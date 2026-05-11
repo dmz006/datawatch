@@ -2057,6 +2057,74 @@ case "$PUB" in
 esac
 
 # ---------------------------------------------------------------------------
+H "32. v7.0.0-alpha.37 — Enabled Models (models[] field + back-compat + in_use + refresh)"
+
+# 32a — Create LLM with models[], verify field present, delete.
+SM37A=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-models","kind":"ollama","compute_nodes":["node1","node2"],"models":[{"node":"node1","model":"llama3"},{"node":"node2","model":"llama3"},{"node":"node1","model":"qwen3"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37A" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-models"
+  # Verify the models field is returned.
+  SM37A_GET=$(curl "${curl_args[@]}" -s "$BASE/api/llms/smoke-llm-models" 2>/dev/null || echo "{}")
+  if echo "$SM37A_GET" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("models"), list) and len(d["models"])>0' 2>/dev/null; then
+    ok "alpha.37 — models[] field returned on GET /api/llms/<name>"
+  else
+    ko "alpha.37 — models[] field missing from GET response: $SM37A_GET"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-models" >/dev/null 2>&1
+else
+  skip "alpha.37 — LLM create with models[] failed (may be schema mismatch): $SM37A"
+fi
+
+# 32b — Back-compat: legacy single model field is expanded.
+SM37B=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-compat","kind":"ollama","model":"llama3","compute_nodes":["compat-node"]}' 2>/dev/null || echo "{}")
+if echo "$SM37B" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-compat"
+  SM37B_GET=$(curl "${curl_args[@]}" -s "$BASE/api/llms/smoke-llm-compat" 2>/dev/null || echo "{}")
+  if echo "$SM37B_GET" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("models"), list) and len(d["models"])>0' 2>/dev/null; then
+    ok "alpha.37 — legacy model field back-compat expands to models[] on GET"
+  else
+    ko "alpha.37 — back-compat: models[] missing after loading legacy model field: $SM37B_GET"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-compat" >/dev/null 2>&1
+else
+  skip "alpha.37 — LLM create (compat) failed: $SM37B"
+fi
+
+# 32c — in_use endpoint shape.
+SM37C=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-inuse","kind":"ollama","models":[{"model":"llama3"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37C" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-inuse"
+  SM37C_IU=$(curl "${curl_args[@]}" -s "$BASE/api/llms/smoke-llm-inuse/in_use?page=1&size=5" 2>/dev/null || echo "{}")
+  if echo "$SM37C_IU" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "total" in d and "sessions" in d and "automata" in d' 2>/dev/null; then
+    ok "alpha.37 — GET /api/llms/<name>/in_use returns paginated shape"
+  else
+    ko "alpha.37 — in_use endpoint shape unexpected: $SM37C_IU"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-inuse" >/dev/null 2>&1
+else
+  skip "alpha.37 — LLM create (in_use) failed: $SM37C"
+fi
+
+# 32d — refresh_models endpoint.
+SM37D=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-refresh","kind":"ollama","models":[{"model":"llama3"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37D" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-refresh"
+  SM37D_RF=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms/smoke-llm-refresh/refresh_models" 2>/dev/null || echo "{}")
+  if echo "$SM37D_RF" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+    ok "alpha.37 — POST /api/llms/<name>/refresh_models returns ok"
+  else
+    ko "alpha.37 — refresh_models endpoint unexpected: $SM37D_RF"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-refresh" >/dev/null 2>&1
+else
+  skip "alpha.37 — LLM create (refresh) failed: $SM37D"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

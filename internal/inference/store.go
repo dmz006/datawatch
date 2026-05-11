@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // NewRegistryFromFile opens / creates the JSON-backed registry at
@@ -46,7 +48,7 @@ func NewRegistryFromFile(path string) (*Registry, error) {
 // migrate it to. Used by MigrateLegacyConfig (alpha.3) and the
 // expanded MigrateAllLegacyBackends (alpha.15).
 type LegacyBackend struct {
-	Name      string // canonical LLM registry name (e.g. "ollama-default")
+	Name      string // canonical LLM registry name (e.g. "ollama")
 	Kind      Kind
 	Model     string
 	APIKeyRef string
@@ -59,9 +61,38 @@ type LegacyBackend struct {
 // Kept for backward compat with alpha.3 callers.
 func MigrateLegacyConfig(reg *Registry, ollamaHost, ollamaModel, openWebUIURL, openWebUIModel, openWebUIKey string) []string {
 	return MigrateAllLegacyBackends(reg, []LegacyBackend{
-		{Name: "ollama-default", Kind: KindOllama, Model: ollamaModel, Address: ollamaHost},
-		{Name: "openwebui-default", Kind: KindOpenWebUI, Model: openWebUIModel, APIKeyRef: openWebUIKey, Address: openWebUIURL},
+		{Name: "ollama", Kind: KindOllama, Model: ollamaModel, Address: ollamaHost},
+		{Name: "openwebui", Kind: KindOpenWebUI, Model: openWebUIModel, APIKeyRef: openWebUIKey, Address: openWebUIURL},
 	})
+}
+
+// StripDefaultSuffix is a one-time startup migration that renames
+// legacy *-default registry entries created by alpha.15 auto-migration.
+// Returns old→new name map for callers that need to update references.
+// Idempotent: skips if target name already exists.
+func (r *Registry) StripDefaultSuffix() map[string]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	renames := map[string]string{}
+	for name := range r.llms {
+		if !strings.HasSuffix(name, "-default") {
+			continue
+		}
+		newName := strings.TrimSuffix(name, "-default")
+		if _, exists := r.llms[newName]; exists {
+			continue // target already exists; skip
+		}
+		cp := *r.llms[name]
+		cp.Name = newName
+		cp.UpdatedAt = time.Now().UTC()
+		r.llms[newName] = &cp
+		delete(r.llms, name)
+		renames[name] = newName
+	}
+	if len(renames) > 0 && r.persistFn != nil {
+		_ = r.persistFn()
+	}
+	return renames
 }
 
 // MigrateAllLegacyBackends (v7.0.0-alpha.15 #229) — extended migration

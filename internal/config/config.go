@@ -439,7 +439,7 @@ type CouncilConfig struct {
 	// LLMRef names the LLM (from cfg.llms / runtime registry) the
 	// council orchestrator should use for persona inference and
 	// synthesis. Empty = council disabled (Run() returns honest 503).
-	// Default "ollama-default" — matches the auto-migrated entry from
+	// Default "ollama" — matches the auto-migrated entry from
 	// cfg.ollama.host.
 	LLMRef string `yaml:"llm_ref,omitempty" json:"llm_ref,omitempty"`
 	// MaxParallel is the per-round persona concurrency cap (BL295 Q2).

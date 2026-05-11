@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.36"
+var Version = "7.0.0-alpha.37a"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2504,8 +2504,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// v7.0.0 S2 — LLM-inference registry + dispatcher.
 			// JSON store at <data-dir>/inference/llms.json. Auto-
 			// migrates v6.x cfg.ollama.host / cfg.openwebui.url into
-			// "ollama-default" / "openwebui-default" entries on first
-			// startup so existing operators keep working.
+			// "ollama" / "openwebui" entries on first startup so
+			// existing operators keep working.
 			if llmReg, lerr := inference.NewRegistryFromFile(filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")); lerr == nil {
 				owuiKey := cfg.OpenWebUI.APIKey
 				// v7.0.0-alpha.15 (#229) — extended migration covering
@@ -2515,20 +2515,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// on-start migration and 'just-work'".
 				legacyBackends := []inference.LegacyBackend{
 					// Inference protocols
-					{Name: "ollama-default", Kind: inference.KindOllama, Model: cfg.Ollama.Model, Address: cfg.Ollama.Host},
-					{Name: "openwebui-default", Kind: inference.KindOpenWebUI, Model: cfg.OpenWebUI.Model, APIKeyRef: owuiKey, Address: cfg.OpenWebUI.URL},
+					{Name: "ollama", Kind: inference.KindOllama, Model: cfg.Ollama.Model, Address: cfg.Ollama.Host},
+					{Name: "openwebui", Kind: inference.KindOpenWebUI, Model: cfg.OpenWebUI.Model, APIKeyRef: owuiKey, Address: cfg.OpenWebUI.URL},
 					// Session-backend kinds (binaries / bins). v6 had
 					// these as cfg.<Backend>.Binary; we promote each
 					// non-empty entry into the LLM registry as a
 					// resolvable name. Sessions resolve at start-time.
-					{Name: "claude-code-default", Kind: inference.KindClaudeCode, Address: cfg.Session.ClaudeBin},
-					{Name: "opencode-default", Kind: inference.KindOpenCode, Address: cfg.OpenCode.Binary},
-					{Name: "opencode-acp-default", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
-					{Name: "opencode-prompt-default", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
-					{Name: "aider-default", Kind: inference.KindAider, Address: cfg.Aider.Binary},
-					{Name: "goose-default", Kind: inference.KindGoose, Address: cfg.Goose.Binary},
-					{Name: "gemini-default", Kind: inference.KindGemini, Address: cfg.Gemini.Binary},
-					{Name: "shell-default", Kind: inference.KindShell, Address: cfg.Shell.ScriptPath},
+					{Name: "claude-code", Kind: inference.KindClaudeCode, Address: cfg.Session.ClaudeBin},
+					{Name: "opencode", Kind: inference.KindOpenCode, Address: cfg.OpenCode.Binary},
+					{Name: "opencode-acp", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
+					{Name: "opencode-prompt", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
+					{Name: "aider", Kind: inference.KindAider, Address: cfg.Aider.Binary},
+					{Name: "goose", Kind: inference.KindGoose, Address: cfg.Goose.Binary},
+					{Name: "gemini", Kind: inference.KindGemini, Address: cfg.Gemini.Binary},
+					{Name: "shell", Kind: inference.KindShell, Address: cfg.Shell.ScriptPath},
 				}
 				created := inference.MigrateAllLegacyBackends(llmReg, legacyBackends)
 				for _, name := range created {
@@ -2539,13 +2539,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if len(created) > 0 {
 					_ = writeMigrationStatus(expandHome(cfg.DataDir), created)
 				}
+				// Strip any *-default suffixes from entries created by
+				// earlier alpha builds (alpha.15 named them "ollama-default"
+				// etc.). Idempotent: skips targets that already exist.
+				renames := llmReg.StripDefaultSuffix()
+				for old, nw := range renames {
+					fmt.Printf("[inference] renamed llm %q → %q (removed -default suffix)\n", old, nw)
+				}
+				if len(renames) > 0 {
+					for _, sess := range mgr.ListSessions() {
+						if newName, ok := renames[sess.LLMRef]; ok {
+							sess.LLMRef = newName
+							if saveErr := mgr.SaveSession(sess); saveErr != nil {
+								fmt.Printf("[inference] warn: could not update llm_ref on session %s: %v\n", sess.FullID, saveErr)
+							}
+						}
+					}
+				}
 				// v7.0.0 S3 — also auto-derive matching ComputeNodes
 				// for the legacy hosts + link them in the LLM entries.
 				// Without this the dispatcher has no Node to call and
 				// every refactored consumer fails with "no reachable
 				// ComputeNode". Idempotent — Add returns ErrConflict
 				// when re-derived.
-				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama-default", cfg.Ollama.Host, "local-ollama")
+				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama", cfg.Ollama.Host, "local-ollama")
 				// v7.0.0-alpha.16 (#246) — operator-corrected 2026-05-09:
 				// "openwebui is an app that uses the ollama. we shouldn't
 				// have it's own compute for openwebui, just have the
@@ -2556,7 +2573,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// local-ollama Node when ollama is configured; OpenWebUI's
 				// URL + API key live on the LLM struct already.
 				if cfg.OpenWebUI.URL != "" && cfg.Ollama.Host != "" {
-					autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui-default", cfg.Ollama.Host, "local-ollama")
+					autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui", cfg.Ollama.Host, "local-ollama")
 				}
 				// Cleanup: if a previous v7-alpha created a stale
 				// `local-openwebui` Node, drop it.
@@ -2564,7 +2581,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					_ = computeReg.Delete("local-openwebui")
 					fmt.Printf("[inference] dropped stale auto-Node local-openwebui (#246: openwebui is an LLM, not a Node)\n")
 					// Also strip the stale ref from the openwebui LLM if present.
-					if llm, lerr := llmReg.Get("openwebui-default"); lerr == nil && llm != nil {
+					if llm, lerr := llmReg.Get("openwebui"); lerr == nil && llm != nil {
 						out := llm.ComputeNodes[:0]
 						for _, n := range llm.ComputeNodes {
 							if n != "local-openwebui" {
@@ -2595,7 +2612,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if councilOrch != nil {
 					llmRef := cfg.Council.LLMRef
 					if llmRef == "" {
-						llmRef = "ollama-default" // matches MigrateLegacyConfig auto-entry
+						llmRef = "ollama" // matches MigrateLegacyConfig auto-entry
 					}
 					maxPar := cfg.Council.MaxParallel
 					if maxPar == 0 {
@@ -3064,7 +3081,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				askBody["model"] = amgrCfg.DecompositionModel
 			}
 			body, _ := json.Marshal(askBody)
-			httpReq, err := http.NewRequest(http.MethodPost,
+			// GATE alpha.36 #286 (operator 2026-05-10): cap decompose
+			// at 5 min so a hung LLM (e.g. Ollama cold-loading a large
+			// model that never finishes) can't park the PRD in
+			// "planning" forever. The manager's roll-back-to-draft
+			// path fires when this returns an error, so a clean
+			// timeout produces a clean retry path for the operator.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
 				bytes.NewReader(body))
 			if err != nil { return "", err }
@@ -3073,7 +3098,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 			}
 			resp, err := http.DefaultClient.Do(httpReq)
-			if err != nil { return "", err }
+			if err != nil { return "", fmt.Errorf("decompose call failed (model may be cold-loading or compute node unreachable): %w", err) }
 			defer resp.Body.Close()
 			b, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
@@ -6605,7 +6630,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
 	newCmd.Flags().StringP("name", "n", "", "Optional human-readable name for this session")
 	newCmd.Flags().String("backend", "", "LLM backend to use (overrides config; e.g. claude-code, aider) — legacy v6; v7 prefers --llm")
-	newCmd.Flags().String("llm", "", "v7 LLM registry name (e.g. ollama-default). Overrides --backend.")
+	newCmd.Flags().String("llm", "", "v7 LLM registry name (e.g. ollama). Overrides --backend.")
 	newCmd.Flags().String("compute", "", "v7 ComputeNode registry name. Requires --llm; must be in that LLM's compute_nodes list.")
 	sessionCmd.AddCommand(newCmd)
 

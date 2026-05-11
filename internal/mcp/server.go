@@ -465,6 +465,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolLLMTest(), tracked(s.handleLLMTestMCP))
 	mcpSrv.AddTool(s.toolLLMEnable(), tracked(s.handleLLMEnableMCP))
 	mcpSrv.AddTool(s.toolLLMDisable(), tracked(s.handleLLMDisableMCP))
+	// v7.0.0-alpha.37 — Enabled Models + in_use.
+	mcpSrv.AddTool(s.toolLLMInUse(), tracked(s.handleLLMInUseMCP))
+	mcpSrv.AddTool(s.toolLLMRefreshModels(), tracked(s.handleLLMRefreshModelsMCP))
+	mcpSrv.AddTool(s.toolLLMAddModel(), tracked(s.handleLLMAddModelMCP))
+	mcpSrv.AddTool(s.toolLLMRemoveModel(), tracked(s.handleLLMRemoveModelMCP))
+	mcpSrv.AddTool(s.toolLLMListModels(), tracked(s.handleLLMListModelsMCP))
 	// v7.0.0 alpha.5.x — memory scope-hierarchy MCP tools.
 	mcpSrv.AddTool(s.toolMemoryScopeRecall(), tracked(s.handleMemoryScopeRecallMCP))
 	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))
@@ -888,7 +894,7 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 			mcpsdk.Description("Absolute path to the project directory. Defaults to home directory."),
 		),
 		mcpsdk.WithString("llm",
-			mcpsdk.Description("v7 LLM registry name (e.g. ollama-default). Overrides backend defaults; the LLM's Kind selects the session backend."),
+			mcpsdk.Description("v7 LLM registry name (e.g. ollama). Overrides backend defaults; the LLM's Kind selects the session backend."),
 		),
 		mcpsdk.WithString("compute_node",
 			mcpsdk.Description("v7 ComputeNode registry name. Requires llm; must appear in that LLM's compute_nodes list."),

@@ -4,6 +4,8 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"net/url"
 	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -187,4 +189,153 @@ func fmtSscanf(s string, dst *int) (int, error) {
 	}
 	*dst = n
 	return len(s), nil
+}
+
+// ---------------------------------------------------------------------------
+// v7.0.0-alpha.37 — Enabled Models + in_use MCP tools
+// ---------------------------------------------------------------------------
+
+func (s *Server) toolLLMInUse() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_in_use",
+		mcpsdk.WithDescription("alpha.37 — list sessions, automata, and personas bound to this LLM."),
+		mcpsdk.WithString("name", mcpsdk.Required()),
+		mcpsdk.WithString("filter", mcpsdk.Description("AND-substring filter across id/name/state")),
+		mcpsdk.WithString("page", mcpsdk.Description("page number (1-based)")),
+		mcpsdk.WithString("size", mcpsdk.Description("page size: 5, 10, or 50")),
+	)
+}
+
+func (s *Server) toolLLMRefreshModels() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_refresh_models",
+		mcpsdk.WithDescription("alpha.37 — trigger a model-list refresh from the LLM's ComputeNodes."),
+		mcpsdk.WithString("name", mcpsdk.Required()),
+	)
+}
+
+func (s *Server) toolLLMAddModel() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_add_model",
+		mcpsdk.WithDescription("alpha.37 — add an enabled model (node+model pair) to an LLM."),
+		mcpsdk.WithString("llm", mcpsdk.Required()),
+		mcpsdk.WithString("node", mcpsdk.Description("ComputeNode name (empty for SaaS kinds)")),
+		mcpsdk.WithString("model", mcpsdk.Required()),
+	)
+}
+
+func (s *Server) toolLLMRemoveModel() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_remove_model",
+		mcpsdk.WithDescription("alpha.37 — remove an enabled model from an LLM."),
+		mcpsdk.WithString("llm", mcpsdk.Required()),
+		mcpsdk.WithString("node", mcpsdk.Description("ComputeNode name")),
+		mcpsdk.WithString("model", mcpsdk.Required()),
+	)
+}
+
+func (s *Server) toolLLMListModels() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_list_models",
+		mcpsdk.WithDescription("alpha.37 — list enabled models for an LLM."),
+		mcpsdk.WithString("name", mcpsdk.Required()),
+	)
+}
+
+func (s *Server) handleLLMInUseMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := mustString(req, "name")
+	q := url.Values{}
+	if v := optString(req, "filter"); v != "" {
+		q.Set("filter", v)
+	}
+	if v := optString(req, "page"); v != "" {
+		q.Set("page", v)
+	}
+	if v := optString(req, "size"); v != "" {
+		q.Set("size", v)
+	}
+	out, err := s.proxyGet("/api/llms/"+name+"/in_use", q)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleLLMRefreshModelsMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON("POST", "/api/llms/"+mustString(req, "name")+"/refresh_models", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// handleLLMAddModelMCP: GET the LLM, append the model, PUT it back.
+func (s *Server) handleLLMAddModelMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	llmName := mustString(req, "llm")
+	model := mustString(req, "model")
+	node := optString(req, "node")
+
+	raw, err := s.proxyGet("/api/llms/"+llmName, nil)
+	if err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	models, _ := body["models"].([]any)
+	models = append(models, map[string]any{"node": node, "model": model})
+	body["models"] = models
+
+	out, err := s.proxyJSON("PUT", "/api/llms/"+llmName, body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// handleLLMRemoveModelMCP: GET the LLM, remove the model, PUT it back.
+func (s *Server) handleLLMRemoveModelMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	llmName := mustString(req, "llm")
+	model := mustString(req, "model")
+	node := optString(req, "node")
+
+	raw, err := s.proxyGet("/api/llms/"+llmName, nil)
+	if err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	models, _ := body["models"].([]any)
+	var kept []any
+	for _, m := range models {
+		if mm, ok := m.(map[string]any); ok {
+			if mm["model"] == model && (node == "" || mm["node"] == node) {
+				continue
+			}
+		}
+		kept = append(kept, m)
+	}
+	body["models"] = kept
+
+	out, err := s.proxyJSON("PUT", "/api/llms/"+llmName, body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// handleLLMListModelsMCP: GET the LLM, return just the models field.
+func (s *Server) handleLLMListModelsMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	raw, err := s.proxyGet("/api/llms/"+mustString(req, "name"), nil)
+	if err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	models := body["models"]
+	if models == nil {
+		models = []any{}
+	}
+	out, _ := json.Marshal(map[string]any{"models": models})
+	return textOK(string(out)), nil
 }

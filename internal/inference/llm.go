@@ -74,6 +74,13 @@ var AllKinds = []Kind{
 	KindAider, KindGoose, KindGemini, KindShell,
 }
 
+// EnabledModel pairs one ComputeNode with one model name.
+// Node is empty for SaaS kinds (claude, gemini).
+type EnabledModel struct {
+	Node  string `yaml:"node,omitempty" json:"node,omitempty"`
+	Model string `yaml:"model" json:"model"`
+}
+
 // LLM is one named LLM definition in the registry.
 type LLM struct {
 	Name    string `yaml:"name" json:"name"`
@@ -85,6 +92,15 @@ type LLM struct {
 	// kind's adapter knows" (used by the v6.x cfg shim — see
 	// MigrateLegacyConfig in main.go).
 	ComputeNodes []string `yaml:"compute_nodes,omitempty" json:"compute_nodes,omitempty"`
+	// Models is the per-node model list (alpha.37). Each element pairs a
+	// ComputeNode name with a model name available on that node. For SaaS
+	// kinds (claude, gemini) Node is empty. Replaces the single Model field.
+	// Back-compat: on LoadSnapshot, if Models is nil and Model is non-empty,
+	// it is expanded into Models using each ComputeNode.
+	Models []EnabledModel `yaml:"models,omitempty" json:"models,omitempty"`
+	// AutoAddModels — when true the model-refresh loop appends newly-discovered
+	// models from the LLM's ComputeNodes automatically.
+	AutoAddModels bool `yaml:"auto_add_models,omitempty" json:"auto_add_models,omitempty"`
 	// APIKeyRef is for SaaS kinds (claude). May be a literal value
 	// OR a `${secret:name}` reference resolved via the secrets store
 	// at call time.
@@ -312,6 +328,16 @@ func (r *Registry) LoadSnapshot(snap []LLM) {
 	r.llms = make(map[string]*LLM, len(snap))
 	for i := range snap {
 		l := snap[i]
+		// Back-compat alpha.37: expand legacy single-model field into Models[].
+		if l.Models == nil && l.Model != "" {
+			if len(l.ComputeNodes) > 0 {
+				for _, cn := range l.ComputeNodes {
+					l.Models = append(l.Models, EnabledModel{Node: cn, Model: l.Model})
+				}
+			} else {
+				l.Models = []EnabledModel{{Model: l.Model}}
+			}
+		}
 		r.llms[l.Name] = &l
 	}
 }

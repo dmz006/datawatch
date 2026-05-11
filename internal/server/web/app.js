@@ -1948,9 +1948,14 @@ function renderSessionsView() {
     if (c.key === 'all') stateCounts.all = state.sessions.length;
     else stateCounts[c.key] = state.sessions.filter(s => s.state === c.key).length;
   });
+  // GATE finding (operator 2026-05-10): only show state chips that have
+  // entries in the current list — 0-count chips are confusing. 'all'
+  // always visible. The currently-active filter ALSO stays visible even
+  // if 0 (so operator can see what they picked + back out).
+  const visibleStateChips = realStateChips.filter(c => c.key === 'all' || stateCounts[c.key] > 0 || chip === c.key);
   const stateActiveKey = (chip && chip !== 'all') ? chip : '';
-  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${realStateChips.length - 1})`;
-  const stateBadges = realStateChips.map(c => {
+  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${visibleStateChips.length - 1})`;
+  const stateBadges = visibleStateChips.map(c => {
     const isActive = chip === c.key;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
   }).join('');
@@ -2070,6 +2075,15 @@ function setBackendFilter(backend) {
 function setSessionStateChip(chip) {
   state.sessionStateChip = chip;
   localStorage.setItem('cs_session_state_chip', chip);
+  // GATE finding (operator 2026-05-10): if filter selects a historical
+  // state (complete/failed/killed/cancelled/archived), auto-activate the
+  // History toggle so those sessions actually become visible. Without
+  // this, picking 'killed' shows zero results because historical
+  // sessions are filtered out unless History is on.
+  const historicalStates = new Set(['complete', 'failed', 'killed', 'cancelled', 'archived']);
+  if (historicalStates.has(chip) && !state.showHistory) {
+    state.showHistory = true;
+  }
   renderSessionsView();
 }
 
@@ -2211,21 +2225,30 @@ function sessionCard(sess, idx, total) {
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
   const backend = sess.backend_family || '';
+  const llmDisplay = sess.llm_ref || sess.backend_family || '';
   const mode = getSessionMode(backend);
   const isActive = !DONE_STATES.has(sess.state);
   const isWaiting = sess.state === 'waiting_input';
 
-  // Action icons inline in header
+  // alpha.36 GATE finding — operator: "Stop looks like a badge, not a
+  // button. Buttons hard to tell you can still click them. Last response
+  // should be next to other buttons on upper right." Action buttons get
+  // explicit button styling (border + bg + hover); last-response moves
+  // here from the task line; restart/delete get the same treatment.
   let actions = '';
+  const btnStyle = 'border:1px solid var(--border);background:var(--bg2);color:var(--text);border-radius:4px;font-size:11px;padding:3px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;line-height:1;';
   if (isActive) {
-    actions += `<button class="btn-stop" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop">&#9632; Stop</button>`;
+    actions += `<button onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop session" style="${btnStyle}border-color:var(--error);color:var(--error);">&#9632; Stop</button>`;
     if (isWaiting) {
-      actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands">&#9654;</button>`;
+      actions += `<button onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands" style="${btnStyle}">&#9654;</button>`;
     }
   } else if (DONE_STATES.has(sess.state)) {
-    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart">&#8635;</button>`;
-    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete">&#128465;</button>`;
+    actions += `<button onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart" style="${btnStyle}">&#8635; Restart</button>`;
+    actions += `<button onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete" style="${btnStyle}border-color:var(--error);color:var(--error);">&#128465;</button>`;
   }
+  // Last-response button — operator follow-up: bottom-right next to the
+  // time, not with action buttons. Different action (view what session
+  // said) tied to the session, not lifecycle. Built separately below.
 
   // Waiting-input prompt and expandable commands
   let waitingRow = '';
@@ -2256,20 +2279,27 @@ function sessionCard(sess, idx, total) {
          ondragover="sessionDragOver(event)"
          ondrop="sessionDrop(event,'${escHtml(fullId)}')"
          ondragend="sessionDragEnd(event)">
-      <div class="session-card-header">
-        ${showCheckbox ? `<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSessionSelect('${escHtml(fullId)}')" style="margin-right:6px;" />` : ''}
-        <span class="id">${escHtml(shortId)}</span>
-        <span class="state ${badgeClass}" data-state="${escHtml(sess.state || '')}" data-channel-evt="${sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : ''}">${escHtml(sess.state || 'unknown')}<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s — may be going to WaitingInput'}"></span></span>
-        ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}
-        ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent2);color:var(--bg);margin-left:2px;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
-        ${sess.agent_id ? `<span class="agent-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(124,58,237,0.18);color:var(--accent2);margin-left:2px;" title="Container worker (agent ${escHtml(sess.agent_id)}). v5.26.58 — full driver kind (docker/k8s/cf) + recursion depth land when the agent record is fetched.">⬡ worker</span>` : ''}
-        <span class="time">${escHtml(ago)}</span>
-        <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
-        <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
-      </div>
-      <div class="task">
-        ${escHtml(taskText)}
-        ${sess.last_response ? `<button class="btn-icon card-action response-icon" onclick="event.stopPropagation();showResponseViewer('${escHtml(fullId)}')" title="View last response">&#128196;</button>` : ''}
+      <div class="session-card-header" style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding-bottom:6px;">
+        ${showCheckbox ? `<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSessionSelect('${escHtml(fullId)}')" style="margin-top:4px;flex-shrink:0;" />` : ''}
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="task" style="font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;">${escHtml(taskText)}</span>
+            <span class="card-actions" onclick="event.stopPropagation()" style="display:inline-flex;gap:4px;align-items:center;flex-shrink:0;">${actions}</span>
+            ${actions ? '<span style="color:var(--text2);opacity:0.5;flex-shrink:0;">|</span>' : ''}
+            <span class="state ${badgeClass}" data-state="${escHtml(sess.state || '')}" data-channel-evt="${sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : ''}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;flex-shrink:0;">${escHtml(sess.state || 'unknown')}<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s — may be going to WaitingInput'}"></span></span>
+            <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder" style="cursor:grab;color:var(--text2);font-size:14px;">&#8942;&#8942;</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
+            <span class="id" style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);color:var(--text);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-weight:600;letter-spacing:0.3px;" title="Session ID">${escHtml(shortId)}</span>
+            ${llmDisplay ? `<span class="backend-badge" style="font-size:10px;border:1px solid var(--accent2,#60a5fa);padding:2px 7px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);font-weight:600;" title="LLM/backend: ${escHtml(llmDisplay)}">${escHtml(llmDisplay)}</span>` : ''}
+            ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
+            ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
+              ${sess.last_response ? `<button onclick="event.stopPropagation();showResponseViewer('${escHtml(fullId)}')" title="View last response" style="border:1px solid var(--border);background:var(--bg2);color:var(--text);border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;line-height:1;">&#128196; Response</button>` : ''}
+              <span class="time">${escHtml(ago)}</span>
+            </span>
+          </div>
+        </div>
       </div>
       ${waitingRow}
     </div>`;
@@ -2507,26 +2537,47 @@ function renderSessionDetail(sessionId) {
         <button class="term-tool-btn" onclick="termFitToWidth();closeTermFontDropdown();" title="${t('term_fit_title')||'Fit terminal to screen width'}">Fit</button>
       </div>
     </div>
-    <span style="color:var(--border);margin:0 4px;">|</span>
-    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="${t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)'}">&#128220; Scroll</button>
+    <!-- GATE alpha.36 (operator 2026-05-10): drop the | separator and
+         the "Scroll" label — icon-only on narrow screens. Picked
+         U+2912 ⤒ (UPWARDS ARROW TO BAR — iTerm/Warp convention for
+         scroll-back-to-top), bumped font size + bold so it reads
+         prominently against the toolbar. -->
+    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="${t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)'}" aria-label="${t('term_scroll_title')||'Scroll back through history'}" style="font-size:18px;font-weight:700;line-height:1;padding:0 8px;">&#10514;</button>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
   // v6.11.21 — Stats tab added per operator: "The mobile app sessions
   // have a stats tab that is missing in pwa". Same set of session-
   // process metrics mobile renders via SessionStatsPanel.kt.
+  // GATE alpha.36 (operator 2026-05-10): merged Stats + Status into a
+  // single "Status" top-level tab to free up tab-strip space; the
+  // hook-health line that lived inside Status is now an internal sub-
+  // tab strip with Status (default) / Stats. Outer tab id stays
+  // tabStatus so existing handlers + badge code keep working.
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
-        <button class="output-tab" id="tabStats" onclick="switchOutputTab('stats')">${t('session_detail_tab_stats')||'Stats'}</button>
         <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
-        <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;margin-left:auto;opacity:0.6;display:none;" onclick="showChannelHelp()" title="${t('channel_help_title')||'Channel commands'}">?</button>
-        ${isChatMode ? '' : fontCtrl}
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
+          <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;opacity:0.6;display:none;" onclick="showChannelHelp()" title="${t('channel_help_title')||'Channel commands'}">?</button>
+          ${isChatMode ? '' : fontCtrl}
+        </span>
       </div>
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>
-      <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>
-      <div class="output-area output-area-status" id="outputAreaStatus" style="display:none;padding:12px;overflow:auto;"></div>
+      <!-- Combined Status panel hosts Status + Stats sub-tabs internally. -->
+      <div class="output-area output-area-status" id="outputAreaStatus" style="display:none;padding:0;overflow:auto;">
+        <div class="status-subtabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 4px;">
+          <button class="status-subtab active" id="statusSubtabStatus" onclick="switchStatusSubtab('status')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid var(--accent2,#60a5fa);color:var(--text);cursor:pointer;font-weight:600;">${t('session_detail_tab_status')||'Status'}</button>
+          <button class="status-subtab" id="statusSubtabStats" onclick="switchStatusSubtab('stats')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('session_detail_tab_stats')||'Stats'}</button>
+        </div>
+        <div id="statusSubpaneStatus" style="padding:12px;"></div>
+        <div id="statusSubpaneStats" style="padding:12px;display:none;"></div>
+      </div>
+      <!-- Legacy outputAreaStats kept hidden so existing code paths that
+           write to it don't error; the combined panel above is the real
+           render target. -->
+      <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;"></div>
       <!-- v6.13.9 — generating indicator slot moved into the tmux saved-
            commands strip (between the Commands dropdown and the up arrow)
            per operator request. Renders inline: 3 dots, no "generating…"
@@ -2538,12 +2589,20 @@ function renderSessionDetail(sessionId) {
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
        : `<div class="output-tabs">
             <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${t('session_detail_tab_tmux')||'Tmux'}</button>
-            <button class="output-tab" id="tabStats" onclick="switchOutputTab('stats')">${t('session_detail_tab_stats')||'Stats'}</button>
+            <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
             <span style="margin-left:auto;"></span>
             ${fontCtrl}
           </div>
           <div class="output-area output-area-tmux" id="outputAreaTmux"></div>
-          <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>`);
+          <div class="output-area output-area-status" id="outputAreaStatus" style="display:none;padding:0;overflow:auto;">
+            <div class="status-subtabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 4px;">
+              <button class="status-subtab active" id="statusSubtabStatus" onclick="switchStatusSubtab('status')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid var(--accent2,#60a5fa);color:var(--text);cursor:pointer;font-weight:600;">${t('session_detail_tab_status')||'Status'}</button>
+              <button class="status-subtab" id="statusSubtabStats" onclick="switchStatusSubtab('stats')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('session_detail_tab_stats')||'Stats'}</button>
+            </div>
+            <div id="statusSubpaneStatus" style="padding:12px;"></div>
+            <div id="statusSubpaneStats" style="padding:12px;display:none;"></div>
+          </div>
+          <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;"></div>`);
 
   // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
@@ -2561,9 +2620,8 @@ function renderSessionDetail(sessionId) {
     <div class="session-detail">
       <div class="session-info-bar">
         <div class="meta">
-          ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
-          ${llmRefText ? `<span class="backend-badge" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e);" title="${escHtml(t('session_llm_ref_title')||'v7 LLM registry name')}">⚡ ${escHtml(llmRefText)}</span>` : ''}
-          ${computeRefText ? `<span class="backend-badge" style="background:rgba(168,85,247,0.12);color:var(--accent,#a855f7);" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
+          ${llmRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--success,#22c55e);padding:2px 8px;border-radius:8px;background:rgba(34,197,94,0.12);color:var(--success,#22c55e);font-weight:600;" title="${escHtml(t('session_llm_ref_title')||'v7 LLM registry name')}">⚡ ${escHtml(llmRefText)}</span>` : (backendText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--border);padding:2px 8px;border-radius:8px;background:var(--bg2);color:var(--text2);font-weight:600;" title="LLM/backend (legacy): ${escHtml(backendText)}">${escHtml(backendText)}</span>` : '')}
+          ${computeRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--accent,#a855f7);padding:2px 8px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent,#a855f7);font-weight:600;" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
               badge here since the Channel/ACP tab below already conveys
               the mode. Keep tmux mode-badge so plain tmux sessions
@@ -2571,7 +2629,13 @@ function renderSessionDetail(sessionId) {
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
-          <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}">&#128336; ${t('btn_timeline')||'Timeline'}</button>
+          <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
+               are icon-only on narrow / phone screens — labels were
+               wrapping awkwardly. Tooltips carry the meaning. Right-
+               justified via margin-left:auto on the leading icon so
+               they sit at the right edge of the meta row. -->
+          <button class="detail-pill-btn detail-pill-icon" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}" aria-label="${t('btn_timeline')||'Timeline'}" style="margin-left:auto;">&#128336;</button>
+          <button class="detail-pill-btn detail-pill-icon" onclick="showResponseViewer('${escHtml(sessionId)}')" title="${t('btn_view_last_response')||'View last response'}" aria-label="${t('btn_response')||'Response'}">&#128196;</button>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
@@ -2579,17 +2643,12 @@ function renderSessionDetail(sessionId) {
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       ${connBanner}
       ${outputAreaHtml}
-      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196;</button>
-        <!-- v6.13.9 — generating indicator slot. v7.0.0-alpha.29 #255
-             follow-up: operator wants the green ... gone (running flash
-             is enough). Slot becomes the alert-pill when alerts are active. -->
-        <span id="alertPillSlot" class="alert-pill-slot" onclick="toggleAlertDock()"></span>
-        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
-          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
         </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
@@ -2720,6 +2779,12 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
   loadSessionStats(sessionId);
+  // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
+  // mount so the Status tab badge dot reflects state immediately —
+  // previously only populated when the operator clicked into the tab.
+  apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/status')
+    .then(b => { if (state.activeSession === sessionId) updateSessionStatusBadge(b); })
+    .catch(() => {});
 
   // Ensure input bar is visible (safety net against scroll mode or other display:none leaks)
   const renderedInputBar = document.getElementById('inputBar');
@@ -2850,9 +2915,19 @@ function toggleScrollMode() {
     else document.querySelector('.session-detail')?.appendChild(scrollBar);
   }
   scrollBar.style.display = 'flex';
-  // Update toolbar button
+  // GATE alpha.36 (operator 2026-05-10): toolbar toggle stays icon-only
+  // when in scroll mode — was rendering "⏹ Exit Scroll" text which
+  // broke the header at narrow widths. Use the same ⤒ glyph but
+  // overlay an "active" tint so it's visually distinct, plus aria-label
+  // so the action is still discoverable.
   const btn = document.getElementById('scrollModeBtn');
-  if (btn) { btn.textContent = '⏹ Exit Scroll'; btn.onclick = exitScrollMode; }
+  if (btn) {
+    btn.innerHTML = '&#10514;';
+    btn.classList.add('term-tool-btn-active');
+    btn.title = t('term_scroll_exit_title')||'Exit scroll mode';
+    btn.setAttribute('aria-label', t('term_scroll_exit_title')||'Exit scroll mode');
+    btn.onclick = exitScrollMode;
+  }
 }
 
 function scrollPage(dir) {
@@ -2891,8 +2966,17 @@ function restoreInputBar() {
   if (inputBar) inputBar.style.display = '';
   const scrollBar = document.getElementById('scrollBar');
   if (scrollBar) scrollBar.remove();
+  // GATE alpha.36 (operator 2026-05-10): restore the SAME ⤒ icon-only
+  // glyph that the original render used (was being replaced with
+  // "↕ Scroll" text + double-sided arrow which broke the toolbar).
   const btn = document.getElementById('scrollModeBtn');
-  if (btn) { btn.innerHTML = '&#8597; Scroll'; btn.onclick = toggleScrollMode; }
+  if (btn) {
+    btn.innerHTML = '&#10514;';
+    btn.classList.remove('term-tool-btn-active');
+    btn.title = t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)';
+    btn.setAttribute('aria-label', t('term_scroll_title')||'Scroll back through history');
+    btn.onclick = toggleScrollMode;
+  }
   state._scrollMode = false;
 }
 
@@ -3325,15 +3409,14 @@ function switchOutputTab(tab) {
     if (tabChannel) tabChannel.classList.add('active');
     if (helpBtn) helpBtn.style.display = '';
     channelArea.scrollTop = channelArea.scrollHeight;
-  } else if (tab === 'stats' && statsArea) {
-    statsArea.style.display = '';
-    if (tabStats) tabStats.classList.add('active');
-    renderSessionStats(state.activeSession);
-  } else if (tab === 'status' && statusArea) {
-    // alpha.34 #202 — Claude statusline / status board.
+  } else if ((tab === 'stats' || tab === 'status') && statusArea) {
+    // GATE alpha.36 (operator 2026-05-10): Stats + Status merged into
+    // one Status panel with internal sub-tabs. Old `stats` calls land
+    // on the same panel, just defaulted to the Stats sub-tab.
     statusArea.style.display = '';
     if (tabStatus) tabStatus.classList.add('active');
     renderSessionStatusBoard(state.activeSession);
+    if (tab === 'stats') switchStatusSubtab('stats'); else switchStatusSubtab('status');
   } else {
     tmuxArea.style.display = '';
     if (tabTmux) tabTmux.classList.add('active');
@@ -3359,12 +3442,16 @@ function switchOutputTab(tab) {
 // often won't exist — fall back to the matching `backend:` envelope so
 // operators always see something useful.
 function renderSessionStats(sessionId) {
-  const area = document.getElementById('outputAreaStats');
+  // GATE alpha.36 (operator 2026-05-10): Stats sub-pane lives inside
+  // the merged Status panel. Render into statusSubpaneStats; fall back
+  // to legacy outputAreaStats for any non-tab callers. The activeOutputTab
+  // is now 'status' (the merged tab), so the gate-check accepts both.
+  const area = document.getElementById('statusSubpaneStats') || document.getElementById('outputAreaStats');
   if (!area || !sessionId) return;
   area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('loading')||'Loading…')}</div>`;
   const sess = state.sessions.find(s => s.full_id === sessionId);
   apiFetch('/api/observer/envelopes').then(d => {
-    if (state.activeSession !== sessionId || state.activeOutputTab !== 'stats') return;
+    if (state.activeSession !== sessionId || (state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status')) return;
     const envelopes = (d && d.envelopes) || [];
     let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
     let labelHint = t('session_stats_process_title') || 'Process Stats';
@@ -3379,13 +3466,13 @@ function renderSessionStats(sessionId) {
   // Schedule a refresh every 5 s while the tab stays open.
   if (state._statsTabPoll) clearInterval(state._statsTabPoll);
   state._statsTabPoll = setInterval(() => {
-    if (state.activeOutputTab !== 'stats' || state.activeSession !== sessionId) {
+    if ((state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status') || state.activeSession !== sessionId) {
       clearInterval(state._statsTabPoll);
       state._statsTabPoll = null;
       return;
     }
     apiFetch('/api/observer/envelopes').then(d => {
-      if (state.activeSession !== sessionId || state.activeOutputTab !== 'stats') return;
+      if (state.activeSession !== sessionId || (state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status')) return;
       const envelopes = (d && d.envelopes) || [];
       let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
       let labelHint = t('session_stats_process_title') || 'Process Stats';
@@ -3506,7 +3593,6 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
   if (sess && sess.llm_ref) {
     llmCard = card(t('stats_card_llm')||'LLM', `
       ${row(t('stats_field_ref')||'LLM ref', sess.llm_ref)}
-      ${sess.backend_family ? row(t('stats_field_family')||'Family', sess.backend_family) : ''}
       <div style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('stats_llm_more_soon')||'Token rate / latency / model state coming POST v7.0 (#276 Grafana sprint).')}</div>
       <div style="margin-top:6px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_llm')||'Open LLM →')}</a></div>
     `);
@@ -3520,10 +3606,42 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
 // summary · Council · Skills · Git. Each card is conditional on the
 // hook payload providing data; "no data yet — install hooks" message
 // when nothing has been received for the session.
+// GATE alpha.36 (operator 2026-05-10): toggle between the merged
+// panel's Status / Stats sub-tabs. Idempotent — safe to call from
+// switchOutputTab when entering the panel.
+window.switchStatusSubtab = function(name) {
+  const tabStatus = document.getElementById('statusSubtabStatus');
+  const tabStats = document.getElementById('statusSubtabStats');
+  const paneStatus = document.getElementById('statusSubpaneStatus');
+  const paneStats = document.getElementById('statusSubpaneStats');
+  if (!tabStatus || !tabStats || !paneStatus || !paneStats) return;
+  const setActive = (btn, on) => {
+    btn.style.borderBottomColor = on ? 'var(--accent2,#60a5fa)' : 'transparent';
+    btn.style.color = on ? 'var(--text)' : 'var(--text2)';
+    btn.style.fontWeight = on ? '600' : '400';
+    btn.classList.toggle('active', on);
+  };
+  if (name === 'stats') {
+    setActive(tabStatus, false); setActive(tabStats, true);
+    paneStatus.style.display = 'none'; paneStats.style.display = '';
+    if (typeof renderSessionStats === 'function' && state.activeSession) renderSessionStats(state.activeSession);
+  } else {
+    setActive(tabStatus, true); setActive(tabStats, false);
+    paneStatus.style.display = ''; paneStats.style.display = 'none';
+  }
+};
+
 function renderSessionStatusBoard(sessionId) {
-  const area = document.getElementById('outputAreaStatus');
+  // GATE alpha.36 (operator 2026-05-10): Status pane is now a sub-pane
+  // inside the combined Status+Stats panel. Render into the Status
+  // sub-pane element; also kick a Stats render so when operator flips
+  // sub-tabs the data is already there. Keep the old `outputAreaStatus`
+  // fallback so other call sites that aren't tab-aware still work.
+  const area = document.getElementById('statusSubpaneStatus') || document.getElementById('outputAreaStatus');
   if (!area || !sessionId) return;
   area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('common_loading')||'Loading…')}</div>`;
+  // Pre-load Stats sub-pane in parallel so toggling is instant.
+  if (typeof renderSessionStats === 'function') renderSessionStats(sessionId);
   apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/status').then(b => {
     if (state.activeSession !== sessionId || state.activeOutputTab !== 'status') return;
     renderSessionStatusBoardInner(area, b, sessionId);
@@ -3551,15 +3669,23 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;margin-bottom:8px;">${escHtml(title)}</div>
     ${body}
   </div>`;
-  const stateBadge = (() => {
-    const map = { running: ['🟢', 'var(--success,#10b981)'], waiting: ['🟠', 'var(--warning,#f59e0b)'], idle: ['⚪', 'var(--text2)'], unknown: ['❔', 'var(--text2)'] };
-    const e = map[board.state] || map.unknown;
-    return `<span style="background:${e[1]};color:var(--bg);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700;">${e[0]} ${escHtml(board.state)}</span>`;
-  })();
+  // GATE alpha.36 (operator 2026-05-10): drop the in-panel state badge —
+  // header already shows session state. hookHealthBadge: dot is click-to-
+  // refetch (instant feedback) + tooltip explains stale ≠ broken (last
+  // event > 5 min ago, not that hooks failed). When hooks are absent or
+  // stale we surface a clickable "Docs ↗" pointing to the in-PWA docs
+  // viewer so the operator can fix it without leaving the page.
+  const refetch = `event.stopPropagation();renderSessionStatusBoard('${escHtml(sessionId)}')`;
+  const docsLink = (anchor, label) => `<a href="${escHtml(anchor)}" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);margin-left:6px;font-size:11px;" onclick="event.stopPropagation()">${escHtml(label)} ↗</a>`;
+  const hooksDoc = '/diagrams.html#docs/howto/claude-hooks.md';
   const hookHealthBadge = (() => {
-    if (board.hook_health === 'alive') return `<span style="color:var(--success,#10b981);font-size:11px;">●</span> hooks alive`;
-    if (board.hook_health === 'stale') return `<span style="color:var(--warning,#f59e0b);font-size:11px;">●</span> hooks stale`;
-    return `<span style="color:var(--text2);font-size:11px;">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed — see howto/claude-hooks.md')}`;
+    if (board.hook_health === 'alive') {
+      return `<span style="color:var(--success,#10b981);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_alive_tip')||'Hooks installed and firing — last event recent. Click to re-poll.')}" onclick="${refetch}">●</span> hooks alive`;
+    }
+    if (board.hook_health === 'stale') {
+      return `<span style="color:var(--warning,#f59e0b);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_stale_tip')||'Hooks installed but no event in >5 min — agent may just be in a long thinking turn. Click to re-poll.')}" onclick="${refetch}">●</span> <span style="cursor:pointer;text-decoration:underline dotted;" onclick="${refetch}" title="Click to re-poll">hooks stale</span>${docsLink(hooksDoc, t('common_docs')||'Docs')}`;
+    }
+    return `<span style="color:var(--text2);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_missing_tip')||'No hook events received yet. For non-claude-code backends or unhooked sessions this is expected. Click to re-poll.')}" onclick="${refetch}">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed')}${docsLink(hooksDoc, t('common_setup')||'Set up')}`;
   })();
 
   // Current focus card
@@ -3574,7 +3700,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
         ${board.idle_since ? `<div style="font-size:11px;color:var(--warning,#f59e0b);">idle since ${escHtml(new Date(board.idle_since).toLocaleTimeString('en-GB', {hour12:false}))}</div>` : ''}
       </div>`;
   } else {
-    focusBody = `<em style="color:var(--text2);">${escHtml(t('status_no_events_yet')||'No hook events received yet. Install Claude hooks per docs/howto/claude-hooks.md (auto-install lands post-v7.0).')}</em>`;
+    focusBody = `<em style="color:var(--text2);">${escHtml(t('status_no_events_yet')||'No hook events received yet.')} ${docsLink(hooksDoc, t('common_setup')||'Set up')}</em>`;
   }
 
   // Sprint / PRD tree card
@@ -3597,9 +3723,8 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   }
 
   area.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-      ${stateBadge}
-      <span style="font-size:11px;color:var(--text2);margin-left:auto;">${hookHealthBadge}</span>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
+      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
     ${card(t('status_card_sprint')||'Sprint / PRD tree', sprintBody)}
@@ -4187,9 +4312,14 @@ function loadSavedCmdsQuick(sessionId) {
       let optHtml = '<optgroup label="System">';
       optHtml += systemOpts.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
       optHtml += '</optgroup>';
-      if (cmds && cmds.length) {
+      // GATE alpha.36 (operator 2026-05-10): suppress server-seeded
+      // commands from the Saved optgroup — they exactly duplicate the
+      // hardcoded System set (approve/reject/enter/continue/skip/abort/
+      // ctrl-c) and made the dropdown look broken. Only show user-saved.
+      const userSaved = (cmds || []).filter(c => !c.seeded);
+      if (userSaved.length) {
         optHtml += '<optgroup label="Saved">';
-        optHtml += cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name || c.command)}</option>`).join('');
+        optHtml += userSaved.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name || c.command)}</option>`).join('');
         optHtml += '</optgroup>';
       }
       optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
@@ -4203,30 +4333,28 @@ function loadSavedCmdsQuick(sessionId) {
       // The arrow group uses margin-left:auto to push to the row's
       // right edge inside the flex container.
       const sid = sessionId || '';
-      // v5.23.0 — operator-reported: Response button should be icon-only
-      // (no text "Response") between commands + arrows. The 📄 glyph
-      // alone with the title tooltip is enough.
-      const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196;</button>` : '';
+      // GATE alpha.36 (operator 2026-05-10): Response button moved to
+      // header (right of Timeline). alertPillSlot removed from send bar
+      // — header alert dock is the single source. D-pad reordered:
+      // ESC on the left, arrows in the middle, Enter on the right.
+      // GATE alpha.36 (operator 2026-05-10): arrow buttons must
+      // press-and-hold repeat (operator scrolls a lot through long
+      // outputs / pickers). ESC + Enter stay one-shot.
       const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[A')" title="Up">&uarr;</button>
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[B')" title="Down">&darr;</button>
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[C')" title="Right">&rarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[D')" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[C')" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
       </span>` : '';
-      // alpha.29 #255 follow-up + #271 — generating dots removed per
-      // operator (running flash is enough). Slot now hosts the alert pill:
-      // surface 🔔 N when alerts are pending; click → toggleAlertDock().
-      const alertPillSlot = `<span id="alertPillSlot" class="alert-pill-slot" onclick="toggleAlertDock()"></span>`;
-      panel.innerHTML = responseBtn +
+      panel.innerHTML =
         `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
         `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
         `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
         `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
         `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>` +
-        alertPillSlot +
         arrows;
-      // Re-render alert pill so the freshly-emitted slot picks up state.
-      if (typeof renderAlertPill === 'function') renderAlertPill();
     })
     .catch(() => {});
 }
@@ -4321,14 +4449,93 @@ const newSessionState = {
 // presentation comes from .new-session-modal styling on body when
 // activeView === 'new'.
 function openNewSessionModal() {
-  state._returnView = state.activeView === 'new' ? state._returnView : (state.activeView || 'sessions');
-  navigate('new');
+  // GATE alpha.36 (operator 2026-05-10): convert from full-screen view
+  // to a panel-style modal anchored inside .app, matching the Launch
+  // Automaton wizard pattern. Same width constraint (capped to PWA
+  // shell), ? help link + × close in header right side.
+  state._returnView = state.activeView || 'sessions';
   document.body.classList.add('new-session-active');
+  _newSessionMountPanel();
 }
 
 function closeNewSessionModal() {
   document.body.classList.remove('new-session-active');
-  navigate(state._returnView || 'sessions');
+  const m = document.getElementById('newSessionModal');
+  if (m) m.remove();
+}
+
+function _newSessionMountPanel() {
+  const existing = document.getElementById('newSessionModal');
+  if (existing) existing.remove();
+  const host = document.querySelector('.app') || document.body;
+  const modal = document.createElement('div');
+  modal.id = 'newSessionModal';
+  modal.className = 'confirm-modal-overlay app-anchored';
+  modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:100%;">
+    <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
+      <strong>＋ ${escHtml(t('new_session_title')||'New Session')}</strong>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
+        <a href="/diagrams.html#docs/howto/new-session.md" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+        <button class="btn-icon" onclick="closeNewSessionModal()" title="Close">&#10005;</button>
+      </span>
+    </div>
+    <form id="newSessionForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
+      <div id="newSessionViewMount"></div>
+    </form>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) closeNewSessionModal(); });
+  host.appendChild(modal);
+  // Reuse the existing renderNewSessionView() field markup by mounting
+  // it inside the modal (the function expects #view); temporarily remap
+  // to render into our panel mount, then restore. Simpler: render the
+  // form fields directly here by calling the existing helper that
+  // populates fields. Defer to the existing pipeline by setting
+  // activeView and calling renderNewSessionView with a redirected view
+  // element.
+  const viewEl = document.getElementById('newSessionViewMount');
+  // Render the form fields by calling the same logic the old route used.
+  // The renderNewSessionView function writes to #view; we override
+  // briefly by giving the mount the expected id.
+  const realView = document.getElementById('view');
+  if (realView) realView.id = '_view_save';
+  viewEl.id = 'view';
+  if (typeof renderNewSessionView === 'function') renderNewSessionView();
+  viewEl.id = 'newSessionViewMount';
+  if (realView) realView.id = 'view';
+  // GATE alpha.36 (operator 2026-05-10): the old renderNewSessionView
+  // markup has its own header (h2 + description + × close). With the
+  // panel adding a header of its own, we get two close buttons + two
+  // titles. Strip the embedded header now and tighten paddings.
+  const inner = viewEl.querySelector('.view-content');
+  if (inner) inner.style.padding = '0';
+  const oldHeader = viewEl.querySelector('.new-session-view > div:first-child');
+  if (oldHeader && oldHeader.querySelector('h2')) oldHeader.remove();
+  const nsv = viewEl.querySelector('.new-session-view');
+  if (nsv) { nsv.style.padding = '0'; nsv.style.marginTop = '0'; }
+  // GATE alpha.36 (operator 2026-05-10): strip whitespace text nodes
+  // throughout the mounted form. Template literals in renderNewSessionView
+  // create indented newlines that render as anonymous block boxes,
+  // each ~20px tall, accumulating into the empty rows above SESSION
+  // NAME the operator kept reporting. CSS line-height tricks couldn't
+  // catch them because the * descendant selector restored line-height.
+  // Walk and remove every whitespace-only text node under the panel.
+  const walker = document.createTreeWalker(modal, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => /^\s*$/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  const dead = [];
+  let cur; while ((cur = walker.nextNode())) dead.push(cur);
+  dead.forEach(n => n.remove());
+  // GATE alpha.36 (operator 2026-05-10): "project directory selector
+  // should be above LLM". Move the dir-row above the v7-LLM row, AND
+  // bring the #dirBrowser dropdown panel along with it (otherwise the
+  // browser opens way down the page, after Effort).
+  const dirRow = modal.querySelector('#sessDirRow');
+  const dirBrowser = modal.querySelector('#dirBrowser');
+  const v7Row = modal.querySelector('#sessV7Row');
+  if (dirRow && v7Row && v7Row.parentElement === dirRow.parentElement) {
+    dirRow.parentElement.insertBefore(dirRow, v7Row);
+    if (dirBrowser) dirRow.parentElement.insertBefore(dirBrowser, v7Row);
+  }
 }
 
 function renderNewSessionView() {
@@ -4337,9 +4544,12 @@ function renderNewSessionView() {
     <div class="view-content">
       <div class="new-session-view">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
-          <div>
-            <h2 style="margin-bottom:4px;">${t('new_session_title')||'New Session'}</h2>
-            <p style="margin:0;">${t('new_session_desc')||'Describe the coding task for the AI to work on.'}</p>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div>
+              <h2 style="margin-bottom:4px;">${t('new_session_title')||'New Session'}</h2>
+              <p style="margin:0;">${t('new_session_desc')||'Describe the coding task for the AI to work on.'}</p>
+            </div>
+            <a href="/diagrams.html#docs/howto/new-session.md" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:14px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
           </div>
           <button class="btn-icon" onclick="closeNewSessionModal()" title="Close" aria-label="Close" style="font-size:22px;line-height:1;padding:4px 10px;">&times;</button>
         </div>
@@ -4385,7 +4595,11 @@ function renderNewSessionView() {
             <option value="">— Local service instance (daemon-side) —</option>
           </select>
         </div>
-        <div class="form-group" id="sessBackendRow">
+        <!-- GATE alpha.36 (operator 2026-05-10): legacy LLM backend
+             dropdown deprecated — the v7 LLM registry below replaces
+             it. Kept hidden so existing field-id refs don't break, but
+             not rendered in the panel UI. -->
+        <div class="form-group" id="sessBackendRow" style="display:none;">
           <label for="backendSelect">${t('new_session_llm_label')||'LLM backend'}</label>
           <select id="backendSelect" class="form-select">
             <option value="">${t('new_session_llm_loading')||'Loading backends…'}</option>
@@ -4403,30 +4617,36 @@ function renderNewSessionView() {
              Node dropdown; the legacy backend dropdown above is
              deprecated for v7 sessions but still works for back-compat. -->
         <div class="form-group" id="sessV7Row">
-          <label for="sessLLMSelect">${t('new_session_v7_llm_label')||'LLM (v7 registry)'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">${t('new_session_v7_optional')||'(optional — overrides backend above)'}</span></label>
+          <label for="sessLLMSelect">${t('new_session_v7_llm_label')||'LLM'}</label>
           <select id="sessLLMSelect" class="form-select" onchange="onSessLLMChange()">
             <option value="">${t('new_session_v7_llm_default')||'(use legacy backend dropdown above)'}</option>
           </select>
-          <label for="sessComputeSelect" style="margin-top:6px;display:block;">${t('new_session_v7_compute_label')||'Compute Node'}</label>
-          <select id="sessComputeSelect" class="form-select" disabled>
-            <option value="">${t('new_session_v7_compute_default')||'— pick an LLM first —'}</option>
+          <!-- GATE alpha.36 (operator 2026-05-10): Compute Node hidden
+               by default; surfaced only when the selected LLM has 2+
+               pinned compute_nodes. onSessLLMChange flips visibility. -->
+          <label for="sessComputeSelect" style="margin-top:6px;display:none;">${t('new_session_v7_compute_label')||'Compute Node'}</label>
+          <select id="sessComputeSelect" class="form-select" style="display:none;" disabled>
+            <option value=""></option>
           </select>
           <div id="sessV7Hint" style="display:none;color:var(--text2);font-size:11px;margin-top:4px;line-height:1.4;"></div>
         </div>
-        <!-- v5.27.5 — claude-code per-session overrides. Visible only
-             when the selected backend is claude-code. Populated from
-             /api/llm/claude/{models,efforts,permission_modes}. -->
+        <!-- GATE alpha.36 (operator 2026-05-10): row generalized from
+             "Claude options" to "LLM options". Shown when any LLM is
+             picked; populated based on the LLM's kind. Permission mode
+             is claude-code-only and stays hidden for other LLMs. Model
+             + Effort populate from the same per-backend conditional
+             tables the wizard uses. -->
         <div class="form-group" id="sessClaudeRow" style="display:none;">
           <label style="display:flex;justify-content:space-between;align-items:center;">
-            <span>Claude options <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for config defaults)</span></span>
+            <span>${t('new_session_llm_options_label')||'LLM options'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">${t('new_session_llm_options_hint')||'(optional — leave blank for config defaults)'}</span></span>
           </label>
-          <select id="sessPermissionMode" class="form-select" style="margin-top:6px;" title="Permission mode (--permission-mode)">
+          <select id="sessPermissionMode" class="form-select" style="margin-top:6px;display:none;" title="Permission mode (--permission-mode)">
             <option value="">${t('new_session_perm_default')||'Permission mode: (config default)'}</option>
           </select>
-          <select id="sessClaudeModel" class="form-select" style="margin-top:6px;" title="Model (--model)">
+          <select id="sessClaudeModel" class="form-select" style="margin-top:6px;" title="Model">
             <option value="">${t('new_session_model_default')||'Model: (config default)'}</option>
           </select>
-          <select id="sessClaudeEffort" class="form-select" style="margin-top:6px;" title="Effort level (--effort)">
+          <select id="sessClaudeEffort" class="form-select" style="margin-top:6px;" title="Effort level">
             <option value="">${t('new_session_effort_default')||'Effort: (config default)'}</option>
           </select>
         </div>
@@ -4457,7 +4677,10 @@ function renderNewSessionView() {
             <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
         </div>
-        <button class="btn-primary" onclick="submitNewSession()">${t('new_session_start_btn')||'Start Session'}</button>
+        <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+          <button class="btn-secondary" onclick="closeNewSessionModal()">${t('action_cancel')||'Cancel'}</button>
+          <button class="btn-primary" onclick="submitNewSession()">${t('new_session_start_btn')||'Start Session'}</button>
+        </div>
 
         <div class="session-backlog-section">
           <div class="session-backlog-title">${t('new_session_backlog_title')||'Restart a previous session'}</div>
@@ -4523,49 +4746,118 @@ function populateSessionV7Pickers() {
   const llmSel = document.getElementById('sessLLMSelect');
   const compSel = document.getElementById('sessComputeSelect');
   if (!llmSel || !compSel) return;
-  apiFetch('/api/llms').then(res => {
+  // GATE alpha.36 (operator 2026-05-10): cross-reference /api/backends
+  // and drop LLMs whose backend isn't actually installed/available.
+  // The daemon seeds `<kind>-default` for every supported kind even
+  // when the binary isn't present, so the picker would otherwise list
+  // opencode/-acp/-prompt even when the operator never ran `pnpm i -g
+  // opencode`. Filtering by backends[i].available keeps the picker
+  // honest. shell still drops as a non-LLM kind.
+  Promise.all([
+    apiFetch('/api/llms').catch(() => null),
+    apiFetch('/api/backends').catch(() => null),
+  ]).then(([res, beRes]) => {
     const llms = (res && Array.isArray(res.llms)) ? res.llms : (Array.isArray(res) ? res : []);
-    window._sessV7LLMs = llms.filter(l => !l.disabled);
+    const backends = (beRes && Array.isArray(beRes.llm)) ? beRes.llm : [];
+    const availableKinds = new Set();
+    backends.forEach(b => {
+      if (typeof b === 'string') { availableKinds.add(b); return; }
+      if (b && b.name && (b.available === undefined || b.available)) availableKinds.add(b.name);
+    });
+    // Council is a virtual backend (no separate binary) — always
+    // considered available so the picker can offer it.
+    availableKinds.add('council');
+    window._sessV7LLMs = llms.filter(l => !l.disabled
+      && l.kind !== 'shell'
+      && (availableKinds.size === 0 || availableKinds.has(l.kind)));
     while (llmSel.options.length > 1) llmSel.remove(1);
     window._sessV7LLMs.forEach(l => {
       const opt = document.createElement('option');
       opt.value = l.name;
-      const kind = l.kind ? ' [' + l.kind + ']' : '';
-      opt.textContent = l.name + kind;
+      const display = (l.auto_created && l.name === (l.kind || '') + '-default') ? l.kind : l.name;
+      opt.textContent = display;
       llmSel.appendChild(opt);
     });
-  }).catch(() => {});
+  });
 }
 
 function onSessLLMChange() {
   const llmSel = document.getElementById('sessLLMSelect');
   const compSel = document.getElementById('sessComputeSelect');
+  const compLabel = document.querySelector('label[for="sessComputeSelect"]');
   const hint = document.getElementById('sessV7Hint');
   if (!llmSel || !compSel) return;
   const name = llmSel.value;
-  // Reset
+  // GATE alpha.36 (operator 2026-05-10): drive the LLM options row
+  // (renamed from "Claude options"). Show whole row when an LLM is
+  // picked. Permission mode visible only for claude-code. Model +
+  // Effort populate from per-backend lists driven by the LLM's kind.
+  const llmObj = (window._sessV7LLMs || []).find(l => l.name === name);
+  const kind = llmObj && llmObj.kind || '';
+  const optsRow = document.getElementById('sessClaudeRow');
+  const permSel = document.getElementById('sessPermissionMode');
+  const modelSel = document.getElementById('sessClaudeModel');
+  const effortSel = document.getElementById('sessClaudeEffort');
+  if (optsRow) optsRow.style.display = name ? '' : 'none';
+  if (permSel) permSel.style.display = (kind === 'claude-code') ? '' : 'none';
+  if (kind === 'claude-code') {
+    if (typeof populateClaudeOptionDropdowns === 'function') populateClaudeOptionDropdowns();
+  } else if (name) {
+    // For non-claude LLMs: rebuild model + effort with backend-conditional
+    // option sets so the operator only sees values their LLM kind
+    // understands. Reuses the wizard's EFFORT_BY_BACKEND + per-backend
+    // model fetch helpers.
+    if (effortSel && typeof effortOptionsFor === 'function') {
+      effortSel.innerHTML = ['<option value="">' + (t('new_session_effort_default')||'Effort: (config default)') + '</option>']
+        .concat(effortOptionsFor(kind).filter(e => e !== '').map(e => `<option value="${escHtml(e)}">${escHtml(e)}</option>`)).join('');
+    }
+    if (modelSel) {
+      // Live-fetch models for the kinds where it makes sense, like the
+      // wizard does. Hide the model select for kinds that don't have a
+      // discoverable model list.
+      const setModelOpts = (models) => {
+        const opts = ['<option value="">' + (t('new_session_model_default')||'Model: (config default)') + '</option>']
+          .concat((models || []).map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`));
+        modelSel.innerHTML = opts.join('');
+        modelSel.style.display = '';
+      };
+      if (kind === 'ollama') {
+        apiFetch('/api/ollama/models').then(setModelOpts).catch(() => { modelSel.style.display = 'none'; });
+      } else if (kind === 'openwebui') {
+        apiFetch('/api/openwebui/models').then(setModelOpts).catch(() => { modelSel.style.display = 'none'; });
+      } else {
+        // opencode variants / council / other backends — model picker
+        // doesn't apply (operator: don't show empty/hint controls).
+        modelSel.style.display = 'none';
+      }
+    }
+  }
+  // GATE alpha.36 (operator 2026-05-10): hide the Compute Node row
+  // entirely unless the selected LLM has 2+ pinned compute nodes —
+  // when there's only one (or none / not picked), the daemon picks
+  // automatically and the picker just adds noise.
+  const setCompVisible = (vis) => {
+    if (compSel) compSel.style.display = vis ? '' : 'none';
+    if (compLabel) compLabel.style.display = vis ? 'block' : 'none';
+  };
   while (compSel.options.length > 0) compSel.remove(0);
   if (!name) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = t('new_session_v7_compute_default') || '— pick an LLM first —';
-    compSel.appendChild(opt);
-    compSel.disabled = true;
+    setCompVisible(false);
     if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
     return;
   }
   const llm = (window._sessV7LLMs || []).find(l => l.name === name);
   const nodes = (llm && Array.isArray(llm.compute_nodes)) ? llm.compute_nodes : [];
-  if (nodes.length === 0) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = t('new_session_v7_compute_any') || '(any compute node — LLM did not pin one)';
-    compSel.appendChild(opt);
-    compSel.disabled = true;
-    if (hint) {
-      hint.textContent = (t('new_session_v7_hint_any') || 'LLM has no pinned compute_nodes; daemon picks at dispatch time.');
-      hint.style.display = '';
-    }
+  // GATE alpha.36 (operator 2026-05-10): SaaS-style LLMs (anthropic.com,
+  // gemini, etc.) have no local compute concept — never show the picker
+  // for them, regardless of compute_nodes count. Council uses local LLMs
+  // per-persona, so it CAN have compute nodes and follows the standard
+  // 2+ rule. Local-runtime kinds (ollama / openwebui) only show the
+  // picker when 2+ nodes are pinned.
+  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose']);
+  if (SAAS_KINDS.has(llm && llm.kind) || nodes.length < 2) {
+    setCompVisible(false);
+    if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
     return;
   }
   nodes.forEach((n, i) => {
@@ -4574,6 +4866,7 @@ function onSessLLMChange() {
     opt.textContent = n + (i === 0 ? ' (primary)' : ' (failover ' + i + ')');
     compSel.appendChild(opt);
   });
+  setCompVisible(true);
   compSel.disabled = false;
   compSel.selectedIndex = 0;
   if (hint) {
@@ -4677,7 +4970,7 @@ function renderSessionBacklog() {
   el.innerHTML = done.map(s => {
     const displaySnip = s.name || s.task || '';
     const taskSnippet = displaySnip.length > 60 ? displaySnip.slice(0, 60) + '…' : (displaySnip || '(no task)');
-    const backend = s.backend_family || '';
+    const llmDisplayB = s.llm_ref || s.backend_family || '';
     const badgeClass = `state-badge-${s.state}`;
     const ago = timeAgo(s.updated_at);
     return `<div class="backlog-entry">
@@ -4686,7 +4979,7 @@ function renderSessionBacklog() {
         <span class="state ${badgeClass}" style="font-size:10px;">${escHtml(s.state)}</span>
       </div>
       <div class="backlog-entry-meta">
-        ${backend ? `<span class="backend-badge" style="font-size:10px;">${escHtml(backend)}</span>` : ''}
+        ${llmDisplayB ? `<span class="backend-badge" style="font-size:10px;">${escHtml(llmDisplayB)}</span>` : ''}
         <span style="color:var(--text2);font-size:11px;">${escHtml(ago)}</span>
       </div>
       <button class="btn-secondary backlog-restart-btn" onclick="restartSession('${escHtml(s.full_id || s.id)}')">&#8635; Restart</button>
@@ -5021,6 +5314,7 @@ function submitNewSession() {
         showToast('Agent spawned (' + projectProfile + ' on ' + (clusterProfile || 'local') + ')', 'success', 3000);
         if (taskInput) taskInput.value = '';
         if (nameInput) nameInput.value = '';
+        closeNewSessionModal();
         // Operator stays on sessions view; the spawned agent's session
         // shows up via the WS broadcast.
         navigate('sessions');
@@ -5068,6 +5362,7 @@ function submitNewSession() {
       newSessionState.browsing = false;
       // Seed local state immediately so the detail view renders before the WS broadcast arrives.
       updateSession(sess);
+      closeNewSessionModal();
       navigate('session-detail', sess.full_id);
     })
     .catch(err => {
@@ -5373,11 +5668,10 @@ function renderSettingsView() {
         <!-- v7.0.0-alpha.10 — legacy "LLM Configuration" card REMOVED per
              operator 2026-05-09. The fields it surfaced (cfg.ollama.host,
              cfg.openwebui.url) now live in the new LLM registry; the
-             daemon auto-migrates legacy cfg blocks to ollama-default /
-             openwebui-default LLM entries on first v7 startup, so
-             operators see them in the LLMs card below. The
-             LLM_CONFIG_FIELDS rendering loop below now only emits
-             non-legacy LLM-tab cards (memory, rtk). -->
+             daemon auto-migrates legacy cfg blocks to ollama / openwebui
+             LLM entries on first v7 startup, so operators see them in
+             the LLMs card below. The LLM_CONFIG_FIELDS rendering loop
+             below now only emits non-legacy LLM-tab cards (memory, rtk). -->
         ${LLM_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('lc_'+sec.id, sec.section, sec.docs)}
@@ -6130,7 +6424,9 @@ function loadComputeNodesPanel() {
           // v7.0.0-alpha.20 #252 — escHtml-wrap for attribute safety.
           const safeJ = escHtml(JSON.stringify(n.name));
           const cap = (n.declared_capacity||{}).max_concurrent_models || '—';
-          const auto = n.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('compute_auto')||'auto')}</span>` : '';
+          // GATE alpha.36 (operator 2026-05-10): added tooltip — "auto"
+          // wasn't self-explanatory.
+          const auto = n.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;cursor:help;" title="${escHtml(t('compute_auto_tip')||'Auto-created by the daemon (e.g. seeded from cfg.yaml or migrated). Edit to convert to operator-managed.')}">${escHtml(t('compute_auto')||'auto')}</span>` : '';
           // v7.0.0-alpha.23 (Q7) — render only operator-supplied tags;
           // daemon-applied AutoTags live in n.auto_tags and are hidden.
           const tagsHtml = (n.tags||[]).map(tg => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(tg)}</span>`).join('');
@@ -6146,79 +6442,42 @@ function loadComputeNodesPanel() {
           // a reserved field (alpha.23.x) that, when present, surfaces as
           // the badge tooltip. Empty for now until dispatcher persists it.
           const switchHTML = slidingSwitchHTML(safeJ, !!n.disabled, n.last_dispatch_error || '', 'computeToggleEnabled');
-          return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
-            <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
+          // GATE alpha.36 (operator 2026-05-10): dim full row when
+          // disabled (operator: visual state was unclear). aria-labels
+          // + tooltip text on Edit / Detail / Delete so the icons are
+          // discoverable. JSON dump replaced with a styled key/value
+          // table — the raw JSON was hard to read at a glance.
+          const dimStyle = n.disabled ? 'opacity:0.55;filter:grayscale(0.6);' : '';
+          const fmtVal = (v) => {
+            if (v == null) return '<span style="color:var(--text2);font-style:italic;">—</span>';
+            if (typeof v === 'object') return `<code style="font-size:10px;">${escHtml(JSON.stringify(v))}</code>`;
+            return escHtml(String(v));
+          };
+          const detailRows = Object.entries(n).filter(([k]) => !['name','tags','auto_tags'].includes(k))
+            .map(([k, v]) => `<tr><td style="padding:2px 8px;color:var(--text2);font-size:10px;white-space:nowrap;vertical-align:top;">${escHtml(k)}</td><td style="padding:2px 8px;font-size:11px;word-break:break-all;">${fmtVal(v)}</td></tr>`).join('');
+          return `<details class="compute-node-row" style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);${dimStyle}">
+            <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap;">
               <strong>${safe}</strong>${auto}
               ${kindBadge}
               <span style="color:var(--text2);font-size:10px;">${escHtml(n.address||'')}</span>
               <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${tagsHtml}
-              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;">
                 ${switchHTML}
-                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit form / YAML / test before save')}">✏️</button>
-                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})" title="${escHtml(t('compute_detail_btn_title')||'Live monitoring detail')}">📡</button>
-                <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
+                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit')}" aria-label="Edit ${safe}">✏️</button>
+                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})" title="${escHtml(t('compute_detail_btn_title')||'Live monitoring detail')}" aria-label="Details for ${safe}">📡</button>
+                <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:0 6px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" aria-label="Delete ${safe}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
               </span>
             </summary>
-            <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(n, null, 2))}</pre>
+            <table style="width:100%;border-collapse:collapse;background:var(--bg);border-top:1px solid var(--border);">${detailRows}</table>
           </details>`;
         }).join('');
-    // v7.0.0-alpha.23 (Q1) — Kind dropdown reduced to supported set only.
-    // Roadmap kinds (Gemini, Claude API, opencode API, TabbyML, MLX, …)
-    // documented in docs/plans/post-v7-llm-kinds.md, hidden from form.
-    const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
-      <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</summary>
-      <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_name')||'Name (kebab-case)')}</label>
-        <input id="computeNewName" class="form-input" placeholder="gpu-1" />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind (LLM-API protocol)')}</label>
-        <select id="computeNewKind" class="form-select" onchange="computeNewKindChanged()">
-          <option value="ollama" selected>ollama</option>
-          <option value="openai-compat">openai-compat</option>
-        </select>
-        <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_kind_hint')||'ollama = native Ollama API · openai-compat = OpenAI /v1 (covers OpenWebUI, vLLM, LMStudio, OpenAI itself)')}</div>
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
-        <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_monitoring')||'Monitoring endpoint (stub --listen URL; for live detail)')}</label>
-        <input id="computeNewMonitoring" class="form-input" placeholder="https://gpu-1:9001/api/stats" />
-        <!-- v7.0.0-alpha.23 (Q3) — Hardware section. Auto-shown for ollama or
-             private-host openai-compat URLs. Auto-hidden for SaaS-pattern
-             openai-compat URLs (api.openai.com, etc.). -->
-        <div id="computeHardwareSection" style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
-          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_hardware_section')||'Hardware (auto-detect via observer or set manually)')}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <input id="computeNewOS" class="form-input" placeholder="${escHtml(t('compute_hw_os_ph')||'OS (linux/macos/windows)')}" />
-            <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" />
-            <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" />
-            <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" />
-            <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" oninput="computeRecomputeMax()" />
-            <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" oninput="computeRecomputeMax()" />
-            <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" />
-            <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" />
-          </div>
-        </div>
-        <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" />
-          <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
-        </div>
-        <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
-        <select id="computeNewObserverPeer" class="form-select"><option value="">${escHtml(t('compute_observer_none')||'(none)')}</option></select>
-        <div style="font-size:10px;color:var(--text3);">${escHtml(t('compute_observer_hint')||'Free peers self-register via REST. Detach by selecting (none).')}</div>
-        <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="computeAddNode()">${escHtml(t('compute_add_btn')||'Add')}</button>
-      </div>
-    </details>`;
+    // GATE alpha.36 (operator 2026-05-10): Add ComputeNode is now a
+    // panel-modal trigger button (matches Launch Automaton / New
+    // Session pattern). Inline form was wider than .app shell on
+    // narrow viewports. The actual form lives in openComputeAddPanel().
+    const addForm = `<button class="btn-primary" style="font-size:12px;padding:6px 14px;margin-top:10px;" onclick="openComputeAddPanel()">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</button>`;
     panel.innerHTML = intro + rows + addForm;
-    // v7.0.0-alpha.23 — render the migration banner if any deprecated-Kind nodes exist.
     if (typeof window._migrationBanner === 'function') window._migrationBanner(panel);
-    // alpha.23b — populate free-observer dropdown on the Add form.
-    ensureFreeObserversCached().then(() => {
-      const sel = document.getElementById('computeNewObserverPeer');
-      if (!sel) return;
-      const opts = (window._freeObserversCache || []).map(p =>
-        `<option value="${escHtml(p.name)}">${escHtml(p.name)}${p.shape ? ' (shape '+escHtml(p.shape)+')' : ''}</option>`
-      ).join('');
-      sel.insertAdjacentHTML('beforeend', opts);
-    });
   }).catch(e => {
     panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
   });
@@ -6303,11 +6562,15 @@ window.openFormEditPopup = function(kindCfg, name) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(obj),
       }).then(() => {
-        return apiFetch(kindCfg.testURL, {
-          method: kindCfg.testMethod || 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(kindCfg.testBody || {}),
-        });
+        // GATE alpha.36 (operator 2026-05-10): GET/HEAD requests can't
+        // carry a body — browsers reject with "Request with GET/HEAD
+        // method cannot have body". Omit body for those methods.
+        const method = kindCfg.testMethod || 'POST';
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (method !== 'GET' && method !== 'HEAD') {
+          opts.body = JSON.stringify(kindCfg.testBody || {});
+        }
+        return apiFetch(kindCfg.testURL, opts);
       }).then(d => {
         const summary = (d && (d.text || d.status || JSON.stringify(d).slice(0, 200))) || 'ok';
         setStatus('✓ ' + (t('form_edit_test_ok')||'Test passed: ') + String(summary).slice(0, 200), 'var(--success,#10b981)');
@@ -6734,11 +6997,14 @@ window._legacyOpenYAMLEditPopup = function(kindCfg, name) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(obj),
       }).then(() => {
-        return apiFetch(kindCfg.testURL, {
-          method: kindCfg.testMethod || 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(kindCfg.testBody || {}),
-        });
+        // GATE alpha.36 (operator 2026-05-10): same fix as the other
+        // popup — GET/HEAD requests must not carry a body.
+        const method = kindCfg.testMethod || 'POST';
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (method !== 'GET' && method !== 'HEAD') {
+          opts.body = JSON.stringify(kindCfg.testBody || {});
+        }
+        return apiFetch(kindCfg.testURL, opts);
       }).then(d => {
         const summary = (d && (d.text || d.status || JSON.stringify(d).slice(0, 200))) || 'ok';
         setStatus('✓ Test passed: ' + String(summary).slice(0, 200), 'var(--success,#10b981)');
@@ -6761,28 +7027,154 @@ window._legacyOpenYAMLEditPopup = function(kindCfg, name) {
   }).catch(e => showError('Load failed', String(e.message || e)));
 };
 
+// GATE alpha.36 (operator 2026-05-10): Compute + LLM Edit replaced
+// the YAML popup with structured form panels (matches Add panel
+// pattern). Same CRUD on every field, just friendlier UX + fits the
+// PWA shell. The YAML popup couldn't fit on narrow PWAs and was raw-
+// YAML-unfriendly.
 window.computeEditNode = function(name) {
-  openYAMLEditPopup({
-    title: 'Compute Node',
-    getURL: '/api/compute/nodes/' + encodeURIComponent(name),
-    saveMethod: 'PUT',
-    testURL: '/api/compute/nodes/' + encodeURIComponent(name) + '/health',
-    testMethod: 'GET',
-    testBody: {},
-    onAfterSave: () => loadComputeNodesPanel(),
-  }, name);
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name)).then(node => {
+    openComputeAddPanel(node);
+  }).catch(e => showError('Load failed: ' + (e.message || e)));
 };
 
 window.llmEdit = function(name) {
+  apiFetch('/api/llms/' + encodeURIComponent(name)).then(llm => {
+    openLLMEditPanel(llm);
+  }).catch(e => showError('Load failed: ' + (e.message || e)));
+};
+
+// GATE alpha.36 (operator 2026-05-10): structured LLM edit form
+// (replaces the YAML popup which didn't fit narrow PWAs). Anchored
+// inside .app shell, fields pre-populated, Save = PUT, with Test +
+// YAML escape hatch. Operator-spec'd #294 covers deeper UX
+// improvements (per-kind field visibility, model probing, etc.) —
+// this round delivers the structural fix.
+window.openLLMEditPanel = function(existing) {
+  const isEdit = !!(existing && existing.name);
+  if (!existing) existing = {};
+  const host = document.querySelector('.app') || document.body;
+  const old = document.getElementById('llmAddPanel');
+  if (old) old.remove();
+  const allKinds = ['ollama','openwebui','opencode','claude-code','opencode-acp','opencode-prompt','aider','goose','gemini','council','shell'];
+  const kindOpts = allKinds.map(k => `<option value="${k}" ${k === (existing.kind||'') ? 'selected' : ''}>${k}</option>`).join('');
+  const nodes = (window._computeNodesCache || []);
+  const selectedNodes = new Set(existing.compute_nodes || []);
+  const nodeOpts = nodes.map(n => `<option value="${escHtml(n.name)}" ${selectedNodes.has(n.name) ? 'selected' : ''}>${escHtml(n.name)} (${escHtml(n.kind||'?')})</option>`).join('');
+  const modal = document.createElement('div');
+  modal.id = 'llmAddPanel';
+  modal.dataset.editName = isEdit ? existing.name : '';
+  modal.className = 'confirm-modal-overlay app-anchored';
+  modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:100%;">
+    <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
+      <strong>${isEdit ? '✎ ' + escHtml(t('llm_edit_title')||'Edit LLM') + ': ' + escHtml(existing.name) : '+ ' + escHtml(t('llm_add_title')||'Add LLM')}</strong>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
+        <a href="/diagrams.html#docs/datawatch-definitions.md#llms" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+        <button class="btn-icon" onclick="document.getElementById('llmAddPanel').remove()" title="Close">&#10005;</button>
+      </span>
+    </div>
+    <form id="llmEditForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_name')||'Name (kebab-case)')}</label>
+        <input id="llmEditName" class="form-input" placeholder="llama3-70b" value="${isEdit ? escHtml(existing.name) : ''}" ${isEdit ? 'readonly style="opacity:0.7;cursor:not-allowed;"' : ''} />
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_kind')||'Kind')}</label>
+        <select id="llmEditKind" class="form-select">${kindOpts}</select>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
+        <select id="llmEditComputeNodes" class="form-select" multiple size="4" style="min-height:80px;">${nodeOpts}</select>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('llm_field_compute_nodes_hint')||'Hold Ctrl/Cmd to multi-select. Order = failover order.')}</div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_model')||'Model')}</label>
+        <input id="llmEditModel" class="form-input" placeholder="llama3:70b / claude-sonnet-4-6 / etc." value="${escHtml(existing.model||'')}" />
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
+        <input id="llmEditAPIKey" class="form-input" placeholder="$\{secret:anthropic-key\}" value="${escHtml(existing.api_key_ref||'')}" />
+      </div>
+      <div id="llmEditStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:6px;">
+        <button type="button" class="btn-secondary" style="font-size:11px;" onclick="_llmOpenYAMLForCurrent()" title="${escHtml(t('llm_edit_yaml_tip')||'Edit raw YAML — form will reload with parsed values on save')}">&lt;/&gt; YAML</button>
+        <span style="display:inline-flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-secondary" onclick="document.getElementById('llmAddPanel').remove()">${escHtml(t('action_cancel')||'Cancel')}</button>
+          <button type="button" class="btn-secondary" onclick="_llmTestDraft()">${escHtml(t('llm_test_btn')||'Test')}</button>
+          <button type="button" class="btn-primary" onclick="_llmSaveDraft()">${isEdit ? escHtml(t('llm_save_btn')||'Save') : escHtml(t('llm_add_btn')||'Add')}</button>
+        </span>
+      </div>
+    </form>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  host.appendChild(modal);
+  // Strip whitespace text-nodes (same fix).
+  const walker = document.createTreeWalker(modal, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => /^\s*$/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  const dead = []; let cur; while ((cur = walker.nextNode())) dead.push(cur);
+  dead.forEach(n => n.remove());
+};
+
+window._llmTestDraft = function() {
+  const status = document.getElementById('llmEditStatus');
+  const setStatus = (msg, color) => { if (status) { status.style.color = color; status.textContent = msg; } };
+  const modal = document.getElementById('llmAddPanel');
+  const editName = modal ? modal.dataset.editName : '';
+  if (!editName) { setStatus('Save first, then Test', 'var(--text2)'); return; }
+  setStatus('Testing…', 'var(--text2)');
+  apiFetch('/api/llms/' + encodeURIComponent(editName) + '/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: 'Reply with the single word OK so we can verify reachability.' }),
+  }).then(d => {
+    setStatus('✓ ' + (d && (d.text || JSON.stringify(d).slice(0,160)) || 'OK'), 'var(--success,#10b981)');
+  }).catch(e => setStatus('✕ ' + String(e.message || e).slice(0, 240), 'var(--error)'));
+};
+
+window._llmSaveDraft = function() {
+  const modal = document.getElementById('llmAddPanel');
+  const editName = modal ? modal.dataset.editName : '';
+  const isEdit = !!editName;
+  const name = (document.getElementById('llmEditName')||{}).value.trim();
+  const kind = (document.getElementById('llmEditKind')||{}).value;
+  const model = (document.getElementById('llmEditModel')||{}).value.trim();
+  const apiKey = (document.getElementById('llmEditAPIKey')||{}).value.trim();
+  const sel = document.getElementById('llmEditComputeNodes');
+  const computeNodes = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+  if (!isEdit && !name) { showError('LLM name required'); return; }
+  const url = isEdit ? '/api/llms/' + encodeURIComponent(editName) : '/api/llms';
+  const method = isEdit ? 'PUT' : 'POST';
+  apiFetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: isEdit ? editName : name, kind, model, compute_nodes: computeNodes, api_key_ref: apiKey }),
+  }).then(() => {
+    showToast(isEdit ? '✓ LLM updated' : '✓ LLM added', 'success', 2000);
+    if (modal) modal.remove();
+    loadLLMsPanel();
+  }).catch(e => showError((isEdit ? 'Update' : 'Add') + ' failed', String(e.message || e)));
+};
+
+window._llmOpenYAMLForCurrent = function() {
+  const modal = document.getElementById('llmAddPanel');
+  if (!modal) return;
+  const editName = modal.dataset.editName;
+  if (!editName) { showToast('YAML editor available after first save', 'info', 2500); return; }
+  modal.remove();
   openYAMLEditPopup({
     title: 'LLM',
-    getURL: '/api/llms/' + encodeURIComponent(name),
+    getURL: '/api/llms/' + encodeURIComponent(editName),
     saveMethod: 'PUT',
-    testURL: '/api/llms/' + encodeURIComponent(name) + '/test',
+    testURL: '/api/llms/' + encodeURIComponent(editName) + '/test',
     testMethod: 'POST',
     testBody: { prompt: 'Reply with the single word OK so we can verify reachability.' },
-    onAfterSave: () => loadLLMsPanel(),
-  }, name);
+    onAfterSave: () => {
+      apiFetch('/api/llms/' + encodeURIComponent(editName))
+        .then(llm => openLLMEditPanel(llm))
+        .catch(() => loadLLMsPanel());
+    },
+  }, editName);
 };
 
 // v7.0.0-alpha.23 (Q3) — Kind-aware Hardware section visibility.
@@ -6837,11 +7229,236 @@ window.computeToggleEnabled = function(name, currentlyDisabled) {
   }).catch(e => showError('Toggle failed', String(e.message||e)));
 };
 
+// GATE alpha.36 (operator 2026-05-10): Add ComputeNode panel modal.
+// - Replaces the inline <details> form (which was wider than .app shell)
+// - Drops the manual `monitoring_endpoint` field — observer peer
+//   dropdown auto-infers it (operator: "the dropdown is right, it
+//   should infer the monitoring endpoint from that")
+// - Address auto-prepends `http://` if no scheme (the operator-hit
+//   `datawatch:11434` bug)
+// - Test Connection button BEFORE save (operator: "needs test
+//   connection on add")
+window.openComputeAddPanel = function(existingNode) {
+  // GATE alpha.36 (operator 2026-05-10): unified Add + Edit. Pass an
+  // existing node to switch into edit mode — name field becomes
+  // read-only, all other fields pre-fill, Save uses PUT instead of
+  // POST. Form structure is identical so operator sees the same UX.
+  const isEdit = !!(existingNode && existingNode.name);
+  ensureFreeObserversCached();
+  const host = document.querySelector('.app') || document.body;
+  const existing = document.getElementById('computeAddPanel');
+  if (existing) existing.remove();
+  const cap = (existingNode && existingNode.declared_capacity) || {};
+  const hw  = (existingNode && existingNode.hardware) || {};
+  const initObs = (existingNode && existingNode.observer_peer) || '';
+  const modal = document.createElement('div');
+  modal.id = 'computeAddPanel';
+  modal.dataset.editName = isEdit ? existingNode.name : '';
+  modal.className = 'confirm-modal-overlay app-anchored';
+  modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:100%;">
+    <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
+      <strong>${isEdit ? '✎ ' + escHtml(t('compute_edit_title')||'Edit ComputeNode') + ': ' + escHtml(existingNode.name) : '+ ' + escHtml(t('compute_add_title')||'Add ComputeNode')}</strong>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
+        <a href="/diagrams.html#docs/datawatch-definitions.md#compute-nodes" target="_blank" rel="noopener" title="Open ComputeNode docs" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+        <button class="btn-icon" onclick="document.getElementById('computeAddPanel').remove()" title="Close">&#10005;</button>
+      </span>
+    </div>
+    <form id="computeAddForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_name_simple')||'Name')}</label>
+        <input id="computeNewName" class="form-input" placeholder="gpu-1" value="${isEdit ? escHtml(existingNode.name) : ''}" ${isEdit ? 'readonly style="opacity:0.7;cursor:not-allowed;"' : ''} />
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_field_name_hint')||'Short identifier, lowercase letters/numbers/dashes (e.g. gpu-1, dev-laptop, prod-h100)')}</div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_kind')||'Kind (LLM-API protocol)')}</label>
+        <select id="computeNewKind" class="form-select" onchange="computeNewKindChanged()">
+          <option value="ollama" ${isEdit && existingNode.kind === 'ollama' ? 'selected' : (!isEdit ? 'selected' : '')}>ollama</option>
+          <option value="openai-compat" ${isEdit && existingNode.kind === 'openai-compat' ? 'selected' : ''}>openai-compat</option>
+        </select>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_kind_hint')||'ollama = native Ollama API · openai-compat = OpenAI /v1 (covers OpenWebUI, vLLM, LMStudio, OpenAI itself)')}</div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
+        <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" value="${isEdit ? escHtml(existingNode.address || '') : ''}" />
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_address_scheme_hint')||'http:// or https:// auto-added if missing.')}</div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
+        <select id="computeNewObserverPeer" class="form-select" onchange="_computeObserverChanged()"><option value="">${escHtml(t('compute_observer_none')||'(none)')}</option></select>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_observer_hint_v2')||'Picks a registered datawatch-stats observer. Monitoring endpoint + hardware are inferred from the observer’s heartbeat.')}</div>
+      </div>
+      <div id="computeHardwareSection" class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('compute_hardware_section')||'Hardware (auto-detect via observer or set manually)')}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <input id="computeNewOS" class="form-input" placeholder="${escHtml(t('compute_hw_os_ph')||'OS (linux/macos/windows)')}" value="${escHtml(hw.os||'')}" />
+          <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" value="${escHtml(hw.arch||'')}" />
+          <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" value="${escHtml(hw.gpu_vendor||'')}" />
+          <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" value="${escHtml(hw.gpu_model||'')}" />
+          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${hw.gpu_count||''}" oninput="computeRecomputeMax()" />
+          <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" value="${cap.gpu_mem_gb && hw.gpu_count ? Math.round(cap.gpu_mem_gb / Math.max(1, hw.gpu_count)) : ''}" oninput="computeRecomputeMax()" />
+          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${hw.memory_gb||''}" />
+          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${hw.cpu_cores||''}" />
+        </div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${cap.max_concurrent_models||''}" />
+          <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
+        </div>
+      </div>
+      <div id="computeAddStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:6px;">
+        <button type="button" class="btn-secondary" style="font-size:11px;" onclick="_computeOpenYAMLForCurrent()" title="${escHtml(t('compute_edit_yaml_tip')||'Edit raw YAML — form will reload with parsed values on save')}">&lt;/&gt; YAML</button>
+        <span style="display:inline-flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-secondary" onclick="document.getElementById('computeAddPanel').remove()">${escHtml(t('action_cancel')||'Cancel')}</button>
+          <button type="button" class="btn-secondary" onclick="computeTestConnectionDraft()">${escHtml(t('compute_test_btn')||'Test Connection')}</button>
+          <button type="button" class="btn-primary" onclick="computeAddNode()">${isEdit ? escHtml(t('compute_save_btn')||'Save') : escHtml(t('compute_add_btn')||'Add')}</button>
+        </span>
+      </div>
+    </form>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  host.appendChild(modal);
+  // Strip whitespace text nodes (same fix as other panels) so the
+  // form doesn't render with phantom 20px gaps.
+  const walker = document.createTreeWalker(modal, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => /^\s*$/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  const dead = []; let cur; while ((cur = walker.nextNode())) dead.push(cur);
+  dead.forEach(n => n.remove());
+  // Populate observer dropdown. Pre-select the observer that's already
+  // attached when editing. GATE alpha.36 (operator 2026-05-10): also
+  // include the LOCAL datawatch host (synthetic-self peer) so an
+  // operator running ollama on the same box as the daemon doesn't
+  // need a separate datawatch-stats process — the daemon's own
+  // observer reports the local host's stats.
+  ensureFreeObserversCached().then(() => {
+    const sel = document.getElementById('computeNewObserverPeer');
+    if (!sel) return;
+    const cached = window._freeObserversCache || [];
+    const known = new Set(cached.map(p => p.name));
+    const list = cached.slice();
+    // Pull the synthetic-self entry from /api/observer/peers and
+    // surface it in the dropdown labelled (local).
+    apiFetch('/api/observer/peers').then(d => {
+      const peers = (d && d.peers) || [];
+      const self = peers.find(p => p.is_self);
+      if (self && !known.has(self.name)) {
+        list.unshift({ name: self.name, host_info: self.host_info || {}, monitoring_endpoint: '', _isLocal: true });
+      }
+      if (initObs && !known.has(initObs) && (!self || self.name !== initObs)) {
+        list.push({ name: initObs, host_info: {}, monitoring_endpoint: '' });
+      }
+      const opts = list.map(p => {
+        const localHint = p._isLocal ? ' (local datawatch host)' : (p.shape ? ' (shape '+p.shape+')' : '');
+        return `<option value="${escHtml(p.name)}" data-host="${escHtml((p.host_info && p.host_info.address) || '')}" data-monitoring="${escHtml(p.monitoring_endpoint || '')}" ${initObs === p.name ? 'selected' : ''}>${escHtml(p.name)}${escHtml(localHint)}</option>`;
+      }).join('');
+      sel.insertAdjacentHTML('beforeend', opts);
+    }).catch(() => {
+      // Fallback: just the cached free observers.
+      const opts = list.map(p =>
+        `<option value="${escHtml(p.name)}" data-host="${escHtml((p.host_info && p.host_info.address) || '')}" data-monitoring="${escHtml(p.monitoring_endpoint || '')}" ${initObs === p.name ? 'selected' : ''}>${escHtml(p.name)}${p.shape ? ' (shape '+escHtml(p.shape)+')' : ''}</option>`
+      ).join('');
+      sel.insertAdjacentHTML('beforeend', opts);
+    });
+  });
+};
+
+// GATE alpha.36 (operator 2026-05-10): YAML escape hatch for power
+// users — operator: "Yaml option is still helpful but should reload
+// crud if edited yaml". Pulls the current node by editName, opens
+// the YAML popup, and on save re-opens the form panel with the
+// parsed values so the operator sees what changed.
+window._computeOpenYAMLForCurrent = function() {
+  const modal = document.getElementById('computeAddPanel');
+  if (!modal) return;
+  const editName = modal.dataset.editName;
+  if (!editName) {
+    showToast('YAML editor available after first save', 'info', 2500);
+    return;
+  }
+  modal.remove();
+  openYAMLEditPopup({
+    title: 'Compute Node',
+    getURL: '/api/compute/nodes/' + encodeURIComponent(editName),
+    saveMethod: 'PUT',
+    testURL: '/api/compute/nodes/' + encodeURIComponent(editName) + '/health',
+    testMethod: 'GET',
+    testBody: {},
+    onAfterSave: () => {
+      // Reload the CRUD form with the parsed YAML values so the
+      // operator can confirm what changed (operator-spec 2026-05-10).
+      apiFetch('/api/compute/nodes/' + encodeURIComponent(editName))
+        .then(node => openComputeAddPanel(node))
+        .catch(() => loadComputeNodesPanel());
+    },
+  }, editName);
+};
+
+// GATE alpha.36 (operator 2026-05-10): when an observer is picked,
+// pre-fill the address (if blank) so the operator doesn't have to
+// retype the host. monitoring_endpoint is then inferred at save time
+// from the observer's name (server-side already maps observer →
+// endpoint via the registered peer).
+window._computeObserverChanged = function() {
+  const sel = document.getElementById('computeNewObserverPeer');
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  const addrEl = document.getElementById('computeNewAddress');
+  const inferredHost = opt.dataset.host || '';
+  if (addrEl && !addrEl.value && inferredHost) {
+    addrEl.value = inferredHost;
+  }
+};
+
+// GATE alpha.36 (operator 2026-05-10): test the entered config BEFORE
+// save. Creates a transient name, POSTs probe-skip to /api/compute/nodes,
+// then calls /health, then DELETEs the transient. UI shows pass/fail
+// inline so operator can fix scheme/address before committing.
+window.computeTestConnectionDraft = function() {
+  const status = document.getElementById('computeAddStatus');
+  const setStatus = (msg, color) => { if (status) { status.style.color = color; status.textContent = msg; } };
+  const name = (document.getElementById('computeNewName')||{}).value.trim();
+  const kind = (document.getElementById('computeNewKind')||{}).value || 'ollama';
+  let address = (document.getElementById('computeNewAddress')||{}).value.trim();
+  if (!address) { setStatus('✕ Address required', 'var(--error)'); return; }
+  if (!/^https?:\/\//i.test(address)) address = 'http://' + address;
+  setStatus('Testing ' + address + '…', 'var(--text2)');
+  // Quick health probe without persisting — POST a transient with
+  // probe-skip:false so the daemon's existing probe path runs against
+  // the address. If it fails, show the error inline.
+  const probeName = 'smoke-test-' + Date.now();
+  apiFetch('/api/compute/nodes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: probeName, kind, address, declared_capacity: { max_concurrent_models: 1 } }),
+  }).then(() => {
+    return apiFetch('/api/compute/nodes/' + encodeURIComponent(probeName) + '/health', { method: 'GET' });
+  }).then(d => {
+    setStatus('✓ Reachable: ' + (d && (d.status || d.ok || JSON.stringify(d).slice(0,80)) || 'OK'), 'var(--success,#10b981)');
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(probeName), { method: 'DELETE' }).catch(() => {});
+  }).catch(e => {
+    setStatus('✕ ' + String(e.message || e).slice(0, 200), 'var(--error)');
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(probeName), { method: 'DELETE' }).catch(() => {});
+  });
+};
+
 window.computeAddNode = function() {
   const name = (document.getElementById('computeNewName')||{}).value || '';
   const kind = (document.getElementById('computeNewKind')||{}).value || 'ollama';
-  const address = (document.getElementById('computeNewAddress')||{}).value || '';
-  const monitoring = (document.getElementById('computeNewMonitoring')||{}).value || '';
+  let address = (document.getElementById('computeNewAddress')||{}).value || '';
+  // GATE alpha.36 (operator 2026-05-10): auto-prepend scheme so
+  // bare host:port doesn't fail with "unsupported protocol scheme"
+  // (exact bug operator hit on local-ollama).
+  if (address.trim() && !/^https?:\/\//i.test(address.trim())) {
+    address = 'http://' + address.trim();
+  }
+  // monitoring_endpoint dropped — observer dropdown infers it server-
+  // side from the registered peer's advertised endpoint. Operator
+  // never has to know the IP.
+  const monitoring = '';
   let maxModels = parseInt((document.getElementById('computeNewMaxModels')||{}).value || '0', 10) || 0;
   // v7.0.0-alpha.23 (Q4) — auto-fill Computed when Declared empty.
   const vram = parseInt((document.getElementById('computeNewVRAM')||{}).value || '0', 10) || 0;
@@ -6859,13 +7476,22 @@ window.computeAddNode = function() {
     memory_gb:    parseInt((document.getElementById('computeNewMemoryGB')||{}).value || '0', 10) || 0,
     cpu_cores:    parseInt((document.getElementById('computeNewCPUCores')||{}).value || '0', 10) || 0,
   };
-  // VRAM is per-GPU; declared_capacity.gpu_mem_gb is total. Convert.
-  apiFetch('/api/compute/nodes', {
-    method: 'POST',
+  // GATE alpha.36 (operator 2026-05-10): branch on edit-mode (panel
+  // dataset.editName). Edit → PUT /api/compute/nodes/<name>; Add →
+  // POST. Same field set either way.
+  const modal = document.getElementById('computeAddPanel');
+  const editName = modal ? modal.dataset.editName : '';
+  const isEdit = !!editName;
+  const url = isEdit
+    ? '/api/compute/nodes/' + encodeURIComponent(editName)
+    : '/api/compute/nodes';
+  const method = isEdit ? 'PUT' : 'POST';
+  apiFetch(url, {
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: name.trim(), kind, address: address.trim(),
-      monitoring_endpoint: monitoring.trim(),
+      name: (isEdit ? editName : name.trim()), kind, address: address.trim(),
+      monitoring_endpoint: monitoring,
       declared_capacity: {
         max_concurrent_models: maxModels,
         gpus: gpuCnt,
@@ -6879,9 +7505,11 @@ window.computeAddNode = function() {
       observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
     }),
   }).then(() => {
-    showToast('✓ ComputeNode added', 'success', 2000);
+    showToast(isEdit ? '✓ ComputeNode updated' : '✓ ComputeNode added', 'success', 2000);
+    const m = document.getElementById('computeAddPanel');
+    if (m) m.remove();
     loadComputeNodesPanel();
-  }).catch(e => showError('Add failed', String(e.message||e)));
+  }).catch(e => showError((isEdit ? 'Update' : 'Add') + ' failed', String(e.message||e)));
 };
 
 window.computeDeleteNode = function(name) {
@@ -6941,36 +7569,10 @@ function loadLLMsPanel() {
             <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(l, null, 2))}</pre>
           </details>`;
         }).join('');
-    // v7.0.0-alpha.18 #242 — operator-spec'd multi-select for
-    // ComputeNodes + kind-aware model dropdown. Falls back to text
-    // input when the dropdown probe fails.
-    const nodesOptionHTML = (window._computeNodesCache||[]).map(n =>
-      `<option value="${escHtml(n.name)}">${escHtml(n.name)} (${escHtml(n.kind||'?')})</option>`
-    ).join('');
-    const allKinds = [
-      'ollama','openwebui','opencode','claude',
-      'claude-code','opencode-acp','opencode-prompt',
-      'aider','goose','gemini','shell',
-    ];
-    const kindOptions = allKinds.map(k => `<option value="${k}">${k}</option>`).join('');
-    const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
-      <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('llm_add_title')||'Add LLM')}</summary>
-      <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_name')||'Name (kebab-case)')}</label>
-        <input id="llmNewName" class="form-input" placeholder="llama3-70b" />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_kind')||'Kind')}</label>
-        <select id="llmNewKind" class="form-select" onchange="llmAddKindChanged()">${kindOptions}</select>
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
-        <select id="llmNewComputeNodes" class="form-select" multiple size="4" style="min-height:80px;" onchange="llmAddComputeNodesChanged()">${nodesOptionHTML}</select>
-        <div style="font-size:10px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes_hint')||'Hold Ctrl/Cmd to multi-select. Order = failover order.')}</div>
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_model')||'Model')}</label>
-        <select id="llmNewModelSelect" class="form-select" style="display:none;" onchange="llmAddModelSelectChanged()"><option value="">— probe ComputeNode for models…</option></select>
-        <input id="llmNewModel" class="form-input" placeholder="llama3:70b / claude-sonnet-4-6 / etc." />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
-        <input id="llmNewAPIKey" class="form-input" placeholder="${ '$' }{secret:anthropic-key}" />
-        <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="llmAdd()">${escHtml(t('llm_add_btn')||'Add')}</button>
-      </div>
-    </details>`;
+    // GATE alpha.36 (operator 2026-05-10): Add LLM is now a panel-modal
+    // trigger (matches Compute Node Add). The inline <details> form
+    // was wider than the .app shell on narrow viewports.
+    const addForm = `<button class="btn-primary" style="font-size:12px;padding:6px 14px;margin-top:10px;" onclick="openLLMEditPanel()">+ ${escHtml(t('llm_add_title')||'Add LLM')}</button>`;
     panel.innerHTML = intro + rows + addForm;
   }).catch(e => { panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>'; });
 }
@@ -7267,44 +7869,94 @@ const NON_LLM_BACKENDS = new Set(['shell']);
 
 function renderBackendSelect(id, current, onchange) {
   const opts = ['<option value="">(inherit)</option>'];
+  // GATE alpha.36 (operator 2026-05-10): drop shell, ensure council
+  // appears in the wizard backend list. opencode-acp / opencode-prompt
+  // already appear as separate backends from the API and are kept —
+  // operator wants them as alternatives to interactive tmux opencode.
+  const seen = new Set();
   (state._prdBackends || []).forEach(b => {
     if (typeof b === 'string') {
       const name = b;
-      if (name && !NON_LLM_BACKENDS.has(name)) opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+      if (name && !NON_LLM_BACKENDS.has(name)) { seen.add(name); opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`); }
       return;
     }
     if (!b || !b.name) return;
-    if (b.enabled === false) return; // skip non-configured backends
-    if (NON_LLM_BACKENDS.has(b.name)) return; // skip non-LLM session backends (shell, …)
+    if (b.enabled === false) return;
+    if (NON_LLM_BACKENDS.has(b.name)) return;
+    seen.add(b.name);
     opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
   });
-  // Always keep the current value visible even if it's not in the
-  // enabled set (operator may have configured a backend then disabled
-  // it; the existing PRD assignment shouldn't drop silently).
+  // Council is a virtual backend not always advertised in /api/backends;
+  // surface it explicitly so it's selectable in the wizard.
+  if (!seen.has('council')) {
+    opts.push(`<option value="council" ${current === 'council' ? 'selected' : ''}>council</option>`);
+  }
   if (current && !opts.some(o => o.includes(`value="${escHtml(current)}"`))) {
     opts.push(`<option value="${escHtml(current)}" selected>${escHtml(current)} (not configured)</option>`);
   }
-  // v6.13.2 — operator: "dropdowns for backend and effort and smaller
-  // than every other input size is like it is squeezed shorter".
-  // Removed the inline-style override (font-size:11px;padding:1px 4px)
-  // so .form-select's full styles apply (14px / 10px 14px / width:100%).
+  const onchangeAttr = onchange ? `onchange="${onchange}"` : '';
+  return `<select id="${id}" class="form-select" ${onchangeAttr}>${opts.join('')}</select>`;
+}
+
+// GATE alpha.36 (operator 2026-05-10): effort options are now backend-
+// conditional. (inherit) backend → only (inherit) is offered; each LLM
+// backend exposes only the levels its provider actually understands.
+// claude-code values match /api/llm/claude/efforts authoritatively.
+const EFFORT_BY_BACKEND = {
+  '':                ['', /* inherit */ ],
+  'claude-code':     ['', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'ollama':          ['', 'low', 'medium', 'high'],
+  'openwebui':       ['', 'low', 'medium', 'high'],
+  'opencode':        ['', 'quick', 'normal', 'thorough'],
+  'opencode-acp':    ['', 'quick', 'normal', 'thorough'],
+  'opencode-prompt': ['', 'quick', 'normal', 'thorough'],
+  'council':         ['', 'low', 'medium', 'high'],
+};
+
+function effortOptionsFor(backend) {
+  return EFFORT_BY_BACKEND[backend || ''] || ['', 'low', 'medium', 'high'];
+}
+
+function renderEffortSelect(id, current, onchange, backend) {
+  const opts = effortOptionsFor(backend).map(e => `<option value="${escHtml(e)}" ${current === e ? 'selected' : ''}>${e ? escHtml(e) : '(inherit)'}</option>`);
   return `<select id="${id}" class="form-select" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
 }
 
-function renderEffortSelect(id, current, onchange) {
-  const opts = state._prdEfforts.map(e => `<option value="${escHtml(e)}" ${current === e ? 'selected' : ''}>${e ? escHtml(e) : '(inherit)'}</option>`);
+// renderModelSelect — alpha.36 GATE: when a backend is chosen, surface
+// a model picker. For unknown / inherit backends, the picker collapses
+// to "(inherit)" only. Per-backend lists are baked-in for now; future
+// work can wire `/api/backends/<name>/models` for live model lists.
+const MODELS_BY_BACKEND = {
+  '':                ['(inherit)'],
+  'claude-code':     ['(inherit)', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+  'opencode':        ['(inherit)'],
+  'opencode-acp':    ['(inherit)'],
+  'opencode-prompt': ['(inherit)'],
+  'openwebui':       ['(inherit)'],
+  'ollama':          ['(inherit)'],
+  'council':         ['(inherit)'],
+};
+function modelOptionsFor(backend) {
+  return MODELS_BY_BACKEND[backend || ''] || ['(inherit)'];
+}
+function renderModelSelect(id, current, onchange, backend) {
+  const opts = modelOptionsFor(backend).map(m => {
+    const v = m === '(inherit)' ? '' : m;
+    return `<option value="${escHtml(v)}" ${current === v ? 'selected' : ''}>${escHtml(m)}</option>`;
+  });
   return `<select id="${id}" class="form-select" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
 }
 
 function statusPill(status) {
-  const colors = {
-    draft: '#6b7280', planning: '#3b82f6', decomposing: '#3b82f6', needs_review: '#f59e0b',
-    approved: '#10b981', running: '#3b82f6', completed: '#10b981',
-    revisions_asked: '#f59e0b', rejected: '#ef4444', cancelled: '#6b7280',
-    archived: '#6b7280', active: '#3b82f6',
-  };
-  const c = colors[status] || '#6b7280';
-  return `<span style="background:${c};color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">${escHtml(status || '?')}</span>`;
+  // GATE alpha.36 (operator 2026-05-10): match the session-state-badge
+  // pill — same size + colors as session detail's "Running" pill, and
+  // the same dw-running-pulse animation for active states (running /
+  // planning / decomposing — the operator's "action badges that show
+  // they're working"). Adds a tiny class hook so .state-badge-running
+  // keyframe applies; treat planning/decomposing as visually active too.
+  const s = (status || 'unknown');
+  const klass = `state state-badge-${s.replace(/[^a-z_]/g, '')} ${(s === 'planning' || s === 'decomposing' || s === 'running') ? 'state-badge-running' : ''}`;
+  return `<span class="${klass}" data-state="${escHtml(s)}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(s)}</span>`;
 }
 
 function renderPRDRow(prd) {
@@ -8134,10 +8786,17 @@ function _prdMountModal(html, onSubmit) {
   if (existing) existing.remove();
   const modal = document.createElement('div');
   modal.id = 'prdModal';
-  modal.className = 'confirm-modal-overlay';
-  modal.innerHTML = `<div class="response-modal" style="max-width:560px;width:92%;">${html}</div>`;
+  // GATE alpha.36 (operator 2026-05-10): anchor the modal overlay inside
+  // the .app container (which has position:relative) instead of <body>,
+  // so the modal width is naturally bounded by the PWA shell — not the
+  // browser viewport. The .app-anchored class applies position:absolute
+  // (not fixed) and inherits the shell's width as the constraint, so
+  // max-width:100% inside the modal honors the PWA edges.
+  const host = document.querySelector('.app') || document.body;
+  modal.className = 'confirm-modal-overlay app-anchored';
+  modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:100%;">${html}</div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  document.body.appendChild(modal);
+  host.appendChild(modal);
   const form = document.getElementById('prdModalForm');
   if (form) form.addEventListener('submit', ev => {
     ev.preventDefault();
@@ -10620,6 +11279,27 @@ function showToast(message, type = 'info', _duration = 3500) {
 // with ×N counter; auto-render the dock; trim history to 100.
 function pushToAlertDock(message, type) {
   const dock = window._alertDock;
+  // GATE finding (operator 2026-05-10): when a "Connected" success
+  // arrives, clear any prior "Disconnected" entries AND don't keep
+  // ourselves around once visible — a successful reconnect shouldn't
+  // linger as a dock entry. If no other alerts pending, the dock
+  // auto-collapses when this entry expires.
+  const msgStr = String(message);
+  const isConnected = type === 'success' && /\bconnect(ed|ion)\b/i.test(msgStr);
+  if (isConnected) {
+    // Remove any prior connection-related entries (Disconnected, reconnecting…).
+    dock.alerts = dock.alerts.filter(a => !/\b(dis(connected|connect)|reconnect)\b/i.test(a.message || ''));
+    // Schedule self-dismiss after 3s — only remove the matching entry,
+    // not the whole dock; if other alerts arrive, they stay.
+    setTimeout(() => {
+      if (!window._alertDock) return;
+      window._alertDock.alerts = window._alertDock.alerts.filter(a => !(a.type === 'success' && /\bconnect(ed|ion)\b/i.test(a.message || '')));
+      if (window._alertDock.alerts.length === 0 && window._alertDock.expanded) {
+        window._alertDock.expanded = false;
+      }
+      renderAlertDock();
+    }, 3000);
+  }
   const stripped = String(message).replace(/^\[[^\]]*\]\s*/, '');
   const sepMatch = stripped.match(/^([^—:,]+?)(?:\s*[—:,].*)?$/);
   const family = (sepMatch && sepMatch[1]) ? sepMatch[1].trim() : stripped;
@@ -10704,26 +11384,43 @@ function renderAlertDock() {
     </div>`;
   let bodyHTML = '';
   if (dock.expanded) {
-    const rows = dock.alerts.map(a => {
+    // Per-card expansion state lives on the dock so re-renders preserve
+    // which long messages the operator has unfolded.
+    dock._expandedCards = dock._expandedCards || {};
+    const rows = dock.alerts.map((a, idx) => {
       const time = new Date(a.ts).toLocaleTimeString('en-GB', { hour12: false });
       const xN = (a.n > 1) ? ` <span style="color:var(--accent2);font-weight:700;">×${a.n}</span>` : '';
-      // Color rail per type so rows are easy to distinguish at a glance.
-      let rail = 'var(--text2)';
-      if (a.type === 'error') rail = 'var(--error,#ef4444)';
-      else if (a.type === 'warning' || a.type === 'warn') rail = 'var(--warning,#f59e0b)';
-      else if (a.type === 'success') rail = 'var(--success,#10b981)';
-      else if (a.type === 'info') rail = 'var(--accent2,#60a5fa)';
-      return `<div style="padding:8px 12px 8px 10px;display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--border);border-left:3px solid ${rail};font-size:13px;line-height:1.45;">
-        <span style="opacity:0.7;font-family:var(--mono,monospace);font-size:11px;flex-shrink:0;min-width:60px;">${time}</span>
-        <span style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:11px;flex-shrink:0;font-weight:600;">${escHtml(a.type)}</span>
-        <span style="flex:1;word-wrap:break-word;">${escHtml(a.message)}${xN}</span>
+      // Color rail per type so cards are easy to distinguish at a glance.
+      let rail = 'var(--text2)', icon = '•';
+      if (a.type === 'error') { rail = 'var(--error,#ef4444)'; icon = '✕'; }
+      else if (a.type === 'warning' || a.type === 'warn') { rail = 'var(--warning,#f59e0b)'; icon = '⚠'; }
+      else if (a.type === 'success') { rail = 'var(--success,#10b981)'; icon = '✓'; }
+      else if (a.type === 'info') { rail = 'var(--accent2,#60a5fa)'; icon = 'ℹ'; }
+      const cardKey = `${a.type}|${(a.message||'').slice(0,40)}|${a.ts}`;
+      const isLong = (a.message || '').length > 140 || /\n/.test(a.message || '');
+      const isExpanded = !!dock._expandedCards[cardKey];
+      const msgStyle = isLong && !isExpanded
+        ? 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;'
+        : 'white-space:pre-wrap;';
+      const chevron = isLong
+        ? `<span style="opacity:0.6;font-size:11px;margin-left:4px;cursor:pointer;" onclick="event.stopPropagation();toggleAlertCard('${escHtml(cardKey)}')" title="${isExpanded ? 'collapse' : 'expand'}">${isExpanded ? '▾ less' : '▸ more'}</span>`
+        : '';
+      return `<div class="alert-card" style="margin:6px 8px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${rail};border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.45;">
+        <div style="display:flex;gap:8px;align-items:center;font-size:11px;margin-bottom:4px;">
+          <span style="color:${rail};font-weight:700;">${icon}</span>
+          <span style="background:var(--bg);padding:1px 6px;border-radius:4px;font-weight:600;">${escHtml(a.type)}</span>
+          <span style="opacity:0.65;font-family:var(--mono,monospace);">${time}</span>
+          ${a.n > 1 ? `<span style="background:var(--accent2);color:var(--bg);padding:1px 6px;border-radius:8px;font-weight:700;">×${a.n}</span>` : ''}
+          <span style="margin-left:auto;cursor:pointer;opacity:0.55;font-size:14px;line-height:1;" onclick="event.stopPropagation();dismissAlertCard(${idx})" title="${escHtml(t('alert_dock_dismiss')||'Dismiss')}">✕</span>
+        </div>
+        <div style="${msgStyle}word-wrap:break-word;" onclick="${isLong ? `event.stopPropagation();toggleAlertCard('${escHtml(cardKey)}')` : ''}">${escHtml(a.message)}${chevron}</div>
       </div>`;
     }).join('');
     // Cap body height so the dock can't extend down over the input
-    // bar / arrow group / command-bar controls. min(50vh, 360px)
-    // gives plenty of room on tall displays without ever reaching
-    // the bottom controls.
-    bodyHTML = `<div style="max-height:min(50vh,360px);overflow-y:auto;">${rows}</div>`;
+    // bar / arrow group / command-bar controls. Cards are already
+    // padded; the inner scroll just clips overflow when many alerts
+    // pile up.
+    bodyHTML = `<div style="max-height:min(50vh,360px);overflow-y:auto;padding:2px 0 4px 0;">${rows}</div>`;
   }
   dock.el.innerHTML = headerHTML + bodyHTML;
 }
@@ -10753,6 +11450,23 @@ window.dismissAlertDock = function() {
   dock.alerts = [];
   dock.expanded = false;
   if (dock.el) { dock.el.remove(); dock.el = null; }
+  if (typeof renderAlertPill === 'function') renderAlertPill();
+};
+
+window.toggleAlertCard = function(cardKey) {
+  const dock = window._alertDock;
+  if (!dock) return;
+  dock._expandedCards = dock._expandedCards || {};
+  dock._expandedCards[cardKey] = !dock._expandedCards[cardKey];
+  renderAlertDock();
+};
+
+window.dismissAlertCard = function(idx) {
+  const dock = window._alertDock;
+  if (!dock || !dock.alerts) return;
+  dock.alerts.splice(idx, 1);
+  if (dock.alerts.length === 0) dock.expanded = false;
+  renderAlertDock();
   if (typeof renderAlertPill === 'function') renderAlertPill();
 };
 
@@ -10959,7 +11673,17 @@ function installStatusLongPressRefresh() {
 }
 
 function forceRefreshConnection() {
-  showToast('Refreshing server connection…', 'info', 2000);
+  showToast('Refreshing server connection + checking for app update…', 'info', 2500);
+  // GATE alpha.36 (operator 2026-05-10): long-press on the status dot
+  // also force-checks the SW for a new app version. If the daemon has
+  // shipped a CACHE_NAME bump, the SW activates → controllerchange →
+  // auto-reload picks up the new bundle. Falls through to the normal
+  // WebSocket reconnect path below either way.
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(r => r.update().catch(() => {}));
+    }).catch(() => {});
+  }
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
@@ -10971,9 +11695,6 @@ function forceRefreshConnection() {
   }
   state.connected = false;
   updateStatusDot();
-  // Tiny delay so the close event flushes and the UI redraws disconnected
-  // state before we attempt a new socket. connect() is a no-op if a
-  // CONNECTING/OPEN socket somehow lingered.
   setTimeout(() => connect(), 100);
 }
 
@@ -11530,15 +12251,37 @@ function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       console.log('SW registered:', reg.scope);
+      window._swReg = reg;
+      // GATE alpha.36 (operator 2026-05-10): force an SW update check
+      // on load AND every 60s. Without this the browser may sit on a
+      // stale SW until next cold-start.
+      reg.update().catch(() => {});
+      setInterval(() => reg.update().catch(() => {}), 60000);
+      // GATE alpha.36 (operator 2026-05-10): when the SW finds an
+      // update (new bundle on the daemon), make the new SW take over
+      // immediately and surface a visible toast so the operator
+      // KNOWS something happened. Standard PWA upgrade pattern: skip-
+      // waiting + reload-on-controllerchange (already wired below).
+      const triggerImmediateActivation = (sw) => {
+        if (!sw) return;
+        showToast(t('pwa_update_installing')||'New version downloaded — reloading…', 'info', 2500);
+        try { sw.postMessage({ type: 'SKIP_WAITING' }); } catch (_) {}
+      };
+      // If a worker is already waiting (page loaded between install
+      // and activation), prompt it to take over now.
+      if (reg.waiting) triggerImmediateActivation(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            triggerImmediateActivation(installing);
+          }
+        });
+      });
     }).catch(err => {
       console.warn('SW registration failed:', err);
     });
-    // v6.13.11 — when the daemon ships a new SW (CACHE_NAME bump),
-    // the new SW takes over (skipWaiting + clients.claim) and fires
-    // controllerchange. Auto-reload so the operator picks up new
-    // style.css / app.js immediately without a manual hard refresh.
-    // Guard against the install-time controllerchange (initial SW
-    // claim on a tab that had no controller) so we don't reload-loop.
     let _reloadGuard = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (_reloadGuard) return;
@@ -11548,6 +12291,25 @@ function registerServiceWorker() {
     });
   }
 }
+
+// GATE alpha.36 (operator 2026-05-10): manual escape hatch for stuck
+// PWA caches. Unregisters every SW + drops every cache + reloads with
+// bypass. Operator can fire this from the dev console
+// (window.forcePWAUpdate()) or via the long-press refresh hint.
+window.forcePWAUpdate = async function() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
+  // Hard reload bypassing HTTP cache too.
+  window.location.reload();
+};
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
 
@@ -11918,11 +12680,17 @@ function renderAutomataCard(prd) {
   const isChecked = _automataState.selected.has(id);
   const isPinned = _automataState.pinned.has(id);
   const statusClass = `prd-card-status-${status.replace(/[^a-z_]/g, '')}`;
+  // GATE alpha.36 (operator 2026-05-10): type badge gets the same
+  // distinctive treatment as the LLM badge on session cards — colored
+  // border + tinted bg + bold; per-type accent color matches the
+  // template card mapping so software / research / operational /
+  // personal each have a stable hue across the PWA.
+  const typeColor = { software: '#6366f1', research: '#f59e0b', operational: '#10b981', personal: '#ec4899' }[type] || 'var(--accent2,#60a5fa)';
   const typeBadge = type
-    ? `<span class="automata-filter-badge type-badge" style="font-size:11px;padding:2px 8px;">${escHtml(type)}</span>`
+    ? `<span class="type-badge" style="font-size:11px;padding:2px 9px;border-radius:8px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor};font-weight:700;letter-spacing:0.3px;text-transform:lowercase;">${escHtml(type)}</span>`
     : '';
   const tplBadge = prd.is_template
-    ? `<span style="background:#7c3aed;color:#fff;font-size:11px;padding:2px 8px;border-radius:8px;">template</span>`
+    ? `<span style="background:#7c3aed;color:#fff;font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;">template</span>`
     : '';
   const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
@@ -11930,43 +12698,52 @@ function renderAutomataCard(prd) {
   const checkboxCell = _automataState.selectMode
     ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
     : '';
-  // alpha.31 #272 — inline action buttons. Open · Pause/Resume · Cancel ·
-  // Approve-next-story (highlighted when waiting_approval).
+  // GATE alpha.36 (operator 2026-05-10):
+  // - Open button removed: clicking the title (or any non-button area
+  //   of the card) opens detail; explicit Open was redundant
+  // - Pin button moved out of the title row to the bottom-right of the
+  //   action row (right of Cancel/Approve), so it's clearly a "card-
+  //   level" affordance and not part of the title group
+  // - lifecycle strip shrunk via .lifecycle-compact modifier so all 5
+  //   steps fit on one line
+  // - Status pill now right-justified (margin-left:auto) on title row
+  // - ID + last-activity moved to their own meta row, right-justified,
+  //   single line below title
+  // - Stories & tasks summary now shows count
   const lastActivity = prd.updated_at ? new Date(prd.updated_at).toLocaleString('en-GB', { hour12: false }) : '';
   const isApprovalState = ['needs_review', 'revisions_asked', 'waiting_input'].includes(status);
   const isCancelable = !['completed','cancelled','rejected','archived'].includes(status);
   const approveBtn = isApprovalState
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;" title="${escHtml(t('automata_action_approve_tip')||'Approve next story / unblock')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`
-    : `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;opacity:0.4;" disabled title="${escHtml(t('automata_action_approve_disabled_tip')||'No approval pending')}">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`;
-  // alpha.31 #272 — Pause/Resume hidden until backend endpoints land (POST v7.0).
-  // Cancel uses existing /api/autonomous/prds/<id>/cancel.
-  const pauseResumeBtn = '';
+    : '';
   const cancelBtn = isCancelable
     ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}" onclick="event.stopPropagation();automataCancel(${escId})">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
     : '';
-  const openBtn = `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_open_tip')||'Open detail view')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">${escHtml(t('automata_action_open')||'Open')} →</button>`;
   const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
-  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;">
+  const storyCount = (prd.stories || []).length;
+  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="renderPRDDetailView(${escId})">
     <div style="display:flex;align-items:flex-start;gap:10px;">
       ${checkboxCell}
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${pinBtn}
           ${typeBadge}${tplBadge}
-          <span style="font-weight:700;font-size:15px;color:var(--text);cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(title)}</span>
-          ${statusPill(status)}
-          ${lastActivity ? `<span style="font-size:11px;color:var(--text2);margin-left:auto;font-family:var(--mono,monospace);">${escHtml(lastActivity)}</span>` : ''}
+          <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
+          <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
         </div>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px;"><code style="cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(id)}</code></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);margin-top:4px;font-family:var(--mono,monospace);">
+          <code>${escHtml(id)}</code>
+          ${lastActivity ? `<span>${escHtml(lastActivity)}</span>` : ''}
+        </div>
         ${progress}
         ${position}
-        ${renderLifecycleStrip(prd)}
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-          ${openBtn}${pauseResumeBtn}${cancelBtn}${approveBtn}
+        <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
+          ${cancelBtn}
+          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${pinBtn}</span>
         </div>
       </div>
     </div>
-    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
+    <details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
     </details>
   </div>`;
@@ -12459,9 +13236,12 @@ function openLaunchAutomatonWizard() {
     //   - Skills copy: "Configure in Settings → Agents → Project Profiles → Skills"
     //     once we add that field (A9 below).
     _prdMountModal(`
-      <div class="response-modal-header">
+      <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
-        <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
+          <a href="/diagrams.html#docs/howto/automata-wizard.md" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+          <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+        </span>
       </div>
       <form id="prdModalForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;">
 
@@ -12482,19 +13262,22 @@ function openLaunchAutomatonWizard() {
             <button type="button" class="wizard-mic-btn" title="Voice input"
               onclick="_wizardMicForField('wizardIntent')">🎤</button>
           </div>
-          <!-- Detected-type pill: tap to expand chip row. v6.13.4 —
-               operator: "how does it auto detect?". Tooltip explains. -->
-          <div class="wizard-detected-row">
+          <!-- GATE alpha.36 (operator 2026-05-10): Detected pill restyled
+               with the same accent border + tinted bg + bold treatment as
+               the LLM badge on session cards. Type pills converted to a
+               dropdown — operator: "either remove or turn into dropdown".
+               Detection still runs from the intent text and pre-selects
+               the dropdown, but the operator can override directly here. -->
+          <div class="wizard-detected-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span class="wizard-detected-label" id="wizardDetectedLabel"
-              onclick="_wizardToggleTypeChips()"
-              title="${escHtml(t('automata_wizard_detected_help')||'Auto-inferred from your intent text (keyword scan: code/test/refactor → software; research/analyze → research; deploy/restart/migrate → operational; otherwise personal). Tap to override.')}">
-              <span style="opacity:0.6;">${escHtml(t('automata_wizard_detected')||'Detected')}:</span>
-              <span id="wizardDetectedType" style="font-weight:600;text-transform:capitalize;">software</span>
-              <span style="opacity:0.5;font-size:10px;">✏️</span>
+              title="${escHtml(t('automata_wizard_detected_help')||'Auto-inferred from your intent text (keyword scan: code/test/refactor → software; research/analyze → research; deploy/restart/migrate → operational; otherwise personal). Override via the dropdown.')}"
+              style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);border:1px solid var(--accent2,#60a5fa);font-weight:700;display:inline-flex;align-items:center;gap:6px;">
+              <span style="opacity:0.7;font-weight:600;">${escHtml(t('automata_wizard_detected')||'Detected')}:</span>
+              <span id="wizardDetectedType" style="text-transform:lowercase;">software</span>
             </span>
-          </div>
-          <div class="wizard-type-chips" id="wizardTypeChips" style="display:none;">
-            ${typeBtns}
+            <select id="wizardTypeSelect" class="form-select" style="max-width:180px;font-size:12px;padding:3px 8px;" onchange="_wizardSelectType(this.value)">
+              ${types.map(tp => `<option value="${tp}" ${tp === 'software' ? 'selected' : ''}>${escHtml(tp)}</option>`).join('')}
+            </select>
           </div>
         </div>
 
@@ -12509,29 +13292,40 @@ function openLaunchAutomatonWizard() {
           </div>
         </div>
 
-        <!-- Workspace + Execution combined into one tight 2-column block on
-             desktop, single column on mobile. -->
-        <div class="wizard-grid-mobile">
-          <div class="wizard-field">
-            <label class="wizard-label">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.5;font-size:10px;">(profile or dir)</span></label>
-            <select id="wizardProfile" class="form-select" onchange="_wizardProfileChanged()">
-              ${profileOpts.join('')}
-            </select>
-            <div id="wizardDirRow" style="margin-top:4px;">
-              <div class="dir-picker">
-                <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
-              </div>
-              <div id="dirBrowser" class="dir-browser" style="display:none"><div id="dirBrowserContent"></div></div>
+        <!-- GATE alpha.36 (operator 2026-05-10): Workspace + Directory
+             stacked on separate rows (operator: long paths scroll off
+             when side-by-side). Directory cell hides entirely when a
+             named profile is selected. -->
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('automata_wizard_workspace'))}</label>
+          <select id="wizardProfile" class="form-select" onchange="_wizardProfileChanged()">
+            ${profileOpts.join('')}
+          </select>
+        </div>
+        <div class="wizard-field" id="wizardDirCell">
+          <label class="wizard-label">${escHtml(t('automata_wizard_directory')||'Directory')}</label>
+          <div id="wizardDirRow">
+            <div class="dir-picker">
+              <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
             </div>
+            <div id="dirBrowser" class="dir-browser" style="display:none"><div id="dirBrowserContent"></div></div>
           </div>
-          <div class="wizard-field">
-            <label class="wizard-label">${escHtml(t('automata_wizard_backend'))}</label>
-            ${renderBackendSelect('wizardBackend', '', '')}
-          </div>
-          <div class="wizard-field">
-            <label class="wizard-label">${escHtml(t('automata_wizard_effort'))}</label>
-            ${renderEffortSelect('wizardEffort', '', '')}
-          </div>
+        </div>
+
+        <!-- GATE alpha.36 (operator 2026-05-10): Backend / Model / Effort
+             each on their own row — model + effort labels can run long
+             (e.g. claude-sonnet-4-6, "thorough"), and 3-up squeezes them. -->
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('automata_wizard_backend'))}</label>
+          ${renderBackendSelect('wizardBackend', '', '_wizardBackendChanged()')}
+        </div>
+        <div class="wizard-field" id="wizardModelField">
+          <label class="wizard-label">${escHtml(t('automata_wizard_model')||'Model')}</label>
+          <div id="wizardModelWrap">${renderModelSelect('wizardModel', '', '', '')}</div>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('automata_wizard_effort'))}</label>
+          <div id="wizardEffortWrap">${renderEffortSelect('wizardEffort', '', '', '')}</div>
         </div>
 
         <!-- Advanced (collapsed). -->
@@ -12554,9 +13348,7 @@ function openLaunchAutomatonWizard() {
               <input type="checkbox" id="wizardStoryApproval">
               <span>${escHtml(t('automata_wizard_story_approval'))}</span>
             </label>
-            <div class="wizard-skills-hint">
-              💡 ${escHtml(t('automata_wizard_skills_hint')||'Configure skills per workspace in Settings → Agents → Project Profiles → Skills.')}
-            </div>
+            <div class="wizard-skills-hint"><span>💡 </span><a href="#" onclick="event.preventDefault();_prdCloseModal();window.navigate&&window.navigate('settings');setTimeout(()=>{const s=document.querySelector('[data-settings-section=\\'project-profiles\\']');s&&s.scrollIntoView({behavior:'smooth'});},200);return false;" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);">${escHtml(t('automata_wizard_skills_hint_link')||'Configure skills in Settings → Agents → Project Profiles → Skills')} ↗</a></div>
           </div>
         </details>
 
@@ -12580,13 +13372,63 @@ function _wizardSelectType(tp) {
   _wizardState.type = tp;
   _wizardState.typeOverridden = true;
   document.querySelectorAll('.wizard-type-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.type === tp));
-  // v6.13.1 — refresh the "Detected: <type>" pill.
+  // Refresh both the badge and the dropdown so they stay in sync whether
+  // the change came from auto-detect or from the operator's dropdown pick.
   const pill = document.getElementById('wizardDetectedType');
   if (pill) pill.textContent = tp;
+  const sel = document.getElementById('wizardTypeSelect');
+  if (sel && sel.value !== tp) sel.value = tp;
 }
 window._wizardSelectType = _wizardSelectType;
 
-// v6.13.1 — operator-directed mobile-first wizard helpers.
+// GATE alpha.36 (operator 2026-05-10): when the operator picks a backend,
+// the Effort + Model dropdowns repaint to show only the values that
+// backend actually supports. Inherit collapses both to (inherit) only.
+window._wizardBackendChanged = function() {
+  const sel = document.getElementById('wizardBackend');
+  const backend = sel ? sel.value : '';
+  const effortWrap = document.getElementById('wizardEffortWrap');
+  const modelWrap = document.getElementById('wizardModelWrap');
+  if (effortWrap) effortWrap.innerHTML = renderEffortSelect('wizardEffort', '', '', backend);
+  // GATE alpha.36 (operator 2026-05-10): live-fetch model lists for
+  // backends that expose them. Static fallback for claude-code (model
+  // IDs are released names). Ollama + openwebui hit their real /api
+  // endpoints. Opencode reads OPENCODE_MODELS env from the project
+  // profile — operator picks model in that env, so we surface a hint
+  // rather than a dropdown.
+  if (!modelWrap) return;
+  const setOpts = (models) => {
+    if (!models || models.length === 0) {
+      modelWrap.innerHTML = renderModelSelect('wizardModel', '', '', backend);
+      return;
+    }
+    const opts = ['<option value="">(inherit)</option>']
+      .concat(models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`));
+    modelWrap.innerHTML = `<select id="wizardModel" class="form-select">${opts.join('')}</select>`;
+  };
+  // GATE alpha.36 (operator 2026-05-10): hide the entire Model field
+  // (label + control) when no real list is available rather than
+  // showing a placeholder/hint. The whole row vanishes for opencode
+  // variants and council; reappears when a backend with models is
+  // picked. Looks cleaner than a stale "(inherit)" or a prose hint.
+  const modelField = document.getElementById('wizardModelField');
+  const showModel = (b) => { if (modelField) modelField.style.display = ''; };
+  const hideModel = () => { if (modelField) modelField.style.display = 'none'; };
+  if (backend === 'ollama') {
+    showModel(); apiFetch('/api/ollama/models').then(setOpts).catch(() => setOpts(null));
+  } else if (backend === 'openwebui') {
+    showModel(); apiFetch('/api/openwebui/models').then(setOpts).catch(() => setOpts(null));
+  } else if (backend === 'claude-code') {
+    showModel(); modelWrap.innerHTML = renderModelSelect('wizardModel', '', '', backend);
+  } else {
+    // opencode variants / council / inherit — model picker doesn't apply.
+    hideModel();
+  }
+};
+
+// Type chip toggle kept for back-compat (older inline event handlers may
+// reference it); the new dropdown directly drives _wizardSelectType so
+// this is a no-op when chips no longer exist.
 window._wizardToggleTypeChips = function() {
   const chips = document.getElementById('wizardTypeChips');
   if (!chips) return;
@@ -12611,8 +13453,14 @@ window._wizardMicForField = function(fieldId) {
 
 function _wizardProfileChanged() {
   const sel = document.getElementById('wizardProfile');
-  const dirRow = document.getElementById('wizardDirRow');
-  if (dirRow) dirRow.style.display = (!sel || sel.value === '__dir__') ? 'block' : 'none';
+  // GATE alpha.36 (operator 2026-05-10): hide the WHOLE Directory cell
+  // (label + picker) when a named profile is selected — operator
+  // reported the orphan label was lingering when only the dir-row was
+  // hidden. Toggling the cell keeps the row's flex layout intact:
+  // Workspace simply takes the full row width when Dir is hidden.
+  const dirCell = document.getElementById('wizardDirCell');
+  const isDir = !sel || sel.value === '__dir__';
+  if (dirCell) dirCell.style.display = isDir ? 'flex' : 'none';
 }
 window._wizardProfileChanged = _wizardProfileChanged;
 
@@ -12838,9 +13686,15 @@ function _renderDetailContent(prd) {
     _automataDetailBreadcrumb.push({ id, title });
   }
 
-  // Render breadcrumb
+  // GATE alpha.36 (operator 2026-05-10): the breadcrumb bar duplicated
+  // the back button now rendered inside the new detail header (row 1
+  // ← icon). Hide the breadcrumb element entirely unless we're inside
+  // a parent-child chain (length > 1), where the breadcrumb still
+  // provides useful navigation.
   const bcEl = document.getElementById('automataDetailBreadcrumb');
   if (bcEl) {
+    const showBc = _automataDetailBreadcrumb.length > 1;
+    bcEl.style.display = showBc ? '' : 'none';
     const parts = [
       `<button class="prd-breadcrumb-link" onclick="_backToAutomataList()">← ${escHtml(t('automata_detail_back'))}</button>`,
     ];
@@ -12879,9 +13733,122 @@ function _renderDetailContent(prd) {
     ${tabStrip}
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  // GATE alpha.36 (operator 2026-05-10): hoist the title + back into
+  // the PWA banner header (matches session-detail behavior).
+  // - backBtn shown with onclick=_backToAutomataList (chevron arrow,
+  //   same color/style as session detail)
+  // - headerTitle replaced with the automaton title + ✎ edit pencil
+  //   (operator: "title should have an edit button like in a session")
+  const backBtn = document.getElementById('backBtn');
+  const headerTitle = document.getElementById('headerTitle');
+  if (backBtn) {
+    backBtn.style.display = 'inline';
+    backBtn.onclick = () => _backToAutomataList();
+  }
+  // GATE alpha.36 (operator 2026-05-10): hide the header search/filter
+  // icon inside the PRD detail view — search is only useful on the
+  // list. It reappears automatically on _backToAutomataList because
+  // navigate('autonomous') sets headerSearchBtn.display='inline-flex'.
+  const headerSearchBtn = document.getElementById('headerSearchBtn');
+  if (headerSearchBtn) headerSearchBtn.style.display = 'none';
+  if (headerTitle) {
+    const titleText = prd.title || '(no title)';
+    const idJStr = JSON.stringify(prd.id || '');
+    const titleStr = JSON.stringify(titleText);
+    const specStr = JSON.stringify(prd.spec || '');
+    // GATE alpha.36 (operator 2026-05-10): edit pencil sits to the
+    // RIGHT of the (truncating) title, BEFORE the ID, so a long title
+    // can't push the robot-identity wizard off the right edge of the
+    // header bar. Title node truncates with ellipsis at narrow widths
+    // — same affordance as session-detail header.
+    headerTitle.innerHTML = `<span class="header-sess-name" onclick="openPRDEditModal(${escHtml(idJStr)},${escHtml(titleStr)},${escHtml(specStr)})" title="${escHtml(t('prd_edit_title_tip')||'Click to edit title')}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:60vw;">${escHtml(titleText)}</span><button class="btn-icon header-edit-btn" onclick="openPRDEditModal(${escHtml(idJStr)},${escHtml(titleStr)},${escHtml(specStr)})" title="${escHtml(t('prd_btn_edit')||'Edit')}">&#9998;</button><span class="header-id">#${escHtml(prd.id || '')}</span>`;
+  }
   // Async load scan results when on Scan tab
   if (tab === 'scan') loadPRDScanResult(id);
+  // GATE alpha.36 (operator 2026-05-10): inline active-session card
+  // (#290). When the PRD is in an active state, surface the spawned
+  // session(s) + hook status under "Next" hint, before the toolbar.
+  if (['planning','decomposing','running'].includes(prd.status || '')) {
+    _loadPRDActiveSessionCard(prd);
+  }
 }
+
+window._loadPRDActiveSessionCard = function(prd) {
+  const slot = document.getElementById('prdActiveSessionCard');
+  if (!slot) return;
+  apiFetch('/api/sessions').then(allSessions => {
+    const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
+    const matches = list.filter(s => (s.prd_id || s.parent_prd_id) === prd.id);
+    if (matches.length === 0) {
+      // GATE alpha.36 (operator 2026-05-10): no session yet — surface
+      // the gap as a COLLAPSIBLE card (operator: hide/collapse if no
+      // activity). Defaults open the first time, includes a Cancel
+      // action so the operator can reset stuck planning state. Full
+      // failed-state handling tracked in #291. Hidden entirely when
+      // status isn't actually active anymore (caller already gates,
+      // but defensive).
+      if (!['planning','decomposing','running'].includes(prd.status || '')) {
+        slot.style.display = 'none';
+        return;
+      }
+      slot.style.display = 'block';
+      const idJStr = JSON.stringify(prd.id || '');
+      slot.innerHTML = `<details class="prd-stuck-warning" open style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:12px;color:var(--text2);">
+        <summary style="cursor:pointer;padding:8px 12px;font-weight:600;color:var(--warning,#f59e0b);list-style:none;display:flex;align-items:center;gap:6px;">
+          <span>⚠ ${escHtml(t('prd_no_active_session_title')||'No active session record')}</span>
+          <span style="margin-left:auto;font-size:10px;opacity:0.6;font-weight:400;">${escHtml(t('prd_collapse_hint')||'click to collapse')}</span>
+        </summary>
+        <div style="padding:0 12px 10px 12px;">
+          <div style="margin-bottom:8px;">${escHtml(t('prd_no_active_session_hint')||'Status looks active but no spawned session was found. The LLM call may have failed silently.')}</div>
+          <div style="margin-bottom:6px;font-size:11px;"><strong>${escHtml(t('prd_unstick_label')||'Unstick')}:</strong> ${escHtml(t('prd_unstick_steps')||'Cancel below, then re-trigger Plan from the lifecycle strip after verifying the LLM\'s compute node is reachable in Compute Nodes.')}</div>
+          <button class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="event.stopPropagation();automataCancel(${escHtml(idJStr)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>
+        </div>
+      </details>`;
+      return;
+    }
+    // Active session(s) found — render compact card with state + hook
+    // status. Use first match for the inline card; full list lives in
+    // the future Sessions sub-tab (#290).
+    Promise.all(matches.slice(0, 3).map(s => {
+      const fid = s.full_id || s.id;
+      return apiFetch('/api/sessions/' + encodeURIComponent(fid) + '/status')
+        .then(b => ({ sess: s, board: b }))
+        .catch(() => ({ sess: s, board: null }));
+    })).then(rows => {
+      slot.style.display = 'block';
+      slot.innerHTML = rows.map(({ sess, board }) => {
+        const fid = sess.full_id || sess.id;
+        const stateClass = `state-badge-${sess.state || 'unknown'}`;
+        const isActive = !['killed','complete','failed'].includes(sess.state);
+        const animClass = (sess.state === 'running') ? 'state-badge-running' : '';
+        const hookDot = board && board.hook_health
+          ? (board.hook_health === 'alive'
+              ? `<span style="color:var(--success);font-size:11px;" title="Hooks alive">●</span>`
+              : board.hook_health === 'stale'
+                ? `<span style="color:var(--warning);font-size:11px;" title="Hooks stale (>5 min)">●</span>`
+                : `<span style="color:var(--text2);font-size:11px;" title="No hooks">●</span>`)
+          : '';
+        const focus = board && board.last_event
+          ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(board.last_event.event)}${board.last_event.tool ? ' · ' + escHtml(board.last_event.tool) : ''}</div>`
+          : '';
+        const stats = board && board.tests
+          ? `<span style="margin-left:10px;font-size:11px;"><span style="color:var(--success);">${board.tests.pass||0}✓</span> / <span style="color:var(--error);">${board.tests.fail||0}✗</span></span>`
+          : '';
+        return `<div class="prd-active-session-row" style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;cursor:pointer;margin-top:4px;" onclick="navigate('session-detail','${escHtml(fid)}')">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;">
+            <span class="state ${stateClass} ${animClass}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(sess.state || 'unknown')}</span>
+            <code style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);padding:1px 6px;border-radius:4px;">${escHtml(sess.id || fid.split('-').pop())}</code>
+            <span style="opacity:0.8;">${escHtml(sess.name || sess.task || '')}</span>
+            ${hookDot}
+            ${stats}
+            <span style="margin-left:auto;font-size:11px;opacity:0.6;">→</span>
+          </div>
+          ${focus}
+        </div>`;
+      }).join('');
+    });
+  }).catch(() => { slot.style.display = 'none'; });
+};
 
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
 // BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
@@ -12904,36 +13871,82 @@ function _renderDetailContent(prd) {
 //
 // Run-Scan/Run-Rules are additionally gated on prd.scan_enabled /
 // prd.rules_enabled (BL294 v6.22.2).
+// GATE alpha.36 (operator 2026-05-10): Edit-flyout toggle. Positions
+// the menu in viewport coords (escapes the tab body's overflow:hidden
+// scroll) so it overlays freely above any tab/scroll bounds. Outside-
+// click dismisses.
+window._toggleEditMenu = function(ev) {
+  ev.stopPropagation();
+  const m = document.getElementById('prdEditMenu');
+  if (!m) return;
+  if (m.style.display === 'block') { m.style.display = 'none'; return; }
+  const btn = ev.currentTarget;
+  const r = btn.getBoundingClientRect();
+  m.style.display = 'block';
+  m.style.top = Math.round(r.top) + 'px';
+  // Position the menu's right edge to the LEFT edge of the button
+  // (operator: "slide out to the left, going over anything that
+  // might be to the left of the edit button").
+  m.style.right = Math.max(0, Math.round(window.innerWidth - r.left + 6)) + 'px';
+  m.style.left = '';
+  // Outside-click dismiss — single global handler that self-removes.
+  setTimeout(() => {
+    const off = (e) => { if (!m.contains(e.target) && e.target !== btn) { m.style.display = 'none'; document.removeEventListener('click', off, true); } };
+    document.addEventListener('click', off, true);
+  }, 0);
+};
+
 function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const id = prd.id || '';
   const title = prd.title || '(no title)';
   const status = prd.status || 'draft';
   const idJ = JSON.stringify(id);
-  const editable = (status === 'draft' || status === 'needs_review' || status === 'revisions_asked');
+  // GATE alpha.36 (operator 2026-05-10): planning was missing from the
+  // editable list — operator hit a planning-stuck PRD and couldn't get
+  // to Edit Spec / Settings. Allow editing during planning too (the
+  // operator may need to fix the spec or change LLM/effort to unblock).
+  const editable = (status === 'draft' || status === 'planning' || status === 'needs_review' || status === 'revisions_asked');
   const terminal = ['completed','cancelled','archived'].includes(status);
-  const buttons = [];
+  // GATE alpha.36 (operator 2026-05-10): action buttons regrouped into
+  // two rows with clear roles:
+  //   Row 1 (workflow): Cancel | Approve              ⋯ Edit-menu | Delete
+  //     - Cancel + Approve = visible state-conditional action buttons
+  //     - Edit-menu collapses Edit Spec / Settings / Clone-to-Template
+  //       behind a single "⋯ Edit" overflow on the lower-right
+  //     - Delete kept separate (red) — operator question on whether
+  //       Delete needs Cancel-first: per the per-state matrix above,
+  //       Delete is allowed in any non-running state. Cancel-first is
+  //       NOT required: a draft that never ran can delete directly; a
+  //       cancelled/completed automaton skips straight to delete for
+  //       cleanup. The two are different actions: Cancel changes state,
+  //       Delete removes the record. Kept distinct so the operator's
+  //       intent is unambiguous.
+  const editMenuItems = [];
   if (editable) {
-    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})" title="${escHtml(t('prd_edit_spec_title')||'Edit title + spec')}">✎ ${escHtml(t('prd_btn_edit_spec')||'Edit Spec')}</button>`);
-  }
-  if (editable) {
-    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDSettingsModal(${escHtml(idJ)})" title="${escHtml(t('prd_settings_title')||'Type, backend, effort, model, skills, guided mode')}">⚙ ${escHtml(t('prd_btn_settings')||'Settings')}</button>`);
-  }
-  if (status === 'needs_review' || status === 'revisions_asked') {
-    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`);
+    editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})" title="${escHtml(t('prd_edit_spec_title')||'Edit title + spec')}">✎ ${escHtml(t('prd_btn_edit_spec')||'Edit Spec')}</button>`);
+    editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';openPRDSettingsModal(${escHtml(idJ)})" title="${escHtml(t('prd_settings_title')||'Type, backend, effort, model, skills, guided mode')}">⚙ ${escHtml(t('prd_btn_settings')||'Settings')}</button>`);
   }
   if (!prd.is_template) {
-    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
+    editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
   }
-  if (status !== 'running') {
-    buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
+  // Cancel button — shown for any non-terminal, non-running cancellable state.
+  const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')
+    ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
+    : '';
+  // Approve / Request Revision — state-driven primary action.
+  let approveBtn = '';
+  if (status === 'needs_review' || status === 'revisions_asked') {
+    approveBtn = `<button class="btn-primary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
   }
-  // BL294 (v6.22.2) — top-level Run Scan / Run Rules buttons in the
-  // detail-view persistent header. Operator: "should scan page and
-  // rules check pages have 'run scan' or should those be action
-  // buttons at top of automata since if they are enabled it should
-  // be part of the workflow". Gated on prd.scan_enabled /
-  // prd.rules_enabled AND on a state where running them makes sense
-  // (not archived / cancelled / completed).
+  const editBtn = editMenuItems.length > 0
+    ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
+    : '';
+  const deleteBtn = (status !== 'running')
+    ? `<button class="btn-icon prd-delete-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑</button>`
+    : '';
+  // Run-scan / Run-rules — kept inline next to lifecycle since they're
+  // workflow operations gated on guardrail config.
+  const buttons = [];
   const canRunScans = !['archived','cancelled','completed'].includes(status);
   if (canRunScans && prd.scan_enabled) {
     buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(96,165,250,0.15);color:var(--accent);" onclick="prdAction(${escHtml(idJ)},'scan','POST')" title="${escHtml(t('prd_btn_run_scan_title')||'Run security/secrets/dep scan')}">▶ ${escHtml(t('prd_btn_run_scan')||'Run Scan')}</button>`);
@@ -12941,30 +13954,40 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   if (canRunScans && prd.rules_enabled) {
     buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(168,85,247,0.15);color:var(--accent2);" onclick="prdAction(${escHtml(idJ)},'scan/rules','POST')" title="${escHtml(t('prd_btn_run_rules_title')||'Run rules check (after scan)')}">▶ ${escHtml(t('prd_btn_run_rules')||'Run Rules')}</button>`);
   }
-  // v6.13.8 — operator: "action buttons should have their own row and
-  // clearly indicate what is the next step. this should be the first
-  // row of buttons when viewing an automata so it's clear they are
-  // actions and those buttons should be different rows from the
-  // edit/settings/clone — editing is different from actions". The
-  // lifecycle strip (Plan / Approve / Run / Done) used to live in the
-  // Overview tab body — invisible from Stories/Decisions/Scan/Rules
-  // tabs. Hoisted into the persistent header above the management
-  // toolbar (and the tab strip), so the next-step action is always one
-  // tap away regardless of which sub-tab the operator is on.
+  // GATE alpha.36 (operator 2026-05-10): full header restructure.
+  //   Row 1: ← back · type · title (click to edit) · status pill (right)
+  //   Row 2: ID badge · last-activity (right-justified)
+  //   Row 3: spec snippet — the "what do you want to accomplish" text
+  //   Row 4: lifecycle strip (compact, single line via .lifecycle-compact)
+  //   Row 5: actions: Cancel · Approve            ⋯ Edit  · 🗑 Delete
+  //   Row 6: optional Run Scan / Run Rules pills
+  const lastActivity = prd.updated_at ? _fmtDate(prd.updated_at) : '';
+  const specSnippet = (prd.spec || '').trim();
+  const titleClickable = `<h2 style="margin:0;font-size:16px;font-weight:700;color:var(--text);cursor:pointer;flex:1;min-width:0;" title="${escHtml(t('prd_edit_title_tip')||'Click to edit title')}" onclick="openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})">${escHtml(title)}</h2>`;
   return `
-    <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
-          ${typeBadge}${tplBadge}
-          <h2 style="margin:0;font-size:16px;font-weight:700;color:var(--text);">${escHtml(title)}</h2>
-          ${statusPill(status)}
-        </div>
-        <div style="font-size:11px;color:var(--text2);"><code>${escHtml(id)}</code></div>
+    <div class="prd-detail-header-v2">
+      <!-- GATE alpha.36 (operator 2026-05-10): row 1 ← back removed —
+           the PWA banner now hosts the back chevron + title + edit
+           pencil (matches session-detail). Only badges + status pill
+           remain here. -->
+      <div class="prd-detail-row1" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        ${typeBadge}${tplBadge}
+        <span style="flex:1;min-width:0;"></span>
+        <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
       </div>
+      <div class="prd-detail-row2" style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);font-family:var(--mono,monospace);margin-bottom:6px;">
+        <code>${escHtml(id)}</code>
+        ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
+      </div>
+      ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) + '…' : specSnippet)}</div>` : ''}
+      <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
+      <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
+      <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        ${cancelBtn}${approveBtn}${buttons.join('')}
+        <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
+      </div>
+      ${terminal ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}
     </div>
-    <div class="prd-detail-actions-row">${renderLifecycleStrip(prd)}</div>
-    <div class="prd-detail-toolbar">${buttons.join('')}</div>
-    ${terminal ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:4px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Edit/Settings/Run actions are no longer available; only Clone-to-Template + Delete remain.`)}</div>` : ''}
   `;
 }
 
@@ -13192,10 +14215,22 @@ window.proposeScanRules = function(prdId) {
 };
 
 function _backToAutomataList() {
+  // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
+  // doesn't reset the PWA banner (back chevron, title, search icon)
+  // OR the bottom-nav highlight. Operator hit "back goes to list but
+  // bottom-nav says Sessions". Route through navigate('autonomous')
+  // which handles ALL the header/nav state in one place.
   _automataDetailId = null;
   _automataDetailBreadcrumb = [];
   history.pushState({ prdDetail: null }, '', '');
-  renderAutonomousView();
+  // Reset header back-button + restore the headerSearchBtn that the
+  // detail view hid; navigate() does the rest (title, identity btn,
+  // bottom-nav highlight, view re-mount).
+  const backBtn = document.getElementById('backBtn');
+  if (backBtn) { backBtn.style.display = 'none'; backBtn.onclick = null; }
+  const searchBtn = document.getElementById('headerSearchBtn');
+  if (searchBtn) searchBtn.style.display = 'inline-flex';
+  navigate('autonomous');
 }
 window._backToAutomataList = _backToAutomataList;
 
@@ -13254,6 +14289,7 @@ function renderAutonomousView() {
   }).join('');
 
   view.innerHTML = `
+    <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     <div class="view-content" style="position:relative;">
       <!-- v6.12.4 — operator: "automata tab, automata and templates
            should be like tab headers, like tmux,channel,state are
@@ -13261,16 +14297,19 @@ function renderAutonomousView() {
            output-tab classes for visual parity with the in-session
            tab strip. The right-side action buttons keep their existing
            class so they don't pick up the tab-style background. -->
+      <!-- GATE alpha.36 (operator 2026-05-10): in-view '?' button removed
+           — header banner already exposes Help via headerHelpLink for the
+           'autonomous' view. Action buttons reordered: Select then Filter
+           then History (operator: "filter button to right of select cards").
+           All action buttons share the .automata-action-btn class for
+           consistent sizing + padding (defined in style.css). -->
       <div class="output-tabs automata-tabs-bar">
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
-        <button class="automata-action-btn" onclick="openAutomataHowto()" title="${escHtml(t('automata_header_howto'))}">?</button>
-        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
+        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
         <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
-        <!-- v6.12.4 — operator: "+ New Template" → "+ Template" (shorter,
-             matches FAB-style verb-only labels). -->
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
       </div>
       <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">

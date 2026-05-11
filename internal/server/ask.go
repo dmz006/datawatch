@@ -29,8 +29,8 @@ import (
 // the call through the configured ComputeNode failover list with the
 // appropriate adapter. The legacy `backend` + `model` fields are
 // retained for backwards compat — when used, the daemon shims them
-// to the auto-migrated `ollama-default` / `openwebui-default` LLM
-// entries (see internal/inference/store.go::MigrateLegacyConfig).
+// to the auto-migrated `ollama` / `openwebui` LLM entries
+// (see internal/inference/store.go::MigrateLegacyConfig).
 type AskRequest struct {
 	Question string `json:"question"`
 	LLM      string `json:"llm,omitempty"`     // v7 preferred — registry LLM name
@@ -74,12 +74,12 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		llmName := req.LLM
 		if llmName == "" {
 			// Legacy shim: map the v6 backend field to the
-			// auto-migrated default LLM name.
+			// auto-migrated LLM name.
 			switch req.Backend {
 			case "ollama":
-				llmName = "ollama-default"
+				llmName = "ollama"
 			case "openwebui":
-				llmName = "openwebui-default"
+				llmName = "openwebui"
 			default:
 				http.Error(w, "unsupported backend: "+req.Backend, http.StatusBadRequest)
 				return
