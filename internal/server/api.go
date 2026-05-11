@@ -97,7 +97,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "7.0.0-alpha.39"
+var Version = "7.0.0-alpha.40"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
