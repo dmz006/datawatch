@@ -7097,20 +7097,20 @@ window._renderLLMEditPanel = function(existing) {
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_kind')||'Kind')}</label>
-        <select id="llmEditKind" class="form-select">${kindOpts}</select>
+        <select id="llmEditKind" class="form-select" onchange="window._llmKindChanged()">${kindOpts}</select>
       </div>
-      <div class="wizard-field">
+      <div class="wizard-field" id="llmComputeNodesSect">
         <label class="wizard-label">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
         <select id="llmEditComputeNodes" class="form-select" multiple size="4" style="min-height:80px;">${nodeOpts}</select>
         <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('llm_field_compute_nodes_hint')||'Hold Ctrl/Cmd to multi-select. Order = failover order.')}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_enabled_models')||'Enabled Models')}</label>
-        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('llm_field_enabled_models_hint')||'One row per (node, model) pair. Node is empty for SaaS kinds.')}</div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('llm_field_enabled_models_hint')||'One model per row. For local kinds, pick the node then select or type the model.')}</div>
         <table id="llmModelsTable" style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="border-bottom:1px solid var(--border);color:var(--text2);font-size:10px;">
-              <th style="text-align:left;padding:2px 8px 4px 0;">${escHtml(t('llm_models_node_col')||'Node')}</th>
+              <th style="text-align:left;padding:2px 8px 4px 0;" id="llmModelsNodeColHdr">${escHtml(t('llm_models_node_col')||'Node')}</th>
               <th style="text-align:left;padding:2px 8px 4px 8px;">${escHtml(t('llm_models_model_col')||'Model')}</th>
               <th></th>
             </tr>
@@ -7119,7 +7119,7 @@ window._renderLLMEditPanel = function(existing) {
         </table>
         <div style="display:flex;gap:6px;align-items:center;margin-top:6px;" id="llmAddModelRow">
           <select id="llmNewModelNode" class="form-select" style="flex:0 0 auto;width:auto;min-width:80px;max-width:200px;font-size:11px;" onchange="_llmProbeNodeModels()">
-            <option value="">(SaaS)</option>
+            <option value="">—</option>
             ${nodes.map(n => `<option value="${escHtml(n.name)}">${escHtml(n.name)}</option>`).join('')}
           </select>
           <input id="llmNewModelName" class="form-input" style="flex:1;font-size:11px;" placeholder="e.g. qwen3:8b" list="llmNodeModelsList" autocomplete="off" />
@@ -7127,7 +7127,7 @@ window._renderLLMEditPanel = function(existing) {
           <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 10px;white-space:nowrap;" onclick="_llmAddModelRow()">${escHtml(t('llm_models_add_row')||'+ Add')}</button>
         </div>
       </div>
-      <div class="wizard-field">
+      <div class="wizard-field" id="llmAutoAddSect">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
           <input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} />
           ${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}
@@ -7163,16 +7163,65 @@ window._renderLLMEditPanel = function(existing) {
   });
   const dead = []; let cur; while ((cur = walker.nextNode())) dead.push(cur);
   dead.forEach(n => n.remove());
+  // Apply kind-aware visibility on initial render.
+  window._llmKindChanged();
+};
+
+// SaaS kinds: hide compute nodes + auto-detect node name from kind.
+const _llmSaasKinds = new Set(['claude-code', 'aider', 'goose', 'gemini']);
+const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
+
+window._llmKindChanged = function() {
+  const kind = (document.getElementById('llmEditKind') || {}).value || '';
+  const isSaas = _llmSaasKinds.has(kind);
+  const cnSect = document.getElementById('llmComputeNodesSect');
+  const aaSect = document.getElementById('llmAutoAddSect');
+  const nodeEl = document.getElementById('llmNewModelNode');
+  const nodeHdr = document.getElementById('llmModelsNodeColHdr');
+  if (cnSect) cnSect.style.display = isSaas ? 'none' : '';
+  if (aaSect) aaSect.style.display = isSaas ? 'none' : '';
+  if (nodeEl) nodeEl.style.display = isSaas ? 'none' : '';
+  if (nodeHdr) nodeHdr.style.display = isSaas ? 'none' : '';
+  // Populate model datalist for the current kind.
+  if (isSaas) {
+    window._llmProbeSaasModels(kind);
+  } else {
+    window._llmProbeNodeModels();
+  }
+};
+
+window._llmProbeSaasModels = function(kind) {
+  const dl = document.getElementById('llmNodeModelsList');
+  if (!dl) return;
+  const already = new Set(
+    (window._llmCollectModels ? window._llmCollectModels() : []).map(em => em.model)
+  );
+  if (kind === 'claude-code') {
+    apiFetch('/api/llm/claude/models').then(d => {
+      const aliases = (d.aliases || []).map(a => a.value);
+      const full = (d.full_names || []).map(a => a.value);
+      dl.innerHTML = [...aliases, ...full]
+        .filter(m => !already.has(m))
+        .map(m => `<option value="${escHtml(m)}">`)
+        .join('');
+    }).catch(() => { dl.innerHTML = ''; });
+  } else {
+    dl.innerHTML = '';
+  }
 };
 
 window._llmAddModelRow = function() {
+  const kindEl = document.getElementById('llmEditKind');
+  const kind = kindEl ? kindEl.value : '';
+  const isSaas = _llmSaasKinds.has(kind);
   const nodeEl = document.getElementById('llmNewModelNode');
   const modelEl = document.getElementById('llmNewModelName');
   if (!modelEl || !modelEl.value.trim()) {
     showToast('Model name required', 'error', 2000);
     return;
   }
-  const node = nodeEl ? nodeEl.value : '';
+  // For SaaS kinds, the node is the service name (e.g. "claude" for claude-code).
+  const node = isSaas ? (_llmSaasNodeName[kind] || kind) : (nodeEl ? nodeEl.value : '');
   const model = modelEl.value.trim();
   const tbody = document.getElementById('llmModelsBody');
   if (!tbody) return;
@@ -7215,12 +7264,14 @@ window._llmCollectModels = function() {
 };
 
 window._llmProbeNodeModels = function() {
+  const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
+  // Delegate SaaS kinds to their own probe.
+  if (_llmSaasKinds && _llmSaasKinds.has(kind)) { window._llmProbeSaasModels(kind); return; }
   const nodeEl = document.getElementById('llmNewModelNode');
   const dl = document.getElementById('llmNodeModelsList');
   if (!dl) return;
   const nodeName = nodeEl ? nodeEl.value : '';
   if (!nodeName) { dl.innerHTML = ''; return; }
-  const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
   // Collect already-added models for this node so we can dedup.
   const already = new Set(
     (window._llmCollectModels ? window._llmCollectModels() : [])
