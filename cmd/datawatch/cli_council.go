@@ -26,14 +26,15 @@ Two modes:
   debate (3 rounds)  — for serious decisions
   quick  (1 round)   — for fast perspective checks
 
-Built-in 6 personas: security-skeptic, ux-advocate, perf-hawk,
-simplicity-advocate, ops-realist, contrarian. Operators may add more
-by dropping YAML files into ~/.datawatch/council/personas/.
+Built-in 12 personas: security-skeptic, ux-advocate, perf-hawk,
+simplicity-advocate, ops-realist, contrarian, platform-engineer,
+network-engineer, data-architect, privacy, hacker, app-hacker.
+Operators may add more by dropping YAML files into
+~/.datawatch/council/personas/ or using the personas subcommands.
 
-v6.11.0 ships the framework with stubbed LLM responses (deterministic
-placeholders). Real per-persona inference lands in a v6.11.x follow-up.`,
+Use "datawatch council personas" to list, get, or edit persona prompts.`,
 	}
-	cmd.AddCommand(newCouncilPersonasCmd())
+	cmd.AddCommand(newCouncilPersonasCmd()) // BL296 — now has list/get/set subcommands
 	cmd.AddCommand(newCouncilRunCmd())
 	cmd.AddCommand(newCouncilRunsCmd())
 	cmd.AddCommand(newCouncilGetRunCmd())
@@ -174,11 +175,45 @@ func newCouncilDraftsPurgeCmd() *cobra.Command {
 }
 
 func newCouncilPersonasCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "personas",
-		Short: "List registered Council personas",
+		Short: "Manage registered Council personas (BL296)",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/council/personas") },
 	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all registered Council personas",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/council/personas") },
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "get <name>",
+		Short: "Show one Council persona by name (name + role + system_prompt)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/council/personas/" + args[0])
+		},
+	})
+	var prompt, role string
+	setCmd := &cobra.Command{
+		Use:   "set <name>",
+		Short: "Update a Council persona's system_prompt (and optionally role)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if strings.TrimSpace(prompt) == "" {
+				return fmt.Errorf("--prompt is required")
+			}
+			body := map[string]any{"system_prompt": prompt}
+			if role != "" {
+				body["role"] = role
+			}
+			return daemonJSON(http.MethodPut, "/api/council/personas/"+args[0], body)
+		},
+	}
+	setCmd.Flags().StringVar(&prompt, "prompt", "", "new system prompt text (required)")
+	setCmd.Flags().StringVar(&role, "role", "", "optional new role title")
+	_ = setCmd.MarkFlagRequired("prompt")
+	cmd.AddCommand(setCmd)
+	return cmd
 }
 
 func newCouncilRunCmd() *cobra.Command {

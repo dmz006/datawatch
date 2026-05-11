@@ -24,7 +24,9 @@ import (
 
 type councilOrchestrator interface {
 	Personas() []council.Persona
+	GetPersona(name string) (council.Persona, error)
 	AddPersona(p council.Persona) error
+	UpdatePersona(name string, update council.Persona) error
 	RemovePersona(name string) error
 	RestoreDefaultPersona(name string) error
 	Run(proposal string, names []string, mode council.Mode) (*council.Run, error)
@@ -194,6 +196,36 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 		}
 		s.auditCouncil(body.Name, "council_persona_add")
 		writeJSONOK(w, map[string]any{"name": body.Name, "ok": true})
+
+	// BL296 — GET /api/council/personas/{name} — fetch one persona.
+	case rest != "" && !strings.Contains(rest, "/") && r.Method == http.MethodGet:
+		p, err := s.councilOrch.GetPersona(rest)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, p)
+
+	// BL296 — PUT /api/council/personas/{name} — update system_prompt (and
+	// optionally role) without delete+re-add. PWA edit modal uses this path.
+	case rest != "" && !strings.Contains(rest, "/") && (r.Method == http.MethodPut || r.Method == http.MethodPatch):
+		name := rest
+		var body council.Persona
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(body.SystemPrompt) == "" {
+			http.Error(w, "system_prompt required", http.StatusBadRequest)
+			return
+		}
+		if err := s.councilOrch.UpdatePersona(name, body); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		s.auditCouncil(name, "council_persona_update")
+		p, _ := s.councilOrch.GetPersona(name)
+		writeJSONOK(w, map[string]any{"name": name, "ok": true, "persona": p})
 
 	case strings.HasSuffix(rest, "/restore") && r.Method == http.MethodPost:
 		name := strings.TrimSuffix(rest, "/restore")

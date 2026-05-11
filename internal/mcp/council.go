@@ -17,9 +17,28 @@ import (
 
 func (s *Server) toolCouncilPersonas() mcpsdk.Tool {
 	return mcpsdk.NewTool("council_personas",
-		mcpsdk.WithDescription("BL260 — list registered Council personas (built-in 6 by default + operator-added)."),
+		mcpsdk.WithDescription("BL260 — list registered Council personas (built-in 12 by default + operator-added)."),
 	)
 }
+
+// BL296 — council_personas_get: fetch one persona by name.
+func (s *Server) toolCouncilPersonasGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("council_personas_get",
+		mcpsdk.WithDescription("BL296 — fetch a single Council persona by name, returning its role + system_prompt."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("persona name (e.g. security-skeptic, privacy, platform-engineer)")),
+	)
+}
+
+// BL296 — council_personas_set: update an existing persona's system_prompt (and optionally role).
+func (s *Server) toolCouncilPersonasSet() mcpsdk.Tool {
+	return mcpsdk.NewTool("council_personas_set",
+		mcpsdk.WithDescription("BL296 — update an existing Council persona's system_prompt (and optionally role). Persists to ~/.datawatch/council/personas/<name>.yaml."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("persona name to update")),
+		mcpsdk.WithString("system_prompt", mcpsdk.Required(), mcpsdk.Description("new system prompt text")),
+		mcpsdk.WithString("role", mcpsdk.Description("optional: new role title")),
+	)
+}
+
 func (s *Server) toolCouncilRun() mcpsdk.Tool {
 	return mcpsdk.NewTool("council_run",
 		mcpsdk.WithDescription("BL260 — run a multi-persona Council debate on a proposal. Two modes: debate (3 rounds), quick (1 round). v6.11.0 ships the framework with stubbed LLM responses; real per-persona inference is a v6.11.x follow-up."),
@@ -48,6 +67,31 @@ func (s *Server) handleCouncilPersonasMCP(_ context.Context, _ mcpsdk.CallToolRe
 	}
 	return textOK(string(out)), nil
 }
+
+func (s *Server) handleCouncilPersonasGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := mustString(req, "name")
+	out, err := s.proxyGet("/api/council/personas/"+name, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleCouncilPersonasSetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := mustString(req, "name")
+	body := map[string]any{
+		"system_prompt": mustString(req, "system_prompt"),
+	}
+	if role := optString(req, "role"); role != "" {
+		body["role"] = role
+	}
+	out, err := s.proxyJSON("PUT", "/api/council/personas/"+name, body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) handleCouncilRunMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{
 		"proposal": mustString(req, "proposal"),
@@ -259,8 +303,11 @@ func (s *Server) toolCouncilConfigGet() mcpsdk.Tool {
 
 func (s *Server) toolCouncilConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("council_config_set",
-		mcpsdk.WithDescription("BL297 — update Council subsystem runtime config. Persists to cfg.yaml; live ticker re-reads on next sweep."),
+		mcpsdk.WithDescription("BL297/BL295 — update Council subsystem runtime config. Persists to cfg.yaml; live ticker re-reads on next sweep."),
 		mcpsdk.WithString("draft_retention_days", mcpsdk.Description("persona-wizard draft GC retention in days (>=0; 0 disables auto-GC)")),
+		mcpsdk.WithString("llm_ref", mcpsdk.Description("LLM registry entry name for Council debates (e.g. 'ollama', 'openwebui')")),
+		mcpsdk.WithString("max_parallel", mcpsdk.Description("per-round persona concurrency cap (>=0; 0=serial)")),
+		mcpsdk.WithString("comm_firehose", mcpsdk.Description("push every persona response to comm channels: true or false")),
 	)
 }
 
@@ -277,8 +324,17 @@ func (s *Server) handleCouncilConfigSetMCP(_ context.Context, req mcpsdk.CallToo
 	if v := optString(req, "draft_retention_days"); v != "" {
 		body["draft_retention_days"] = v
 	}
+	if v := optString(req, "llm_ref"); v != "" {
+		body["llm_ref"] = v
+	}
+	if v := optString(req, "max_parallel"); v != "" {
+		body["max_parallel"] = v
+	}
+	if v := optString(req, "comm_firehose"); v != "" {
+		body["comm_firehose"] = v == "true" || v == "1" || v == "yes"
+	}
 	if len(body) == 0 {
-		return nil, fmt.Errorf("at least one config key required")
+		return nil, fmt.Errorf("at least one config key required (draft_retention_days, llm_ref, max_parallel, comm_firehose)")
 	}
 	out, err := s.proxyJSON("PATCH", "/api/council/config", body)
 	if err != nil {

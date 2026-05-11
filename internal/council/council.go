@@ -372,6 +372,60 @@ func (o *Orchestrator) AddPersona(p Persona) error {
 	return nil
 }
 
+// GetPersona returns a single persona by name, or an error if not found.
+//
+// BL296 — backs REST GET /api/council/personas/{name} and the new
+// council_personas_get MCP tool + CLI personas get <name>.
+func (o *Orchestrator) GetPersona(name string) (Persona, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	p, ok := o.personas[name]
+	if !ok {
+		return Persona{}, fmt.Errorf("persona %q not found", name)
+	}
+	return p, nil
+}
+
+// UpdatePersona replaces an existing persona's mutable fields (role and
+// system_prompt) in memory and on disk. The name is immutable; rename
+// by removing the old one and adding a new one.
+//
+// BL296 — backs REST PUT /api/council/personas/{name} and the new
+// council_personas_set MCP tool + CLI personas set <name> --prompt.
+// This is the recommended path instead of the delete+re-POST pattern
+// the PWA previously used.
+func (o *Orchestrator) UpdatePersona(name string, update Persona) error {
+	if name == "" {
+		return fmt.Errorf("persona name required")
+	}
+	if update.SystemPrompt == "" {
+		return fmt.Errorf("persona system_prompt required")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	existing, ok := o.personas[name]
+	if !ok {
+		return fmt.Errorf("persona %q not found", name)
+	}
+	if update.Role != "" {
+		existing.Role = update.Role
+	}
+	existing.SystemPrompt = update.SystemPrompt
+	dir := o.PersonasDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(&existing)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), b, 0o644); err != nil {
+		return err
+	}
+	o.personas[name] = existing
+	return nil
+}
+
 // RemovePersona deletes a persona from disk + memory and records the
 // name in the .seeded marker so the additive-seed path doesn't
 // resurrect it on the next daemon restart. Removing a built-in

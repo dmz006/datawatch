@@ -425,6 +425,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCouncilListRuns(), tracked(s.handleCouncilListRunsMCP))
 	mcpSrv.AddTool(s.toolCouncilGetRun(), tracked(s.handleCouncilGetRunMCP))
 	mcpSrv.AddTool(s.toolCouncilRunCancel(), tracked(s.handleCouncilRunCancelMCP)) // v7.0.0 S3
+	// BL296 — individual persona get/set.
+	mcpSrv.AddTool(s.toolCouncilPersonasGet(), tracked(s.handleCouncilPersonasGetMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonasSet(), tracked(s.handleCouncilPersonasSetMCP))
 	// BL297 (v6.22.3) — persona-wizard tools.
 	mcpSrv.AddTool(s.toolCouncilPersonaOneShot(), tracked(s.handleCouncilPersonaOneShotMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftStart(), tracked(s.handleCouncilPersonaDraftStartMCP))
@@ -433,7 +436,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftSave(), tracked(s.handleCouncilPersonaDraftSaveMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftList(), tracked(s.handleCouncilPersonaDraftListMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftPurge(), tracked(s.handleCouncilPersonaDraftPurgeMCP))
-	// BL297 v6.22.4 — runtime config knob.
+	// BL297 v6.22.4 / BL295 — runtime config knob.
 	mcpSrv.AddTool(s.toolCouncilConfigGet(), tracked(s.handleCouncilConfigGetMCP))
 	mcpSrv.AddTool(s.toolCouncilConfigSet(), tracked(s.handleCouncilConfigSetMCP))
 	// v7.0.0 S1 — ComputeNode registry.

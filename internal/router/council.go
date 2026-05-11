@@ -16,6 +16,8 @@ import (
 const councilUsage = `Usage:
   council                                list personas
   council personas                       list personas
+  council personas get <name>            show one persona's system prompt
+  council personas set <name> <prompt>   update a persona's system prompt
   council run <mode> <proposal>          execute (mode = debate|quick)
   council runs                           list past runs
   council get-run <id>                   fetch one run
@@ -29,7 +31,10 @@ const councilUsage = `Usage:
     persona-wizard purge                    delete ALL drafts
   council config                         (BL297 v6.22.4) runtime config
     config                                  read draft_retention_days etc.
-    config set draft-retention-days <N>     update + persist (live)`
+    config set draft-retention-days <N>     update + persist (live)
+    config set llm-ref <name>               LLM registry entry for debates
+    config set max-parallel <N>             per-round persona concurrency
+    config set comm-firehose <true|false>   push persona responses to comm`
 
 func (r *Router) handleCouncilCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -43,6 +48,51 @@ func (r *Router) handleCouncilCmd(cmd Command) {
 		}
 		r.reply("council", prettyJSON(out))
 		return
+	}
+
+	// BL296 — "personas get <name>" / "personas set <name> <prompt>"
+	if strings.HasPrefix(lower, "personas ") {
+		rest := strings.TrimSpace(text[len("personas "):])
+		pParts := strings.SplitN(rest, " ", 3)
+		pVerb := strings.ToLower(pParts[0])
+		switch pVerb {
+		case "get":
+			if len(pParts) < 2 {
+				r.reply("council personas get", "Usage: council personas get <name>")
+				return
+			}
+			out, err := r.commGet("/api/council/personas/"+pParts[1], nil)
+			if err != nil {
+				r.reply("council personas get", err.Error())
+				return
+			}
+			r.reply("council personas get", prettyJSON(out))
+			return
+		case "set":
+			if len(pParts) < 3 {
+				r.reply("council personas set", "Usage: council personas set <name> <system_prompt>")
+				return
+			}
+			name := pParts[1]
+			prompt := pParts[2]
+			body, _ := json.Marshal(map[string]any{"system_prompt": prompt})
+			out, err := r.commJSON("PUT", "/api/council/personas/"+name, string(body))
+			if err != nil {
+				r.reply("council personas set", err.Error())
+				return
+			}
+			r.reply("council personas set", prettyJSON(out))
+			return
+		default:
+			// fall through to list
+			out, err := r.commGet("/api/council/personas", nil)
+			if err != nil {
+				r.reply("council personas", err.Error())
+				return
+			}
+			r.reply("council personas", prettyJSON(out))
+			return
+		}
 	}
 
 	parts := strings.SplitN(text, " ", 2)

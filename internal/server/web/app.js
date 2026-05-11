@@ -19115,15 +19115,13 @@ window._councilEditPersonaSave = function(encodedName) {
   const name = decodeURIComponent(encodedName);
   const role = (document.getElementById('cwEditRole')||{}).value || '';
   const prompt = (document.getElementById('cwEditPrompt')||{}).value || '';
-  // The simplest "edit" semantic: DELETE then POST so YAML is rewritten + the
-  // .seeded marker is re-cleared. The orchestrator allows an immediate re-add
-  // because the deletion clears the marker for THIS name.
-  apiFetch('/api/council/personas/' + encodeURIComponent(name), { method: 'DELETE' })
-    .then(() => apiFetch('/api/council/personas', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, role, system_prompt: prompt }),
-    }))
+  // BL296 — use PUT /api/council/personas/{name} (atomic update) instead of
+  // the previous delete+re-POST dance that could race or lose data.
+  apiFetch('/api/council/personas/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, system_prompt: prompt }),
+  })
     .then(() => {
       showToast('✓ Persona updated', 'success', 2000);
       closeModal();

@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.38"
+var Version = "7.0.0-alpha.39"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -928,6 +928,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// stubbed in v6.11.0; real per-persona inference is a v6.11.x
 	// follow-up.
 	councilOrch := council.NewOrchestrator(expandHome(cfg.DataDir))
+	// BL296 — apply YAML persona overrides (cfg.Council.Personas) at startup.
+	// These allow fleet-wide prompt customization without per-host file edits.
+	for _, ov := range cfg.Council.Personas {
+		if ov.Name == "" || ov.SystemPrompt == "" {
+			continue
+		}
+		if err := councilOrch.UpdatePersona(ov.Name, council.Persona{
+			Role:         ov.Role,
+			SystemPrompt: ov.SystemPrompt,
+		}); err != nil {
+			fmt.Printf("[council] persona override %q: %v\n", ov.Name, err)
+		}
+	}
 
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)

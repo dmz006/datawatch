@@ -429,8 +429,21 @@ type ComputeNodeYAML struct {
 	} `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 }
 
+// CouncilPersonaOverride allows operators to customize a persona's
+// system_prompt (and optionally role) via YAML config instead of
+// editing the on-disk YAML files directly. These overrides are applied
+// at daemon start via council.Orchestrator.UpdatePersona; the on-disk
+// file is also rewritten so the changes survive config removal.
+//
+// BL296 — YAML surface for persona prompt customization.
+type CouncilPersonaOverride struct {
+	Name         string `yaml:"name" json:"name"`
+	Role         string `yaml:"role,omitempty" json:"role,omitempty"`
+	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
+}
+
 // CouncilConfig configures the Council Mode subsystem. v7.0.0 S3
-// adds the LLM wiring fields.
+// adds the LLM wiring fields. BL296 adds the Personas override slice.
 type CouncilConfig struct {
 	// DraftRetentionDays controls how long unsaved persona-wizard
 	// drafts live in SQLite before auto-GC. 0 = disabled (drafts kept
@@ -451,6 +464,18 @@ type CouncilConfig struct {
 	// run_completed + run_cancelled). Default false = milestones only.
 	// v7.0.0-alpha.13 (#199, operator-spec'd 2026-05-09).
 	CommFirehose bool `yaml:"comm_firehose,omitempty" json:"comm_firehose,omitempty"`
+	// Personas is an optional override slice. Each entry customizes a
+	// persona's system_prompt (and optionally role) at daemon start.
+	// Useful for fleet-wide persona tuning without editing per-host
+	// YAML files. Example config.yaml fragment:
+	//
+	//   council:
+	//     personas:
+	//       - name: privacy
+	//         system_prompt: "You are a privacy reviewer focused on GDPR/CCPA..."
+	//
+	// BL296 — YAML surface for persona customization.
+	Personas []CouncilPersonaOverride `yaml:"personas,omitempty" json:"personas,omitempty"`
 }
 
 // SkillsConfig is the YAML side of the skills subsystem. Storage of
