@@ -368,7 +368,6 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](datawatch-definitions.md)

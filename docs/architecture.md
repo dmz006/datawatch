@@ -425,7 +425,6 @@ sequenceDiagram
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](datawatch-definitions.md)

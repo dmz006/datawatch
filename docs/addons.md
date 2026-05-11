@@ -78,7 +78,6 @@ See [setup.md](setup.md) for full configuration reference.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](datawatch-definitions.md)

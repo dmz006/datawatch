@@ -71,6 +71,20 @@ if [[ -f docs/datawatch-definitions.md ]]; then
     fi
 fi
 
+# 6. howto/* prose must not contain internal refs (operator-facing tutorials).
+#    Frontmatter tool/step names (exec_steps) are exempt as they are
+#    machine-readable identifiers, not prose. Comment lines (<!-- -->) are
+#    exempt. identity-and-telos.md example YAML uses BL### as placeholder
+#    project names in user-editable fields — grep those out via line context.
+if ls docs/howto/*.md 2>/dev/null | head -1 &>/dev/null; then
+    while IFS= read -r line; do
+        report "$line"
+    done < <(grep -rnE '\b(BL[0-9]{3,}|F[0-9]{2}\b|B[0-9]{2}\b)\b' docs/howto/*.md \
+        | grep -vE '^\S+:\s*[0-9]+:\s*(#|//|<!--|---|\s+tool:|description:|args:)' \
+        | grep -vE 'identity-and-telos\.md' \
+        || true)
+fi
+
 if [[ $ERRORS -gt 0 ]]; then
     echo
     echo "✗ FAIL: $ERRORS internal-ref leak(s) in user-facing surface."
