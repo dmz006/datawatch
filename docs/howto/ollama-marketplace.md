@@ -113,7 +113,6 @@ datawatch compute remove-model <node-name> llama3.1:8b
 
 ## Happy path — PWA
 
-<!-- screenshot: Ollama Marketplace modal open with search and model cards -->
 ![Ollama Marketplace modal](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-modal.png)
 
 1. Bottom nav → **Settings** → **Compute** tab → **Compute Nodes**.
@@ -127,7 +126,6 @@ datawatch compute remove-model <node-name> llama3.1:8b
    "reasoning").
 6. Click **Pick variant →** on any model card to open the tag-grid.
 
-<!-- screenshot: tag-grid modal showing Size / Min RAM / Min VRAM / Fit columns -->
 ![Tag-grid modal with hardware fit columns](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-tags.png)
 
 7. The tag-grid shows every available size variant with:
@@ -144,8 +142,7 @@ datawatch compute remove-model <node-name> llama3.1:8b
    at the bottom of the screen: *"Pulling llama3.1:8b (0%)"*. It
    updates as the download progresses.
 
-<!-- screenshot: alert dock showing pull progress entry -->
-![Alert dock pull progress](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-pull-progress.png)
+![Alert dock showing pull progress — "🔽 Pulling llama3.1:8b on datawatch-ollama (47%)"](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-pull-progress.png)
 
 10. When the pull completes the dock entry shows *done*. Refresh the
     node edit panel to see the new model in the installed list.
