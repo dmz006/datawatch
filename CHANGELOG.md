@@ -5,40 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Deferred — BL300 — Alert popup must not auto-open
-
-The alert dock / notification popup must never open automatically. It should:
-
-- Show only a pill/badge with the unread count when new alerts arrive.
-- Open exclusively on explicit user click/tap.
-- Applies to all surfaces: PWA alert dock, any in-app notification overlay,
-  and the mobile equivalent in datawatch-app.
-
-Note: alpha.37e fixed auto-open for the dock panel itself; this BL tracks
-any regression or remaining auto-open path (e.g. toast-triggered expand,
-SSE push forcing the panel visible, or mobile-side auto-show).
-
-Mobile-parity: one datawatch-app issue on fix (per mobile-parity rule).
-
-### Deferred — BL299 — Narrow-screen header responsive layout (PWA + mobile)
-
-On narrow screens (≤ ~375px viewport width) the card/session header row may only
-fit the item ID and a truncated title side-by-side. Accepted design:
-
-- **ID chip always visible** — never truncated; anchor-left.
-- **Title truncates with ellipsis** — `text-overflow: ellipsis` + `max-width` relative to
-  remaining space after ID chip; never clips the ID.
-- **Right-side actions wrap to a second line** — status badge, action buttons,
-  kebab menu, etc. shift to a dedicated flex-row below the title on narrow
-  viewports; the row is right-aligned (`justify-content: flex-end`) so the
-  visual grouping is preserved.
-- Breakpoint: activate at container width < 420px (CSS `@container` or media
-  query); wider viewports keep the existing single-row layout unchanged.
-- Applies to: Automata card headers, session list rows, Council run rows,
-  LLM registry cards, ComputeNode cards — any header that already has a
-  right-side action cluster.
-- Mobile-parity: requires matching change in datawatch-app
-  (one per-change issue per mobile-parity rule).
+_(BL299 + BL300 filed — see backlog tracker.)_
 
 ## v7.0.0-alpha.38 — Observer fix + Automata PWA modals + LLM CLI parity
 

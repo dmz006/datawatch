@@ -38,77 +38,27 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-05
+## Current state — 2026-05-11
 
-Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav buttons spread evenly across the bar at every viewport (was left-huddled <600px); Launch Automaton wizard + PRD Edit Settings modals tightened to read as professional compact forms instead of airy stacks). v6.7.0 minor closed **BL255 Skill Registries**; v6.7.1–v6.7.5 patch series followed (BL255 button + JSON-tag fixes; BL247-followup direction sequence — folded into Settings → Monitor (v6.7.2, wrong direction), corrected to Observer top-level absorbing Monitor cards (v6.7.3), then secContent scope hotfix (v6.7.4), then layout polish (v6.7.5)). BL241 Matrix design discussion finalized (Round 3); P1 implementation pending operator green-light.
+Latest release: **v7.0.0-alpha.38** (2026-05-11). v7.0 major arc opened 2026-05-08 and delivered 38 alpha releases across the week: ComputeNode registry (alpha.1), LLM Registry+dispatcher (alpha.2), Council wired to real LLMs (alpha.3), SSE live updates (alpha.4), Scoped memory (alpha.5), Ollama Marketplace (alpha.33), Claude Code hooks + Status board (alpha.34), LLM Enabled Models (alpha.37), LLM CLI parity (alpha.38). Full rule-violation audit landed this cut (version sync, CommFirehose parity, locale × 5 gaps). BL292–BL296 remain open; BL297/BL298 closed v6.22.3; BL299/BL300 filed 2026-05-11.
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | (BL246 fully closed v6.6.0) |
-| Open features | 1 | BL241 Matrix (Plan II ready, P1 implementation pending operator green-light) |
-| Active backlog | 1 | BL190 howto screenshot density (iterative) |
-| Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
-| Recently closed | Layout polish ✅ v6.7.5 · BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2; secContent hotfix v6.7.4) · BL255 ✅ v6.7.0 (button + JSON-tag fixes v6.7.1) · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
-| New (filed 2026-05-05) | BL257 Identity/Telos · BL258 Algorithm Mode · BL259 Evals · BL260 Council | PAI features dropped from BL221 closure; retro-filed for tracking. Plan: `docs/plans/2026-05-05-bl257-260-pai-parity-plan.md` |
-| New (filed 2026-05-05) | BL261 Settings → Automata tab card padding | v6.7.6 padding-fix follow-up; Pipeline / Orchestrator / Skills cards still flush against card edge |
-| New (filed 2026-05-05) | BL262 Claude "out of extra usage" rate-limit prompt detection | New prompt format with `· resets <time> (<tz>)` not in existing detector regex set |
-| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
+| Open bugs | 1 | BL294 — session registry slow-drip drop on daemon restart |
+| Open features | 1 | BL241 — Matrix.org channel (design interview) |
+| Active backlog | 5 | BL292 · BL293 · BL295 · BL296 · BL300 |
+| Deferred (no decision needed) | 2 | BL299 · BL300 |
+| Awaiting operator action | 1 | BL295 — Council LLM wiring (a/b/c decision) |
+| Recently closed | BL297 ✅ v6.22.3 · BL298 ✅ v6.22.3 | Council persona wizard + toast/error UX |
+| Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
 ## Unclassified
 
-_(empty — operator drop zone. The previous Automata mobile-overhaul block was filed pre-v6.13.x and verified live 2026-05-08; 16 of 19 sub-bullets had already shipped in the v6.6.0 → v6.13.14 patch chain. Closure summary at `docs/plans/2026-05-08-sprint-a-verification.md`. The 3 genuinely-outstanding items moved to BL292/293/294 below.)_
-
-- 📋 **BL292 — Generic mic helper attached to every large text input across PWA** (split out of Unclassified Automata block 2026-05-08). `micButtonHTML(targetId)` exists in `app.js:3583` since v5.26.8 but is only attached to a few inputs (wizard intent + title; Council intake; CSV-edit modal). Operator: "all input boxes should have mic so can be done with voice prompts (standard for all large text input areas)". Audit every `<textarea>` + multi-line `<input>` in `app.js` and attach the mic via the existing helper. Acceptance: every operator-facing text input ≥3 rows OR ≥40-char content has a mic affordance to its right; no exceptions. 7-surface parity: PWA only — no API change. Mobile-Parity Rule: file `dmz006/datawatch-app` issue so the mobile companion mics every equivalent input.
-
-- 📋 **BL293 — Automata card button consistency across all PRD states** (split out of Unclassified Automata block 2026-05-08). Operator: "buttons should be on all automata; i noticed not all had all buttons not sure why". Audit `prd-card` rendering in `app.js:renderPRDRow` + per-state filters in `batchAutomataAction` to verify every state (`draft / needs_review / approved / running / completed / cancelled / archived`) shows the documented button set. Spawn smoke-* PRDs in each state for live verification (cleanup tracked). Acceptance: button-set-per-state matrix documented in code comment + verified against live PRDs in each state; no missing-button surprises. 7-surface parity: PWA only. Mobile-Parity: file `dmz006/datawatch-app` issue.
-
-- 📋 **BL294 — Top-level Run Scan / Run Rules buttons in detail-view persistent header** (split out of Unclassified Automata block 2026-05-08). Operator: "should scan page and rules check pages have 'run scan' or should those be action buttons at top of automata since if they are enabled it should be part of the workflow". Currently the run controls live INSIDE the Scan/Rules tabs; surface them as visible action buttons in the detail-view persistent header (`_renderDetailHeader`) alongside Edit Spec / Settings / Clone / Delete. Gate visibility on `prd.scan_enabled` / `prd.rules_enabled` AND on a state where running them makes sense (not `archived` / `cancelled`). Acceptance: when a PRD has scan or rules enabled, operator sees the action button at top of the detail view without needing to switch tabs. 7-surface parity: REST endpoints exist (`POST /api/autonomous/prds/{id}/scan`, `…/rules`); MCP/CLI/comm already proxy. PWA-add only. Mobile-Parity: file `dmz006/datawatch-app` issue.
-
-- ⚠️ **BL295 — Council Mode LLMFn never wired (operator decision needed)** (filed 2026-05-08; reframed after live audit). Operator's original Unclassified bullet pointed at the PWA card description "stubbed responses; real LLM debate in v6.11.x". The PWA copy WAS stripped in v6.12.1 (BL275) — but live audit found the backend `internal/council/council.go:425 (o *Orchestrator).respond()` still falls back to a STUB string when `LLMFn == nil`, and a repo-wide grep of `LLMFn\s*=` returns ZERO assignments. So Council runs in production still emit `"[name] STUB — proposal length …"` (line 431) and `synthesize()` still concatenates with `"(stub mode)"` (line 447). The v6.11.x follow-up to wire real LLM inference was scoped but never landed. **Operator decision needed:** (a) Wire LLMFn now using existing /api/ask Ollama/OpenWebUI pattern (medium effort, ~1 file change to council/Orchestrator constructor + a few lines in main.go). (b) Defer + change the stub copy to be honest: "Council Mode is currently a framework / stub-only — real LLM inference is not yet wired" so operator isn't misled. (c) Delete Council Mode entirely if it isn't going to ship for real.
-
-- ✅ **BL298 — Toast / error UX: bigger font + longer dwell + X-to-ack for app errors** (operator-filed 2026-05-08, closed v6.22.3). Operator: "error messages need to be bigger font, hard to read (2x at least) and stay on screen longer if they are errors for the app, not messages from alerts from other sessions. In session pwa errors or notices for the session - X to close to ack seeing them". Distinguish error-class toasts (app failures: backend errors, mic failure, transcribe error, AI-assist failure, etc.) from notification-class toasts (alerts from other sessions, transcribed-success, etc.). **App-error toasts**: 2× font size, indefinite dwell until acknowledged, explicit ✕ close button. **Session-notification toasts**: keep current 2-6 second auto-dismiss. New `showError(msg)` helper alongside existing `showToast(msg, kind, ms)`. Acceptance: PWA errors visible from across the room, never miss-able by accidental scroll. 7-surface parity: PWA + mobile (mobile may need separate companion implementation). Mobile-Parity: file `dmz006/datawatch-app` issue once shipped.
-
-- ✅ **BL297 — Council Mode: LLM-assisted persona wizard for "Add Persona" flow** (operator-filed 2026-05-08, closed v6.22.3 with full 7-surface parity + Edit + Re-interview). Operator: "in settings/automata/council mode. when adding a persona it should be like the user interview process and start a questionnaire with LLM agent (selectable) that you give title and possible short description and then llm makes it into appropriate prompt and ability to tune/resubmit before saving. this way it's a better workflow than typing it all and the prompt will be better crafted by llm". Mirror the existing Identity Wizard interview pattern (`openIdentityWizard()` / `_renderIdentityWizard()`). Backend uses `/api/ask` (BL34) with operator-selected backend (Ollama / OpenWebUI / etc.) to draft the system_prompt from {title, short_description}; tune-loop sends the operator's edits back as additional prompt context until satisfied; final save POSTs to `/api/council/personas`. Depends on BL295 (LLM wiring resolution) — `/api/ask` already works for one-shot LLM calls so this can ship even with Council in stub mode for runs. 7-surface parity: PWA-primary + maybe MCP `council_persona_wizard` later. Mobile-Parity: file once shipped.
-
-- 📋 **BL296 — Council Mode: add platform-engineer / network-engineer / data / privacy personas + document persona view/edit path** (split out of Unclassified 2026-05-08). Operator: "console mode - how do we add more persona? I'd like to add platform-engineer who is responsible for systems and operations of the running tech environment, network-engineer who is responsible for the networking/load balancing/boundries and considers load on the network, data who considers the ramificatoins of large data, connected data and things enterprise DBA handles, Privacy who is like security but for privacy, pii, etc. Let me know if any existing persona match those and how i can edit and or view the personna definitions." Audit existing personas in `internal/council/personas.go` (or wherever they live); add the 4 new personas if not already present (or document the equivalent existing ones); document operator path to view + edit personas (PWA / CLI / config-file). 7-surface parity required. Mobile-Parity: file `dmz006/datawatch-app` issue once view/edit lands in PWA.
-
-- ✅ **BL278 — Light mode / dark mode toggle in Settings → General (top of page)** — closed v6.13.11. Light palette on `[data-theme="light"]` selector with WCAG AA contrast on every text/UI colour; state-colour semantics preserved (running green, waiting blue, warning amber, error red, brand purple). Bootstrap script in `index.html` sets the attribute pre-paint to avoid FOUC; `setThemeMode()` persists to `localStorage['cs_theme']` (dark / light / system). System mode follows OS `prefers-color-scheme` live. Original-filed body kept below for reference.
-
-_(BL278-original body removed 2026-05-08 — was being mis-read as pending work; see ✅ closed entry above for the actual implementation in v6.13.11.)_
-
-- ❄️ **BL281 (frozen) — Vault AppRole + Kubernetes auth methods** (filed v6.15.0). v6.15.0 ships static-token auth only. AppRole (production-recommended; `role_id` + `secret_id` rotation) and Kubernetes (pod serviceaccount JWT → Vault TokenReview) auth methods slot in via the `vaultAuthenticator` interface already present in `internal/secrets/vault.go`. Operator-decided 2026-05-07 BL267 interview Q2.
-
-- ❄️ **BL282 (frozen) — Vault cache + invalidation API** (filed v6.15.0). v6.15.0 fetches fresh on every Vault read. A configurable in-memory cache with TTL (default ~5 min) + a `POST /api/secrets/cache/clear` invalidation surface (CLI / MCP / comm parity) lets operators trade rotation latency for request volume. Operator-decided 2026-05-07 BL267 interview Q5.
-
-- ❄️ **BL283 (frozen) — Vault per-actor tokens + Vault-side scope enforcement** (filed v6.15.0). v6.15.0 uses defense-in-depth (daemon `CheckScope` first, then one operator-class Vault token). Full per-actor tokens with policies derived from datawatch scope tags + the tag-aware path layout would let Vault enforce blast-radius reduction natively. Builds on the existing `path_layout: tag_aware` opt-in. Operator-decided 2026-05-07 BL267 interview Q3 + Q8.
-
-- ❄️ **BL284 (frozen, umbrella) — Better secrets management** (filed v6.15.0). Per-secret backend mobility (Move-to-backend button + bulk migrate CLI/MCP/comm), cross-backend search, last-used / rotation-age metadata, expiration warnings, multi-backend resolution. v6.15.0 ships VaultStore as a drop-in single-backend choice; the operator's stated "Vault may only be used for a single agent, not all of datawatch" model needs the multi-backend refactor that lives here. Operator-flagged 2026-05-07 BL267 interview Q9.
-
-- ❄️ **BL285 (frozen) — Vault failure alerting + SRE-style stability** (filed v6.15.0). v6.15.0 surfaces Vault state via the Settings → Secrets card + nav badge. SRE-grade: alerts when Vault transitions unreachable (route through existing comm channels), retry/backoff on transient failures, optional grace-window cache for short blips, healthcheck cadence + SLO surfaces. Operator-flagged 2026-05-07 BL267 interview Q10.
-
-- ✅ **BL267 — Open-source vault backend (HashiCorp Vault / OpenBao)** — closed v6.15.0. Drop-in `VaultStore` implementing the existing `Store` interface. KV v2 only, static-token auth (BL281 frozen for AppRole + Kubernetes), flat path layout default + tag_aware opt-in (BL283 frozen for per-actor + Vault-side enforcement), no cache (BL282 frozen), fail-closed on Vault unreachable (BL285 frozen for alerting), defense-in-depth scope check (daemon `CheckScope` first, then Vault read), Vault Enterprise namespace supported, audit log Details captures `X-Vault-Request-ID` + `vault_status`. Multi-backend mobility (Move + migrate) deferred to BL284 umbrella. 7-surface parity for the status surface (REST `GET /api/secrets/vault/status`, MCP `secrets_vault_status`, CLI `datawatch secrets vault status`, comm `secrets vault status`, PWA Settings → Secrets card status row, locale × 5, YAML `secrets.vault.*`). Mobile-Parity issue filed.
-
-- ✅ **BL279 — Embedded docs viewer: tighter spacing + cross-doc links** — closed v6.14.0. Viewer CSS tightened in v6.13.10 + v6.13.13 (line-height 1.55→1.35, p+p rule removed, all heading top-margins drastically reduced). Full-corpus See-also sweep landed v6.14.0: 48 docs (all 24 how-tos, all 17 API references, architecture / agents / addons / backends / memory / skills / profiles) carry a marker-guarded See-also footer with 3-7 cross-links each. Idempotent — `<!-- BL279 see-also footer -->` marker prevents re-run duplication. Original-filed body kept below for reference.
-
-_(BL279-original body removed 2026-05-08 — was being mis-read as pending work; see ✅ closed entry above for the actual implementation in v6.13.10/v6.13.13/v6.14.0.)_
-
-- ✅ **BL277 — Remove the yellow "Input Required" popup entirely** — closed v6.13.9. `dismissNeedsInputBanner`, `buildNeedsInputBannerHTML`, all 3 dismiss callers, `state.needsInputDismissed`, `state.needsInputLastShown`, `<div id="needsInputSlot">` markup, and all `.needs-input-banner / -badge / -body / -tip / -dismiss` CSS rules removed. Last-response affordance (📄 icon + viewer modal) preserved per operator: "useful for auto, watch and from sessions screen". The `.input-bar.needs-input` yellow border stays as the only `waiting_input` visual cue. Original-filed body kept below for reference.
-
-_(BL277-original body removed 2026-05-08 — was being mis-read as pending work; see ✅ closed entry above for the actual implementation in v6.13.9.)_
-
-- ✅ **BL287 (closed v6.20.0) — PWA mic input regressed: no "processing" feedback + transcription doesn't land** [Fix: visible toasts at every state transition (recording → transcribing → transcribed/empty/error) + console.log/warn/error at every step + defensive state.voice.chunks access.] (operator-filed 2026-05-07). Previous behavior: tap 🎤 in any input area → speak → tap stop → "processing…" indicator appears while the transcription backend (Whisper / configured voice backend) returns text → text lands in the input field, ready to send. Current behavior: no "processing" indicator appears AND the transcribed text never reaches the input field. Likely culprits: (a) the voice-input handler stopped wiring into the input element after a recent app.js refactor; (b) the backend response shape changed and the JS unmarshal silently drops the result; (c) the "processing" UI element was removed by a CSS sweep without restoring the JS hook. Surfaces affected: every input area that exposes the mic button (session input bar, automaton wizard intent textarea, every chat-mode input). **Repro:** open any session detail or the new-automaton wizard → tap the 🎤 button → speak → tap stop. Acceptance: (1) "Processing…" indicator visible from stop-tap until backend response, (2) transcribed text lands in the focused input field, (3) error state surfaces a clear toast if the backend fails. 7-surface check: PWA only — no API change unless the backend protocol drifted.
-
-- ✅ **BL288 (closed v6.19.0) — Settings → About card missing proper left + bottom padding** [Fix: .settings-section .settings-row padding: 6px 14px (was 6px 0) + .settings-section padding-bottom: 6px.] (operator-filed 2026-05-07). The About card on Settings → About reads flush against the card's left edge and runs to the bottom edge with no gutter. Should match the inset other Settings cards use (the v6.12.1 BL272 sweep set `.settings-section > .settings-row` + `div[id^="settings-sec-"]` to `padding: 8px 14px`). Likely cause: an inline-style override OR a non-standard wrapper around the About card body that bypasses the BL272 selector. Repro: Settings → About → observe Version / Daemon / Update / Language / Theme rows hugging the left edge and the last row touching the card's bottom border. Fix: ensure the About-card body wrapper inherits the standard `.settings-section`-child padding, or add explicit `padding: 8px 14px 12px` to whatever inner div renders the About rows.
-
-- ✅ **BL289 (closed v6.22.2) — Document Ollama use across every datawatch feature + tested no-GPU fallback** [Fix: docs/install-ollama-host.md enumerates 7 Ollama-using features with degraded-mode behavior (v6.20.0); per-path fallback tests verified — `internal/server/bl34_ask_test.go:TestBL34_Ask_OllamaNotConfigured` covers /api/ask, `internal/evals/evals_test.go` covers llm_rubric stub, `internal/autonomous/autonomous_test.go` covers decompose via DecomposeFn injection, `internal/docsindex/vector_test.go:TestHybridSearcher_VectorPrimaryBM25Fallback` covers BL274 vector → BM25 fallback, `internal/server/docs_translator_test.go:TestNewDocsTranslator_NilWhenUnconfigured` covers BL274 LLM translator, NEW `internal/council/no_llm_test.go` covers Council stub fallback (filed v6.22.2 to close the last gap). Memory embedder fallback covered transitively via vector test.] (operator-filed 2026-05-07).
-
-- ✅ **BL290 (closed v6.19.0) — `datawatch-stats --help` shows single-dash flag form ("-datawatch", "-inseure-tls") instead of double-dash ("--datawatch", "--insecure-tls"); also typo in "inseure"** [Fix: custom flag.CommandLine.Usage in cmd/datawatch-stats prints --<name> form; typo claim was operator memory error (source spelled correctly).] (operator-filed 2026-05-07). The standard Go `flag` package emits single-dash flag names by default in `-h` output, but the docs (`docs/install-ollama-host.md`) show `--datawatch …`, `--name …`, `--insecure-tls`. Operators copy-pasting from the help text get the single-dash form which Go's flag package does accept, but it's inconsistent and confusing — and the docs use double-dash. **Two fixes in `cmd/datawatch-stats/`:** (1) switch from stdlib `flag` to `pflag` (or wrap the help printer) so `--name` is the canonical form in help and accepted on the command line; (2) fix the typo `-inseure-tls` → `-insecure-tls` (missing 'c'). Acceptance: `datawatch-stats --help` shows `--datawatch`, `--name`, `--token-file`, `--push-interval`, `--listen`, `--insecure-tls` (all double-dash); single-dash form continues to work for backward compat.
-
-- ✅ **BL291 (closed v6.20.0) — Observer settings not findable in PWA; need a dedicated card or sub-tab** [Fix: new Federated Observer card in Settings -> General with one-button Open-Observer-view jump + help text + 5 locale keys x 5 bundles + datawatch-app#88.] (operator-filed 2026-05-07). Operator could not locate where to manage federated observer config + peer registry from the PWA. The Federated Peers card is on Settings → Monitor, but observer-mode toggle, push targets, and peer registry CRUD aren't all in one place. Confirm + add: (1) one Settings card that contains all observer config (mode A/B/C, peer registry CRUD, push interval, parent URL); (2) cross-link from Settings → Monitor → Federated Peers card to that settings card; (3) one-line splash on first PWA load if the daemon is shape A/B/C and operator hasn't visited the observer settings yet. 7-surface parity: REST + MCP + CLI + comm already cover the operator-set; the gap is PWA + mobile only. Mobile-Parity: file matching `dmz006/datawatch-app` issue once the PWA card lands.
-
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
+
+---
 
 ### v6.12.0 batch — closed 2026-05-05
 
@@ -127,13 +77,35 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 - ✅ **BL271** — `wizard-grid-2col` (`style.css:752` v6.12.4) + mobile-first `wizard-mobile` overhaul (`style.css:770` v6.13.1) + Start-from-template strip first (`app.js:10247`). Closed v6.13.1.
 - ✅ **BL272** — `.settings-section > .settings-row` 8 px 14 px inset normalized + 6 px inter-card gap (`style.css:2844-2866`). Closed v6.12.1 (v6.12.4 gap retune).
 - ✅ **BL273** — `/docs/` is served by the FileServer (`internal/server/server.go:459` `//go:embed web` + `web/docs/` mirror), and every `?`/`docs` link in the PWA goes through `defsLink()`/`docsLink()` (`app.js:4690-4713`) targeting `/diagrams.html#docs/...` — no GitHub round-trip. Closed v6.13.7 (verified; was effectively shipped earlier).
-- 🐛 **BL294** — **Session registry slow-drip drop on daemon restart** (operator-filed 2026-05-06). Sessions are silently being removed from `~/.datawatch/sessions.json` across daemon restarts even though their on-disk session dirs (`~/.datawatch/sessions/<full-id>/session.json`) remain intact. Triggered today: a 2-day-old running Claude session (`ralfthewise-a95f`, alive on tmux since May 4) vanished from the API session list after the v6.13.6 → v6.13.7 daemon restart, even though its tmux pane was still attached and its `session.json` on disk was current. Recovery via `POST /api/sessions/import {dir:"ralfthewise-a95f"}` worked instantly — the data was never lost on disk. **Evidence (from `~/.datawatch/daemon.log`):** the BL93 reconcile-with-orphans line fires only when orphans exist; it appeared exactly **3 times in 23.7 MB of log**: once on April 18 v3.0.1 startup (158 orphans, before a95f existed) and three times today during v6.13.7+v6.13.8 startups (185 orphans including a95f). Between v3.0.1 and v6.13.6 (≈30 daemon restarts including all v6.13.0–6 boots after a95f was created) the orphan list was empty — meaning sessions.json was being maintained correctly. The orphan count drifted 158→185 over a month, ≈1 dropped session per release. **No operator delete:** `~/.datawatch/audit.log` has zero `session_delete` actions for any of the dropped IDs. **Smoking gun in v6.13.7 startup log (line 255030–255044):** the `[channel] using native Go bridge` and `[ebpf] Capabilities missing … Attempting to set capabilities (may prompt for sudo)…` lines appear **twice consecutively** before `[warn] Could not set CAP_BPF: setcap failed: exit status 1`, suggesting the daemon re-execve'd itself trying to elevate for CAP_BPF and **two Manager instances briefly shared `~/.datawatch/sessions.json`**. With no file locking around `Store.persist()` (`internal/session/store.go:230`) the last writer wins and one Manager's view (likely a fresh empty-ish in-memory state from the new exec instance) overwrites the full state. **Likely root-cause classes (most → least likely):** (a) daemon re-execve race during privilege elevation in the eBPF/CAP_BPF setcap path; (b) `datawatch update && datawatch restart` SIGTERM Save() racing the new daemon's first Save() (also explains the slow drift, as not every release had the eBPF re-execve double-init); (c) some channel/cleanup path calling `store.Delete()` without an audit entry (less likely — would need direct evidence). **Mitigation already shipped (this fix):** `cmd/datawatch/main.go` startup now always calls `ReconcileSessions(true)` so any orphan dir is auto-imported on every boot. `cfg.Session.ReconcileOnStartup` retained for backward compat but no longer gates behavior. `internal/session/reconcile.go` gained `ReconcileLiveSessions()` + `ReconcileResult.LiveOrphans` field so callers can render "X live, Y stopped". 8/8 reconcile tests pass; build green. Self-healing on next restart regardless of root cause. **Still open (the actual bug):** find and fix the source-level race so sessions.json doesn't get corrupted in the first place. Suspected sites to audit: (1) eBPF capability re-exec path (search for `setcap`/`syscall.Exec` in `internal/observer/`); (2) `Manager.Shutdown` flush ordering vs SIGTERM handler; (3) add `flock(2)` or `O_EXCL` rename around `Store.persist()` so concurrent writers don't truncate each other; (4) consider per-session `session.json` as the canonical store and treat `sessions.json` as a derived index rebuilt at boot from session dirs (would make the slow-drip impossible). **Repro hint:** trigger a daemon restart while at least one session is alive AND `setcap` will fail (e.g. no sudo). Watch `sessions.json` modtime + content before/after. Affected: any user who restarts the daemon ≥1×/day; data loss is opaque (no logs, no audit) until BL93 dry-run reconcile is read by an operator. **Status: 🐛 Open — root cause speculative, mitigation shipped; will dig later.**
-
 - ✅ **BL274 — Docs-as-MCP-interface** (operator-filed 2026-05-05; **closed 2026-05-08 in v6.21.0**). 6 sprints, design captured in `docs/plans/2026-05-07-bl274-docs-as-mcp-plan.md`. Shipped: hybrid index (vector primary + BM25 fallback), 4 MCP tools (`docs_search` / `docs_read` / `docs_list_howtos` / `docs_apply`), 22/22 curated howtos with hand-authored `exec_steps` front-matter, plan-then-execute with approval-token round-trip + per-step risk gate, in-process MCP dispatcher (`internal/mcp.Server.Invoke`), LLM-translation fallback (Ollama/OpenWebUI) for non-curated howtos, fsnotify-driven plugin + skill auto-indexer with pending-trust queue, all-opt-in trust model, 7-surface parity (REST + MCP + CLI + comm + PWA + locale × 5), 3 new AGENT.md rules + 3 CI lint scripts wired into release-smoke, new `docs/howto/docs-as-mcp.md`, `datawatch-definitions.md` update. Hard constraint enforced: no GPU required; every Ollama-using path has a tested fallback. Six minor releases: v6.16.0 → v6.17.0 → v6.18.0 → v6.19.0 → v6.20.0 → v6.21.0; one critical patch v6.18.1 (chunker frontmatter fix). 1847+ tests pass; smoke 100%+; mobile-parity issues filed at every release.
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
-_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research. GH#37 promoted to BL253._
+_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research. GH#37 promoted to BL253. 2026-05-11 v7.0.0 refactor: BL292/293/295/296 promoted to Active backlog; BL294 moved to Open Bugs; BL297/298 moved to Recently closed; BL299/BL300 filed._
+
+---
+
+#### BL292 — Generic mic helper attached to every large text input across PWA
+
+(Split out of Unclassified Automata block 2026-05-08.) `micButtonHTML(targetId)` exists in `app.js:3583` since v5.26.8 but is only attached to a few inputs (wizard intent + title; Council intake; CSV-edit modal). Operator: "all input boxes should have mic so can be done with voice prompts (standard for all large text input areas)". Audit every `<textarea>` + multi-line `<input>` in `app.js` and attach the mic via the existing helper. Acceptance: every operator-facing text input ≥3 rows OR ≥40-char content has a mic affordance to its right; no exceptions. 7-surface parity: PWA only — no API change. Mobile-Parity Rule: file `dmz006/datawatch-app` issue so the mobile companion mics every equivalent input.
+
+**Status:** 📋 Open
+
+---
+
+#### BL293 — Automata card button consistency across all PRD states
+
+(Split out of Unclassified Automata block 2026-05-08.) Operator: "buttons should be on all automata; i noticed not all had all buttons not sure why". Audit `prd-card` rendering in `app.js:renderPRDRow` + per-state filters in `batchAutomataAction` to verify every state (`draft / needs_review / approved / running / completed / cancelled / archived`) shows the documented button set. Spawn smoke-* PRDs in each state for live verification (cleanup tracked). Acceptance: button-set-per-state matrix documented in code comment + verified against live PRDs in each state; no missing-button surprises. 7-surface parity: PWA only. Mobile-Parity: file `dmz006/datawatch-app` issue.
+
+**Status:** 📋 Open
+
+---
+
+#### BL296 — Council Mode: add platform-engineer / network-engineer / data / privacy personas + document persona view/edit path
+
+(Split out of Unclassified 2026-05-08.) Operator: "console mode - how do we add more persona? I'd like to add platform-engineer who is responsible for systems and operations of the running tech environment, network-engineer who is responsible for the networking/load balancing/boundries and considers load on the network, data who considers the ramificatoins of large data, connected data and things enterprise DBA handles, Privacy who is like security but for privacy, pii, etc. Let me know if any existing persona match those and how i can edit and or view the personna definitions." Audit existing personas in `internal/council/personas.go` (or wherever they live); add the 4 new personas if not already present (or document the equivalent existing ones); document operator path to view + edit personas (PWA / CLI / config-file). 7-surface parity required. Mobile-Parity: file `dmz006/datawatch-app` issue once view/edit lands in PWA.
+
+**Status:** 📋 Open
 
 ---
 
@@ -147,13 +119,21 @@ Operator-filed 2026-05-05 alongside the README Secrets Manager wording fix. The 
 
 Acceptance: same `${secret:name}` resolution + scope enforcement; one new `SecretsBackend` impl alongside `KeePassStore` / `OnePasswordStore`; YAML config block; smoke + 7-surface parity.
 
-**Status:** 📋 Open
+**Status:** ✅ Closed v6.15.0 — VaultStore (HashiCorp Vault / OpenBao) shipped. See Open Bugs section for BL281–BL285 (frozen follow-ups).
 
 ---
 
 ## Open Bugs
 
-_(none truly open — every entry below is `✅ Closed`. Per the no-reuse rule, BL numbers stay in place; the body is sticky for one release cycle, then archived to **Completed Backlog** below.)_
+#### BL294 — Session registry slow-drip drop on daemon restart (operator-filed 2026-05-06)
+
+Sessions are silently being removed from `~/.datawatch/sessions.json` across daemon restarts even though their on-disk session dirs (`~/.datawatch/sessions/<full-id>/session.json`) remain intact. Triggered 2026-05-06: a 2-day-old running Claude session (`ralfthewise-a95f`, alive on tmux since May 4) vanished from the API session list after the v6.13.6 → v6.13.7 daemon restart, even though its tmux pane was still attached and its `session.json` on disk was current. Recovery via `POST /api/sessions/import {dir:"ralfthewise-a95f"}` worked instantly — the data was never lost on disk. **Evidence (from `~/.datawatch/daemon.log`):** the BL93 reconcile-with-orphans line fires only when orphans exist; it appeared exactly **3 times in 23.7 MB of log**: once on April 18 v3.0.1 startup (158 orphans) and three times during v6.13.7+v6.13.8 startups (185 orphans including a95f). The orphan count drifted 158→185 over a month, ≈1 dropped session per release. **No operator delete:** `~/.datawatch/audit.log` has zero `session_delete` actions for any of the dropped IDs. **Smoking gun in v6.13.7 startup log:** the `[channel] using native Go bridge` and `[ebpf] Capabilities missing…` lines appear **twice consecutively**, suggesting the daemon re-execve'd itself trying to elevate for CAP_BPF and **two Manager instances briefly shared `~/.datawatch/sessions.json`**. With no file locking around `Store.persist()` the last writer wins and one Manager's view overwrites the full state. **Likely root-cause classes:** (a) daemon re-execve race during privilege elevation in the eBPF/CAP_BPF setcap path; (b) `datawatch update && datawatch restart` SIGTERM Save() racing the new daemon's first Save(); (c) some channel/cleanup path calling `store.Delete()` without an audit entry. **Mitigation shipped:** `cmd/datawatch/main.go` startup now always calls `ReconcileSessions(true)` so any orphan dir is auto-imported on every boot. **Still open (the actual bug):** find and fix the source-level race. Suspected sites: (1) eBPF capability re-exec path; (2) `Manager.Shutdown` flush ordering vs SIGTERM handler; (3) add `flock(2)` or `O_EXCL` rename around `Store.persist()`; (4) consider per-session `session.json` as canonical store, treating `sessions.json` as a derived index rebuilt at boot from session dirs.
+
+**Status:** 🐛 Open — root cause speculative, mitigation shipped v6.13.x
+
+---
+
+_(Older entries below are `✅ Closed`. Per the no-reuse rule, BL numbers stay in place; the body is sticky for one release cycle, then archived to **Completed Backlog** below.)_
 
 #### BL246 — Automata tab UX overhaul (filed 2026-05-04)
 
@@ -523,6 +503,29 @@ _(empty — BL173-followup closed v5.28.2. BL218/BL219/BL226/BL228 closed v6.0.6
 
 **Quick map:** items where I can keep working sit in **Active work** below. Items where I'm blocked on an operator decision sit in **Awaiting operator action** with a structured "what's needed + recommendation" per item. Items shipped recently sit in **Recently closed** for one release cycle; long-term / external items sit in **Frozen / External**.
 
+### Open backlog — deferred (filed, no decision needed, pick up when ready)
+
+#### BL299 — Narrow-screen header responsive layout (PWA + mobile)
+
+On narrow viewports (< 420px), card/session header rows must:
+- ID chip always visible, anchor-left, never truncated.
+- Title truncates with ellipsis; `max-width` relative to remaining space after ID chip.
+- Right-side actions (status badge, action buttons, kebab menu) wrap to a second flex-row below, right-aligned (`justify-content: flex-end`).
+- Applies to: Automata cards, session rows, Council run rows, LLM/ComputeNode cards.
+- Mobile-parity: one datawatch-app issue per change.
+
+**Status:** 📋 Open (deferred)
+
+---
+
+#### BL300 — Alert popup must not auto-open
+
+The alert dock / notification popup must never open automatically. Show only a pill/badge count on new alerts; open exclusively on explicit user click/tap. Applies to all surfaces: PWA alert dock, any in-app notification overlay, mobile equivalent. Note: alpha.37e fixed the main dock-panel case; this BL tracks any regression or remaining auto-open path.
+
+**Status:** 📋 Open (deferred)
+
+---
+
 ### Active work (no decision needed — keep iterating)
 
 > **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
@@ -812,6 +815,22 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 
 ### Awaiting operator action
 
+#### BL295 — Council Mode LLMFn never wired (operator decision needed)
+
+(Filed 2026-05-08; reframed after live audit.) Operator's original Unclassified bullet pointed at the PWA card description "stubbed responses; real LLM debate in v6.11.x". The PWA copy WAS stripped in v6.12.1 (BL275) — but live audit found the backend `internal/council/council.go:425 (o *Orchestrator).respond()` still falls back to a STUB string when `LLMFn == nil`, and a repo-wide grep of `LLMFn\s*=` returns ZERO assignments. So Council runs in production still emit `"[name] STUB — proposal length …"` (line 431) and `synthesize()` still concatenates with `"(stub mode)"` (line 447). The v6.11.x follow-up to wire real LLM inference was scoped but never landed.
+
+**Operator decision needed — choose one:**
+
+- **(a)** Wire LLMFn now using existing `/api/ask` Ollama/OpenWebUI pattern (medium effort, ~1 file change to `council/Orchestrator` constructor + a few lines in `main.go`).
+- **(b)** Defer + change the stub copy to be honest: "Council Mode is currently a framework / stub-only — real LLM inference is not yet wired" so operator isn't misled.
+- **(c)** Delete Council Mode entirely if it isn't going to ship for real.
+
+**Recommendation:** Option (a) — the LLM Registry shipped in v7.0 alpha.2 and Council is already wired to real LLMs per-persona via the dispatcher as of alpha.3; confirm this is resolved or track remaining gaps.
+
+**Status:** ⚠️ Awaiting operator decision (a/b/c)
+
+---
+
 #### BL241 — Matrix.org channel: design interview needed
 
 **What's needed:** Operator-driven design session to choose the Matrix integration approach.
@@ -838,6 +857,12 @@ All 3 phases shipped (per-pod sidecar, OAuth device flow, ACL generator + push).
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v7.0.0-alpha.38 (2026-05-11):** LLM CLI parity (models list/add/remove, in-use, refresh, reassign, force-delete). Observer fix for compute-node detail when monitoring_endpoint not set. Automata PWA modals use showConfirmModal instead of browser confirm(). Rule-violation audit batch: version sync (api.go → 7.0.0-alpha.38), CommFirehose REST+PWA+CLI parity (llm_ref/max_parallel/comm_firehose on /api/council/config), locale fixes (prd_* keys + council_cfg_* × 5 bundles), README rewrite, BL299+BL300 filed.
+
+**v7.0.0 alpha.1–alpha.37e (2026-05-08–2026-05-11):** ComputeNode registry (add/edit/delete/monitor/observer-peer integration), LLM Registry+dispatcher (ollama/openwebui/opencode/claude adapters, ordered failover, enabled-models, in-use bindings, reassign, force-delete), Council wired to real LLMs per-persona, SSE live updates for LLM/compute panels, Scoped memory with namespace isolation, Ollama Marketplace (model discovery/pull/progress), Claude Code hooks + Status board (hook-event stream, per-session state display), Alert dock pill-only (no auto-open), showConfirmModal replacing browser confirm().
+
+**v6.22.3 (2026-05-08):** BL297 — Council "Add Persona" wizard (SQLite drafts, LLM-assisted one-shot + edit + re-interview, 7-surface parity). BL298 — Toast/error UX (showError() with 16px font, no auto-dismiss, ✕ button; ~15 app error paths converted).
 
 **v6.6.0 (2026-05-04):** BL246 fully closed (items 1, 5, 6 — tabbed detail view with Overview/Stories/Decisions/Scan, persistent header toolbar exposing every PRD API verb as a button, split Edit Spec / Settings modals, hidden-by-default per-card checkboxes with select-mode toggle); BL252 closed (Phases 6 + 7 collected — header nav titles, FAB titles, terminal/voice states, status indicators, update progress, memory tools, audit/analytics empty states, Signal device link states, KG queries, toast messages — 69 keys this cut, ~190 total across 7 phases). Smoke: 91/0/6.
 
