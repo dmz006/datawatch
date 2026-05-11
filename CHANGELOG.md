@@ -5,7 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-_(nothing pending)_
+### Deferred — BL299 — Narrow-screen header responsive layout (PWA + mobile)
+
+On narrow screens (≤ ~375px viewport width) the card/session header row may only
+fit the item ID and a truncated title side-by-side. Accepted design:
+
+- **ID chip always visible** — never truncated; anchor-left.
+- **Title truncates with ellipsis** — `text-overflow: ellipsis` + `max-width` relative to
+  remaining space after ID chip; never clips the ID.
+- **Right-side actions wrap to a second line** — status badge, action buttons,
+  kebab menu, etc. shift to a dedicated flex-row below the title on narrow
+  viewports; the row is right-aligned (`justify-content: flex-end`) so the
+  visual grouping is preserved.
+- Breakpoint: activate at container width < 420px (CSS `@container` or media
+  query); wider viewports keep the existing single-row layout unchanged.
+- Applies to: Automata card headers, session list rows, Council run rows,
+  LLM registry cards, ComputeNode cards — any header that already has a
+  right-side action cluster.
+- Mobile-parity: requires matching change in datawatch-app
+  (one per-change issue per mobile-parity rule).
 
 ## v7.0.0-alpha.38 — Observer fix + Automata PWA modals + LLM CLI parity
 

@@ -623,6 +623,31 @@ plugins:
   # Names to skip at discovery (manifests parsed but Enabled=false).
   disabled: []
 
+# ── Council Mode (v6.11.0 / v7.0.0) ──
+# Multi-persona structured debate orchestrator. All fields configurable at
+# runtime via PATCH /api/council/config, `datawatch council config set`,
+# Settings → Automata → Council Mode config section (PWA), or comm verb
+# `council config set <key> <value>`.
+council:
+  # LLM registry entry name used for all persona inference and synthesis.
+  # Empty = uses the default entry if only one is registered. Set to the
+  # name of any entry from `datawatch llm list`.
+  llm_ref: "ollama"
+
+  # Per-round maximum concurrent persona calls. 0 = fully serial.
+  # Higher values speed up long debates but increase load on the LLM node.
+  max_parallel: 2
+
+  # When true, every persona_response event is pushed to all configured
+  # comm channels (Signal/Telegram/etc.) in addition to the always-on
+  # milestone events (run_started, round_completed, synthesis, run_completed).
+  # Default false = milestones only.
+  comm_firehose: false
+
+  # How long persona-wizard draft entries are retained before auto-GC.
+  # 0 disables garbage collection entirely.
+  draft_retention_days: 7
+
 # ── Auto-Update ──
 # Automatic self-update configuration.
 update:

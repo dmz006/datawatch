@@ -61,8 +61,12 @@ func newCouncilConfigCmd() *cobra.Command {
 	setCmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Update one Council config key",
-		Long:  "Currently supported keys:\n  draft-retention-days <N>   set persona-wizard draft GC retention (days; 0 disables)",
-		Args:  cobra.ExactArgs(2),
+		Long: "Supported keys:\n" +
+			"  draft-retention-days <N>   persona-wizard draft GC retention (days; 0 disables)\n" +
+			"  llm-ref <name>             LLM registry entry used for debates\n" +
+			"  max-parallel <N>           per-round persona concurrency (0 = serial)\n" +
+			"  comm-firehose <true|false>  push every persona response to comm channels",
+		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, val := args[0], args[1]
 			switch key {
@@ -71,8 +75,18 @@ func newCouncilConfigCmd() *cobra.Command {
 				if err != nil || n < 0 {
 					return fmt.Errorf("draft-retention-days must be a non-negative integer, got %q", val)
 				}
-				body := map[string]any{"draft_retention_days": n}
-				return daemonJSON(http.MethodPatch, "/api/council/config", body)
+				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"draft_retention_days": n})
+			case "llm-ref", "llm_ref":
+				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"llm_ref": val})
+			case "max-parallel", "max_parallel":
+				n, err := strconv.Atoi(val)
+				if err != nil || n < 0 {
+					return fmt.Errorf("max-parallel must be a non-negative integer, got %q", val)
+				}
+				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"max_parallel": n})
+			case "comm-firehose", "comm_firehose":
+				b := val == "true" || val == "1" || val == "yes"
+				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"comm_firehose": b})
 			}
 			return fmt.Errorf("unsupported key: %s", key)
 		},

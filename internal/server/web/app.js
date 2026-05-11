@@ -18836,10 +18836,18 @@ function _renderCouncilPanel(panel, personas, runs) {
       }).join('');
   }
   // BL297 v6.22.4 — Council subsystem runtime config block (parity fix).
-  // Shows draft_retention_days; operator can edit + save inline.
+  // Shows draft_retention_days, llm_ref, max_parallel, comm_firehose; operator can edit + save inline.
   const cfgBlock = `<details style="margin-top:14px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);">
     <summary style="cursor:pointer;padding:6px 10px;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t('council_cfg_section')||'Council subsystem config')}</summary>
-    <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
+    <div style="padding:10px;display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_llm_ref_label')||'LLM registry entry for debates (e.g. ollama)')}</label>
+      <input id="councilCfgLLMRef" type="text" class="form-input" style="font-size:12px;padding:4px 6px;" placeholder="ollama" />
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_max_parallel_label')||'Per-round persona concurrency (0 = serial, default 2)')}</label>
+      <input id="councilCfgMaxParallel" type="number" min="0" class="form-input" style="width:120px;font-size:12px;padding:4px 6px;" />
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;">
+        <input id="councilCfgFirehose" type="checkbox" />
+        ${escHtml(t('council_cfg_firehose_label')||'Comm firehose — push every persona response to channels (default: milestones only)')}
+      </label>
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_retention_label')||'Persona-wizard draft retention (days; 0 disables auto-GC)')}</label>
       <div style="display:flex;gap:6px;align-items:center;">
         <input id="councilCfgRetention" type="number" min="0" class="form-input" style="width:120px;font-size:12px;padding:4px 6px;" />
@@ -18860,6 +18868,12 @@ function _renderCouncilPanel(panel, personas, runs) {
   apiFetch('/api/council/config').then(d => {
     const inp = document.getElementById('councilCfgRetention');
     if (inp) inp.value = (d && d.draft_retention_days != null) ? d.draft_retention_days : 7;
+    const llmRef = document.getElementById('councilCfgLLMRef');
+    if (llmRef) llmRef.value = (d && d.llm_ref) || '';
+    const maxP = document.getElementById('councilCfgMaxParallel');
+    if (maxP) maxP.value = (d && d.max_parallel != null) ? d.max_parallel : 2;
+    const fh = document.getElementById('councilCfgFirehose');
+    if (fh) fh.checked = !!(d && d.comm_firehose);
   }).catch(()=>{});
 }
 
@@ -18868,10 +18882,14 @@ window.councilSaveCfg = function() {
   const status = document.getElementById('councilCfgStatus');
   const v = parseInt((inp||{}).value || '', 10);
   if (isNaN(v) || v < 0) { showError('retention must be >= 0'); return; }
+  const llmRef = (document.getElementById('councilCfgLLMRef')||{}).value || '';
+  const maxPRaw = parseInt((document.getElementById('councilCfgMaxParallel')||{}).value || '2', 10);
+  const maxP = isNaN(maxPRaw) ? 2 : maxPRaw;
+  const firehose = !!(document.getElementById('councilCfgFirehose')||{}).checked;
   apiFetch('/api/council/config', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ draft_retention_days: v }),
+    body: JSON.stringify({ draft_retention_days: v, llm_ref: llmRef, max_parallel: maxP, comm_firehose: firehose }),
   }).then(() => {
     if (status) { status.textContent = '✓ saved'; setTimeout(()=>{ status.textContent=''; }, 2500); }
   }).catch(e => showError('Save failed', String(e.message||e)));

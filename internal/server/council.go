@@ -99,6 +99,9 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSONOK(w, map[string]any{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+			"llm_ref":              s.cfg.Council.LLMRef,
+			"max_parallel":         s.cfg.Council.MaxParallel,
+			"comm_firehose":        s.cfg.Council.CommFirehose,
 		})
 	case http.MethodPatch, http.MethodPut:
 		if s.cfgPath == "" {
@@ -106,7 +109,10 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			DraftRetentionDays *int `json:"draft_retention_days"`
+			DraftRetentionDays *int    `json:"draft_retention_days"`
+			LLMRef             *string `json:"llm_ref"`
+			MaxParallel        *int    `json:"max_parallel"`
+			CommFirehose       *bool   `json:"comm_firehose"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -119,6 +125,19 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			s.cfg.Council.DraftRetentionDays = *body.DraftRetentionDays
 		}
+		if body.LLMRef != nil {
+			s.cfg.Council.LLMRef = *body.LLMRef
+		}
+		if body.MaxParallel != nil {
+			if *body.MaxParallel < 0 {
+				http.Error(w, "max_parallel must be >= 0", http.StatusBadRequest)
+				return
+			}
+			s.cfg.Council.MaxParallel = *body.MaxParallel
+		}
+		if body.CommFirehose != nil {
+			s.cfg.Council.CommFirehose = *body.CommFirehose
+		}
 		if err := s.saveConfig(); err != nil {
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -126,6 +145,9 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 		s.auditCouncil("council_config", "council_config_update")
 		writeJSONOK(w, map[string]any{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+			"llm_ref":              s.cfg.Council.LLMRef,
+			"max_parallel":         s.cfg.Council.MaxParallel,
+			"comm_firehose":        s.cfg.Council.CommFirehose,
 			"status":               "ok",
 		})
 	default:

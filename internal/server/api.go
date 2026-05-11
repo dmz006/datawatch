@@ -97,7 +97,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "7.0.0-alpha.37c"
+var Version = "7.0.0-alpha.38"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3283,6 +3283,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// BL297 v6.22.4 — Council subsystem configuration.
 		"council": map[string]interface{}{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+			"llm_ref":              s.cfg.Council.LLMRef,
+			"max_parallel":         s.cfg.Council.MaxParallel,
+			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3637,6 +3640,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Council.DraftRetentionDays = n
 			}
+		case "council.llm_ref":
+			if s, ok := v.(string); ok {
+				cfg.Council.LLMRef = s
+			}
+		case "council.max_parallel":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Council.MaxParallel = n
+			}
+		case "council.comm_firehose":
+			cfg.Council.CommFirehose = toBool(v)
 
 		// Detection patterns
 		case "detection.prompt_patterns":
