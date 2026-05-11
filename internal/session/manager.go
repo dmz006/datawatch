@@ -2646,6 +2646,19 @@ func (m *Manager) Rename(id, name string) error {
 	return m.store.Save(sess)
 }
 
+// UpdateLLMRef changes the LLM registry binding for a session in-place.
+// Safe to call while the session is running — the next dispatch resolves
+// the new name.
+func (m *Manager) UpdateLLMRef(id, llmRef string) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.LLMRef = llmRef
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
 // SetAgentBinding records that this session lives inside the
 // parent-spawned worker `agentID`. F10 sprint 3.6 — once bound,
 // session API calls forward through /api/proxy/agent/{agentID}/...

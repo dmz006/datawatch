@@ -1879,6 +1879,8 @@ function renderSessionsView() {
     pool = pool.filter(s => s.state === 'waiting_input');
   } else if (chip === 'done') {
     pool = pool.filter(s => DONE_STATES.has(s.state));
+  } else if (chip && chip !== 'all') {
+    pool = pool.filter(s => s.state === chip);
   }
   if (filterText) {
     pool = pool.filter(s =>

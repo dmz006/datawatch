@@ -2223,6 +2223,34 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
 
+// POST /api/sessions/set_llm_ref {"id":"...","llm_ref":"..."}
+// Updates a session's LLM registry binding in-place (safe while running).
+func (s *Server) handleSetSessionLLMRef(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID     string `json:"id"`
+		LLMRef string `json:"llm_ref"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.ID == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.UpdateLLMRef(req.ID, req.LLMRef); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": req.ID, "llm_ref": req.LLMRef}) //nolint:errcheck
+}
+
 // handleKillSession terminates a running or waiting session.
 func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

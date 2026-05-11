@@ -448,8 +448,7 @@ func (s *Server) handleLLMReassign(w http.ResponseWriter, r *http.Request, name 
 			if sess.LLMRef != name {
 				continue
 			}
-			// TODO: wire s.manager.UpdateSession when it exists.
-			// For now record the binding but cannot mutate it.
+			_ = s.manager.UpdateLLMRef(sess.FullID, body.ToLLM)
 			reassigned = append(reassigned, map[string]any{
 				"kind": "session", "id": sess.FullID, "name": sess.Name,
 			})

@@ -66,21 +66,30 @@ func MigrateLegacyConfig(reg *Registry, ollamaHost, ollamaModel, openWebUIURL, o
 	})
 }
 
-// StripDefaultSuffix is a one-time startup migration that renames
+// StripDefaultSuffix is a one-time startup migration that removes
 // legacy *-default registry entries created by alpha.15 auto-migration.
-// Returns old→new name map for callers that need to update references.
-// Idempotent: skips if target name already exists.
+//
+// Two cases:
+//  1. Canonical name does NOT exist → rename *-default → canonical.
+//  2. Canonical name already exists → delete the *-default duplicate.
+//
+// Returns old→new name map (case 1) and deleted name list (case 2) for
+// callers that need to update references. Idempotent.
 func (r *Registry) StripDefaultSuffix() map[string]string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	renames := map[string]string{}
+	dirty := false
 	for name := range r.llms {
 		if !strings.HasSuffix(name, "-default") {
 			continue
 		}
 		newName := strings.TrimSuffix(name, "-default")
 		if _, exists := r.llms[newName]; exists {
-			continue // target already exists; skip
+			// Canonical already exists — delete the stale duplicate.
+			delete(r.llms, name)
+			dirty = true
+			continue
 		}
 		cp := *r.llms[name]
 		cp.Name = newName
@@ -88,8 +97,9 @@ func (r *Registry) StripDefaultSuffix() map[string]string {
 		r.llms[newName] = &cp
 		delete(r.llms, name)
 		renames[name] = newName
+		dirty = true
 	}
-	if len(renames) > 0 && r.persistFn != nil {
+	if dirty && r.persistFn != nil {
 		_ = r.persistFn()
 	}
 	return renames
