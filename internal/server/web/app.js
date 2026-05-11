@@ -11770,8 +11770,12 @@ function renderAlertDock() {
   const dock = window._alertDock;
   // Keep the always-on header pill (and legacy slot) in sync.
   if (typeof renderAlertPill === 'function') renderAlertPill();
-  // No alerts AND not expanded → no panel. (Badge stays in header.)
-  if (dock.alerts.length === 0 && !dock.expanded) {
+  // BL300 — dock panel must NEVER auto-create; only the pill/badge updates
+  // on new alerts. The panel is created only when the operator has explicitly
+  // clicked (dock.expanded = true via toggleAlertDock). Without this guard
+  // the panel auto-spawned whenever renderAlertDock() was called with alerts
+  // in the queue (e.g. on the isConnected cleanup path or a direct refresh).
+  if (!dock.expanded) {
     if (dock.el) { dock.el.remove(); dock.el = null; }
     return;
   }
