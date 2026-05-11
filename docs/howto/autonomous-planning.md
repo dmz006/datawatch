@@ -5,7 +5,7 @@ docs:
 exec_params:
   - {name: spec, required: true, description: "Free-form goal specification"}
   - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
-  - {name: type, required: false, default: "software", description: "PRD type: software | research | operational | personal"}
+  - {name: type, required: false, default: "software", description: "Automaton type: software | research | operational | personal"}
 exec_steps:
   - tool: autonomous_prd_create
     description: Create the PRD record
@@ -22,17 +22,17 @@ exec_steps:
 # How-to: Autonomous planning
 
 Describe a feature in plain English; datawatch decomposes it into a
-hierarchical PRD (Product Requirements Document) of stories + tasks,
-queues it for review, then runs the approved tasks under verification.
+structured hierarchy of stories + tasks, queues it for review, then
+runs the approved tasks under verification.
 This howto walks the spawn → decompose → review → run loop.
 
 ## What it is
 
-An Automaton is a structured PRD spec that the daemon's autonomous
+An Automaton is a structured spec that the daemon's autonomous
 executor walks through: each story has tasks; each task spawns a
 session against a configured backend; per-story Evals + scan
 guardrails verify output before advancing. Operator-gated approval
-(per-story or whole-PRD) keeps the human in the loop.
+(per-story or whole-automaton) keeps the human in the loop.
 
 States: `draft` → `planning` → `needs_review` → `approved` → `running`
 → `blocked` / `completed` / `failed` / `rejected` / `cancelled` /
@@ -111,7 +111,7 @@ datawatch autonomous delete $PRD_ID
    - Execution: backend / effort.
    - Advanced (collapsed): guided mode, scan, rules, story-approval.
    - **Start**.
-3. The PRD appears in the list with status `planning`. Click it to
+3. The automaton appears in the list with status `planning`. Click it to
    open the detail view.
 4. Detail view 4-tab layout:
    - **Overview** — spec + status + persistent toolbar (Edit Spec,
@@ -177,20 +177,20 @@ result.
 
 ```
 You: automaton: Refactor auth to use JWT-only sessions
-Bot: started PRD abc123; decomposing...
-Bot (~60s later): PRD abc123 needs_review
+Bot: started automaton abc123; decomposing...
+Bot (~60s later): automaton abc123 needs_review
        4 stories / 15 tasks
        Reply "approve abc123" to run as-is
        Reply "review abc123" for the per-story review
 You: approve abc123
-Bot: PRD abc123 running; tasks 0/15
+Bot: automaton abc123 running; tasks 0/15
 Bot (per-task completion): task 1/15 done — "Audit current auth flow"
 ...
 ```
 
 ### 5e. YAML
 
-PRD spec lives at `~/.datawatch/autonomous/prds/<id>.yaml`:
+Automaton spec lives at `~/.datawatch/autonomous/prds/<id>.yaml`:
 
 ```yaml
 id: abc123
@@ -274,7 +274,6 @@ the spec without re-decomposing.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

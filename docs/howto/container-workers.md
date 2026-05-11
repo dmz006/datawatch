@@ -12,7 +12,7 @@ exec_steps:
     args: {kind: "project"}
     read_only: true
   - tool: agent_spawn
-    description: Spawn the F10 worker container
+    description: Spawn the agent worker container
     args:
       project_profile: "{{params.project_profile}}"
       cluster_profile: "{{params.cluster_profile}}"
@@ -274,7 +274,6 @@ Cluster-specific overrides live in `~/.datawatch/profiles/clusters/<name>.yaml`
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

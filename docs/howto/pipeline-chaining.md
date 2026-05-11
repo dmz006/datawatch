@@ -258,7 +258,6 @@ Operators can edit step-level `task:` text between runs to refine.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

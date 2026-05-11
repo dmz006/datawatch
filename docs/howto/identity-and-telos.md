@@ -136,7 +136,7 @@ datawatch identity get
 Verify injection on a fresh session:
 
 ```sh
-SID=$(datawatch sessions start --backend claude-code --task "Hello" --project-dir /tmp 2>&1 \
+SID=$(datawatch sessions start --llm claude-code --task "Hello" --project-dir /tmp 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
 sleep 2
 grep -A30 'L0:' ~/.datawatch/sessions/$SID/wakeup.log
@@ -368,7 +368,6 @@ recall + L3 deep search), see `architecture-overview.md` § Wake-up.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

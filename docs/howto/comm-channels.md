@@ -65,7 +65,7 @@ channels:
     enabled: true
     bot_token: ${secret:TELEGRAM_BOT_TOKEN}
     allowed_chats: [123456, 789012]   # restrict to specific chat IDs
-    default_backend: ollama            # which LLM backend to spawn against
+    default_llm: ollama                # which LLM to spawn against
     rate_limit_per_minute: 30
 ```
 
@@ -193,7 +193,7 @@ replies; Matrix supports room-scoped routing).
 channels:
   <name>:
     enabled: true
-    default_backend: ollama          # which LLM to spawn for "start:"
+    default_llm: ollama              # which LLM to spawn for "start:"
     rate_limit_per_minute: 30
     allowed_chats: [...]              # or allowed_groups, allowed_rooms
     push_notifications: true          # daemon-emitted alerts → this channel
@@ -259,7 +259,6 @@ documented inline in the auto-generated `datawatch init` template.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

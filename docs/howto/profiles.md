@@ -18,7 +18,7 @@ exec_steps:
 # How-to: Project + Cluster Profiles
 
 Project Profiles describe **what** to do (workspace dir + git policy
-+ default backend + skills + pre/post hooks). Cluster Profiles
++ default LLM + skills + pre/post hooks). Cluster Profiles
 describe **where** to do it (Kubernetes context + namespace + node
 selector + resource limits). Sessions and Automatons reference
 profiles by name so the operator doesn't repeat configuration.
@@ -57,7 +57,7 @@ That's it — profiles are operator-authored YAMLs.
 cat > ~/.datawatch/profiles/projects/datawatch-dev.yaml <<'EOF'
 name: datawatch-dev
 project_dir: ~/work/datawatch
-default_backend: claude-code
+default_llm: claude-code
 default_effort: thorough
 skills:
   - go-style
@@ -77,13 +77,13 @@ EOF
 
 # 2. List + verify.
 datawatch profiles projects list
-#  → datawatch-dev   workspace=~/work/datawatch  backend=claude-code
+#  → datawatch-dev   workspace=~/work/datawatch  llm=claude-code
 
 datawatch profiles projects get datawatch-dev
 
 # 3. Spawn a session against it.
-datawatch sessions start --profile datawatch-dev --task "Audit BL266"
-# Inherits project_dir, backend, effort, skills, git policy, env.
+datawatch sessions start --profile datawatch-dev --task "Audit the auth module"
+# Inherits project_dir, llm, effort, skills, git policy, env.
 
 # 4. Author a Cluster Profile (if you'll use container workers).
 cat > ~/.datawatch/profiles/clusters/lab-east.yaml <<'EOF'
@@ -103,7 +103,7 @@ datawatch profiles clusters list
 #  → lab-east   ns=datawatch-agents  context=...
 
 # 5. Spawn an agent worker against the cluster.
-datawatch sessions start --backend claude-code --agent k8s \
+datawatch sessions start --llm claude-code --agent k8s \
   --cluster lab-east --profile datawatch-dev --task "Run integration tests"
 ```
 
@@ -111,7 +111,7 @@ datawatch sessions start --backend claude-code --agent k8s \
 
 1. Settings → Agents → **Project Profiles** card → click **+ New Profile**.
 2. Editor opens with a starter YAML; fill in name, workspace dir,
-   default backend, skills (multi-select chip picker), git policy,
+   default LLM, skills (multi-select chip picker), git policy,
    pre/post hook script paths, env vars. **Save**.
 3. The new profile appears in the card. Edit / Clone / Delete actions
    on each row.
@@ -119,7 +119,7 @@ datawatch sessions start --backend claude-code --agent k8s \
    kubeconfig path, namespace, node selector, resource limits.
 5. Spawn a session: Sessions tab → + FAB → **Workspace** dropdown
    shows configured Project Profiles. Pick one; the wizard pre-fills
-   backend/effort/skills.
+   llm/effort/skills.
 6. Same FAB has a **Cluster** dropdown when `agent: k8s` is chosen.
 
 ## Other channels
@@ -173,8 +173,8 @@ Project Profile schema:
 ```yaml
 name: <required; matches filename>
 project_dir: <required; absolute or ~ path>
-default_backend: <claude-code | ollama | openai | ...>
-default_model: <optional; backend-specific>
+default_llm: <claude-code | ollama | openai | ...>
+default_model: <optional; LLM-specific>
 default_effort: <quick | normal | thorough>      # claude-code only
 skills: [<skill-name>, ...]
 git:
@@ -211,7 +211,7 @@ service_account: <optional>
   ┌──────────────────────┐
   │ Project Profile       │
   │  workspace + git +    │
-  │  skills + backend     │
+  │  skills + llm         │
   └──────────┬───────────┘
              │ session --profile <name>
              ▼
@@ -232,8 +232,8 @@ service_account: <optional>
 - **Profile name vs filename mismatch.** Daemon takes the `name:`
   field from the YAML, not the filename. Keep them in sync to avoid
   confusion.
-- **Operator-overrides win.** `--backend claude-code` on the spawn
-  command overrides the profile's `default_backend`. Useful but easy
+- **Operator-overrides win.** `--llm claude-code` on the spawn
+  command overrides the profile's `default_llm`. Useful but easy
   to forget.
 - **Skills not synced.** Profile references a skill not in the local
   registry → spawn fails. Sync first: `datawatch skills sync`.
@@ -247,7 +247,7 @@ service_account: <optional>
 
 - See also: [`container-workers.md`](container-workers.md) — Cluster Profiles in action.
 - See also: [`skills-sync.md`](skills-sync.md) — installing skills.
-- See also: [`autonomous-planning.md`](autonomous-planning.md) — PRDs reference profiles.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — Automata reference profiles.
 - Architecture: `../architecture-overview.md` § Profiles.
 
 ## Screenshots needed (operator weekend pass)
@@ -260,7 +260,6 @@ service_account: <optional>
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

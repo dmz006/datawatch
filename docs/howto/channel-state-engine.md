@@ -266,7 +266,6 @@ Pure visual; no state change. Useful for alerting integrations:
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

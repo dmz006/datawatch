@@ -32,28 +32,36 @@ together.
 ## Base requirements
 
 - `datawatch start` — daemon up. See [`setup-and-install.md`](setup-and-install.md).
-- One LLM backend installed + reachable from the host:
-  - `claude-code` (Anthropic, paid) — fast, smart; needs `claude` CLI
-    + `~/.claude.json`.
+- At least one LLM configured in the registry (v7.0+):
+  - `claude-code` (Anthropic) — needs `claude` CLI + `~/.claude.json`;
+    auto-registered as `claude-code` on first start.
   - `ollama` (local) — free; needs `ollama` running + at least one
-    model pulled (`ollama pull llama3.1:8b`).
-  - `openai` (OpenAI, paid) — needs API key.
+    model pulled (`ollama pull llama3.1:8b`); auto-registered as `ollama`.
+  - Any OpenAI-compatible endpoint — add via Settings → Compute → LLM
+    Configuration → **+ Add LLM**.
 - (Optional but recommended for chat) one comm channel:
   - **Signal** (E2E, the default datawatch flagship) — needs
     `signal-cli` + a linked device.
   - **Telegram** — needs a bot token from @BotFather.
   - **Slack** / Discord / Matrix — see [`comm-channels.md`](comm-channels.md).
 
+> **v7.0 change:** LLM configuration moved from `config.yaml` blocks to the
+> **LLM Registry** (Settings → Compute → LLM Configuration). Each entry has a
+> name, kind, and per-node model list. See [`llm-registry.md`](llm-registry.md)
+> and [`compute-nodes.md`](compute-nodes.md) for the full picture.
+
 ## Setup
 
-Configure ONE backend + ONE channel. Picking the cheapest path:
+Configure ONE LLM + ONE channel. Picking the cheapest path:
 
 ```sh
-# Backend: ollama (free, local).
+# LLM: ollama (free, local). Ollama is auto-registered as "ollama" if
+# cfg.ollama.host is set. Add a model:
+datawatch llm models add ollama --node datawatch-ollama --model llama3.1:8b
+
+# Or pull directly:
 ollama pull llama3.1:8b
-datawatch config set llm.backends.ollama.enabled true
-datawatch config set llm.backends.ollama.url http://localhost:11434
-datawatch config set session.default_backend ollama
+# (daemon auto-discovers it on next refresh-models cycle)
 
 # Channel: Telegram (free, fast to set up).
 datawatch secrets set TELEGRAM_BOT_TOKEN "<from-BotFather>"
@@ -65,7 +73,7 @@ datawatch reload
 Verify:
 
 ```sh
-datawatch backends list           # ollama: ENABLED, reachable
+datawatch llm list                # shows ollama: enabled, models listed
 datawatch channels list           # telegram: connected
 ```
 
@@ -74,8 +82,9 @@ datawatch channels list           # telegram: connected
 ### 4a. Happy path — CLI
 
 ```sh
-# 1. Spawn a session pointed at ollama.
-SID=$(datawatch sessions start --backend ollama --model llama3.1:8b \
+# 1. Spawn a session using the LLM registry name.
+#    --llm picks the named LLM entry; dispatcher routes to the right node.
+SID=$(datawatch sessions start --llm ollama --model llama3.1:8b \
   --task "Help me draft a one-paragraph commit message" \
   --project-dir ~/work/foo 2>&1 | grep -oP 'session \K[a-z0-9-]+')
 
@@ -95,11 +104,14 @@ datawatch sessions kill $SID
 
 ### 4b. Happy path — PWA
 
-1. Bottom nav → **Sessions** → **+** FAB.
+<!-- screenshot: PWA new-session wizard with LLM dropdown open -->
+
+1. Bottom nav → **Sessions** → **+** (lightning bolt) FAB.
 2. Wizard:
-   - Backend: ollama → Model: llama3.1:8b
-   - Task: *"Help me draft a one-paragraph commit message"*
-   - Workspace: pick a project profile or `/tmp`
+   - **LLM**: pick from your configured LLM registry entries (e.g. `ollama`)
+   - **Model**: picked from that LLM's enabled models list
+   - **Task**: *"Help me draft a one-paragraph commit message"*
+   - **Workspace**: pick a project profile or `/tmp`
    - **Start**
 3. Detail view opens with xterm streaming. Type follow-ups in the
    input bar at the bottom; press Enter to send.
@@ -119,10 +131,10 @@ Same flow as PWA — Sessions tab → + FAB → backend / task / workspace
 ### 5b. REST
 
 ```sh
-# Start a session.
+# Start a session (v7.0: use "llm" for registry name, "model" for model override).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"backend":"ollama","model":"llama3.1:8b","task":"...","project_dir":"/tmp"}' \
+  -d '{"llm":"ollama","model":"llama3.1:8b","task":"...","project_dir":"/tmp"}' \
   $BASE/api/sessions/start
 
 # Send a follow-up.
@@ -183,7 +195,7 @@ Default backend in `~/.datawatch/datawatch.yaml`:
 
 ```yaml
 session:
-  default_backend: ollama
+  default_llm: ollama
   default_model: llama3.1:8b
   default_effort: normal     # claude-code only
 
@@ -218,9 +230,7 @@ channels:
 
 ## Common pitfalls
 
-- **No backend reachable.** `datawatch backends list` shows
-  `unreachable`. Common: ollama not running (`ollama serve`), wrong
-  URL, claude binary not on PATH. Fix the path / start the service.
+- **No LLM reachable.** `datawatch llm list` shows `unreachable`. Common: ollama not running (`ollama serve`), wrong URL (check Settings → Compute → Compute Nodes), claude binary not on PATH. Fix the path / start the service.
 - **Telegram bot replies not arriving.** The bot must be added to
   the chat AND the chat ID listed in `allowed_chats`. Verify with
   `datawatch channels test telegram`.
@@ -233,27 +243,27 @@ channels:
 
 ## Linked references
 
+- See also: [`llm-registry.md`](llm-registry.md) for full LLM registry management.
+- See also: [`compute-nodes.md`](compute-nodes.md) for compute node setup.
 - See also: [`comm-channels.md`](comm-channels.md) for full per-channel setup.
 - See also: [`voice-input.md`](voice-input.md) to add voice transcription.
 - See also: [`profiles.md`](profiles.md) for per-workspace defaults.
 - See also: [`sessions-deep-dive.md`](sessions-deep-dive.md) for the session anatomy.
 
-## Screenshots needed (operator weekend pass)
+## Screenshots needed
 
-- [ ] PWA new-session wizard with backend dropdown open
+- [ ] PWA new-session wizard with LLM dropdown open
 - [ ] Telegram chat round-trip with the bot
 - [ ] Signal chat round-trip
 - [ ] Session detail showing first LLM response streaming in xterm
-- [ ] CLI `datawatch backends list` output (healthy)
+- [ ] CLI `datawatch llm list` output (healthy)
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
-- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/llm-registry](llm-registry.md)
+- [howto/compute-nodes](compute-nodes.md)
 - [howto/comm-channels](comm-channels.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/mcp-tools](mcp-tools.md)
-- [backends](../backends.md)
-- [api/chat-mode-backends](../api/chat-mode-backends.md)

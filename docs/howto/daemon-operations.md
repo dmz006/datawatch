@@ -71,13 +71,13 @@ datawatch status
 #  → daemon: running  PID 49334
 #    listeners: 0.0.0.0:8443 (https), 0.0.0.0:8080 (http→redirect)
 #    sessions: 4
-#    backends: claude-code (✓), ollama (✓)
+#    llms: claude-code (✓), ollama (✓)
 #    channels: telegram (✓)
 
 # Diagnose (deep health — backends, channels, observer, memory, KG).
 datawatch diagnose
 #  → ✓ daemon healthy
-#    ✓ all backends reachable
+#    ✓ all LLMs reachable
 #    ✓ telegram channel connected
 #    ✓ observer pushing to primary-kona (last 3s ago)
 #    ⚠ memory backend: postgres disk usage 78% (threshold 80%)
@@ -151,7 +151,7 @@ before kicking off a long-running workflow.
 | Verb | Example |
 |---|---|
 | `health` | One-line health for chat. |
-| `status` | Multi-line with sessions / backends / channels. |
+| `status` | Multi-line with sessions / llms / channels. |
 | `diagnose` | Deep health (slower). |
 | `audit list actor=... limit=20` | Filtered audit entries. |
 
@@ -176,7 +176,7 @@ server:
   bearer_token: ${secret:SERVER_TOKEN}
 
 session:
-  default_backend: claude-code
+  default_llm: claude-code
   default_effort: normal
   max_sessions: 50
 
@@ -251,7 +251,6 @@ channels:  # see comm-channels.md
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

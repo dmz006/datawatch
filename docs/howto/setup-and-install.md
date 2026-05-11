@@ -13,7 +13,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: agent_list
-    description: List any pre-existing F10 agents
+    description: List any pre-existing agent workers
     args: {}
     read_only: true
 ---
@@ -86,7 +86,7 @@ datawatch backends list
 #  → claude-code  ENABLED  reachable  models=[claude-sonnet-4-5,...]
 
 # Spawn a smoke session.
-SID=$(datawatch sessions start --backend claude-code \
+SID=$(datawatch sessions start --llm claude-code \
   --task "What model are you?" --project-dir /tmp 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
 sleep 5
@@ -221,7 +221,6 @@ top-level structural changes).
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

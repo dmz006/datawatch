@@ -251,7 +251,6 @@ the spec — the daemon picks up the changes on next run.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

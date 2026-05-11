@@ -246,7 +246,6 @@ ACL rules use the same scope syntax as the secrets manager
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

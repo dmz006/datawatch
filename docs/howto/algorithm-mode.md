@@ -64,7 +64,7 @@ on demand, against any running session.
 
 ```sh
 # 1. Start a session in your project workspace.
-SID=$(datawatch sessions start --backend claude-code \
+SID=$(datawatch sessions start --llm claude-code \
   --project-dir ~/work/foo \
   --task "Decide whether to migrate the cron jobs to k8s CronJobs" 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
@@ -258,7 +258,6 @@ session state engine + Evals + Council), see
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

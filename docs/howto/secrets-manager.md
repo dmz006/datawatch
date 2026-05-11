@@ -257,7 +257,6 @@ Default-fallback syntax: `${secret:name:fallback-value}` resolves to
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

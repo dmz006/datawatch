@@ -107,10 +107,9 @@ two (`channel-state-engine`, `README`) are LLM-only by design.
   plugins must be explicitly trusted before their docs index.
 - **CI lints block drift.** Every release runs `check-curated-howtos.sh`,
   `check-howto-coverage.sh`, `check-plugin-manifests.sh` to catch the
-  three classes of silent breakage that BL274 audited.
+  three classes of silent breakage caught by the docs audit.
 
 ## Linked references
 
 - See also: [`secrets-manager.md`](secrets-manager.md) — example of a curated authored howto.
 - See also: [`skills-sync.md`](skills-sync.md) — how skills + their SKILL.md docs land in the index.
-- Plan attribution: BL274 in `../plans/2026-05-07-bl274-docs-as-mcp-plan.md`.

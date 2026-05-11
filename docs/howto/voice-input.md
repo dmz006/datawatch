@@ -332,7 +332,6 @@ The daemon actively probes the configured backend on startup by POSTing a 1-seco
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

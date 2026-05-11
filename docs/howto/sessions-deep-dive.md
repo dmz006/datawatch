@@ -55,8 +55,8 @@ state-decision logic.
 
 - `datawatch start` — daemon up.
 - `tmux` on PATH (every datawatch host needs it).
-- An LLM backend with at least one model configured (claude-code,
-  ollama, openai, etc.).
+- At least one LLM configured in the registry (`datawatch llm list`).
+  See [`llm-registry.md`](llm-registry.md) to set one up.
 
 ## Setup
 
@@ -69,7 +69,7 @@ No setup beyond having a backend. Sessions spawn on demand.
 ```sh
 # 1. Start a session.
 SID=$(datawatch sessions start \
-  --backend claude-code \
+  --llm claude-code \
   --project-dir ~/work/foo \
   --task "Audit the auth module for input-validation gaps" 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
@@ -88,7 +88,7 @@ datawatch sessions input $SID "Start with the password reset flow"
 # 5. Inspect via API.
 datawatch sessions get $SID | jq
 #  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
-#     "task":"...","backend":"claude-code","last_channel_event_at":"..."}
+#     "task":"...","llm_ref":"claude-code","last_channel_event_at":"..."}
 
 # 6. Stop when done.
 datawatch sessions kill $SID
@@ -104,7 +104,8 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 1. PWA → bottom nav **Sessions**. The list shows every session this
    daemon knows about; new sessions go to the top by default.
 2. Click the **+** FAB → wizard:
-   - Backend dropdown (only configured backends appear).
+   - **LLM** dropdown (shows entries from your LLM Registry).
+   - **Model** (populated from that LLM's enabled model list).
    - Task (free-text; one-paragraph task spec).
    - Project Profile (optional — picks workspace + git policy + skills).
    - Effort (only shown for backends that support it).
@@ -140,12 +141,12 @@ optional.
 # Start.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"backend":"claude-code","task":"...","project_dir":"/tmp"}' \
+  -d '{"llm":"claude-code","task":"...","project_dir":"/tmp"}' \
   $BASE/api/sessions/start
 
 # List + filter.
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/sessions?state=running&backend=claude-code"
+  "$BASE/api/sessions?state=running&llm=claude-code"
 
 # Get by ID.
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/sessions/<full-id>
@@ -165,7 +166,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 Tools: `session_start`, `session_get`, `session_list`, `session_input`,
 `session_kill`.
 
-`session_start` args: `{"backend": "...", "task": "...", "project_dir":
+`session_start` args: `{"llm": "...", "task": "...", "project_dir":
 "...", "profile": "?"}`. Returns the session metadata.
 
 When invoked from inside an existing session (e.g. claude-code
@@ -182,7 +183,7 @@ two are linked in the cross-session memory subsystem.
 | `stop:<id>` | Kills. |
 | `restart:<id>` | Restarts a terminal-state session (spawns fresh, seeded from prior). |
 
-Each channel adapter inherits a `session.default_backend` from config
+Each channel adapter inherits a `session.default_llm` from config
 unless overridden per-channel.
 
 ### 5e. YAML
@@ -199,7 +200,7 @@ Session templates schema:
 
 ```yaml
 name: audit-flow
-backend: claude-code
+llm: claude-code
 effort: thorough
 skills: [secrets-scan, sast]
 profile: prod-audit
@@ -287,7 +288,7 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 - **Confusing `last_channel_event_at` with `updated_at`.** UpdatedAt
   is bumped by daemon-internal housekeeping (rate-limit timer,
   reconcile, etc.). LCE is the real activity signal.
-- **Spawning without a profile.** Default backend + workspace are
+- **Spawning without a profile.** Default LLM + workspace are
   fine for chat sessions, but for long-running work a Project Profile
   saves repeated config and gives the LLM cleaner context.
 - **Killing a session while reading its output.** Safe — kill closes
@@ -313,12 +314,13 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/channel-state-engine](channel-state-engine.md)
 - [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
+- [howto/llm-registry](llm-registry.md)
+- [howto/compute-nodes](compute-nodes.md)
 - [howto/comm-channels](comm-channels.md)
 - [howto/mcp-tools](mcp-tools.md)
 - [architecture-overview](../architecture-overview.md)

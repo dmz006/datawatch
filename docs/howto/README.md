@@ -43,7 +43,9 @@ you already have a daemon you can talk to.
 | [Algorithm Mode](algorithm-mode.md) | 7-phase structured-thinking harness (Observe → Improve) with per-phase capture |
 | [Evals](evals.md) | Rubric-based grading suites: capability + regression modes, 4 grader types |
 | [Council Mode](council-mode.md) | Multi-persona structured debate; 12 default personas; quick + debate modes |
+| [Compute Nodes](compute-nodes.md) | ComputeNode registry — kinds (ollama/openai-compat), capacity, scheduling priority, observer peer, model pull, CLI + PWA + REST + MCP + comm |
 | [Secrets Manager](secrets-manager.md) | Native + KeePass + 1Password backends; `${secret:name}` references; per-secret scopes |
+| [LLM Registry](llm-registry.md) | Named LLM definitions, per-node model pairs, enabled/disable toggle, block-on-delete + reassign, all surfaces |
 | [Tailscale Mesh](tailscale-mesh.md) | Headscale + commercial Tailscale; agent worker mesh sidecar; ACL generator |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has

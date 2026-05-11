@@ -369,7 +369,6 @@ the YAML AND drops the name from `.seeded`.
 
 ---
 
-<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
