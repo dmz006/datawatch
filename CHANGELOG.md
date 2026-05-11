@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## v7.0.0-alpha.37e — LLM/Compute UX polish
+
+### Fixed
+- LLM edit/add panel now refreshes compute node list on open — no browser reload needed after adding a new node.
+- LLM edit panel: "Test" button model dropdown (`llmTestModelSel`) shows enabled models and passes selected model to `/api/llms/{name}/test`. Previously only sent the first configured model.
+- LLM edit panel: `(kebab-case)` hint removed from Name label (not enforced and not needed).
+- LLM card: enabled models and compute nodes no longer listed in the summary row (too verbose; visible via YAML/Edit).
+- Compute node `local-ollama` renamed to `datawatch-ollama` in storage and config. Auto-migration on startup strips stale `local-ollama` refs from LLM `compute_nodes` arrays.
+- Default auto-link node name changed from `local-ollama` → `datawatch-ollama` in migration path.
+- `openwebui` LLM now correctly links to `datawatch-openwebui` compute node (was incorrectly linking to `local-ollama`).
+- Alert dock no longer auto-opens on new alerts — shows pill/badge count only; user opens on click.
+- Reconnect/disconnect messages no longer auto-dismiss from dock; "Connected" events are silently dropped (cleared prior disconnect entries only).
+- Delete confirmations for LLM and Compute Node use PWA `showConfirmModal()` instead of browser `confirm()`.
+
+### Locales × 5
+- 6 new keys: `llm_test_model_label`, `llm_test_model_first`, `llm_confirm_delete`, `llm_confirm_delete_nocheck`, `compute_confirm_delete`, `llm_field_name` (updated, no suffix).
+
+### Rule audit
+| Rule | Status |
+|---|---|
+| `feedback_per_release_smoke` | ✓ — no new endpoints; existing smoke sufficient |
+| `feedback_localization_rule` (× 5 bundles) | ✓ |
+| `feedback_phase_release_pattern` | ✓ |
+
 ## v7.0.0-alpha.37 — LLM Enabled Models overhaul
 
 ### Schema

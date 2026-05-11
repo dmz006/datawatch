@@ -289,8 +289,18 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	// When MonitoringEndpoint is empty, fall back to the last cached
+	// snapshot from the peer registry (observer pushing stats without a
+	// pull endpoint configured — common when the observer uses a non-
+	// default port or is behind a firewall).
 	if n.MonitoringEndpoint == "" {
-		http.Error(w, "compute node has no monitoring_endpoint configured (set the stub --listen address)", http.StatusServiceUnavailable)
+		if s.peerRegistry != nil {
+			if snap := s.peerRegistry.LastPayload(name); snap != nil {
+				writeJSONOK(w, snap)
+				return
+			}
+		}
+		http.Error(w, "compute node has no monitoring_endpoint configured and no cached snapshot (set the stub --listen address or wait for a push)", http.StatusServiceUnavailable)
 		return
 	}
 	client := &http.Client{

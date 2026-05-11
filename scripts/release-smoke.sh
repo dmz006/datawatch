@@ -2124,6 +2124,105 @@ else
   skip "alpha.37 — LLM create (refresh) failed: $SM37D"
 fi
 
+# 32e — DELETE 409 when active session bound.
+SM37E_LLM=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-del409","kind":"shell","models":[{"model":"default"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37E_LLM" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-del409"
+  # Start a shell session and bind it to the LLM, then force it running.
+  SM37E_SESS=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/start" -H 'Content-Type: application/json' \
+    -d '{"task":"smoke del409","project_dir":"/tmp","llm":"shell"}' 2>/dev/null || echo "{}")
+  SM37E_SID=$(echo "$SM37E_SESS" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("full_id",""))' 2>/dev/null || echo "")
+  if [[ -n "$SM37E_SID" ]]; then
+    add_cleanup sess "$SM37E_SID"
+    # Bind session to our test LLM + ensure running state.
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/set_llm_ref" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37E_SID\",\"llm_ref\":\"smoke-llm-del409\"}" >/dev/null 2>&1
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/state" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37E_SID\",\"state\":\"running\"}" >/dev/null 2>&1
+    SM37E_DEL=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/api/llms/smoke-llm-del409" 2>/dev/null || echo "000")
+    if [[ "$SM37E_DEL" == "409" ]]; then
+      ok "alpha.37 — DELETE /api/llms/<name> returns 409 when active session bound"
+    else
+      ko "alpha.37 — expected DELETE 409 but got $SM37E_DEL"
+    fi
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/kill" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37E_SID\"}" >/dev/null 2>&1
+  else
+    skip "alpha.37 — DELETE 409 test: session start failed"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-del409" >/dev/null 2>&1
+else
+  skip "alpha.37 — DELETE 409 test: LLM create failed: $SM37E_LLM"
+fi
+
+# 32f — reassign active bindings to another LLM.
+SM37F_A=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-reassign-a","kind":"shell","models":[{"model":"default"}]}' 2>/dev/null || echo "{}")
+SM37F_B=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-reassign-b","kind":"shell","models":[{"model":"default"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37F_A" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null && \
+   echo "$SM37F_B" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-reassign-a"
+  add_cleanup llm "smoke-llm-reassign-b"
+  SM37F_SESS=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/start" -H 'Content-Type: application/json' \
+    -d '{"task":"smoke reassign","project_dir":"/tmp","llm":"shell"}' 2>/dev/null || echo "{}")
+  SM37F_SID=$(echo "$SM37F_SESS" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("full_id",""))' 2>/dev/null || echo "")
+  if [[ -n "$SM37F_SID" ]]; then
+    add_cleanup sess "$SM37F_SID"
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/set_llm_ref" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37F_SID\",\"llm_ref\":\"smoke-llm-reassign-a\"}" >/dev/null 2>&1
+    # Reassign all bindings from A to B.
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/llms/smoke-llm-reassign-a/reassign" -H 'Content-Type: application/json' \
+      -d '{"to_llm":"smoke-llm-reassign-b"}' >/dev/null 2>&1
+    SM37F_CHECK=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" 2>/dev/null | \
+      python3 -c "import json,sys;sessions=json.load(sys.stdin);matches=[s for s in sessions if s.get('full_id')=='$SM37F_SID'];print(matches[0].get('llm_ref','') if matches else '')" 2>/dev/null || echo "")
+    if [[ "$SM37F_CHECK" == "smoke-llm-reassign-b" ]]; then
+      ok "alpha.37 — POST /api/llms/<name>/reassign updates session llm_ref"
+    else
+      ko "alpha.37 — reassign: expected smoke-llm-reassign-b, got '$SM37F_CHECK'"
+    fi
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/kill" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37F_SID\"}" >/dev/null 2>&1
+  else
+    skip "alpha.37 — reassign test: session start failed"
+  fi
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-reassign-a" >/dev/null 2>&1
+  curl "${curl_args[@]}" -s -X DELETE "$BASE/api/llms/smoke-llm-reassign-b" >/dev/null 2>&1
+else
+  skip "alpha.37 — reassign test: LLM create failed"
+fi
+
+# 32g — force_delete cancels active session and removes LLM.
+SM37G=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke-llm-forcedel","kind":"shell","models":[{"model":"default"}]}' 2>/dev/null || echo "{}")
+if echo "$SM37G" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+  add_cleanup llm "smoke-llm-forcedel"
+  SM37G_SESS=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/start" -H 'Content-Type: application/json' \
+    -d '{"task":"smoke forcedel","project_dir":"/tmp","llm":"shell"}' 2>/dev/null || echo "{}")
+  SM37G_SID=$(echo "$SM37G_SESS" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("full_id",""))' 2>/dev/null || echo "")
+  if [[ -n "$SM37G_SID" ]]; then
+    add_cleanup sess "$SM37G_SID"
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/set_llm_ref" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37G_SID\",\"llm_ref\":\"smoke-llm-forcedel\"}" >/dev/null 2>&1
+    curl "${curl_args[@]}" -s -X POST "$BASE/api/sessions/state" -H 'Content-Type: application/json' \
+      -d "{\"id\":\"$SM37G_SID\",\"state\":\"running\"}" >/dev/null 2>&1
+    SM37G_FD=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms/smoke-llm-forcedel/force_delete" \
+      -H 'Content-Type: application/json' \
+      -d '{"confirm":"yes I understand this terminates active work"}' 2>/dev/null || echo "{}")
+    if echo "$SM37G_FD" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("ok")==True' 2>/dev/null; then
+      ok "alpha.37 — POST /api/llms/<name>/force_delete cancels sessions and deletes LLM"
+    else
+      ko "alpha.37 — force_delete returned unexpected: $SM37G_FD"
+    fi
+  else
+    skip "alpha.37 — force_delete test: session start failed"
+  fi
+  # cleanup_all on EXIT removes smoke-llm-forcedel if not already deleted + session.
+else
+  skip "alpha.37 — force_delete test: LLM create failed: $SM37G"
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

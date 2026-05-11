@@ -144,7 +144,8 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLLMTest exercises one inference call to verify the LLM
-// definition is valid + adapter reachable. Body: {prompt: "..."}.
+// definition is valid + adapter reachable.
+// Body: {prompt: "...", model: "optional-override", node: "optional-node"}.
 func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name string) {
 	if s.inferenceDisp == nil {
 		http.Error(w, "inference dispatcher disabled", http.StatusServiceUnavailable)
@@ -152,6 +153,8 @@ func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name stri
 	}
 	var body struct {
 		Prompt string `json:"prompt"`
+		Model  string `json:"model,omitempty"`
+		Node   string `json:"node,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -168,7 +171,11 @@ func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name stri
 	timeout := inference.ResolveTimeout(llm)
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
-	resp, err := s.inferenceDisp.Call(ctx, name, inference.Request{Prompt: body.Prompt, Consumer: "test"})
+	resp, err := s.inferenceDisp.Call(ctx, name, inference.Request{
+		Prompt:        body.Prompt,
+		ModelOverride: body.Model,
+		Consumer:      "test",
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

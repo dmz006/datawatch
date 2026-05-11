@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.37d"
+var Version = "7.0.0-alpha.37e"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2562,7 +2562,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// every refactored consumer fails with "no reachable
 				// ComputeNode". Idempotent — Add returns ErrConflict
 				// when re-derived.
-				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama", cfg.Ollama.Host, "local-ollama")
+				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama", cfg.Ollama.Host, "datawatch-ollama")
 				// v7.0.0-alpha.16 (#246) — operator-corrected 2026-05-09:
 				// "openwebui is an app that uses the ollama. we shouldn't
 				// have it's own compute for openwebui, just have the
@@ -2570,10 +2570,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// compute server and path or port or whatever is needed".
 				// OpenWebUI = LLM (an app routed to a real compute), NOT
 				// a Compute Node. Link the openwebui LLM to the underlying
-				// local-ollama Node when ollama is configured; OpenWebUI's
+				// datawatch-ollama Node when ollama is configured; OpenWebUI's
 				// URL + API key live on the LLM struct already.
 				if cfg.OpenWebUI.URL != "" && cfg.Ollama.Host != "" {
-					autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui", cfg.Ollama.Host, "local-ollama")
+					autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui", cfg.Ollama.Host, "datawatch-ollama")
 				}
 				// Cleanup: if a previous v7-alpha created a stale
 				// `local-openwebui` Node, drop it.
@@ -2591,6 +2591,28 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if len(out) != len(llm.ComputeNodes) {
 							llm.ComputeNodes = out
 							_ = llmReg.Update(llm)
+						}
+					}
+				}
+				// Cleanup: drop stale `local-ollama` Node if it still exists,
+				// and unconditionally strip any `local-ollama` refs from LLMs
+				// (orphaned by the rename to datawatch-ollama).
+				if node, gerr := computeReg.Get("local-ollama"); gerr == nil && node != nil && node.AutoCreated {
+					_ = computeReg.Delete("local-ollama")
+					fmt.Printf("[inference] dropped stale auto-Node local-ollama (renamed to datawatch-ollama)\n")
+				}
+				for _, llmName := range []string{"ollama", "openwebui"} {
+					if llm, lerr := llmReg.Get(llmName); lerr == nil && llm != nil {
+						out := llm.ComputeNodes[:0]
+						for _, n := range llm.ComputeNodes {
+							if n != "local-ollama" {
+								out = append(out, n)
+							}
+						}
+						if len(out) != len(llm.ComputeNodes) {
+							llm.ComputeNodes = out
+							_ = llmReg.Update(llm)
+							fmt.Printf("[inference] stripped stale local-ollama ref from llm/%s\n", llmName)
 						}
 					}
 				}

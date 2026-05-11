@@ -525,11 +525,17 @@ func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
+// Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
 func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 	url, apiKey := "", ""
 	if s.cfg != nil {
 		url = s.cfg.OpenWebUI.URL
 		apiKey = s.cfg.OpenWebUI.APIKey
+	}
+	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
+		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
+			url = n.Address
+		}
 	}
 	models, err := openwebui.ListModels(url, apiKey)
 	if err != nil {
@@ -593,10 +599,16 @@ code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
 }
 
 // handleOllamaModels returns available ollama models from the configured host.
+// Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
 func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 	host := ""
 	if s.cfg != nil {
 		host = s.cfg.Ollama.Host
+	}
+	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
+		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
+			host = n.Address
+		}
 	}
 	models, err := ollama.ListModels(host)
 	if err != nil {

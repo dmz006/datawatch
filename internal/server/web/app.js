@@ -7041,9 +7041,9 @@ window.computeEditNode = function(name) {
 };
 
 window.llmEdit = function(name) {
-  apiFetch('/api/llms/' + encodeURIComponent(name)).then(llm => {
-    openLLMEditPanel(llm);
-  }).catch(e => showError('Load failed: ' + (e.message || e)));
+  apiFetch('/api/llms/' + encodeURIComponent(name))
+    .then(llm => openLLMEditPanel(llm))
+    .catch(e => showError('Load failed: ' + (e.message || e)));
 };
 
 // GATE alpha.36 (operator 2026-05-10): structured LLM edit form
@@ -7053,6 +7053,11 @@ window.llmEdit = function(name) {
 // improvements (per-kind field visibility, model probing, etc.) —
 // this round delivers the structural fix.
 window.openLLMEditPanel = function(existing) {
+  const cacheP = typeof window._loadComputeNodesCache === 'function'
+    ? window._loadComputeNodesCache() : Promise.resolve([]);
+  cacheP.then(() => _renderLLMEditPanel(existing));
+};
+window._renderLLMEditPanel = function(existing) {
   const isEdit = !!(existing && existing.name);
   if (!existing) existing = {};
   const host = document.querySelector('.app') || document.body;
@@ -7087,7 +7092,7 @@ window.openLLMEditPanel = function(existing) {
     </div>
     <form id="llmEditForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
       <div class="wizard-field">
-        <label class="wizard-label">${escHtml(t('llm_field_name')||'Name (kebab-case)')}</label>
+        <label class="wizard-label">${escHtml(t('llm_field_name')||'Name')}</label>
         <input id="llmEditName" class="form-input" placeholder="llama3-70b" value="${isEdit ? escHtml(existing.name) : ''}" ${isEdit ? 'readonly style="opacity:0.7;cursor:not-allowed;"' : ''} />
       </div>
       <div class="wizard-field">
@@ -7113,11 +7118,12 @@ window.openLLMEditPanel = function(existing) {
           <tbody id="llmModelsBody">${modelsRowsHTML}</tbody>
         </table>
         <div style="display:flex;gap:6px;align-items:center;margin-top:6px;" id="llmAddModelRow">
-          <select id="llmNewModelNode" class="form-select" style="flex:0 0 auto;width:auto;min-width:80px;max-width:200px;font-size:11px;">
+          <select id="llmNewModelNode" class="form-select" style="flex:0 0 auto;width:auto;min-width:80px;max-width:200px;font-size:11px;" onchange="_llmProbeNodeModels()">
             <option value="">(SaaS)</option>
             ${nodes.map(n => `<option value="${escHtml(n.name)}">${escHtml(n.name)}</option>`).join('')}
           </select>
-          <input id="llmNewModelName" class="form-input" style="flex:1;font-size:11px;" placeholder="e.g. qwen3:8b" />
+          <input id="llmNewModelName" class="form-input" style="flex:1;font-size:11px;" placeholder="e.g. qwen3:8b" list="llmNodeModelsList" autocomplete="off" />
+          <datalist id="llmNodeModelsList"></datalist>
           <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 10px;white-space:nowrap;" onclick="_llmAddModelRow()">${escHtml(t('llm_models_add_row')||'+ Add')}</button>
         </div>
       </div>
@@ -7132,11 +7138,18 @@ window.openLLMEditPanel = function(existing) {
         <input id="llmEditAPIKey" class="form-input" placeholder="$\{secret:anthropic-key\}" value="${escHtml(existing.api_key_ref||'')}" />
       </div>
       <div id="llmEditStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+        <label style="font-size:11px;color:var(--text2);white-space:nowrap;">${escHtml(t('llm_test_model_label')||'Test model:')}</label>
+        <select id="llmTestModelSel" class="form-select" style="flex:1;font-size:11px;">
+          <option value="">${escHtml(t('llm_test_model_first')||'(first enabled)')}</option>
+          ${existingModels.map(em => `<option value="${escHtml(em.model)}">${escHtml(em.node ? em.node + ' / ' + em.model : em.model)}</option>`).join('')}
+        </select>
+        <button type="button" class="btn-secondary" style="font-size:11px;white-space:nowrap;" onclick="_llmTestDraft()">${escHtml(t('llm_test_btn')||'Test')}</button>
+      </div>
       <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:6px;">
         <button type="button" class="btn-secondary" style="font-size:11px;" onclick="_llmOpenYAMLForCurrent()" title="${escHtml(t('llm_edit_yaml_tip')||'Edit raw YAML — form will reload with parsed values on save')}">&lt;/&gt; YAML</button>
         <span style="display:inline-flex;gap:8px;align-items:center;">
           <button type="button" class="btn-secondary" onclick="document.getElementById('llmAddPanel').remove()">${escHtml(t('action_cancel')||'Cancel')}</button>
-          <button type="button" class="btn-secondary" onclick="_llmTestDraft()">${escHtml(t('llm_test_btn')||'Test')}</button>
           <button type="button" class="btn-primary" onclick="_llmSaveDraft()">${isEdit ? escHtml(t('llm_save_btn')||'Save') : escHtml(t('llm_add_btn')||'Add')}</button>
         </span>
       </div>
@@ -7171,11 +7184,25 @@ window._llmAddModelRow = function() {
     `<td style="padding:4px 0;text-align:right;"><button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button></td>`;
   tbody.appendChild(tr);
   modelEl.value = '';
+  _llmRefreshTestModelSel();
 };
 
 window._llmRemoveModelRow = function(btn) {
   const tr = btn.closest('tr');
   if (tr) tr.remove();
+  _llmRefreshTestModelSel();
+};
+
+window._llmRefreshTestModelSel = function() {
+  const sel = document.getElementById('llmTestModelSel');
+  if (!sel) return;
+  const prevVal = sel.value;
+  const models = window._llmCollectModels ? window._llmCollectModels() : [];
+  const firstOpt = `<option value="">${escHtml(t('llm_test_model_first')||'(first enabled)')}</option>`;
+  sel.innerHTML = firstOpt + models.map(em =>
+    `<option value="${escHtml(em.model)}">${escHtml(em.node ? em.node + ' / ' + em.model : em.model)}</option>`
+  ).join('');
+  if (prevVal) sel.value = prevVal;
 };
 
 window._llmCollectModels = function() {
@@ -7187,17 +7214,45 @@ window._llmCollectModels = function() {
   })).filter(em => em.model);
 };
 
+window._llmProbeNodeModels = function() {
+  const nodeEl = document.getElementById('llmNewModelNode');
+  const dl = document.getElementById('llmNodeModelsList');
+  if (!dl) return;
+  const nodeName = nodeEl ? nodeEl.value : '';
+  if (!nodeName) { dl.innerHTML = ''; return; }
+  const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
+  // Collect already-added models for this node so we can dedup.
+  const already = new Set(
+    (window._llmCollectModels ? window._llmCollectModels() : [])
+      .filter(em => em.node === nodeName)
+      .map(em => em.model)
+  );
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(nodeName) + '/models?kind=' + encodeURIComponent(kind))
+    .then(d => {
+      const models = (d && d.models) || [];
+      dl.innerHTML = models
+        .filter(m => !already.has(m))
+        .map(m => `<option value="${escHtml(m)}">`)
+        .join('');
+    })
+    .catch(() => { dl.innerHTML = ''; });
+};
+
 window._llmTestDraft = function() {
   const status = document.getElementById('llmEditStatus');
   const setStatus = (msg, color) => { if (status) { status.style.color = color; status.textContent = msg; } };
   const modal = document.getElementById('llmAddPanel');
   const editName = modal ? modal.dataset.editName : '';
   if (!editName) { setStatus('Save first, then Test', 'var(--text2)'); return; }
+  const modelSel = document.getElementById('llmTestModelSel');
+  const selectedModel = modelSel ? modelSel.value : '';
   setStatus('Testing…', 'var(--text2)');
+  const body = { prompt: 'Reply with the single word OK so we can verify reachability.' };
+  if (selectedModel) body.model = selectedModel;
   apiFetch('/api/llms/' + encodeURIComponent(editName) + '/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: 'Reply with the single word OK so we can verify reachability.' }),
+    body: JSON.stringify(body),
   }).then(d => {
     setStatus('✓ ' + (d && (d.text || JSON.stringify(d).slice(0,160)) || 'OK'), 'var(--success,#10b981)');
   }).catch(e => setStatus('✕ ' + String(e.message || e).slice(0, 240), 'var(--error)'));
@@ -7586,10 +7641,11 @@ window.computeAddNode = function() {
 };
 
 window.computeDeleteNode = function(name) {
-  if (!confirm(`Remove ComputeNode "${name}"?`)) return;
-  apiFetch('/api/compute/nodes/' + encodeURIComponent(name), { method: 'DELETE' })
-    .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadComputeNodesPanel(); })
-    .catch(e => showError('Delete failed', String(e.message||e)));
+  showConfirmModal(t('compute_confirm_delete', [name]) || `Remove ComputeNode "${name}"?`, () => {
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(name), { method: 'DELETE' })
+      .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadComputeNodesPanel(); })
+      .catch(e => showError('Delete failed', String(e.message||e)));
+  });
 };
 
 // On-demand detail (ASK 24 hybrid pull). Fetches once + opens a
@@ -7619,7 +7675,6 @@ function loadLLMsPanel() {
           // terminate the onclick attribute (caught in PWA Chrome audit).
           const safeJ = escHtml(JSON.stringify(l.name));
           const auto = l.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('llm_auto')||'auto')}</span>` : '';
-          const nodes = (l.compute_nodes||[]).map(n => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-right:2px;">${escHtml(n)}</span>`).join('');
           // v7.0.0-alpha.23 (Q6) — sliding switch replaces the
           // ⚪ on/off icon-button. last_dispatch_error is a future
           // dispatcher-persisted field; absent today (alpha.23.x).
@@ -7631,12 +7686,7 @@ function loadLLMsPanel() {
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
               <strong>${safe}</strong>${auto}
               <span style="color:var(--text2);font-size:11px;">${escHtml(l.kind||'')}</span>
-              ${l.models && l.models.length > 0
-                ? `<span style="color:var(--text2);font-size:10px;">${escHtml(l.models.map(m => (m.node ? m.node+':' : '') + m.model).join(', ').slice(0,60))}</span>`
-                : l.model
-                ? `<span style="color:var(--text2);font-size:10px;">${escHtml(l.model)}</span>`
-                : ''}
-              <span style="color:var(--text2);font-size:10px;">${nodes}</span>${llmTagsHtml}
+              ${llmTagsHtml}
               <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
                 ${llmSwitchHTML}
                 <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();llmEdit(${safeJ})" title="${escHtml(t('llm_edit_btn_title')||'Edit form / YAML / test before save')}">✏️</button>
@@ -7860,10 +7910,11 @@ window.llmDelete = function(name) {
 
     if (active.length === 0) {
       // No active bindings — simple confirm + delete.
-      if (!confirm(`Remove LLM "${name}"?`)) return;
-      apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
-        .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
-        .catch(e => showError('Delete failed', String(e.message||e)));
+      showConfirmModal(t('llm_confirm_delete', [name]) || `Remove LLM "${name}"?`, () => {
+        apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
+          .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
+          .catch(e => showError('Delete failed', String(e.message||e)));
+      });
       return;
     }
 
@@ -7871,10 +7922,11 @@ window.llmDelete = function(name) {
     _llmShowDeleteBlockModal(name, active);
   }).catch(() => {
     // in_use check failed — fall back to plain confirm.
-    if (!confirm(`Remove LLM "${name}"? (Could not check active bindings.)`)) return;
-    apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
-      .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
-      .catch(e => showError('Delete failed', String(e.message||e)));
+    showConfirmModal(t('llm_confirm_delete_nocheck', [name]) || `Remove LLM "${name}"? (Could not check active bindings.)`, () => {
+      apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
+        .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
+        .catch(e => showError('Delete failed', String(e.message||e)));
+    });
   });
 };
 
@@ -11574,16 +11626,9 @@ function pushToAlertDock(message, type) {
   if (isConnected) {
     // Remove any prior connection-related entries (Disconnected, reconnecting…).
     dock.alerts = dock.alerts.filter(a => !/\b(dis(connected|connect)|reconnect)\b/i.test(a.message || ''));
-    // Schedule self-dismiss after 3s — only remove the matching entry,
-    // not the whole dock; if other alerts arrive, they stay.
-    setTimeout(() => {
-      if (!window._alertDock) return;
-      window._alertDock.alerts = window._alertDock.alerts.filter(a => !(a.type === 'success' && /\bconnect(ed|ion)\b/i.test(a.message || '')));
-      if (window._alertDock.alerts.length === 0 && window._alertDock.expanded) {
-        window._alertDock.expanded = false;
-      }
-      renderAlertDock();
-    }, 3000);
+    // Skip adding the "Connected" entry — it's noise now that the dock doesn't auto-open.
+    renderAlertDock();
+    return;
   }
   const stripped = String(message).replace(/^\[[^\]]*\]\s*/, '');
   const sepMatch = stripped.match(/^([^—:,]+?)(?:\s*[—:,].*)?$/);
@@ -11600,7 +11645,12 @@ function pushToAlertDock(message, type) {
     dock.alerts.unshift({ ts: now, type, message, key, family, n: 1 });
     if (dock.alerts.length > 100) dock.alerts.length = 100;
   }
-  renderAlertDock();
+  // Only render the dock panel if it's already open; otherwise just update the pill.
+  if (dock.el) {
+    renderAlertDock();
+  } else {
+    if (typeof renderAlertPill === 'function') renderAlertPill();
+  }
 }
 
 // alpha.29 #271 — render (or refresh) the dock tray.
