@@ -7642,6 +7642,12 @@ function loadLLMsPanel() {
               </span>
             </summary>
             <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(l, null, 2))}</pre>
+            <div style="padding:6px 10px;border-top:1px solid var(--border);">
+              <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="event.stopPropagation();llmLoadInUse(${safeJ}, this)">
+                ${escHtml(t('llm_in_use_collapsed')||'▾ In use…')}
+              </button>
+              <div class="llm-in-use-envelope" style="display:none;margin-top:6px;"></div>
+            </div>
           </details>`;
         }).join('');
     // GATE alpha.36 (operator 2026-05-10): Add LLM is now a panel-modal
@@ -7758,11 +7764,213 @@ window._loadComputeNodesCache = function() {
   }).catch(() => { window._computeNodesCache = []; return []; });
 };
 
+window.llmLoadInUse = function(name, btn) {
+  const envelope = btn.parentElement.querySelector('.llm-in-use-envelope');
+  if (!envelope) return;
+  const isOpen = envelope.style.display !== 'none';
+  if (isOpen) {
+    envelope.style.display = 'none';
+    btn.textContent = t('llm_in_use_collapsed')||'▾ In use…';
+    return;
+  }
+  envelope.style.display = 'block';
+  envelope.innerHTML = '<em style="font-size:11px;color:var(--text2);">Loading…</em>';
+
+  const page = parseInt(envelope.dataset.page||'1', 10);
+  const size = parseInt(envelope.dataset.size||'5', 10);
+  const filter = envelope.dataset.filter||'';
+  const qs = new URLSearchParams({page, size, ...(filter ? {filter} : {})});
+
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/in_use?' + qs).then(d => {
+    const total = d.total || 0;
+    const sessions = d.sessions || [];
+    const automata = d.automata || [];
+    const personas = d.personas || [];
+    btn.textContent = (t('llm_in_use_collapsed')||'▾ In use') + ' (' + total + ')';
+
+    if (total === 0) {
+      envelope.innerHTML = '<em style="font-size:11px;color:var(--text2);">' + escHtml(t('llm_in_use_empty')||'No active bindings') + '</em>';
+      return;
+    }
+
+    const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', complete:'⚪', failed:'🔴', killed:'🔴', configured:'🔵' })[s] || '⚫';
+
+    const renderRows = (rows, kind) => rows.map(r => {
+      const id = r.id || r.name || '';
+      const label = r.name || r.title || id;
+      const state = r.state || '';
+      const link = kind === 'session' ? `onclick="navigate('session-detail','${escHtml(id)}')"` : '';
+      return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0;" ${link ? `style="cursor:pointer;" ${link}` : ''}>
+        <span>${stateIcon(state)}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(id)}">${escHtml(label.slice(0,40))}</span>
+        <span style="color:var(--text2);font-size:10px;">${escHtml(state)}</span>
+      </div>`;
+    }).join('');
+
+    const filterInput = `<input type="text" placeholder="${escHtml(t('llm_in_use_filter_ph')||'Filter…')}" value="${escHtml(filter)}" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);width:120px;" onchange="llmInUseFilter(${JSON.stringify(name)}, this.value, event.target.closest('.llm-in-use-envelope'))" />`;
+    const sizeSelect = `<select style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" onchange="llmInUsePageSize(${JSON.stringify(name)}, this.value, event.target.closest('.llm-in-use-envelope'))">
+      <option value="5" ${size===5?'selected':''}>5</option>
+      <option value="10" ${size===10?'selected':''}>10</option>
+      <option value="50" ${size===50?'selected':''}>50</option>
+    </select>`;
+
+    const start = (page-1)*size+1;
+    const end = Math.min(page*size, total);
+    const pagination = total > size ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${start}–${end} of ${total}</div>` : '';
+
+    const sectSessions = sessions.length > 0 ? `<div style="font-size:10px;font-weight:600;color:var(--text2);margin-top:4px;">${escHtml(t('llm_in_use_sessions')||'Sessions')}</div>${renderRows(sessions,'session')}` : '';
+    const sectAutomata = automata.length > 0 ? `<div style="font-size:10px;font-weight:600;color:var(--text2);margin-top:4px;">${escHtml(t('llm_in_use_automata')||'Automata')}</div>${renderRows(automata,'automata')}` : '';
+    const sectPersonas = personas.length > 0 ? `<div style="font-size:10px;font-weight:600;color:var(--text2);margin-top:4px;">${escHtml(t('llm_in_use_personas')||'Personas')}</div>${renderRows(personas,'persona')}` : '';
+
+    envelope.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+        ${filterInput}${sizeSelect}
+      </div>
+      ${sectSessions}${sectAutomata}${sectPersonas}
+      ${pagination}`;
+  }).catch(e => {
+    envelope.innerHTML = '<em style="font-size:11px;color:var(--error);">' + escHtml(String(e.message||e)) + '</em>';
+  });
+};
+
+window.llmInUseFilter = function(name, filter, envelope) {
+  if (!envelope) return;
+  envelope.dataset.filter = filter;
+  envelope.dataset.page = '1';
+  const btn = envelope.previousElementSibling;
+  if (btn) llmLoadInUse(name, btn);
+};
+
+window.llmInUsePageSize = function(name, size, envelope) {
+  if (!envelope) return;
+  envelope.dataset.size = size;
+  envelope.dataset.page = '1';
+  const btn = envelope.previousElementSibling;
+  if (btn) llmLoadInUse(name, btn);
+};
+
 window.llmDelete = function(name) {
-  if (!confirm(`Remove LLM "${name}"?`)) return;
-  apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
-    .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
-    .catch(e => showError('Delete failed', String(e.message||e)));
+  // Check for active bindings first (409 on the API side, but pre-check in UI too).
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/in_use?size=50').then(d => {
+    const total = d.total || 0;
+    const all = [...(d.sessions||[]), ...(d.automata||[]), ...(d.personas||[])];
+    const active = all.filter(r => ['running','planning','decomposing','waiting_input','configured'].includes(r.state||''));
+
+    if (active.length === 0) {
+      // No active bindings — simple confirm + delete.
+      if (!confirm(`Remove LLM "${name}"?`)) return;
+      apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
+        .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
+        .catch(e => showError('Delete failed', String(e.message||e)));
+      return;
+    }
+
+    // Active bindings — show block modal.
+    _llmShowDeleteBlockModal(name, active);
+  }).catch(() => {
+    // in_use check failed — fall back to plain confirm.
+    if (!confirm(`Remove LLM "${name}"? (Could not check active bindings.)`)) return;
+    apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
+      .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
+      .catch(e => showError('Delete failed', String(e.message||e)));
+  });
+};
+
+window._llmShowDeleteBlockModal = function(name, activeBindings) {
+  const host = document.querySelector('.app') || document.body;
+  const old = document.getElementById('llmDeleteBlockModal');
+  if (old) old.remove();
+
+  const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', configured:'🔵' })[s] || '⚫';
+  const bindingsHTML = activeBindings.slice(0, 10).map(r =>
+    `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0;">
+      <span>${stateIcon(r.state||'')}</span>
+      <span style="flex:1;">${escHtml((r.name||r.title||r.id||'').slice(0,40))}</span>
+      <span style="color:var(--text2);font-size:10px;">${escHtml(r.state||'')}</span>
+    </div>`
+  ).join('') + (activeBindings.length > 10 ? `<div style="font-size:10px;color:var(--text2);">…and ${activeBindings.length-10} more</div>` : '');
+
+  const modal = document.createElement('div');
+  modal.id = 'llmDeleteBlockModal';
+  modal.className = 'confirm-modal-overlay app-anchored';
+  modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:500px;">
+    <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
+      <strong>⚠ ${escHtml(t('llm_delete_blocked_title')||'LLM in use')}: ${escHtml(name)}</strong>
+      <button class="btn-icon" style="margin-left:auto;" onclick="document.getElementById('llmDeleteBlockModal').remove()">&#10005;</button>
+    </div>
+    <div class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:12px;color:var(--text2);">${escHtml(t('llm_delete_blocked_hint')||'Reassign or cancel active bindings before deleting.')}</div>
+      <div style="border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg2);">
+        ${bindingsHTML}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--text2);">Reassign to:</label>
+        <div style="display:flex;gap:6px;">
+          <select id="llmDeleteReassignTo" class="form-select" style="flex:1;font-size:11px;">
+            <option value="">— pick replacement LLM —</option>
+          </select>
+          <button class="btn-primary" style="font-size:11px;white-space:nowrap;" onclick="_llmReassignThenDelete(${JSON.stringify(name)})">Reassign + Delete</button>
+        </div>
+      </div>
+      <details style="margin-top:4px;">
+        <summary style="font-size:11px;color:var(--error);cursor:pointer;">⋯ Force delete (terminates active work)</summary>
+        <div style="margin-top:6px;padding:8px;border:1px solid var(--error);border-radius:6px;background:rgba(239,68,68,0.05);">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+            <input type="checkbox" id="llmForceDeleteConfirm" />
+            I understand this terminates active work
+          </label>
+          <button class="btn-primary" style="font-size:11px;margin-top:6px;background:var(--error);border-color:var(--error);" onclick="_llmForceDelete(${JSON.stringify(name)})">Force Delete</button>
+        </div>
+      </details>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  host.appendChild(modal);
+
+  // Populate the reassign dropdown with all OTHER LLMs.
+  apiFetch('/api/llms').then(d => {
+    const sel = document.getElementById('llmDeleteReassignTo');
+    if (!sel) return;
+    (d.llms||[]).filter(l => l.name !== name).forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.name;
+      opt.textContent = l.name + ' (' + (l.kind||'') + ')';
+      sel.appendChild(opt);
+    });
+  });
+};
+
+window._llmReassignThenDelete = function(name) {
+  const toEl = document.getElementById('llmDeleteReassignTo');
+  const toLLM = toEl ? toEl.value : '';
+  if (!toLLM) { showToast('Pick a replacement LLM first', 'error', 2500); return; }
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/reassign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to_llm: toLLM }),
+  }).then(() => {
+    return apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' });
+  }).then(() => {
+    showToast('✓ Reassigned + deleted ' + name, 'success', 2500);
+    const m = document.getElementById('llmDeleteBlockModal');
+    if (m) m.remove();
+    loadLLMsPanel();
+  }).catch(e => showError('Reassign + delete failed', String(e.message||e)));
+};
+
+window._llmForceDelete = function(name) {
+  const cb = document.getElementById('llmForceDeleteConfirm');
+  if (!cb || !cb.checked) { showToast('Check the confirmation box first', 'error', 2500); return; }
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/force_delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: 'yes I understand this terminates active work' }),
+  }).then(() => {
+    showToast('✓ Force-deleted ' + name, 'success', 2500);
+    const m = document.getElementById('llmDeleteBlockModal');
+    if (m) m.remove();
+    loadLLMsPanel();
+  }).catch(e => showError('Force delete failed', String(e.message||e)));
 };
 
 // v7.0.0-alpha.16 #247 — operator-spec'd LLM enable/disable toggle.

@@ -1081,5 +1081,6 @@
   "llm_models_add_row": "+ Add model",
   "llm_models_node_col": "Node",
   "llm_models_model_col": "Model",
-  "llm_models_node_missing_warn": "Model not found on this node"
+  "llm_models_node_missing_warn": "Model not found on this node",
+  "llm_in_use_empty": "No active bindings"
 }

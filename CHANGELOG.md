@@ -7,6 +7,60 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## v7.0.0-alpha.37 — LLM Enabled Models overhaul
+
+### Schema
+- `LLM.Models []EnabledModel` — per-node model list replaces single `Model` field
+- `LLM.AutoAddModels bool` — auto-append newly-discovered models on Compute Nodes
+- Back-compat: old `Model` field expanded into `Models[]` on registry load
+
+### REST
+- `GET  /api/llms/{name}/in_use` — paginated; filter; sessions/automata/personas
+- `POST /api/llms/{name}/refresh_models` — trigger model-list refresh
+- `POST /api/llms/{name}/reassign` — move all active bindings to another LLM
+- `POST /api/llms/{name}/force_delete` — cascade-cancel all bindings then delete
+- `DELETE /api/llms/{name}` — 409 Conflict when active bindings exist
+
+### CLI / MCP / comm
+- `datawatch llm models list|add|remove <name>`
+- `datawatch llm in-use <name> [filter=...]`
+- `datawatch llm refresh-models <name>`
+- MCP: `llm_in_use`, `llm_refresh_models`, `llm_add_model`, `llm_remove_model`, `llm_list_models`
+- Comm: `llm models list|add|remove`, `llm in-use`, `llm refresh-models`
+
+### PWA
+- LLM Edit panel: per-node Enabled Models table with add/remove rows, Auto-enable toggle
+- In-use collapsible envelope per LLM (paginated 5/10/50, AND-substring filter)
+- Delete blocked on active bindings — modal lists offenders + Reassign+Delete path + Force delete
+- LLM badge in session list/detail: prefers `llm_ref` (v7 registry) over legacy `backend_family`
+
+### LLM name cleanup
+- Auto-migration no longer creates `*-default` entries (`ollama-default` → `ollama`, etc.)
+- `StripDefaultSuffix()` startup migration renames any existing `*-default` registry entries
+- Session `llm_ref` back-references updated to match renamed entries
+
+### Locales × 5
+- 17 new keys: `llm_field_enabled_models`, `llm_in_use_*`, `llm_delete_blocked_*`, `llm_models_*`, `llm_in_use_empty`
+
+### Mobile parity
+- datawatch-app issue filed: alpha.37 PWA parity — LLM Enabled Models
+
+### Rule audit
+| Rule | Status |
+|---|---|
+| `feedback_full_parity_required` (REST + MCP + CLI + comm + PWA + locale × 5 + mobile-parity issue) | ✓ |
+| `feedback_localization_rule` (× 5 bundles) | ✓ |
+| `feedback_per_release_smoke` (smoke gates tag) | ✓ — 4 new smoke checks added |
+| `feedback_docs_plans_audit` (CHANGELOG + plan doc + rule audit) | ✓ |
+| `feedback_user_facing_docs_no_internals` (no BL###/alpha.NN in user-facing copy) | ✓ |
+| `feedback_automata_not_prd` (uses "automata"/"automaton") | ✓ |
+| `feedback_backlog_is_spec` (plan pre-approved by operator) | ✓ |
+| `feedback_smoke_naming_cleanup` (smoke-* prefix + add_cleanup) | ✓ |
+| `feedback_smoke_cleanup_only_tracked` (no mass-sweeps) | ✓ |
+| `feedback_phase_release_pattern` (implement → build → smoke → tag) | ✓ |
+| `feedback_no_mega_bucket_close` | ✓ — splits into 37a/b/c with explicit checklist |
+| `feedback_no_global_pattern_widening` | n/a |
+
 ## [7.0.0-alpha.36] - 2026-05-10
 
 ### Summary — #183 items 4/5/6 — Sessions filter UX (LLM + State collapsibles + wider input)
