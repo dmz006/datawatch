@@ -1012,6 +1012,13 @@ func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, erro
 	})
 }
 
+// daemonStartedAtETag — base36-encoded unix nanos at package init.
+// Folded into the cacheControlMiddleware ETag so every daemon restart
+// produces a unique validator even when Version doesn't bump. Fixes
+// the operator-reported 304-on-same-version-rebuild cache bug
+// (GATE 2026-05-10).
+var daemonStartedAtETag = strconv.FormatInt(time.Now().UnixNano(), 36)
+
 // v6.13.12 — cacheControlMiddleware sets explicit Cache-Control on
 // every static asset so browsers can't fall back to heuristic caching
 // (which on embed FS — no mtime → no ETag/Last-Modified — meant
@@ -1032,14 +1039,22 @@ func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, erro
 //     fonts, .png, .ico): long max-age. These are immutable per-version
 //     URLs; safe to cache hard.
 //
-// ETag is derived from the daemon's Version string so every release
-// produces a different validator without needing per-file mtime.
+// ETag is derived from the daemon's Version string PLUS the daemon
+// start-time epoch so every restart produces a different validator.
+//
+// GATE alpha.36 (operator 2026-05-10): this was previously Version-only,
+// which meant same-version rebuilds (every iteration during the GATE
+// walkthrough) returned 304 Not Modified to the browser even though
+// the embed-FS content had changed. Operator was forced to manually
+// clear cache after every daemon restart. Folding daemonStartedAt
+// into the ETag makes every restart cache-bust automatically — same
+// effect as a Version bump but free.
 func cacheControlMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Read Version per-request — main.go assigns server.Version
 		// AFTER server.New() runs, so capturing it at middleware
 		// construction time would lock in the package default.
-		etag := `"dw-` + Version + `"`
+		etag := `"dw-` + Version + `-` + daemonStartedAtETag + `"`
 		path := r.URL.Path
 		switch {
 		case path == "/" || path == "/index.html" || path == "/sw.js":

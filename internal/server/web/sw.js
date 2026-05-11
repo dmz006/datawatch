@@ -18,7 +18,13 @@
 // controlled window after the cache purge, which forces the page to
 // reload from the network. This works WITHOUT the OLD app.js needing
 // a controllerchange listener — the SW drives the navigation directly.
-const CACHE_NAME = 'datawatch-v7-0-0-alpha-18';
+// GATE alpha.36 (operator 2026-05-10): bumped — was stuck at alpha-18,
+// so installed PWAs (ie. operator's phone) kept serving the old app.js
+// until manual "clear site data". With this bump, the SW byte-level
+// changes → browser detects an update → install handler fires →
+// activate handler purges old caches AND force-navigates every
+// controlled window. Reload-to-update should Just Work after this.
+const CACHE_NAME = 'datawatch-v7-0-0-alpha-36-r2';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {
@@ -26,6 +32,16 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
+});
+
+// GATE alpha.36 (operator 2026-05-10): page can postMessage SKIP_WAITING
+// to force an immediately-installed-but-waiting SW to take over.
+// Pairs with the page-side updatefound listener that fires this when
+// it sees a new SW arrived while another tab held the controller.
+self.addEventListener('message', event => {
+  if (event && event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', event => {

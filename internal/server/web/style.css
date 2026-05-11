@@ -464,9 +464,16 @@ body {
 }
 
 /* Header action buttons */
+/* GATE alpha.36 (operator 2026-05-10): consistent sizing across all
+   action icons. Icon glyphs (?, ⊞, ☑, ⏱) had different intrinsic
+   widths and read as inconsistent — min-width + center-align fixes it.
+   Also adds breathing room between adjacent buttons via the parent
+   .automata-tabs-bar gap. */
 .automata-action-btn {
-  padding: 4px 10px;
-  font-size: 12px;
+  min-width: 32px;
+  height: 28px;
+  padding: 4px 8px;
+  font-size: 13px;
   color: var(--text2);
   background: transparent;
   border: 1px solid var(--border);
@@ -475,7 +482,11 @@ body {
   transition: all 0.15s;
   white-space: nowrap;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.automata-tabs-bar { gap: 6px; }
 .automata-action-btn:hover { color: var(--text); background: var(--bg3); }
 .automata-action-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(96,165,250,0.1); }
 
@@ -579,6 +590,13 @@ body {
 .lifecycle-step-btn.done    { background: var(--success); color: #fff; border-color: var(--success); }
 .lifecycle-step-btn.danger  { border-color: var(--error); color: var(--error); }
 .lifecycle-step-btn.danger:hover { background: rgba(239,68,68,0.12); }
+/* GATE alpha.36 (operator 2026-05-10): compact mode for the lifecycle
+   strip inside automata cards. Shrinks padding + font so all 5 steps
+   (plan/review/approve/run/done) fit on one line at typical viewport
+   widths without wrapping. */
+.lifecycle-compact .lifecycle-strip { gap: 0; flex-wrap: nowrap; overflow-x: auto; }
+.lifecycle-compact .lifecycle-step-btn { padding: 2px 6px; font-size: 10px; }
+.lifecycle-compact .lifecycle-sep { font-size: 10px; }
 .lifecycle-sep {
   color: var(--text2);
   padding: 0 2px;
@@ -853,19 +871,28 @@ body {
   font-family: inherit;
   min-height: 76px;
 }
+/* GATE alpha.36 (operator 2026-05-10): mic should be a small icon
+   button regardless of input height — matches the mic placement we use
+   on the session input bar. align-self:flex-start keeps it pinned to
+   the top-right corner of a tall textarea instead of stretching. */
 .wizard-mic-btn {
   flex-shrink: 0;
-  background: var(--bg2);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  border: none;
   border-radius: 6px;
-  padding: 0 10px;
-  font-size: 16px;
+  padding: 4px 6px;
+  font-size: 14px;
   cursor: pointer;
-  align-self: stretch;
+  align-self: flex-start;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .wizard-mic-btn:active { background: var(--bg3); }
-.wizard-mic-btn:hover { border-color: var(--accent); }
+.wizard-mic-btn:hover { color: var(--accent); background: var(--bg3); }
 
 /* Detected-type pill row + collapsible chip row. */
 .wizard-detected-row { display: flex; gap: 6px; align-items: center; padding: 2px 0 4px; }
@@ -987,6 +1014,172 @@ body {
    directory chip itself. */
 .wizard-mobile #wizardDirRow { margin-top: 1px !important; }
 .wizard-mobile .dir-display { padding: 3px 9px !important; line-height: 1.3; }
+/* GATE alpha.36 (operator 2026-05-10): "between Workspace dropdown and
+   directory picker is a large space; between directory picker and Effort
+   are also a few empty rows; Advanced envelope big space before first
+   checkbox; Configure skills indented oddly". Final tightening pass. */
+.wizard-mobile .wizard-grid-mobile { gap: 0 !important; row-gap: 0 !important; }
+@media (min-width: 600px) {
+  .wizard-mobile .wizard-grid-mobile { gap: 0 12px !important; }
+}
+.wizard-mobile .wizard-field { margin-bottom: 4px; }
+.wizard-mobile .wizard-field + .wizard-field { margin-top: 0; }
+.wizard-mobile #wizardDirRow { margin-bottom: 2px !important; }
+.wizard-advanced-body-tight { padding-top: 4px !important; gap: 2px !important; }
+.wizard-advanced-body-tight .wizard-checkbox-row:first-child { margin-top: 0; padding-top: 0; }
+/* Skills hint: kill the indent so it left-aligns with the checkbox text
+   (which sits ~22px from the row start because of the 16px box + 8px gap,
+   close enough — match exactly to avoid a visual offset). */
+/* GATE alpha.36 (operator 2026-05-10): skills hint must be left-flush
+   with the rest of the advanced section (no extra indent). */
+.wizard-skills-hint { padding-left: 0 !important; margin-top: 6px; text-align: left; }
+/* GATE alpha.36 (operator 2026-05-10): kill the vertical stretch that
+   made Workspace/Backend cells uniformly tall, BUT keep the horizontal
+   stretch so each field fills the form width. align-self: start was
+   too aggressive — it collapsed the cross-axis stretch and shrunk the
+   intent textarea to content width. flex: 0 0 auto on children pins
+   their natural height without touching width. */
+.wizard-mobile .wizard-grid-mobile { align-items: start !important; }
+.wizard-mobile .wizard-field { align-self: stretch !important; width: 100%; box-sizing: border-box; }
+.wizard-mobile .wizard-field > * { flex: 0 0 auto !important; }
+.wizard-mobile #wizardDirRow { display: flex; flex-direction: column; }
+.wizard-mobile #dirBrowser:not([style*="display: block"]):not([style*="display:block"]) { height: 0 !important; }
+/* GATE alpha.36 (operator 2026-05-10): the persistent ~62px gap
+   between the Advanced summary and the first checkbox came from THREE
+   whitespace text nodes inside the <details> element (template-literal
+   indentation creates anonymous block boxes that each consume one
+   line-height ≈ 20.8px). Collapsing line-height on the details
+   container removes the phantom rows; we restore line-height on the
+   real children (summary + body) so they read normally. */
+.wizard-mobile .wizard-advanced-details { line-height: 0; font-size: 0; }
+.wizard-mobile .wizard-advanced-details > * { margin: 0 !important; line-height: normal; font-size: 13px; }
+.wizard-mobile .wizard-advanced-summary { padding: 4px 10px !important; }
+.wizard-mobile .wizard-advanced-body-tight { gap: 0 !important; padding: 2px 10px 4px !important; margin-top: 0 !important; }
+.wizard-mobile .wizard-advanced-body-tight > * { margin-top: 0 !important; margin-bottom: 0 !important; }
+.wizard-mobile .wizard-checkbox-row { padding: 0 !important; line-height: 1.4; margin: 0 !important; }
+/* Skills hint left-flush — defeating the earlier `.wizard-mobile
+   .wizard-skills-hint` 24px indent that won on specificity. */
+.wizard-mobile .wizard-advanced-body-tight .wizard-skills-hint { padding-left: 0 !important; margin-top: 4px !important; text-align: left !important; }
+/* GATE alpha.36 (operator 2026-05-10): same whitespace-text-node fix
+   for the New Session panel — its `<form>` contained dozens of indented
+   newlines that each rendered as an empty 20.8px row inside the flex
+   column. Collapse line-height on the form, restore on the field
+   elements that need readable text. Also normalize form-group margins
+   so the section spacing reads tight + uniform. */
+#newSessionModal .response-modal-body { line-height: 0; font-size: 0; gap: 0 !important; }
+#newSessionModal .response-modal-body * { line-height: normal; font-size: 13px; }
+#newSessionModal .response-modal-body .form-group { margin: 6px 0 !important; padding: 0 !important; }
+#newSessionModal .response-modal-body .new-session-view > * { margin-top: 6px !important; margin-bottom: 0 !important; }
+#newSessionModal .response-modal-body details summary { padding: 4px 0 !important; }
+#newSessionModal .response-modal-body details > * { margin: 0 !important; }
+#newSessionModal .response-modal-body details { line-height: 0; }
+#newSessionModal .response-modal-body details > * { line-height: normal; }
+#newSessionModal .response-modal-body details[open] > div { padding-top: 4px !important; }
+/* Ensure long inputs stay full-width inside the panel. */
+#newSessionModal .form-input, #newSessionModal .form-select, #newSessionModal .form-textarea { width: 100%; box-sizing: border-box; }
+/* GATE alpha.36 (operator 2026-05-10): Edit-menu overflow popup on PRD
+   detail. Was rendering inline (pushed everything around). Now absolute
+   positioning so it overlays below the ⋯ Edit button. Items styled as
+   proper buttons (full width, hover state, separator borders). */
+/* GATE alpha.36 (operator 2026-05-10): Edit-menu slides out to the
+   LEFT of the ⋯ Edit button (horizontal flyout) instead of dropping
+   down. Position right:100% pins the menu's right edge to the button's
+   left edge; gap pushes it out via margin-right. Items render as a
+   horizontal row of pill buttons. The menu overlays whatever sits to
+   the left of Edit (it's z-index 100 + position absolute). */
+.prd-edit-menu {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 6px);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  z-index: 100;
+  padding: 3px 5px;
+  display: flex;
+  flex-direction: row;
+  gap: 3px;
+  white-space: nowrap;
+}
+.prd-edit-menu-item {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+.prd-edit-menu-item:hover { background: var(--bg3); border-color: var(--border); }
+/* GATE alpha.36 (operator 2026-05-10): unified action-button sizing
+   across the PRD detail toolbar — Cancel / Approve / ⋯ Edit / 🗑 Delete
+   all share the same height + padding so the row reads as a coherent
+   button strip (operator: "buttons are not the same size, they should
+   be the same size as edit/delete"). */
+.prd-detail-toolbar-v2 button.btn-secondary,
+.prd-detail-toolbar-v2 button.btn-primary,
+.prd-detail-toolbar-v2 .prd-edit-overflow-btn,
+.prd-detail-toolbar-v2 .prd-delete-btn,
+.prd-detail-toolbar-v2 .prd-action-btn,
+.prd-detail-toolbar-v2 .prd-header-btn {
+  height: 30px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+}
+.prd-edit-overflow-btn {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.prd-edit-overflow-btn:hover { border-color: var(--accent); }
+.prd-delete-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.prd-delete-btn:hover { background: rgba(239,68,68,0.12); border-color: var(--error); }
+/* GATE alpha.36 (operator 2026-05-10): the Edit flyout was being
+   clipped because the tab body has overflow set. Escape the container
+   with position:fixed so the menu overlays freely above any tab/scroll
+   bounds. JS positions it dynamically (right: window.innerWidth -
+   buttonRect.left + 6, top: buttonRect.top). */
+.prd-edit-menu {
+  position: fixed;
+  z-index: 1000;
+}
+/* GATE alpha.36 (operator 2026-05-10): the embedded .new-session-view
+   has padding:20px 16px + gap:16px from its standalone-view styles.
+   Inside the panel the panel body already pads — strip the inner
+   padding and reduce gap so sections sit tight. The .view-content
+   wrapper also has padding:0 12px which we zero out. */
+#newSessionModal .view-content { padding: 0 !important; }
+#newSessionModal .new-session-view { padding: 0 !important; gap: 6px !important; }
+#newSessionModal .new-session-view h2,
+#newSessionModal .new-session-view p { display: none; }
+/* GATE alpha.36 (operator 2026-05-10): "long paths scroll off the
+   window to the right". Truncate with ellipsis + show full path on
+   hover via the existing title attribute. RTL direction lets the
+   ellipsis appear on the LEFT (so the meaningful tail of the path
+   stays visible — `…/long/path/foo/bar` reads better than
+   `/long/path/foo/…`). */
+.wizard-mobile .dir-picker { width: 100%; min-width: 0; }
+.wizard-mobile .dir-display {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
 .wizard-mobile .wizard-label { margin-bottom: 1px; }
 
 /* Compact form inputs in wizard contexts. The default form-input
@@ -1999,18 +2192,15 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    the state badge after >2 s with no channel events (running sessions
    only). 15 s flips the actual state to WaitingInput; this gives an
    earlier visual / alerting hook. */
-.state .stale-dot {
-  display: none;
-}
+/* GATE finding (operator 2026-05-10): the stale-comms yellow dot was
+   inaccurate — it fired even when the channel tab showed plenty of
+   activity. Hooks (alpha.34d universal state-change emit + .34b
+   detection-augmentation pipeline) give us better signal. The dot stays
+   in the DOM for back-compat (other code may reference its presence),
+   but we never display it now. */
+.state .stale-dot,
 .state.stale-comms .stale-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 6px;
-  border-radius: 50%;
-  background: var(--warning, #f59e0b);
-  vertical-align: middle;
-  animation: stale-pulse 1.4s ease-in-out infinite;
+  display: none;
 }
 @keyframes stale-pulse {
   0%, 100% { opacity: 0.4; }
@@ -2276,6 +2466,49 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   align-items: center;
   justify-content: center;
   z-index: 200;
+  /* GATE alpha.36 (operator 2026-05-10): "new automata wizard is wider
+     than pwa window". Constrain to the .app shell when present (matches
+     the alert dock anchor pattern), and never let inner content force
+     horizontal overflow. */
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.confirm-modal-overlay > .response-modal,
+.confirm-modal-overlay > .confirm-modal {
+  max-width: min(560px, calc(100% - 24px)) !important;
+  box-sizing: border-box;
+}
+.confirm-modal-overlay .form-select,
+.confirm-modal-overlay .form-input,
+.confirm-modal-overlay select,
+.confirm-modal-overlay input,
+.confirm-modal-overlay textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+/* GATE alpha.36 (operator 2026-05-10): app-anchored variant — overlay
+   covers the .app shell (not the viewport). The .app container has
+   position:relative so position:absolute + inset:0 fills it exactly.
+   Inner modal max-width then resolves against .app's width — never
+   the larger browser window. */
+.confirm-modal-overlay.app-anchored {
+  position: absolute;
+  inset: 0;
+  /* GATE alpha.36 (operator 2026-05-10): top-align panel modals.
+     Common pattern (Linear/GitHub/Notion/Stripe all do this for create
+     forms): users start reading from the top, not the middle. Centering
+     wastes vertical space on tall content and pushes form submit out of
+     view on shorter viewports. */
+  align-items: flex-start;
+  padding-top: 16px;
+}
+.confirm-modal-overlay.app-anchored > .response-modal,
+.confirm-modal-overlay.app-anchored > .confirm-modal {
+  width: 100%;
+  max-width: calc(100% - 16px) !important;
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
 }
 .confirm-modal {
   background: var(--bg2);
@@ -2308,6 +2541,40 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   color: var(--accent2);
   border-color: var(--accent2);
   background: rgba(168,85,247,0.08);
+}
+/* GATE alpha.36 (operator 2026-05-10): active state for the scroll
+   toggle so the ⤒ icon is visually distinct when scroll mode is on. */
+.term-tool-btn-active {
+  color: var(--accent2) !important;
+  border-color: var(--accent2) !important;
+  background: rgba(168,85,247,0.18) !important;
+}
+
+/* GATE alpha.36 (operator 2026-05-10): mobile Chrome leaves :hover
+   state stuck on tap-targets after touch ends — operator-reported
+   "buttons stay purple after tap on mobile". The fix: scope every
+   :hover rule on tappable buttons behind `@media (hover: hover)` so
+   touch-only devices skip the hover rule entirely (they still get
+   the click handler + the explicit .active / .term-tool-btn-active
+   classes for state, just not a stuck visual). For desktop pointer
+   devices, the @media query matches and hover works normally. */
+@media not (hover: hover) {
+  .term-tool-btn:hover,
+  .detail-pill-btn:hover,
+  .btn-icon:hover,
+  .btn-icon-del:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .prd-edit-overflow-btn:hover,
+  .prd-edit-menu-item:hover,
+  .prd-delete-btn:hover,
+  .automata-action-btn:hover,
+  .lifecycle-step-btn:hover,
+  .lifecycle-step-btn.clickable:hover {
+    color: inherit;
+    background: inherit;
+    border-color: inherit;
+  }
 }
 
 .session-schedules {

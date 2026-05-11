@@ -160,7 +160,15 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			snap := s.peerRegistry.LastPayload(name)
 			if snap == nil {
-				http.Error(w, "no snapshot for peer", http.StatusNotFound)
+				// GATE alpha.36 (operator 2026-05-10): self-peer has
+				// no pushed snapshot — it's the local instance. Fall
+				// back to live local observer stats so clicking the
+				// synthetic-self row shows real data instead of 404.
+				if name == s.hostname && s.observerAPI != nil {
+					s.handleObserverStats(w, r)
+					return
+				}
+				http.Error(w, "no snapshot for peer (peer hasn't pushed stats yet)", http.StatusNotFound)
 				return
 			}
 			writeJSONOK(w, snap)

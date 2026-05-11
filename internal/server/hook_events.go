@@ -73,7 +73,13 @@ var globalHookStore = &hookEventStore{
 }
 
 const hookHistoryMax = 50
-const hookStaleAfter = 30 * time.Second
+// hookStaleAfter — alpha.36 GATE (operator 2026-05-10): bumped from 30s
+// to 5 min. The 30s threshold was too aggressive for real-world tool
+// cadence — a long Thinking turn (no PostToolUse) trivially exceeds 30s
+// and falsely marked otherwise-installed hooks as "stale". 5 min better
+// matches actual usage where the operator wants to know hooks aren't
+// firing at all, not that the agent is just thinking hard.
+const hookStaleAfter = 5 * time.Minute
 
 func (s *hookEventStore) record(sessionID string, ev *SessionHookEvent) {
 	s.mu.Lock()
