@@ -4782,3 +4782,133 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   font-size: 11px;
   opacity: 0.6;
 }
+
+/* ── BL299 — Narrow-screen header responsive layout (<420px) ──────────────
+   On viewports narrower than 420px:
+   • ID chip is anchor-left, never truncated (flex-shrink:0).
+   • Title truncates with ellipsis (flex:1; overflow:hidden; text-overflow).
+   • Right-side actions wrap to a second row, right-aligned.
+   Applies to: session card headers, PRD card headers, Council run rows,
+   LLM/ComputeNode card headers.
+   ─────────────────────────────────────────────────────────────────────── */
+@media (max-width: 419px) {
+  /* Session card header */
+  .session-card-header {
+    flex-wrap: wrap;
+  }
+  .session-card .id {
+    flex-shrink: 0;
+    order: 0;
+  }
+  .session-card-header .session-name,
+  .session-card-header .card-title,
+  .session-card-header .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    order: 1;
+  }
+  .session-card-header .card-actions,
+  .session-card .card-actions {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    order: 2;
+    margin-top: 4px;
+  }
+
+  /* PRD / Automata card header */
+  .prd-card > div:first-child,
+  .prd-card .prd-card-top {
+    flex-wrap: wrap;
+  }
+  .prd-card .prd-id,
+  .prd-card [class*="id-chip"],
+  .prd-card .id {
+    flex-shrink: 0;
+    order: 0;
+  }
+  .prd-card .prd-title,
+  .prd-card .title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    order: 1;
+  }
+  .prd-card .prd-actions,
+  .prd-card .card-actions {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    order: 2;
+    margin-top: 4px;
+  }
+
+  /* Council run rows */
+  .council-run-row,
+  .council-run-header {
+    flex-wrap: wrap;
+  }
+  .council-run-row .run-id,
+  .council-run-header .run-id {
+    flex-shrink: 0;
+    order: 0;
+  }
+  .council-run-row .run-title,
+  .council-run-row .run-topic,
+  .council-run-header .run-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    order: 1;
+  }
+  .council-run-row .run-actions {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    order: 2;
+    margin-top: 4px;
+  }
+
+  /* LLM / ComputeNode card headers */
+  .llm-card-header,
+  .compute-card-header {
+    flex-wrap: wrap;
+  }
+  .llm-card-header .llm-id,
+  .compute-card-header .node-id {
+    flex-shrink: 0;
+    order: 0;
+  }
+  .llm-card-header .llm-name,
+  .compute-card-header .node-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    order: 1;
+  }
+  .llm-card-header .llm-actions,
+  .compute-card-header .node-actions {
+    flex: 0 0 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    order: 2;
+    margin-top: 4px;
+  }
+}

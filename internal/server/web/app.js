@@ -8896,6 +8896,22 @@ window.toggleVerdictDrilldown = function(groupId, idx) {
   panel.style.display = 'block';
 };
 
+// BL293 — Automata card button matrix (verified 2026-05-11):
+// ┌─────────────────┬──────────────────────────────────────────────────────┐
+// │ Status          │ Buttons                                              │
+// ├─────────────────┼──────────────────────────────────────────────────────┤
+// │ draft           │ Decompose · LLM · Edit · Delete                      │
+// │ needs_review    │ LLM · Approve · Reject · Revise · Edit · Delete      │
+// │ revisions_asked │ Decompose · LLM · Approve · Reject · Revise · Edit · Delete │
+// │ approved        │ LLM · Run · Edit · Delete                            │
+// │ running         │ Cancel · Delete                                      │
+// │ completed       │ Edit · Delete                                        │
+// │ cancelled       │ LLM · Edit · Delete                                  │
+// │ archived        │ LLM · Edit · Delete                                  │
+// │ template        │ Instantiate (only)                                   │
+// └─────────────────┴──────────────────────────────────────────────────────┘
+// LLM absent on running+completed (can't change LLM mid-run or post-run).
+// Edit absent on running (spec change during execution is unsafe).
 function renderPRDActions(prd) {
   const id = prd.id || '';
   const idJ = JSON.stringify(id);
