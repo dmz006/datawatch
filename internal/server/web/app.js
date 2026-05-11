@@ -7061,6 +7061,16 @@ window.openLLMEditPanel = function(existing) {
   const nodes = (window._computeNodesCache || []);
   const selectedNodes = new Set(existing.compute_nodes || []);
   const nodeOpts = nodes.map(n => `<option value="${escHtml(n.name)}" ${selectedNodes.has(n.name) ? 'selected' : ''}>${escHtml(n.name)} (${escHtml(n.kind||'?')})</option>`).join('');
+  const existingModels = existing.models || (existing.model ? [{node: (existing.compute_nodes||[])[0]||'', model: existing.model}] : []);
+  const modelsRowsHTML = existingModels.map((em) =>
+    `<tr data-node="${escHtml(em.node||'')}" data-model="${escHtml(em.model||'')}">
+      <td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(em.node||'—')}</code></td>
+      <td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(em.model||'')}</code></td>
+      <td style="padding:4px 0;text-align:right;">
+        <button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button>
+      </td>
+    </tr>`
+  ).join('');
   const modal = document.createElement('div');
   modal.id = 'llmAddPanel';
   modal.dataset.editName = isEdit ? existing.name : '';
@@ -7088,8 +7098,32 @@ window.openLLMEditPanel = function(existing) {
         <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('llm_field_compute_nodes_hint')||'Hold Ctrl/Cmd to multi-select. Order = failover order.')}</div>
       </div>
       <div class="wizard-field">
-        <label class="wizard-label">${escHtml(t('llm_field_model')||'Model')}</label>
-        <input id="llmEditModel" class="form-input" placeholder="llama3:70b / claude-sonnet-4-6 / etc." value="${escHtml(existing.model||'')}" />
+        <label class="wizard-label">${escHtml(t('llm_field_enabled_models')||'Enabled Models')}</label>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('llm_field_enabled_models_hint')||'One row per (node, model) pair. Node is empty for SaaS kinds.')}</div>
+        <table id="llmModelsTable" style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);color:var(--text2);font-size:10px;">
+              <th style="text-align:left;padding:2px 8px 4px 0;">${escHtml(t('llm_models_node_col')||'Node')}</th>
+              <th style="text-align:left;padding:2px 8px 4px 8px;">${escHtml(t('llm_models_model_col')||'Model')}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="llmModelsBody">${modelsRowsHTML}</tbody>
+        </table>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:6px;" id="llmAddModelRow">
+          <select id="llmNewModelNode" class="form-select" style="flex:0 0 auto;width:auto;min-width:80px;max-width:200px;font-size:11px;">
+            <option value="">(SaaS)</option>
+            ${nodes.map(n => `<option value="${escHtml(n.name)}">${escHtml(n.name)}</option>`).join('')}
+          </select>
+          <input id="llmNewModelName" class="form-input" style="flex:1;font-size:11px;" placeholder="e.g. qwen3:8b" />
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 10px;white-space:nowrap;" onclick="_llmAddModelRow()">${escHtml(t('llm_models_add_row')||'+ Add')}</button>
+        </div>
+      </div>
+      <div class="wizard-field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+          <input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} />
+          ${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}
+        </label>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
@@ -7116,6 +7150,41 @@ window.openLLMEditPanel = function(existing) {
   dead.forEach(n => n.remove());
 };
 
+window._llmAddModelRow = function() {
+  const nodeEl = document.getElementById('llmNewModelNode');
+  const modelEl = document.getElementById('llmNewModelName');
+  if (!modelEl || !modelEl.value.trim()) {
+    showToast('Model name required', 'error', 2000);
+    return;
+  }
+  const node = nodeEl ? nodeEl.value : '';
+  const model = modelEl.value.trim();
+  const tbody = document.getElementById('llmModelsBody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.dataset.node = node;
+  tr.dataset.model = model;
+  tr.innerHTML = `<td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(node||'—')}</code></td>` +
+    `<td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(model)}</code></td>` +
+    `<td style="padding:4px 0;text-align:right;"><button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button></td>`;
+  tbody.appendChild(tr);
+  modelEl.value = '';
+};
+
+window._llmRemoveModelRow = function(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+};
+
+window._llmCollectModels = function() {
+  const tbody = document.getElementById('llmModelsBody');
+  if (!tbody) return [];
+  return Array.from(tbody.querySelectorAll('tr')).map(tr => ({
+    node: tr.dataset.node || '',
+    model: tr.dataset.model || '',
+  })).filter(em => em.model);
+};
+
 window._llmTestDraft = function() {
   const status = document.getElementById('llmEditStatus');
   const setStatus = (msg, color) => { if (status) { status.style.color = color; status.textContent = msg; } };
@@ -7138,17 +7207,19 @@ window._llmSaveDraft = function() {
   const isEdit = !!editName;
   const name = (document.getElementById('llmEditName')||{}).value.trim();
   const kind = (document.getElementById('llmEditKind')||{}).value;
-  const model = (document.getElementById('llmEditModel')||{}).value.trim();
   const apiKey = (document.getElementById('llmEditAPIKey')||{}).value.trim();
   const sel = document.getElementById('llmEditComputeNodes');
   const computeNodes = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
   if (!isEdit && !name) { showError('LLM name required'); return; }
+  const models = window._llmCollectModels ? window._llmCollectModels() : [];
+  const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
+  const firstModel = models.length > 0 ? models[0].model : '';
   const url = isEdit ? '/api/llms/' + encodeURIComponent(editName) : '/api/llms';
   const method = isEdit ? 'PUT' : 'POST';
   apiFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: isEdit ? editName : name, kind, model, compute_nodes: computeNodes, api_key_ref: apiKey }),
+    body: JSON.stringify({ name: isEdit ? editName : name, kind, models, model: firstModel, auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey }),
   }).then(() => {
     showToast(isEdit ? '✓ LLM updated' : '✓ LLM added', 'success', 2000);
     if (modal) modal.remove();
@@ -7558,7 +7629,11 @@ function loadLLMsPanel() {
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
               <strong>${safe}</strong>${auto}
               <span style="color:var(--text2);font-size:11px;">${escHtml(l.kind||'')}</span>
-              <span style="color:var(--text2);font-size:10px;">${escHtml(l.model||'')}</span>
+              ${l.models && l.models.length > 0
+                ? `<span style="color:var(--text2);font-size:10px;">${escHtml(l.models.map(m => (m.node ? m.node+':' : '') + m.model).join(', ').slice(0,60))}</span>`
+                : l.model
+                ? `<span style="color:var(--text2);font-size:10px;">${escHtml(l.model)}</span>`
+                : ''}
               <span style="color:var(--text2);font-size:10px;">${nodes}</span>${llmTagsHtml}
               <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
                 ${llmSwitchHTML}
