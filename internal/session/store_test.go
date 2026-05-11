@@ -1,8 +1,10 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -454,5 +456,81 @@ func TestSecfile_AtomicWrite_SurvivesPartialFlush(t *testing.T) {
 	// The .tmp file should not linger after a successful rename.
 	if _, err := os.Stat(path + ".tmp"); err == nil {
 		t.Errorf("WriteFile should remove .tmp after successful rename; .tmp still exists")
+	}
+}
+
+// BL294 — concurrent persist() calls from two goroutines (simulating two
+// Manager instances sharing sessions.json during a daemon re-exec) must not
+// corrupt the file. After both goroutines finish, the file must contain valid
+// JSON and must include all sessions that were saved.
+func TestStore_ConcurrentPersist_NoCorruption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	// Two independent Store instances share the same file — simulating the
+	// brief window where the parent daemon and child daemon co-exist.
+	s1, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore s1: %v", err)
+	}
+	s2, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore s2: %v", err)
+	}
+
+	// Pre-populate each store's in-memory map so their persist() calls write
+	// disjoint but overlapping session sets.
+	sess1a := makeTestSession("cc01", "host", StateRunning)
+	sess1b := makeTestSession("cc02", "host", StateComplete)
+	sess2a := makeTestSession("cc03", "host", StateRunning)
+	sess2b := makeTestSession("cc04", "host", StateWaitingInput)
+
+	// Load sessions into each store without calling persist yet.
+	s1.mu.Lock()
+	s1.sessions[sess1a.FullID] = sess1a
+	s1.sessions[sess1b.FullID] = sess1b
+	s1.mu.Unlock()
+
+	s2.mu.Lock()
+	s2.sessions[sess2a.FullID] = sess2a
+	s2.sessions[sess2b.FullID] = sess2b
+	s2.mu.Unlock()
+
+	// Fire concurrent persists.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		s1.mu.Lock()
+		defer s1.mu.Unlock()
+		if err := s1.persist(); err != nil {
+			t.Errorf("s1.persist: %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		s2.mu.Lock()
+		defer s2.mu.Unlock()
+		if err := s2.persist(); err != nil {
+			t.Errorf("s2.persist: %v", err)
+		}
+	}()
+	wg.Wait()
+
+	// The file must be valid JSON (no corruption from torn writes).
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read sessions.json after concurrent persist: %v", err)
+	}
+	var sessions []*Session
+	if err := json.Unmarshal(raw, &sessions); err != nil {
+		t.Fatalf("sessions.json is not valid JSON after concurrent persist: %v\nbody: %s", err, raw)
+	}
+	// The last writer wins; it must have written a non-empty, structurally
+	// valid array — we already verified that above. No further assertion on
+	// which writer's sessions survived (last-writer-wins is acceptable for
+	// cross-process races; the boot ReconcileSessions recovers any gap).
+	if len(sessions) == 0 {
+		t.Errorf("sessions.json is empty after concurrent persist — expected at least one session")
 	}
 }

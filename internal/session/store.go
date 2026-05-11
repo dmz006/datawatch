@@ -12,6 +12,11 @@ import (
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
+// lockFileName is the sidecar advisory-lock file used by flockAcquire.
+// A sidecar avoids locking the file being written (which secfile.WriteFile
+// replaces via atomic rename, breaking any lock held on the old inode).
+const lockFileName = "sessions.json.lock"
+
 // State represents the lifecycle state of a claude-code session.
 type State string
 
@@ -178,6 +183,7 @@ func IsValidEffort(s string) bool {
 type Store struct {
 	mu       sync.RWMutex
 	path     string
+	lockPath string // advisory lock sidecar file (sessions.json.lock)
 	encKey   []byte // nil = no encryption
 	sessions map[string]*Session // key: full ID
 }
@@ -197,6 +203,7 @@ func NewStoreEncrypted(path string, key []byte) (*Store, error) {
 func newStoreWithKey(path string, key []byte) (*Store, error) {
 	s := &Store{
 		path:     path,
+		lockPath: filepath.Join(filepath.Dir(path), lockFileName),
 		encKey:   key,
 		sessions: make(map[string]*Session),
 	}
@@ -412,7 +419,28 @@ func (s *Store) Flush() error {
 
 // persist writes the current sessions to disk.
 // Must be called with mu held.
+//
+// BL294 — an exclusive advisory flock on sessions.json.lock serialises
+// concurrent persist() calls from two Manager instances that briefly
+// co-exist during the daemon re-exec path (capability elevation).
+// The lock is held only for the duration of the atomic write and
+// released immediately after. A 5-second timeout prevents deadlock:
+// if the lock cannot be acquired within that window the persist is
+// skipped (the ReconcileSessions boot call recovers any missed writes).
 func (s *Store) persist() error {
+	// Acquire cross-process advisory lock on the sidecar lock file.
+	// flockAcquire returns (nil, nil) on timeout — caller skips the persist.
+	lockFile, lockErr := flockAcquire(s.lockPath)
+	if lockErr != nil {
+		return fmt.Errorf("acquire sessions lock: %w", lockErr)
+	}
+	if lockFile == nil {
+		// Timed out — skip this persist cycle rather than risk a deadlock.
+		// The warning was already printed by flockAcquire.
+		return nil
+	}
+	defer flockRelease(lockFile)
+
 	sessions := make([]*Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
 		sessions = append(sessions, sess)
