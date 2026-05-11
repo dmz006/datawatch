@@ -218,176 +218,15 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 
 ---
 
-### v6.1 queue — all shipped ✅
-
-v6.0.6–v6.0.9 patch series collected into v6.1.0 minor (2026-05-03). All items below are closed. BL221 carries forward to v6.2.
+> **BL218** — ✅ Closed v6.0.7. Channel session-start hygiene: SHA-256 hash for EnsureExtracted staleness check; SweepUserScopeMCPConfig rewrites ~/.mcp.json on every pre-launch; pre-launch log line emitted per bridge wiring.
 
 ---
 
-#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02, ✅ v6.0.7)
-
-**Context:** BL216 (v5.27.10) fixed `WriteProjectMCPConfig` to write the Go bridge path when `BridgePath()` is set, and added `CleanupStaleJSRegistrations()` at daemon start. BL212 (v5.27.7/v5.27.9) added memory tools to both the Go bridge binary and `channel.js` JS fallback. But several per-session gaps remain.
-
-**Gap 1 — `channel.js` accuracy check uses size only.**  
-`EnsureExtracted` (channel.go) compares `info.Size() != int64(len(channelJS))` as its staleness gate. If an older `channel.js` happens to be the same byte count as the embedded version (realistic on a minor content change), the stale file is never overwritten. Fix: compare SHA-256 hash of the on-disk file against `sha256.Sum256(channelJS)`, not size.
-
-**Gap 2 — No pre-launch `.mcp.json` sweep for Claude sessions.**  
-`WriteProjectMCPConfig` is idempotent and rewrites the `datawatch` entry on every spawn, but it only covers the *project* `.mcp.json`. It does not check:
-- `~/.mcp.json` (user-scope global) — Claude Code loads this before the project file; a stale user-scope entry overrides the per-project fix.
-- Session working directory if it differs from the registered project dir.
-- Any Claude-scope `.mcp.json` written by a previous run of a *different* LLM backend that happened to create one.
-
-Fix: on `onPreLaunch` for any Claude-based backend, scan user-scope + working-dir scope `.mcp.json` files and rewrite the `datawatch` entry to the current bridge (Go or JS) the same way `WriteProjectMCPConfig` does. Log a `[channel] rewrote stale .mcp.json at <path>` line for each.
-
-**Gap 3 — JS fallback path not verified before use.**  
-When `BridgePath()` returns empty (Go bridge not on hand), the fallback writes `node ~/.datawatch/channel/channel.js`. But if `node` is not on `$PATH` or `node_modules` hasn't been installed (e.g. npm was unavailable at daemon start), the session launches silently with a broken bridge. Fix: `WriteProjectMCPConfig` in JS-fallback mode should call `Probe()` and fail-fast with a descriptive error rather than writing an unusable config.
-
-**Gap 4 — `channel.js` vs Go bridge preference not logged per session.**  
-BL216 added a daemon log line `[channel] session <id> registered with <kind> bridge at <path>` on registration, but the pre-launch path (before the session is even started) doesn't log which bridge is being wired. Operators troubleshooting mid-flight can't tell which bridge a not-yet-connected session was configured to use. Fix: log `[channel] pre-launch: wiring <go|js> bridge for session <name> at <path>` from `onPreLaunch`.
-
-**Acceptance criteria:**
-- SHA-256-based `EnsureExtracted` staleness check with unit test (hash-same-size-different-content scenario).
-- User-scope `~/.mcp.json` swept and updated on every Claude pre-launch; working-dir swept if different from project dir.
-- JS fallback path calls `Probe()` and returns an error (surfaced as a pre-launch failure) if node or node_modules is absent.
-- Pre-launch log line emitted for every bridge wiring, visible in `datawatch logs`.
-- `GET /api/channel/info` `stale_mcp_json` field extended to check user-scope `~/.mcp.json` (currently only checks project scope).
-
-**Related:** BL216 (closed v5.27.10) · BL212 (closed v5.27.7/v5.27.9) · `internal/channel/channel.go` · `internal/channel/mcp_config.go`
+> **BL219** — ✅ Closed v6.0.8. LLM tooling artifact lifecycle: BackendArtifacts registry; EnsureIgnored appends patterns to .gitignore idempotently; CleanupArtifacts removes ephemeral files on session end; YAML session.gitignore_check_on_start / gitignore_artifacts / cleanup_artifacts_on_end + full 6-surface parity.
 
 ---
 
-#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02, ✅ v6.0.8)
-
-**Context:** Each configured LLM backend leaves file-system side effects in the project directory. When a session starts with backend X, artifacts left by previous backend Y may confuse the new backend or clutter the repository. Datawatch knows all configured LLMs (8 backends) and should own the setup/teardown lifecycle for their file artifacts.
-
-**Known per-backend file footprint:**
-
-| Backend | Files created in project dir | Notes |
-|---------|-----------------------------|-|
-| `claude-code` | `.mcp.json` (project-scope MCP) | Managed by `WriteProjectMCPConfig`; handled by BL218 |
-| `opencode` | `.mcp.json` (OpenCode auto-discovers this), `.opencode/` config dir | OpenCode shares the `.mcp.json` convention; writes its own under `.opencode/` |
-| `aider` | `.aider.conf.yml`, `.aider.chat.history.md`, `.aider.tags.cache.v*/` | Cache dirs grow unbounded; history file leaks session content |
-| `goose` | `.goose/` (session cache + config), `.goose/sessions/*.jsonl` | Session JSONL files; may contain secrets in tool-call outputs |
-| `gemini` | `gemini_api_config.json` or env-only (CLI is config-file-light); may write `.gemini/` | Less certain; needs audit against current gemini CLI version |
-| `ollama` / `openwebui` | No project-dir artifacts (HTTP backends, no local CLI) | — |
-| `shell` | None (operator-defined) | — |
-
-**Required behavior:**
-
-1. **Pre-session setup (on `onPreLaunch`):** For the starting backend, ensure its required tooling is in place (e.g. `WriteProjectMCPConfig` for claude/opencode). Log what was set up.
-
-2. **Cross-backend cleanup (on `onPreLaunch`):** For each *other* configured backend, remove or neutralize its project-dir artifacts that would conflict with the starting backend. Specifically:
-   - If starting `claude-code`: remove any `.mcp.json` `datawatch` entry that points at another backend's MCP bridge (not "remove file," just remove the `datawatch` key if it's wrong — BL218 handles the rewrite).
-   - If starting `opencode`: similar `.mcp.json` check; leave `.opencode/` alone (it's opencode's own state).
-   - If starting `aider`: no MCP setup needed; but if a `.mcp.json` exists with a stale `datawatch` entry, remove the entry (aider doesn't use `.mcp.json` natively).
-
-3. **Post-session teardown (on `onSessionEnd`):** For the backend that just finished, optionally remove ephemeral artifacts (configurable per backend: `session.cleanup_on_end`). Default: keep but ensure they're in `.gitignore` / `.cfignore`.
-
-4. **Ignore file hygiene:** On first session start with a given backend in a project dir, append the backend's known artifact patterns to `.gitignore` (and `.cfignore` / `.dockerignore` if present). Idempotent — don't add duplicates. Patterns per backend:
-
-   ```
-   # claude-code / opencode (datawatch-managed)
-   .mcp.json
-
-   # aider
-   .aider.conf.yml
-   .aider.chat.history.md
-   .aider.tags.cache.v*/
-
-   # goose
-   .goose/
-
-   # opencode
-   .opencode/
-   ```
-
-   Note: `.mcp.json` is debatable — some operators want to commit it for team sharing. Make this per-backend-per-project configurable via `session.gitignore_artifacts: [aider, goose]` (default: all except `claude-code` and `opencode`).
-
-5. **Knowledge of all configured backends:** The ignore-file writer and the cross-backend cleanup runner should enumerate `cfg.LLMBackends()` (all enabled backends) so they cover any backend the operator has configured, not just a hardcoded list.
-
-**New config fields:**
-```yaml
-session:
-  cleanup_artifacts_on_end: false     # remove ephemeral backend files after session ends
-  gitignore_artifacts: [aider, goose] # append to .gitignore on first use (default: all non-MCP backends)
-  gitignore_check_on_start: true      # verify + update .gitignore on every session start
-```
-
-**New internal package:** `internal/tooling/` (or extend `internal/channel/`) — `BackendArtifacts` registry mapping backend name → known file patterns; `EnsureIgnored(projectDir, backend)`, `CleanupArtifacts(projectDir, backend)`.
-
-**Acceptance criteria:**
-- Pre-launch: for each configured backend, `EnsureIgnored` appends its patterns to `.gitignore` (and `.cfignore`/`.dockerignore` if present) idempotently; tested with a temp dir.
-- Pre-launch: cross-backend `.mcp.json` `datawatch` entry is cleaned up when switching from one MCP-writing backend to another.
-- Post-session: `CleanupArtifacts` removes aider/goose ephemeral files when `cleanup_artifacts_on_end: true`; tested.
-- All new config fields reachable via YAML + REST + MCP + CLI + comm + PWA (Configuration Accessibility Rule).
-- Unit tests: artifact registry shape, `EnsureIgnored` idempotence, cross-backend cleanup.
-
-**Related:** BL218 above · BL288 (v5.4.0 stale-JS cleanup) · `internal/channel/mcp_config.go` · `internal/session/manager.go` `onPreLaunch` hook
-
----
-
-#### BL220 — Configuration Accessibility Rule full alignment audit (filed 2026-05-02, expands BL210)
-
-**Context:** BL210 (partially closed v5.27.8, remainder deferred) audited only the **MCP surface** — "does every REST endpoint have an MCP tool equivalent?" The operator directive extends this to the full **Configuration Accessibility Rule**: every feature must be reachable from all 6 surfaces:
-
-```
-YAML config → REST API → MCP tool → CLI subcommand → Comm channel command → PWA / Web UI
-```
-
-BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Gaps exist on other surfaces too.
-
-**Scope of this audit:**
-
-1. **YAML ↔ REST parity** — every `config.Config` field that `applyConfigPatch` handles should also be writable via `PUT /api/config`. Known gaps: some nested structs added in v5.x sprints may have been missed in `applyConfigPatch` switch statements (the pattern that caused BL217).
-
-2. **REST ↔ CLI parity** — `datawatch config get/set` mirrors `PUT /api/config`. Verify `datawatch` CLI subcommands exist for every non-trivial REST endpoint family (sessions, memory, autonomous, observer, profiles, agents, orchestrator, plugins, skills [future], identity [future]).
-
-3. **REST ↔ Comm channel parity** — the router's command parser (`internal/router/commands.go`) should cover every operator-useful action available via REST. Current gaps likely: observer peer management, orchestrator graph control, agent spawn from chat.
-
-4. **REST ↔ PWA parity** — Settings tabs should surface every configurable field. Known gaps: some `internal/config/` fields added in v5.x never got PWA Settings form entries (spotted: some observer sub-fields, some autonomous tuning knobs).
-
-5. **MCP remaining gaps** (BL210 deferred):
-   - `filter_list` / `filter_upsert` / `filter_delete` — detection filter management from IDE
-   - `backends_list` / `backends_active` — reachability + version info for all backends
-   - `federation_sessions` — proxy-mode aggregated session list
-   - `device_register` — mobile push token registry write
-   - `files_list` / `files_browse` — directory browser
-   - `session_aggregated` / `session_set_state` / `session_set_prompt` — three sub-endpoints lacking MCP
-
-**Deliverable:** A matrix doc (`docs/config-accessibility-audit.md`) mapping every feature/config area to its 6-surface status (✅ / 🟡 partial / 🔴 missing). Each gap gets a BL sub-item. The audit itself is a 1-sprint pass; gap closures are bundled into the v6.0 release.
-
-**Related:** BL210 (MCP-only audit, v5.27.8) · AGENT.md § Configuration Accessibility Rule · `internal/server/api.go` · `internal/router/commands.go` · `internal/mcp/` · `internal/server/web/app.js`
-
-**Audit deliverable: ✅ complete 2026-05-02 — [`docs/config-accessibility-audit.md`](../config-accessibility-audit.md)**
-
-**Gap closure sub-items — all v6.0 (operator directive 2026-05-02). T1 = operator-critical · T2 = config completeness · T3 = power-user:**
-
-| ID | Gap | Surfaces | Tier |
-|----|-----|----------|------|
-| BL220-G1 | **PWA Observer panel** — observer config, envelope browser, peer stats | PWA | T1 |
-| BL220-G2 | **PWA Plugin management panel** — enable / disable / test from web UI | PWA | T1 |
-| BL220-G3 | **PWA Routing rules editor** — create / test / delete routing rules | PWA | T1 |
-| BL220-G4 | **Comm `orchestrator` command** — graph lifecycle (start/stop/status/list) from chat channels | Comm | T1 |
-| BL220-G5 | **Comm `plugins` command** — enable / disable / test plugins from chat channels | Comm | T1 |
-| BL220-G6 | **PWA Cost rates editor** — per-model token rate config (stats shown; rates not editable) | PWA | T2 |
-| BL220-G7 | **PWA Comms config — 5 missing channels** — Ntfy / Matrix / Twilio / Email / GitHub webhook settings fields | PWA | T2 |
-| BL220-G8 | **Comm `templates` command** — list / create / edit templates from chat | Comm | T2 |
-| BL220-G9 | **Comm `device-alias` command** — list / manage device aliases from chat | Comm | T2 |
-| BL220-G10 | **PWA Cooldown controls** — set / clear cooldown threshold (status already shown; no set/clear action) | PWA | T2 |
-| BL220-G11 | **Detection surface parity** — PWA detection settings panel + MCP `detection_status` / `detection_config_*` tools + Comm `detection` command | Comm+MCP+PWA | T3 |
-| BL220-G12 | **DNS channel surface parity** — PWA DNS channel settings panel + MCP `dns_channel_config_*` tools | MCP+PWA | T3 |
-| BL220-G13 | **Proxy surface parity** — PWA proxy settings panel + CLI `datawatch proxy` subcommand + MCP `proxy_config_*` tools + Comm `proxy` command | Comm+CLI+MCP+PWA | T3 |
-| BL220-G14 | **Analytics surface parity** — CLI `datawatch analytics` subcommand + Comm `analytics` command + PWA analytics view | Comm+CLI+PWA | T3 |
-| BL220-G15 | **PWA Orchestrator panel** — graph list, create, run, monitor from web UI | PWA | T3 |
-| BL220-G16 | **Comm `observer` full command** — observer config / stats / envelopes beyond the existing `peers` subset | Comm | T3 |
-| BL220-G17 | **Comm `routing` command** — routing rules from chat channels | Comm | T3 |
-| BL220-G18 | **PWA Template management UI** — create / edit / delete templates from web UI | PWA | T3 |
-| BL220-G19 | **PWA Device alias manager** — map device IDs to friendly names | PWA | T3 |
-| BL220-G20 | **PWA Audit log browser** — filter and page audit events | PWA | T3 |
-| BL220-G21 | **PWA Pipeline manager** — start / cancel / list pipelines from web UI | PWA | T3 |
-| BL220-G22 | **PWA KG browser** — query, add, view knowledge graph interactively | PWA | T3 |
-| BL220-G23 | **PWA Memory search/recall UI** — query episodic memory interactively | PWA | T3 |
-| BL220-G24 | **Comm `splash` command** + **PWA Branding/splash config panel** — logo/splash info from chat + web | Comm+PWA | T3 |
+> **BL220** — ✅ Fully closed v5.28.10. Configuration Accessibility Rule full alignment audit (6-surface matrix: YAML + REST + MCP + CLI + Comm + PWA). 24 gap-closure sub-items (G1–G24) shipped across v5.28.9–v5.28.10. Matrix doc: docs/config-accessibility-audit.md.
 
 ---
 
@@ -448,40 +287,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL298** | **Toast / error UX** — `showError()` helper (16px, no auto-dismiss, ✕ button); ~15 app error paths converted. | ✅ Closed v6.22.3 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
-#### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
-
-Audit: **126 REST surfaces; 130 MCP tools** at time of filing. v5.27.8 closed 11 tools (memory ×3, LLM listing ×3, RTK ×4, daemon_logs ×1). Remaining gaps below.
-
-**Closed in v5.27.8** ✅
-
-| Tool added | Closes |
-|---|---|
-| `memory_wal` | `GET /api/memory/wal` |
-| `memory_test_embedder` | `POST /api/memory/test` |
-| `memory_wakeup` | `GET /api/memory/wakeup` |
-| `claude_models` | `GET /api/llm/claude/models` |
-| `claude_efforts` | `GET /api/llm/claude/efforts` |
-| `claude_permission_modes` | `GET /api/llm/claude/permission_modes` |
-| `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover` | RTK quartet |
-| `daemon_logs` | `GET /api/daemon/logs` |
-
-**Still open — deferred to v6.0 window** 🔴
-
-| Area | Missing MCP | Priority |
-|---|---|---|
-| Filters | `filter_list` / `filter_upsert` / `filter_delete` — detection filter management from IDE | High |
-| Backends | `backends_list` / `backends_active` — reachability + version info (get_config doesn't include this) | High |
-| Sessions | `session_set_state` / `session_set_prompt` — two sub-endpoint operations lacking MCP | Medium |
-| Federation | `federation_sessions` — proxy-mode aggregated session list | Medium |
-| Files | `files_list` / `files_browse` — directory browser | Medium |
-| Devices | `device_register` — mobile push token registry write | Low |
-| Sessions | `session_aggregated` — cross-proxy aggregated view | Low |
-
-**Full MCP coverage (no gaps):**
-
-Sessions (start, list, get, output, timeline, send, kill, restart, rename, delete, bind, import, reconcile, rollback) ✅ · Autonomous ✅ · Observer ✅ · Orchestrator ✅ · Memory (all 16 tools) ✅ · KG ✅ · Pipeline ✅ · Profiles ✅ · Plugins ✅ · Templates ✅ · Cooldown ✅ · Cost ✅ · Audit / Analytics / Diagnose / Stats / Alerts ✅ · Config ✅ · Reload ✅ · Update ✅ · Schedule ✅ · Saved commands ✅ · RTK ✅ · LLM listing ✅
-
-**Note:** BL220 (Configuration Accessibility Rule full audit) extends BL210's MCP scope to the full 6-surface matrix.
+> **BL210** — ✅ Fully closed v6.0.4. MCP coverage parity audit: all 12 remaining gaps closed (filter_list/add/delete/toggle, backends_list/active, session_set_state, federation_sessions, device_register/list/delete, files_list).
 
 > **BL244** — ✅ closed v6.3.0. Plugin Manifest v2.1: `comm_commands` (auto-routed by Router via PluginRegistry interface), `cli_subcommands` (`datawatch plugins run <name> <sub>` + `plugins mobile-issue <name>`), `mobile` declarations, `session_injection` (ContextPrepend wired into SpawnRequest). MCP tool `plugin_run_subcommand` added. PWA shows v2.1 sections in plugin detail. All 5 locale bundles updated.
 
@@ -515,18 +321,6 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 3. **go-coap / go-libp2p** — lower-level matrix-org protocols; better suited to IoT/P2P than general chat.
 
 **Recommendation:** Option 1 (mautrix-go) — most complete Go Matrix SDK, covers rooms/DMs/bots/federation, straightforward to integrate alongside existing comm-channel backends.
-
----
-
-#### BL242 — ✅ Secrets manager: CLOSED v6.4.7
-
-All phases shipped. See Open Features section for the full implementation record.
-
----
-
-#### BL243 — ✅ Tailscale k8s sidecar: CLOSED v6.5.3
-
-All 3 phases shipped (per-pod sidecar, OAuth device flow, ACL generator + push). See Open Features section for the full implementation record.
 
 ---
 
@@ -1019,6 +813,87 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL6  | Cost tracking — Session.tokens_in/out/est_cost_usd + `/api/cost` + per-backend rates | v3.7.0 |
 | BL86 | Remote GPU/system stats agent — `cmd/datawatch-agent/` standalone binary | v3.7.0 |
 | BL9  | Operator audit log — append-only JSONL + `/api/audit` filtered query | v3.7.0 |
+| BL15 | Rich previews in alerts — `messaging.FormatAlert` Telegram/Signal/Slack/Discord formatting | v3.8.0 |
+| BL31 | Device targeting (`@device` routing) — `session.device_aliases` + `/api/device-aliases` CRUD | v3.8.0 |
+| BL69 | Splash screen — custom logo path/tagline + `GET /api/splash/{logo,info}` | v3.8.0 |
+| BL42 | Quick-response assistant — `POST /api/assist` with dedicated assistant_* config | v3.8.0 |
+| BL20 | Backend auto-selection (routing rules) — `/api/routing-rules` + test endpoint | v3.9.0 |
+| BL24 | Autonomous task decomposition — `internal/autonomous/` full package, REST + MCP + CLI + comm | v3.10.0 |
+| BL25 | Independent verification — VerifyFn indirection; BL103 real guardrail wiring | v3.10.0 |
+| BL33 | Plugin framework — subprocess driver, manifest discovery, 4 hooks, full 7-surface parity | v3.11.0 |
+| BL117 | PRD-DAG orchestrator + guardrail sub-agents — `internal/orchestrator/`, Kahn topo-sort, 9 MCP tools | v4.0.0 |
+| BL85 | RTK auto-update REST surface — GET /api/rtk/version, POST /api/rtk/check, POST /api/rtk/update | v4.0.1 |
+| BL166 | tools-ops helm re-add — get.helm.sh TARGETARCH tarball install | v4.0.1 |
+| BL103 | BL117 real GuardrailFn — per-guardrail system prompt via /api/ask, unparseable→warn | v4.0.1 |
+| BL180 | eBPF observer — Phase 1 Ollama tap, Phase 2 procfs caller attribution + cross-host + kprobes + BTF | v4.9.1–v5.13.0 |
+| BL190 | Howto screenshot capture pipeline — 22 PNGs across 8 howtos, puppeteer-core recipe map | v5.11.0–v5.15.0 |
+| BL191 | PRD-flow Phases 1–6 — review/approve gate, templates, Q4 recursive child-PRDs, Q6 per-story+task guardrails | v5.2.0–v5.10.0 |
+| BL178 | Session last-response live re-capture for running sessions | v4.8.10 |
+| BL184 | opencode-acp: recognition lag fix + thinking-message italic render | v4.8.20 |
+| BL196 | Binary size: HTTP gzip middleware + -trimpath -s -w + UPX | v4.8.17 |
+| BL200 | Howto coverage expansion — 13 walkthroughs total | v5.7.0 |
+| BL201 | Voice/whisper backend inheritance — openwebui/ollama URL/key auto-inherit | v5.8.0 |
+| BL202 | PWA full CRUD second cut — proper modals + LLM dropdowns | v5.5.0 |
+| BL203 | Flexible LLM selection — per-task + per-PRD worker LLM overrides, 7-surface parity | v5.4.0 |
+| BL204 | Subsystem hot-reload (POST /api/reload?subsystem=) + claude auto-accept disclaimer flag | v5.27.2 |
+| BL205 | GET /api/update/check read-only endpoint + modern rate-limit patterns | v5.27.4 |
+| BL207 | Claude permission_mode + model + effort per-session surfaces | v5.27.5 |
+| BL208 | PWA running-badge pulse, 3-dot indicator, scroll-mode glyph swap, PRD card style | v5.27.7–v5.27.8 |
+| BL209 | GET /api/quick_commands config-driven quick commands | v5.27.7 |
+| BL210 | MCP coverage parity audit — all gaps closed (filter_list, backends_list, session_set_state, etc.) | v6.0.4 |
+| BL211 | CapturePaneLiveTail() for state detection — scrollback no longer pins detection | v5.27.6 |
+| BL212 | channel.js JS fallback memory tools parity (memory_remember/recall/list/forget/stats) | v5.27.9 |
+| BL213 | Signal device-linking API (/api/link/qr, /api/link/status, DELETE /api/link/{id}) | v5.27.9 |
+| BL214 | PWA i18n foundation DE/ES/FR/JA — 5 locale bundles, t() helper, data-i18n DOM sweep | v5.28.0–v5.28.3 |
+| BL215 | Rate-limit length gate raised 200→1024 chars | v5.27.6 |
+| BL216 | MCP channel bridge introspection (GET /api/channel/info) + BL109 stale-.mcp.json fix | v5.27.10 |
+| BL218 | Channel session-start hygiene — SHA-256 EnsureExtracted, user-scope ~/.mcp.json sweep | v6.0.7 |
+| BL219 | LLM tooling artifact lifecycle — BackendArtifacts registry, EnsureIgnored, CleanupArtifacts | v6.0.8 |
+| BL220 | Configuration Accessibility Rule full audit — G1–G24 gap closures across 6 surfaces | v5.28.10 |
+| BL221 | Automata redesign Phases 1–5 — launch wizard, template store, scan framework, Guided Mode, skills | v6.2.0 |
+| BL226 | Service-level alert stream + System tab — source:"system" field, 4 instrumentation sites | v6.0.9 |
+| BL228 | Scheduled commands + security scanners — schedule add/list/cancel + language Dockerfiles | v6.0.6 |
+| BL239 | Bottom nav bar width — justify-content:space-around + flex:1 at 480px breakpoint | v6.2.0 |
+| BL240 | Rate-limit auto-schedule recovery — 6 new patterns, 1024→2048 char gate | v6.2.0 |
+| BL242 | Secrets manager — AES-256-GCM store, KeePass, 1Password, scoping, plugin injection, agent token | v6.4.7 |
+| BL243 | Tailscale k8s sidecar — headscale client, sidecar injection, OAuth device flow, ACL generator | v6.5.3 |
+| BL244 | Plugin Manifest v2.1 — comm routing, CLI subcommands, mobile declarations, session injection | v6.3.0 |
+| BL245 | Schedule date display bug — _fmtScheduleTime() year<2000 check | v6.2.1 |
+| BL246 | Automata tab UX overhaul — 7 items (sub-tabs, FAB, help text, menu, filters, workflow, launch form) | v6.6.0 |
+| BL247 | Settings tab reorganization — card migrations + Observer↔Monitor unification | v6.7.3 |
+| BL248 | Rate-limit detection overrides saved commands — StateRateLimited guard | v6.5.1 |
+| BL249 | Session auto-reconnect after daemon restart | v6.5.1 |
+| BL250 | Session state refresh after Input Required popup dismiss | v6.5.1 |
+| BL251 | Agent auth/settings injection — AgentSettings, spawn-time secret resolution, 7-surface | v6.5.4 |
+| BL252 | PWA i18n full coverage — 7 phases, ~190 keys, 5 locale bundles | v6.6.0 |
+| BL253 | eBPF setup false-positive — kernel ≥5.8, cap_sys_resource, rlimit probe check | v6.5.1 |
+| BL254 | Secrets-Store Rule retroactive sweep — 26 credential fields audited, zero retroactive targets | v6.11.3 |
+| BL255 | Skill Registries + PAI default — 10 REST endpoints, 13 MCP tools, 7-surface parity | v6.7.0 |
+| BL257 | Identity/Telos layer + Identity Wizard — internal/identity, 7-surface CRUD, L0 injection | v6.8.1 |
+| BL258 | Algorithm Mode — 7-phase session harness, operator-driven phase advance, 7-surface | v6.9.0 |
+| BL259 | Evals Framework — 4 grader types, Suite/Run YAML, 7-surface parity | v6.10.1 |
+| BL260 | Council Mode multi-agent debate — 6 personas, debate/quick modes, 7-surface | v6.11.0 |
+| BL261 | Settings → Automata tab card padding — Pipeline/Orchestrator/Skills cards | v6.7.7 |
+| BL262 | Claude "out of extra usage" rate-limit detection — new trigger phrases | v6.11.3 |
+| BL263 | Re-establish tmux pipe-pane bridge after daemon restart — RepipeOutput on ResumeMonitors | v6.11.9 |
+| BL267 | HashiCorp Vault / OpenBao backend — VaultStore, KV v2 + static-token auth | v6.15.0 |
+| BL268 | datawatch-definitions.md end-to-end population — all sections + TODO placeholders | v6.13.7 |
+| BL269 | openAutomataHowto() opens definitions doc at /diagrams.html#automata | v6.12.1 |
+| BL270 | Select-bar-fixed above bottom nav — bottom:var(--nav-h) + horizontal-scroll variant | v6.12.4 |
+| BL271 | wizard-grid-2col + wizard-mobile overhaul + Start-from-template strip first | v6.13.1 |
+| BL272 | Settings section padding normalization — 8px 14px inset + 6px inter-card gap | v6.12.4 |
+| BL273 | /docs/ served by FileServer — defsLink()/docsLink() route all ?/docs links | v6.13.7 |
+| BL274 | Docs-as-MCP-interface — hybrid index, 4 MCP tools, 22 curated howtos, plan-then-execute | v6.21.0 |
+| BL277 | Remove yellow "Input Required" popup — all banner HTML/CSS/JS removed | v6.13.9 |
+| BL278 | Light/dark mode toggle — [data-theme="light"] palette, FOUC-safe, localStorage | v6.13.11 |
+| BL279 | Embedded docs viewer UX — tighter spacing + 48-doc See-also footer sweep | v6.14.0 |
+| BL287 | PWA mic input regression — toasts at every voice state + defensive state.voice.chunks | v6.20.0 |
+| BL288 | Settings → About card padding — .settings-section .settings-row 6px 14px | v6.19.0 |
+| BL289 | Document Ollama use + no-GPU fallback tests — 7 features, per-path fallback | v6.22.2 |
+| BL290 | datawatch-stats --help double-dash flag form — custom usage printer + typo fix | v6.19.0 |
+| BL291 | Observer settings findable in PWA — Federated Observer card in Settings → General | v6.20.0 |
+| BL297 | Council "Add Persona" wizard — SQLite drafts, LLM one-shot + edit + re-interview, 7-surface | v6.22.3 |
+| BL298 | Toast / error UX — showError() helper, no auto-dismiss, ✕ button; ~15 app paths converted | v6.22.3 |
 
 ### Promoted to Features
 
