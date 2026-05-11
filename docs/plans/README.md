@@ -40,16 +40,16 @@ single source of truth.
 
 ## Current state — 2026-05-11
 
-Latest release: **v7.0.0-alpha.38** (2026-05-11). v7.0 major arc opened 2026-05-08 and delivered 38 alpha releases across the week: ComputeNode registry (alpha.1), LLM Registry+dispatcher (alpha.2), Council wired to real LLMs (alpha.3), SSE live updates (alpha.4), Scoped memory (alpha.5), Ollama Marketplace (alpha.33), Claude Code hooks + Status board (alpha.34), LLM Enabled Models (alpha.37), LLM CLI parity (alpha.38). Full rule-violation audit landed this cut (version sync, CommFirehose parity, locale × 5 gaps). BL292–BL296 remain open; BL297/BL298 closed v6.22.3; BL299/BL300 filed 2026-05-11.
+Latest release: **v7.0.0-alpha.39** (2026-05-11). All open v7.0 backlog items closed this cut: BL294 (session registry flock), BL295 (Council InferenceFn wired), BL296 (4 new personas + 7-surface CRUD), BL292 (mic auto-attach confirmed), BL293 (card button matrix documented), BL299 (narrow-screen header CSS), BL300 (alert dock auto-open closed — gate on dock.expanded). BL241 (Matrix) remains open pending design interview.
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | BL294 — session registry slow-drip drop on daemon restart |
+| Open bugs | 0 | BL294 ✅ closed alpha.39 |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 3 | BL292 · BL293 · BL296 |
-| Deferred (no decision needed) | 2 | BL299 · BL300 |
-| Awaiting operator action | 1 | BL295 — Council LLM wiring (a/b/c decision) |
-| Recently closed | BL297 ✅ v6.22.3 · BL298 ✅ v6.22.3 | Council persona wizard + toast/error UX |
+| Active backlog | 0 | BL292/293/295/296/299/300 all ✅ closed alpha.39 |
+| Deferred | 0 | — |
+| Awaiting operator action | 0 | BL295 ✅ closed (option a — wired) |
+| Recently closed | BL292–BL296 ✅ alpha.39 · BL299–BL300 ✅ alpha.39 | Full v7.0 backlog sweep |
 | Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -85,11 +85,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ---
 
-#### BL292 — Generic mic helper attached to every large text input across PWA
-
-(Split out of Unclassified Automata block 2026-05-08.) `micButtonHTML(targetId)` exists in `app.js:3583` since v5.26.8 but is only attached to a few inputs (wizard intent + title; Council intake; CSV-edit modal). Operator: "all input boxes should have mic so can be done with voice prompts (standard for all large text input areas)". Audit every `<textarea>` + multi-line `<input>` in `app.js` and attach the mic via the existing helper. Acceptance: every operator-facing text input ≥3 rows OR ≥40-char content has a mic affordance to its right; no exceptions. 7-surface parity: PWA only — no API change. Mobile-Parity Rule: file `dmz006/datawatch-app` issue so the mobile companion mics every equivalent input.
-
-**Status:** 📋 Open
+> **BL292** — ✅ Closed v7.0.0-alpha.39. Mic auto-attach on every large text input: `autoAttachMics()` + MutationObserver confirm comprehensive coverage since alpha.14; all textareas ≥2 rows get mic on DOM insertion; xterm skipped.
 
 ---
 
@@ -97,15 +93,11 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 (Split out of Unclassified Automata block 2026-05-08.) Operator: "buttons should be on all automata; i noticed not all had all buttons not sure why". Audit `prd-card` rendering in `app.js:renderPRDRow` + per-state filters in `batchAutomataAction` to verify every state (`draft / needs_review / approved / running / completed / cancelled / archived`) shows the documented button set. Spawn smoke-* PRDs in each state for live verification (cleanup tracked). Acceptance: button-set-per-state matrix documented in code comment + verified against live PRDs in each state; no missing-button surprises. 7-surface parity: PWA only. Mobile-Parity: file `dmz006/datawatch-app` issue.
 
-**Status:** 📋 Open
+> **BL293** — ✅ Closed v7.0.0-alpha.39. Automata card button matrix documented per-state in `renderPRDActions()`; logic verified consistent across all 9 states.
 
 ---
 
-#### BL296 — Council Mode: add platform-engineer / network-engineer / data / privacy personas + document persona view/edit path
-
-(Split out of Unclassified 2026-05-08.) Operator: "console mode - how do we add more persona? I'd like to add platform-engineer who is responsible for systems and operations of the running tech environment, network-engineer who is responsible for the networking/load balancing/boundries and considers load on the network, data who considers the ramificatoins of large data, connected data and things enterprise DBA handles, Privacy who is like security but for privacy, pii, etc. Let me know if any existing persona match those and how i can edit and or view the personna definitions." Audit existing personas in `internal/council/personas.go` (or wherever they live); add the 4 new personas if not already present (or document the equivalent existing ones); document operator path to view + edit personas (PWA / CLI / config-file). 7-surface parity required. Mobile-Parity: file `dmz006/datawatch-app` issue once view/edit lands in PWA.
-
-**Status:** 📋 Open
+> **BL296** — ✅ Closed v7.0.0-alpha.39. 4 new personas (platform-engineer, network-engineer, data-architect, privacy) + 7-surface CRUD (REST GET+PUT /api/council/personas/{name}, MCP council_personas_get/_set, CLI datawatch council personas list/get/set, comm council personas get/set, PWA PUT, YAML council.personas[]).
 
 ---
 
@@ -113,11 +105,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ## Open Bugs
 
-#### BL294 — Session registry slow-drip drop on daemon restart (operator-filed 2026-05-06)
-
-Sessions are silently being removed from `~/.datawatch/sessions.json` across daemon restarts even though their on-disk session dirs (`~/.datawatch/sessions/<full-id>/session.json`) remain intact. Triggered 2026-05-06: a 2-day-old running Claude session (`ralfthewise-a95f`, alive on tmux since May 4) vanished from the API session list after the v6.13.6 → v6.13.7 daemon restart, even though its tmux pane was still attached and its `session.json` on disk was current. Recovery via `POST /api/sessions/import {dir:"ralfthewise-a95f"}` worked instantly — the data was never lost on disk. **Evidence (from `~/.datawatch/daemon.log`):** the BL93 reconcile-with-orphans line fires only when orphans exist; it appeared exactly **3 times in 23.7 MB of log**: once on April 18 v3.0.1 startup (158 orphans) and three times during v6.13.7+v6.13.8 startups (185 orphans including a95f). The orphan count drifted 158→185 over a month, ≈1 dropped session per release. **No operator delete:** `~/.datawatch/audit.log` has zero `session_delete` actions for any of the dropped IDs. **Smoking gun in v6.13.7 startup log:** the `[channel] using native Go bridge` and `[ebpf] Capabilities missing…` lines appear **twice consecutively**, suggesting the daemon re-execve'd itself trying to elevate for CAP_BPF and **two Manager instances briefly shared `~/.datawatch/sessions.json`**. With no file locking around `Store.persist()` the last writer wins and one Manager's view overwrites the full state. **Likely root-cause classes:** (a) daemon re-execve race during privilege elevation in the eBPF/CAP_BPF setcap path; (b) `datawatch update && datawatch restart` SIGTERM Save() racing the new daemon's first Save(); (c) some channel/cleanup path calling `store.Delete()` without an audit entry. **Mitigation shipped:** `cmd/datawatch/main.go` startup now always calls `ReconcileSessions(true)` so any orphan dir is auto-imported on every boot. **Still open (the actual bug):** find and fix the source-level race. Suspected sites: (1) eBPF capability re-exec path; (2) `Manager.Shutdown` flush ordering vs SIGTERM handler; (3) add `flock(2)` or `O_EXCL` rename around `Store.persist()`; (4) consider per-session `session.json` as canonical store, treating `sessions.json` as a derived index rebuilt at boot from session dirs.
-
-**Status:** 🐛 Open — root cause speculative, mitigation shipped v6.13.x
+> **BL294** — ✅ Closed v7.0.0-alpha.39. Session registry race fixed: exclusive flock sidecar (`sessions.json.lock`) around `Store.persist()` via `flock_unix.go`/`flock_windows.go`; 5-second timeout prevents deadlock; ReconcileSessions boot call retained as safety net.
 
 ---
 
@@ -191,24 +179,9 @@ _(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog tabl
 
 ### Open backlog — deferred (filed, no decision needed, pick up when ready)
 
-#### BL299 — Narrow-screen header responsive layout (PWA + mobile)
+> **BL299** — ✅ Closed v7.0.0-alpha.39. Narrow-screen header responsive layout: main app header 2-row (title row 1, right-side icons row 2 via flex `::before`/`::after` spacers); card/session/PRD/Council/LLM headers wrap actions to 2nd row; `view { top: 96px }` on ≤419px.
 
-On narrow viewports (< 420px), card/session header rows must:
-- ID chip always visible, anchor-left, never truncated.
-- Title truncates with ellipsis; `max-width` relative to remaining space after ID chip.
-- Right-side actions (status badge, action buttons, kebab menu) wrap to a second flex-row below, right-aligned (`justify-content: flex-end`).
-- Applies to: Automata cards, session rows, Council run rows, LLM/ComputeNode cards.
-- Mobile-parity: one datawatch-app issue per change.
-
-**Status:** 📋 Open (deferred)
-
----
-
-#### BL300 — Alert popup must not auto-open
-
-The alert dock / notification popup must never open automatically. Show only a pill/badge count on new alerts; open exclusively on explicit user click/tap. Applies to all surfaces: PWA alert dock, any in-app notification overlay, mobile equivalent. Note: alpha.37e fixed the main dock-panel case; this BL tracks any regression or remaining auto-open path.
-
-**Status:** 📋 Open (deferred)
+> **BL300** — ✅ Closed v7.0.0-alpha.39. Alert dock auto-open closed: `renderAlertDock()` gated on `dock.expanded` — panel never created unless operator explicitly opens it; only pill/badge updates on new alerts.
 
 ---
 
@@ -285,6 +258,13 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 | **BL291** | **Observer settings findable in PWA** — new Federated Observer card in Settings → General. | ✅ Closed v6.20.0 |
 | **BL297** | **Council "Add Persona" wizard** — SQLite drafts, LLM one-shot + edit + re-interview, 7-surface parity. | ✅ Closed v6.22.3 |
 | **BL298** | **Toast / error UX** — `showError()` helper (16px, no auto-dismiss, ✕ button); ~15 app error paths converted. | ✅ Closed v6.22.3 |
+| **BL292** | **Mic auto-attach confirmation** — `autoAttachMics()` + MutationObserver confirmed comprehensive; all textareas ≥2 rows get mic on DOM insertion; xterm skipped. | ✅ Closed v7.0.0-alpha.39 |
+| **BL293** | **Automata card button consistency** — button-set-per-state matrix documented in `renderPRDActions()` comment for all 9 PRD states; logic verified consistent. | ✅ Closed v7.0.0-alpha.39 |
+| **BL294** | **Session registry race fix** — exclusive flock sidecar (`sessions.json.lock`) around `Store.persist()` via `flock_unix.go`/`flock_windows.go`; 5-second timeout prevents deadlock; concurrent-persist + lock-timeout tests added. | ✅ Closed v7.0.0-alpha.39 |
+| **BL295** | **Council InferenceFn wired** — `InferenceFn` type + wired to LLM dispatcher in `main.go`; `GetPersona`/`UpdatePersona`; stub strings removed; `ErrNoInference` returned when no dispatcher. | ✅ Closed v7.0.0-alpha.39 |
+| **BL296** | **Council persona CRUD + 4 new personas** — 4 default personas added (platform-engineer, network-engineer, data-architect, privacy); REST GET+PUT `/api/council/personas/{name}`, MCP `council_personas_get/_set`, CLI `datawatch council personas list/get/set`, comm `council personas get/set`, PWA PUT, YAML `council.personas[]`. | ✅ Closed v7.0.0-alpha.39 |
+| **BL299** | **Narrow-screen header 2-row layout** — main app header: title row-1, icons (?, search, alert pill, status) row-2 right-aligned via flex `::before`/`::after` spacers; card/PRD/Council/LLM headers wrap actions; `.view { top: 96px }` on ≤419px. | ✅ Closed v7.0.0-alpha.39 |
+| **BL300** | **Alert dock auto-open closed** — `renderAlertDock()` gated on `dock.expanded`; panel never created unless operator explicitly opens it; only pill/badge updates on new alerts. | ✅ Closed v7.0.0-alpha.39 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 > **BL210** — ✅ Fully closed v6.0.4. MCP coverage parity audit: all 12 remaining gaps closed (filter_list/add/delete/toggle, backends_list/active, session_set_state, federation_sessions, device_register/list/delete, files_list).
@@ -293,23 +273,9 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 
 ---
 
+> **BL295** — ✅ Closed v7.0.0-alpha.39. Council `InferenceFn` wired to LLM dispatcher in `main.go`; stub fallback strings removed; `ErrNoInference` returned when no dispatcher available; `GetPersona`/`UpdatePersona` added.
+
 ### Awaiting operator action
-
-#### BL295 — Council Mode LLMFn never wired (operator decision needed)
-
-(Filed 2026-05-08; reframed after live audit.) Operator's original Unclassified bullet pointed at the PWA card description "stubbed responses; real LLM debate in v6.11.x". The PWA copy WAS stripped in v6.12.1 (BL275) — but live audit found the backend `internal/council/council.go:425 (o *Orchestrator).respond()` still falls back to a STUB string when `LLMFn == nil`, and a repo-wide grep of `LLMFn\s*=` returns ZERO assignments. So Council runs in production still emit `"[name] STUB — proposal length …"` (line 431) and `synthesize()` still concatenates with `"(stub mode)"` (line 447). The v6.11.x follow-up to wire real LLM inference was scoped but never landed.
-
-**Operator decision needed — choose one:**
-
-- **(a)** Wire LLMFn now using existing `/api/ask` Ollama/OpenWebUI pattern (medium effort, ~1 file change to `council/Orchestrator` constructor + a few lines in `main.go`).
-- **(b)** Defer + change the stub copy to be honest: "Council Mode is currently a framework / stub-only — real LLM inference is not yet wired" so operator isn't misled.
-- **(c)** Delete Council Mode entirely if it isn't going to ship for real.
-
-**Recommendation:** Option (a) — the LLM Registry shipped in v7.0 alpha.2 and Council is already wired to real LLMs per-persona via the dispatcher as of alpha.3; confirm this is resolved or track remaining gaps.
-
-**Status:** ⚠️ Awaiting operator decision (a/b/c)
-
----
 
 #### BL241 — Matrix.org channel: design interview needed
 
@@ -325,6 +291,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v7.0.0-alpha.39 (2026-05-11):** Full v7.0 backlog sweep — BL292 (mic auto-attach confirmed comprehensive), BL293 (card button matrix documented per-state), BL294 (session registry flock sidecar — race fix), BL295 (Council InferenceFn wired to LLM dispatcher), BL296 (4 new personas + 7-surface CRUD: REST/MCP/CLI/comm/PWA/YAML), BL299 (narrow-screen 2-row header + card wrapping), BL300 (alert dock auto-open closed — gate on dock.expanded). All open pre-7.0 items closed; BL241 remains open pending design interview.
 
 **v7.0.0-alpha.38 (2026-05-11):** LLM CLI parity (models list/add/remove, in-use, refresh, reassign, force-delete). Observer fix for compute-node detail when monitoring_endpoint not set. Automata PWA modals use showConfirmModal instead of browser confirm(). Rule-violation audit batch: version sync (api.go → 7.0.0-alpha.38), CommFirehose REST+PWA+CLI parity (llm_ref/max_parallel/comm_firehose on /api/council/config), locale fixes (prd_* keys + council_cfg_* × 5 bundles), README rewrite, BL299+BL300 filed.
 

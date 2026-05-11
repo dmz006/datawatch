@@ -4792,6 +4792,49 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    LLM/ComputeNode card headers.
    ─────────────────────────────────────────────────────────────────────── */
 @media (max-width: 419px) {
+  /* BL299 — Main app header 2-row layout:
+     Row 1: back button + title (truncated).
+     Row 2: identity btn + ? help + search + alert pill + status dot (right-aligned).
+     The header becomes height:auto; .view top adjusted via explicit override. */
+  .header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 6px 16px;
+  }
+  .back-btn  { order: 0; }
+  .header-title {
+    order: 0;
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* Invisible full-width flex item at order:1 forces a line break after row 1. */
+  .header::after {
+    content: '';
+    flex: 0 0 100%;
+    height: 0;
+    order: 1;
+  }
+  /* Growing spacer at order:2 absorbs free space so row-2 icons right-align. */
+  .header::before {
+    content: '';
+    flex: 1 1 0;
+    height: 0;
+    order: 2;
+  }
+  /* Row 2: all right-side icons. */
+  .header-identity-btn,
+  #headerHelpLink,
+  .header-search-btn,
+  #headerAlertPill,
+  .status-dot { order: 3; }
+  /* View starts below the now-taller 2-row header. */
+  .view { top: 96px; }
+
   /* Session card header */
   .session-card-header {
     flex-wrap: wrap;
