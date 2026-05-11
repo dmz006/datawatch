@@ -60,6 +60,8 @@
   "automata_action_pause_tip": "Mettre en pause",
   "automata_action_resume_tip": "Reprendre",
   "automata_action_cancel_tip": "Annuler cet automate",
+  "automata_confirm_cancel": "Annuler l'automate \"%1$s\" ?",
+  "automata_confirm_batch_delete": "Supprimer %1$d automate(s) ? Cela ne peut pas être annulé.",
   "automata_action_approve_tip": "Approuver la prochaine histoire / débloquer",
   "automata_action_approve_disabled_tip": "Aucune approbation en attente",
   "automata_batch_archive": "Archiver tout",

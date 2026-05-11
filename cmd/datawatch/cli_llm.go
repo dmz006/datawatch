@@ -58,6 +58,11 @@ protocols. Adapters today: ollama, openwebui, opencode, claude.`,
 	cmd.AddCommand(testCmd)
 	cmd.AddCommand(newLLMEnableCmd(true))
 	cmd.AddCommand(newLLMEnableCmd(false))
+	cmd.AddCommand(newLLMModelsCmd())
+	cmd.AddCommand(newLLMInUseCmd())
+	cmd.AddCommand(newLLMRefreshModelsCmd())
+	cmd.AddCommand(newLLMReassignCmd())
+	cmd.AddCommand(newLLMForceDeleteCmd())
 	return cmd
 }
 
@@ -148,6 +153,133 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().Float64Var(&costInput, "cost-per-1k-input", 0, "USD per 1k input tokens (cloud accounting)")
 	cmd.Flags().Float64Var(&costOutput, "cost-per-1k-output", 0, "USD per 1k output tokens")
 	return cmd
+}
+
+// newLLMModelsCmd — llm models list|add|remove
+func newLLMModelsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "models <subcommand>",
+		Short: "Manage enabled models for an LLM",
+	}
+	// models list <llm-name>
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list <llm-name>",
+		Short: "List enabled models for an LLM",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/llms/" + args[0] + "/models")
+		},
+	})
+	// models add <llm-name> --node <cn> --model <m>
+	addCmd := &cobra.Command{
+		Use:   "add <llm-name>",
+		Short: "Add an enabled model (and optionally bind to a compute node)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			node, _ := cmd.Flags().GetString("node")
+			model, _ := cmd.Flags().GetString("model")
+			body := map[string]any{"model": model}
+			if node != "" {
+				body["node"] = node
+			}
+			return daemonJSON(http.MethodPost, "/api/llms/"+args[0]+"/models", body)
+		},
+	}
+	addCmd.Flags().String("node", "", "compute node name (leave empty for SaaS kinds)")
+	addCmd.Flags().String("model", "", "model name (required)")
+	_ = addCmd.MarkFlagRequired("model")
+	cmd.AddCommand(addCmd)
+	// models remove <llm-name> --node <cn> --model <m>
+	rmCmd := &cobra.Command{
+		Use:   "remove <llm-name>",
+		Short: "Remove an enabled model from an LLM",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			node, _ := cmd.Flags().GetString("node")
+			model, _ := cmd.Flags().GetString("model")
+			body := map[string]any{"model": model}
+			if node != "" {
+				body["node"] = node
+			}
+			return daemonJSON(http.MethodDelete, "/api/llms/"+args[0]+"/models", body)
+		},
+	}
+	rmCmd.Flags().String("node", "", "compute node name (required for multi-node LLMs)")
+	rmCmd.Flags().String("model", "", "model name (required)")
+	_ = rmCmd.MarkFlagRequired("model")
+	cmd.AddCommand(rmCmd)
+	return cmd
+}
+
+// newLLMInUseCmd — llm in-use <name> [--filter <text>] [--page N] [--size N]
+func newLLMInUseCmd() *cobra.Command {
+	var filter string
+	var page, size int
+	cmd := &cobra.Command{
+		Use:   "in-use <name>",
+		Short: "Show active sessions, automata, and personas using this LLM",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			qs := fmt.Sprintf("?page=%d&size=%d", page, size)
+			if filter != "" {
+				qs += "&filter=" + filter
+			}
+			return daemonGet("/api/llms/" + args[0] + "/in_use" + qs)
+		},
+	}
+	cmd.Flags().StringVar(&filter, "filter", "", "AND substring filter across name/state columns")
+	cmd.Flags().IntVar(&page, "page", 1, "page number (1-based)")
+	cmd.Flags().IntVar(&size, "size", 5, "page size (5, 10, or 50)")
+	return cmd
+}
+
+// newLLMRefreshModelsCmd — llm refresh-models <name>
+func newLLMRefreshModelsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "refresh-models <name>",
+		Short: "Trigger a model-list refresh from all compute nodes for this LLM",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/llms/"+args[0]+"/refresh_models", nil)
+		},
+	}
+}
+
+// newLLMReassignCmd — llm reassign <name> --to-llm <other> [--to-model <m>]
+func newLLMReassignCmd() *cobra.Command {
+	var toLLM, toModel string
+	cmd := &cobra.Command{
+		Use:   "reassign <name>",
+		Short: "Reassign all active bindings from this LLM to another",
+		Long: `Updates every active session, automaton, and persona currently using <name>
+to use the target LLM instead. Running sessions pick up the change on
+their next LLM call; waiting_input / planning sessions switch immediately.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body := map[string]any{"to_llm": toLLM}
+			if toModel != "" {
+				body["to_model"] = toModel
+			}
+			return daemonJSON(http.MethodPost, "/api/llms/"+args[0]+"/reassign", body)
+		},
+	}
+	cmd.Flags().StringVar(&toLLM, "to-llm", "", "target LLM name (required)")
+	cmd.Flags().StringVar(&toModel, "to-model", "", "specific model within the target LLM (optional)")
+	_ = cmd.MarkFlagRequired("to-llm")
+	return cmd
+}
+
+// newLLMForceDeleteCmd — llm force-delete <name>
+func newLLMForceDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "force-delete <name>",
+		Short: "Cancel all active bindings then delete (destructive — terminates in-progress work)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body := map[string]any{"confirm": "yes I understand this terminates active work"}
+			return daemonJSON(http.MethodPost, "/api/llms/"+args[0]+"/force_delete", body)
+		},
+	}
 }
 
 var _ = fmt.Sprintf

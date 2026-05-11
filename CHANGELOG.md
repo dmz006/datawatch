@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## v7.0.0-alpha.38 — Observer fix + Automata PWA modals + LLM CLI parity
+
+### Fixed
+- Compute node "live monitoring detail" no longer returns an error when an observer peer is configured but `monitoring_endpoint` is not set. The handler now uses `Node.ObserverPeer` to look up the peer snapshot — fixing the mismatch where the compute node name (`datawatch-ollama`) differed from the peer name (`datawatch`). Multiple compute nodes can share one observer peer (e.g. ollama + openwebui on same box).
+- Self-peer fallback added to compute node detail: when the bound peer is the local daemon and the observer is running, live stats are returned directly.
+- `automataCancel` now uses PWA `showConfirmModal()` instead of browser `confirm()`.
+- Batch automata delete now uses `showConfirmModal()` instead of browser `confirm()`.
+
+### CLI (completing alpha.37 parity)
+- `datawatch llm models list <name>` — list enabled models
+- `datawatch llm models add <name> --model <m> [--node <cn>]` — add an enabled model
+- `datawatch llm models remove <name> --model <m> [--node <cn>]` — remove an enabled model
+- `datawatch llm in-use <name> [--filter <text>] [--page N] [--size N]` — show active bindings
+- `datawatch llm refresh-models <name>` — trigger model-list refresh
+- `datawatch llm reassign <name> --to-llm <other> [--to-model <m>]` — reassign all active bindings
+- `datawatch llm force-delete <name>` — cascade-cancel all bindings then delete
+
+### Locales × 5
+- `automata_confirm_cancel` — PWA cancel confirm dialog
+- `automata_confirm_batch_delete` — PWA batch delete confirm dialog
+
+### Rule audit
+| Rule | Status |
+|---|---|
+| `feedback_full_parity_required` (CLI surface completing alpha.37) | ✓ |
+| `feedback_localization_rule` (× 5 bundles) | ✓ |
+| `feedback_per_release_smoke` | ✓ — smoke 91/0/6 |
+| `feedback_phase_release_pattern` | ✓ |
+| `feedback_automata_not_prd` | ✓ |
+
 ## v7.0.0-alpha.37e — LLM/Compute UX polish
 
 ### Fixed

@@ -60,6 +60,8 @@
   "automata_action_pause_tip": "Pause this automaton",
   "automata_action_resume_tip": "Resume this automaton",
   "automata_action_cancel_tip": "Cancel this automaton",
+  "automata_confirm_cancel": "Cancel automaton \"%1$s\"?",
+  "automata_confirm_batch_delete": "Delete %1$d automaton(s)? This cannot be undone.",
   "automata_action_approve_tip": "Approve next story / unblock",
   "automata_action_approve_disabled_tip": "No approval pending",
   "automata_wizard_backend": "Backend",

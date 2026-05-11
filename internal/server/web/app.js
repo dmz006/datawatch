@@ -10018,7 +10018,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.backend', label: 'Storage backend', type: 'select', options: ['sqlite','postgres'] },
     { key: 'memory.embedder', label: 'Embedding provider', type: 'select', options: ['ollama','openai'] },
     { key: 'memory.embedder_model', label: 'Embedding model', type: 'text', placeholder: 'nomic-embed-text' },
-    { key: 'memory.embedder_host', label: 'Embedder host', type: 'text' },
+    { key: 'memory.embedder_host', label: 'Compute Node', type: 'embedder_node' },
     { key: 'memory.top_k', label: 'Search results (top-K)', type: 'number' },
     { key: 'memory.auto_save', label: 'Auto-save session summaries', type: 'toggle' },
     { key: 'memory.learnings_enabled', label: 'Extract task learnings', type: 'toggle' },
@@ -10165,10 +10165,14 @@ function loadCommsConfig() {
 }
 
 function loadLLMTabConfig() {
-  apiFetch('/api/config').then(cfg => {
+  const nodeP = typeof window._loadComputeNodesCache === 'function'
+    ? window._loadComputeNodesCache() : Promise.resolve([]);
+  Promise.all([apiFetch('/api/config'), nodeP]).then(([cfg]) => {
     if (!cfg) return;
     // Resolve default for embedder_host from ollama.host
     const ollamaHost = cfg.ollama?.host || 'http://localhost:11434';
+    const computeNodes = window._computeNodesCache || [];
+    const embedderProvider = cfg.memory?.embedder || 'ollama';
     for (const sec of LLM_CONFIG_FIELDS) {
       const el = document.getElementById('llmCfg_' + sec.id);
       if (!el) continue;
@@ -10204,6 +10208,30 @@ function loadLLMTabConfig() {
               </label>
             </div>
           </div>`;
+        } else if (f.type === 'embedder_node') {
+          // Compute node picker for embedder_host: filtered by current embedder provider.
+          if (embedderProvider === 'openai') {
+            const displayVal = val !== undefined && val !== null ? String(val) : '';
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)} (URL)</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
+                placeholder="https://api.openai.com"
+                onchange="saveGeneralField('${f.key}', this.value)" />
+            </div>`;
+          } else {
+            // ollama (or other local) — show compute node dropdown.
+            const kind = embedderProvider; // 'ollama' → kind='ollama'
+            const matchingNodes = computeNodes.filter(n => !kind || n.kind === kind || kind === 'ollama' && n.kind === 'ollama');
+            const currentAddr = val || ollamaHost;
+            const nodeOpts = [
+              `<option value="">${escHtml('(use ollama.host default: ' + ollamaHost + ')')}</option>`,
+              ...matchingNodes.map(n => `<option value="${escHtml(n.address)}" ${currentAddr === n.address ? 'selected' : ''}>${escHtml(n.name)} — ${escHtml(n.address)}</option>`),
+            ].join('');
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${nodeOpts}</select>
+            </div>`;
+          }
         } else if (f.type === 'select') {
           const opts = f.options.map(o => `<option value="${escHtml(o)}" ${String(val || '') === o ? 'selected' : ''}>${escHtml(o)}</option>`).join('');
           html += `<div class="settings-row" style="justify-content:space-between;">
@@ -12999,27 +13027,32 @@ window.batchAutomataAction = function(action) {
     showToast(`No selected items match "${action}"`, 'info', 2500);
     return;
   }
+  const _execBatch = () => {
+    const reqs = ids.map(id => {
+      if (action === 'run')     return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/run', { method: 'POST' });
+      if (action === 'approve') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/approve', { method: 'POST' });
+      if (action === 'cancel')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+      if (action === 'archive') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
+      // v6.13.6 — operator: "Delete function says it deleted but it didn't".
+      // The DELETE endpoint without ?hard=true only flips status → cancelled
+      // (legacy v4.0 behavior). For an actual delete we MUST pass hard=true.
+      // The single-PRD delete path (line 6077) already does this.
+      if (action === 'delete')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' });
+      return Promise.resolve();
+    });
+    Promise.all(reqs).then(() => {
+      // Drop only the IDs we acted on; keep ineligible siblings selected.
+      ids.forEach(id => sel.delete(id));
+      loadAutomataPanel();
+      showToast(`${action}: ${ids.length} done`, 'success', 2000);
+    }).catch(err => showToast('Batch action failed: ' + String(err), 'error', 3000));
+  };
   if (action === 'delete') {
-    if (!confirm(`Delete ${ids.length} automaton(s)? This cannot be undone.`)) return;
+    const msg = (t('automata_confirm_batch_delete') || 'Delete %1$d automaton(s)? This cannot be undone.').replace('%1$d', String(ids.length));
+    showConfirmModal(msg, _execBatch);
+    return;
   }
-  const reqs = ids.map(id => {
-    if (action === 'run')     return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/run', { method: 'POST' });
-    if (action === 'approve') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/approve', { method: 'POST' });
-    if (action === 'cancel')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-    if (action === 'archive') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
-    // v6.13.6 — operator: "Delete function says it deleted but it didn't".
-    // The DELETE endpoint without ?hard=true only flips status → cancelled
-    // (legacy v4.0 behavior). For an actual delete we MUST pass hard=true.
-    // The single-PRD delete path (line 6077) already does this.
-    if (action === 'delete')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' });
-    return Promise.resolve();
-  });
-  Promise.all(reqs).then(() => {
-    // Drop only the IDs we acted on; keep ineligible siblings selected.
-    ids.forEach(id => sel.delete(id));
-    loadAutomataPanel();
-    showToast(`${action}: ${ids.length} done`, 'success', 2000);
-  }).catch(err => showToast('Batch action failed: ' + String(err), 'error', 3000));
+  _execBatch();
 };
 
 // v6.12.4 — explicit Done button to leave select-mode (not just clear
@@ -13147,10 +13180,14 @@ window.automataResume = function(id) {
     .catch(e => showError('Resume failed: ' + (e.message || e)));
 };
 window.automataCancel = function(id) {
-  if (!confirm('Cancel automaton ' + id + '?')) return;
-  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
-    .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
-    .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  showConfirmModal(
+    (t('automata_confirm_cancel') || 'Cancel automaton "%1$s"?').replace('%1$s', id),
+    () => {
+      apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
+        .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
+        .catch(e => showError('Cancel failed: ' + (e.message || e)));
+    }
+  );
 };
 
 function loadAutomataPanel() {

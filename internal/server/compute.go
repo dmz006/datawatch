@@ -293,14 +293,28 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 	// snapshot from the peer registry (observer pushing stats without a
 	// pull endpoint configured — common when the observer uses a non-
 	// default port or is behind a firewall).
+	// Use ObserverPeer name when set (e.g. "datawatch") rather than the
+	// compute node name (e.g. "datawatch-ollama") — multiple compute nodes
+	// can share one observer peer (e.g. ollama + openwebui on same box).
 	if n.MonitoringEndpoint == "" {
+		peerName := name
+		if n.ObserverPeer != "" {
+			peerName = n.ObserverPeer
+		}
 		if s.peerRegistry != nil {
-			if snap := s.peerRegistry.LastPayload(name); snap != nil {
+			if snap := s.peerRegistry.LastPayload(peerName); snap != nil {
 				writeJSONOK(w, snap)
 				return
 			}
 		}
-		http.Error(w, "compute node has no monitoring_endpoint configured and no cached snapshot (set the stub --listen address or wait for a push)", http.StatusServiceUnavailable)
+		// Self-peer fallback: when the bound peer is the local daemon and the
+		// local observer is running, serve live stats directly (the self-peer
+		// never pushes snapshots — it's always live).
+		if s.observerAPI != nil && peerName == s.hostname {
+			s.handleObserverStats(w, r)
+			return
+		}
+		http.Error(w, "compute node has no monitoring_endpoint configured and no cached observer snapshot (set monitoring_endpoint or wait for the observer peer to push stats)", http.StatusServiceUnavailable)
 		return
 	}
 	client := &http.Client{

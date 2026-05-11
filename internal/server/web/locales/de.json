@@ -60,6 +60,8 @@
   "automata_action_pause_tip": "Anhalten",
   "automata_action_resume_tip": "Fortsetzen",
   "automata_action_cancel_tip": "Diesen Automaten abbrechen",
+  "automata_confirm_cancel": "Automat \"%1$s\" abbrechen?",
+  "automata_confirm_batch_delete": "%1$d Automat(en) löschen? Dies kann nicht rückgängig gemacht werden.",
   "automata_action_approve_tip": "Nächste Story genehmigen / Blocker lösen",
   "automata_action_approve_disabled_tip": "Keine Genehmigung ausstehend",
   "automata_batch_archive": "Alle archivieren",
