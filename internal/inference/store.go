@@ -190,19 +190,31 @@ func (r *Registry) BackfillSessionDefaults() []string {
 			llm.InputMode = KindDefaultInputMode(llm.Kind)
 			changed = true
 		}
-		// For auto-created claude-code stubs (no explicit operator settings):
-		// apply v6 defaults so skip_permissions / channel_enabled keep working.
-		if llm.Kind == KindClaudeCode && llm.AutoCreated &&
-			!llm.SkipPermissions && !llm.ChannelEnabled {
-			llm.SkipPermissions = true
-			llm.ChannelEnabled = true
-			if llm.DefaultEffort == "" {
-				llm.DefaultEffort = "normal"
-			}
+		// For auto-created claude-code stubs: apply v6 defaults for each
+		// field independently so a partially-backfilled entry (e.g.
+		// channel_enabled=true but skip_permissions still false) still gets
+		// fixed. Each condition is checked separately — no combined &&.
+		if llm.Kind == KindClaudeCode && llm.AutoCreated {
 			if llm.Binary == "" {
 				llm.Binary = "claude"
+				changed = true
 			}
-			changed = true
+			if !llm.SkipPermissions {
+				llm.SkipPermissions = true
+				changed = true
+			}
+			if !llm.ChannelEnabled {
+				llm.ChannelEnabled = true
+				changed = true
+			}
+			if !llm.AutoAcceptDisclaimer {
+				llm.AutoAcceptDisclaimer = true
+				changed = true
+			}
+			if llm.DefaultEffort == "" {
+				llm.DefaultEffort = "normal"
+				changed = true
+			}
 		}
 		if changed {
 			llm.UpdatedAt = time.Now().UTC()
