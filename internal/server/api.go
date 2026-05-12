@@ -2611,6 +2611,33 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			opts.PermissionMode = cl.PermissionMode
 		}
 	}
+	// Wire LLM registry session-backend settings into opts so the session
+	// manager uses per-named-LLM values instead of global cfg defaults.
+	if s.inferenceReg != nil {
+		llmName := resolvedLLMRef
+		if llmName == "" {
+			llmName = opts.Backend
+		}
+		if llmName == "" {
+			llmName = req.Backend
+		}
+		if llmName != "" {
+			if llmEntry, err := s.inferenceReg.Get(llmName); err == nil && llmEntry != nil {
+				if llmEntry.OutputMode != "" && opts.OutputMode == "" {
+					opts.OutputMode = llmEntry.OutputMode
+				}
+				if llmEntry.InputMode != "" && opts.InputMode == "" {
+					opts.InputMode = llmEntry.InputMode
+				}
+				if llmEntry.ConsoleCols > 0 && opts.ConsoleCols == 0 {
+					opts.ConsoleCols = llmEntry.ConsoleCols
+				}
+				if llmEntry.ConsoleRows > 0 && opts.ConsoleRows == 0 {
+					opts.ConsoleRows = llmEntry.ConsoleRows
+				}
+			}
+		}
+	}
 	// BL5 — propagate template env vars (request takes precedence
 	// only if a profile already set them; templates fill the gap).
 	if req.Template != "" {

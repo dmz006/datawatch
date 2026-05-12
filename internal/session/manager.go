@@ -1182,6 +1182,14 @@ type StartOptions struct {
 	// legacy v6 backend path (Backend field above).
 	LLMRef         string
 	ComputeNodeRef string
+
+	// v7.0.0-alpha.41 — per-LLM session settings from the inference
+	// registry. When set, override cfg.GetOutputMode / GetInputMode /
+	// GetConsoleSize so per-named-LLM values are respected.
+	OutputMode  string
+	InputMode   string
+	ConsoleCols int
+	ConsoleRows int
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1363,15 +1371,28 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
 
-	// Create tmux session with per-LLM console size
+	// Create tmux session with per-LLM console size.
+	// LLM registry values (via opts) take precedence over cfg defaults.
 	cols, rows := 80, 24
-	if m.cfg != nil {
+	if opt != nil && opt.ConsoleCols > 0 {
+		cols = opt.ConsoleCols
+		rows = opt.ConsoleRows
+		if rows <= 0 {
+			rows = 24
+		}
+	} else if m.cfg != nil {
 		cols, rows = m.cfg.GetConsoleSize(backendName)
 	}
 	sess.ConsoleCols = cols
 	sess.ConsoleRows = rows
-	if m.cfg != nil {
+	if opt != nil && opt.OutputMode != "" {
+		sess.OutputMode = opt.OutputMode
+	} else if m.cfg != nil {
 		sess.OutputMode = m.cfg.GetOutputMode(backendName)
+	}
+	if opt != nil && opt.InputMode != "" {
+		sess.InputMode = opt.InputMode
+	} else if m.cfg != nil {
 		sess.InputMode = m.cfg.GetInputMode(backendName)
 	}
 	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q size=%dx%d mode=%s", tmuxSession, backendName, task, projectDir, cols, rows, sess.OutputMode)

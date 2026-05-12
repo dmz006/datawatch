@@ -5199,8 +5199,8 @@ function loadDirContents(path) {
       // refresh the listing on success.
       content.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>` +
         `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-           <button class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>
-           <button class="btn-secondary" data-mkdir="${escHtml(currentPath)}" style="font-size:11px;">+ New folder</button>
+           <button type="button" class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>
+           <button type="button" class="btn-secondary" data-mkdir="${escHtml(currentPath)}" style="font-size:11px;">+ New folder</button>
          </div>` +
         (entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>');
       content.onclick = function(ev) {

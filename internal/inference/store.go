@@ -156,3 +156,62 @@ func MigrateAllLegacyBackends(reg *Registry, backends []LegacyBackend) []string 
 	}
 	return created
 }
+
+// KindDefaultOutputMode returns the canonical output mode for a session-backend kind.
+// Matches the per-kind logic in cfg.GetOutputMode (config.go).
+func KindDefaultOutputMode(k Kind) string {
+	switch k {
+	case KindOpenCodeACP, KindOllama, KindOpenWebUI:
+		return "chat"
+	default:
+		return "terminal"
+	}
+}
+
+// KindDefaultInputMode returns the canonical input mode — all kinds default to tmux.
+func KindDefaultInputMode(_ Kind) string { return "tmux" }
+
+// BackfillSessionDefaults fills in empty session-backend fields on LLM registry
+// entries that were created before alpha.41 (before these fields were added to the
+// struct). Idempotent — skips any entry that already has OutputMode set.
+// Returns the names of updated entries.
+func (r *Registry) BackfillSessionDefaults() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var updated []string
+	dirty := false
+	for _, llm := range r.llms {
+		changed := false
+		if llm.OutputMode == "" {
+			llm.OutputMode = KindDefaultOutputMode(llm.Kind)
+			changed = true
+		}
+		if llm.InputMode == "" {
+			llm.InputMode = KindDefaultInputMode(llm.Kind)
+			changed = true
+		}
+		// For auto-created claude-code stubs (no explicit operator settings):
+		// apply v6 defaults so skip_permissions / channel_enabled keep working.
+		if llm.Kind == KindClaudeCode && llm.AutoCreated &&
+			!llm.SkipPermissions && !llm.ChannelEnabled {
+			llm.SkipPermissions = true
+			llm.ChannelEnabled = true
+			if llm.DefaultEffort == "" {
+				llm.DefaultEffort = "normal"
+			}
+			if llm.Binary == "" {
+				llm.Binary = "claude"
+			}
+			changed = true
+		}
+		if changed {
+			llm.UpdatedAt = time.Now().UTC()
+			updated = append(updated, llm.Name)
+			dirty = true
+		}
+	}
+	if dirty && r.persistFn != nil {
+		_ = r.persistFn()
+	}
+	return updated
+}

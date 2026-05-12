@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.41"
+var Version = "7.0.0-alpha.43"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -705,6 +705,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		earlyPath := filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")
 		if r, err := inference.NewRegistryFromFile(earlyPath); err == nil {
 			earlyLLMReg = r
+			// Backfill session-backend defaults for entries created before
+			// alpha.41 (SkipPermissions, ChannelEnabled, OutputMode, etc.).
+			if names := earlyLLMReg.BackfillSessionDefaults(); len(names) > 0 {
+				debugf("backfilled session defaults for LLMs: %s", strings.Join(names, ", "))
+			}
 		}
 	}
 	claudeBin, claudeSkipPerms, claudeChannelEnabled, claudeAutoAccept :=
@@ -717,13 +722,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				claudeBin = cl.Binary
 			}
 			claudeSkipPerms = cl.SkipPermissions
-			// ChannelEnabled: zero value is false, but existing migrated entries
-			// that don't have the field set should default to true. If the entry
-			// has no Binary set (freshly migrated with no explicit config),
-			// keep the default true; if Binary is set, use the stored value.
-			if cl.Binary != "" {
-				claudeChannelEnabled = cl.ChannelEnabled
-			}
+			claudeChannelEnabled = cl.ChannelEnabled
 			claudeAutoAccept = cl.AutoAcceptDisclaimer
 			claudePermMode = cl.PermissionMode
 			if cl.DefaultEffort != "" {
@@ -8164,7 +8163,9 @@ func isNewerVersion(latest, current string) bool {
 
 func fetchLatestVersion() (string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/dmz006/datawatch/releases/latest", nil)
+	// Use /releases (not /releases/latest) so pre-release alpha/beta tags are
+	// included. GitHub's /releases/latest silently skips pre-releases.
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/dmz006/datawatch/releases?per_page=20", nil)
 	if err != nil {
 		return "", err
 	}
@@ -8178,13 +8179,25 @@ func fetchLatestVersion() (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
-	var result struct {
+	var releases []struct {
 		TagName string `json:"tag_name"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return "", err
 	}
-	return strings.TrimPrefix(result.TagName, "v"), nil
+	if len(releases) == 0 {
+		return "", fmt.Errorf("no releases found")
+	}
+	// Pick the highest version (first entry is most-recently published, but
+	// compare properly to handle out-of-order tags).
+	best := strings.TrimPrefix(releases[0].TagName, "v")
+	for _, r := range releases[1:] {
+		v := strings.TrimPrefix(r.TagName, "v")
+		if isNewerVersion(v, best) {
+			best = v
+		}
+	}
+	return best, nil
 }
 
 // ---- backend command -------------------------------------------------------
