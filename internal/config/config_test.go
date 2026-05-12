@@ -36,9 +36,7 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Session.LLMBackend != "claude-code" {
 		t.Errorf("LLMBackend = %q, want claude-code", cfg.Session.LLMBackend)
 	}
-	if cfg.Session.ClaudeBin != "claude" {
-		t.Errorf("ClaudeBin = %q, want claude", cfg.Session.ClaudeBin)
-	}
+	// ClaudeBin moved to LLM registry (v7 clean move); not in SessionConfig.
 	if cfg.Session.DefaultProjectDir == "" {
 		t.Error("DefaultProjectDir should not be empty")
 	}

@@ -135,6 +135,21 @@ func MigrateAllLegacyBackends(reg *Registry, backends []LegacyBackend) []string 
 			APIKeyRef:   b.APIKeyRef,
 			AutoCreated: true,
 		}
+		// v7.0.0 — session-backend kinds store the binary in Binary.
+		// For claude-code, also set sensible v6 defaults so existing
+		// operators keep working after migration: ChannelEnabled=true,
+		// SkipPermissions=true match the v6 SessionConfig defaults.
+		switch b.Kind {
+		case KindClaudeCode:
+			llm.Binary = b.Address
+			llm.ChannelEnabled = true
+			llm.SkipPermissions = true
+			llm.DefaultEffort = "normal"
+		case KindAider, KindGoose, KindGemini, KindShell:
+			llm.Binary = b.Address
+		case KindOpenCode, KindOpenCodeACP, KindOpenCodePrompt:
+			llm.Binary = b.Address
+		}
 		if err := reg.Add(llm); err == nil {
 			created = append(created, b.Name)
 		}

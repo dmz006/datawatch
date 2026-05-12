@@ -140,17 +140,8 @@ func (s *Server) reload() ReloadResult {
 			s.manager.SetMCPMaxRetries(newCfg.Session.MCPMaxRetries)
 			res.Applied = append(res.Applied, "session.mcp_max_retries")
 		}
-		if newCfg.Session.DefaultEffort != s.cfg.Session.DefaultEffort {
-			s.manager.SetDefaultEffort(newCfg.Session.DefaultEffort)
-			res.Applied = append(res.Applied, "session.default_effort")
-		}
-		// v5.27.2 — claude_auto_accept_disclaimer is read at runtime
-		// from cfg.Session so the *s.cfg = *newCfg below picks it up
-		// without an explicit setter. Recording in Applied for
-		// operator visibility when it actually changed.
-		if newCfg.Session.ClaudeAutoAcceptDisclaimer != s.cfg.Session.ClaudeAutoAcceptDisclaimer {
-			res.Applied = append(res.Applied, "session.claude_auto_accept_disclaimer")
-		}
+		// v7.0.0: DefaultEffort and ClaudeAutoAcceptDisclaimer moved to LLM registry.
+		// Hot-reload of these fields is handled via PUT /api/config → applyLLMRegistryPatch.
 	}
 
 	// Swap config pointer contents — a shallow copy of the loaded

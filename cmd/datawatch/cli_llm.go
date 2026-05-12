@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -94,8 +93,12 @@ func newLLMEnableCmd(enable bool) *cobra.Command {
 func newLLMAddCmd(update bool) *cobra.Command {
 	var (
 		kind, model, computeNodesCSV, apiKeyRef, tagsCSV string
-		timeoutSeconds                                   int
-		costInput, costOutput                            float64
+		timeoutSeconds, consoleCols, consoleRows          int
+		costInput, costOutput                             float64
+		binary, outputMode, inputMode                    string
+		autoGitInit, autoGitCommit                       bool
+		skipPerms, channelEnabled, autoAccept            bool
+		permMode, defaultEffort, fallbackChainCSV        string
 	)
 	use := "add <name>"
 	short := "Add a new LLM"
@@ -139,12 +142,49 @@ func newLLMAddCmd(update bool) *cobra.Command {
 			if costOutput > 0 {
 				body["cost_per_1k_output"] = costOutput
 			}
-			b, _ := json.Marshal(body)
-			_ = b
+			if binary != "" {
+				body["binary"] = binary
+			}
+			if consoleCols > 0 {
+				body["console_cols"] = consoleCols
+			}
+			if consoleRows > 0 {
+				body["console_rows"] = consoleRows
+			}
+			if outputMode != "" {
+				body["output_mode"] = outputMode
+			}
+			if inputMode != "" {
+				body["input_mode"] = inputMode
+			}
+			if autoGitInit {
+				body["auto_git_init"] = true
+			}
+			if autoGitCommit {
+				body["auto_git_commit"] = true
+			}
+			if skipPerms {
+				body["skip_permissions"] = true
+			}
+			if channelEnabled {
+				body["channel_enabled"] = true
+			}
+			if autoAccept {
+				body["auto_accept_disclaimer"] = true
+			}
+			if permMode != "" {
+				body["permission_mode"] = permMode
+			}
+			if defaultEffort != "" {
+				body["default_effort"] = defaultEffort
+			}
+			if fallbackChainCSV != "" {
+				body["fallback_chain"] = splitCSV(fallbackChainCSV)
+			}
 			return daemonJSON(method, urlBuilder(args[0]), body)
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "ollama", "ollama | openwebui | opencode | claude")
+	cmd.Flags().StringVar(&kind, "kind", "ollama", "ollama | openwebui | opencode | claude | claude-code | aider | goose | gemini | shell")
 	cmd.Flags().StringVar(&model, "model", "", "model name (e.g. llama3:8b, claude-sonnet-4-6)")
 	cmd.Flags().StringVar(&computeNodesCSV, "compute-nodes", "", "comma-separated ordered ComputeNode names for failover (local kinds only)")
 	cmd.Flags().StringVar(&apiKeyRef, "api-key-ref", "", "literal key OR ${secret:name} reference (cloud kinds)")
@@ -152,6 +192,21 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().Float64Var(&costInput, "cost-per-1k-input", 0, "USD per 1k input tokens (cloud accounting)")
 	cmd.Flags().Float64Var(&costOutput, "cost-per-1k-output", 0, "USD per 1k output tokens")
+	// Session-backend fields (B/C/D)
+	cmd.Flags().StringVar(&binary, "binary", "", "path to the backend binary (session-backend kinds)")
+	cmd.Flags().IntVar(&consoleCols, "console-cols", 0, "terminal width in columns (0 = session default)")
+	cmd.Flags().IntVar(&consoleRows, "console-rows", 0, "terminal height in rows (0 = session default)")
+	cmd.Flags().StringVar(&outputMode, "output-mode", "", "output display mode: terminal | log | chat")
+	cmd.Flags().StringVar(&inputMode, "input-mode", "", "input mode: tmux | none")
+	cmd.Flags().BoolVar(&autoGitInit, "auto-git-init", false, "initialize git repo in project dir if missing")
+	cmd.Flags().BoolVar(&autoGitCommit, "auto-git-commit", false, "commit before/after each session")
+	// Claude-code-specific fields
+	cmd.Flags().BoolVar(&skipPerms, "skip-permissions", false, "pass --dangerously-skip-permissions (claude-code only)")
+	cmd.Flags().BoolVar(&channelEnabled, "channel-enabled", false, "enable MCP channel bridge (claude-code only)")
+	cmd.Flags().BoolVar(&autoAccept, "auto-accept-disclaimer", false, "auto-accept startup disclaimers (claude-code only)")
+	cmd.Flags().StringVar(&permMode, "permission-mode", "", "permission mode: plan | acceptEdits | auto | bypassPermissions | dontAsk (claude-code only)")
+	cmd.Flags().StringVar(&defaultEffort, "default-effort", "", "default effort: quick | normal | thorough (claude-code only)")
+	cmd.Flags().StringVar(&fallbackChainCSV, "fallback-chain", "", "comma-separated profile fallback chain (claude-code only)")
 	return cmd
 }
 

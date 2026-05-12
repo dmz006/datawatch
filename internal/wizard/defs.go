@@ -2,6 +2,8 @@ package wizard
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	slackpkg "github.com/slack-go/slack"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // yesNoValidator validates a y/n prompt response.
@@ -71,6 +74,44 @@ func loadAndSave(cfgPath string, patch func(*config.Config)) error {
 	}
 	patch(cfg)
 	return config.Save(cfg, cfgPath)
+}
+
+// expandHomeWizard expands "~" in a path to the user's home directory.
+func expandHomeWizard(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
+// upsertClaudeCodeLLM loads (or creates) the claude-code LLM registry entry and
+// calls patch on it, then saves. Used by wizard steps that set claude-code settings.
+func upsertClaudeCodeLLM(dataDir string, patch func(*inference.LLM)) error {
+	regPath := filepath.Join(expandHomeWizard(dataDir), "inference", "llms.json")
+	reg, _ := inference.NewRegistryFromFile(regPath)
+	if reg == nil {
+		reg = inference.NewRegistry()
+	}
+	var cl *inference.LLM
+	if existing, err := reg.Get("claude-code"); err == nil && existing != nil {
+		cl = existing
+	} else {
+		cl = &inference.LLM{
+			Name:           "claude-code",
+			Kind:           inference.KindClaudeCode,
+			Binary:         "claude",
+			ChannelEnabled: true,
+			AutoCreated:    true,
+		}
+	}
+	patch(cl)
+	if _, err := reg.Get("claude-code"); err != nil {
+		return reg.Add(cl)
+	}
+	return reg.Update(cl)
 }
 
 // ---- Signal ---------------------------------------------------------------
@@ -647,13 +688,18 @@ Type 'cancel' at any time to abort.`,
 				Validate: yesNoValidator, Optional: true},
 		},
 		OnComplete: func(cfgPath string, data map[string]string) error {
-			return loadAndSave(cfgPath, func(cfg *config.Config) {
+			// v7.0.0: binary and skip_permissions moved to LLM registry.
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				cfg = config.DefaultConfig()
+			}
+			return upsertClaudeCodeLLM(cfg.DataDir, func(cl *inference.LLM) {
 				if b := data["binary"]; b != "" {
-					cfg.Session.ClaudeBin = b
-				} else if cfg.Session.ClaudeBin == "" {
-					cfg.Session.ClaudeBin = "claude"
+					cl.Binary = b
+				} else if cl.Binary == "" {
+					cl.Binary = "claude"
 				}
-				cfg.Session.ClaudeSkipPermissions = isYes(data["skip_permissions"]) && !isNo(data["skip_permissions"])
+				cl.SkipPermissions = isYes(data["skip_permissions"]) && !isNo(data["skip_permissions"])
 			})
 		},
 	}
@@ -866,7 +912,10 @@ Type 'cancel' at any time to abort.`,
 				Validate: yesNoValidator, Optional: true},
 		},
 		OnComplete: func(cfgPath string, data map[string]string) error {
-			return loadAndSave(cfgPath, func(cfg *config.Config) {
+			// Persist session config fields.
+			var dataDir string
+			if err := loadAndSave(cfgPath, func(cfg *config.Config) {
+				dataDir = cfg.DataDir
 				if v := data["llm_backend"]; v != "" {
 					cfg.Session.LLMBackend = v
 				}
@@ -882,12 +931,22 @@ Type 'cancel' at any time to abort.`,
 				if v := data["project_dir"]; v != "" {
 					cfg.Session.DefaultProjectDir = v
 				}
-				if isNo(data["skip_permissions"]) {
-					cfg.Session.ClaudeSkipPermissions = false
-				} else if isYes(data["skip_permissions"]) && data["skip_permissions"] != "" {
-					cfg.Session.ClaudeSkipPermissions = true
+			}); err != nil {
+				return err
+			}
+			// v7.0.0: skip_permissions moved to LLM registry.
+			if _, ok := data["skip_permissions"]; ok {
+				if err := upsertClaudeCodeLLM(dataDir, func(cl *inference.LLM) {
+					if isNo(data["skip_permissions"]) {
+						cl.SkipPermissions = false
+					} else if isYes(data["skip_permissions"]) && data["skip_permissions"] != "" {
+						cl.SkipPermissions = true
+					}
+				}); err != nil {
+					return err
 				}
-			})
+			}
+			return nil
 		},
 	}
 }

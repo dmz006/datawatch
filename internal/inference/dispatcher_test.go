@@ -202,13 +202,13 @@ func TestMigrateLegacyConfig(t *testing.T) {
 	if len(created) != 2 {
 		t.Fatalf("expected 2 migrated, got %v", created)
 	}
-	got, _ := r.Get("ollama-default")
-	if got.Kind != KindOllama || got.Model != "llama3:8b" || !got.AutoCreated {
-		t.Fatalf("ollama-default: %+v", got)
+	got, err := r.Get("ollama")
+	if err != nil || got.Kind != KindOllama || got.Model != "llama3:8b" || !got.AutoCreated {
+		t.Fatalf("ollama: err=%v llm=%+v", err, got)
 	}
-	got2, _ := r.Get("openwebui-default")
-	if got2.Kind != KindOpenWebUI || got2.APIKeyRef != "sk-owui" {
-		t.Fatalf("openwebui-default: %+v", got2)
+	got2, err2 := r.Get("openwebui")
+	if err2 != nil || got2.Kind != KindOpenWebUI || got2.APIKeyRef != "sk-owui" {
+		t.Fatalf("openwebui: err=%v llm=%+v", err2, got2)
 	}
 	// Re-running shouldn't duplicate.
 	created2 := MigrateLegacyConfig(r, "http://localhost:11434", "llama3:8b", "http://owui:8080", "gpt-4o", "sk-owui")

@@ -130,6 +130,25 @@ type LLM struct {
 	// for back-compat; existing JSON/YAML without the field reads as
 	// enabled, preserving v7-alpha behavior).
 	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+
+	// Session-backend fields. Only applicable when Kind is a session-backend
+	// (claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, shell).
+	Binary      string `yaml:"binary,omitempty" json:"binary,omitempty"`
+	ConsoleCols int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty" json:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty" json:"input_mode,omitempty"`
+	AutoGitInit   bool `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
+	AutoGitCommit bool `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+
+	// Claude-code-specific settings. Clean move from SessionConfig.
+	// Only meaningful when Kind == KindClaudeCode.
+	SkipPermissions      bool     `yaml:"skip_permissions,omitempty" json:"skip_permissions,omitempty"`
+	ChannelEnabled       bool     `yaml:"channel_enabled,omitempty" json:"channel_enabled,omitempty"`
+	AutoAcceptDisclaimer bool     `yaml:"auto_accept_disclaimer,omitempty" json:"auto_accept_disclaimer,omitempty"`
+	PermissionMode       string   `yaml:"permission_mode,omitempty" json:"permission_mode,omitempty"`
+	DefaultEffort        string   `yaml:"default_effort,omitempty" json:"default_effort,omitempty"`
+	FallbackChain        []string `yaml:"fallback_chain,omitempty" json:"fallback_chain,omitempty"`
 }
 
 // Enabled is the operator-facing accessor — handy for templates and

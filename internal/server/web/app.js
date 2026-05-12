@@ -7141,6 +7141,92 @@ window._renderLLMEditPanel = function(existing) {
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
         <input id="llmEditAPIKey" class="form-input" placeholder="$\{secret:anthropic-key\}" value="${escHtml(existing.api_key_ref||'')}" />
       </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
+        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags (comma-separated)')}</label>
+        <input id="llmEditTags" class="form-input" value="${escHtml((existing.tags||[]).join(', '))}" />
+      </div>
+      <div id="llmSessionSect" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('llm_field_binary')||'Binary path')}</label>
+          <input id="llmEditBinary" class="form-input" value="${escHtml(existing.binary||'')}" placeholder="e.g. claude / aider / goose" />
+        </div>
+        <div style="display:flex;gap:6px;">
+          <div class="wizard-field" style="flex:1;">
+            <label class="wizard-label">${escHtml(t('llm_field_console_cols')||'Console width (cols)')}</label>
+            <input id="llmEditCols" type="number" min="0" class="form-input" value="${existing.console_cols||''}" placeholder="120" />
+          </div>
+          <div class="wizard-field" style="flex:1;">
+            <label class="wizard-label">${escHtml(t('llm_field_console_rows')||'Console height (rows)')}</label>
+            <input id="llmEditRows" type="number" min="0" class="form-input" value="${existing.console_rows||''}" placeholder="40" />
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <div class="wizard-field" style="flex:1;">
+            <label class="wizard-label">${escHtml(t('llm_field_output_mode')||'Output mode')}</label>
+            <select id="llmEditOutputMode" class="form-select">
+              ${['','terminal','log','chat'].map(v=>`<option value="${escHtml(v)}" ${(existing.output_mode||'')===v?'selected':''}>${escHtml(v||'(default)')}</option>`).join('')}
+            </select>
+          </div>
+          <div class="wizard-field" style="flex:1;">
+            <label class="wizard-label">${escHtml(t('llm_field_input_mode')||'Input mode')}</label>
+            <select id="llmEditInputMode" class="form-select">
+              ${['','tmux','none'].map(v=>`<option value="${escHtml(v)}" ${(existing.input_mode||'')===v?'selected':''}>${escHtml(v||'(default)')}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" id="llmEditAutoGitInit" ${existing.auto_git_init?'checked':''} />
+            ${escHtml(t('llm_field_auto_git_init')||'Auto git init (create repo in project dir if missing)')}
+          </label>
+        </div>
+        <div class="wizard-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" id="llmEditAutoGitCommit" ${existing.auto_git_commit?'checked':''} />
+            ${escHtml(t('llm_field_auto_git_commit')||'Auto git commit (commit before/after session)')}
+          </label>
+        </div>
+      </div>
+      <div id="llmClaudeSect" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="wizard-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" id="llmEditSkipPerms" ${existing.skip_permissions?'checked':''} />
+            ${escHtml(t('llm_field_skip_permissions')||'Skip permissions (--dangerously-skip-permissions)')}
+          </label>
+        </div>
+        <div class="wizard-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" id="llmEditChannelEnabled" ${existing.channel_enabled?'checked':''} />
+            ${escHtml(t('llm_field_channel_enabled')||'Channel mode (MCP channel bridge)')}
+          </label>
+        </div>
+        <div class="wizard-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
+            <input type="checkbox" id="llmEditAutoAccept" ${existing.auto_accept_disclaimer?'checked':''} />
+            ${escHtml(t('llm_field_auto_accept_disclaimer')||'Auto-accept startup disclaimers')}
+          </label>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('llm_field_permission_mode')||'Permission mode')}</label>
+          <select id="llmEditPermMode" class="form-select">
+            ${['','plan','acceptEdits','auto','bypassPermissions','dontAsk','default'].map(v=>`<option value="${escHtml(v)}" ${(existing.permission_mode||'')===v?'selected':''}>${escHtml(v||'(none)')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('llm_field_default_effort')||'Default effort')}</label>
+          <select id="llmEditEffort" class="form-select">
+            ${['','quick','normal','thorough'].map(v=>`<option value="${escHtml(v)}" ${(existing.default_effort||'')===v?'selected':''}>${escHtml(v||'(default)')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('llm_field_fallback_chain')||'Fallback chain (comma-separated profile names)')}</label>
+          <input id="llmEditFallback" class="form-input" value="${escHtml((existing.fallback_chain||[]).join(', '))}" placeholder="claude-personal,gemini-backup" />
+        </div>
+      </div>
       <div id="llmEditStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
       <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
         <label style="font-size:11px;color:var(--text2);white-space:nowrap;">${escHtml(t('llm_test_model_label')||'Test model:')}</label>
@@ -7175,17 +7261,25 @@ window._renderLLMEditPanel = function(existing) {
 const _llmSaasKinds = new Set(['claude-code', 'aider', 'goose', 'gemini']);
 const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
 
+const _llmSessionBackendKinds = new Set(['claude-code','aider','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
+
 window._llmKindChanged = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || '';
   const isSaas = _llmSaasKinds.has(kind);
+  const isSessionBackend = _llmSessionBackendKinds.has(kind);
+  const isClaudeCode = kind === 'claude-code';
   const cnSect = document.getElementById('llmComputeNodesSect');
   const aaSect = document.getElementById('llmAutoAddSect');
   const nodeEl = document.getElementById('llmNewModelNode');
   const nodeHdr = document.getElementById('llmModelsNodeColHdr');
+  const sessionSect = document.getElementById('llmSessionSect');
+  const claudeSect = document.getElementById('llmClaudeSect');
   if (cnSect) cnSect.style.display = isSaas ? 'none' : '';
   if (aaSect) aaSect.style.display = isSaas ? 'none' : '';
   if (nodeEl) nodeEl.style.display = isSaas ? 'none' : '';
   if (nodeHdr) nodeHdr.style.display = isSaas ? 'none' : '';
+  if (sessionSect) sessionSect.style.display = isSessionBackend ? '' : 'none';
+  if (claudeSect) claudeSect.style.display = isClaudeCode ? '' : 'none';
   // Populate model datalist for the current kind.
   if (isSaas) {
     window._llmProbeSaasModels(kind);
@@ -7326,12 +7420,40 @@ window._llmSaveDraft = function() {
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
+  // Collect all new fields (B/C/D + claude-specific + bug-fix A).
+  const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
+  const tagsRaw = (document.getElementById('llmEditTags')||{}).value||'';
+  const tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
+  const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
+  const consoleRows = parseInt((document.getElementById('llmEditRows')||{}).value||'0', 10) || 0;
+  const outputMode = (document.getElementById('llmEditOutputMode')||{}).value||'';
+  const inputMode = (document.getElementById('llmEditInputMode')||{}).value||'';
+  const autoGitInit = !!(document.getElementById('llmEditAutoGitInit')||{}).checked;
+  const autoGitCommit = !!(document.getElementById('llmEditAutoGitCommit')||{}).checked;
+  const skipPerms = !!(document.getElementById('llmEditSkipPerms')||{}).checked;
+  const channelEnabled = !!(document.getElementById('llmEditChannelEnabled')||{}).checked;
+  const autoAccept = !!(document.getElementById('llmEditAutoAccept')||{}).checked;
+  const permMode = (document.getElementById('llmEditPermMode')||{}).value||'';
+  const effort = (document.getElementById('llmEditEffort')||{}).value||'';
+  const fallbackRaw = (document.getElementById('llmEditFallback')||{}).value||'';
+  const fallbackChain = fallbackRaw.split(',').map(s => s.trim()).filter(Boolean);
   const url = isEdit ? '/api/llms/' + encodeURIComponent(editName) : '/api/llms';
   const method = isEdit ? 'PUT' : 'POST';
   apiFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: isEdit ? editName : name, kind, models, model: firstModel, auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey }),
+    body: JSON.stringify({
+      name: isEdit ? editName : name, kind, models, model: firstModel,
+      auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+      timeout_seconds: timeoutSec, tags,
+      binary, console_cols: consoleCols, console_rows: consoleRows,
+      output_mode: outputMode, input_mode: inputMode,
+      auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
+      skip_permissions: skipPerms, channel_enabled: channelEnabled,
+      auto_accept_disclaimer: autoAccept, permission_mode: permMode,
+      default_effort: effort, fallback_chain: fallbackChain,
+    }),
   }).then(() => {
     showToast(isEdit ? '✓ LLM updated' : '✓ LLM added', 'success', 2000);
     if (modal) modal.remove();
@@ -9866,6 +9988,13 @@ function toggleLLM(cfgKey, enabled, name) {
 }
 
 function openLLMSetup(name) {
+  // Session-backend kinds: settings live in the LLM registry now.
+  if (_llmSessionBackendKinds && _llmSessionBackendKinds.has(name)) {
+    apiFetch('/api/llms/' + encodeURIComponent(name))
+      .then(llm => openLLMEditPanel(llm))
+      .catch(() => openLLMEditPanel({ name, kind: name }));
+    return;
+  }
   const section = LLM_CFG_SECTION[name];
   if (!section) { showToast('No config fields for ' + name, 'info'); return; }
   fetch('/api/config', { headers: tokenHeader() })
@@ -10899,18 +11028,10 @@ const GIT_FIELDS = [
 ];
 
 const LLM_FIELDS = {
+  // claude-code: all settings moved to LLM registry (openLLMSetup redirects to openLLMEditPanel).
+  // Only claude_enabled remains in session config.
   'claude-code': [
-    { key:'claude_code_bin', label:'Claude binary', type:'text', placeholder:'claude', section:'session' },
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
-    { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
-    { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
-    { key:'claude_auto_accept_disclaimer', label:'Auto-accept startup disclaimer', type:'checkbox', section:'session' },
-    { key:'permission_mode', label:'Default permission mode', type:'select', options:['','plan','acceptEdits','auto','bypassPermissions','dontAsk','default'], section:'session' },
-    { key:'default_effort', label:'Default effort', type:'select', options:['','quick','normal','thorough'], section:'session' },
-    { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
-    ...GIT_FIELDS,
-    { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
-    { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'40', section:'session' },
   ],
   'aider':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'goose':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],

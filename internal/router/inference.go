@@ -33,7 +33,11 @@ const llmUsage = `Usage:
 
 Common kv pairs:
   model=<name>            compute_nodes=<csv>      api_key_ref=<literal-or-${secret:name}>
-  timeout_seconds=<N>     tags=<csv>`
+  timeout_seconds=<N>     tags=<csv>               binary=<path>
+  console_cols=<N>        console_rows=<N>         output_mode=terminal|log|chat
+  auto_git_init=true      auto_git_commit=true
+  skip_permissions=true   channel_enabled=true     auto_accept_disclaimer=true
+  permission_mode=plan     default_effort=normal    fallback_chain=<csv>`
 
 func (r *Router) handleLLMCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -289,10 +293,13 @@ func parseLLMKVPairs(s string) map[string]any {
 		k := strings.ToLower(kv[:eq])
 		v := kv[eq+1:]
 		switch k {
-		case "compute_nodes", "tags":
+		case "compute_nodes", "tags", "fallback_chain":
 			out[k] = strings.Split(v, ",")
-		case "timeout_seconds":
+		case "timeout_seconds", "console_cols", "console_rows":
 			out[k] = atoiOrZero(v)
+		case "auto_git_init", "auto_git_commit", "skip_permissions",
+			"channel_enabled", "auto_accept_disclaimer", "auto_add_models":
+			out[k] = strings.EqualFold(v, "true") || v == "1"
 		default:
 			out[k] = v
 		}

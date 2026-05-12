@@ -2605,9 +2605,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		LLMRef:             resolvedLLMRef,
 		ComputeNodeRef:     resolvedComputeNodeRef,
 	}
-	// Empty per-request overrides fall through to global config.
-	if opts.PermissionMode == "" && s.cfg.Session.PermissionMode != "" {
-		opts.PermissionMode = s.cfg.Session.PermissionMode
+	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
+	if opts.PermissionMode == "" && s.inferenceReg != nil {
+		if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil && cl.PermissionMode != "" {
+			opts.PermissionMode = cl.PermissionMode
+		}
 	}
 	// BL5 — propagate template env vars (request takes precedence
 	// only if a profile already set them; templates fill the gap).
@@ -3045,30 +3047,39 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"addr":    s.cfg.Webhook.Addr,
 			"token":   mask(s.cfg.Webhook.Token),
 		},
-		"session": map[string]interface{}{
-			"llm_backend":        s.cfg.Session.LLMBackend,
-			"max_sessions":       s.cfg.Session.MaxSessions,
-			"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
-			"tail_lines":         s.cfg.Session.TailLines,
+		"session": func() map[string]interface{} {
+			m := map[string]interface{}{
+				"llm_backend":        s.cfg.Session.LLMBackend,
+				"max_sessions":       s.cfg.Session.MaxSessions,
+				"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
+				"tail_lines":         s.cfg.Session.TailLines,
 				"alert_context_lines": s.cfg.Session.AlertContextLines,
-			"default_project_dir": s.cfg.Session.DefaultProjectDir,
-			"workspace_root":     s.cfg.Session.WorkspaceRoot,
-			"claude_enabled":     s.cfg.Session.ClaudeEnabled,
-			"skip_permissions":          s.cfg.Session.ClaudeSkipPermissions,
-			"channel_enabled":           s.cfg.Session.ClaudeChannelEnabled,
-			"claude_auto_accept_disclaimer": s.cfg.Session.ClaudeAutoAcceptDisclaimer,
-			"permission_mode":            s.cfg.Session.PermissionMode,
-			"auto_git_commit":    s.cfg.Session.AutoGitCommit,
-			"auto_git_init":      s.cfg.Session.AutoGitInit,
-			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
-			"root_path":         s.cfg.Session.RootPath,
-			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
-			"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
-			"default_effort":    s.cfg.Session.DefaultEffort,
-			"console_cols":      s.cfg.Session.ConsoleCols,
-			"console_rows":      s.cfg.Session.ConsoleRows,
-			"log_level":         s.cfg.Session.LogLevel,
-		},
+				"default_project_dir": s.cfg.Session.DefaultProjectDir,
+				"workspace_root":     s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":     s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":    s.cfg.Session.AutoGitCommit,
+				"auto_git_init":      s.cfg.Session.AutoGitInit,
+				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
+				"root_path":         s.cfg.Session.RootPath,
+				"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
+				"console_cols":      s.cfg.Session.ConsoleCols,
+				"console_rows":      s.cfg.Session.ConsoleRows,
+				"log_level":         s.cfg.Session.LogLevel,
+			}
+			// v7.0.0: claude-code settings moved to LLM registry.
+			// Read from registry when available for API back-compat.
+			if s.inferenceReg != nil {
+				if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil {
+					m["skip_permissions"] = cl.SkipPermissions
+					m["channel_enabled"] = cl.ChannelEnabled
+					m["claude_auto_accept_disclaimer"] = cl.AutoAcceptDisclaimer
+					m["permission_mode"] = cl.PermissionMode
+					m["default_effort"] = cl.DefaultEffort
+				}
+			}
+			return m
+		}(),
 		"mcp": map[string]interface{}{
 			"enabled":          s.cfg.MCP.Enabled,
 			"sse_enabled":      s.cfg.MCP.SSEEnabled,
@@ -3226,8 +3237,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"guardrail_backend":     s.cfg.Orchestrator.GuardrailBackend,
 			"max_parallel_prds":     s.cfg.Orchestrator.MaxParallelPRDs,
 		},
-		"profiles":       s.cfg.Profiles,
-		"fallback_chain": s.cfg.Session.FallbackChain,
+		"profiles": s.cfg.Profiles,
+		"fallback_chain": func() []string {
+			if s.inferenceReg != nil {
+				if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil {
+					return cl.FallbackChain
+				}
+			}
+			return nil
+		}(),
 		"whisper": map[string]interface{}{
 			"enabled":   s.cfg.Whisper.Enabled,
 			// v7.0.0-alpha.20 #253 — backend was missing here, so the
@@ -3312,10 +3330,24 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigPatch(s.cfg, patch)
-	// B30 + BL41: apply hot-reloadable session knobs to live manager.
+	// B30: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
-		s.manager.SetDefaultEffort(s.cfg.Session.DefaultEffort)
+	}
+	// v7.0.0: BL41 default_effort and claude-code fields moved to LLM registry.
+	// Apply registry patches for the moved fields.
+	if s.inferenceReg != nil {
+		s.applyLLMRegistryPatch(patch)
+		// Apply default_effort to live manager from registry.
+		if s.manager != nil {
+			if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil {
+				effort := cl.DefaultEffort
+				if effort == "" {
+					effort = "normal"
+				}
+				s.manager.SetDefaultEffort(effort)
+			}
+		}
 	}
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
@@ -3329,6 +3361,72 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// applyLLMRegistryPatch applies config patch keys that now live in the LLM registry
+// (v7.0.0 clean move from SessionConfig). Upserts the claude-code entry.
+func (s *Server) applyLLMRegistryPatch(patch map[string]interface{}) {
+	// Collect registry-bound keys from the patch.
+	keys := []string{
+		"session.skip_permissions", "session.channel_enabled",
+		"session.claude_auto_accept_disclaimer", "session.permission_mode",
+		"session.default_effort", "session.fallback_chain",
+	}
+	hasRegistryKey := false
+	for _, k := range keys {
+		if _, ok := patch[k]; ok {
+			hasRegistryKey = true
+			break
+		}
+	}
+	if !hasRegistryKey {
+		return
+	}
+
+	var cl *inference.LLM
+	if existing, err := s.inferenceReg.Get("claude-code"); err == nil && existing != nil {
+		cl = existing
+	} else {
+		cl = &inference.LLM{Name: "claude-code", Kind: inference.KindClaudeCode, ChannelEnabled: true, AutoCreated: true}
+	}
+
+	for k, v := range patch {
+		switch k {
+		case "session.skip_permissions":
+			cl.SkipPermissions = toBool(v)
+		case "session.channel_enabled":
+			cl.ChannelEnabled = toBool(v)
+		case "session.claude_auto_accept_disclaimer":
+			cl.AutoAcceptDisclaimer = toBool(v)
+		case "session.permission_mode":
+			cl.PermissionMode = toString(v)
+		case "session.default_effort":
+			if s2 := toString(v); s2 != "" {
+				cl.DefaultEffort = s2
+			}
+		case "session.fallback_chain":
+			s2 := toString(v)
+			if s2 == "" {
+				cl.FallbackChain = nil
+			} else {
+				parts := strings.Split(s2, ",")
+				chain := make([]string, 0, len(parts))
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						chain = append(chain, p)
+					}
+				}
+				cl.FallbackChain = chain
+			}
+		}
+	}
+
+	if _, err := s.inferenceReg.Get("claude-code"); err != nil {
+		_ = s.inferenceReg.Add(cl)
+	} else {
+		_ = s.inferenceReg.Update(cl)
+	}
 }
 
 // applyConfigPatch applies dot-path key/value pairs from patch to cfg.
@@ -3419,7 +3517,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.claude_enabled":
 			cfg.Session.ClaudeEnabled = toBool(v)
 		case "session.skip_permissions":
-			cfg.Session.ClaudeSkipPermissions = toBool(v)
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.auto_git_commit":
 			cfg.Session.AutoGitCommit = toBool(v)
 		case "session.max_sessions":
@@ -3448,11 +3546,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			// so don't gate on non-empty here.
 			cfg.Session.WorkspaceRoot = toString(v)
 		case "session.channel_enabled":
-			cfg.Session.ClaudeChannelEnabled = toBool(v)
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.claude_auto_accept_disclaimer":
-			cfg.Session.ClaudeAutoAcceptDisclaimer = toBool(v)
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.permission_mode":
-			cfg.Session.PermissionMode = toString(v)
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.auto_git_init":
 			cfg.Session.AutoGitInit = toBool(v)
 		case "session.kill_sessions_on_exit":
@@ -3468,9 +3566,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 				cfg.Session.ScheduleSettleMs = n
 			}
 		case "session.default_effort":
-			if s := toString(v); s != "" {
-				cfg.Session.DefaultEffort = s
-			}
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.console_cols":
 			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }
 		case "session.console_rows":
@@ -3814,20 +3910,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Shell.InputMode = toString(v)
 		// Profiles & Fallback
 		case "session.fallback_chain":
-			s := toString(v)
-			if s == "" {
-				cfg.Session.FallbackChain = nil
-			} else {
-				parts := strings.Split(s, ",")
-				chain := make([]string, 0, len(parts))
-				for _, p := range parts {
-					p = strings.TrimSpace(p)
-					if p != "" {
-						chain = append(chain, p)
-					}
-				}
-				cfg.Session.FallbackChain = chain
-			}
+			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		// RTK config
 		case "rtk.enabled":
 			cfg.RTK.Enabled = toBool(v)

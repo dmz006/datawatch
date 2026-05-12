@@ -986,9 +986,6 @@ type SessionConfig struct {
 	// ClaudeEnabled controls whether claude-code backend is available.
 	ClaudeEnabled bool `yaml:"claude_enabled"`
 
-	// ClaudeBin is the path to the claude binary (claude-code backend only).
-	ClaudeBin string `yaml:"claude_code_bin"`
-
 	// LLMBackend selects which LLM backend to use. Default: "claude-code".
 	LLMBackend string `yaml:"llm_backend"`
 
@@ -1025,37 +1022,6 @@ type SessionConfig struct {
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
 	AutoGitInit bool `yaml:"auto_git_init"`
 
-	// ClaudeSkipPermissions passes --dangerously-skip-permissions to claude-code,
-	// bypassing interactive permission prompts within the session's project dir.
-	// Only applies to the claude-code backend.
-	ClaudeSkipPermissions bool `yaml:"skip_permissions"`
-
-	// ClaudeChannelEnabled enables MCP channel mode for claude-code sessions.
-	// Adds --channels server:datawatch --dangerously-load-development-channels
-	// so Claude can receive messages and send replies via the datawatch channel server.
-	// Only applies to the claude-code backend.
-	ClaudeChannelEnabled bool `yaml:"channel_enabled"`
-
-	// ClaudeAutoAcceptDisclaimer (v5.27.2) — when true, datawatch detects
-	// claude-code's startup disclaimer / "trust this folder" / "Loading
-	// development channels" prompts and auto-accepts them by sending the
-	// confirmation key (Enter for trust prompts; "1\n" for numbered menus).
-	// Mirrors the PRD-automation pattern: the prompt is recognised, marked
-	// as `waiting_input`, then a brief debounce later the auto-response is
-	// sent. Defaults to false so the operator opts in explicitly. Only
-	// applies to the claude-code backend.
-	ClaudeAutoAcceptDisclaimer bool `yaml:"claude_auto_accept_disclaimer"`
-
-	// PermissionMode (v5.27.5) — passed to claude-code as
-	// `--permission-mode <value>`. Valid values: "default", "plan",
-	// "acceptEdits", "auto", "bypassPermissions", "dontAsk". Empty
-	// (default) lets claude pick its own default. The "plan" mode is
-	// the design-without-writing flavour useful for PRD decomposition
-	// + design-review sessions. Overridden per-task / per-PRD via
-	// the autonomous executor (Task.PermissionMode → PRD.PermissionMode
-	// → this global). Only applies to the claude-code backend.
-	PermissionMode string `yaml:"permission_mode"`
-
 	// SecureTracking controls tracker file encryption when --secure is enabled.
 	// "log_only" (default) encrypts only output.log; "full" also encrypts tracker .md files.
 	SecureTracking string `yaml:"secure_tracking"`
@@ -1087,22 +1053,12 @@ type SessionConfig struct {
 	ConsoleCols int `yaml:"console_cols"`
 	ConsoleRows int `yaml:"console_rows"`
 
-	// FallbackChain is an ordered list of profile names to try when the primary
-	// backend hits a rate limit. Each entry must match a key in the top-level
-	// profiles map. Empty = no fallback (default: pause and auto-resume).
-	FallbackChain []string `yaml:"fallback_chain,omitempty"`
-
 	// ScheduleSettleMs (B30) is the delay in milliseconds between sending
 	// text and pressing Enter for scheduled commands. Fixes the 2nd-Enter
 	// bug for TUIs that start accepting input slightly after their prompt
 	// state transition fires. 0 disables (legacy single-call send-keys).
 	// Default: 200.
 	ScheduleSettleMs int `yaml:"schedule_settle_ms"`
-
-	// DefaultEffort (BL41) is the per-session effort hint applied when
-	// the operator doesn't pass one explicitly. One of "quick", "normal",
-	// "thorough". Empty = "normal".
-	DefaultEffort string `yaml:"default_effort,omitempty"`
 
 	// StaleTimeoutSeconds (BL40) — sessions in StateRunning whose
 	// UpdatedAt is older than this are reported as stale via
@@ -1562,17 +1518,13 @@ func DefaultConfig() *Config {
 			InputIdleTimeout:      10,
 			TailLines:             20,
 				AlertContextLines:     10,
-			ClaudeBin:             "claude",
 			LLMBackend:            "claude-code",
 			DefaultProjectDir:     home,
 			AutoGitCommit:         true,
 			AutoGitInit:           false,
 			ClaudeEnabled:         true,
-			ClaudeChannelEnabled:  true,
-			ClaudeSkipPermissions: true,
 			MCPMaxRetries:        5,
 			ScheduleSettleMs:     200,
-			DefaultEffort:        "normal",
 			StaleTimeoutSeconds:  1800,
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
@@ -1860,14 +1812,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Session.ScheduleSettleMs == 0 {
 		cfg.Session.ScheduleSettleMs = 200
 	}
-	if cfg.Session.DefaultEffort == "" {
-		cfg.Session.DefaultEffort = "normal"
-	}
 	if cfg.Session.StaleTimeoutSeconds == 0 {
 		cfg.Session.StaleTimeoutSeconds = 1800
-	}
-	if cfg.Session.ClaudeBin == "" {
-		cfg.Session.ClaudeBin = "claude"
 	}
 	if cfg.Session.LLMBackend == "" {
 		cfg.Session.LLMBackend = "claude-code"

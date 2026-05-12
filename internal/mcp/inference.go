@@ -26,25 +26,59 @@ func (s *Server) toolLLMGet() mcpsdk.Tool {
 
 func (s *Server) toolLLMAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_add",
-		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude)."),
+		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude|claude-code|aider|goose|gemini|shell. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude). Session-backend fields (binary, console_cols/rows, output_mode, input_mode, auto_git_init/commit) apply to coding-agent kinds. Claude-code fields (skip_permissions, channel_enabled, auto_accept_disclaimer, permission_mode, default_effort, fallback_chain) only apply to claude-code."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout (0=adapter default)")),
+		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
+		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		// Session-backend fields
+		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
+		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
+		mcpsdk.WithString("console_rows", mcpsdk.Description("terminal height override")),
+		mcpsdk.WithString("output_mode", mcpsdk.Description("output display mode: terminal or log")),
+		mcpsdk.WithString("input_mode", mcpsdk.Description("input mode")),
+		mcpsdk.WithString("auto_git_init", mcpsdk.Description("true/false — auto-init git repo in project dir")),
+		mcpsdk.WithString("auto_git_commit", mcpsdk.Description("true/false — auto-commit after session")),
+		// Claude-code-specific
+		mcpsdk.WithString("skip_permissions", mcpsdk.Description("true/false — pass --dangerously-skip-permissions (claude-code only)")),
+		mcpsdk.WithString("channel_enabled", mcpsdk.Description("true/false — enable MCP channel mode (claude-code only)")),
+		mcpsdk.WithString("auto_accept_disclaimer", mcpsdk.Description("true/false — auto-accept startup prompts (claude-code only)")),
+		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value: default|plan|acceptEdits|auto|bypassPermissions|dontAsk (claude-code only)")),
+		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
+		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
 	)
 }
 
 func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_update",
-		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM."),
+		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM. Supports all fields from llm_add."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout")),
+		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
+		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		// Session-backend fields
+		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
+		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
+		mcpsdk.WithString("console_rows", mcpsdk.Description("terminal height override")),
+		mcpsdk.WithString("output_mode", mcpsdk.Description("output display mode: terminal or log")),
+		mcpsdk.WithString("input_mode", mcpsdk.Description("input mode")),
+		mcpsdk.WithString("auto_git_init", mcpsdk.Description("true/false — auto-init git repo in project dir")),
+		mcpsdk.WithString("auto_git_commit", mcpsdk.Description("true/false — auto-commit after session")),
+		// Claude-code-specific
+		mcpsdk.WithString("skip_permissions", mcpsdk.Description("true/false — pass --dangerously-skip-permissions (claude-code only)")),
+		mcpsdk.WithString("channel_enabled", mcpsdk.Description("true/false — enable MCP channel mode (claude-code only)")),
+		mcpsdk.WithString("auto_accept_disclaimer", mcpsdk.Description("true/false — auto-accept startup prompts (claude-code only)")),
+		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value (claude-code only)")),
+		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
+		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
 	)
 }
 
@@ -175,6 +209,71 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		var n int
 		_, _ = fmtSscanf(v, &n)
 		body["timeout_seconds"] = n
+	}
+	// Tags (bug fix: was missing from llm_add/llm_update).
+	if v := optString(req, "tags"); v != "" {
+		tags := []string{}
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				tags = append(tags, t)
+			}
+		}
+		body["tags"] = tags
+	}
+	// auto_add_models (bug fix: was missing).
+	if v := optString(req, "auto_add_models"); v != "" {
+		body["auto_add_models"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	// Session-backend fields.
+	if v := optString(req, "binary"); v != "" {
+		body["binary"] = v
+	}
+	if v := optString(req, "console_cols"); v != "" {
+		var n int
+		_, _ = fmtSscanf(v, &n)
+		body["console_cols"] = n
+	}
+	if v := optString(req, "console_rows"); v != "" {
+		var n int
+		_, _ = fmtSscanf(v, &n)
+		body["console_rows"] = n
+	}
+	if v := optString(req, "output_mode"); v != "" {
+		body["output_mode"] = v
+	}
+	if v := optString(req, "input_mode"); v != "" {
+		body["input_mode"] = v
+	}
+	if v := optString(req, "auto_git_init"); v != "" {
+		body["auto_git_init"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := optString(req, "auto_git_commit"); v != "" {
+		body["auto_git_commit"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	// Claude-code-specific fields.
+	if v := optString(req, "skip_permissions"); v != "" {
+		body["skip_permissions"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := optString(req, "channel_enabled"); v != "" {
+		body["channel_enabled"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := optString(req, "auto_accept_disclaimer"); v != "" {
+		body["auto_accept_disclaimer"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := optString(req, "permission_mode"); v != "" {
+		body["permission_mode"] = v
+	}
+	if v := optString(req, "default_effort"); v != "" {
+		body["default_effort"] = v
+	}
+	if v := optString(req, "fallback_chain"); v != "" {
+		chain := []string{}
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				chain = append(chain, p)
+			}
+		}
+		body["fallback_chain"] = chain
 	}
 	return body
 }

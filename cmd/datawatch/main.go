@@ -697,6 +697,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	debugf("hostname=%s", cfg.Hostname)
 
+	// Early LLM registry load — claude-code settings moved from SessionConfig
+	// to the LLM registry (clean move, v7). Full registry wiring happens
+	// later in the compute block; this early load reads startup-time settings.
+	var earlyLLMReg *inference.Registry
+	{
+		earlyPath := filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")
+		if r, err := inference.NewRegistryFromFile(earlyPath); err == nil {
+			earlyLLMReg = r
+		}
+	}
+	claudeBin, claudeSkipPerms, claudeChannelEnabled, claudeAutoAccept :=
+		"claude", false, true, false
+	claudePermMode, claudeDefaultEffort := "", "normal"
+	var claudeFallbackChain []string
+	if earlyLLMReg != nil {
+		if cl, err := earlyLLMReg.Get("claude-code"); err == nil && cl != nil {
+			if cl.Binary != "" {
+				claudeBin = cl.Binary
+			}
+			claudeSkipPerms = cl.SkipPermissions
+			// ChannelEnabled: zero value is false, but existing migrated entries
+			// that don't have the field set should default to true. If the entry
+			// has no Binary set (freshly migrated with no explicit config),
+			// keep the default true; if Binary is set, use the stored value.
+			if cl.Binary != "" {
+				claudeChannelEnabled = cl.ChannelEnabled
+			}
+			claudeAutoAccept = cl.AutoAcceptDisclaimer
+			claudePermMode = cl.PermissionMode
+			if cl.DefaultEffort != "" {
+				claudeDefaultEffort = cl.DefaultEffort
+			}
+			claudeFallbackChain = cl.FallbackChain
+		}
+	}
+
 	// Register LLM backends from config.
 	// Always register configured backends regardless of Enabled flag so they
 	// appear in the dropdown and can be selected per-session. Enabled only
@@ -719,7 +755,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Create session manager (passes encKey for encrypted session store when --secure)
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeBin, idleTimeout, encKey)
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, claudeBin, idleTimeout, encKey)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
@@ -739,7 +775,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
 	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
-	if cfg.Session.ClaudeChannelEnabled {
+	if claudeChannelEnabled {
 		// BL174 — register the native Go bridge with channel.RegisterMCP
 		// when the binary is on hand; otherwise fall through to the
 		// embedded JS path. Hint is process-global (RegisterSessionMCP
@@ -786,14 +822,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
-	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled).
+	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled).
 	// v5.27.5 — also threads PermissionMode through the backend so
-	// `cfg.Session.permission_mode: plan` (or any other valid mode)
-	// reaches `--permission-mode <value>` at launch time.
-	claudeBackend := claudecode.NewWithOptions(cfg.Session.ClaudeBin, cfg.Session.ClaudeSkipPermissions, cfg.Session.ClaudeChannelEnabled)
-	if cfg.Session.PermissionMode != "" {
+	// `permission_mode: plan` (or any other valid mode) reaches
+	// `--permission-mode <value>` at launch time. v7.0.0: settings
+	// read from LLM registry (clean move from SessionConfig).
+	claudeBackend := claudecode.NewWithOptions(claudeBin, claudeSkipPerms, claudeChannelEnabled)
+	if claudePermMode != "" {
 		if cb, ok := claudeBackend.(interface{ SetPermissionMode(string) }); ok {
-			cb.SetPermissionMode(cfg.Session.PermissionMode)
+			cb.SetPermissionMode(claudePermMode)
 		}
 	}
 	llm.Register(claudeBackend)
@@ -972,7 +1009,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
 	}
 	mgr.SetScheduleSettleMs(cfg.Session.ScheduleSettleMs)
-	mgr.SetDefaultEffort(cfg.Session.DefaultEffort)
+	mgr.SetDefaultEffort(claudeDefaultEffort)
 	mgr.SetRateLimitGlobalPause(cfg.Session.RateLimitGlobalPause)
 	// BL6 — apply operator cost-rate overrides (empty = built-in defaults).
 	if len(cfg.Session.CostRates) > 0 {
@@ -984,7 +1021,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Per-session MCP channel registration for claude-code multi-session support.
-	if cfg.Session.ClaudeChannelEnabled {
+	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
 		channelEnv := map[string]string{
 			"DATAWATCH_API_URL": loopbackBaseURL(cfg),
@@ -1173,10 +1210,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Fallback chain: when a session hits rate limit, start a fallback session with
 	// the next profile in the chain if configured.
-	if len(cfg.Session.FallbackChain) > 0 && len(cfg.Profiles) > 0 {
+	if len(claudeFallbackChain) > 0 && len(cfg.Profiles) > 0 {
 		mgr.SetOnRateLimitFallback(func(sess *session.Session) {
 			// Find which profile to use next
-			chain := cfg.Session.FallbackChain
+			chain := claudeFallbackChain
 			currentProfile := sess.Profile
 			nextIdx := 0
 			if currentProfile != "" {
@@ -1626,7 +1663,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// When enabled and the matched line is a known startup
 			// disclaimer, auto-respond after a brief debounce so the
 			// prompt has settled.
-			if !cfg.Session.ClaudeAutoAcceptDisclaimer {
+			if !claudeAutoAccept {
 				return
 			}
 			sess, ok := mgr.GetSession(sessID)
@@ -2534,7 +2571,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// these as cfg.<Backend>.Binary; we promote each
 					// non-empty entry into the LLM registry as a
 					// resolvable name. Sessions resolve at start-time.
-					{Name: "claude-code", Kind: inference.KindClaudeCode, Address: cfg.Session.ClaudeBin},
+					{Name: "claude-code", Kind: inference.KindClaudeCode, Address: claudeBin},
 					{Name: "opencode", Kind: inference.KindOpenCode, Address: cfg.OpenCode.Binary},
 					{Name: "opencode-acp", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
 					{Name: "opencode-prompt", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
@@ -6498,8 +6535,8 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 
 	cfg.Hostname = prompt("Hostname (identifies this machine in messages)", cfg.Hostname)
 	cfg.DataDir = prompt("Data directory", cfg.DataDir)
-	cfg.Session.ClaudeBin = prompt("Claude binary path", cfg.Session.ClaudeBin)
 	cfg.Session.LLMBackend = prompt("Default LLM backend (claude-code|aider|goose|gemini|opencode)", cfg.Session.LLMBackend)
+	fmt.Println("  (To configure the claude binary path, run: datawatch setup llm claude-code)")
 
 	// Signal section — optional, shown as example
 	fmt.Println()
@@ -6546,15 +6583,14 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("[session]")
 			fmt.Printf("  llm_backend:           %s\n", cfg.Session.LLMBackend)
-			fmt.Printf("  claude_code_bin:       %s\n", cfg.Session.ClaudeBin)
 			fmt.Printf("  default_project_dir:   %s\n", cfg.Session.DefaultProjectDir)
 			fmt.Printf("  max_sessions:          %d\n", cfg.Session.MaxSessions)
 			fmt.Printf("  input_idle_timeout:    %ds\n", cfg.Session.InputIdleTimeout)
 			fmt.Printf("  tail_lines:            %d\n", cfg.Session.TailLines)
 			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
 			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)
-			fmt.Printf("  skip_permissions:      %v\n", cfg.Session.ClaudeSkipPermissions)
 			fmt.Printf("  kill_sessions_on_exit: %v\n", cfg.Session.KillSessionsOnExit)
+			fmt.Printf("  (claude-code settings: see datawatch llm get claude-code)\n")
 
 			fmt.Println()
 			fmt.Println("[server]")
@@ -6597,7 +6633,7 @@ func newConfigShowCmd() *cobra.Command {
 			// Show enabled LLM backends
 			fmt.Println()
 			fmt.Println("[llm backends]")
-			fmt.Printf("  claude-code: enabled (bin: %s)\n", cfg.Session.ClaudeBin)
+			fmt.Printf("  claude-code: enabled (see: datawatch llm get claude-code)\n")
 			if cfg.Aider.Enabled {
 				fmt.Printf("  aider:      enabled (bin: %s)\n", cfg.Aider.Binary)
 			}
@@ -7911,8 +7947,16 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// v7.0.0: claude binary path moved from SessionConfig to LLM registry.
+	mcpClaudeBin := "claude"
+	if r, err2 := inference.NewRegistryFromFile(filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")); err2 == nil {
+		if cl, err3 := r.Get("claude-code"); err3 == nil && cl != nil && cl.Binary != "" {
+			mcpClaudeBin = cl.Binary
+		}
+	}
+
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeBin, idleTimeout)
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, mcpClaudeBin, idleTimeout)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
@@ -9060,19 +9104,54 @@ func runSetupLLMClaudeCode(_ *cobra.Command, _ []string) error {
 	fmt.Println("Configures the claude CLI binary used to run AI coding sessions.")
 	fmt.Println()
 
-	cfg.Session.ClaudeBin = cliPrompt(reader, "claude binary path", func() string {
-		if cfg.Session.ClaudeBin != "" {
-			return cfg.Session.ClaudeBin
-		}
-		return "claude"
-	}())
+	// Load or create the LLM registry to persist claude-code settings.
+	llmRegPath := filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")
+	llmReg, _ := inference.NewRegistryFromFile(llmRegPath)
+	if llmReg == nil {
+		llmReg = inference.NewRegistry()
+	}
+
+	// Read existing entry or create defaults.
+	var existingBin string
+	existingSkip := false
+	if cl, gerr := llmReg.Get("claude-code"); gerr == nil && cl != nil {
+		existingBin = cl.Binary
+		existingSkip = cl.SkipPermissions
+	}
+	if existingBin == "" {
+		existingBin = "claude"
+	}
+
+	newBin := cliPrompt(reader, "claude binary path", existingBin)
 	skipChoice := cliPrompt(reader, "Skip claude permissions (--dangerously-skip-permissions)? (y/n)", func() string {
-		if cfg.Session.ClaudeSkipPermissions {
+		if existingSkip {
 			return "y"
 		}
 		return "n"
 	}())
-	cfg.Session.ClaudeSkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	newSkip := strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+
+	// Upsert the claude-code LLM registry entry.
+	existing, gerr := llmReg.Get("claude-code")
+	if gerr == nil && existing != nil {
+		existing.Binary = newBin
+		existing.SkipPermissions = newSkip
+		if err2 := llmReg.Update(existing); err2 != nil {
+			return fmt.Errorf("update llm registry: %w", err2)
+		}
+	} else {
+		if err2 := llmReg.Add(&inference.LLM{
+			Name:            "claude-code",
+			Kind:            inference.KindClaudeCode,
+			Binary:          newBin,
+			SkipPermissions: newSkip,
+			ChannelEnabled:  true,
+			AutoCreated:     true,
+		}); err2 != nil {
+			return fmt.Errorf("add llm registry: %w", err2)
+		}
+	}
+
 	if err := setupSave(cfg); err != nil {
 		return err
 	}
@@ -9383,13 +9462,37 @@ func runSetupSession(_ *cobra.Command, _ []string) error {
 
 	cfg.Session.DefaultProjectDir = cliPrompt(reader, "Default project directory (press Enter for none)", cfg.Session.DefaultProjectDir)
 
+	// v7.0.0: skip_permissions moved to LLM registry (claude-code entry).
+	// Prompt and persist there.
+	sessionLLMRegPath := filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")
+	sessionLLMReg, _ := inference.NewRegistryFromFile(sessionLLMRegPath)
+	if sessionLLMReg == nil {
+		sessionLLMReg = inference.NewRegistry()
+	}
+	existingSkipForSession := false
+	if cl, gerr := sessionLLMReg.Get("claude-code"); gerr == nil && cl != nil {
+		existingSkipForSession = cl.SkipPermissions
+	}
 	skipChoice := cliPrompt(reader, "Skip claude permissions by default? (y/n)", func() string {
-		if cfg.Session.ClaudeSkipPermissions {
+		if existingSkipForSession {
 			return "y"
 		}
 		return "n"
 	}())
-	cfg.Session.ClaudeSkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	newSkipForSession := strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	if existing2, gerr2 := sessionLLMReg.Get("claude-code"); gerr2 == nil && existing2 != nil {
+		existing2.SkipPermissions = newSkipForSession
+		_ = sessionLLMReg.Update(existing2)
+	} else {
+		_ = sessionLLMReg.Add(&inference.LLM{
+			Name:            "claude-code",
+			Kind:            inference.KindClaudeCode,
+			Binary:          "claude",
+			SkipPermissions: newSkipForSession,
+			ChannelEnabled:  true,
+			AutoCreated:     true,
+		})
+	}
 
 	return setupSave(cfg)
 }
@@ -10460,7 +10563,7 @@ func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
 		enabled bool
 		details []string
 	}{
-		{"claude-code", true, []string{fmt.Sprintf("binary: %s", cfg.Session.ClaudeBin)}},
+		{"claude-code", true, []string{"(see: datawatch llm get claude-code)"}},
 		{"aider", cfg.Aider.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Aider.Binary)}},
 		{"goose", cfg.Goose.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Goose.Binary)}},
 		{"gemini", cfg.Gemini.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Gemini.Binary)}},
