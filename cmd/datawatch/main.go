@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.46"
+var Version = "7.0.0-alpha.47"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1365,6 +1365,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
 	if err != nil {
 		return fmt.Errorf("open filter store: %w", err)
+	}
+	// Auto-seed missing built-in filters on every startup (idempotent — skips
+	// patterns already present so user customisations are preserved).
+	if err := filterStore.Seed(seededFilters); err != nil {
+		debugf("filter auto-seed: %v", err)
 	}
 
 	// F10 sprint 2: Project + Cluster profile stores.
