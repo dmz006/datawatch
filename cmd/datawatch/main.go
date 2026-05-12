@@ -736,6 +736,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			claudeFallbackChain = cl.FallbackChain
 		}
 	}
+	// Tell the channel package which claude binary to use for `claude mcp add/remove`.
+	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
+	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
+	channel.SetClaudeBin(claudeBin)
 
 	// Register LLM backends from config.
 	// Always register configured backends regardless of Enabled flag so they

@@ -192,12 +192,12 @@ func RegisterSessionMCP(sessionID, channelJSPath string, env map[string]string) 
 // UnregisterSessionMCP removes the per-session MCP channel server registration.
 func UnregisterSessionMCP(sessionID string) {
 	name := "datawatch-" + sessionID
-	exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+	exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 }
 
 // UnregisterGlobalMCP removes the legacy global "datawatch" MCP registration.
 func UnregisterGlobalMCP() {
-	exec.Command("claude", "mcp", "remove", "datawatch", "-s", "user").Run() //nolint:errcheck
+	exec.Command(claudeCliBin, "mcp", "remove", "datawatch", "-s", "user").Run() //nolint:errcheck
 }
 
 // ChannelServerName returns the MCP server name for a given session.
@@ -209,7 +209,7 @@ func ChannelServerName(sessionID string) string {
 // sessionExists is called with the full session ID (hostname-id) to check if it's still tracked.
 // Runs on daemon startup to prevent stale entries from accumulating.
 func CleanupStaleMCP(sessionExists func(string) bool) {
-	out, err := exec.Command("claude", "mcp", "list").Output()
+	out, err := exec.Command(claudeCliBin, "mcp", "list").Output()
 	if err != nil {
 		return
 	}
@@ -234,7 +234,7 @@ func CleanupStaleMCP(sessionExists func(string) bool) {
 			continue // session exists, keep the registration
 		}
 		// Session doesn't exist — remove the stale registration
-		exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+		exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 		removed++
 	}
 	if removed > 0 {
@@ -330,7 +330,7 @@ func RemoveLegacyJSArtifacts(dataDir string) []string {
 // were removed; logs are the caller's job.
 func CleanupStaleJSRegistrations() []string {
 	var removed []string
-	out, err := exec.Command("claude", "mcp", "list").CombinedOutput()
+	out, err := exec.Command(claudeCliBin, "mcp", "list").CombinedOutput()
 	if err != nil {
 		return removed
 	}
@@ -350,7 +350,7 @@ func CleanupStaleJSRegistrations() []string {
 		}
 		// Try each scope until one removes it cleanly.
 		for _, scope := range []string{"user", "local", "project"} {
-			if err := exec.Command("claude", "mcp", "remove", name, "-s", scope).Run(); err == nil {
+			if err := exec.Command(claudeCliBin, "mcp", "remove", name, "-s", scope).Run(); err == nil {
 				removed = append(removed, name+"@"+scope)
 				break
 			}
@@ -363,10 +363,23 @@ func CleanupStaleJSRegistrations() []string {
 // the dataDir-derived binary path. Empty means "fall back to JS".
 var channelBinPathForReg string
 
+// claudeCliBin overrides the "claude" binary name for mcp add/remove calls.
+// Set via SetClaudeBin when the daemon knows the full path.
+var claudeCliBin = "claude"
+
 // SetBinaryHint allows the parent daemon to pre-resolve the bridge
 // binary once at startup; registerMCPNamed will prefer it over the
 // JS path when set. Idempotent.
 func SetBinaryHint(path string) { channelBinPathForReg = path }
+
+// SetClaudeBin sets the claude CLI binary path used by registerMCPNamed
+// for `claude mcp add/remove` calls. Defaults to "claude" (requires PATH).
+// Call once at daemon startup with the resolved binary path.
+func SetClaudeBin(bin string) {
+	if bin != "" {
+		claudeCliBin = bin
+	}
+}
 
 // BridgeKind reports which bridge the daemon is currently configured
 // to use: "go" when SetBinaryHint has been called, "js" otherwise.
@@ -385,7 +398,7 @@ func BridgePath() string { return channelBinPathForReg }
 
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	// Remove existing entry (ignore errors — may not exist).
-	exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+	exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 
 	var args []string
 	if channelBinPathForReg != "" {
@@ -401,7 +414,7 @@ func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	for k, v := range env {
 		args = append(args, "--env", k+"="+v)
 	}
-	out, err := exec.Command("claude", args...).CombinedOutput()
+	out, err := exec.Command(claudeCliBin, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("claude mcp add %s: %w\n%s", name, err, string(out))
 	}
