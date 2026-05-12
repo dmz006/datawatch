@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.44"
+var Version = "7.0.0-alpha.45"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8125,40 +8125,74 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 // Non-numeric suffixes are ignored. Returns false on parse errors so callers
 // never falsely report "update available" when versions can't be compared.
 func isNewerVersion(latest, current string) bool {
-	parse := func(s string) []int {
+	// parseVer splits "7.0.0-alpha.44" into numeric parts [7, 0, 0]
+	// and a pre-release integer (44). Stable releases have preN = -1
+	// which sorts higher than any pre-release (semver: 7.0.0 > 7.0.0-alpha.N).
+	type ver struct {
+		parts []int
+		preN  int // -1 = stable; >= 0 = pre-release number
+	}
+	parse := func(s string) (ver, bool) {
 		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-		// Drop any pre-release / build suffix (e.g. "2.4.4-rc1+meta")
-		if i := strings.IndexAny(s, "-+"); i >= 0 {
+		pre := -1
+		if i := strings.Index(s, "+"); i >= 0 {
+			s = s[:i] // strip build metadata
+		}
+		if i := strings.Index(s, "-"); i >= 0 {
+			suffix := s[i+1:]
 			s = s[:i]
+			// Extract trailing integer from pre-release label (e.g. "alpha.44" → 44).
+			if j := strings.LastIndex(suffix, "."); j >= 0 {
+				if n, err := strconv.Atoi(suffix[j+1:]); err == nil {
+					pre = n
+				}
+			} else if n, err := strconv.Atoi(suffix); err == nil {
+				pre = n
+			}
+			if pre < 0 {
+				pre = 0 // non-numeric suffix treated as pre-release 0
+			}
 		}
 		parts := strings.Split(s, ".")
 		out := make([]int, len(parts))
 		for i, p := range parts {
 			n, err := strconv.Atoi(p)
 			if err != nil {
-				return nil
+				return ver{}, false
 			}
 			out[i] = n
 		}
-		return out
+		return ver{parts: out, preN: pre}, true
 	}
-	a, b := parse(latest), parse(current)
-	if a == nil || b == nil {
+	a, aok := parse(latest)
+	b, bok := parse(current)
+	if !aok || !bok {
 		return false
 	}
-	for i := 0; i < len(a) || i < len(b); i++ {
+	// Compare major.minor.patch first.
+	for i := 0; i < len(a.parts) || i < len(b.parts); i++ {
 		var x, y int
-		if i < len(a) {
-			x = a[i]
+		if i < len(a.parts) {
+			x = a.parts[i]
 		}
-		if i < len(b) {
-			y = b[i]
+		if i < len(b.parts) {
+			y = b.parts[i]
 		}
 		if x != y {
 			return x > y
 		}
 	}
-	return false
+	// Same base version: stable (-1) beats any pre-release; higher pre number wins.
+	if a.preN == b.preN {
+		return false
+	}
+	if a.preN == -1 {
+		return true // latest is stable, current is pre-release
+	}
+	if b.preN == -1 {
+		return false // latest is pre-release, current is stable
+	}
+	return a.preN > b.preN
 }
 
 func fetchLatestVersion() (string, error) {
