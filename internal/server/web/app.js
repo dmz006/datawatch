@@ -7132,10 +7132,10 @@ window._renderLLMEditPanel = function(existing) {
         </div>
       </div>
       <div class="wizard-field" id="llmAutoAddSect">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-          <input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} />
-          ${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}
-        </label>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}</span>
+          <label class="toggle-switch"><input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+        </div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
@@ -7179,36 +7179,36 @@ window._renderLLMEditPanel = function(existing) {
           </div>
         </div>
         <div class="wizard-field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-            <input type="checkbox" id="llmEditAutoGitInit" ${existing.auto_git_init?'checked':''} />
-            ${escHtml(t('llm_field_auto_git_init')||'Auto git init (create repo in project dir if missing)')}
-          </label>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_git_init')||'Auto git init (create repo in project dir if missing)')}</span>
+            <label class="toggle-switch"><input type="checkbox" id="llmEditAutoGitInit" ${existing.auto_git_init?'checked':''} /><span class="toggle-slider"></span></label>
+          </div>
         </div>
         <div class="wizard-field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-            <input type="checkbox" id="llmEditAutoGitCommit" ${existing.auto_git_commit?'checked':''} />
-            ${escHtml(t('llm_field_auto_git_commit')||'Auto git commit (commit before/after session)')}
-          </label>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_git_commit')||'Auto git commit (commit before/after session)')}</span>
+            <label class="toggle-switch"><input type="checkbox" id="llmEditAutoGitCommit" ${existing.auto_git_commit?'checked':''} /><span class="toggle-slider"></span></label>
+          </div>
         </div>
       </div>
       <div id="llmClaudeSect" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="wizard-field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-            <input type="checkbox" id="llmEditSkipPerms" ${existing.skip_permissions?'checked':''} />
-            ${escHtml(t('llm_field_skip_permissions')||'Skip permissions (--dangerously-skip-permissions)')}
-          </label>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_skip_permissions')||'Skip permissions (--dangerously-skip-permissions)')}</span>
+            <label class="toggle-switch"><input type="checkbox" id="llmEditSkipPerms" ${existing.skip_permissions?'checked':''} /><span class="toggle-slider"></span></label>
+          </div>
         </div>
         <div class="wizard-field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-            <input type="checkbox" id="llmEditChannelEnabled" ${existing.channel_enabled?'checked':''} />
-            ${escHtml(t('llm_field_channel_enabled')||'Channel mode (MCP channel bridge)')}
-          </label>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_channel_enabled')||'Channel mode (MCP channel bridge)')}</span>
+            <label class="toggle-switch"><input type="checkbox" id="llmEditChannelEnabled" ${existing.channel_enabled?'checked':''} /><span class="toggle-slider"></span></label>
+          </div>
         </div>
         <div class="wizard-field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-            <input type="checkbox" id="llmEditAutoAccept" ${existing.auto_accept_disclaimer?'checked':''} />
-            ${escHtml(t('llm_field_auto_accept_disclaimer')||'Auto-accept startup disclaimers')}
-          </label>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_accept_disclaimer')||'Auto-accept startup disclaimers')}</span>
+            <label class="toggle-switch"><input type="checkbox" id="llmEditAutoAccept" ${existing.auto_accept_disclaimer?'checked':''} /><span class="toggle-slider"></span></label>
+          </div>
         </div>
         <div class="wizard-field">
           <label class="wizard-label">${escHtml(t('llm_field_permission_mode')||'Permission mode')}</label>
