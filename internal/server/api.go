@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"syscall"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -5594,12 +5593,11 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "restarting",
 		})
 		time.Sleep(800 * time.Millisecond)
-		selfPath, err := os.Executable()
-		if err == nil {
-			selfPath, _ = filepath.EvalSymlinks(selfPath)
-			_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
+		if s.restartFn != nil {
+			s.restartFn()
 		}
-		// If Exec fails (Windows), just exit so the supervisor/user can restart.
+		// restartFn calls syscall.Exec which replaces the process; reaching here means it failed.
+		fmt.Printf("[update] restart failed — operator may need to run `datawatch stop && datawatch start`\n")
 		os.Exit(0)
 	}()
 }

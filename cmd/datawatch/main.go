@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.51"
+var Version = "7.0.0-alpha.52"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4316,16 +4316,19 @@ Return STRICT JSON:
 				s.CPULoadAvg1, s.CPUCores, fmtB(s.MemUsed), fmtB(s.MemTotal), fmtB(s.DiskUsed), fmtB(s.DiskTotal))
 		})
 
-		httpServer.SetRestartFunc(func() {
+		daemonRestartFn := func() {
 			fmt.Printf("[daemon] Restarting daemon (v%s)...\n", Version)
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
 				fmt.Printf("[daemon] Executing: %s %v\n", selfPath, os.Args)
-				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
+				if err3 := syscall.Exec(selfPath, os.Args, os.Environ()); err3 != nil { // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
+					fmt.Printf("[daemon] syscall.Exec failed: %v\n", err3)
+				}
 			}
 			os.Exit(0)
-		})
+		}
+		httpServer.SetRestartFunc(daemonRestartFn)
 
 		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
 		// as claude MCP channel replies, so the web UI renders them as amber lines.
@@ -5006,7 +5009,16 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 			if err := installPrebuiltBinary(latest, nil); err != nil {
 				fmt.Printf("[updater] install failed: %v\n", err)
 			} else {
-				fmt.Printf("[updater] updated to v%s. Restart the daemon to apply (`datawatch stop && datawatch start`).\n", latest)
+				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
+				time.Sleep(500 * time.Millisecond)
+				selfPath, execErr := os.Executable()
+				if execErr == nil {
+					selfPath, _ = filepath.EvalSymlinks(selfPath)
+					if err2 := syscall.Exec(selfPath, os.Args, os.Environ()); err2 != nil { // #nosec G702
+						fmt.Printf("[updater] syscall.Exec failed: %v — run `datawatch stop && datawatch start` to apply v%s\n", err2, latest)
+					}
+				}
+				os.Exit(0)
 			}
 		} else {
 			fmt.Printf("[updater] already up to date (v%s)\n", Version)
@@ -5062,6 +5074,8 @@ func nextScheduledTime(schedule, timeOfDay string) time.Time {
 // nil when no progress reporting is wanted (e.g. the CLI self-update
 // path that prints its own text progress to stdout).
 func installPrebuiltBinary(version string, progress func(downloaded, total int64)) error {
+	updateMu.Lock()
+	defer updateMu.Unlock()
 	goos := func() string {
 		out, err := exec.Command("go", "env", "GOOS").Output()
 		if err != nil {
@@ -5327,6 +5341,10 @@ func extractFromZip(archivePath, target, dest string) error {
 	}
 	return fmt.Errorf("binary %q not found in zip", target)
 }
+
+// updateMu prevents concurrent binary replacements from the PWA update
+// handler and the auto-updater goroutine racing on replaceExecutable.
+var updateMu sync.Mutex
 
 func replaceExecutable(dest, src string) error {
 	// Write to a temp file next to the destination, then rename (atomic on same fs)

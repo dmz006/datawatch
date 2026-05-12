@@ -5,7 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-_(BL299 + BL300 filed — see backlog tracker.)_
+_(BL299, BL300, BL301 filed — see backlog tracker.)_
+
+## v7.0.0-alpha.52 — Auto-restart fix (BL299 + BL300)
+
+### Fixed
+- **Auto-restart after update** — the background updater (`[updater]`) now restarts the daemon via `syscall.Exec` after installing a new binary, instead of printing "Restart the daemon to apply". The PWA-triggered update path (`[update]`) now uses the same `restartFn` as the manual Restart button, with error logging if `Exec` fails, instead of the previous silent discard.
+- **Concurrent update race** — added `updateMu` mutex to `installPrebuiltBinary` so the auto-updater and the PWA update handler can no longer run `replaceExecutable` simultaneously on the same binary, which previously corrupted the install and caused `Exec` to fail silently.
+
+### Backlog
+- **BL301** — File upload to LLMs that support it (post-v7). PWA + all 7 surfaces to attach files (images, PDFs, documents) to sessions whose backing LLM exposes a file/vision API (e.g. Claude vision, GPT-4o, Gemini). Operator-requested 2026-05-12. Design interview required before implementation.
 
 ## v7.0.0-alpha.38 — Observer fix + Automata PWA modals + LLM CLI parity
 
