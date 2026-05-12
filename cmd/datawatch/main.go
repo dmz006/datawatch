@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.45"
+var Version = "7.0.0-alpha.46"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -177,6 +177,7 @@ func autoLinkLegacyComputeNode(creg *compute.Registry, lreg *inference.Registry,
 //
 //   - "trust this folder" / "Quick safety check" / "Yes, I trust"
 //     → "1\n"  (the numbered "Yes, I trust this folder" menu)
+//   - "Enter to confirm" / "Esc to cancel" → "\n" (option 1 pre-selected)
 //   - "I am using this for local development" /
 //     "Loading development channels"
 //     → "\n"   (Enter-to-confirm continuation)
@@ -191,8 +192,12 @@ func claudeDisclaimerResponse(line string) string {
 		strings.Contains(lower, "quick safety check"),
 		strings.Contains(lower, "yes, i trust"):
 		return "1\n"
-	case strings.Contains(lower, "i am using this for local development"),
+	case strings.Contains(lower, "enter to confirm"),
+		strings.Contains(lower, "esc to cancel"),
+		strings.Contains(lower, "i am using this for local development"),
 		strings.Contains(lower, "loading development channels"):
+		// "Enter to confirm · Esc to cancel" appears after option 1 is
+		// already highlighted; pressing Enter accepts the pre-selected choice.
 		return "\n"
 	}
 	return ""
