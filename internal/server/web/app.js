@@ -202,6 +202,22 @@ function getSessionMode(backend) {
   return 'tmux';
 }
 
+// Returns a consistent icon prefix for a backend/LLM name so badges look
+// the same regardless of whether the session has llm_ref (v7) or only
+// backend_family (legacy cross-host sessions).
+function backendIcon(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('claude')) return '⚡';
+  if (n.includes('opencode')) return '🔮';
+  if (n.includes('aider')) return '🤖';
+  if (n.includes('goose')) return '🪿';
+  if (n.includes('gemini')) return '✨';
+  if (n.includes('ollama')) return '🦙';
+  if (n.includes('openwebui')) return '💬';
+  if (n.includes('shell')) return '🔧';
+  return '⚡';
+}
+
 function buildWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('cs_token') || '';
@@ -2625,7 +2641,7 @@ function renderSessionDetail(sessionId) {
     <div class="session-detail">
       <div class="session-info-bar">
         <div class="meta">
-          ${llmRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--success,#22c55e);padding:2px 8px;border-radius:8px;background:rgba(34,197,94,0.12);color:var(--success,#22c55e);font-weight:600;" title="${escHtml(t('session_llm_ref_title')||'v7 LLM registry name')}">⚡ ${escHtml(llmRefText)}</span>` : (backendText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--border);padding:2px 8px;border-radius:8px;background:var(--bg2);color:var(--text2);font-weight:600;" title="LLM/backend (legacy): ${escHtml(backendText)}">${escHtml(backendText)}</span>` : '')}
+          ${(llmRefText || backendText) ? (() => { const label = llmRefText || backendText; const isV7 = !!llmRefText; const style = isV7 ? 'border:1px solid var(--success,#22c55e);background:rgba(34,197,94,0.12);color:var(--success,#22c55e);' : 'border:1px solid var(--border);background:var(--bg2);color:var(--text2);'; const tip = isV7 ? (t('session_llm_ref_title')||'v7 LLM registry name') : `LLM/backend: ${label}`; return `<span class="backend-badge" style="font-size:11px;${style}padding:2px 8px;border-radius:8px;font-weight:600;" title="${escHtml(tip)}">${backendIcon(label)} ${escHtml(label)}</span>`; })() : ''}
           ${computeRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--accent,#a855f7);padding:2px 8px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent,#a855f7);font-weight:600;" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
               badge here since the Channel/ACP tab below already conveys
@@ -2776,6 +2792,12 @@ function renderSessionDetail(sessionId) {
     const sessCols = sess ? (sess.console_cols || 0) : 0;
     const sessRows = sess ? (sess.console_rows || 0) : 0;
     initXterm(sessionId, rawLines, sessCols, sessRows);
+    // initXterm calls destroyXterm which clears the watchdog started above.
+    // Restart it so the retry loop fires if pane_capture is slow (e.g. tmux
+    // not ready yet when the detail view opens immediately after session start).
+    if (!isSameSession && isActive && sessOutputMode === 'terminal' && !state._termHasContent) {
+      startTermConnectWatchdog(sessionId);
+    }
   }
 
   // Load saved commands quick panel and pending schedules
@@ -8308,7 +8330,10 @@ function loadVersionInfo() {
     .then(data => {
       if (!data) return;
       const el = document.getElementById('aboutVersion');
-      if (el) el.textContent = 'v' + (data.version || '?');
+      if (el) {
+        const ver = data.version || '?';
+        el.innerHTML = `<a href="https://github.com/dmz006/datawatch/releases/tag/v${encodeURIComponent(ver)}" target="_blank" rel="noopener" style="color:var(--accent2);">v${escHtml(ver)}</a>`;
+      }
     })
     .catch(() => {});
   // BL183 follow-up (v5.2.0) — orphaned-tmux affordance moved here
