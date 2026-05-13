@@ -49,3 +49,7 @@ internal/memory/memory-wal.jsonl
 # datawatch-managed (BL219)
 .gemini/
 internal/council/council/
+
+# E2E test isolation — data dir and run artifacts
+.datawatch-test/
+/testing/
