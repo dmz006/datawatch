@@ -130,6 +130,261 @@ CLEANUP_LOG="$(mktemp)"
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
 
 # ---------------------------------------------------------------------------
+# Status-board hook integration
+#
+# Fires Start/Activity/Stop events to the LIVE daemon so the Status board
+# lights up with real-time test progress — identical to how automata and
+# claude-code sessions appear.
+#
+# Auto-detection order (first that works wins):
+#   1. HOOK_SESSION_ID env — caller supplies an existing session ID
+#   2. DATAWATCH_SESSION_ID env — set by Claude Code hook when running inside CC
+#   3. HOOK_BASE / HOOK_TOKEN env — explicit override
+#   4. Auto-probe localhost:8080 and localhost:8443 for a live daemon
+# ---------------------------------------------------------------------------
+HOOK_BASE="${HOOK_BASE:-}"
+HOOK_TOKEN="${HOOK_TOKEN:-}"
+HOOK_SESSION_ID="${HOOK_SESSION_ID:-${DATAWATCH_SESSION_ID:-}}"
+HOOK_ENABLED=false
+_HOOK_OWN_SESSION=false   # true if we created the session (so we clean it up)
+_STORY_START_MS=0
+_SPRINT_NUM=0
+_SPRINT_PASS=0
+_SPRINT_FAIL=0
+_SPRINT_SKIP=0
+_TOTAL_SPRINT=17
+RUN_START_EPOCH=$(date +%s)
+
+# _ms — current time in milliseconds
+_ms() { python3 -c "import time; print(int(time.time()*1000))" 2>/dev/null || echo "0"; }
+
+# _elapsed — ms since argument
+_elapsed() { local now; now=$(_ms); echo $(( now - $1 )); }
+
+# _fmt_ms — human-readable ms: "23ms" / "1.4s" / "2m 03s"
+_fmt_ms() {
+  local ms="$1"
+  if   [[ $ms -lt 1000 ]];  then echo "${ms}ms"
+  elif [[ $ms -lt 60000 ]]; then python3 -c "print(f'{$ms/1000:.1f}s')" 2>/dev/null || echo "${ms}ms"
+  else python3 -c "m=$ms//60000; s=($ms%60000)//1000; print(f'{m}m {s:02d}s')" 2>/dev/null || echo "${ms}ms"
+  fi
+}
+
+# _bar — 24-char progress bar  e.g. [████████░░░░░░░░░░░░░░░░]
+_bar() {
+  local cur="$1" tot="$2" w=24
+  [[ $tot -le 0 ]] && tot=1
+  local filled=$(( cur * w / tot ))
+  local empty=$(( w - filled ))
+  local bar="["
+  local i
+  for ((i=0; i<filled; i++)); do bar="${bar}█"; done
+  for ((i=0; i<empty;  i++)); do bar="${bar}░"; done
+  bar="${bar}]"
+  echo "$bar"
+}
+
+# _json_escape — safely encode a string for JSON embedding
+_json_escape() {
+  python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1" 2>/dev/null || \
+    echo "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'
+}
+
+# _hook_fire — fire a single hook event, non-blocking, best-effort
+_hook_fire() {
+  [[ "$HOOK_ENABLED" != "true" || -z "$HOOK_SESSION_ID" ]] && return 0
+  local event="$1"
+  local text="$2"
+  local escaped; escaped=$(_json_escape "$text")
+  curl -s --max-time 4 \
+    -X POST \
+    -H "Authorization: Bearer $HOOK_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"event\":\"$event\",\"data\":{\"session_id\":\"$HOOK_SESSION_ID\",\"text\":\"$escaped\"}}" \
+    "$HOOK_BASE/api/sessions/$HOOK_SESSION_ID/hook-event" \
+    >/dev/null 2>&1 &
+}
+
+# _detect_live_daemon — probe localhost for a running daemon; echo BASE or ""
+_detect_live_daemon() {
+  for try_base in "http://localhost:8080" "https://localhost:8443" "http://127.0.0.1:8080"; do
+    if curl -sk --max-time 2 "$try_base/api/health" 2>/dev/null \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('status')=='ok'" 2>/dev/null; then
+      echo "$try_base"
+      return
+    fi
+  done
+  echo ""
+}
+
+# hook_init — detect daemon + establish session for status board tracking
+hook_init() {
+  # If caller supplied a session ID directly, we're already wired
+  if [[ -n "$HOOK_SESSION_ID" ]]; then
+    if [[ -z "$HOOK_BASE" ]]; then HOOK_BASE=$(_detect_live_daemon); fi
+    if [[ -z "$HOOK_TOKEN" ]]; then
+      HOOK_TOKEN=$(datawatch config get server.token 2>/dev/null || echo "")
+    fi
+    if [[ -n "$HOOK_BASE" && -n "$HOOK_TOKEN" ]]; then
+      HOOK_ENABLED=true
+      echo "  Status hooks → session $HOOK_SESSION_ID on $HOOK_BASE"
+    fi
+    return
+  fi
+
+  # Auto-detect base
+  if [[ -z "$HOOK_BASE" ]]; then HOOK_BASE=$(_detect_live_daemon); fi
+  [[ -z "$HOOK_BASE" ]] && return  # no live daemon
+
+  # Auto-detect token
+  if [[ -z "$HOOK_TOKEN" ]]; then
+    HOOK_TOKEN=$(datawatch config get server.token 2>/dev/null || echo "")
+  fi
+  [[ -z "$HOOK_TOKEN" ]] && return
+
+  # Create a tracking session in the live daemon
+  local ver; ver=$(get_daemon_version 2>/dev/null || echo "unknown")
+  local run_name="e2e-${RUN_DATE}-$(printf '%03d' $_run_idx)"
+  local resp
+  resp=$(curl -s --max-time 5 \
+    -X POST \
+    -H "Authorization: Bearer $HOOK_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$run_name\",\"backend\":\"shell\",\"project_dir\":\"$REPO_ROOT\",\"effort\":\"standard\"}" \
+    "$HOOK_BASE/api/sessions" 2>/dev/null || echo "{}")
+  HOOK_SESSION_ID=$(echo "$resp" | python3 -c \
+    'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$HOOK_SESSION_ID" ]]; then
+    HOOK_ENABLED=true
+    _HOOK_OWN_SESSION=true
+    echo "  Status hooks → new session $HOOK_SESSION_ID on $HOOK_BASE"
+  fi
+}
+
+# hook_start — send Start event with run banner
+hook_start() {
+  [[ "$HOOK_ENABLED" != "true" ]] && return
+  local ver; ver=$(get_daemon_version 2>/dev/null || echo "?")
+  local text
+  text=$(cat <<EOF
+╔══════════════════════════════════════════════════════════════╗
+║  🧪  datawatch E2E Test Run                                   ║
+║  Version : $ver
+║  Run     : ${RUN_DATE}-$(printf '%03d' $_run_idx)
+║  Sprints : $_TOTAL_SPRINT   •   Binaries: $TEST_BINARY
+║  Filter  : surface=${FILTER_SURFACE:-all}  feature=${FILTER_FEATURE:-all}
+╚══════════════════════════════════════════════════════════════╝
+EOF
+)
+  _hook_fire "Start" "$text"
+}
+
+# hook_sprint — send Activity event for a new sprint starting
+hook_sprint() {
+  [[ "$HOOK_ENABLED" != "true" ]] && return
+  local name="$1"
+  local pct=$(( _SPRINT_NUM * 100 / _TOTAL_SPRINT ))
+  local bar; bar=$(_bar "$_SPRINT_NUM" "$_TOTAL_SPRINT")
+  local elapsed; elapsed=$(_fmt_ms "$(( $(_ms) - RUN_START_EPOCH * 1000 ))")
+  local text
+  text=$(cat <<EOF
+
+$bar $_SPRINT_NUM/$_TOTAL_SPRINT  ($pct%)  ⏱ $elapsed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🔬 $name
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+)
+  _hook_fire "Activity" "$text"
+}
+
+# hook_story_result — send Activity for a single story result
+hook_story_result() {
+  [[ "$HOOK_ENABLED" != "true" ]] && return
+  local result="$1"   # PASS | FAIL | SKIP | FAIL_BLOCKING
+  local story="$2"
+  local desc="$3"
+  local ms="$4"
+  local detail="${5:-}"
+
+  local icon timing line
+  case "$result" in
+    PASS)          icon="✅" ;;
+    FAIL_BLOCKING) icon="🚨" ;;
+    FAIL)          icon="❌" ;;
+    SKIP)          icon="⏭ " ;;
+    *)             icon="❓" ;;
+  esac
+
+  timing=""
+  [[ "$ms" -gt 0 ]] && timing="  ($(_fmt_ms "$ms"))"
+
+  line="  $icon  $story  $desc$timing"
+  [[ "$result" == "FAIL_BLOCKING" ]] && line="$line  ⚠️  BLOCKING"
+  [[ -n "$detail" ]] && line="$line
+     └─ $detail"
+
+  _hook_fire "Activity" "$line"
+}
+
+# hook_sprint_summary — send Activity with sprint result totals
+hook_sprint_summary() {
+  [[ "$HOOK_ENABLED" != "true" ]] && return
+  local name="$1"
+  local p=$_SPRINT_PASS f=$_SPRINT_FAIL s=$_SPRINT_SKIP
+  local status="✅"
+  [[ $f -gt 0 ]] && status="❌"
+  local text
+  text=$(cat <<EOF
+  $status  $name done  │  ✅ $p  ❌ $f  ⏭  $s  │  Run total: ✅ $PASS ❌ $FAIL ⏭  $SKIP
+EOF
+)
+  _hook_fire "Activity" "$text"
+}
+
+# hook_stop — send Stop event with final summary banner
+hook_stop() {
+  [[ "$HOOK_ENABLED" != "true" ]] && return
+  local total=$(( PASS + FAIL + SKIP ))
+  local duration_ms=$(( $(_ms) - RUN_START_EPOCH * 1000 ))
+  local duration; duration=$(_fmt_ms "$duration_ms")
+  local result_line status_icon
+  if [[ $FAIL -eq 0 ]]; then
+    status_icon="🏁"; result_line="ALL PASSED"
+  elif [[ $BLOCKER_FAIL -gt 0 ]]; then
+    status_icon="🚨"; result_line="BLOCKER — halted at $CURRENT_STORY"
+  else
+    status_icon="⚠️ "; result_line="$FAIL FAILURE(S)"
+  fi
+
+  local bar; bar=$(_bar "$PASS" "$total")
+  local pct=0; [[ $total -gt 0 ]] && pct=$(( PASS * 100 / total ))
+  local text
+  text=$(cat <<EOF
+
+╔══════════════════════════════════════════════════════════════╗
+║  $status_icon  E2E Run Complete — $result_line
+╠══════════════════════════════════════════════════════════════╣
+║  ✅ PASS  $PASS   ❌ FAIL  $FAIL  (blocking: $BLOCKER_FAIL)   ⏭  SKIP  $SKIP
+║  Total: $total   Duration: $duration
+║
+║  $bar  $pct% pass
+║
+║  Run: $RUN_DIR
+╚══════════════════════════════════════════════════════════════╝
+EOF
+)
+  _hook_fire "Stop" "$text"
+
+  # If we created the session, leave it in history as a run record
+  # (don't DELETE — operator may want to review it)
+  if [[ "$_HOOK_OWN_SESSION" == "true" && -n "$HOOK_SESSION_ID" ]]; then
+    echo "  Status board session preserved: $HOOK_SESSION_ID"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Lazy prerequisite helpers — create test fixtures on demand so downstream
 # tests don't cascade-skip just because T2/T3 ran in a different filter pass.
 # ---------------------------------------------------------------------------
@@ -273,21 +528,38 @@ _write_summary() {
 RUNEOF
 }
 
-ok()   { echo "  PASS  [$CURRENT_STORY] $*"; PASS=$((PASS+1)); }
-skip() { echo "  SKIP  [$CURRENT_STORY] $*"; SKIP=$((SKIP+1)); }
+ok() {
+  local msg="$*"
+  local ms=$(( $(_ms) - _STORY_START_MS ))
+  echo "  PASS  [$CURRENT_STORY] $msg  ($(_fmt_ms $ms))"
+  PASS=$((PASS+1)); _SPRINT_PASS=$((_SPRINT_PASS+1))
+  hook_story_result "PASS" "$CURRENT_STORY" "$msg" "$ms"
+}
+
+skip() {
+  local msg="$*"
+  echo "  SKIP  [$CURRENT_STORY] $msg"
+  SKIP=$((SKIP+1)); _SPRINT_SKIP=$((_SPRINT_SKIP+1))
+  hook_story_result "SKIP" "$CURRENT_STORY" "$msg" "0"
+}
 
 ko() {
   local msg="$*"
+  local ms=$(( $(_ms) - _STORY_START_MS ))
   local is_blocking=false
   echo "$_CURRENT_TAGS" | grep -q "blocking" && is_blocking=true
 
   if [[ "$is_blocking" == "true" ]]; then
     echo "  FAIL_BLOCKING  [$CURRENT_STORY] $msg"
     BLOCKER_FAIL=$((BLOCKER_FAIL+1))
+    hook_story_result "FAIL_BLOCKING" "$CURRENT_STORY" "$msg" "$ms" \
+      "evidence: $EVIDENCE_DIR/$CURRENT_STORY"
   else
     echo "  FAIL  [$CURRENT_STORY] $msg"
+    hook_story_result "FAIL" "$CURRENT_STORY" "$msg" "$ms" \
+      "evidence: $EVIDENCE_DIR/$CURRENT_STORY"
   fi
-  FAIL=$((FAIL+1))
+  FAIL=$((FAIL+1)); _SPRINT_FAIL=$((_SPRINT_FAIL+1))
 
   # Write structured failure entry for agent-based BL filing
   mkdir -p "$RUN_DIR"
@@ -308,7 +580,7 @@ ko() {
     echo "  !!   bash scripts/run-tests.sh --resume-from=$CURRENT_STORY [other flags]"
     echo "  !! Evidence: $EVIDENCE_DIR/$CURRENT_STORY"
     echo "  !! Failures so far: $RUN_DIR/failures.jsonl"
-    # flush summary before exiting
+    hook_stop
     _write_summary
     exit 2
   fi
@@ -379,6 +651,7 @@ run_test() {
   echo ""
   echo "  >> $story: $desc"
   mkdir -p "$EVIDENCE_DIR/$story"
+  _STORY_START_MS=$(_ms)
   "$fn" "$@"
 }
 
@@ -539,10 +812,20 @@ trap cleanup_all EXIT
 # Sprint header
 # ---------------------------------------------------------------------------
 H() {
+  local name="$*"
+  # Send summary of previous sprint before starting next
+  if [[ $_SPRINT_NUM -gt 0 ]]; then
+    hook_sprint_summary "$_SPRINT_NAME"
+  fi
+  # Advance sprint counter and reset per-sprint tallies
+  _SPRINT_NUM=$((_SPRINT_NUM+1))
+  _SPRINT_NAME="$name"
+  _SPRINT_PASS=0; _SPRINT_FAIL=0; _SPRINT_SKIP=0
   echo ""
   echo "======================================================================"
-  echo "== $* =="
+  echo "== $name =="
   echo "======================================================================"
+  hook_sprint "$name"
 }
 
 # ---------------------------------------------------------------------------
@@ -2753,6 +3036,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+# Wire into status board — probe live daemon and register run session
+echo ""
+hook_init
+hook_start
+
 # Start test daemon
 start_test_daemon
 
@@ -2779,6 +3067,9 @@ run_t17
 # Final report
 # ---------------------------------------------------------------------------
 TOTAL=$((PASS+FAIL+SKIP))
+# Flush final sprint summary + status-board Stop event
+hook_sprint_summary "$_SPRINT_NAME"
+hook_stop
 _write_summary
 
 echo ""
