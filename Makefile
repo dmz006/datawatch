@@ -239,6 +239,7 @@ cross: sync-docs docs-index
 	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-arm64  ./cmd/datawatch/
 	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-windows-amd64.exe ./cmd/datawatch/
 	$(MAKE) cross-agent
+	$(MAKE) cross-channel
 	# Opt-in UPX pack — runs only if upx is on PATH. Linux + Windows
 	# only (UPX has known issues with macOS Mach-O binaries on recent
 	# OS versions). --best gives the largest reduction; --lzma is

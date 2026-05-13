@@ -7,6 +7,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301 filed — see backlog tracker.)_
 
+## v7.0.0-alpha.53 — Go channel bridge self-install
+
+### Fixed
+- **Go channel bridge now self-installs** — at daemon startup, if `datawatch-channel` is not found on the host, the daemon automatically downloads it from the current version's GitHub release and installs it to `<data-dir>/channel/datawatch-channel`. No operator action needed; the JS/Node fallback only activates if the download fails (e.g. offline or unreleased version). `datawatch setup channel` follows the same logic.
+- **`datawatch-channel` now a release asset** — added to `.goreleaser.yaml` and `make cross` so `datawatch-channel-linux-amd64`, `-arm64`, `-darwin-*`, `-windows-*` ship alongside the main binary in every release.
+- **Smoke check added** — `release-smoke.sh §7ab` now fails if the daemon is running the JS bridge instead of the Go bridge.
+
 ## v7.0.0-alpha.52 — Auto-restart fix (BL299 + BL300)
 
 ### Fixed

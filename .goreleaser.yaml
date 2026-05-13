@@ -25,6 +25,24 @@ builds:
       - goos: windows
         goarch: arm64
 
+  - id: datawatch-channel
+    main: ./cmd/datawatch-channel/
+    binary: datawatch-channel
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
 archives:
   - id: default
     format: tar.gz

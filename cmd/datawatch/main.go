@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.52"
+var Version = "7.0.0-alpha.53"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -790,9 +790,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// reads it), so set it once at startup.
 		dataDirExpanded := expandHome(cfg.DataDir)
 		usingGoBridge := false
-		if bin := channel.BinaryPath(dataDirExpanded); bin != "" {
-			channel.SetBinaryHint(bin)
-			fmt.Printf("[channel] using native Go bridge: %s\n", bin)
+		bridgeBin := channel.BinaryPath(dataDirExpanded)
+		if bridgeBin == "" {
+			// Go bridge absent — try to self-heal by downloading from the
+			// current release. Runs silently; falls back to Node on failure.
+			fmt.Printf("[channel] Go bridge not found — downloading from v%s release...\n", Version)
+			if downloaded, dlErr := downloadChannelBinary(dataDirExpanded); dlErr == nil {
+				bridgeBin = downloaded
+				fmt.Printf("[channel] Go bridge installed: %s\n", bridgeBin)
+			} else {
+				fmt.Printf("[channel] auto-download failed (%v); falling back to Node.js bridge\n", dlErr)
+			}
+		}
+		if bridgeBin != "" {
+			channel.SetBinaryHint(bridgeBin)
+			fmt.Printf("[channel] using native Go bridge: %s\n", bridgeBin)
 			usingGoBridge = true
 			// BL288 (v5.4.0) — purge stale `datawatch*` entries in claude's
 			// MCP list that still point at `node + channel.js` from before
@@ -5345,6 +5357,62 @@ func extractFromZip(archivePath, target, dest string) error {
 // updateMu prevents concurrent binary replacements from the PWA update
 // handler and the auto-updater goroutine racing on replaceExecutable.
 var updateMu sync.Mutex
+
+// downloadChannelBinary fetches datawatch-channel-<os>-<arch> from the same
+// GitHub release as the running daemon and saves it to <dataDir>/channel/.
+// Called at startup when BinaryPath returns "" so the Go bridge self-heals
+// without operator intervention.
+func downloadChannelBinary(dataDir string) (string, error) {
+	// Don't attempt for unversioned dev builds.
+	if Version == "" || Version == "dev" || strings.HasPrefix(Version, "0.0.0") {
+		return "", fmt.Errorf("dev build — skipping auto-download")
+	}
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	assetName := fmt.Sprintf("datawatch-channel-%s-%s", goos, goarch)
+	if goos == "windows" {
+		assetName += ".exe"
+	}
+	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, assetName)
+
+	dir := filepath.Join(dataDir, "channel")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir: %w", err)
+	}
+	dst := filepath.Join(dir, "datawatch-channel")
+	if goos == "windows" {
+		dst += ".exe"
+	}
+
+	tmp := dst + ".tmp"
+	httpClient := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+	}
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return dst, nil
+}
 
 func replaceExecutable(dest, src string) error {
 	// Write to a temp file next to the destination, then rename (atomic on same fs)
@@ -10017,7 +10085,16 @@ switching to the Go bridge.`,
 				return nil
 			}
 
-			fmt.Println("Go bridge:    not found (will fall back to Node.js)")
+			fmt.Println("Go bridge:    not found — attempting auto-download...")
+			if downloaded, dlErr := downloadChannelBinary(dataDir); dlErr == nil {
+				fmt.Printf("Go bridge:    %s   ✓ (just downloaded)\n", downloaded)
+				fmt.Println("\nReady. Restart the daemon to pick up the Go bridge.")
+				return nil
+			} else {
+				fmt.Printf("Go bridge:    auto-download failed: %v\n\n", dlErr)
+			}
+
+			// Fall back to Node.js bridge setup.
 			probe := channel.Probe(dataDir)
 			if probe.NodePath != "" {
 				fmt.Printf("Node:         %s\n", probe.NodePath)

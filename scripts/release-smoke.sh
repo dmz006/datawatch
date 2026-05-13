@@ -1418,6 +1418,19 @@ else
   ko "comm detection command: no responses array in: $(echo "$DET_MSG" | head -c 200)"
 fi
 
+H "7ab. Go channel bridge available at runtime"
+# Verify the daemon resolved the native Go bridge (not the JS fallback).
+# A daemon running the JS bridge means datawatch-channel was not shipped
+# in the release or the auto-download failed — either is a smoke failure.
+BRIDGE=$(curl "${curl_args[@]}" "$BASE/api/channel/info" 2>/dev/null || true)
+if echo "$BRIDGE" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("kind")=="go"' 2>/dev/null; then
+  ok "channel bridge: Go bridge active ($(echo "$BRIDGE" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("path","?"))' 2>/dev/null))"
+elif echo "$BRIDGE" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("kind")=="js"' 2>/dev/null; then
+  ko "channel bridge: JS fallback active — datawatch-channel missing from release or auto-download failed"
+else
+  skip "channel bridge: /api/channel/info unavailable or unexpected shape ($BRIDGE)"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
