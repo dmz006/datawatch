@@ -106,6 +106,64 @@ CLEANUP_LOG="$(mktemp)"
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
 
 # ---------------------------------------------------------------------------
+# Lazy prerequisite helpers — create test fixtures on demand so downstream
+# tests don't cascade-skip just because T2/T3 ran in a different filter pass.
+# ---------------------------------------------------------------------------
+
+# ensure_test_session — sets SESSION_ID to a live session, creating one if
+# needed.  Returns 1 and emits a skip if session creation fails.
+ensure_test_session() {
+  if [[ -n "$SESSION_ID" ]]; then
+    # Verify it still exists
+    local chk
+    chk=$(api GET "/api/sessions/$SESSION_ID" 2>/dev/null)
+    if echo "$chk" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'id' in d" 2>/dev/null; then
+      return 0
+    fi
+    SESSION_ID=""
+  fi
+  local resp
+  resp=$(api POST /api/sessions '{"name":"test-fixture-session","backend":"shell","project_dir":"/tmp","effort":"quick"}')
+  SESSION_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$SESSION_ID" ]]; then
+    add_cleanup sess "$SESSION_ID"
+    echo "  [fixture] created test session: $SESSION_ID"
+    return 0
+  fi
+  skip "could not create test session fixture: $(echo "$resp" | head -c 200)"
+  return 1
+}
+
+# ensure_test_prd — sets PRD_ID to a live automaton, creating one if needed.
+# Returns 1 and emits a skip if autonomous is disabled or creation fails.
+ensure_test_prd() {
+  if [[ -n "$PRD_ID" ]]; then
+    local chk
+    chk=$(api GET "/api/autonomous/prds/$PRD_ID" 2>/dev/null)
+    if echo "$chk" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'id' in d" 2>/dev/null; then
+      return 0
+    fi
+    PRD_ID=""
+  fi
+  local a_enabled
+  a_enabled=$(api GET /api/autonomous/config | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
+  if [[ "$a_enabled" != "yes" ]]; then
+    skip "autonomous disabled — cannot create test automaton fixture"
+    return 1
+  fi
+  local resp
+  resp=$(api POST /api/autonomous/prds '{"spec":"test-prd-fixture: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
+  PRD_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$PRD_ID" ]]; then
+    add_cleanup prd "$PRD_ID"
+    echo "  [fixture] created test automaton: $PRD_ID"
+    return 0
+  fi
+  skip "could not create test automaton fixture: $(echo "$resp" | head -c 200)"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # curl args
 # ---------------------------------------------------------------------------
 curl_args=(-sk --max-time 30 -H "Authorization: Bearer $TEST_TOKEN")
@@ -540,7 +598,7 @@ t2_ts012_session_in_stats() {
 }
 
 t2_ts013_hook_event_start() {
-  if [[ -z "$SESSION_ID" ]]; then skip "no session ID (TS-010 may have failed)"; return; fi
+  ensure_test_session || return
   local resp
   resp=$(api POST "/api/sessions/$SESSION_ID/hook-event" '{"event":"Start","data":{"session_id":"'"$SESSION_ID"'"}}')
   save_evidence TS-013 "hook_start.json" "$resp"
@@ -552,7 +610,7 @@ t2_ts013_hook_event_start() {
 }
 
 t2_ts014_hook_event_activity() {
-  if [[ -z "$SESSION_ID" ]]; then skip "no session ID"; return; fi
+  ensure_test_session || return
   local resp
   resp=$(api POST "/api/sessions/$SESSION_ID/hook-event" '{"event":"Activity","data":{"session_id":"'"$SESSION_ID"'","text":"test activity"}}')
   save_evidence TS-014 "hook_activity.json" "$resp"
@@ -564,7 +622,7 @@ t2_ts014_hook_event_activity() {
 }
 
 t2_ts015_hook_event_stop() {
-  if [[ -z "$SESSION_ID" ]]; then skip "no session ID"; return; fi
+  ensure_test_session || return
   local resp
   resp=$(api POST "/api/sessions/$SESSION_ID/hook-event" '{"event":"Stop","data":{"session_id":"'"$SESSION_ID"'"}}')
   save_evidence TS-015 "hook_stop.json" "$resp"
@@ -576,7 +634,7 @@ t2_ts015_hook_event_stop() {
 }
 
 t2_ts016_channel_send() {
-  if [[ -z "$SESSION_ID" ]]; then skip "no session ID"; return; fi
+  ensure_test_session || return
   local resp
   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"test channel message e2e"}')
   save_evidence TS-016 "channel_send.json" "$resp"
@@ -588,7 +646,7 @@ t2_ts016_channel_send() {
 }
 
 t2_ts017_channel_history() {
-  if [[ -z "$SESSION_ID" ]]; then skip "no session ID"; return; fi
+  ensure_test_session || return
   local resp
   resp=$(curl "${curl_args[@]}" "$TEST_BASE/api/channel/history?session_id=$SESSION_ID")
   save_evidence TS-017 "channel_history.json" "$resp"
@@ -668,7 +726,7 @@ t3_ts020_create_prd() {
 }
 
 t3_ts021_prd_get() {
-  if [[ -z "$PRD_ID" ]]; then skip "no PRD ID (TS-020 may have failed)"; return; fi
+  ensure_test_prd || return
   local resp
   resp=$(api GET "/api/autonomous/prds/$PRD_ID")
   save_evidence TS-021 "get.json" "$resp"
@@ -691,7 +749,7 @@ t3_ts022_prd_list() {
 }
 
 t3_ts023_prd_decompose() {
-  if [[ -z "$PRD_ID" ]]; then skip "no PRD ID"; return; fi
+  ensure_test_prd || return
   # Check LLM availability
   local avail
   avail=$(api GET /api/backends | python3 -c '
@@ -715,7 +773,7 @@ print(",".join(have))
 }
 
 t3_ts024_prd_approve() {
-  if [[ -z "$PRD_ID" ]]; then skip "no PRD ID"; return; fi
+  ensure_test_prd || return
   local resp
   resp=$(api POST "/api/autonomous/prds/$PRD_ID/approve" '{"actor":"test-runner","note":"e2e test approval"}')
   save_evidence TS-024 "approve.json" "$resp"
@@ -727,7 +785,7 @@ t3_ts024_prd_approve() {
 }
 
 t3_ts025_prd_run() {
-  if [[ -z "$PRD_ID" ]]; then skip "no PRD ID"; return; fi
+  ensure_test_prd || return
   local avail
   avail=$(api GET /api/backends | python3 -c '
 import json,sys
@@ -815,7 +873,7 @@ t3_ts028_prd_hard_delete() {
 }
 
 t3_ts029_children_list() {
-  if [[ -z "$PRD_ID" ]]; then skip "no PRD ID"; return; fi
+  ensure_test_prd || return
   local resp
   resp=$(api GET "/api/autonomous/prds/$PRD_ID/children")
   save_evidence TS-029 "children.json" "$resp"
@@ -1431,6 +1489,7 @@ t8_ts074_version_resource() {
 }
 
 t8_ts075_sessions_resource() {
+  ensure_test_session || true  # best-effort: resource should still be readable even if empty
   local resp
   resp=$(api POST /api/mcp/resources/read '{"uri":"datawatch://sessions"}')
   save_evidence TS-075 "sessions_resource.json" "$resp"
@@ -1498,6 +1557,8 @@ assert 'datawatch commands' in resp.lower() or 'command' in resp.lower()
 }
 
 t9_ts096_sessions_command() {
+  # Ensure at least one session exists so !sessions returns a non-empty list
+  ensure_test_session || true
   local resp
   resp=$(api POST /api/test/message '{"text":"sessions"}')
   save_evidence TS-096 "sessions.json" "$resp"
