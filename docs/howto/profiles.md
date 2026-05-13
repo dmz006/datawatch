@@ -152,7 +152,7 @@ Tools: `profile_project_list`, `profile_project_get`,
 `profile_project_set`, `profile_project_delete`,
 `profile_cluster_list`, etc.
 
-When an autonomous LLM coordinator wants to spawn a sub-PRD against
+When an autonomous LLM coordinator wants to spawn a sub-Automaton against
 a specific workspace, it can `profile_project_get` to read the
 defaults, then `prd_create` with the matching `profile:` reference.
 

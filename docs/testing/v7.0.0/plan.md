@@ -63,7 +63,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 |---|---|---|---|
 | T1 | Daemon Bootstrap + Auth | TS-001–TS-008 | 📋 planned |
 | T2 | Sessions | TS-010–TS-019 | 📋 planned |
-| T3 | Automata / PRDs | TS-020–TS-029 | 📋 planned |
+| T3 | Automata | TS-020–TS-029 | 📋 planned |
 | T4 | Council | TS-030–TS-037 | 📋 planned |
 | T5 | Memory + KG | TS-040–TS-049 | 📋 planned |
 | T6 | Secrets + Config | TS-050–TS-059 | 📋 planned |
@@ -97,7 +97,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 |---|---|
 | `[feature:bootstrap]` | Daemon start/health/auth |
 | `[feature:sessions]` | Session lifecycle |
-| `[feature:automata]` | PRD/Automata lifecycle |
+| `[feature:automata]` | Automaton/Automata lifecycle |
 | `[feature:council]` | Council deliberation |
 | `[feature:memory]` | Episodic memory |
 | `[feature:kg]` | Knowledge graph |
@@ -357,14 +357,14 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-## T3 — Automata / PRDs
+## T3 — Automata
 
-### TS-020 — Create PRD via REST
+### TS-020 — Create Automaton via REST
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
 1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"spec":"test-prd-001: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}' $TEST_BASE/api/autonomous/prds`
-2. Assert response contains `id`, `spec`, `status`; save `PRD_ID`
-3. `add_cleanup prd $PRD_ID`
+2. Assert response contains `id`, `spec`, `status`; save `AUTOMATON_ID`
+3. `add_cleanup automaton $AUTOMATON_ID`
 4. Save to `evidence/TS-020/create.json`
 **Expected**: `{"id":"...","spec":"test-prd-001:...","status":"draft"}`  
 **Evidence**: `create.json`  
@@ -372,35 +372,35 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-### TS-021 — PRD GET
+### TS-021 — Automaton GET
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/autonomous/prds/$PRD_ID`
-2. Assert `id == $PRD_ID`, `spec` field matches, `status` is present
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID`
+2. Assert `id == $AUTOMATON_ID`, `spec` field matches, `status` is present
 3. Save to `evidence/TS-021/get.json`
-**Expected**: Full PRD record  
+**Expected**: Full Automaton record  
 **Evidence**: `get.json`  
 **Status**: 📋 planned
 
 ---
 
-### TS-022 — PRD list
+### TS-022 — Automata list
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
 1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/autonomous/prds`
-2. Assert response is a list or `{"prds":[...]}`, created PRD ID appears
+2. Assert response is a list or `{"prds":[...]}`, created Automaton ID appears
 3. Save to `evidence/TS-022/list.json`
-**Expected**: List contains `$PRD_ID`  
+**Expected**: List contains `$AUTOMATON_ID`  
 **Evidence**: `list.json`  
 **Status**: 📋 planned
 
 ---
 
-### TS-023 — PRD decompose (SKIP if LLM unreachable)
+### TS-023 — Automaton decompose (SKIP if LLM unreachable)
 **Tags**: [surface:api] [feature:automata] [conflict:llm]  
 **Steps**:
 1. Check if any LLM backend available+enabled; if not, SKIP
-2. `curl -sk --max-time 300 -H "Authorization: Bearer $TEST_TOKEN" -X POST $TEST_BASE/api/autonomous/prds/$PRD_ID/decompose`
+2. `curl -sk --max-time 300 -H "Authorization: Bearer $TEST_TOKEN" -X POST $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/decompose`
 3. Assert HTTP 200, `stories` is a non-empty list
 4. Save to `evidence/TS-023/decompose.json`
 **Expected**: `{"stories":[{"id":"...","spec":"..."},...]}`  
@@ -409,10 +409,10 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-### TS-024 — PRD approve
+### TS-024 — Automaton approve
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"actor":"test-runner","note":"e2e test approval"}' $TEST_BASE/api/autonomous/prds/$PRD_ID/approve`
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"actor":"test-runner","note":"e2e test approval"}' $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/approve`
 2. Assert `status == "approved"`
 3. Save to `evidence/TS-024/approve.json`
 **Expected**: `{"status":"approved"}`  
@@ -421,14 +421,14 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-### TS-025 — PRD run → spawn (SKIP if LLM unreachable)
+### TS-025 — Automaton run → spawn (SKIP if LLM unreachable)
 **Tags**: [surface:api] [feature:automata] [conflict:llm]  
 **Steps**:
-1. Create, decompose (skip if no LLM), and approve a test PRD
-2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -X POST $TEST_BASE/api/autonomous/prds/$PRD_ID/run`
+1. Create, decompose (skip if no LLM), and approve a test Automaton
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -X POST $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/run`
 3. Assert `status == "running"`
-4. Wait 5s; verify PRD is `running` or tasks have `session_id` assigned
-5. Cancel: `curl ... -X DELETE $TEST_BASE/api/autonomous/prds/$PRD_ID`
+4. Wait 5s; verify Automaton is `running` or tasks have `session_id` assigned
+5. Cancel: `curl ... -X DELETE $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID`
 6. Save to `evidence/TS-025/run.json`
 **Expected**: Run accepted, executor spawns at least one session  
 **Evidence**: `run.json`, `post_run.json`  
@@ -436,13 +436,13 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-### TS-026 — PRD per-story approval gate
+### TS-026 — Automaton per-story approval gate
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
 1. Enable: `curl ... -X PUT -d '{"autonomous.per_story_approval":true}' $TEST_BASE/api/config`
-2. Create+decompose+approve a fresh PRD (requires stories)
+2. Create+decompose+approve a fresh Automaton (requires stories)
 3. Assert all stories transition to `awaiting_approval`
-4. Approve first story: `curl ... -X POST -d '{"story_id":"...","actor":"test"}' $TEST_BASE/api/autonomous/prds/$PRD_ID/approve_story`
+4. Approve first story: `curl ... -X POST -d '{"story_id":"...","actor":"test"}' $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/approve_story`
 5. Assert story transitions from `awaiting_approval` to `pending`
 6. Restore config: `curl ... -X PUT -d '{"autonomous.per_story_approval":false}' $TEST_BASE/api/config`
 7. Save to `evidence/TS-026/`
@@ -456,35 +456,35 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 **Tags**: [surface:api] [feature:automata] [feature:profiles]  
 **Steps**:
 1. Create a test project profile: `curl ... -X POST -d '{"name":"test-profile-e2e","git":{"url":"https://github.com/dmz006/datawatch","branch":"main"},"image_pair":{"agent":"agent-claude"}}' $TEST_BASE/api/profiles/projects`
-2. Create PRD referencing profile: `curl ... -d '{"spec":"test-prd-profile","project_profile":"test-profile-e2e","effort":"low"}' $TEST_BASE/api/autonomous/prds`
-3. Assert PRD record carries `project_profile == "test-profile-e2e"`
-4. Cleanup profile and PRD
+2. Create Automaton referencing profile: `curl ... -d '{"spec":"test-prd-profile","project_profile":"test-profile-e2e","effort":"low"}' $TEST_BASE/api/autonomous/prds`
+3. Assert Automaton record carries `project_profile == "test-profile-e2e"`
+4. Cleanup profile and Automaton
 5. Save to `evidence/TS-027/`
-**Expected**: Profile attachment persists on PRD record  
-**Evidence**: `profile_create.json`, `prd_create.json`, `prd_get.json`  
+**Expected**: Profile attachment persists on Automaton record  
+**Evidence**: `profile_create.json`, `automaton_create.json`, `automaton_get.json`  
 **Status**: 📋 planned
 
 ---
 
-### TS-028 — PRD hard-delete
+### TS-028 — Automaton hard-delete
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
-1. Create a test PRD (name: `test-prd-harddelete`)
-2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -X DELETE "$TEST_BASE/api/autonomous/prds/$PRD_ID?hard=true"`
+1. Create a test Automaton (name: `test-prd-harddelete`)
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -X DELETE "$TEST_BASE/api/autonomous/prds/$AUTOMATON_ID?hard=true"`
 3. Assert `{"status":"deleted"}`
 4. Verify GET returns 404
 5. Save to `evidence/TS-028/`
-**Expected**: PRD is hard-deleted, subsequent GET returns 404  
+**Expected**: Automaton is hard-deleted, subsequent GET returns 404  
 **Evidence**: `delete.json`, `verify_404.txt`  
 **Status**: 📋 planned
 
 ---
 
-### TS-029 — PRD children list
+### TS-029 — Automaton children list
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/autonomous/prds/$PRD_ID/children`
-2. Assert `{"children":[...]}` — list (may be empty for fresh PRD)
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/children`
+2. Assert `{"children":[...]}` — list (may be empty for fresh Automaton)
 3. Save to `evidence/TS-029/children.json`
 **Expected**: `{"children":[]}` or populated list  
 **Evidence**: `children.json`  
@@ -1599,9 +1599,9 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 **Steps**:
 1. SKIP if Chrome plugin not available
 2. Navigate to Automata panel
-3. Assert PRD list loads from `/api/autonomous/prds`
+3. Assert Automata list loads from `/api/autonomous/prds`
 4. Screenshot to `evidence/TS-140/automata_panel.png`
-**Expected**: Automata panel shows PRD list  
+**Expected**: Automata panel shows Automata list  
 **Evidence**: `automata_panel.png`  
 **Status**: 📋 planned
 
@@ -2075,7 +2075,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 **Tags**: `[surface:api]` `[feature:parity]` `[feature:sessions]`
 **Steps**:
 For each backend in `[claude-code, opencode, ollama, shell]`:
-1. Create test session with that backend: `POST /api/autonomous/prds` with `backend=<backend>` (or session create endpoint)
+1. Create test session with that backend: `POST /api/sessions` with `backend=<backend>` (or session create endpoint)
 2. POST Start hook: `POST /api/sessions/<id>/hook-event {"event":"Start","data":{}}`
 3. Assert 200
 4. POST Activity hook: `POST /api/sessions/<id>/hook-event {"event":"Activity","data":{"text":"parity check"}}`
@@ -2275,10 +2275,10 @@ For each `event` in `[Start, Activity, Stop, PromptSubmit, ToolUse]`:
 **Tags**: `[surface:api]` `[feature:sessions]` `[feature:howto]`
 **Howto**: `channel-state-engine.md`
 **Steps**:
-1. Create test session via `POST /api/autonomous/prds` → extract id
+1. Create test session via `POST /api/sessions` → extract id
 2. `GET /api/sessions` → assert session record has `state` field
 3. Verify `state` is one of `[running, waiting_input, rate_limited, idle, stopped]`
-4. Delete PRD
+4. Delete session
 **Expected**: Session records carry state machine field
 **Evidence**: `sessions_with_state.json`
 **Status**: 📋 planned
@@ -2320,13 +2320,13 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Tags**: `[surface:api]` `[feature:sessions]` `[feature:howto]`
 **Howto**: `sessions-deep-dive.md`
 **Steps**:
-1. `POST /api/autonomous/prds {title:"test-session-lifecycle", backend:"claude-code"}` → id
+1. `POST /api/sessions {name:"test-session-lifecycle", backend:"claude-code"}` → id
 2. `GET /api/sessions` → assert session appears (may take a moment; retry 3×)
 3. `POST /api/sessions/{id}/hook-event {event:"Start"}` → 200
 4. `POST /api/channel/reply {text:"test reply", session_id:"{id}"}` → 200
 5. `GET /api/channel/history?session_id={id}` → array with reply
 6. `POST /api/sessions/{id}/hook-event {event:"Stop"}` → 200
-7. `DELETE /api/autonomous/prds/{id}` → 204
+7. `DELETE /api/sessions/{id}` → 204
 **Expected**: Full session lifecycle exercised end-to-end
 **Evidence**: `session_create.json`, `hook_start.json`, `reply.json`, `history.json`, `hook_stop.json`
 **Status**: 📋 planned
@@ -2371,13 +2371,13 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Howto**: `profiles.md`
 **Steps**:
 1. `POST /api/profiles/projects {"name":"test-profile-proj"}` → id
-2. `POST /api/autonomous/prds {"title":"test-profile-prd","backend":"claude-code"}` → prd_id
-3. `PUT /api/autonomous/prds/{prd_id} {"project_profile":"test-profile-proj"}` → 200
-4. `GET /api/autonomous/prds/{prd_id}` → assert `project_profile` set
-5. `PUT /api/autonomous/prds/{prd_id} {"project_profile":""}` → clear
-6. `DELETE /api/autonomous/prds/{prd_id}`, `DELETE /api/profiles/projects/{id}`
+2. `POST /api/autonomous/prds {"title":"test-profile-automaton","backend":"claude-code"}` → automaton_id
+3. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":"test-profile-proj"}` → 200
+4. `GET /api/autonomous/prds/{automaton_id}` → assert `project_profile` set
+5. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":""}` → clear
+6. `DELETE /api/autonomous/prds/{automaton_id}`, `DELETE /api/profiles/projects/{id}`
 **Expected**: Project profiles attach/detach cleanly
-**Evidence**: `profile_create.json`, `prd_attach.json`, `prd_detach.json`
+**Evidence**: `profile_create.json`, `automaton_attach.json`, `automaton_detach.json`
 **Status**: 📋 planned
 
 #### TS-215 — secrets-manager: full backend surface
@@ -2489,20 +2489,20 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Evidence**: `memory_save.json`, `kg_add.json`, `mcp_recall.json`, `mcp_kg.json`
 **Status**: 📋 planned
 
-#### TS-241 — Autonomous journey: PRD lifecycle with profiles
+#### TS-241 — Autonomous journey: Automaton lifecycle with profiles
 **Tags**: `[surface:api]` `[feature:automata]` `[feature:profiles]` `[feature:journey]`
 **Steps**:
 1. `POST /api/profiles/projects {"name":"test-journey-proj"}` → proj_id
 2. `POST /api/profiles/clusters {"name":"test-journey-cluster"}` → cluster_id
-3. `POST /api/autonomous/prds {"title":"test-journey-prd","backend":"claude-code","question":"test"}` → prd_id
-4. `PUT /api/autonomous/prds/{prd_id} {"project_profile":"test-journey-proj","cluster_profile":"test-journey-cluster"}` → 200
-5. `GET /api/autonomous/prds/{prd_id}` → assert both profiles attached
-6. `POST /api/autonomous/prds/{prd_id}/set_llm {"backend":"claude-code","model":"claude-sonnet-4-5"}` → 200
+3. `POST /api/autonomous/prds {"title":"test-journey-automaton","backend":"claude-code","question":"test"}` → automaton_id
+4. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":"test-journey-proj","cluster_profile":"test-journey-cluster"}` → 200
+5. `GET /api/autonomous/prds/{automaton_id}` → assert both profiles attached
+6. `POST /api/autonomous/prds/{automaton_id}/set_llm {"backend":"claude-code","model":"claude-sonnet-4-5"}` → 200
 7. `PUT /api/autonomous/config {"per_story_approval":true}` → 200
 8. Restore: `PUT /api/autonomous/config {"per_story_approval":false}`
-9. `DELETE /api/autonomous/prds/{prd_id}`, DELETE profiles
-**Expected**: Full PRD setup journey: create → profile attach → LLM config → approval gate → cleanup
-**Evidence**: `proj_create.json`, `prd_create.json`, `prd_profiles.json`, `prd_llm.json`
+9. `DELETE /api/autonomous/prds/{automaton_id}`, DELETE profiles
+**Expected**: Full Automaton setup journey: create → profile attach → LLM config → approval gate → cleanup
+**Evidence**: `proj_create.json`, `automaton_create.json`, `automaton_profiles.json`, `automaton_llm.json`
 **Status**: 📋 planned
 
 #### TS-242 — Monitoring journey: webhook comm → send → verify stats
@@ -2596,16 +2596,16 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 #### TS-249 — Full session + channel lifecycle journey
 **Tags**: `[surface:api]` `[feature:sessions]` `[feature:journey]`
 **Steps**:
-1. `POST /api/autonomous/prds {"title":"test-journey-session","backend":"claude-code"}` → prd_id
-2. `POST /api/sessions/{prd_id}/hook-event {"event":"Start","data":{}}` → 200
-3. `POST /api/sessions/{prd_id}/hook-event {"event":"Activity","data":{"text":"test activity"}}` → 200
-4. `POST /api/channel/reply {"text":"test channel message","session_id":"{prd_id}"}` → 200
-5. `GET /api/channel/history?session_id={prd_id}` → assert message in history
-6. `POST /api/sessions/{prd_id}/hook-event {"event":"Stop","data":{}}` → 200
+1. `POST /api/sessions {"name":"test-journey-session","backend":"claude-code"}` → sess_id
+2. `POST /api/sessions/{sess_id}/hook-event {"event":"Start","data":{}}` → 200
+3. `POST /api/sessions/{sess_id}/hook-event {"event":"Activity","data":{"text":"test activity"}}` → 200
+4. `POST /api/channel/reply {"text":"test channel message","session_id":"{sess_id}"}` → 200
+5. `GET /api/channel/history?session_id={sess_id}` → assert message in history
+6. `POST /api/sessions/{sess_id}/hook-event {"event":"Stop","data":{}}` → 200
 7. `GET /api/stats` → assert `active_sessions` updated
-8. `DELETE /api/autonomous/prds/{prd_id}` → 204
+8. `DELETE /api/sessions/{sess_id}` → 204
 **Expected**: Complete session lifecycle from hook events through channel comms to cleanup
-**Evidence**: `prd_create.json`, `hooks.json`, `channel_reply.json`, `channel_history.json`
+**Evidence**: `session_create.json`, `hooks.json`, `channel_reply.json`, `channel_history.json`
 **Status**: 📋 planned
 
 ---
@@ -2646,7 +2646,7 @@ After every run (via `trap EXIT`):
 2. Stop Docker sim daemon if started
 3. Kill local webhook listener if started
 4. Stop kubectl port-forward if started
-5. Delete all `test-*` resources via REST (sessions, PRDs, personas, secrets, filters, schedules, profiles, memories, KG entries, algorithm sessions)
+5. Delete all `test-*` resources via REST (sessions, Automata, personas, secrets, filters, schedules, profiles, memories, KG entries, algorithm sessions)
 6. `rm -rf .datawatch-test/` — test daemon data
 7. `/tmp/dw-docker-sim/` — Docker sim data
 8. `runs/YYYY-MM-DD-NNN/evidence/` is **NOT removed** — preserved for audit

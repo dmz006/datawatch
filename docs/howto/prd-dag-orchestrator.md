@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [orchestrator, dag, prd, autonomous, guardrails]
 exec_params:
-  - {name: prd_ids, required: true, description: "Comma-separated PRD IDs to compose"}
+  - {name: prd_ids, required: true, description: "Comma-separated Automaton IDs to compose"}
   - {name: name, required: true, description: "Graph name"}
 exec_steps:
   - tool: orchestrator_graph_list
@@ -11,7 +11,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: orchestrator_graph_create
-    description: Create the new graph from the supplied PRD IDs
+    description: Create the new graph from the supplied Automaton IDs
     args:
       name: "{{params.name}}"
       prd_ids: "{{params.prd_ids}}"
@@ -27,27 +27,27 @@ exec_steps:
       name: "{{params.name}}"
     read_only: false
 ---
-# How-to: PRD-DAG orchestrator
+# How-to: Automaton-DAG orchestrator
 
-Compose multiple autonomous PRDs into a dependency graph with
-guardrails. The orchestrator runs PRDs in topological order, gates
+Compose multiple Automata into a dependency graph with
+guardrails. The orchestrator runs Automata in topological order, gates
 each on its declared verifiers (rules / security / release-readiness
 / docs integrity), and lets you approve or block at the graph level
-instead of one PRD at a time.
+instead of one Automaton at a time.
 
 ## What it is
 
-A PRD-DAG is a YAML spec that names PRDs (existing or to-be-created),
+An Automaton-DAG is a YAML spec that names Automata (existing or to-be-created),
 declares dependencies between them (`depends_on:`), and attaches
 guardrails. The executor:
 
-1. Picks the next PRD with all dependencies satisfied + status
+1. Picks the next Automaton with all dependencies satisfied + status
    `approved`.
 2. Spawns its tasks (per [`autonomous-planning.md`](autonomous-planning.md)).
 3. Runs declared guardrails on completion.
-4. If guardrails pass → marks PRD `completed`; checks for the next
-   eligible PRD.
-5. If guardrails fail → marks PRD `blocked`; pauses the graph for
+4. If guardrails pass → marks Automaton `completed`; checks for the next
+   eligible Automaton.
+5. If guardrails fail → marks Automaton `blocked`; pauses the graph for
    operator action.
 
 States: `draft` → `planning` → `needs_review` → `approved` → `running`
@@ -57,7 +57,7 @@ States: `draft` → `planning` → `needs_review` → `approved` → `running`
 
 - `datawatch start` — daemon up.
 - Autonomous subsystem enabled (`autonomous.enabled: true`).
-- One or more PRDs to compose (or define them inline in the graph
+- One or more Automata to compose (or define them inline in the graph
   spec).
 - (Optional) configured guardrail backends: `rules` (in-process),
   `security` (Trivy / Snyk), `release-readiness` (custom),
@@ -120,11 +120,11 @@ datawatch orchestrator get $GRAPH_ID
 #      migrate     (depends: [implement])  (status: draft)
 #    guardrails: rules, security, release-readiness, docs-integrity
 
-# 4. Decompose all child PRDs (LLM-driven; async per PRD).
+# 4. Decompose all child Automata (LLM-driven; async per Automaton).
 datawatch orchestrator decompose $GRAPH_ID
 sleep 90
 
-# 5. Approve the graph (or per-PRD via the autonomous CLI).
+# 5. Approve the graph (or per-Automaton via the autonomous CLI).
 datawatch orchestrator approve $GRAPH_ID
 
 # 6. Run.
@@ -133,7 +133,7 @@ datawatch orchestrator run $GRAPH_ID
 # 7. Watch.
 watch -n 5 "datawatch orchestrator get $GRAPH_ID | jq '{status, prds: .prds|map({id,status,n_completed_tasks})}'"
 
-# 8. If a PRD blocks on a guardrail:
+# 8. If an Automaton blocks on a guardrail:
 datawatch orchestrator unblock $GRAPH_ID --prd implement \
   --reason "Security finding accepted: SAST false-positive in legacy file"
 ```
@@ -142,17 +142,17 @@ datawatch orchestrator unblock $GRAPH_ID --prd implement \
 
 1. Settings → Automate → **Automata Orchestrator** card → click
    **+ New Graph**.
-2. Editor opens with a starter YAML template; fill in name + PRDs +
+2. Editor opens with a starter YAML template; fill in name + Automata +
    `depends_on` + guardrails. **Save**.
 3. The new graph appears in the Orchestrator card list with status
    `draft`. Click into it.
-4. Detail view shows a graph visualization (nodes = PRDs; edges =
+4. Detail view shows a graph visualization (nodes = Automata; edges =
    `depends_on`) and a control toolbar:
    - **Decompose all** — kicks off LLM decomposition for every child
-     PRD in parallel.
-   - **Review** — opens the per-PRD review pane (same UI as
+     Automaton in parallel.
+   - **Review** — opens the per-Automaton review pane (same UI as
      [`autonomous-review-approve.md`](autonomous-review-approve.md)).
-   - **Approve graph** — marks all PRDs approved when you've reviewed.
+   - **Approve graph** — marks all Automata approved when you've reviewed.
    - **Run** — start execution in topological order.
 5. While running, nodes color: gray (waiting), blue (running), green
    (completed), red (blocked). Click a blocked node for the guardrail
@@ -190,7 +190,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   $BASE/api/orchestrator/graphs/$GRAPH_ID/cancel
 
-# Unblock a PRD inside the graph.
+# Unblock an Automaton inside the graph.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prd":"implement","reason":"Accepted SAST FP"}' \
@@ -203,14 +203,14 @@ Tools: `orchestrator_create`, `orchestrator_get`, `orchestrator_list`,
 `orchestrator_decompose`, `orchestrator_approve`, `orchestrator_run`,
 `orchestrator_cancel`, `orchestrator_unblock`.
 
-Useful for a meta-coordinator LLM that composes large multi-PRD work
+Useful for a meta-coordinator LLM that composes large multi-Automaton work
 streams; can monitor progress and react to blocks autonomously.
 
 ### 5d. Comm channel
 
 ```
 You: orchestrator run abc123
-Bot: graph abc123 running; first PRD: audit
+Bot: graph abc123 running; first Automaton: audit
 ... (audit completes)
 Bot: graph abc123 — audit completed; running implement
 ... (implement blocks on security guardrail)
@@ -261,7 +261,7 @@ unblocks:
    (rules / sec /    (rules / sec /      (rules / sec /
     rel / docs)       rel / docs)         rel / docs)
 
-   On any guardrail failure → PRD: blocked → graph: paused
+   On any guardrail failure → Automaton: blocked → graph: paused
    Operator unblock with rationale → graph resumes
 ```
 
@@ -273,17 +273,17 @@ unblocks:
   parallel; if all use the same backend you may rate-limit. Stagger
   with `orchestrator decompose --concurrency 2`.
 - **Approve graph without reviewing children.** Same risk as
-  per-PRD. The graph view's per-node click opens the per-PRD review
+  per-Automaton. The graph view's per-node click opens the per-Automaton review
   modal — use it.
 - **Unblock without rationale.** API requires a `reason`; the audit
   log entry is permanent.
-- **Mid-run spec edits.** Editing a child PRD spec while its graph
+- **Mid-run spec edits.** Editing a child Automaton spec while its graph
   is running is allowed but only the next-spawned task picks up the
   edit. In-flight tasks complete under the old spec.
 
 ## Linked references
 
-- See also: [`autonomous-planning.md`](autonomous-planning.md) — single-PRD lifecycle.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — single-Automaton lifecycle.
 - See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — review gate.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - Architecture: `../architecture-overview.md` § Orchestrator.

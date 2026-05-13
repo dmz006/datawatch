@@ -26,7 +26,7 @@ exec_steps:
 Chain a sequence of tasks into a DAG with optional before/after gates;
 each step spawns a session, waits for completion, propagates context
 into the next. Pipelines are lighter-weight than full Automatons —
-they don't go through the PRD review gate, they just run the steps.
+they don't go through the Automaton review gate, they just run the steps.
 
 ## What it is
 
@@ -243,7 +243,7 @@ Operators can edit step-level `task:` text between runs to refine.
 
 ## Linked references
 
-- See also: [`autonomous-planning.md`](autonomous-planning.md) — heavier-weight PRDs.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — heavier-weight Automata.
 - See also: [`evals.md`](evals.md) — per-step grading.
 - See also: [`sessions-deep-dive.md`](sessions-deep-dive.md) — each step is a session.
 - Architecture: `../architecture-overview.md` § Pipelines.

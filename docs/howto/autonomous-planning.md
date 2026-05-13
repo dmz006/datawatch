@@ -8,14 +8,14 @@ exec_params:
   - {name: type, required: false, default: "software", description: "Automaton type: software | research | operational | personal"}
 exec_steps:
   - tool: autonomous_prd_create
-    description: Create the PRD record
+    description: Create the Automaton record
     args:
       spec: "{{params.spec}}"
       project_dir: "{{params.project_dir}}"
       type: "{{params.type}}"
     read_only: false
   - tool: autonomous_prd_list
-    description: Confirm the new PRD shows in the list
+    description: Confirm the new Automaton shows in the list
     args: {}
     read_only: true
 ---
@@ -252,7 +252,7 @@ the spec without re-decomposing.
   autonomous get $PRD_ID` shows `status: planning` for >5 min →
   check backend health.
 - **Approve without review.** Easy to fall into; for non-trivial
-  PRDs always at least read the Stories tab. Per-story approve gives
+  Automata always at least read the Stories tab. Per-story approve gives
   finer control.
 - **Run without approve.** Returns 400 (`approval required`). Approve
   first.
@@ -265,7 +265,7 @@ the spec without re-decomposing.
 ## Linked references
 
 - See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — the review flow.
-- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing PRDs into DAGs.
+- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing Automata into DAGs.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - See also: [`profiles.md`](profiles.md) — Project + Cluster Profiles.
 - Architecture: `../architecture-overview.md` § Autonomous executor.
@@ -276,7 +276,7 @@ the spec without re-decomposing.
 
 ![Launch Automaton wizard — intent + workspace + backend](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/autonomous-new-prd-modal.png)
 
-<!-- Screenshots still needed: PRD detail Overview/Stories/Decisions/Scan tabs, multi-select bar -->
+<!-- Screenshots still needed: Automaton detail Overview/Stories/Decisions/Scan tabs, multi-select bar -->
 
 ---
 

@@ -184,7 +184,7 @@ output, per-grader verdict, aggregate score.
   <session-id> --evals <suite>` runs the suite against the captured
   Act-phase output. See `algorithm-mode.md`.
 - **Automaton story** — declare `evals_suite: <name>` on a story in
-  the PRD spec; the autonomous executor runs the suite when the story
+  the Automaton spec; the autonomous executor runs the suite when the story
   finishes. Regression failures put the story into `blocked`.
 
 ## Diagram

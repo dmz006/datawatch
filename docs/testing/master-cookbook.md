@@ -30,7 +30,7 @@
 | T1 | TS-006 | GET /api/config returns structured config | surface:api feature:bootstrap feature:config | 📋 planned | — | — |
 | T1 | TS-007 | GET /api/stats returns full snapshot | surface:api feature:bootstrap | 📋 planned | — | — |
 | T1 | TS-008 | GET /api/diagnose returns result array | surface:api feature:bootstrap | 📋 planned | — | — |
-| T2 | TS-010 | POST /api/autonomous/prds creates PRD | surface:api feature:sessions feature:automata | 📋 planned | — | — |
+| T2 | TS-010 | POST /api/autonomous/prds creates Automaton | surface:api feature:sessions feature:automata | 📋 planned | — | — |
 | T2 | TS-011 | GET /api/sessions returns array | surface:api feature:sessions | 📋 planned | — | — |
 | T2 | TS-012 | hook-event Start returns 200 | surface:api feature:sessions | 📋 planned | — | — |
 | T2 | TS-013 | hook-event Activity returns 200 | surface:api feature:sessions | 📋 planned | — | — |
@@ -39,17 +39,17 @@
 | T2 | TS-016 | POST /api/channel/reply returns 200 | surface:api feature:sessions | 📋 planned | — | — |
 | T2 | TS-017 | PUT /api/config session.recent_session_minutes round-trip | surface:api feature:sessions feature:config | 📋 planned | — | — |
 | T2 | TS-018 | GET /api/stats session_stats present | surface:api feature:sessions | 📋 planned | — | — |
-| T2 | TS-019 | DELETE /api/autonomous/prds/{id} hard delete | surface:api feature:sessions feature:automata | 📋 planned | — | — |
-| T3 | TS-020 | POST /api/autonomous/prds creates with backend field | surface:api feature:automata | 📋 planned | — | — |
-| T3 | TS-021 | GET /api/autonomous/prds/{id} round-trip | surface:api feature:automata | 📋 planned | — | — |
+| T2 | TS-019 | DELETE /api/autonomous/prds/{id} hard delete (Automaton) | surface:api feature:sessions feature:automata | 📋 planned | — | — |
+| T3 | TS-020 | POST /api/autonomous/prds creates Automaton with backend field | surface:api feature:automata | 📋 planned | — | — |
+| T3 | TS-021 | GET /api/autonomous/prds/{id} Automaton round-trip | surface:api feature:automata | 📋 planned | — | — |
 | T3 | TS-022 | GET /api/autonomous/prds/{id}/children empty array | surface:api feature:automata | 📋 planned | — | — |
 | T3 | TS-023 | PUT /api/autonomous/prds/{id} title update | surface:api feature:automata | 📋 planned | — | — |
 | T3 | TS-024 | POST /api/autonomous/prds/{id}/decompose | surface:api feature:automata conflict:llm | 📋 planned | — | — |
 | T3 | TS-025 | POST /api/autonomous/prds/{id}/set_llm round-trip | surface:api feature:automata | 📋 planned | — | — |
-| T3 | TS-026 | Project profile create + attach to PRD | surface:api feature:automata | 📋 planned | — | — |
-| T3 | TS-027 | Cluster profile create + attach | surface:api feature:automata | 📋 planned | — | — |
+| T3 | TS-026 | Project profile create + attach to Automaton | surface:api feature:automata | 📋 planned | — | — |
+| T3 | TS-027 | Cluster profile create + attach to Automaton | surface:api feature:automata | 📋 planned | — | — |
 | T3 | TS-028 | PUT /api/autonomous/config per_story_approval round-trip | surface:api feature:automata feature:config | 📋 planned | — | — |
-| T3 | TS-029 | DELETE PRD + profiles cleanup | surface:api feature:automata | 📋 planned | — | — |
+| T3 | TS-029 | DELETE Automaton + profiles cleanup | surface:api feature:automata | 📋 planned | — | — |
 | T4 | TS-030 | GET /api/council/personas returns array | surface:api feature:council | 📋 planned | — | — |
 | T4 | TS-031 | POST /api/council/personas creates persona | surface:api feature:council | 📋 planned | — | — |
 | T4 | TS-032 | GET /api/council/personas/{id} round-trip | surface:api feature:council | 📋 planned | — | — |
@@ -138,7 +138,7 @@
 | T11 | TS-137 | PWA: Config PUT via settings | surface:pwa feature:pwa feature:config conflict:pwa | 📋 planned | — | — |
 | T11 | TS-138 | PWA: MCP tools panel >= 30 tools | surface:pwa feature:pwa feature:mcp conflict:pwa | 📋 planned | — | — |
 | T11 | TS-139 | PWA: Council personas panel renders | surface:pwa feature:pwa feature:council conflict:pwa | 📋 planned | — | — |
-| T11 | TS-140 | PWA: Automata/PRD list renders | surface:pwa feature:pwa feature:automata conflict:pwa | 📋 planned | — | — |
+| T11 | TS-140 | PWA: Automata list renders | surface:pwa feature:pwa feature:automata conflict:pwa | 📋 planned | — | — |
 | T11 | TS-141 | PWA: Secrets panel renders | surface:pwa feature:pwa feature:secrets conflict:pwa | 📋 planned | — | — |
 | T11 | TS-142 | PWA: Plugins panel renders | surface:pwa feature:pwa feature:plugins conflict:pwa | 📋 planned | — | — |
 | T11 | TS-143 | PWA: Full page load no console errors | surface:pwa feature:pwa conflict:pwa | 📋 planned | — | — |
@@ -210,13 +210,13 @@
 | T16 | TS-224 | Howto: container-workers | surface:api feature:howto feature:automata | 📋 planned | — | — |
 | T16 | TS-225 | Howto: tailscale-mesh | surface:api feature:howto | 📋 planned | — | — |
 | T16 | TS-226 | Howto: ollama-marketplace | surface:api feature:howto | 📋 planned | — | — |
-| T16 | TS-227 | Howto: prd-dag-orchestrator | surface:api feature:howto feature:automata | 📋 planned | — | — |
+| T16 | TS-227 | Howto: automaton-dag-orchestrator | surface:api feature:howto feature:automata | 📋 planned | — | — |
 | T16 | TS-228 | Howto: channel-state-engine | surface:api feature:howto feature:sessions | 📋 planned | — | — |
 | T16 | TS-229 | Howto: voice-input | surface:api feature:howto | 📋 planned | — | — |
 | T16 | TS-230 | Howto: v7-compute-migration | surface:api feature:howto | 📋 planned | — | — |
 | T16 | TS-231 | Howto: screenshots (if any) | surface:api feature:howto | 📋 planned | — | — |
 | T17 | TS-240 | Journey: research (memory + KG + MCP) | surface:api surface:mcp feature:journey feature:memory feature:kg | 📋 planned | — | — |
-| T17 | TS-241 | Journey: autonomous (PRD lifecycle) | surface:api feature:journey feature:automata | 📋 planned | — | — |
+| T17 | TS-241 | Journey: autonomous (Automaton lifecycle) | surface:api feature:journey feature:automata | 📋 planned | — | — |
 | T17 | TS-242 | Journey: monitoring (webhook + comm stats) | surface:api surface:comms feature:journey feature:comms | 📋 planned | — | — |
 | T17 | TS-243 | Journey: secrets (create + ref + delete) | surface:api feature:journey feature:secrets | 📋 planned | — | — |
 | T17 | TS-244 | Journey: council (2 personas + run + cancel) | surface:api feature:journey feature:council | 📋 planned | — | — |

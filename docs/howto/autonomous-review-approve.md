@@ -3,10 +3,10 @@ docs:
   index: true
   topics: [autonomous, prd, approve]
 exec_params:
-  - {name: prd_id, required: true, description: "PRD identifier (8-char hex)"}
+  - {name: prd_id, required: true, description: "Automaton ID (8-char hex)"}
 exec_steps:
   - tool: autonomous_prd_get
-    description: Read the PRD record + current decomposition
+    description: Read the Automaton record + current decomposition
     args: {id: "{{params.prd_id}}"}
     read_only: true
   - tool: autonomous_prd_approve
@@ -18,23 +18,23 @@ exec_steps:
     args: {id: "{{params.prd_id}}"}
     read_only: true
 ---
-# How-to: Review and approve an autonomous PRD
+# How-to: Review and approve an Automaton
 
 [`autonomous-planning.md`](autonomous-planning.md) showed the spawn →
 decompose → run loop. This howto zooms into the review gate — what to
-look at when a PRD lands in `needs_review`, how to approve / reject /
-request-revision per-story or whole-PRD, and the audit trail you get
+look at when an Automaton lands in `needs_review`, how to approve / reject /
+request-revision per-story or whole-Automaton, and the audit trail you get
 back.
 
 ## What it is
 
-After `decompose`, a PRD sits in `needs_review` until the operator
+After `decompose`, an Automaton sits in `needs_review` until the operator
 acts. Three actions:
 
 - **Approve** — promotes to `approved`, ready to run. Per-story
   approve is finer-grained: only approved stories run when you hit
   Run.
-- **Reject** — terminal; the PRD won't run. Use for "this isn't
+- **Reject** — terminal; the Automaton won't run. Use for "this isn't
   what I meant; throw it away".
 - **Request revision** — bounces back to the LLM for re-decomposition
   with operator notes. Status returns to `planning`.
@@ -43,12 +43,12 @@ Every action is recorded in the Decisions tab + audit log.
 
 ## Base requirements
 
-- A PRD in `needs_review` (i.e. you've already run `decompose`).
+- An Automaton in `needs_review` (i.e. you've already run `decompose`).
 - Operator role (review actions are gated).
 
 ## Setup
 
-No setup beyond having a PRD to review.
+No setup beyond having an Automaton to review.
 
 ## Two happy paths
 
@@ -70,14 +70,14 @@ datawatch autonomous get $PRD_ID | jq '.stories[] | {title, n_tasks: (.tasks|len
 # 3. Read a specific story / task in full.
 datawatch autonomous get $PRD_ID --story 0 --task 1
 
-# 4. Approve all stories + the PRD.
+# 4. Approve all stories + the Automaton.
 datawatch autonomous approve $PRD_ID
 #  → approved; ready to run
 
 # 5. Or approve per-story (finer control).
 datawatch autonomous approve $PRD_ID --story 0
 datawatch autonomous approve $PRD_ID --story 1
-datawatch autonomous reject  $PRD_ID --story 2 --reason "Out of scope; defer to a separate PRD"
+datawatch autonomous reject  $PRD_ID --story 2 --reason "Out of scope; defer to a separate Automaton"
 
 # 6. Or request revision.
 datawatch autonomous request-revision $PRD_ID \
@@ -94,7 +94,7 @@ datawatch autonomous decisions $PRD_ID
 
 ### 4b. Happy path — PWA
 
-1. Automata list → click the PRD with `needs_review` badge.
+1. Automata list → click the Automaton with `needs_review` badge.
 2. Detail view opens on the **Overview** tab. Read the goal +
    summary; persistent toolbar at the top exposes Edit Spec, Settings,
    Request Revision, Clone to Template, Delete.
@@ -109,8 +109,8 @@ datawatch autonomous decisions $PRD_ID
 5. To request a re-decomposition: toolbar → **Request Revision**.
    Modal asks for notes (free text); on submit, status flips back to
    `planning`.
-6. To reject the whole PRD: toolbar → **Delete** (or set status to
-   `rejected` from the Settings modal). Rejected PRDs persist for
+6. To reject the whole Automaton: toolbar → **Delete** (or set status to
+   `rejected` from the Settings modal). Rejected Automata persist for
    audit; archive when ready.
 7. **Decisions** tab shows every action with timestamp, actor, and
    reason. Click any row to expand the raw `details` payload.
@@ -125,7 +125,7 @@ as a bottom-sheet on narrow viewports.
 ### 5b. REST
 
 ```sh
-# Approve whole PRD.
+# Approve whole Automaton.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   $BASE/api/autonomous/prds/$PRD_ID/approve
 
@@ -139,7 +139,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"reason":"Out of scope"}' \
   $BASE/api/autonomous/prds/$PRD_ID/stories/$STORY_ID/reject
 
-# Request revision (whole PRD).
+# Request revision (whole Automaton).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"notes":"Story 2 too broad — split"}' \
@@ -155,7 +155,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 Tools: `prd_approve`, `prd_reject`, `prd_request_revision`,
 `story_approve`, `story_reject`, `prd_decisions`.
 
-Use case: a top-level autonomous coordinator that spawns sub-PRDs and
+Use case: a top-level autonomous coordinator that spawns sub-Automata and
 auto-approves the ones meeting a confidence threshold (with operator
 escalation for the rest).
 
@@ -163,7 +163,7 @@ escalation for the rest).
 
 ```
 You: review abc123
-Bot: PRD abc123 (auth-refactor) — needs_review
+Bot: Automaton abc123 (auth-refactor) — needs_review
      Stories:
        0  Audit current auth flow         (3 tasks)
        1  Implement JWT issuance          (4 tasks)
@@ -174,12 +174,12 @@ You: approve abc123 stories=0,1,3
 Bot: approved 3/4 stories; story 2 still pending
 
 You: revise abc123 notes="Story 2 too broad — split"
-Bot: PRD abc123 → planning; re-decomposing
+Bot: Automaton abc123 → planning; re-decomposing
 ```
 
 ### 5e. YAML
 
-Per-PRD state lives in the PRD YAML at
+Per-Automaton state lives in the Automaton YAML at
 `~/.datawatch/autonomous/prds/<id>.yaml`:
 
 ```yaml
@@ -225,19 +225,19 @@ the spec — the daemon picks up the changes on next run.
   there for a reason. Even a 30-second skim catches most "this is
   not what I meant" moments.
 - **Per-story approve forgotten.** Run only fires approved stories;
-  unapproved ones stay `needs_review` and the PRD continues without
+  unapproved ones stay `needs_review` and the Automaton continues without
   them. May or may not be what you want.
-- **Reject vs Cancel.** Reject = "this PRD shouldn't exist"
-  (terminal). Cancel = "stop this run; the PRD itself is fine"
-  (PRD goes to `cancelled`; can be re-run).
+- **Reject vs Cancel.** Reject = "this Automaton shouldn't exist"
+  (terminal). Cancel = "stop this run; the Automaton itself is fine"
+  (Automaton goes to `cancelled`; can be re-run).
 - **Lost decisions trail.** Decisions are append-only and persist
-  with the PRD (not deleted on archive). To prune, hard-delete the
-  PRD.
+  with the Automaton (not deleted on archive). To prune, hard-delete the
+  Automaton.
 
 ## Linked references
 
 - See also: [`autonomous-planning.md`](autonomous-planning.md) — full lifecycle.
-- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing PRDs into DAGs.
+- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing Automata into DAGs.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - Architecture: `../architecture-overview.md` § Autonomous executor.
 

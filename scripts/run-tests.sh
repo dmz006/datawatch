@@ -115,7 +115,7 @@ WEBHOOK_PID=""
 
 # Session/resource IDs created during tests (for cleanup)
 SESSION_ID=""
-PRD_ID=""
+AUTOMATON_ID=""
 PERSONA_ID=""
 RUN_ID=""
 MEM_ID=""
@@ -158,16 +158,16 @@ ensure_test_session() {
   return 1
 }
 
-# ensure_test_prd — sets PRD_ID to a live automaton, creating one if needed.
+# ensure_test_automaton — sets AUTOMATON_ID to a live automaton, creating one if needed.
 # Returns 1 and emits a skip if autonomous is disabled or creation fails.
-ensure_test_prd() {
-  if [[ -n "$PRD_ID" ]]; then
+ensure_test_automaton() {
+  if [[ -n "$AUTOMATON_ID" ]]; then
     local chk
-    chk=$(api GET "/api/autonomous/prds/$PRD_ID" 2>/dev/null)
+    chk=$(api GET "/api/autonomous/prds/$AUTOMATON_ID" 2>/dev/null)
     if echo "$chk" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'id' in d" 2>/dev/null; then
       return 0
     fi
-    PRD_ID=""
+    AUTOMATON_ID=""
   fi
   local a_enabled
   a_enabled=$(api GET /api/autonomous/config | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
@@ -177,10 +177,10 @@ ensure_test_prd() {
   fi
   local resp
   resp=$(api POST /api/autonomous/prds '{"spec":"test-prd-fixture: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
-  PRD_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
-  if [[ -n "$PRD_ID" ]]; then
-    add_cleanup prd "$PRD_ID"
-    echo "  [fixture] created test automaton: $PRD_ID"
+  AUTOMATON_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$AUTOMATON_ID" ]]; then
+    add_cleanup automaton "$AUTOMATON_ID"
+    echo "  [fixture] created test automaton: $AUTOMATON_ID"
     return 0
   fi
   skip "could not create test automaton fixture: $(echo "$resp" | head -c 200)"
@@ -500,8 +500,8 @@ cleanup_all() {
       tac "$CLEANUP_LOG" | while read -r kind id; do
         [[ -z "$id" ]] && continue
         case "$kind" in
-          sess)    curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$TEST_BASE/api/sessions/kill" >/dev/null 2>&1 && echo "  killed session $id" ;;
-          prd)     curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" ;;
+          sess)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$TEST_BASE/api/sessions/kill" >/dev/null 2>&1 && echo "  killed session $id" ;;
+          automaton) curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed automaton $id" ;;
           council) curl "${curl_args[@]}" -X POST "$TEST_BASE/api/council/runs/$id/cancel" >/dev/null 2>&1 && echo "  cancelled council run $id" ;;
           persona) curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/council/personas/$id" >/dev/null 2>&1 && echo "  removed persona $id" ;;
           filter)  curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/filters?id=$id" >/dev/null 2>&1 && echo "  removed filter $id" ;;
@@ -806,7 +806,7 @@ run_t2() {
 }
 
 # ---------------------------------------------------------------------------
-# T3 — Automata / PRDs
+# T3 — Automata
 # ---------------------------------------------------------------------------
 
 t3_check_autonomous() {
@@ -815,45 +815,45 @@ t3_check_autonomous() {
   echo "$a_enabled"
 }
 
-t3_ts020_create_prd() {
+t3_ts020_create_automaton() {
   if [[ "$(t3_check_autonomous)" != "yes" ]]; then skip "autonomous disabled"; return; fi
   local resp
   resp=$(api POST /api/autonomous/prds '{"spec":"test-prd-001: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
   save_evidence TS-020 "create.json" "$resp"
-  PRD_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
-  if [[ -n "$PRD_ID" ]]; then
-    add_cleanup prd "$PRD_ID"
-    ok "PRD created: $PRD_ID"
+  AUTOMATON_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$AUTOMATON_ID" ]]; then
+    add_cleanup automaton "$AUTOMATON_ID"
+    ok "Automaton created: $AUTOMATON_ID"
   else
-    ko "PRD create failed: $(echo "$resp" | head -c 200)"
+    ko "Automaton create failed: $(echo "$resp" | head -c 200)"
   fi
 }
 
-t3_ts021_prd_get() {
-  ensure_test_prd || return
+t3_ts021_automaton_get() {
+  ensure_test_automaton || return
   local resp
-  resp=$(api GET "/api/autonomous/prds/$PRD_ID")
+  resp=$(api GET "/api/autonomous/prds/$AUTOMATON_ID")
   save_evidence TS-021 "get.json" "$resp"
-  if assert_json "$resp" 'd.get("id") == "'"$PRD_ID"'"'; then
-    ok "GET PRD returns correct record"
+  if assert_json "$resp" 'd.get("id") == "'"$AUTOMATON_ID"'"'; then
+    ok "GET Automaton returns correct record"
   else
-    ko "PRD get failed: $(echo "$resp" | head -c 200)"
+    ko "Automaton GET failed: $(echo "$resp" | head -c 200)"
   fi
 }
 
-t3_ts022_prd_list() {
+t3_ts022_automata_list() {
   local resp
   resp=$(api GET /api/autonomous/prds)
   save_evidence TS-022 "list.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "GET /api/autonomous/prds returns list shape"
   else
-    ko "PRD list failed: $(echo "$resp" | head -c 200)"
+    ko "Automata list failed: $(echo "$resp" | head -c 200)"
   fi
 }
 
-t3_ts023_prd_decompose() {
-  ensure_test_prd || return
+t3_ts023_automaton_decompose() {
+  ensure_test_automaton || return
   # Check LLM availability
   local avail
   avail=$(api GET /api/backends | python3 -c '
@@ -864,32 +864,32 @@ print(",".join(have))
 ' 2>/dev/null || echo "")
   if [[ -z "$avail" ]]; then skip "no LLM backend available+enabled"; return; fi
   local resp
-  resp=$(curl "${curl_args[@]}" --max-time 300 -X POST "$TEST_BASE/api/autonomous/prds/$PRD_ID/decompose" -w "\n__HTTP_CODE_%{http_code}__")
+  resp=$(curl "${curl_args[@]}" --max-time 300 -X POST "$TEST_BASE/api/autonomous/prds/$AUTOMATON_ID/decompose" -w "\n__HTTP_CODE_%{http_code}__")
   local code; code=$(echo "$resp" | grep -oE "__HTTP_CODE_[0-9]+__" | grep -oE "[0-9]+")
   local body; body=$(echo "$resp" | sed 's/__HTTP_CODE.*//')
   save_evidence TS-023 "decompose.json" "$body"
   if [[ "$code" == "200" ]]; then
     local n; n=$(echo "$body" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d.get("stories",[])))' 2>/dev/null || echo 0)
-    ok "decompose returned 200, $n stories"
+    ok "Automaton decompose returned 200, $n stories"
   else
-    skip "decompose returned $code (LLM may not be reachable in test env)"
+    skip "Automaton decompose returned $code (LLM may not be reachable in test env)"
   fi
 }
 
-t3_ts024_prd_approve() {
-  ensure_test_prd || return
+t3_ts024_automaton_approve() {
+  ensure_test_automaton || return
   local resp
-  resp=$(api POST "/api/autonomous/prds/$PRD_ID/approve" '{"actor":"test-runner","note":"e2e test approval"}')
+  resp=$(api POST "/api/autonomous/prds/$AUTOMATON_ID/approve" '{"actor":"test-runner","note":"e2e test approval"}')
   save_evidence TS-024 "approve.json" "$resp"
   if assert_json "$resp" 'd.get("status") in ("approved","draft","needs_review")'; then
-    ok "PRD approve returned valid status"
+    ok "Automaton approve returned valid status"
   else
-    ko "PRD approve failed: $resp"
+    ko "Automaton approve failed: $resp"
   fi
 }
 
-t3_ts025_prd_run() {
-  ensure_test_prd || return
+t3_ts025_automaton_run() {
+  ensure_test_automaton || return
   local avail
   avail=$(api GET /api/backends | python3 -c '
 import json,sys
@@ -899,14 +899,14 @@ print(",".join(have))
 ' 2>/dev/null || echo "")
   if [[ -z "$avail" ]]; then skip "no LLM backend available+enabled"; return; fi
   local resp
-  resp=$(api POST "/api/autonomous/prds/$PRD_ID/run" '{}')
+  resp=$(api POST "/api/autonomous/prds/$AUTOMATON_ID/run" '{}')
   save_evidence TS-025 "run.json" "$resp"
   if assert_json "$resp" '"status" in d'; then
-    ok "PRD run accepted: $(echo "$resp" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("status","?"))' 2>/dev/null)"
+    ok "Automaton run accepted: $(echo "$resp" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("status","?"))' 2>/dev/null)"
     # Cancel to avoid background work
-    curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/autonomous/prds/$PRD_ID" >/dev/null 2>&1
+    curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/autonomous/prds/$AUTOMATON_ID" >/dev/null 2>&1
   else
-    ko "PRD run failed: $resp"
+    ko "Automaton run failed: $resp"
   fi
 }
 
@@ -938,68 +938,68 @@ t3_ts027_profile_attachment() {
     return
   fi
   add_cleanup profile-proj "$pname"
-  local prd
-  prd=$(api POST /api/autonomous/prds '{"spec":"test-prd-profile-'"$$"'","project_profile":"'"$pname"'","effort":"low","backend":"claude-code"}')
-  save_evidence TS-027 "prd_create.json" "$prd"
-  local prd2_id
-  prd2_id=$(echo "$prd" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
-  if [[ -n "$prd2_id" ]]; then
-    add_cleanup prd "$prd2_id"
+  local atm
+  atm=$(api POST /api/autonomous/prds '{"spec":"test-prd-profile-'"$$"'","project_profile":"'"$pname"'","effort":"low","backend":"claude-code"}')
+  save_evidence TS-027 "automaton_create.json" "$atm"
+  local atm2_id
+  atm2_id=$(echo "$atm" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$atm2_id" ]]; then
+    add_cleanup automaton "$atm2_id"
     local got
-    got=$(echo "$prd" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("project_profile",""))' 2>/dev/null || echo "")
+    got=$(echo "$atm" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("project_profile",""))' 2>/dev/null || echo "")
     if [[ "$got" == "$pname" ]]; then
-      ok "PRD carries project_profile=$pname"
+      ok "Automaton carries project_profile=$pname"
     else
-      ko "PRD dropped project_profile (got='$got', want='$pname')"
+      ko "Automaton dropped project_profile (got='$got', want='$pname')"
     fi
   else
-    ko "PRD create with profile failed: $(echo "$prd" | head -c 200)"
+    ko "Automaton create with profile failed: $(echo "$atm" | head -c 200)"
   fi
 }
 
-t3_ts028_prd_hard_delete() {
+t3_ts028_automaton_hard_delete() {
   local p
   p=$(api POST /api/autonomous/prds '{"spec":"test-prd-harddelete-'"$$"'","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
   local del_id
   del_id=$(echo "$p" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$del_id" ]]; then
-    skip "PRD create failed for hard-delete test"
+    skip "Automaton create failed for hard-delete test"
     return
   fi
   local dr
   dr=$(curl "${curl_args[@]}" -X DELETE "$TEST_BASE/api/autonomous/prds/$del_id?hard=true")
   save_evidence TS-028 "delete.json" "$dr"
   if assert_json "$dr" 'd.get("status") == "deleted"'; then
-    ok "PRD hard-delete: status=deleted"
+    ok "Automaton hard-delete: status=deleted"
   else
-    ko "PRD hard-delete failed: $dr"
+    ko "Automaton hard-delete failed: $dr"
   fi
 }
 
-t3_ts029_children_list() {
-  ensure_test_prd || return
+t3_ts029_automaton_children() {
+  ensure_test_automaton || return
   local resp
-  resp=$(api GET "/api/autonomous/prds/$PRD_ID/children")
+  resp=$(api GET "/api/autonomous/prds/$AUTOMATON_ID/children")
   save_evidence TS-029 "children.json" "$resp"
   if assert_json "$resp" '"children" in d and isinstance(d["children"], list)'; then
     ok "GET /children returns {children:[]} shape"
   else
-    ko "children list shape wrong: $resp"
+    ko "Automaton children list shape wrong: $resp"
   fi
 }
 
 run_t3() {
-  H "T3 — Automata / PRDs"
-  run_test TS-020 "Create PRD via REST" "surface:api feature:automata blocking" t3_ts020_create_prd
-  run_test TS-021 "PRD GET" "surface:api feature:automata" t3_ts021_prd_get
-  run_test TS-022 "PRD list" "surface:api feature:automata" t3_ts022_prd_list
-  run_test TS-023 "PRD decompose (SKIP if LLM unreachable)" "surface:api feature:automata conflict:llm" t3_ts023_prd_decompose
-  run_test TS-024 "PRD approve" "surface:api feature:automata" t3_ts024_prd_approve
-  run_test TS-025 "PRD run → spawn (SKIP if LLM unreachable)" "surface:api feature:automata conflict:llm" t3_ts025_prd_run
-  run_test TS-026 "PRD per-story approval gate" "surface:api feature:automata" t3_ts026_per_story_approval
+  H "T3 — Automata"
+  run_test TS-020 "Create Automaton via REST" "surface:api feature:automata blocking" t3_ts020_create_automaton
+  run_test TS-021 "Automaton GET" "surface:api feature:automata" t3_ts021_automaton_get
+  run_test TS-022 "Automata list" "surface:api feature:automata" t3_ts022_automata_list
+  run_test TS-023 "Automaton decompose (SKIP if LLM unreachable)" "surface:api feature:automata conflict:llm" t3_ts023_automaton_decompose
+  run_test TS-024 "Automaton approve" "surface:api feature:automata" t3_ts024_automaton_approve
+  run_test TS-025 "Automaton run → spawn (SKIP if LLM unreachable)" "surface:api feature:automata conflict:llm" t3_ts025_automaton_run
+  run_test TS-026 "Automaton per-story approval gate" "surface:api feature:automata" t3_ts026_per_story_approval
   run_test TS-027 "project_profile + cluster_profile attachment" "surface:api feature:automata feature:profiles" t3_ts027_profile_attachment
-  run_test TS-028 "PRD hard-delete" "surface:api feature:automata" t3_ts028_prd_hard_delete
-  run_test TS-029 "PRD children list" "surface:api feature:automata" t3_ts029_children_list
+  run_test TS-028 "Automaton hard-delete" "surface:api feature:automata" t3_ts028_automaton_hard_delete
+  run_test TS-029 "Automaton children list" "surface:api feature:automata" t3_ts029_automaton_children
 }
 
 # ---------------------------------------------------------------------------

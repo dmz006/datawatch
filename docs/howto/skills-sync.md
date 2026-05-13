@@ -248,7 +248,7 @@ session_inject: true                     # auto-inject into session prompt
 ## Linked references
 
 - See also: [`profiles.md`](profiles.md) — Project Profiles attach skills.
-- See also: [`autonomous-planning.md`](autonomous-planning.md) — PRDs reference skills per task.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — Automata reference skills per task.
 - See also: [`secrets-manager.md`](secrets-manager.md) — private registry auth.
 - Plan attribution: PAI Skill Registries in `../plan-attribution.md`.
 

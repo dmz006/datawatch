@@ -180,7 +180,7 @@ Every channel adapter recognizes the same verb vocabulary:
 | `health` | Daemon health one-liner. |
 | `secrets list` | Operator-only; gated to private chats. |
 | `council quick "<proposal>"` | Trigger a Council Mode quick check. |
-| `automaton: <spec>` | Decompose into a PRD; queue for review. |
+| `automaton: <spec>` | Decompose into an Automaton; queue for review. |
 
 Each adapter may add channel-specific verbs (Slack supports threaded
 replies; Matrix supports room-scoped routing).

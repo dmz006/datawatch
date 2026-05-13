@@ -12,7 +12,7 @@
 |--------|---------|---------|------|------|------|--------|
 | T1 — Daemon Bootstrap + Auth | 8 | 8 | — | — | — | 📋 planned |
 | T2 — Sessions | 10 | 10 | — | — | — | 📋 planned |
-| T3 — Automata / PRDs | 10 | 10 | — | — | — | 📋 planned |
+| T3 — Automata | 10 | 10 | — | — | — | 📋 planned |
 | T4 — Council | 8 | 8 | — | — | — | 📋 planned |
 | T5 — Memory + KG | 10 | 10 | — | — | — | 📋 planned |
 | T6 — Secrets + Config | 10 | 10 | — | — | — | 📋 planned |
