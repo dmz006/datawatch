@@ -422,11 +422,12 @@ write_test_config() {
 
   mkdir -p "$data_dir"
   cat > "$data_dir/config.yaml" <<EOF
+data_dir: "$data_dir"
 server:
   port: $port
   tls_port: $tls_port
   token: "$token"
-  tls_auto: true
+  tls_auto_generate: true
   auth_enabled: true
 mcp:
   sse_port: $mcp_port
@@ -447,8 +448,7 @@ start_test_daemon() {
   echo "== Starting test daemon =="
   write_test_config "$TEST_DATA"
 
-  DATAWATCH_DATA_DIR="$TEST_DATA" "$TEST_BINARY" serve \
-    --port 18080 --tls-port 18443 \
+  "$TEST_BINARY" start --foreground --config "$TEST_DATA/config.yaml" --port 18080 \
     > "$TEST_DATA/daemon.log" 2>&1 &
   DAEMON_PID=$!
   echo "  Daemon PID: $DAEMON_PID"
@@ -2004,8 +2004,7 @@ run_t12() {
 
 t13_ts160_isolated_start() {
   write_test_config "$DOCKER_SIM_DATA" 18180 18543 18281 18533 "$TEST_TOKEN"
-  DATAWATCH_DATA_DIR="$DOCKER_SIM_DATA" "$TEST_BINARY" serve \
-    --port 18180 --tls-port 18543 \
+  "$TEST_BINARY" start --foreground --config "$DOCKER_SIM_DATA/config.yaml" --port 18180 \
     > "$DOCKER_SIM_DATA/daemon.log" 2>&1 &
   DOCKER_SIM_PID=$!
   echo "  Docker-sim daemon PID: $DOCKER_SIM_PID"
@@ -2069,8 +2068,7 @@ t13_ts165_restart_preserves_state() {
   DOCKER_SIM_PID=""
   sleep 1
   # Restart
-  DATAWATCH_DATA_DIR="$DOCKER_SIM_DATA" "$TEST_BINARY" serve \
-    --port 18180 --tls-port 18543 \
+  "$TEST_BINARY" start --foreground --config "$DOCKER_SIM_DATA/config.yaml" --port 18180 \
     >> "$DOCKER_SIM_DATA/daemon.log" 2>&1 &
   DOCKER_SIM_PID=$!
   local attempts=0
