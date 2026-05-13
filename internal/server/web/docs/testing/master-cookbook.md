@@ -225,3 +225,114 @@
 | T17 | TS-247 | Journey: MCP tools (recall + kg_query) | surface:mcp feature:journey feature:mcp feature:memory feature:kg | 📋 planned | — | — |
 | T17 | TS-248 | Journey: schedule lifecycle | surface:api feature:journey | 📋 planned | — | — |
 | T17 | TS-249 | Journey: full session lifecycle | surface:api surface:comms feature:journey feature:sessions | 📋 planned | — | — |
+
+---
+
+## Bug Workflow
+
+When a test fails, follow this workflow. The runner does steps 1–2 automatically.
+Claude handles steps 3–6 while running tests.
+
+### Step 1 — Failure captured
+
+The runner writes every `ko()` to `runs/YYYY-MM-DD-NNN/failures.jsonl`:
+```json
+{"story":"TS-042","desc":"memory recall did not return stored entry","tags":"surface:api feature:memory","blocking":false,"evidence":"...","timestamp":"2026-05-13T..."}
+```
+
+Blocking failures also print `FAIL_BLOCKING` on stdout, triggering immediate pause if `--fail-fast-blocking` was set.
+
+### Step 2 — Plan updated
+
+Mark the story in `v7.0.0/plan.md` and this cookbook: `📋 planned` → `🔴 failed`.
+
+### Step 3 — BL filed (agent-spawned)
+
+For each entry in `failures.jsonl`, spawn or run an agent to file a backlog item:
+
+**Classification rules:**
+| Condition | Severity | BL label |
+|-----------|----------|----------|
+| `blocking:true` | P0 — release blocker | `bug:release-blocker` |
+| auth/health/daemon | P1 — critical | `bug:critical` |
+| feature regression | P2 — major | `bug:major` |
+| parity gap | P2 — major | `parity-gap` |
+| cosmetic/skip reason | P3 — minor | `bug:minor` |
+
+**BL entry format:**
+```
+**BL###** — [TS-NNN failing: short description]
+
+Surface: <from tags>
+Feature: <from tags>
+Blocking: yes/no
+Evidence: internal/server/web/docs/testing/runs/YYYY-MM-DD-NNN/evidence/TS-NNN/
+Story: internal/server/web/docs/testing/v7.0.0/plan.md#TS-NNN
+
+Steps to reproduce:
+  bash scripts/run-tests.sh --story=TS-NNN
+
+Expected: <from plan.md story Expected section>
+Actual: <from failures.jsonl desc field>
+```
+
+### Step 4 — Fix (blocking bugs immediately, others queued)
+
+**Blocking bug (`blocking:true`):** fix before continuing.
+- Runner exits 2, halted at `$CURRENT_STORY`
+- Fix the code, commit with `fix(BL###): ...`
+- Update CHANGELOG, plan.md story status → 🔧 in-progress
+- Rerun from where it stopped: `bash scripts/run-tests.sh --resume-from=TS-NNN`
+
+**Non-blocking bug:** queue in backlog, continue running remaining stories.
+- Runner continues automatically
+- Fix in a follow-up commit after full run completes
+
+### Step 5 — Retest
+
+```bash
+# Single story after fix
+bash scripts/run-tests.sh --story=TS-NNN
+
+# Resume from blocker after fix
+bash scripts/run-tests.sh --resume-from=TS-NNN --fail-fast-blocking
+
+# Full rerun
+bash scripts/run-tests.sh
+```
+
+### Step 6 — Close
+
+- Story status in plan.md + cookbook: `🔴 failed` → `✅ passed`
+- Close or resolve BL entry with fix commit SHA + retest run date
+- Update `CHANGELOG.md` entry for the release with the fixed BL numbers
+
+---
+
+## Runner Quick Reference
+
+```bash
+# Full run (all 17 sprints)
+bash scripts/run-tests.sh
+
+# Single story
+bash scripts/run-tests.sh --story=TS-042
+
+# Resume after fixing a blocker at TS-005
+bash scripts/run-tests.sh --resume-from=TS-005
+
+# Halt on first blocker (CI mode)
+bash scripts/run-tests.sh --fail-fast-blocking
+
+# Surface or feature slice
+bash scripts/run-tests.sh --surface=api
+bash scripts/run-tests.sh --feature=memory
+
+# Skip external-dependency tests
+bash scripts/run-tests.sh --skip-conflict=llm --skip-conflict=signal
+
+# Exit codes
+# 0 — all passed/skipped
+# 1 — failures (non-blocking)
+# 2 — blocking failure halted (fix + --resume-from)
+```
