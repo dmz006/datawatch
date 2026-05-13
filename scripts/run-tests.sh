@@ -61,17 +61,38 @@ K8S_PF_PORT=19443
 FILTER_SURFACE=""
 FILTER_FEATURE=""
 SKIP_CONFLICT=""
+FILTER_STORY=""       # --story=TS-XXX  run exactly one story
+RESUME_FROM=""        # --resume-from=TS-XXX  skip all stories before this one
+FAIL_FAST_BLOCKING=false  # --fail-fast-blocking  exit 2 on blocking failure
+_RESUMED=false        # internal: true once RESUME_FROM story is reached
 
 for arg in "$@"; do
   case "$arg" in
-    --surface=*)  FILTER_SURFACE="${arg#--surface=}" ;;
-    --feature=*)  FILTER_FEATURE="${arg#--feature=}" ;;
-    --skip-conflict=*) SKIP_CONFLICT="${arg#--skip-conflict=}" ;;
+    --surface=*)         FILTER_SURFACE="${arg#--surface=}" ;;
+    --feature=*)         FILTER_FEATURE="${arg#--feature=}" ;;
+    --skip-conflict=*)   SKIP_CONFLICT="${arg#--skip-conflict=}" ;;
+    --story=*)           FILTER_STORY="${arg#--story=}" ;;
+    --resume-from=*)     RESUME_FROM="${arg#--resume-from=}"; _RESUMED=false ;;
+    --fail-fast-blocking) FAIL_FAST_BLOCKING=true ;;
     --help|-h)
-      echo "Usage: $0 [--surface=X] [--feature=Y] [--skip-conflict=Z]"
+      echo "Usage: $0 [options]"
+      echo ""
+      echo "Filter options:"
       echo "  --surface=api|cli|pwa|mcp|comms|docker|k8s"
       echo "  --feature=sessions|automata|memory|kg|secrets|config|..."
       echo "  --skip-conflict=signal|llm|pwa|k8s|keepassxc|op|db-write"
+      echo "  --story=TS-NNN          Run exactly one story"
+      echo "  --resume-from=TS-NNN    Skip all stories before TS-NNN (after fixing a blocker)"
+      echo ""
+      echo "Bug workflow options:"
+      echo "  --fail-fast-blocking    Exit with code 2 on any blocking failure so"
+      echo "                          the caller can triage + fix before resuming."
+      echo "                          Blocking tests carry the 'blocking' tag."
+      echo ""
+      echo "Exit codes:"
+      echo "  0  All tests passed (or skipped)"
+      echo "  1  One or more failures (non-blocking run)"
+      echo "  2  Blocking failure — fix and rerun with --resume-from=TS-NNN"
       exit 0
       ;;
   esac
@@ -83,7 +104,9 @@ done
 PASS=0
 FAIL=0
 SKIP=0
+BLOCKER_FAIL=0
 CURRENT_STORY=""
+_CURRENT_TAGS=""
 DAEMON_PID=""
 DOCKER_SIM_PID=""
 K8S_PF_PID=""
@@ -224,34 +247,105 @@ assert_json() {
 # ---------------------------------------------------------------------------
 # Test framework
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Summary writer — called at end and on blocking halt
+# ---------------------------------------------------------------------------
+_write_summary() {
+  local total=$((PASS+FAIL+SKIP))
+  mkdir -p "$RUN_DIR"
+  cat > "$RUN_DIR/summary.md" <<RUNEOF
+# E2E Run Summary
+
+- **Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- **Binary**: $TEST_BINARY
+- **Version**: $(get_daemon_version 2>/dev/null || echo unknown)
+- **Filter**: story=${FILTER_STORY:-all} surface=${FILTER_SURFACE:-all} feature=${FILTER_FEATURE:-all} skip_conflict=${SKIP_CONFLICT:-none}
+- **Resume-from**: ${RESUME_FROM:-none}
+- **PASS**: $PASS
+- **FAIL**: $FAIL  (blocking: $BLOCKER_FAIL)
+- **SKIP**: $SKIP
+- **TOTAL**: $total
+- **Run dir**: $RUN_DIR
+- **Evidence**: $EVIDENCE_DIR
+- **Failures**: $RUN_DIR/failures.jsonl
+- **Plan**: internal/server/web/docs/testing/v7.0.0/plan.md
+RUNEOF
+}
+
 ok()   { echo "  PASS  [$CURRENT_STORY] $*"; PASS=$((PASS+1)); }
-ko()   { echo "  FAIL  [$CURRENT_STORY] $*"; FAIL=$((FAIL+1)); }
 skip() { echo "  SKIP  [$CURRENT_STORY] $*"; SKIP=$((SKIP+1)); }
 
+ko() {
+  local msg="$*"
+  local is_blocking=false
+  echo "$_CURRENT_TAGS" | grep -q "blocking" && is_blocking=true
+
+  if [[ "$is_blocking" == "true" ]]; then
+    echo "  FAIL_BLOCKING  [$CURRENT_STORY] $msg"
+    BLOCKER_FAIL=$((BLOCKER_FAIL+1))
+  else
+    echo "  FAIL  [$CURRENT_STORY] $msg"
+  fi
+  FAIL=$((FAIL+1))
+
+  # Write structured failure entry for agent-based BL filing
+  mkdir -p "$RUN_DIR"
+  printf '{"story":"%s","desc":"%s","tags":"%s","blocking":%s,"evidence":"%s","timestamp":"%s"}\n' \
+    "$CURRENT_STORY" \
+    "$(echo "$msg" | sed 's/"/\\"/g')" \
+    "$_CURRENT_TAGS" \
+    "$is_blocking" \
+    "$EVIDENCE_DIR/$CURRENT_STORY" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "$RUN_DIR/failures.jsonl"
+
+  # Blocking + fail-fast: exit 2 so the caller can fix before resuming
+  if [[ "$is_blocking" == "true" && "$FAIL_FAST_BLOCKING" == "true" ]]; then
+    echo ""
+    echo "  !! BLOCKER HALT — $CURRENT_STORY failed and blocks downstream tests."
+    echo "  !! Fix the issue, then rerun:"
+    echo "  !!   bash scripts/run-tests.sh --resume-from=$CURRENT_STORY [other flags]"
+    echo "  !! Evidence: $EVIDENCE_DIR/$CURRENT_STORY"
+    echo "  !! Failures so far: $RUN_DIR/failures.jsonl"
+    # flush summary before exiting
+    _write_summary
+    exit 2
+  fi
+}
+
 # story_matches_filter — returns 0 (true) if story should run, 1 if should skip
-# Tags format: "surface:api feature:sessions conflict:llm"
+# Tags format: "surface:api feature:sessions conflict:llm blocking"
+# CURRENT_STORY must be set before calling.
 story_matches_filter() {
   local tags="$1"
 
-  # Surface filter
-  if [[ -n "$FILTER_SURFACE" ]]; then
-    if ! echo "$tags" | grep -q "surface:$FILTER_SURFACE"; then
+  # Single-story filter — exact match only
+  if [[ -n "$FILTER_STORY" ]]; then
+    [[ "$CURRENT_STORY" == "$FILTER_STORY" ]] || return 1
+  fi
+
+  # Resume-from — skip until we hit the named story, then run everything after
+  if [[ -n "$RESUME_FROM" && "$_RESUMED" != "true" ]]; then
+    if [[ "$CURRENT_STORY" == "$RESUME_FROM" ]]; then
+      _RESUMED=true
+    else
       return 1
     fi
+  fi
+
+  # Surface filter
+  if [[ -n "$FILTER_SURFACE" ]]; then
+    echo "$tags" | grep -q "surface:$FILTER_SURFACE" || return 1
   fi
 
   # Feature filter
   if [[ -n "$FILTER_FEATURE" ]]; then
-    if ! echo "$tags" | grep -q "feature:$FILTER_FEATURE"; then
-      return 1
-    fi
+    echo "$tags" | grep -q "feature:$FILTER_FEATURE" || return 1
   fi
 
   # Conflict skip
   if [[ -n "$SKIP_CONFLICT" ]]; then
-    if echo "$tags" | grep -q "conflict:$SKIP_CONFLICT"; then
-      return 1
-    fi
+    echo "$tags" | grep -q "conflict:$SKIP_CONFLICT" && return 1
   fi
 
   return 0
@@ -266,8 +360,9 @@ run_test() {
   shift 4
 
   CURRENT_STORY="$story"
+  _CURRENT_TAGS="$tags"
 
-  # Check filters
+  # Check filters (story/resume/surface/feature/conflict)
   if ! story_matches_filter "$tags"; then
     echo "  SKIP  [$story] $desc (filtered out)"
     SKIP=$((SKIP+1))
@@ -548,14 +643,15 @@ t1_ts008_diagnose() {
 
 run_t1() {
   H "T1 — Daemon Bootstrap + Auth"
-  run_test TS-001 "Fresh daemon starts on test ports" "surface:api feature:bootstrap" t1_ts001_fresh_start
-  run_test TS-002 "Health endpoint shape" "surface:api feature:bootstrap" t1_ts002_health_shape
-  run_test TS-003 "Auth 401 without token" "surface:api feature:bootstrap" t1_ts003_auth_401_without_token
-  run_test TS-004 "Auth 200 with correct token" "surface:api feature:bootstrap" t1_ts004_auth_200_with_token
-  run_test TS-005 "TLS auto-cert reachable" "surface:api feature:bootstrap" t1_ts005_tls_autocert
-  run_test TS-006 "Config GET round-trip" "surface:api feature:bootstrap feature:config" t1_ts006_config_get
-  run_test TS-007 "Stats snapshot shape" "surface:api feature:bootstrap" t1_ts007_stats_snapshot
-  run_test TS-008 "Diagnose endpoint" "surface:api feature:bootstrap" t1_ts008_diagnose
+  # blocking tag: failure here prevents all other tests from running
+  run_test TS-001 "Fresh daemon starts on test ports" "surface:api feature:bootstrap blocking" t1_ts001_fresh_start
+  run_test TS-002 "Health endpoint shape"             "surface:api feature:bootstrap blocking" t1_ts002_health_shape
+  run_test TS-003 "Auth 401 without token"            "surface:api feature:bootstrap blocking" t1_ts003_auth_401_without_token
+  run_test TS-004 "Auth 200 with correct token"       "surface:api feature:bootstrap blocking" t1_ts004_auth_200_with_token
+  run_test TS-005 "TLS auto-cert reachable"           "surface:api feature:bootstrap blocking" t1_ts005_tls_autocert
+  run_test TS-006 "Config GET round-trip"             "surface:api feature:bootstrap feature:config blocking" t1_ts006_config_get
+  run_test TS-007 "Stats snapshot shape"              "surface:api feature:bootstrap" t1_ts007_stats_snapshot
+  run_test TS-008 "Diagnose endpoint"                 "surface:api feature:bootstrap" t1_ts008_diagnose
 }
 
 # ---------------------------------------------------------------------------
@@ -689,7 +785,7 @@ t2_ts019_session_terminate() {
 
 run_t2() {
   H "T2 — Sessions"
-  run_test TS-010 "Create session (shell backend)" "surface:api feature:sessions" t2_ts010_create_session
+  run_test TS-010 "Create session (shell backend)" "surface:api feature:sessions blocking" t2_ts010_create_session
   run_test TS-011 "List sessions" "surface:api feature:sessions" t2_ts011_list_sessions
   run_test TS-012 "Session appears in stats" "surface:api feature:sessions" t2_ts012_session_in_stats
   run_test TS-013 "Hook event: Start" "surface:api feature:sessions" t2_ts013_hook_event_start
@@ -886,7 +982,7 @@ t3_ts029_children_list() {
 
 run_t3() {
   H "T3 — Automata / PRDs"
-  run_test TS-020 "Create PRD via REST" "surface:api feature:automata" t3_ts020_create_prd
+  run_test TS-020 "Create PRD via REST" "surface:api feature:automata blocking" t3_ts020_create_prd
   run_test TS-021 "PRD GET" "surface:api feature:automata" t3_ts021_prd_get
   run_test TS-022 "PRD list" "surface:api feature:automata" t3_ts022_prd_list
   run_test TS-023 "PRD decompose (SKIP if LLM unreachable)" "surface:api feature:automata conflict:llm" t3_ts023_prd_decompose
@@ -2677,41 +2773,44 @@ run_t17
 # Final report
 # ---------------------------------------------------------------------------
 TOTAL=$((PASS+FAIL+SKIP))
-
-# Write dated run summary
-mkdir -p "$RUN_DIR"
-cat > "$RUN_DIR/summary.md" <<RUNEOF
-# E2E Run Summary
-
-- **Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-- **Binary**: $TEST_BINARY
-- **Version**: $(get_daemon_version 2>/dev/null || echo unknown)
-- **Filter**: surface=${FILTER_SURFACE:-all} feature=${FILTER_FEATURE:-all} skip_conflict=${SKIP_CONFLICT:-none}
-- **PASS**: $PASS
-- **FAIL**: $FAIL
-- **SKIP**: $SKIP
-- **TOTAL**: $TOTAL
-- **Evidence**: $EVIDENCE_DIR
-- **Plan**: internal/server/web/docs/testing/v7.0.0/plan.md
-RUNEOF
+_write_summary
 
 echo ""
 echo "======================================================================"
 echo "  RESULTS"
 echo "======================================================================"
-echo "  PASS : $PASS"
-echo "  FAIL : $FAIL"
-echo "  SKIP : $SKIP"
-echo "  TOTAL: $TOTAL"
+echo "  PASS    : $PASS"
+echo "  FAIL    : $FAIL  (blocking: $BLOCKER_FAIL)"
+echo "  SKIP    : $SKIP"
+echo "  TOTAL   : $TOTAL"
+echo "  Run dir : $RUN_DIR"
 echo ""
 if [[ $FAIL -gt 0 ]]; then
-  echo "  *** $FAIL FAILURE(S) — evidence preserved in $RUN_DIR"
-  echo "  Cookbook: update plan.md T-sprint statuses to 🔴 for failing stories"
+  echo "  *** $FAIL FAILURE(S) — evidence + failures.jsonl in $RUN_DIR"
+  if [[ -f "$RUN_DIR/failures.jsonl" ]]; then
+    echo ""
+    echo "  Failed stories (for BL filing):"
+    while IFS= read -r line; do
+      story=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('story','?'))" 2>/dev/null)
+      desc=$(echo "$line"  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('desc','?')[:60])" 2>/dev/null)
+      blk=$(echo "$line"   | python3 -c "import json,sys; d=json.load(sys.stdin); print('BLOCKING' if d.get('blocking') else 'non-blocking')" 2>/dev/null)
+      echo "    [$blk] $story — $desc"
+    done < "$RUN_DIR/failures.jsonl"
+    echo ""
+    echo "  To resume after fixing a blocker:"
+    first_blocker=$(python3 -c "
+import json, sys
+for line in open('$RUN_DIR/failures.jsonl'):
+    d=json.loads(line.strip())
+    if d.get('blocking'):
+        print(d['story']); break
+" 2>/dev/null || echo "")
+    [[ -n "$first_blocker" ]] && echo "    bash scripts/run-tests.sh --resume-from=$first_blocker [other flags]"
+  fi
+  echo "  Cookbook: mark failing stories 🔴 in v7.0.0/plan.md"
   exit 1
 else
   echo "  ALL TESTS PASSED (or SKIPPED)"
-  echo "  Cookbook: update plan.md T-sprint statuses to ✅"
-  echo "  Run dir : $RUN_DIR"
-  echo "  Evidence: $EVIDENCE_DIR"
+  echo "  Cookbook: mark all stories ✅ in v7.0.0/plan.md"
   exit 0
 fi
