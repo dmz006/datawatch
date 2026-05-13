@@ -10,6 +10,17 @@ _(BL299, BL300, BL301 filed — see backlog tracker.)_
 ### In progress
 - **BL302 — MCP Resources + Prompts** — v7.1.0 target; 5-sprint plan at `internal/server/web/docs/plans/2026-05-12-v7.1.0-mcp-resources-prompts.md`. Adds 20+ URI-addressed resources (docs, config, sessions, memory, stats, alerts, analytics, cost, automata, council, KG) and 22 prompt templates; subscription push via WS hub; full 7-surface parity.
 
+## v7.0.0-alpha.54 — Channel bridge: dynamic MCP proxy (BL300)
+
+### Changed
+- **Channel bridge is now a fully dynamic MCP proxy** — `datawatch-channel` no longer contains hardcoded tool stubs. At startup it calls `GET /api/mcp/tools` to discover all daemon tools, then registers generic forwarding handlers that call `POST /api/mcp/call`. Any new daemon tool automatically appears in Claude Code sessions without any bridge changes. Bridge drops from 825 to 336 lines.
+- **Daemon exposes MCP proxy endpoints** — `GET /api/mcp/tools` returns the full tool manifest; `POST /api/mcp/call` dispatches a named tool call and returns the result. Both are loopback-only (added to TLS bypass list).
+- **Parity drift is architecturally impossible** — the old hardcoded proxy required manual updates whenever daemon tools changed; this class of bug is eliminated.
+- **Parity test replaced** — static `TestParityNoDaemonToolsMissing` (required manual maintenance per new tool) replaced with `TestDynamicDiscovery` (integration test against a mock server that verifies the discovery and forwarding mechanism itself).
+
+### Fixed
+- Stale test expectations in `voice_inherit_test.go` — OpenWebUI endpoint assertions now include the `/api/v1` suffix added in alpha.14.
+
 ## v7.0.0-alpha.53 — Go channel bridge self-install
 
 ### Fixed
