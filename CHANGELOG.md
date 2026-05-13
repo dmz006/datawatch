@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301 filed — see backlog tracker.)_
 
+### In progress
+- **BL302 — MCP Resources + Prompts** — v7.1.0 target; 5-sprint plan at `internal/server/web/docs/plans/2026-05-12-v7.1.0-mcp-resources-prompts.md`. Adds 20+ URI-addressed resources (docs, config, sessions, memory, stats, alerts, analytics, cost, automata, council, KG) and 22 prompt templates; subscription push via WS hub; full 7-surface parity.
+
 ## v7.0.0-alpha.53 — Go channel bridge self-install
 
 ### Fixed

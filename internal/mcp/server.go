@@ -585,6 +585,95 @@ func (s *Server) Invoke(ctx context.Context, name string, args map[string]interf
 	return out.String(), nil
 }
 
+// ToolDescriptor is a compact description of an MCP tool for the REST surface.
+type ToolDescriptor struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// ToolCallResult is the result of a delegated MCP tool call.
+type ToolCallResult struct {
+	Content []map[string]any `json:"content"`
+	IsError bool             `json:"isError,omitempty"`
+}
+
+// ListTools returns all registered MCP tools as ToolDescriptors.
+func (s *Server) ListTools() ([]ToolDescriptor, error) {
+	if s.srv == nil {
+		return nil, fmt.Errorf("mcp server not initialized")
+	}
+	all := s.srv.ListTools()
+	out := make([]ToolDescriptor, 0, len(all))
+	for _, st := range all {
+		schema, err := json.Marshal(st.Tool.InputSchema)
+		if st.Tool.RawInputSchema != nil {
+			schema = st.Tool.RawInputSchema
+			err = nil
+		}
+		if err != nil {
+			schema = []byte(`{"type":"object","properties":{}}`)
+		}
+		out = append(out, ToolDescriptor{
+			Name:        st.Tool.Name,
+			Description: st.Tool.Description,
+			InputSchema: schema,
+		})
+	}
+	return out, nil
+}
+
+// CallTool invokes a registered MCP tool by name with the given arguments.
+func (s *Server) CallTool(ctx context.Context, name string, args map[string]any) (*ToolCallResult, error) {
+	if s.srv == nil {
+		return nil, fmt.Errorf("mcp server not initialized")
+	}
+	st := s.srv.GetTool(name)
+	if st == nil {
+		return nil, fmt.Errorf("tool not found: %s", name)
+	}
+	req := mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{Name: name, Arguments: args}}
+	res, err := st.Handler(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var content []map[string]any
+	if res != nil {
+		for _, c := range res.Content {
+			data, merr := json.Marshal(c)
+			if merr != nil {
+				continue
+			}
+			var m map[string]any
+			if merr = json.Unmarshal(data, &m); merr == nil {
+				content = append(content, m)
+			}
+		}
+	}
+	isError := res != nil && res.IsError
+	return &ToolCallResult{Content: content, IsError: isError}, nil
+}
+
+// MCPToolsJSON returns all registered tools serialised as a JSON array.
+// Satisfies server.mcpBridgeAPI so the HTTP server can expose /api/mcp/tools.
+func (s *Server) MCPToolsJSON() ([]byte, error) {
+	tools, err := s.ListTools()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(tools)
+}
+
+// MCPCallJSON invokes a named tool and returns the result as a JSON object.
+// Satisfies server.mcpBridgeAPI so the HTTP server can expose /api/mcp/call.
+func (s *Server) MCPCallJSON(ctx context.Context, name string, args map[string]any) ([]byte, error) {
+	res, err := s.CallTool(ctx, name, args)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(res)
+}
+
 // SetPipelineAPI wires the pipeline executor for MCP tools.
 func (s *Server) SetPipelineAPI(api PipelineMCP) { s.pipelineAPI = api }
 

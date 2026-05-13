@@ -92,6 +92,15 @@ type KGAPI interface {
 	Stats() map[string]interface{}
 }
 
+// mcpBridgeAPI is the subset of mcp.Server used by the channel-bridge REST surface.
+// The concrete implementation is wired from main.go via SetMCPBridge.
+type mcpBridgeAPI interface {
+	// MCPToolsJSON returns all registered MCP tools serialised as JSON.
+	MCPToolsJSON() ([]byte, error)
+	// MCPCallJSON invokes a named tool with the given args and returns the result as JSON.
+	MCPCallJSON(ctx context.Context, name string, args map[string]any) ([]byte, error)
+}
+
 // startTime records when the daemon started (for uptime calculation).
 var startTime = time.Now()
 
@@ -202,6 +211,10 @@ type Server struct {
 
 	// mcpDocsFunc returns MCP tool documentation (wired from main.go when MCP is enabled).
 	mcpDocsFunc func() interface{}
+
+	// mcpBridge is the daemon MCP server; wired at startup via SetMCPBridge.
+	// Provides /api/mcp/tools and /api/mcp/call for the channel bridge proxy.
+	mcpBridge mcpBridgeAPI
 
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
 	// The progress callback is invoked with (downloaded, total) byte counts
@@ -547,6 +560,55 @@ func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
+
+// SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
+func (s *Server) SetMCPBridge(b mcpBridgeAPI) { s.mcpBridge = b }
+
+// handleMCPTools returns all daemon MCP tools as JSON for the channel bridge.
+func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	data, err := s.mcpBridge.MCPToolsJSON()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
+}
+
+// handleMCPCall dispatches a named MCP tool call and returns the result as JSON.
+func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Tool string         `json:"tool"`
+		Args map[string]any `json:"args"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Tool == "" {
+		http.Error(w, "tool is required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.mcpBridge.MCPCallJSON(r.Context(), req.Tool, req.Args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
+}
 
 // handleMCPDocs returns MCP tool documentation as JSON or HTML.
 func (s *Server) handleMCPDocs(w http.ResponseWriter, r *http.Request) {

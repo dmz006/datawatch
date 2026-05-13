@@ -20,7 +20,7 @@ func TestInheritWhisperEndpoint_OpenWebUI(t *testing.T) {
 	in := transcribePkg.BackendConfig{Backend: "openwebui"}
 	got := inheritWhisperEndpoint(in, cfg)
 
-	if got.Endpoint != "https://owui.local:8080" {
+	if got.Endpoint != "https://owui.local:8080/api/v1" {
 		t.Fatalf("openwebui endpoint not inherited: got %q", got.Endpoint)
 	}
 	if got.APIKey != "owui-key-abc" {
@@ -121,7 +121,7 @@ func TestInheritWhisperEndpoint_BackendCaseInsensitive(t *testing.T) {
 	in := transcribePkg.BackendConfig{Backend: "  OpenWebUI  "}
 	got := inheritWhisperEndpoint(in, cfg)
 
-	if got.Endpoint != "https://owui.local" {
+	if got.Endpoint != "https://owui.local/api/v1" {
 		t.Fatalf("case-insensitive + whitespace trim failed: got %q", got.Endpoint)
 	}
 }

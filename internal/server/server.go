@@ -94,6 +94,7 @@ var loopbackBypassPaths = []string{
 	"/api/sessions/",     // prefix (per-session sub-paths)
 	"/api/orchestrator/", // prefix
 	"/api/autonomous/",   // prefix
+	"/api/mcp/",          // prefix — channel bridge dynamic proxy (tools list + call)
 }
 
 func loopbackPathBypassed(p string) bool {
@@ -348,6 +349,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/info", api.handleChannelInfo)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
+	apiMux.HandleFunc("/api/mcp/tools", api.handleMCPTools)
+	apiMux.HandleFunc("/api/mcp/call", api.handleMCPCall)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
@@ -815,6 +818,9 @@ func (s *HTTPServer) SetOfflineQueue(queue interface{ PendingAll() map[string]in
 
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc = fn }
+
+// SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
+func (s *HTTPServer) SetMCPBridge(b mcpBridgeAPI) { s.api.SetMCPBridge(b) }
 func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
 func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
 

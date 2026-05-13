@@ -69,28 +69,19 @@ the request will be forwarded to the user automatically.`),
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	mcpSrv.AddTool(bridge.replyTool(), bridge.handleReply)
 
-	// v5.27.7 (BL212, datawatch#29) — operator-flagged: claude-code
-	// sessions had no MCP path to the parent's memory subsystem. The
-	// daemon's stdio MCP server registers memory tools, but this
-	// per-session bridge process only exposed `reply`. Adding the
-	// memory tools here (each forwards to the parent's existing
-	// /api/memory/* REST surface) closes the gap so claude-code can
-	// recall + remember + list memories without curl workarounds.
-	mcpSrv.AddTool(bridge.memoryRememberTool(), bridge.handleMemoryRemember)
-	mcpSrv.AddTool(bridge.memoryRecallTool(), bridge.handleMemoryRecall)
-	mcpSrv.AddTool(bridge.memoryListTool(), bridge.handleMemoryList)
-	mcpSrv.AddTool(bridge.memoryForgetTool(), bridge.handleMemoryForget)
-	mcpSrv.AddTool(bridge.memoryStatsTool(), bridge.handleMemoryStats)
-
-	// v5.28.5 (datawatch#33) — add KG tools to match daemon stdio surface.
-	// The daemon exposes kg_add / kg_query / kg_timeline / kg_invalidate /
-	// kg_stats but they weren't in the per-session channel bridge. Same
-	// pattern as memory tools: forward to /api/kg/* REST endpoints.
-	mcpSrv.AddTool(bridge.kgAddTool(), bridge.handleKGAdd)
-	mcpSrv.AddTool(bridge.kgQueryTool(), bridge.handleKGQuery)
-	mcpSrv.AddTool(bridge.kgTimelineTool(), bridge.handleKGTimeline)
-	mcpSrv.AddTool(bridge.kgInvalidateTool(), bridge.handleKGInvalidate)
-	mcpSrv.AddTool(bridge.kgStatsTool(), bridge.handleKGStats)
+	// Discover all daemon tools and register generic forwarding handlers.
+	// The reply tool above is the only hardcoded stub — it sends output back
+	// through the channel, not through the daemon's tool surface.
+	tools, err := bridge.discoverTools()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] tool discovery failed: %v; continuing with reply-only\n", err)
+	} else {
+		for _, t := range tools {
+			t := t
+			mcpSrv.AddTool(t.asMCPTool(), bridge.makeForwarder(t.Name))
+		}
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d daemon tools\n", len(tools))
+	}
 
 	// Start the HTTP listener first so the daemon and channel can begin
 	// pushing notifications immediately. Random port (0) picks a free
@@ -206,257 +197,6 @@ func (b *bridge) handleReply(ctx context.Context, req mcpsdk.CallToolRequest) (*
 	return mcpsdk.NewToolResultText("Reply sent."), nil
 }
 
-// ── memory tools (BL212, v5.27.7) ───────────────────────────────────────────
-// Forwarders to the parent's /api/memory/* REST surface so claude-code
-// sessions can use memory through the same bridge they already speak to
-// for reply / channel notifications. Each handler is intentionally thin:
-// the parent owns validation, dedup, embedding, etc. — the bridge's
-// only job is to plumb the call through.
-
-func (b *bridge) memoryRememberTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("memory_remember",
-		mcpsdk.WithDescription("Save a memory (note, decision, rule) for the current project to the parent datawatch daemon's episodic store. The parent embeds + dedups."),
-		mcpsdk.WithString("text",
-			mcpsdk.Required(),
-			mcpsdk.Description("The text to remember"),
-		),
-		mcpsdk.WithString("project_dir",
-			mcpsdk.Description("Project directory (empty = parent's default project)"),
-		),
-	)
-}
-
-func (b *bridge) handleMemoryRemember(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	text, _ := req.RequireString("text")
-	if text == "" {
-		return mcpsdk.NewToolResultError("text is required"), nil
-	}
-	body := map[string]any{
-		"text":        text,
-		"project_dir": req.GetString("project_dir", ""),
-	}
-	out, err := b.callParent(ctx, http.MethodPost, "/api/memory/save", body)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("save: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) memoryRecallTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("memory_recall",
-		mcpsdk.WithDescription("Semantic search across the parent daemon's episodic memory. Returns top matches ranked by similarity."),
-		mcpsdk.WithString("query",
-			mcpsdk.Required(),
-			mcpsdk.Description("Search query"),
-		),
-	)
-}
-
-func (b *bridge) handleMemoryRecall(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	query, _ := req.RequireString("query")
-	if query == "" {
-		return mcpsdk.NewToolResultError("query is required"), nil
-	}
-	out, err := b.callParent(ctx, http.MethodGet,
-		"/api/memory/search?q="+urlQueryEscape(query), nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("recall: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) memoryListTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("memory_list",
-		mcpsdk.WithDescription("List the most recently saved memories. Optional project_dir filter."),
-		mcpsdk.WithString("project_dir",
-			mcpsdk.Description("Project directory filter (empty = default project)"),
-		),
-		mcpsdk.WithNumber("n",
-			mcpsdk.Description("Number of memories to return (default 20)"),
-		),
-	)
-}
-
-func (b *bridge) handleMemoryList(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	n := req.GetInt("n", 20)
-	path := fmt.Sprintf("/api/memory/list?n=%d", n)
-	if pd := req.GetString("project_dir", ""); pd != "" {
-		path += "&project_dir=" + urlQueryEscape(pd)
-	}
-	out, err := b.callParent(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("list: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) memoryForgetTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("memory_forget",
-		mcpsdk.WithDescription("Delete a memory by its numeric ID."),
-		mcpsdk.WithNumber("id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Memory ID to delete"),
-		),
-	)
-}
-
-func (b *bridge) handleMemoryForget(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	id := req.GetInt("id", 0)
-	if id <= 0 {
-		return mcpsdk.NewToolResultError("id is required and must be positive"), nil
-	}
-	body := map[string]any{"id": id}
-	out, err := b.callParent(ctx, http.MethodPost, "/api/memory/delete", body)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("forget: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) memoryStatsTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("memory_stats",
-		mcpsdk.WithDescription("Memory subsystem stats from the parent daemon — total counts, db size, encryption status."),
-	)
-}
-
-func (b *bridge) handleMemoryStats(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := b.callParent(ctx, http.MethodGet, "/api/memory/stats", nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("stats: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-// ── KG subsystem (datawatch#33) ──────────────────────────────────────
-
-func (b *bridge) kgAddTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("kg_add",
-		mcpsdk.WithDescription("Add an entity + relations to the parent's knowledge graph."),
-		mcpsdk.WithString("entity", mcpsdk.Required(), mcpsdk.Description("Entity name")),
-		mcpsdk.WithString("entity_type", mcpsdk.Description("Optional entity type (person, project, etc.)")),
-		mcpsdk.WithString("relations", mcpsdk.Description("JSON array of {target, relation_type, confidence} objects")),
-		mcpsdk.WithString("metadata", mcpsdk.Description("Optional JSON metadata")),
-	)
-}
-
-func (b *bridge) handleKGAdd(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	entity, _ := req.RequireString("entity")
-	if entity == "" {
-		return mcpsdk.NewToolResultError("entity is required"), nil
-	}
-	body := map[string]any{
-		"entity": entity,
-	}
-	if v := req.GetString("entity_type", ""); v != "" {
-		body["entity_type"] = v
-	}
-	if v := req.GetString("relations", ""); v != "" {
-		body["relations"] = v
-	}
-	if v := req.GetString("metadata", ""); v != "" {
-		body["metadata"] = v
-	}
-	out, err := b.callParent(ctx, http.MethodPost, "/api/kg/add", body)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_add: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) kgQueryTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("kg_query",
-		mcpsdk.WithDescription("Query the parent's knowledge graph — find entities or relations."),
-		mcpsdk.WithString("query", mcpsdk.Required(), mcpsdk.Description("Entity name or relation query")),
-		mcpsdk.WithString("entity_type", mcpsdk.Description("Optional filter by entity type")),
-		mcpsdk.WithNumber("limit", mcpsdk.Description("Max results (default 10)")),
-	)
-}
-
-func (b *bridge) handleKGQuery(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	query, _ := req.RequireString("query")
-	if query == "" {
-		return mcpsdk.NewToolResultError("query is required"), nil
-	}
-	path := "/api/kg/query?q=" + urlQueryEscape(query)
-	if v := req.GetString("entity_type", ""); v != "" {
-		path += "&entity_type=" + urlQueryEscape(v)
-	}
-	if n := req.GetInt("limit", 0); n > 0 {
-		path += fmt.Sprintf("&limit=%d", n)
-	}
-	out, err := b.callParent(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_query: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) kgTimelineTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("kg_timeline",
-		mcpsdk.WithDescription("Timeline of edits to an entity in the knowledge graph."),
-		mcpsdk.WithString("entity", mcpsdk.Required(), mcpsdk.Description("Entity name")),
-		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 50)")),
-	)
-}
-
-func (b *bridge) handleKGTimeline(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	entity, _ := req.RequireString("entity")
-	if entity == "" {
-		return mcpsdk.NewToolResultError("entity is required"), nil
-	}
-	path := "/api/kg/timeline?entity=" + urlQueryEscape(entity)
-	if n := req.GetInt("limit", 0); n > 0 {
-		path += fmt.Sprintf("&limit=%d", n)
-	}
-	out, err := b.callParent(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_timeline: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) kgInvalidateTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("kg_invalidate",
-		mcpsdk.WithDescription("Invalidate an entity or all entities matching a pattern."),
-		mcpsdk.WithString("entity", mcpsdk.Description("Exact entity name")),
-		mcpsdk.WithString("pattern", mcpsdk.Description("Regex pattern to match entities (if entity not provided)")),
-	)
-}
-
-func (b *bridge) handleKGInvalidate(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	entity := req.GetString("entity", "")
-	pattern := req.GetString("pattern", "")
-	if entity == "" && pattern == "" {
-		return mcpsdk.NewToolResultError("entity or pattern is required"), nil
-	}
-	body := map[string]any{}
-	if entity != "" {
-		body["entity"] = entity
-	}
-	if pattern != "" {
-		body["pattern"] = pattern
-	}
-	out, err := b.callParent(ctx, http.MethodPost, "/api/kg/invalidate", body)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_invalidate: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
-func (b *bridge) kgStatsTool() mcpsdk.Tool {
-	return mcpsdk.NewTool("kg_stats",
-		mcpsdk.WithDescription("Statistics about the parent's knowledge graph — entity count, relation count, graph size."),
-	)
-}
-
-func (b *bridge) handleKGStats(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := b.callParent(ctx, http.MethodGet, "/api/kg/stats", nil)
-	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_stats: %v", err)), nil
-	}
-	return mcpsdk.NewToolResultText(string(out)), nil
-}
-
 // callParent is postToParent generalised for either GET or POST + a
 // body-returning shape. v5.27.7 added; the existing postToParent stays
 // for the fire-and-forget reply / ready / permission paths that don't
@@ -491,27 +231,6 @@ func (b *bridge) callParent(ctx context.Context, method, path string, body any) 
 		return nil, fmt.Errorf("parent %s %s: %d %s", method, path, resp.StatusCode, string(out))
 	}
 	return out, nil
-}
-
-// urlQueryEscape — minimal query-string escape for the GET paths.
-// Avoids a `net/url` import; the bridge uses tight stdlib only.
-func urlQueryEscape(s string) string {
-	var out []byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
-			c == '-', c == '_', c == '.', c == '~':
-			out = append(out, c)
-		case c == ' ':
-			out = append(out, '+')
-		default:
-			out = append(out, '%',
-				"0123456789ABCDEF"[c>>4],
-				"0123456789ABCDEF"[c&0xF])
-		}
-	}
-	return string(out)
 }
 
 // httpHandler — accepts daemon→bridge POSTs on /send and /permission.

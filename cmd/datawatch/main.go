@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.53"
+var Version = "7.0.0-alpha.54"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4494,6 +4494,11 @@ Return STRICT JSON:
 		mcpSrv.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
 		// KG MCP wiring — use unified adapter
 		// (MCP KG tools registered via SetKGAPI)
+	}
+
+	// Wire MCP bridge (channel proxy REST surface) to the HTTP server.
+	if httpServer != nil {
+		httpServer.SetMCPBridge(mcpSrv)
 	}
 
 	// Wire MCP tool docs to the HTTP server
