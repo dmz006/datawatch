@@ -12,7 +12,7 @@
 #   bash scripts/run-tests.sh --skip-conflict=signal   # skip conflict tag
 #   bash scripts/run-tests.sh --surface=api --feature=memory
 #
-# See internal/server/web/docs/testing/v7.0.0/plan.md for full story list.
+# See docs/testing/v7.0.0/plan.md for full story list.
 
 set -uo pipefail
 
@@ -36,7 +36,7 @@ TEST_BINARY="${TEST_BINARY:-$REPO_ROOT/bin/datawatch}"
 TEST_SIGNAL_GROUP="${TEST_SIGNAL_GROUP:-}"
 TEST_NTFY_TOPIC="${TEST_NTFY_TOPIC:-}"
 TEST_WEBHOOK_PORT="${TEST_WEBHOOK_PORT:-19080}"
-TESTING_ROOT="$REPO_ROOT/internal/server/web/docs/testing"
+TESTING_ROOT="$REPO_ROOT/docs/testing"
 RUN_DATE=$(date +%Y-%m-%d)
 # Find next sequential run index for today
 _run_idx=1
@@ -269,7 +269,7 @@ _write_summary() {
 - **Run dir**: $RUN_DIR
 - **Evidence**: $EVIDENCE_DIR
 - **Failures**: $RUN_DIR/failures.jsonl
-- **Plan**: internal/server/web/docs/testing/v7.0.0/plan.md
+- **Plan**: docs/testing/v7.0.0/plan.md
 RUNEOF
 }
 

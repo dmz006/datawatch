@@ -50,6 +50,10 @@ internal/memory/memory-wal.jsonl
 .gemini/
 internal/council/council/
 
-# E2E test isolation — data dir and run artifacts
+# E2E test isolation — ephemeral daemon data dir
 .datawatch-test/
-/testing/
+
+# E2E test run evidence (generated output, not source).
+# The runs/ folder itself is tracked via docs/testing/runs/.gitkeep;
+# individual run directories and their evidence are gitignored.
+docs/testing/runs/2*/

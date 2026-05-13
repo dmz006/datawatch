@@ -266,8 +266,8 @@ For each entry in `failures.jsonl`, spawn or run an agent to file a backlog item
 Surface: <from tags>
 Feature: <from tags>
 Blocking: yes/no
-Evidence: internal/server/web/docs/testing/runs/YYYY-MM-DD-NNN/evidence/TS-NNN/
-Story: internal/server/web/docs/testing/v7.0.0/plan.md#TS-NNN
+Evidence: docs/testing/runs/YYYY-MM-DD-NNN/evidence/TS-NNN/
+Story: docs/testing/v7.0.0/plan.md#TS-NNN
 
 Steps to reproduce:
   bash scripts/run-tests.sh --story=TS-NNN
