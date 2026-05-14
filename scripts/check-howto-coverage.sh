@@ -19,6 +19,7 @@ LLM_ONLY=(
     channel-state-engine
     README          # not a howto, just an index
     v7-compute-migration  # narrative migration doc (alpha.15) — explains what auto-migration did, no operator action steps
+    dashboard       # PWA-only view; navigation not callable from MCP — reference/conceptual doc
 )
 
 ERRORS=0

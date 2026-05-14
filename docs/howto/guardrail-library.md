@@ -2,6 +2,15 @@
 docs:
   index: true
   topics: [guardrails, autonomous, automata, security, scan]
+exec_params:
+  - {name: automaton_id, required: true, description: "Automaton ID to run a guardrail scan on"}
+exec_steps:
+  - tool: autonomous_prd_scan
+    description: Run all registered guardrail scans on the Automaton
+    args: {id: "{{params.automaton_id}}"}
+  - tool: autonomous_prd_scan_results
+    description: Retrieve scan results and verdicts
+    args: {id: "{{params.automaton_id}}"}
 ---
 # How-to: Guardrail Library
 

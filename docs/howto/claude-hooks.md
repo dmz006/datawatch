@@ -221,7 +221,7 @@ include what you have.
     "sprint": {
       "name": "Sprint 1",
       "id": "s1",
-      "automata": "BL303",
+      "automata": "my-feature-automata",
       "automata_id": "uuid",
       "task": "implement feature",
       "task_id": "t1"

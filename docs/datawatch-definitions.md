@@ -166,7 +166,7 @@ The header strip carries Status badge + Settings (`openPRDSettingsModal` — typ
 **See also:**
 [howto/autonomous-planning](howto/autonomous-planning.md) ·
 [howto/autonomous-review-approve](howto/autonomous-review-approve.md) ·
-[howto/prd-dag-orchestrator](howto/prd-dag-orchestrator.md) ·
+[howto/automata-orchestrator](howto/automata-orchestrator.md) ·
 [howto/algorithm-mode](howto/algorithm-mode.md) ·
 [howto/evals](howto/evals.md) ·
 [howto/council-mode](howto/council-mode.md) ·
@@ -409,7 +409,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Sessions | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | covered in active backlog | [`architecture-overview.md`](architecture-overview.md) |
 | Session Telemetry | [`howto/session-telemetry.md`](howto/session-telemetry.md) | ✓ | [`flow/telemetry-flow.md`](flow/telemetry-flow.md) |
 | Channel-driven session state engine | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | active backlog | covered in `architecture.md` |
-| Automata / PRD-DAG | [`howto/autonomous-planning.md`](howto/autonomous-planning.md), [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md), [`howto/prd-dag-orchestrator.md`](howto/prd-dag-orchestrator.md) | many plans | architecture covers it |
+| Automata / DAG orchestrator | [`howto/autonomous-planning.md`](howto/autonomous-planning.md), [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md), [`howto/automata-orchestrator.md`](howto/automata-orchestrator.md) | many plans | architecture covers it |
 | Skills | [`howto/skills-sync.md`](howto/skills-sync.md) | ✓ | ✓ |
 | Council Mode | [`howto/council-mode.md`](howto/council-mode.md) | ✓ | ✓ |
 | Algorithm Mode | [`howto/algorithm-mode.md`](howto/algorithm-mode.md) | ✓ | ✓ |
@@ -456,7 +456,7 @@ Comms + LLM:
 Automata + orchestration:
 - [`howto/autonomous-planning.md`](howto/autonomous-planning.md) — submit a free-form spec, watch it decompose
 - [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md) — PRD lifecycle gate
-- [`howto/prd-dag-orchestrator.md`](howto/prd-dag-orchestrator.md) — multi-PRD graphs with guardrails
+- [`howto/automata-orchestrator.md`](howto/automata-orchestrator.md) — multi-Automata graphs with guardrails
 - [`howto/pipeline-chaining.md`](howto/pipeline-chaining.md) — DAG pipelines with before/after gates
 
 Infrastructure:

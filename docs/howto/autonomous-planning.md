@@ -265,7 +265,7 @@ the spec without re-decomposing.
 ## Linked references
 
 - See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — the review flow.
-- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing Automata into DAGs.
+- See also: [`automata-orchestrator.md`](automata-orchestrator.md) — composing Automata into DAGs.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - See also: [`profiles.md`](profiles.md) — Project + Cluster Profiles.
 - Architecture: `../architecture-overview.md` § Autonomous executor.

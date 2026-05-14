@@ -17559,7 +17559,12 @@ function _dashLoop(ts) {
     if (_dash._smokeExpandedId && !_dash._smokeDetailFetching) {
       _dash._smokeDetailFetching = true;
       fetch('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId)).then(r => {
-        if (!r.ok) throw new Error();
+        if (r.status === 404) {
+          _dash._smokeExpandedId = null;
+          _dash._smokeExpandedData = null;
+          throw new Error('run not found');
+        }
+        if (!r.ok) throw new Error(r.status);
         return r.json();
       }).then(d => {
         if (d) _dash._smokeExpandedData = d;

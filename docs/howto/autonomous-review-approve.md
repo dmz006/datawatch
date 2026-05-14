@@ -237,7 +237,7 @@ the spec — the daemon picks up the changes on next run.
 ## Linked references
 
 - See also: [`autonomous-planning.md`](autonomous-planning.md) — full lifecycle.
-- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing Automata into DAGs.
+- See also: [`automata-orchestrator.md`](automata-orchestrator.md) — composing Automata into DAGs.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - Architecture: `../architecture-overview.md` § Autonomous executor.
 

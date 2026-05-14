@@ -262,4 +262,4 @@ Operators can edit step-level `task:` text between runs to refine.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-planning](autonomous-planning.md)
-- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)
+- [howto/automata-orchestrator](automata-orchestrator.md)

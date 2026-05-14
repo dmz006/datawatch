@@ -161,5 +161,5 @@ Full rewrite on every update; small-dataset assumption.
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
-- [howto/prd-dag-orchestrator](../howto/prd-dag-orchestrator.md)
+- [howto/automata-orchestrator](../howto/automata-orchestrator.md)
 - [howto/autonomous-planning](../howto/autonomous-planning.md)

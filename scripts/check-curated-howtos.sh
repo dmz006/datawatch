@@ -21,7 +21,7 @@ CURATED=(
     autonomous-review-approve algorithm-mode container-workers
     tailscale-mesh skills-sync federated-observer sessions-deep-dive
     cross-agent-memory chat-and-llm-quickstart voice-input mcp-tools
-    pipeline-chaining prd-dag-orchestrator evals
+    pipeline-chaining automata-orchestrator evals
 )
 
 ERRORS=0
