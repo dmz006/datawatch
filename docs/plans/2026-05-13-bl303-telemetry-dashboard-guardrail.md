@@ -3,7 +3,7 @@
 **Internal ID:** 4ce314b2  
 **Filed:** 2026-05-13  
 **datawatch-app issue:** https://github.com/dmz006/datawatch-app/issues/126 (Android / Wear / Auto)  
-**Status:** 🔄 S1 in progress
+**Status:** 🔄 S2 in progress
 
 ---
 
@@ -15,8 +15,8 @@
 ║  5 Sprints · ~80 tasks · Android/Wear/Auto via app #126         ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-S1 · Structured Session Telemetry Foundation     🔄 T01-T14 ✅ · T15-T22 📋
-S2 · Guardrail Library + Scan Unification        📋 QUEUED
+S1 · Structured Session Telemetry Foundation     ✅ COMPLETE (T01-T22)
+S2 · Guardrail Library + Scan Unification        🔄 IN PROGRESS
 S3 · Live Task Tree + Status Tab Dashboard       📋 QUEUED
 S4 · /dashboard Mission Control                  📋 QUEUED
 S5 · Rules Validation + Release                  📋 QUEUED
@@ -46,14 +46,14 @@ S5 · Rules Validation + Release                  📋 QUEUED
 | T12 | run-tests.sh: replace ANSI cookbook → structured payload | ✅ Done |
 | T13 | Unit tests: telemetry store, stamping, memory flush | ✅ Done (7 tests) |
 | T14 | Smoke: create session → fire hooks → verify telemetry endpoint | ✅ Done |
-| T15 | Telemetry response includes all fields Android/Wear/Auto need | 📋 |
-| T16 | Comment on datawatch-app #126 confirming telemetry endpoint live | 📋 |
-| T17 | Update docs/howto/claude-hooks.md: new structured payload schema | 📋 |
-| T18 | Update docs/api/sessions.md: telemetry endpoint + schema | 📋 |
-| T19 | New docs/howto/session-telemetry.md | 📋 |
-| T20 | New docs/flow/telemetry-flow.md | 📋 |
-| T21 | Update docs/datawatch-definitions.md: telemetry, sprint, task ancestry | 📋 |
-| T22 | 7-surface parity audit | 📋 |
+| T15 | Telemetry response includes all fields Android/Wear/Auto need | ✅ Done |
+| T16 | Comment on datawatch-app #126 confirming telemetry endpoint live | ✅ Done |
+| T17 | Update docs/howto/claude-hooks.md: new structured payload schema | ✅ Done |
+| T18 | Update docs/api/sessions.md: telemetry endpoint + schema | ✅ Done |
+| T19 | New docs/howto/session-telemetry.md | ✅ Done |
+| T20 | New docs/flow/telemetry-flow.md | ✅ Done |
+| T21 | Update docs/datawatch-definitions.md: telemetry, sprint, task ancestry | ✅ Done |
+| T22 | 7-surface parity audit | ✅ Done |
 
 ---
 

@@ -352,6 +352,54 @@ Lists `cs-*` tmux sessions on this host that have no corresponding entry in the 
 
 ---
 
+## Concepts & Glossary
+
+Key terms used across the docs, API, and hook payloads.
+
+**SessionTelemetry** — structured telemetry accumulated from hook
+payloads for a session. Contains the current task, active tool and
+file, sprint ancestry, task list with server-stamped timings, test
+counts, a progress float, guardrail verdicts, a link to the parent
+session, and a failure buffer. Retrieved via
+`GET /api/sessions/{id}/telemetry` or MCP `telemetry_get`.
+Ephemeral by default; durable with `persist_telemetry_on_stop`.
+
+**sprint** — in the hook payload schema, `sprint` maps to a Story in
+the Automata hierarchy: Automaton → Story (= sprint) → Task. The
+`sprint` object carries `name`, `id`, `automata`, `automata_id`,
+`task`, and `task_id` so telemetry can link back to the originating
+Automaton story. The word "sprint" is used in hook payloads and state
+files; "Story" is the UI label in the Automata view.
+
+**task ancestry** — the chain of identifiers from a TelemetryTask
+(`id`) up through the sprint (`task_id`, `id`) to the Automaton
+(`automata_id`). The full ancestry appears in the `sprint` field of
+the hook payload. Use `automata_id` with `autonomous_prd_get` to
+navigate from a telemetry task back to the Automata view.
+
+**failed_task_buf** — a per-session buffer of the last 5 hook events
+received before any task transitioned to `failed`. Written into
+`SessionTelemetry.FailedTaskBuf` on the failure transition. Useful
+for post-mortem: shows what tools ran, what output was produced, and
+what the session's state was immediately before the failure.
+
+**persist_telemetry_on_stop** — boolean config flag under `session:`
+in `datawatch.yaml`. When `true`, the daemon calls
+`flushTelemetryToMemory()` when a `Stop` or `SubagentStop` hook fires,
+serializing the session's `SessionTelemetry` to episodic memory with a
+compact summary. The entry is searchable via `memory_recall`. Default:
+`false` (ephemeral).
+
+**guardrail_verdict** — one result from a guardrail check, as reported
+in the hook payload's `guardrail_verdicts[]` array. Fields: `guardrail`
+(name of the check, e.g. `sast-scan`), `outcome` (`pass` | `warn` |
+`block`), and optional `summary` string. Verdicts are replaced on each
+event that carries `guardrail_verdicts[]` — they represent the most
+recent check results, not a cumulative log. Also appears in the
+orchestrator's `GET /api/orchestrator/verdicts` flat verdict log.
+
+---
+
 ## Core feature reference matrix
 
 Tracks which core features have how-to walkthroughs, plans, and architecture diagrams.
@@ -359,6 +407,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Feature | How-to | Plan | Architecture / diagram |
 |---|---|---|---|
 | Sessions | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | covered in active backlog | [`architecture-overview.md`](architecture-overview.md) |
+| Session Telemetry | [`howto/session-telemetry.md`](howto/session-telemetry.md) | ✓ | [`flow/telemetry-flow.md`](flow/telemetry-flow.md) |
 | Channel-driven session state engine | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | active backlog | covered in `architecture.md` |
 | Automata / PRD-DAG | [`howto/autonomous-planning.md`](howto/autonomous-planning.md), [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md), [`howto/prd-dag-orchestrator.md`](howto/prd-dag-orchestrator.md) | many plans | architecture covers it |
 | Skills | [`howto/skills-sync.md`](howto/skills-sync.md) | ✓ | ✓ |
@@ -388,6 +437,8 @@ Every core feature now has a dedicated how-to. Per-channel coverage on each is b
 Sessions + state:
 - [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) — anatomy, lifecycle, daemon-restart resume, debugging
 - [`howto/channel-state-engine.md`](howto/channel-state-engine.md) — why a session is in its current state; signals + diagnostic walkthrough
+- [`howto/session-telemetry.md`](howto/session-telemetry.md) — structured task telemetry, guardrail verdicts, persist-on-stop
+- [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, structured payload schema, TodoWrite integration
 
 PAI parity stack:
 - [`howto/identity-and-telos.md`](howto/identity-and-telos.md) — operator self-description; injected into every session's L0

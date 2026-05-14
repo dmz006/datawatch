@@ -38,6 +38,8 @@ you already have a daemon you can talk to.
 | [Federated observer](federated-observer.md) | Multi-host stats + envelope tree across primary + Shape A/B/C peers |
 | [Daemon operations](daemon-operations.md) | Day-two operator workflow: start / stop / restart / upgrade / diagnose / reload / logs |
 | [Sessions deep-dive](sessions-deep-dive.md) | Session anatomy, lifecycle, daemon-restart resume path, debugging when state goes wrong |
+| [Claude Code hooks](claude-hooks.md) | Auto-install, manual setup, structured hook payload schema, TodoWrite integration |
+| [Session Telemetry](session-telemetry.md) | Structured task telemetry from hook events: tasks[], guardrail verdicts, persist-on-stop |
 | [Channel state engine](channel-state-engine.md) | Why a session is in its current state; signals + diagnostic walkthrough |
 | [Identity + Telos](identity-and-telos.md) | One-time operator self-description; injected into every session's wake-up L0 layer |
 | [Algorithm Mode](algorithm-mode.md) | 7-phase structured-thinking harness (Observe → Improve) with per-phase capture |

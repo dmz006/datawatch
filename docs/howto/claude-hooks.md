@@ -203,6 +203,87 @@ The board renders a card for each field present in the payload:
 
 Fields not present in the payload are omitted from the board.
 
+## Structured telemetry payload
+
+In addition to the status-board fields, hook payloads support a
+richer structured schema that feeds the session telemetry endpoint
+(`GET /api/sessions/{id}/telemetry`). All fields are optional;
+include what you have.
+
+```json
+{
+  "event": "Stop | PostToolUse | UserPromptSubmit | SubagentStop",
+  "tool": "Bash | Read | Edit | ...",
+  "payload": {
+    "current_task": "implement story 3 task 2",
+    "tool": "Bash",
+    "file": "internal/server/hook_events.go",
+    "sprint": {
+      "name": "Sprint 1",
+      "id": "s1",
+      "automata": "BL303",
+      "automata_id": "uuid",
+      "task": "implement feature",
+      "task_id": "t1"
+    },
+    "tasks": [
+      {"id": "t1", "title": "Define schema", "status": "pending | in_progress | completed | failed"},
+      {"id": "t2", "title": "Wire endpoint",  "status": "in_progress"}
+    ],
+    "tests": {"pass": 319, "fail": 0, "skip": 0},
+    "progress": 75.0,
+    "guardrail_verdicts": [
+      {"guardrail": "sast-scan", "outcome": "pass | warn | block", "summary": "no issues"}
+    ],
+    "parent_session_id": "hostname-abcd"
+  }
+}
+```
+
+**Field notes:**
+
+- **`tasks[]`** — array of task objects. The daemon merges by `id`
+  across successive payloads; the client only needs to send current
+  state. Daemon stamps `started_at`, `completed_at`, and
+  `duration_ms` on status transitions (`pending → in_progress`,
+  `in_progress → completed | failed`) — the hook script does not
+  need to compute timings.
+- **`sprint`** — maps to the Automata story hierarchy (Automaton →
+  Story → Task). The `automata_id` + `task_id` fields allow
+  drill-down from the telemetry board back to the originating
+  Automaton.
+- **`progress`** — float 0–100; the percent-complete estimate for
+  the current sprint/session. Optional; omit if not tracked.
+- **`guardrail_verdicts[]`** — one entry per guardrail check that
+  ran in this event. The `outcome` field is `pass`, `warn`, or
+  `block`. Replaced (not merged) on each event that carries them.
+- **`parent_session_id`** — full session ID of the orchestrating
+  session, when this session is a sub-agent spawned by another.
+  Used to link telemetry across the session tree.
+- **`file`** — the file being operated on in a `PostToolUse` event.
+  Populated automatically by the hook script when `$TOOL_NAME` is
+  a file-targeting tool.
+
+## TodoWrite integration — automatic tasks[] from jq
+
+The auto-installed `post-event.sh` reads Claude Code's `TodoWrite`
+stdin (the JSON task list Claude maintains) and emits a `tasks[]`
+array when `jq` is on PATH. No changes to your hook script needed;
+install jq and the structured task list appears automatically in
+the telemetry board.
+
+If jq is not installed, the hook script falls back to omitting
+`tasks[]` — the rest of the payload is unaffected.
+
+To verify the integration is working:
+
+```sh
+datawatch session telemetry <id>
+# → tasks: [{id: "t1", title: "...", status: "in_progress", started_at: "..."}]
+```
+
+See [`howto/session-telemetry.md`](session-telemetry.md) for end-to-end usage.
+
 ## Common pitfalls
 
 - **Hooks not firing.** Check `chmod +x post-event.sh` and that

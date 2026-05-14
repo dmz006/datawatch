@@ -1470,6 +1470,22 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Always inject DATAWATCH_SESSION_ID + DATAWATCH_BASE_URL so Claude Code
+	// hook scripts can POST status-board events without needing daemon config.
+	{
+		port := 8080
+		if m.cfg != nil && m.cfg.Server.Port > 0 {
+			port = m.cfg.Server.Port
+		}
+		hookEnv := map[string]string{
+			"DATAWATCH_SESSION_ID": fullID,
+			"DATAWATCH_BASE_URL":   fmt.Sprintf("http://127.0.0.1:%d", port),
+		}
+		if err := m.tmux.SetEnvironment(tmuxSession, hookEnv); err != nil {
+			fmt.Printf("[warn] set DATAWATCH_SESSION_ID for %s: %v\n", sess.ID, err)
+		}
+	}
+
 	// Launch the LLM backend in the tmux session
 	if launchFn != nil {
 		var launchErr error

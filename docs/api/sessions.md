@@ -46,6 +46,57 @@ out from this transition.
 | `POST /api/sessions/import` | Import an orphan from disk. |
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
+| `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
+
+#### GET /api/sessions/{id}/telemetry
+
+Returns structured telemetry accumulated from hook payloads for
+the session. Ephemeral — wiped when the session is deleted unless
+`session.persist_telemetry_on_stop: true`.
+
+**Response schema:**
+
+```json
+{
+  "current_task": "string",
+  "tool": "string",
+  "file": "string",
+  "sprint": {
+    "name": "Sprint 1",
+    "id": "s1",
+    "automata": "string",
+    "automata_id": "uuid",
+    "task": "string",
+    "task_id": "string"
+  },
+  "tasks": [
+    {
+      "id": "string",
+      "title": "string",
+      "status": "pending | in_progress | completed | failed",
+      "started_at": "RFC3339 | null",
+      "completed_at": "RFC3339 | null",
+      "duration_ms": 0
+    }
+  ],
+  "tests": {"pass": 0, "fail": 0, "skip": 0},
+  "progress": 75.0,
+  "guardrail_verdicts": [
+    {"guardrail": "string", "outcome": "pass | warn | block", "summary": "string"}
+  ],
+  "parent_session_id": "string",
+  "failed_task_buf": [...],
+  "updated_at": "RFC3339"
+}
+```
+
+`failed_task_buf` contains the last 5 hook events received before
+any task transitioned to `failed`. Present only when a task failure
+occurred; used for drill-down diagnosis.
+
+Timings (`started_at`, `completed_at`, `duration_ms`) are
+server-stamped on task status transitions. Hook scripts do not
+need to compute or send them.
 
 ### MCP
 
@@ -53,8 +104,8 @@ out from this transition.
 `kill_session`, `rename_session`, `restart_session`,
 `delete_session`, `session_rollback`, `session_timeline`,
 `sessions_stale`, `session_reconcile`, `session_import`,
-`session_bind_agent`, `session_state` — see
-[`docs/api-mcp-mapping.md`](../api-mcp-mapping.md).
+`session_bind_agent`, `session_state`, `telemetry_get`,
+`telemetry_list` — see [`docs/api-mcp-mapping.md`](../api-mcp-mapping.md).
 
 ### CLI
 
@@ -67,6 +118,7 @@ datawatch session kill <id>
 datawatch session restart <id>
 datawatch session timeline <id>
 datawatch session rollback <id>
+datawatch session telemetry <id>
 ```
 
 ### Chat / messaging
@@ -84,6 +136,8 @@ Matrix / Twilio) supports the full session lexicon:
 | `send <id>: <text>` | Send input. |
 | `kill <id>` | Kill. |
 | `attach <id>` | Get an attach URL for the PWA. |
+| `telemetry <id>` | Return structured telemetry for a session. |
+| `telemetry list` | List all sessions with non-empty telemetry. |
 
 ## Configuration
 
@@ -105,7 +159,15 @@ session:
   stale_timeout_seconds: 1800
   schedule_settle_ms: 1500
   default_effort: normal     # quick | normal | thorough
+  persist_telemetry_on_stop: false  # flush structured telemetry to episodic memory on Stop
 ```
+
+**`persist_telemetry_on_stop`** — when `true`, structured telemetry
+(task list, progress, guardrail verdicts) is written to episodic
+memory when a session's `Stop` or `SubagentStop` hook fires. The
+memory entry is searchable via `memory_recall`. Telemetry is
+ephemeral by default (wiped on session delete); this flag makes it
+durable across daemon restarts.
 
 ## See also
 
