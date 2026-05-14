@@ -2899,23 +2899,28 @@ t13_ts160_isolated_start() {
   # Create config for Docker container (use 19xxx port range to avoid conflicts with test daemon)
   write_test_config "$DOCKER_SIM_DATA" "$DOCKER_SIM_HTTP" "$DOCKER_SIM_TLS" "$DOCKER_SIM_MCP" "$DOCKER_SIM_CHAN" "$TEST_TOKEN"
 
-  # Build a simple Docker image with the binary (use alpine as base)
+  # Build a simple Docker image with the binary (use debian-slim as base for glibc compatibility)
   local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
   cat > "$dockerfile" <<'DOCKEREOF'
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY datawatch /usr/local/bin/
+RUN chmod +x /usr/local/bin/datawatch
 EXPOSE 18180 18543 18281 18533
-ENTRYPOINT ["datawatch", "start", "--config", "/config/config.yaml", "--port", "18180"]
+ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--config", "/config/config.yaml", "--port", "18180"]
 DOCKEREOF
 
-  # Copy binary into build context
-  cp "$TEST_BINARY" "$DOCKER_SIM_DATA/datawatch"
+  # Copy binary into build context (ensure it exists first)
+  if [[ ! -f "$TEST_BINARY" ]]; then
+    skip "datawatch binary not found at $TEST_BINARY"
+    return
+  fi
+  cp "$TEST_BINARY" "$DOCKER_SIM_DATA/datawatch" || { skip "failed to copy binary"; return; }
 
   # Build image
   local image_tag="datawatch-e2e-test:$$"
   if ! docker build -t "$image_tag" "$DOCKER_SIM_DATA" > "$DOCKER_SIM_DATA/build.log" 2>&1; then
-    skip "docker build failed"
+    skip "docker build failed: $(tail -5 $DOCKER_SIM_DATA/build.log 2>/dev/null)"
     return
   fi
 
