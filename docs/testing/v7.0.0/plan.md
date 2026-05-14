@@ -13,11 +13,14 @@ Every test run integrates with the datawatch dashboard. Open the PWA at `https:/
 
 ### Smoke Run Card (BL303)
 
-`scripts/release-smoke.sh` writes `~/.datawatch/smoke-progress.json` before each of its 61 sections. The **Smoke Run** card on the dashboard polls `/api/smoke/progress` every 2.5 seconds during an active run and shows:
+Both `scripts/release-smoke.sh` and `scripts/run-tests.sh` write per-run progress to `~/.datawatch/smoke-runs/{run_id}.json`. The **Smoke Run** card on the dashboard polls `GET /api/smoke/progress` (which returns an array of all run envelopes) every 2.5 seconds and shows:
 
-- Pass / Fail / Skip counts with a live progress bar
-- The currently running section name
+- A selectable list of run envelopes (expandable, deletable per run)
+- Pass / Fail / Skip counts with a live progress bar for the selected run
+- The currently running section or story name
 - A compact history of completed sections (✅ pass · ❌ fail · ⏭ skip)
+
+> **Note**: The old single-file `~/.datawatch/smoke-progress.json` has been replaced by the multi-envelope directory `~/.datawatch/smoke-runs/`. Each run gets its own `{run_id}.json` file.
 
 To add the Smoke Run card to your dashboard layout: click **Edit** in the dashboard stat bar → **Add** → select **🔬 Smoke Run**.
 
@@ -65,8 +68,8 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | Isolation | Same host; custom data dir `.datawatch-test/` at repo root (gitignored); ports 18080/18443/18081/18433 |
 | Evidence | Structured JSON + screenshots saved to `docs/testing/v7.0.0/evidence/TS-NNN/` (gitignored) |
 | Organisation | T1–T10 native features, T11 PWA, T12 Advanced, T13 Docker simulation, T14 Kubernetes |
-| Comms scope | DNS (T9/full), Generic Webhook (T9/full), ntfy (T9/partial), Signal (T9/partial — shared prod signal-cli, dedicated test group) |
-| Comms future | Slack, Telegram, Discord, Matrix, Twilio, Email, GitHub Webhook — T9 future stubs |
+| Comms scope | DNS (T9/full), Generic Webhook (T9/full), ntfy (T9/conditional — skip if `TEST_NTFY_TOPIC` unset), Signal (T9/full — production group at `+18435409771`, auto-runs) |
+| Comms future | Slack, Discord, Telegram, Matrix, Twilio, Email, GitHub Webhook — not configured on this machine; T9 future stubs, always skip |
 | Parallelism | Tag-based; single-thread now, parallel later via runner flag |
 | Cleanup | After every run: stop test daemon, remove `.datawatch-test/`, remove evidence/, remove all `test-*` resources |
 | Pass criteria | HTTP response matches expected shape (asserted via python3); CLI stdout matches pattern; PWA screenshot saved + no console errors |
@@ -84,8 +87,10 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | `TEST_TOKEN` | `dw-test-token-12345` | Bearer token |
 | `TEST_DATA` | `.datawatch-test` | Data directory (relative to repo root) |
 | `TEST_BINARY` | `./bin/datawatch` | Path to daemon binary |
-| `TEST_SIGNAL_GROUP` | *(unset)* | Signal group ID for comm tests |
-| `TEST_NTFY_TOPIC` | *(unset)* | ntfy topic for comm tests |
+| `TEST_SIGNAL_GROUP` | `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=` | Signal group ID for comm tests (production group) |
+| `TEST_NTFY_TOPIC` | *(unset)* | ntfy topic for comm tests — skip TS-099 if unset |
+| `TEST_OLLAMA_HOST` | `http://datawatch:11434` | Ollama base URL for LLM-tagged stories |
+| `K8S_CONTEXT` | `testing` | kubectl context for T14 Kubernetes stories |
 | `TEST_WEBHOOK_PORT` | `19080` | Local listener port for webhook receipt |
 | `TEST_SURFACE` | *(unset)* | Filter: `api\|cli\|pwa\|mcp\|comms\|docker\|k8s` |
 | `TEST_FEATURE` | *(unset)* | Filter: `sessions\|automata\|memory\|...` |
@@ -161,15 +166,28 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | `[feature:locale]` | Locale/i18n key completeness |
 
 ### Conflict tags
-| Tag | Meaning |
-|---|---|
-| `[conflict:signal]` | Requires shared signal-cli instance |
-| `[conflict:db-write]` | Mutates persistent data (skip in read-only mode) |
-| `[conflict:llm]` | Requires live LLM backend |
-| `[conflict:pwa]` | Requires Chrome plugin |
-| `[conflict:k8s]` | Requires kubectl + testing cluster |
-| `[conflict:keepassxc]` | Requires keepassxc-cli binary |
-| `[conflict:op]` | Requires 1Password op CLI binary |
+
+| Tag | Auto-run? | Notes |
+|---|---|---|
+| `[conflict:signal]` | ✅ runs automatically | Signal CLI available: account `+18435409771`, production group configured as default |
+| `[conflict:llm]` | ✅ runs automatically | Ollama at `http://datawatch:11434`, model `qwen3:1.7b` pulled; daemon wired in test config |
+| `[conflict:k8s]` | ✅ runs automatically | `kubectl --context=testing`, 3-node cluster; full deploy stories (TS-172/173/174/176) honest-skip (no container image) |
+| `[conflict:pwa]` | ⎈ separate agent | Chrome plugin available; T11 stories run by a browser automation agent, not by `run-tests.sh` |
+| `[conflict:db-write]` | ✅ runs automatically | Mutates test data dir only; cleaned up after every run |
+| `[conflict:keepassxc]` | ⛔ always skip | `keepassxc-cli` not installed on this machine |
+| `[conflict:op]` | ⛔ always skip | `op` (1Password CLI) not installed on this machine |
+| `[conflict:ntfy]` | ⚠ skip unless set | `TEST_NTFY_TOPIC` not set; TS-099 skips unless the env var is provided |
+
+### What Cannot Be Tested
+
+The following are explicitly excluded from automated runs. They are documented here so that gaps are acknowledged, not hidden.
+
+- **KeePass backend** (`[conflict:keepassxc]`): `keepassxc-cli` not installed. TS-058 always skips.
+- **1Password backend** (`[conflict:op]`): `op` CLI not installed. TS-059 always skips.
+- **ntfy** (`[conflict:ntfy]`): `TEST_NTFY_TOPIC` not set. TS-099 skips unless the env var is provided at runtime.
+- **Slack, Discord, Telegram, Matrix, Twilio, Email comm backends**: Not configured on this machine. T9 stubs for these backends always skip.
+- **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): No container image exists yet. These skip with an honest "no image" message; the namespace/configmap/probe-pod stories (TS-170, TS-171, TS-175, TS-177) do run.
+- **T11 PWA stories**: Run separately by a browser automation agent using `mcp__claude-in-chrome__*` tools; not included in `run-tests.sh`.
 
 ---
 
@@ -1220,16 +1238,15 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 ---
 
-### TS-094 — Signal: configure test group + send + verify comm_stats (SKIP if group unset)
-**Tags**: [surface:api] [feature:comms] [conflict:signal]  
+### TS-094 — Signal: configure test group + send + verify comm_stats
+**Tags**: [surface:api] [feature:comms]  
 **Steps**:
-1. If `$TEST_SIGNAL_GROUP == ""`, SKIP with message "TEST_SIGNAL_GROUP not set"
-2. PUT config: `curl ... -d '{"signal.enabled":true,"signal.group":"'"$TEST_SIGNAL_GROUP"'"}' $TEST_BASE/api/config`
-3. Read `comm_stats` before
-4. `curl ... -X POST -d '{"backend":"signal","message":"datawatch e2e test — ignore"}' $TEST_BASE/api/comm/send`
-5. Assert `comm_stats.signal.msg_sent` incremented
-6. Save to `evidence/TS-094/`
-**Expected**: Signal msg_sent increments  
+1. PUT config: `curl ... -d '{"signal.enabled":true,"signal.group":"'"$TEST_SIGNAL_GROUP"'","signal.config_dir":"/home/dmz/.local/share/signal-cli"}' $TEST_BASE/api/config`
+2. Read `comm_stats` before
+3. `curl ... -X POST -d '{"backend":"signal","message":"datawatch e2e test — ignore"}' $TEST_BASE/api/comm/send`
+4. Assert `comm_stats.signal.msg_sent` incremented
+5. Save to `evidence/TS-094/`
+**Expected**: Signal msg_sent increments (account `+18435409771`, production group `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`)  
 **Evidence**: `put.json`, `send.json`, `stats.json`  
 **Status**: 📋 planned
 

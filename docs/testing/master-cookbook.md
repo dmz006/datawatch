@@ -2,7 +2,34 @@
 
 **How to update**: Run `bash scripts/run-tests.sh` — updates this file automatically after every run.
 
-**Monitor live**: Open the dashboard at `https://localhost:8443` — the **🔬 Smoke Run** card shows real-time progress while `release-smoke.sh` runs (polls `/api/smoke/progress`). Add it via Edit → Add Card → Smoke Run.
+**Monitor live**: Open the dashboard at `https://localhost:8443` — the **🔬 Smoke Run** card shows real-time progress while `release-smoke.sh` or `run-tests.sh` runs. The card polls `GET /api/smoke/progress` and shows a selectable list of run envelopes written to `~/.datawatch/smoke-runs/`. Add it via Edit → Add Card → Smoke Run.
+
+---
+
+## Test Environment
+
+| Component | Value |
+|-----------|-------|
+| LLM backend | Ollama at `http://datawatch:11434`, model: `qwen3:1.7b` |
+| Memory embedder | Ollama `nomic-embed-text` at `http://datawatch:11434` |
+| Signal | Account `+18435409771`, group: `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`, config: `/home/dmz/.local/share/signal-cli` |
+| Kubernetes | `kubectl --context=testing` (3-node cluster) |
+| PWA testing | Chrome plugin (`mcp__claude-in-chrome__*`) — run separately, not via `run-tests.sh` |
+| KeePass | NOT AVAILABLE — `keepassxc-cli` not installed |
+| 1Password | NOT AVAILABLE — `op` CLI not installed |
+| ntfy | NOT AVAILABLE by default — set `TEST_NTFY_TOPIC` to enable TS-099 |
+| Slack / Discord / Telegram / Matrix / Twilio / Email | NOT CONFIGURED — always skip |
+
+### Cannot Be Tested
+
+The following items are excluded from automated runs. Gaps are documented, not hidden.
+
+- **KeePass backend** (`[conflict:keepassxc]`): `keepassxc-cli` not installed. TS-058 always skips.
+- **1Password backend** (`[conflict:op]`): `op` CLI not installed. TS-059 always skips.
+- **ntfy** (`[conflict:ntfy]`): `TEST_NTFY_TOPIC` not set. TS-099 skips unless the env var is provided at runtime.
+- **Slack, Discord, Telegram, Matrix, Twilio, Email comm backends**: Not configured. T9 stubs always skip.
+- **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): No container image yet. Honest-skip with a clear message; namespace/configmap/probe-pod stories (TS-170, TS-171, TS-175, TS-177) run normally.
+- **T11 PWA stories**: Run separately by a browser automation agent using `mcp__claude-in-chrome__*` — not included in `run-tests.sh`.
 
 ---
 
@@ -78,8 +105,8 @@
 | T6 | TS-055 | GET /api/config mcp.enabled present | surface:api feature:config | 📋 planned | — | — |
 | T6 | TS-056 | PUT /api/config skip_permissions round-trip | surface:api feature:config | 📋 planned | — | — |
 | T6 | TS-057 | PUT /api/config autonomous.enabled round-trip | surface:api feature:config | 📋 planned | — | — |
-| T6 | TS-058 | keepass config section present | surface:api feature:secrets feature:config conflict:keepassxc | 📋 planned | — | — |
-| T6 | TS-059 | 1Password config section present | surface:api feature:secrets feature:config conflict:op | 📋 planned | — | — |
+| T6 | TS-058 | keepass config section present | surface:api feature:secrets feature:config conflict:keepassxc | 📋 planned | — | always skip — keepassxc-cli not installed |
+| T6 | TS-059 | 1Password config section present | surface:api feature:secrets feature:config conflict:op | 📋 planned | — | always skip — op CLI not installed |
 | T7 | TS-060 | GET /api/plugins returns array | surface:api feature:plugins | 📋 planned | — | — |
 | T7 | TS-061 | GET /api/tooling/status returns shape | surface:api feature:plugins | 📋 planned | — | — |
 | T7 | TS-062 | GET /api/skills/registries returns array | surface:api feature:skills | 📋 planned | — | — |
