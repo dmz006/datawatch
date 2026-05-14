@@ -249,6 +249,11 @@ const (
 	//   "memory scope {recall,borrow,seed,promote} ..."
 	CmdMemory CommandType = "memory"
 
+	// BL303 S1 — structured session telemetry over chat.
+	//   "telemetry <id>"              → GET /api/sessions/<id>/telemetry
+	//   "telemetry list"              → list telemetry summary for all sessions
+	CmdTelemetry CommandType = "telemetry"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -400,6 +405,12 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "status "):
 		return Command{Type: CmdStatus, SessionID: strings.TrimSpace(text[7:])}
+
+	case lower == "telemetry list" || lower == "telemetry":
+		return Command{Type: CmdTelemetry, Text: "list"}
+
+	case strings.HasPrefix(lower, "telemetry "):
+		return Command{Type: CmdTelemetry, SessionID: strings.TrimSpace(text[10:])}
 
 	case strings.HasPrefix(lower, "send "):
 		// format: "send <id>: <text>"

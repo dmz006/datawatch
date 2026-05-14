@@ -1138,6 +1138,12 @@ type SessionConfig struct {
 	// GitignoreCheckOnStart (BL219) — when true, verifies and updates
 	// ignore files on every session start. Default: true.
 	GitignoreCheckOnStart bool `yaml:"gitignore_check_on_start,omitempty"`
+
+	// PersistTelemetryOnStop (BL303 S1) — when true, the daemon serializes
+	// the session's structured telemetry (task list + timings + verdicts) to
+	// episodic memory when a Stop event arrives. Requires memory.enabled=true.
+	// Default: false (telemetry is ephemeral; wiped on session delete).
+	PersistTelemetryOnStop bool `yaml:"persist_telemetry_on_stop,omitempty"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.

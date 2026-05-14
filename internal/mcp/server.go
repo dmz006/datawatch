@@ -46,6 +46,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
+	dwserver "github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
@@ -188,6 +189,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolStartSession(), tracked(s.handleStartSession))
 	mcpSrv.AddTool(s.toolSessionOutput(), tracked(s.handleSessionOutput))
 	mcpSrv.AddTool(s.toolSessionTimeline(), tracked(s.handleSessionTimeline))
+	// BL303 S1 — structured session telemetry.
+	mcpSrv.AddTool(s.toolTelemetryGet(), tracked(s.handleTelemetryGet))
+	mcpSrv.AddTool(s.toolTelemetryList(), tracked(s.handleTelemetryList))
 	mcpSrv.AddTool(s.toolSendInput(), tracked(s.handleSendInput))
 	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
 	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
@@ -795,6 +799,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolStartSession, "start_session"},
 		{s.toolSessionOutput, "session_output"},
 		{s.toolSessionTimeline, "session_timeline"},
+		{s.toolTelemetryGet, "telemetry_get"},
+		{s.toolTelemetryList, "telemetry_list"},
 		{s.toolSendInput, "send_input"},
 		{s.toolKillSession, "kill_session"},
 		{s.toolRenameSession, "rename_session"},
@@ -1298,6 +1304,80 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 	sb.WriteString(fmt.Sprintf("[%s] Timeline (format: timestamp | event | details):\n\n", sess.ID))
 	for _, l := range lines {
 		sb.WriteString(l)
+		sb.WriteByte('\n')
+	}
+	return mcpsdk.NewToolResultText(sb.String()), nil
+}
+
+// BL303 S1 — telemetry_get / telemetry_list MCP tools.
+
+func (s *Server) toolTelemetryGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("telemetry_get",
+		mcpsdk.WithDescription("Get the structured telemetry for a session: task list with daemon-stamped timings, guardrail verdicts, sprint ancestry, tests, and the last 5 hook events before any task failure."),
+		mcpsdk.WithString("session_id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID)"),
+		),
+	)
+}
+
+func (s *Server) toolTelemetryList() mcpsdk.Tool {
+	return mcpsdk.NewTool("telemetry_list",
+		mcpsdk.WithDescription("List telemetry summary for all active sessions: task counts, progress, and hook health."),
+	)
+}
+
+func (s *Server) handleTelemetryGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+	}
+	if s.webPort <= 0 {
+		return mcpsdk.NewToolResultText("Error: daemon API not available"), nil
+	}
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/sessions/%s/telemetry", s.webPort, id))
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+func (s *Server) handleTelemetryList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	sessions := s.manager.ListSessions()
+	if len(sessions) == 0 {
+		return mcpsdk.NewToolResultText("No active sessions."), nil
+	}
+	var sb strings.Builder
+	sb.WriteString("SESSION TELEMETRY SUMMARY\n")
+	sb.WriteString("─────────────────────────────────────────\n")
+	for _, sess := range sessions {
+		board := dwserver.HookBoardFor(sess.ID)
+		sb.WriteString(fmt.Sprintf("%-20s  health:%-8s  state:%-10s",
+			sess.ID, board.HookHealth, board.State))
+		if board.Telemetry != nil {
+			t := board.Telemetry
+			done, total := 0, len(t.Tasks)
+			for _, tk := range t.Tasks {
+				if tk.Status == "completed" {
+					done++
+				}
+			}
+			if total > 0 {
+				sb.WriteString(fmt.Sprintf("  tasks:%d/%d", done, total))
+			}
+			if t.Progress > 0 {
+				sb.WriteString(fmt.Sprintf("  progress:%.0f%%", t.Progress))
+			}
+			if t.CurrentTask != "" {
+				task := t.CurrentTask
+				if len(task) > 40 {
+					task = task[:37] + "..."
+				}
+				sb.WriteString(fmt.Sprintf("  task:%q", task))
+			}
+		}
 		sb.WriteByte('\n')
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil

@@ -28,6 +28,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -337,7 +338,21 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 		Payload:   body.Payload,
 	}
 	globalHookStore.record(sid, ev)
+	// Persist-on-stop: flush structured telemetry to episodic memory on Stop events.
+	if (body.Event == "Stop" || body.Event == "SubagentStop") &&
+		s.cfg != nil && s.cfg.Session.PersistTelemetryOnStop &&
+		s.memoryBackend != nil {
+		s.flushTelemetryToMemory(sid)
+	}
 	writeJSONOK(w, map[string]any{"ok": true, "session_id": sid, "event": body.Event})
+}
+
+// HookBoardFor — BL303. Returns a copy of the hook status board for a
+// session, for in-process callers such as the MCP telemetry_list tool.
+// Returns an empty board (HookHealth="missing") if the session has no
+// recorded events yet.
+func HookBoardFor(sessionID string) *SessionStatusBoard {
+	return globalHookStore.board(sessionID)
 }
 
 // RecordHookEvent — alpha.34d #281. Public entry point for in-process
@@ -429,4 +444,41 @@ func (s *Server) handleSessionTelemetry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSONOK(w, board.Telemetry)
+}
+
+// flushTelemetryToMemory serializes a session's structured telemetry to
+// episodic memory. Called on Stop when persist_telemetry_on_stop=true.
+func (s *Server) flushTelemetryToMemory(sessionID string) {
+	board := globalHookStore.board(sessionID)
+	if board == nil || board.Telemetry == nil {
+		return
+	}
+	t := board.Telemetry
+	// Build a compact human-readable summary for the memory content.
+	done, failed := 0, 0
+	for _, tk := range t.Tasks {
+		switch tk.Status {
+		case "completed":
+			done++
+		case "failed":
+			failed++
+		}
+	}
+	summary := fmt.Sprintf("Session %s telemetry: %d tasks (%d done, %d failed)",
+		sessionID, len(t.Tasks), done, failed)
+	if t.CurrentTask != "" {
+		summary += "; last task: " + t.CurrentTask
+	}
+	// Marshal full telemetry as JSON content.
+	raw, err := json.Marshal(t)
+	if err != nil {
+		return
+	}
+	projectDir := ""
+	if s.manager != nil {
+		if sess, ok := s.manager.GetSession(sessionID); ok {
+			projectDir = sess.ProjectDir
+		}
+	}
+	_, _ = s.memoryBackend.Save(projectDir, string(raw), summary, "telemetry", sessionID, nil)
 }

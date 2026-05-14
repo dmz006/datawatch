@@ -95,8 +95,9 @@ func Install(projectDir, sessionFullID, daemonURL, token string) error {
 	_ = os.WriteFile(settingsPath, body, 0o644)
 
 	// post-event.sh — deterministic; always rewrite.
+	// BL303 S1: extended to parse TodoWrite stdin into structured tasks[].
 	scriptBody := `#!/usr/bin/env bash
-# datawatch hook event POST — auto-installed (alpha.34a #202).
+# datawatch hook event POST — auto-installed (BL303 S1).
 # Args: $1 = event name (Stop/PostToolUse/UserPromptSubmit/SubagentStop)
 #       $2 = optional tool name (PostToolUse only)
 set -euo pipefail
@@ -105,10 +106,37 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVENT="${1:-}"
 TOOL="${2:-}"
 [[ -z "$EVENT" ]] && exit 0
+
+# Read stdin (Claude Code passes hook data as JSON for PostToolUse).
+STDIN_DATA=""
+if [[ "$EVENT" == "PostToolUse" ]]; then
+  STDIN_DATA=$(cat 2>/dev/null || true)
+fi
+
+# Start from state.json base payload.
 PAYLOAD='{}'
 if [[ -f "$SCRIPT_DIR/state.json" ]]; then
   PAYLOAD=$(cat "$SCRIPT_DIR/state.json" 2>/dev/null || echo '{}')
 fi
+
+# BL303: parse TodoWrite output into structured tasks[] array.
+# Requires jq; gracefully skips if jq unavailable or data malformed.
+if [[ "$TOOL" == "TodoWrite" && -n "$STDIN_DATA" ]] && command -v jq &>/dev/null; then
+  TASKS=$(echo "$STDIN_DATA" | jq -c '[
+    .tool_input.todos // [] | .[] |
+    {
+      id: (.id // (.content | @base64 | .[0:8])),
+      title: .content,
+      status: (if .status == "completed" then "completed"
+               elif .status == "in_progress" then "in_progress"
+               else "pending" end)
+    }
+  ]' 2>/dev/null || echo "null")
+  if [[ "$TASKS" != "null" && "$TASKS" != "[]" ]]; then
+    PAYLOAD=$(echo "$PAYLOAD" | jq --argjson t "$TASKS" '. + {tasks: $t}' 2>/dev/null || echo "$PAYLOAD")
+  fi
+fi
+
 curl -ks -X POST "${DAEMON_URL:-https://localhost:8443}/api/sessions/${SESSION_ID}/hook-event" \
   -H "Content-Type: application/json" \
   ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} \

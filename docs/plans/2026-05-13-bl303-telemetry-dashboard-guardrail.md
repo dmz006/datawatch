@@ -15,7 +15,7 @@
 ║  5 Sprints · ~80 tasks · Android/Wear/Auto via app #126         ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-S1 · Structured Session Telemetry Foundation     🔄 T02-T05 ✅ · T06-T22 📋
+S1 · Structured Session Telemetry Foundation     🔄 T01-T14 ✅ · T15-T22 📋
 S2 · Guardrail Library + Scan Unification        📋 QUEUED
 S3 · Live Task Tree + Status Tab Dashboard       📋 QUEUED
 S4 · /dashboard Mission Control                  📋 QUEUED
@@ -37,13 +37,13 @@ S5 · Rules Validation + Release                  📋 QUEUED
 | T03 | Daemon-side task transition stamping (diff successive payloads) | ✅ Done |
 | T04 | Failed task event buffer (last 5 hook events before failure) | ✅ Done |
 | T05 | GET /api/sessions/{id}/telemetry endpoint | ✅ Done |
-| T06 | Persist-on-stop flag + memory flush on Stop event | 📋 |
-| T07 | MCP: telemetry_get, telemetry_list | 📋 |
-| T08 | CLI: datawatch session telemetry \<id\> | 📋 |
-| T09 | Comm verb: telemetry | 📋 |
-| T10 | YAML: persist_telemetry_on_stop config flag | 📋 |
-| T11 | datawatch-hook.sh: parse TodoWrite from PostToolUse stdin, emit structured tasks array | 📋 |
-| T12 | run-tests.sh: replace ANSI cookbook → structured payload | 📋 |
+| T06 | Persist-on-stop flag + memory flush on Stop event | ✅ Done |
+| T07 | MCP: telemetry_get, telemetry_list | ✅ Done |
+| T08 | CLI: datawatch session telemetry \<id\> | ✅ Done |
+| T09 | Comm verb: telemetry | ✅ Done |
+| T10 | YAML: persist_telemetry_on_stop config flag | ✅ Done |
+| T11 | datawatch-hook.sh: parse TodoWrite from PostToolUse stdin, emit structured tasks array | ✅ Done |
+| T12 | run-tests.sh: replace ANSI cookbook → structured payload | ✅ Done |
 | T13 | Unit tests: telemetry store, stamping, memory flush | ✅ Done (7 tests) |
 | T14 | Smoke: create session → fire hooks → verify telemetry endpoint | ✅ Done |
 | T15 | Telemetry response includes all fields Android/Wear/Auto need | 📋 |

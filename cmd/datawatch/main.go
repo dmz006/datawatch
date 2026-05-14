@@ -6954,6 +6954,20 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// BL303 S1: session telemetry <id> — show structured telemetry for a session
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "telemetry <id>",
+		Short: "Show structured telemetry for a session (tasks, timings, guardrail verdicts)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionTelemetry(cfg, args[0])
+		},
+	})
+
 	// session stop-all — kill all running sessions on this host
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "stop-all",
@@ -7628,6 +7642,108 @@ func runSessionTimeline(cfg *config.Config, id string) error {
 		return fmt.Errorf("read timeline: %w", err3)
 	}
 	fmt.Printf("Timeline for %s:\n\n%s\n", sess.FullID, string(data))
+	return nil
+}
+
+// runSessionTelemetry — BL303 S1: datawatch session telemetry <id>
+func runSessionTelemetry(cfg *config.Config, id string) error {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback to self-signed daemon
+		},
+	}
+	resp, err := client.Get(fmt.Sprintf("%s/api/sessions/%s/telemetry", loopbackBaseURL(cfg), id))
+	if err != nil {
+		return fmt.Errorf("daemon unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(body))
+	}
+	var tel struct {
+		CurrentTask       string  `json:"current_task"`
+		Tool              string  `json:"tool"`
+		File              string  `json:"file"`
+		Progress          float64 `json:"progress"`
+		ParentSessionID   string  `json:"parent_session_id"`
+		Tasks             []struct {
+			ID          string  `json:"id"`
+			Title       string  `json:"title"`
+			Status      string  `json:"status"`
+			DurationMs  int64   `json:"duration_ms"`
+		} `json:"tasks"`
+		Tests             map[string]any `json:"tests"`
+		GuardrailVerdicts []struct {
+			Guardrail string `json:"guardrail"`
+			Outcome   string `json:"outcome"`
+			Summary   string `json:"summary"`
+		} `json:"guardrail_verdicts"`
+		UpdatedAt string `json:"updated_at"`
+	}
+	if err := json.Unmarshal(body, &tel); err != nil {
+		fmt.Println(string(body))
+		return nil
+	}
+
+	fmt.Printf("Telemetry for session %s\n", id)
+	fmt.Printf("  Updated:      %s\n", tel.UpdatedAt)
+	if tel.CurrentTask != "" {
+		fmt.Printf("  Current task: %s\n", tel.CurrentTask)
+	}
+	if tel.Tool != "" {
+		fmt.Printf("  Last tool:    %s\n", tel.Tool)
+	}
+	if tel.File != "" {
+		fmt.Printf("  File:         %s\n", tel.File)
+	}
+	if tel.Progress > 0 {
+		fmt.Printf("  Progress:     %.0f%%\n", tel.Progress)
+	}
+	if tel.ParentSessionID != "" {
+		fmt.Printf("  Parent:       %s\n", tel.ParentSessionID)
+	}
+	if len(tel.Tasks) > 0 {
+		fmt.Printf("\nTasks (%d):\n", len(tel.Tasks))
+		for _, t := range tel.Tasks {
+			suffix := ""
+			if t.DurationMs > 0 {
+				suffix = fmt.Sprintf(" [%dms]", t.DurationMs)
+			}
+			status := t.Status
+			switch status {
+			case "completed":
+				status = "✓ " + status
+			case "failed":
+				status = "✗ " + status
+			case "in_progress":
+				status = "▶ " + status
+			default:
+				status = "  " + status
+			}
+			fmt.Printf("  [%s] %s  %s%s\n", status, t.ID, t.Title, suffix)
+		}
+	}
+	if len(tel.GuardrailVerdicts) > 0 {
+		fmt.Printf("\nGuardrail verdicts:\n")
+		for _, v := range tel.GuardrailVerdicts {
+			icon := "✓"
+			if v.Outcome == "warn" {
+				icon = "⚠"
+			} else if v.Outcome == "block" {
+				icon = "✗"
+			}
+			line := fmt.Sprintf("  %s %s: %s", icon, v.Guardrail, v.Outcome)
+			if v.Summary != "" {
+				line += " — " + v.Summary
+			}
+			fmt.Println(line)
+		}
+	}
+	if len(tel.Tests) > 0 {
+		fmt.Printf("\nTests: %v\n", tel.Tests)
+	}
 	return nil
 }
 

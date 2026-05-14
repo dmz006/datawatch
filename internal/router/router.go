@@ -1058,6 +1058,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleLLMCmd(cmd)
 	case CmdMemory:
 		r.handleMemoryCmd(cmd)
+	case CmdTelemetry: // BL303 S1
+		r.handleTelemetryCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
