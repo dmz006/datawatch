@@ -2497,10 +2497,10 @@ t11_ts130_pwa_loads() {
 
 t11_ts131_auth_token() {
   local resp
-  resp=$(api POST /api/sessions '{"backend":"shell","project_dir":"/tmp"}')
+  resp=$(api POST /api/sessions/start '{"backend":"shell","project_dir":"/tmp","task":"test-pwa-131","name":"test-pwa-131"}')
   save_evidence TS-131 "session.json" "$resp"
   local sid
-  sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") if isinstance(d,dict) else (d[0].get("id","") if d else "")))' 2>/dev/null || echo "")
+  sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") or d.get("full_id","")))' 2>/dev/null || echo "")
   if [[ -n "$sid" ]]; then
     ok "auth token accepted, session created: $sid"
     add_cleanup session "$sid"
@@ -2533,10 +2533,10 @@ t11_ts133_stats_panel() {
 
 t11_ts134_new_session() {
   local resp
-  resp=$(api POST /api/sessions '{"backend":"shell","project_dir":"/tmp"}')
+  resp=$(api POST /api/sessions/start '{"backend":"shell","project_dir":"/tmp","task":"test-pwa-134","name":"test-pwa-134"}')
   save_evidence TS-134 "new_session.json" "$resp"
   local sid
-  sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") if isinstance(d,dict) else (d[0].get("id","") if isinstance(d,list) and d else "")))' 2>/dev/null || echo "")
+  sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") or d.get("full_id","")))' 2>/dev/null || echo "")
   if [[ -n "$sid" ]]; then
     ok "new session created via API: $sid"
     add_cleanup session "$sid"
