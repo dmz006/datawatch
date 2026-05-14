@@ -36,10 +36,13 @@ func legacyProgressPath() string {
 //	DELETE /api/smoke/progress/{id}  → delete ONE run
 func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 	// Extract optional run ID from path: /api/smoke/progress/{id}
-	runID := ""
-	base := "/api/smoke/progress"
-	if after, ok := strings.CutPrefix(r.URL.Path, base); ok && len(after) > 1 {
-		runID = strings.TrimPrefix(after, "/")
+	// First try Go 1.22+ path value
+	runID := r.PathValue("id")
+	if runID == "" {
+		// Fallback to manual parsing (for non-Go1.22+ routes)
+		rest := strings.TrimPrefix(r.URL.Path, "/api/smoke/progress")
+		rest = strings.TrimPrefix(rest, "/")
+		runID = rest
 	}
 
 	runsDir, err := smokeRunsDir()
