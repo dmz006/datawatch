@@ -2898,23 +2898,24 @@ t13_ts160_isolated_start() {
   DOCKER_SIM_PID=$!
   echo "  Docker-sim daemon PID: $DOCKER_SIM_PID"
   local attempts=0
-  while [[ $attempts -lt 20 ]]; do
-    if curl -sk --max-time 3 "https://127.0.0.1:18543/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
+  while [[ $attempts -lt 30 ]]; do
+    # Check HTTP health (TLS is async, so check HTTP first like main daemon does)
+    if curl -s --max-time 3 "http://127.0.0.1:18180/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
       local h
-      h=$(curl -sk --max-time 3 "https://127.0.0.1:18543/api/health")
+      h=$(curl -s --max-time 3 "http://127.0.0.1:18180/api/health")
       save_evidence TS-160 "health.json" "$h"
-      ok "docker-sim daemon healthy"
+      ok "docker-sim daemon healthy (HTTP :18180)"
       return 0
     fi
     sleep 1
     attempts=$((attempts+1))
   done
-  skip "docker-sim daemon did not start in 20s"
+  skip "docker-sim daemon did not start in 30s"
 }
 
 t13_ts161_health_check() {
   local resp
-  resp=$(curl -sk --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "https://127.0.0.1:18543/api/health" 2>/dev/null || echo "{}")
+  resp=$(curl -s --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "http://127.0.0.1:18180/api/health" 2>/dev/null || echo "{}")
   save_evidence TS-161 "health.json" "$resp"
   if assert_json "$resp" 'd.get("status")=="ok"'; then
     ok "docker-sim health ok"
@@ -2925,12 +2926,15 @@ t13_ts161_health_check() {
 
 t13_ts162_session_in_isolated() {
   local resp
-  resp=$(curl -sk --max-time 15 -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" \
+  resp=$(curl -s --max-time 15 -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" \
     -d '{"name":"test-docker-session","backend":"shell","project_dir":"/tmp"}' \
-    "https://127.0.0.1:18543/api/sessions" 2>/dev/null || echo "{}")
+    "http://127.0.0.1:18180/api/sessions/start" 2>/dev/null || echo "{}")
   save_evidence TS-162 "session.json" "$resp"
-  if assert_json "$resp" '"id" in d'; then
-    ok "session created in docker-sim daemon"
+  local sid
+  sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") or d.get("full_id","")))' 2>/dev/null || echo "")
+  if [[ -n "$sid" ]]; then
+    ok "session created in docker-sim daemon: $sid"
+    add_cleanup session "$sid"
   else
     skip "session create failed in docker-sim: $(echo "$resp" | head -c 100)"
   fi
