@@ -3,7 +3,7 @@
 **Internal ID:** 4ce314b2  
 **Filed:** 2026-05-13  
 **datawatch-app issue:** https://github.com/dmz006/datawatch-app/issues/126 (Android / Wear / Auto)  
-**Status:** 🔄 S2 in progress
+**Status:** 🔄 S3 queued (S2 complete)
 
 ---
 
@@ -16,7 +16,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 
 S1 · Structured Session Telemetry Foundation     ✅ COMPLETE (T01-T22)
-S2 · Guardrail Library + Scan Unification        🔄 IN PROGRESS
+S2 · Guardrail Library + Scan Unification        ✅ COMPLETE (T01-T27)
 S3 · Live Task Tree + Status Tab Dashboard       📋 QUEUED
 S4 · /dashboard Mission Control                  📋 QUEUED
 S5 · Rules Validation + Release                  📋 QUEUED
@@ -63,33 +63,45 @@ S5 · Rules Validation + Release                  📋 QUEUED
 
 | # | Task | Status |
 |---|------|--------|
-| T01 | Register sast-scan, secrets-scan, deps-scan as named guardrails | 📋 |
-| T02 | executor.go: resolve scan-type guardrails → scan framework | 📋 |
-| T03 | Persist scan results via GuardrailVerdict on Story.Verdicts | 📋 |
-| T04 | GET /api/autonomous/guardrails (library list) | 📋 |
-| T05 | Guardrail profile CRUD endpoints | 📋 |
-| T06 | Per-Automaton guardrail override: model field + API | 📋 |
-| T07 | Skill manifest spec: guardrails + guardrail_profile fields | 📋 |
-| T08 | Skill loader: register guardrails from installed skills | 📋 |
-| T09 | Default skill assignment list: config + API + apply on create | 📋 |
-| T10 | §8 rename → "Guardrail Library" + card-based UI | 📋 |
-| T11 | §9: per_task/per_story → chip selectors referencing library | 📋 |
-| T12 | Automaton detail → Settings tab: per-Automaton override UI | 📋 |
-| T13 | MCP: guardrail_library_*, guardrail_profile_*, per_automaton_guardrails_* | 📋 |
-| T14 | CLI subcommands: guardrail library + profiles | 📋 |
-| T15 | Comm verbs + YAML config structure | 📋 |
-| T16 | Locale keys (5 bundles) | 📋 |
-| T17 | datawatch-app issue: mobile parity | 📋 |
-| T18 | Per-story approval endpoint hardened for Auto/mobile conditions | 📋 |
-| T19 | Comment on datawatch-app #126: guardrail verdicts in payload, approval confirmed | 📋 |
-| T20 | New docs/howto/guardrail-library.md | 📋 |
-| T21 | Rename prd-dag-orchestrator.md → automata-orchestrator.md; update terminology | 📋 |
-| T22 | Update docs/api/autonomous.md: guardrail library + profile endpoints | 📋 |
-| T23 | New docs/flow/guardrail-flow.md | 📋 |
-| T24 | Rename prd-phase3-phase4-flow.md → automata-phase-flow.md | 📋 |
-| T25 | Update docs/api/mobile-surface.md: guardrail APIs for Auto/mobile | 📋 |
-| T26 | Unit tests + smoke tests | 📋 |
-| T27 | 7-surface parity audit | 📋 |
+| T01 | Register sast-scan, secrets-scan, deps-scan as named guardrails | ✅ Done |
+| T02 | executor.go: resolve scan-type guardrails → scan framework | ✅ Done |
+| T03 | Persist scan results via GuardrailVerdict on Story.Verdicts | ✅ Done |
+| T04 | GET /api/autonomous/guardrails (library list) | ✅ Done |
+| T05 | Guardrail profile CRUD endpoints | ✅ Done |
+| T06 | Per-Automaton guardrail override: model field + API | ✅ Done |
+| T07 | Skill manifest spec: guardrails + guardrail_profile fields | ✅ Done |
+| T08 | Skill loader: register guardrails from installed skills | ✅ Done |
+| T09 | Default skill assignment list: config + API + apply on create | ✅ Done |
+| T10 | §8 rename → "Guardrail Library" + card-based UI | ✅ Done |
+| T11 | §9: per_task/per_story → chip selectors referencing library | ✅ Done |
+| T12 | Automaton detail → Settings tab: per-Automaton override UI | ✅ Done |
+| T13 | MCP: guardrail_library_*, guardrail_profile_*, per_automaton_guardrails_* | ✅ Done (7 tools) |
+| T14 | CLI subcommands: guardrail library + profiles | ✅ Done |
+| T15 | Comm verbs + YAML config structure | ✅ Done |
+| T16 | Locale keys (5 bundles) | ✅ Done (22 keys × 5 locales) |
+| T17 | datawatch-app issue: mobile parity | ✅ Done (see app #126) |
+| T18 | Per-story approval endpoint hardened for Auto/mobile conditions | ✅ Done |
+| T19 | Comment on datawatch-app #126: guardrail verdicts in payload, approval confirmed | ✅ Done |
+| T20 | New docs/howto/guardrail-library.md | ✅ Done |
+| T21 | Rename prd-dag-orchestrator.md → automata-orchestrator.md; update terminology | ✅ Done |
+| T22 | Update docs/api/autonomous.md: guardrail library + profile endpoints | ✅ Done |
+| T23 | New docs/flow/guardrail-flow.md | ✅ Done |
+| T24 | Rename prd-phase3-phase4-flow.md → automata-phase-flow.md | ✅ Done |
+| T25 | Update docs/api/mobile-surface.md: guardrail APIs for Auto/mobile | ✅ Done |
+| T26 | Unit tests + smoke tests | ✅ Done (1915 tests pass; smoke non-blocking only) |
+| T27 | 7-surface parity audit | ✅ Done (REST/MCP/CLI/comm/YAML/PWA/mobile) |
+
+#### S2 Rule Audit
+
+| Rule | Status |
+|------|--------|
+| 7-surface parity | ✅ REST + MCP (7 tools) + CLI + comm + YAML + PWA + mobile-surface.md |
+| Smoke counts | ✅ 1915 tests pass; smoke non-blocking only (locale key diff, LLM/session env) |
+| Locale | ✅ 22 keys × 5 bundles (en/de/es/fr/ja); datawatch-app #126 for native translations |
+| Plans hygiene | ✅ No dated plans added; existing renamed files cleaned |
+| Mobile-parity | ✅ mobile-surface.md guardrail section added; app #126 updated |
+| Cookbook | ✅ Updated this sprint cut |
+| Deviations | T11 chip-selector PWA: uses prompt()-based create (Wear-safe fallback); full selector deferred to S3 UI pass |
 
 ---
 

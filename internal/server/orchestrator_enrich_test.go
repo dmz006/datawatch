@@ -103,6 +103,15 @@ func (f *fakeOrchAutonomous) SetPRDType(string, string) (any, error)  { return n
 func (f *fakeOrchAutonomous) SetPRDGuidedMode(string, bool) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDSkills(string, []string) (any, error) { return nil, nil }
 
+// BL303 S2 — guardrail library + profile stubs.
+func (f *fakeOrchAutonomous) GuardrailLibrary() []any                                                           { return nil }
+func (f *fakeOrchAutonomous) CreateGuardrailProfile(string, string, []string) (any, error)                      { return nil, nil }
+func (f *fakeOrchAutonomous) UpdateGuardrailProfile(string, string, string, []string) (any, error)              { return nil, nil }
+func (f *fakeOrchAutonomous) DeleteGuardrailProfile(string) error                                               { return nil }
+func (f *fakeOrchAutonomous) ListGuardrailProfiles() []any                                                      { return nil }
+func (f *fakeOrchAutonomous) GetGuardrailProfile(string) (any, bool)                                            { return nil, false }
+func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string) (any, error)                  { return nil, nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

@@ -24,6 +24,8 @@ type Store struct {
 	stories   map[string]*Story // keyed by Story.ID
 	tasks     map[string]*Task  // keyed by Task.ID
 	learnings []Learning
+	// BL303 S2 — guardrail profiles
+	profiles map[string]*GuardrailProfile
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -33,10 +35,11 @@ func NewStore(dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
 	}
 	s := &Store{
-		dir:     root,
-		prds:    map[string]*PRD{},
-		stories: map[string]*Story{},
-		tasks:   map[string]*Task{},
+		dir:      root,
+		prds:     map[string]*PRD{},
+		stories:  map[string]*Story{},
+		tasks:    map[string]*Task{},
+		profiles: map[string]*GuardrailProfile{},
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -309,6 +312,52 @@ func (s *Store) ListLearnings() []Learning {
 }
 
 // load reads JSONL files into memory. Missing files are not errors.
+// SaveGuardrailProfile upserts a profile (BL303 S2).
+func (s *Store) SaveGuardrailProfile(p *GuardrailProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profiles[p.ID] = p
+	return s.persist()
+}
+
+// GetGuardrailProfile returns a profile by ID (BL303 S2).
+func (s *Store) GetGuardrailProfile(id string) (*GuardrailProfile, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.profiles[id]
+	return p, ok
+}
+
+// ListGuardrailProfiles returns all profiles newest-first (BL303 S2).
+func (s *Store) ListGuardrailProfiles() []*GuardrailProfile {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*GuardrailProfile, 0, len(s.profiles))
+	for _, p := range s.profiles {
+		out = append(out, p)
+	}
+	// Sort newest-first.
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].CreatedAt.After(out[i].CreatedAt) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+// DeleteGuardrailProfile removes a profile by ID (BL303 S2).
+func (s *Store) DeleteGuardrailProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.profiles[id]; !ok {
+		return fmt.Errorf("guardrail profile %q not found", id)
+	}
+	delete(s.profiles, id)
+	return s.persist()
+}
+
 func (s *Store) load() error {
 	if err := loadJSONL(filepath.Join(s.dir, "prds.jsonl"), func(line []byte) error {
 		var p PRD
@@ -339,6 +388,16 @@ func (s *Store) load() error {
 	}); err != nil {
 		return err
 	}
+	if err := loadJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), func(line []byte) error {
+		var p GuardrailProfile
+		if err := json.Unmarshal(line, &p); err != nil {
+			return err
+		}
+		s.profiles[p.ID] = &p
+		return nil
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -354,9 +413,19 @@ func (s *Store) persist() error {
 	}); err != nil {
 		return err
 	}
-	return writeJSONL(filepath.Join(s.dir, "learnings.jsonl"), len(s.learnings), func(emit func(any) error) error {
+	if err := writeJSONL(filepath.Join(s.dir, "learnings.jsonl"), len(s.learnings), func(emit func(any) error) error {
 		for _, l := range s.learnings {
 			if err := emit(l); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return writeJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), len(s.profiles), func(emit func(any) error) error {
+		for _, p := range s.profiles {
+			if err := emit(p); err != nil {
 				return err
 			}
 		}

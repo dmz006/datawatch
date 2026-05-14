@@ -536,3 +536,52 @@ func (a *API) SetPRDSkills(prdID string, skills []string) (any, error) {
 	prd, _ := a.M.Store().GetPRD(prdID)
 	return prd, nil
 }
+
+// ── BL303 S2 — guardrail library + profiles + per-Automaton override ──────
+
+func (a *API) GuardrailLibrary() []any {
+	src := a.M.GuardrailLibrary()
+	out := make([]any, len(src))
+	for i, e := range src {
+		out[i] = e
+	}
+	return out
+}
+
+func (a *API) CreateGuardrailProfile(name, description string, guardrails []string) (any, error) {
+	return a.M.CreateGuardrailProfile(name, description, guardrails)
+}
+
+func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string) (any, error) {
+	return a.M.UpdateGuardrailProfile(id, name, description, guardrails)
+}
+
+func (a *API) DeleteGuardrailProfile(id string) error {
+	return a.M.DeleteGuardrailProfile(id)
+}
+
+func (a *API) ListGuardrailProfiles() []any {
+	src := a.M.ListGuardrailProfiles()
+	out := make([]any, len(src))
+	for i, p := range src {
+		out[i] = p
+	}
+	return out
+}
+
+func (a *API) GetGuardrailProfile(id string) (any, bool) {
+	p, ok := a.M.GetGuardrailProfile(id)
+	if !ok {
+		return nil, false
+	}
+	return p, true
+}
+
+func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (any, error) {
+	prd, err := a.M.SetPRDGuardrails(prdID, profile, perTask, perStory)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}

@@ -1060,6 +1060,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleMemoryCmd(cmd)
 	case CmdTelemetry: // BL303 S1
 		r.handleTelemetryCmd(cmd)
+	case CmdGuardrail: // BL303 S2
+		r.handleGuardrailCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

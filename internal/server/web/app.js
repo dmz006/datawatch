@@ -5541,6 +5541,7 @@ const _cardOrder = {
     'gc_orchestrator': 60,
     'gc_pipeline': 70,
     'automata_scan': 80,
+    'automata_guardrail_profiles': 85,
     'automata_skills': 90,
     // Templates (pre-lifecycle reusable definitions)
     'gc_projectprofiles': 200,
@@ -6215,7 +6216,7 @@ function renderSettingsView() {
 
         <!-- BL221 (v6.2.0) Phase 3 — Settings → Automata tab -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
-          ${settingsSectionHeader('automata_scan', t('scan_config_title') || 'Scan Framework')}
+          ${settingsSectionHeader('automata_scan', t('guardrail_library_title') || 'Guardrail Library')}
           <div id="settings-sec-automata_scan" style="${secContent('automata_scan')}">
             <div id="automataSettingsScanPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -6225,6 +6226,14 @@ function renderSettingsView() {
           ${settingsSectionHeader('automata_autonomous', 'Autonomous Config')}
           <div id="settings-sec-automata_autonomous" style="${secContent('automata_autonomous')}">
             <div id="automataSettingsAutonomousPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
+        <!-- BL303 S2 — Guardrail Profiles section -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_guardrail_profiles', t('guardrail_profile_title') || 'Guardrail Profiles')}
+          <div id="settings-sec-automata_guardrail_profiles" style="${secContent('automata_guardrail_profiles')}">
+            <div id="automataGuardrailProfilesPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
         </div>
 
@@ -6240,6 +6249,7 @@ function renderSettingsView() {
     </div>`;
 
   loadSkillsPanel();
+  if (typeof loadGuardrailProfilesPanel === 'function') loadGuardrailProfilesPanel(); // BL303 S2
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
   if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
@@ -17698,6 +17708,88 @@ function loadAutomataSettingsPanel() {
   }
 }
 window.loadAutomataSettingsPanel = loadAutomataSettingsPanel;
+
+// ── BL303 S2 — Guardrail Library + Profiles panel (Settings → Automata) ──
+
+function loadGuardrailLibraryPanel(el) {
+  el.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  apiFetch('/api/autonomous/guardrails').then(items => {
+    if (!items || items.length === 0) {
+      el.innerHTML = `<div style="padding:6px 12px;color:var(--text2);font-size:12px;">${escHtml(t('guardrail_library_empty')||'No guardrails registered')}</div>`;
+      return;
+    }
+    const rows = items.map(g => `
+      <div style="display:flex;gap:8px;align-items:baseline;padding:3px 12px;font-size:12px;">
+        <span style="font-weight:600;flex:0 0 auto;width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(g.name)}">${escHtml(g.name)}</span>
+        <span style="background:var(--accent2);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;flex:0 0 auto;">${escHtml(g.type||'scan')}</span>
+        <span style="color:var(--text2);flex:1;">${escHtml(g.description||'')}</span>
+      </div>`).join('');
+    el.innerHTML = `<div style="padding:6px 0;">${rows}</div>`;
+  }).catch(() => {
+    el.innerHTML = `<div style="padding:6px 12px;color:var(--error);font-size:12px;">Failed to load guardrail library</div>`;
+  });
+}
+
+function loadGuardrailProfilesPanel() {
+  const panel = document.getElementById('automataGuardrailProfilesPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+
+  // Also refresh the library listing inside the scan section
+  const libEl = document.getElementById('automataSettingsScanPanel');
+  if (libEl) loadGuardrailLibraryPanel(libEl);
+
+  apiFetch('/api/autonomous/guardrail_profiles').then(profiles => {
+    const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="guardrailProfileOpenCreate()">${escHtml(t('guardrail_profile_create')||'New Profile')}</button>`;
+    if (!profiles || profiles.length === 0) {
+      panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
+        ${escHtml(t('guardrail_profile_empty')||'No profiles yet')}
+        <div style="margin-top:10px;">${addBtn}</div>
+      </div></div>`;
+      return;
+    }
+    const rows = profiles.map(p => {
+      const tags = (p.guardrails||[]).map(g => `<span style="background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:1px 5px;margin-right:3px;">${escHtml(g)}</span>`).join('');
+      const idJ = escHtml(JSON.stringify(p.id));
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;">${escHtml(p.name)}</div>
+          ${p.description ? `<div style="color:var(--text2);font-size:11px;">${escHtml(p.description)}</div>` : ''}
+          <div style="margin-top:3px;">${tags||'<span style="color:var(--text2);font-size:11px;">(no guardrails)</span>'}</div>
+        </div>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="guardrailProfileDelete(${idJ})">&times;</button>
+      </div>`;
+    }).join('');
+    panel.innerHTML = `<div style="padding:6px 0;">${rows}</div>
+      <div style="padding:6px 12px;">${addBtn}</div>`;
+  }).catch(() => {
+    panel.innerHTML = `<div style="padding:6px 12px;color:var(--error);font-size:12px;">Failed to load guardrail profiles</div>`;
+  });
+}
+window.loadGuardrailProfilesPanel = loadGuardrailProfilesPanel;
+
+function guardrailProfileOpenCreate() {
+  const name = prompt(t('guardrail_profile_name')||'Profile name');
+  if (!name) return;
+  const csv = prompt(t('guardrail_profile_guardrails')||'Guardrails (comma-separated)', '');
+  const guardrails = (csv||'').split(',').map(s=>s.trim()).filter(Boolean);
+  apiFetch('/api/autonomous/guardrail_profiles', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name, guardrails})
+  }).then(() => {
+    loadGuardrailProfilesPanel();
+  }).catch(e => showError('Create profile failed: ' + e));
+}
+window.guardrailProfileOpenCreate = guardrailProfileOpenCreate;
+
+function guardrailProfileDelete(id) {
+  if (!confirm(t('guardrail_profile_delete_confirm')||'Delete this guardrail profile?')) return;
+  apiFetch('/api/autonomous/guardrail_profiles/' + id, {method: 'DELETE'}).then(() => {
+    loadGuardrailProfilesPanel();
+  }).catch(e => showError('Delete profile failed: ' + e));
+}
+window.guardrailProfileDelete = guardrailProfileDelete;
 
 // ── BL255 v6.7.0 — Skill Registries panel (Settings → Automata) ──────────
 

@@ -169,6 +169,13 @@ type PRD struct {
 	Type        string   `json:"type,omitempty"`
 	GuidedMode  bool     `json:"guided_mode,omitempty"`
 	Skills      []string `json:"skills,omitempty"`
+
+	// BL303 S2 — per-Automaton guardrail overrides.
+	// GuardrailProfile names a profile; PerTask/PerStoryGuardrails are explicit
+	// overrides. Priority: explicit > profile > global Config.
+	GuardrailProfile    string   `json:"guardrail_profile,omitempty"`
+	PerTaskGuardrails   []string `json:"per_task_guardrails,omitempty"`
+	PerStoryGuardrails  []string `json:"per_story_guardrails,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a
@@ -367,6 +374,27 @@ type VerificationResult struct {
 // Learning is a post-task insight extracted by the loop and saved
 // into datawatch memory (BL57 KG + BL23 episodic). Kept here purely
 // for the autonomous-internal record; the source of truth is memory.
+// GuardrailEntry (BL303 S2) is one registered guardrail in the library.
+// Built-in scan guardrails (sast-scan, secrets-scan, deps-scan) are Type=="scan";
+// skill-contributed and custom guardrails are Type=="skill" or "custom".
+type GuardrailEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type"`               // "scan" | "custom" | "skill"
+	ScanType    string `json:"scan_type,omitempty"` // "sast" | "secrets" | "deps" (scan entries only)
+}
+
+// GuardrailProfile (BL303 S2) is a named collection of guardrails that can
+// be assigned to an Automaton or used as a global default.
+type GuardrailProfile struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Guardrails  []string  `json:"guardrails"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type Learning struct {
 	ID        string    `json:"id"`
 	TaskID    string    `json:"task_id"`

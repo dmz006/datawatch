@@ -58,6 +58,14 @@ type Manifest struct {
 	// (f) Built-in MCP-tool declarations
 	ProvidesMCPTools []string `yaml:"provides_mcp_tools,omitempty" json:"provides_mcp_tools,omitempty"`
 
+	// BL303 S2 T07 — guardrail integration. When non-empty, Guardrails
+	// lists named guardrail implementations this skill provides; the
+	// guardrail registry registers them as Type=="skill" entries when the
+	// skill is assigned to an Automaton. GuardrailProfile, if set, names
+	// a profile to activate automatically when the skill is applied.
+	Guardrails      []string `yaml:"guardrails,omitempty" json:"guardrails,omitempty"`
+	GuardrailProfile string  `yaml:"guardrail_profile,omitempty" json:"guardrail_profile,omitempty"`
+
 	// Extra captures any YAML key the parser doesn't know about so they
 	// round-trip when the registry is re-synced. Per the Skills-Awareness
 	// Rule, unknown fields are surfaced (not hidden) and preserved.

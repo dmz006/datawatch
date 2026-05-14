@@ -47,6 +47,15 @@ POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
+
+# Guardrail Library + Profiles
+GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
+GET    /api/autonomous/guardrail_profiles          list profiles
+POST   /api/autonomous/guardrail_profiles          create profile; body: {name, description?, guardrails[]}
+GET    /api/autonomous/guardrail_profiles/{id}     get one profile
+PUT    /api/autonomous/guardrail_profiles/{id}     update profile
+DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
+PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 ```
 
 When `autonomous.enabled` is false, every endpoint returns
@@ -173,4 +182,5 @@ orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-planning](../howto/autonomous-planning.md)
 - [howto/autonomous-review-approve](../howto/autonomous-review-approve.md)
-- [howto/prd-dag-orchestrator](../howto/prd-dag-orchestrator.md)
+- [howto/automata-orchestrator](../howto/automata-orchestrator.md)
+- [howto/guardrail-library](../howto/guardrail-library.md)

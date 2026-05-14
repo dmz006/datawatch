@@ -351,6 +351,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetType(), tracked(s.handleAutonomousPRDSetType))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
+	// BL303 S2 — guardrail library + profiles + per-Automaton override.
+	mcpSrv.AddTool(s.toolGuardrailLibraryList(), tracked(s.handleGuardrailLibraryList))
+	mcpSrv.AddTool(s.toolGuardrailProfileList(), tracked(s.handleGuardrailProfileList))
+	mcpSrv.AddTool(s.toolGuardrailProfileCreate(), tracked(s.handleGuardrailProfileCreate))
+	mcpSrv.AddTool(s.toolGuardrailProfileGet(), tracked(s.handleGuardrailProfileGet))
+	mcpSrv.AddTool(s.toolGuardrailProfileUpdate(), tracked(s.handleGuardrailProfileUpdate))
+	mcpSrv.AddTool(s.toolGuardrailProfileDelete(), tracked(s.handleGuardrailProfileDelete))
+	mcpSrv.AddTool(s.toolPerAutomatonGuardrailsSet(), tracked(s.handlePerAutomatonGuardrailsSet))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -836,6 +844,14 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolPipelineStatus, "pipeline_status"},
 		{s.toolPipelineCancel, "pipeline_cancel"},
 		{s.toolPipelineList, "pipeline_list"},
+		// BL303 S2 — guardrail library + profiles
+		{s.toolGuardrailLibraryList, "guardrail_library_list"},
+		{s.toolGuardrailProfileList, "guardrail_profile_list"},
+		{s.toolGuardrailProfileCreate, "guardrail_profile_create"},
+		{s.toolGuardrailProfileGet, "guardrail_profile_get"},
+		{s.toolGuardrailProfileUpdate, "guardrail_profile_update"},
+		{s.toolGuardrailProfileDelete, "guardrail_profile_delete"},
+		{s.toolPerAutomatonGuardrailsSet, "per_automaton_guardrails_set"},
 	}
 
 	var docs []ToolDoc

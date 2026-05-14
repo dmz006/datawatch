@@ -254,6 +254,16 @@ const (
 	//   "telemetry list"              → list telemetry summary for all sessions
 	CmdTelemetry CommandType = "telemetry"
 
+	// BL303 S2 — guardrail library + profile management over chat.
+	//   "guardrail library"                           → list library
+	//   "guardrail profile list"                      → list profiles
+	//   "guardrail profile create --name <n> [...]"   → create profile
+	//   "guardrail profile get <id>"                  → get profile
+	//   "guardrail profile update <id> [...]"         → update profile
+	//   "guardrail profile delete <id>"               → delete profile
+	//   "guardrail automaton set <id> [...]"          → per-Automaton override
+	CmdGuardrail CommandType = "guardrail"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -411,6 +421,13 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "telemetry "):
 		return Command{Type: CmdTelemetry, SessionID: strings.TrimSpace(text[10:])}
+
+	case lower == "guardrail" || strings.HasPrefix(lower, "guardrail "):
+		rest := ""
+		if strings.HasPrefix(lower, "guardrail ") {
+			rest = strings.TrimSpace(text[10:])
+		}
+		return Command{Type: CmdGuardrail, Text: rest}
 
 	case strings.HasPrefix(lower, "send "):
 		// format: "send <id>: <text>"

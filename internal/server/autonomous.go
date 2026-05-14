@@ -731,6 +731,28 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONOK(w, updated)
 
+	// BL303 S2 T06 — per-Automaton guardrail override.
+	case "guardrails":
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			GuardrailProfile   string   `json:"guardrail_profile"`
+			PerTaskGuardrails  []string `json:"per_task_guardrails"`
+			PerStoryGuardrails []string `json:"per_story_guardrails"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDGuardrails(id, req.GuardrailProfile, req.PerTaskGuardrails, req.PerStoryGuardrails)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
 	// BL221 (v6.2.0) Phase 3 — scan actions
 	case "scan":
 		switch r.Method {
@@ -971,6 +993,100 @@ func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		writeJSONOK(w, s.autonomousMgr.GetScanConfig())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAutonomousGuardrails — BL303 S2 T04.
+//
+//	GET /api/autonomous/guardrails — list the guardrail library
+func (s *Server) handleAutonomousGuardrails(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSONOK(w, s.autonomousMgr.GuardrailLibrary())
+}
+
+// handleAutonomousGuardrailProfiles — BL303 S2 T05.
+//
+//	GET    /api/autonomous/guardrail_profiles        — list
+//	POST   /api/autonomous/guardrail_profiles        — create
+//	GET    /api/autonomous/guardrail_profiles/{id}   — get
+//	PUT    /api/autonomous/guardrail_profiles/{id}   — update
+//	DELETE /api/autonomous/guardrail_profiles/{id}   — delete
+func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/autonomous/guardrail_profiles")
+	rest = strings.Trim(rest, "/")
+	id := rest
+
+	if id == "" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSONOK(w, s.autonomousMgr.ListGuardrailProfiles())
+		case http.MethodPost:
+			var req struct {
+				Name        string   `json:"name"`
+				Description string   `json:"description"`
+				Guardrails  []string `json:"guardrails"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(p)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		p, ok := s.autonomousMgr.GetGuardrailProfile(id)
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, p)
+	case http.MethodPut:
+		var req struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Guardrails  []string `json:"guardrails"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, p)
+	case http.MethodDelete:
+		if err := s.autonomousMgr.DeleteGuardrailProfile(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

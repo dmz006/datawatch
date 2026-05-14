@@ -78,6 +78,9 @@ type Config struct {
 
 	// BL221 (v6.2.0) Phase 3 — scan framework config.
 	Scan scan.Config `json:"scan,omitempty"`
+
+	// BL303 S2 — default skills automatically assigned to every new Automaton.
+	DefaultSkills []string `json:"default_skills,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -148,6 +151,11 @@ type Manager struct {
 	// BL221 (v6.2.0) Phase 4 — type registry
 	typesMu sync.Mutex
 	types   []AutomatonType
+
+	// BL303 S2 — guardrail library + skill guardrail loader
+	guardrailLibMu sync.RWMutex
+	guardrailLib   []GuardrailEntry
+	skillsDir      string // path to ~/.datawatch/skills (injected from main.go)
 
 	// v5.26.19 — F10 profile resolver for PRD profile validation.
 	// Injected from main.go so internal/autonomous stays free of
@@ -248,13 +256,15 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
-	return &Manager{
+	m := &Manager{
 		cfg:       cfg,
 		store:     st,
 		templates: newTemplateStore(dataDir),
 		decompose: decompose,
 		types:     types,
-	}, nil
+	}
+	m.initGuardrailLibrary() // BL303 S2
+	return m, nil
 }
 
 // Templates exposes the TemplateStore for REST/API wiring.
@@ -280,7 +290,28 @@ func (m *Manager) Store() *Store { return m.store }
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
 func (m *Manager) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD, error) {
-	return m.store.CreatePRD(spec, projectDir, backend, effort)
+	prd, err := m.store.CreatePRD(spec, projectDir, backend, effort)
+	if err != nil {
+		return nil, err
+	}
+	// BL303 S2 T09 — apply default skills from config.
+	m.mu.Lock()
+	defaults := append([]string{}, m.cfg.DefaultSkills...)
+	m.mu.Unlock()
+	if len(defaults) > 0 {
+		prd.Skills = defaults
+		_ = m.store.SavePRD(prd)
+	}
+	return prd, nil
+}
+
+// SetSkillsDir wires the path to the skills directory (BL303 S2 T08).
+// When set, Manager.loadSkillGuardrails reads skill manifests to register
+// skill-contributed guardrails before PRD execution.
+func (m *Manager) SetSkillsDir(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.skillsDir = dir
 }
 
 // Decompose calls the LLM via the configured DecomposeFn and persists
@@ -1399,4 +1430,63 @@ func (m *Manager) SetPRDSkills(prdID string, skills []string) error {
 	prd.Skills = skills
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// SetPRDGuardrails (BL303 S2 T06) sets per-Automaton guardrail overrides.
+func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.GuardrailProfile = profile
+	prd.PerTaskGuardrails = perTask
+	prd.PerStoryGuardrails = perStory
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
+}
+
+// CreateGuardrailProfile (BL303 S2 T05) creates a new guardrail profile.
+func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string) (*GuardrailProfile, error) {
+	if name == "" {
+		return nil, fmt.Errorf("profile name is required")
+	}
+	p := &GuardrailProfile{
+		ID:          newProfileID(),
+		Name:        name,
+		Description: description,
+		Guardrails:  guardrails,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	return p, m.store.SaveGuardrailProfile(p)
+}
+
+// UpdateGuardrailProfile (BL303 S2 T05) updates an existing profile.
+func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string) (*GuardrailProfile, error) {
+	p, ok := m.store.GetGuardrailProfile(id)
+	if !ok {
+		return nil, fmt.Errorf("guardrail profile %q not found", id)
+	}
+	if name != "" {
+		p.Name = name
+	}
+	p.Description = description
+	p.Guardrails = guardrails
+	p.UpdatedAt = time.Now()
+	return p, m.store.SaveGuardrailProfile(p)
+}
+
+// DeleteGuardrailProfile (BL303 S2 T05) removes a profile.
+func (m *Manager) DeleteGuardrailProfile(id string) error {
+	return m.store.DeleteGuardrailProfile(id)
+}
+
+// ListGuardrailProfiles (BL303 S2 T05) returns all profiles.
+func (m *Manager) ListGuardrailProfiles() []*GuardrailProfile {
+	return m.store.ListGuardrailProfiles()
+}
+
+// GetGuardrailProfile (BL303 S2 T05) returns one profile by ID.
+func (m *Manager) GetGuardrailProfile(id string) (*GuardrailProfile, bool) {
+	return m.store.GetGuardrailProfile(id)
 }

@@ -296,6 +296,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
+		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
 	)
 
 	if err := root.Execute(); err != nil {

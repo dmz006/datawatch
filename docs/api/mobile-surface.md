@@ -111,8 +111,29 @@ These are best-effort; the source of truth is always
 
 ---
 
+## Guardrail APIs (Automata surface)
+
+Mobile and Auto surfaces can access the guardrail library and profile
+management endpoints under `/api/autonomous/guardrails*`:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/autonomous/guardrails` | GET | List guardrail library |
+| `/api/autonomous/guardrail_profiles` | GET | List profiles |
+| `/api/autonomous/guardrail_profiles` | POST | Create profile |
+| `/api/autonomous/guardrail_profiles/{id}` | GET | Get one profile |
+| `/api/autonomous/guardrail_profiles/{id}` | PUT | Update profile |
+| `/api/autonomous/guardrail_profiles/{id}` | DELETE | Delete profile |
+| `/api/autonomous/prds/{id}/guardrails` | PUT | Set per-Automaton override |
+
+Per-story approval payloads include `guardrail_verdicts` so Wear/Auto
+surfaces can surface block reasons without polling full telemetry.
+
+---
+
 <!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [architecture-overview](../architecture-overview.md)
+- [howto/guardrail-library](../howto/guardrail-library.md)

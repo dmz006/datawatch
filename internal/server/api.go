@@ -432,6 +432,15 @@ type AutonomousAPI interface {
 	SetPRDType(prdID, typ string) (any, error)
 	SetPRDGuidedMode(prdID string, guided bool) (any, error)
 	SetPRDSkills(prdID string, skills []string) (any, error)
+
+	// BL303 S2 — guardrail library + profiles + per-Automaton override.
+	GuardrailLibrary() []any
+	CreateGuardrailProfile(name, description string, guardrails []string) (any, error)
+	UpdateGuardrailProfile(id, name, description string, guardrails []string) (any, error)
+	DeleteGuardrailProfile(id string) error
+	ListGuardrailProfiles() []any
+	GetGuardrailProfile(id string) (any, bool)
+	SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

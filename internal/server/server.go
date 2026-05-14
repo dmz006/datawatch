@@ -302,6 +302,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/scan/config", api.handleAutonomousScanConfig)
 	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
 	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
+	// BL303 S2 — guardrail library + profile CRUD.
+	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
+	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
+	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
 	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)

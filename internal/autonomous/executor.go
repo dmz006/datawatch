@@ -93,6 +93,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
+	m.loadSkillGuardrails(prd) // BL303 S2 T08
 	tasks := flattenTasks(prd)
 	order, err := topoSort(tasks)
 	if err != nil {
@@ -462,31 +463,44 @@ func statusOrUnknown(p *PRD) PRDStatus {
 	return p.Status
 }
 
-// runPerTaskGuardrails (BL191 Q6, v5.10.0) invokes each guardrail in
-// Config.PerTaskGuardrails after a task verifies green. Appends
+// runPerTaskGuardrails (BL191 Q6, v5.10.0; BL303 S2) invokes each guardrail
+// in the resolved task-level list after a task verifies green. Appends
 // Verdicts to the task and returns blocked=true on any block outcome.
-// Returns (false, nil) when no guardrails are configured or no
-// GuardrailFn is wired (silent no-op so tests + bare-daemon mode pass
-// without forcing the operator to mock the validator chain).
+//
+// BL303 S2: guardrail list is resolved via resolveGuardrails (per-PRD
+// explicit > named profile > global Config). Scan-type guardrails ("sast-scan",
+// "secrets-scan", "deps-scan") are dispatched to invokeScanGuardrail instead
+// of GuardrailFn; other names fall through to GuardrailFn. Both paths are
+// silent no-ops when neither is available.
 func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (bool, error) {
 	m.mu.Lock()
-	guardrails := append([]string{}, m.cfg.PerTaskGuardrails...)
 	fn := m.guardrail
 	m.mu.Unlock()
-	if len(guardrails) == 0 || fn == nil {
+
+	guardrails := m.resolveGuardrails(prd, "task")
+	if len(guardrails) == 0 {
 		return false, nil
 	}
 	blocked := false
+	inv := GuardrailInvocation{
+		PRDID:      prd.ID,
+		Level:      "task",
+		UnitID:     t.ID,
+		UnitTitle:  t.Title,
+		UnitSpec:   t.Spec,
+		ProjectDir: prd.ProjectDir,
+	}
 	for _, g := range guardrails {
-		v, err := fn(ctx, GuardrailInvocation{
-			PRDID:      prd.ID,
-			Level:      "task",
-			UnitID:     t.ID,
-			UnitTitle:  t.Title,
-			UnitSpec:   t.Spec,
-			Guardrail:  g,
-			ProjectDir: prd.ProjectDir,
-		})
+		inv.Guardrail = g
+		var v GuardrailVerdict
+		var err error
+		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
+			v, err = m.invokeScanGuardrail(entry, inv)
+		} else if fn != nil {
+			v, err = fn(ctx, inv)
+		} else {
+			continue // silent no-op: scan not in lib + no GuardrailFn
+		}
 		if err != nil {
 			return false, fmt.Errorf("guardrail %s on task %s: %w", g, t.ID, err)
 		}
@@ -502,27 +516,37 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 	return blocked, nil
 }
 
-// runPerStoryGuardrails (BL191 Q6, v5.10.0) — same shape as the per-
-// task variant but for a Story.
+// runPerStoryGuardrails (BL191 Q6, v5.10.0; BL303 S2) — same shape as the
+// per-task variant but for a Story. See runPerTaskGuardrails for BL303 notes.
 func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (bool, error) {
 	m.mu.Lock()
-	guardrails := append([]string{}, m.cfg.PerStoryGuardrails...)
 	fn := m.guardrail
 	m.mu.Unlock()
-	if len(guardrails) == 0 || fn == nil {
+
+	guardrails := m.resolveGuardrails(prd, "story")
+	if len(guardrails) == 0 {
 		return false, nil
 	}
 	blocked := false
+	inv := GuardrailInvocation{
+		PRDID:      prd.ID,
+		Level:      "story",
+		UnitID:     s.ID,
+		UnitTitle:  s.Title,
+		UnitSpec:   s.Description,
+		ProjectDir: prd.ProjectDir,
+	}
 	for _, g := range guardrails {
-		v, err := fn(ctx, GuardrailInvocation{
-			PRDID:      prd.ID,
-			Level:      "story",
-			UnitID:     s.ID,
-			UnitTitle:  s.Title,
-			UnitSpec:   s.Description,
-			Guardrail:  g,
-			ProjectDir: prd.ProjectDir,
-		})
+		inv.Guardrail = g
+		var v GuardrailVerdict
+		var err error
+		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
+			v, err = m.invokeScanGuardrail(entry, inv)
+		} else if fn != nil {
+			v, err = fn(ctx, inv)
+		} else {
+			continue // silent no-op
+		}
 		if err != nil {
 			return false, fmt.Errorf("guardrail %s on story %s: %w", g, s.ID, err)
 		}
