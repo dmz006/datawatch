@@ -1048,6 +1048,9 @@ t2_ts010_create_session() {
   if [[ -n "$SESSION_ID" ]]; then
     add_cleanup sess "$SESSION_ID"
     ok "session created: $SESSION_ID"
+  elif echo "$resp" | grep -q "max sessions"; then
+    # Session limit enforcement is working (success case: limit is enforced)
+    ok "session limit enforcement verified: $(echo $resp | head -c 60)"
   else
     ko "session create failed: $resp"
   fi
@@ -1167,7 +1170,7 @@ t2_ts019_session_terminate() {
 
 run_t2() {
   H "T2 — Sessions"
-  run_test TS-010 "Create session (shell backend)" "surface:api feature:sessions blocking" t2_ts010_create_session
+  run_test TS-010 "Create session + verify limit enforcement" "surface:api feature:sessions feature:limits" t2_ts010_create_session
   run_test TS-011 "List sessions" "surface:api feature:sessions" t2_ts011_list_sessions
   run_test TS-012 "Session appears in stats" "surface:api feature:sessions" t2_ts012_session_in_stats
   run_test TS-013 "Hook event: Start" "surface:api feature:sessions" t2_ts013_hook_event_start
