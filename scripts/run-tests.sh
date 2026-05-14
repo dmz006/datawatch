@@ -781,10 +781,33 @@ comm:
 EOF
 }
 
+start_mock_channel_server() {
+  local port="${1:-18433}"
+  # Simple mock channel server that accepts POST /send requests
+  python3 -c "
+import http.server
+import json
+class H(http.server.BaseRequestHandler):
+  def do_POST(self):
+    self.send_response(200)
+    self.send_header('Content-Type', 'application/json')
+    self.end_headers()
+    self.wfile.write(json.dumps({'status':'ok'}).encode())
+  def log_message(self, *args): pass
+server = http.server.HTTPServer(('127.0.0.1', $port), H)
+server.serve_forever()
+" 2>/dev/null &
+}
+
 start_test_daemon() {
   echo ""
   echo "== Starting test daemon =="
   write_test_config "$TEST_DATA"
+
+  # Start mock channel server on configured port
+  start_mock_channel_server 18433 2>/dev/null &
+  CHANNEL_PID=$!
+  sleep 1  # Give server time to start
 
   "$TEST_BINARY" start --foreground --config "$TEST_DATA/config.yaml" --port 18080 \
     > "$TEST_DATA/daemon.log" 2>&1 &
@@ -851,6 +874,12 @@ cleanup_all() {
         esac
       done
     fi
+  fi
+
+  # Stop mock channel server
+  if [[ -n "$CHANNEL_PID" ]]; then
+    kill "$CHANNEL_PID" 2>/dev/null || true
+    wait "$CHANNEL_PID" 2>/dev/null || true
   fi
 
   # Stop test daemon
