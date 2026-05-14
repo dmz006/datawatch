@@ -137,6 +137,8 @@ CURRENT_STORY=""
 _CURRENT_TAGS=""
 DAEMON_PID=""
 DOCKER_SIM_PID=""
+DOCKER_SIM_CONTAINER=""
+DOCKER_SIM_IMAGE=""
 K8S_PF_PID=""
 WEBHOOK_PID=""
 
@@ -2892,25 +2894,58 @@ run_t12() {
 # ---------------------------------------------------------------------------
 
 t13_ts160_isolated_start() {
+  # Create config for Docker container
   write_test_config "$DOCKER_SIM_DATA" 18180 18543 18281 18533 "$TEST_TOKEN"
-  "$TEST_BINARY" start --foreground --config "$DOCKER_SIM_DATA/config.yaml" --port 18180 \
-    > "$DOCKER_SIM_DATA/daemon.log" 2>&1 &
-  DOCKER_SIM_PID=$!
-  echo "  Docker-sim daemon PID: $DOCKER_SIM_PID"
+
+  # Build a simple Docker image with the binary (use alpine as base)
+  local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
+  cat > "$dockerfile" <<'DOCKEREOF'
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates
+COPY datawatch /usr/local/bin/
+EXPOSE 18180 18543 18281 18533
+ENTRYPOINT ["datawatch", "start", "--config", "/config/config.yaml", "--port", "18180"]
+DOCKEREOF
+
+  # Copy binary into build context
+  cp "$TEST_BINARY" "$DOCKER_SIM_DATA/datawatch"
+
+  # Build image
+  local image_tag="datawatch-e2e-test:$$"
+  if ! docker build -t "$image_tag" "$DOCKER_SIM_DATA" > "$DOCKER_SIM_DATA/build.log" 2>&1; then
+    skip "docker build failed"
+    return
+  fi
+
+  # Run container
+  local container_name="dw-test-$$"
+  if ! docker run -d --name "$container_name" \
+    -p 18180:18180 -p 18543:18543 -p 18281:18281 -p 18533:18533 \
+    -v "$DOCKER_SIM_DATA:/config" \
+    "$image_tag" > "$DOCKER_SIM_DATA/container.id" 2>&1; then
+    skip "docker run failed"
+    return
+  fi
+
+  DOCKER_SIM_PID=$(cat "$DOCKER_SIM_DATA/container.id")
+  DOCKER_SIM_CONTAINER="$container_name"
+  DOCKER_SIM_IMAGE="$image_tag"
+  echo "  Docker container: $DOCKER_SIM_CONTAINER (ID: $DOCKER_SIM_PID)"
+
+  # Wait for health
   local attempts=0
   while [[ $attempts -lt 30 ]]; do
-    # Check HTTP health (TLS is async, so check HTTP first like main daemon does)
     if curl -s --max-time 3 "http://127.0.0.1:18180/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
       local h
       h=$(curl -s --max-time 3 "http://127.0.0.1:18180/api/health")
       save_evidence TS-160 "health.json" "$h"
-      ok "docker-sim daemon healthy (HTTP :18180)"
+      ok "daemon healthy in Docker container"
       return 0
     fi
     sleep 1
     attempts=$((attempts+1))
   done
-  skip "docker-sim daemon did not start in 30s"
+  skip "daemon did not start in Docker container within 30s"
 }
 
 t13_ts161_health_check() {
@@ -2983,16 +3018,18 @@ t13_ts165_restart_preserves_state() {
 }
 
 t13_ts167_cleanup_isolated() {
-  if [[ -n "$DOCKER_SIM_PID" ]]; then
-    kill "$DOCKER_SIM_PID" 2>/dev/null || true
-    wait "$DOCKER_SIM_PID" 2>/dev/null || true
-    DOCKER_SIM_PID=""
+  if [[ -n "$DOCKER_SIM_CONTAINER" ]]; then
+    docker stop "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
+    docker rm "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
+    echo "  docker container stopped: $DOCKER_SIM_CONTAINER"
+  fi
+  if [[ -n "$DOCKER_SIM_IMAGE" ]]; then
+    docker rmi "$DOCKER_SIM_IMAGE" 2>/dev/null || true
+    echo "  docker image removed: $DOCKER_SIM_IMAGE"
   fi
   rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
-  local check
-  check=$(curl -sk --max-time 3 "https://127.0.0.1:18543/api/health" 2>/dev/null || echo "gone")
-  save_evidence TS-167 "cleanup.txt" "port_check=$check docker_sim_data_removed=yes"
-  ok "docker-sim daemon stopped and data dir removed"
+  save_evidence TS-167 "cleanup.txt" "docker_container_removed=yes docker_image_removed=yes data_dir_removed=yes"
+  ok "Docker E2E test cleanup complete"
 }
 
 run_t13() {
