@@ -756,8 +756,7 @@ server:
 mcp:
   sse_port: $mcp_port
   enabled: true
-channel:
-  port: $chan_port
+channel_port: $chan_port
 session:
   llm_backend: ollama
   skip_permissions: true
