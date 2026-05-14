@@ -73,9 +73,11 @@ print(json.dumps([json.loads(l) for l in lines]))
 
 CURRENT_STORY_DESC=""  # set before each story for progress display
 
-# Isolated Docker-sim ports (T13)
-DOCKER_SIM_HTTP=18180
-DOCKER_SIM_TLS=18543
+# Isolated Docker-sim ports (T13) — use 19xxx range to avoid conflicts with test daemon (18xxx)
+DOCKER_SIM_HTTP=19180
+DOCKER_SIM_TLS=19543
+DOCKER_SIM_MCP=19281
+DOCKER_SIM_CHAN=19533
 DOCKER_SIM_DATA="/tmp/dw-docker-sim-$$"
 
 # K8s test namespace (T14)
@@ -2894,8 +2896,8 @@ run_t12() {
 # ---------------------------------------------------------------------------
 
 t13_ts160_isolated_start() {
-  # Create config for Docker container
-  write_test_config "$DOCKER_SIM_DATA" 18180 18543 18281 18533 "$TEST_TOKEN"
+  # Create config for Docker container (use 19xxx port range to avoid conflicts with test daemon)
+  write_test_config "$DOCKER_SIM_DATA" "$DOCKER_SIM_HTTP" "$DOCKER_SIM_TLS" "$DOCKER_SIM_MCP" "$DOCKER_SIM_CHAN" "$TEST_TOKEN"
 
   # Build a simple Docker image with the binary (use alpine as base)
   local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
@@ -2920,7 +2922,7 @@ DOCKEREOF
   # Run container
   local container_name="dw-test-$$"
   if ! docker run -d --name "$container_name" \
-    -p 18180:18180 -p 18543:18543 -p 18281:18281 -p 18533:18533 \
+    -p "$DOCKER_SIM_HTTP:18180" -p "$DOCKER_SIM_TLS:18543" -p "$DOCKER_SIM_MCP:18281" -p "$DOCKER_SIM_CHAN:18533" \
     -v "$DOCKER_SIM_DATA:/config" \
     "$image_tag" > "$DOCKER_SIM_DATA/container.id" 2>&1; then
     skip "docker run failed"
@@ -2930,16 +2932,16 @@ DOCKEREOF
   DOCKER_SIM_PID=$(cat "$DOCKER_SIM_DATA/container.id")
   DOCKER_SIM_CONTAINER="$container_name"
   DOCKER_SIM_IMAGE="$image_tag"
-  echo "  Docker container: $DOCKER_SIM_CONTAINER (ID: $DOCKER_SIM_PID)"
+  echo "  Docker container: $DOCKER_SIM_CONTAINER (ports: $DOCKER_SIM_HTTP:HTTP $DOCKER_SIM_TLS:TLS)"
 
   # Wait for health
   local attempts=0
   while [[ $attempts -lt 30 ]]; do
-    if curl -s --max-time 3 "http://127.0.0.1:18180/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
+    if curl -s --max-time 3 "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
       local h
-      h=$(curl -s --max-time 3 "http://127.0.0.1:18180/api/health")
+      h=$(curl -s --max-time 3 "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health")
       save_evidence TS-160 "health.json" "$h"
-      ok "daemon healthy in Docker container"
+      ok "daemon healthy in Docker container (:$DOCKER_SIM_HTTP)"
       return 0
     fi
     sleep 1
@@ -2950,7 +2952,7 @@ DOCKEREOF
 
 t13_ts161_health_check() {
   local resp
-  resp=$(curl -s --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "http://127.0.0.1:18180/api/health" 2>/dev/null || echo "{}")
+  resp=$(curl -s --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null || echo "{}")
   save_evidence TS-161 "health.json" "$resp"
   if assert_json "$resp" 'd.get("status")=="ok"'; then
     ok "docker-sim health ok"
@@ -2963,7 +2965,7 @@ t13_ts162_session_in_isolated() {
   local resp
   resp=$(curl -s --max-time 15 -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" \
     -d '{"name":"test-docker-session","backend":"shell","project_dir":"/tmp"}' \
-    "http://127.0.0.1:18180/api/sessions/start" 2>/dev/null || echo "{}")
+    "http://127.0.0.1:$DOCKER_SIM_HTTP/api/sessions/start" 2>/dev/null || echo "{}")
   save_evidence TS-162 "session.json" "$resp"
   local sid
   sid=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("id","") or d.get("full_id","")))' 2>/dev/null || echo "")
