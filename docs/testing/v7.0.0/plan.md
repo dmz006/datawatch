@@ -113,7 +113,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | T8 | MCP Surface | TS-070–TS-081 | 📋 planned |
 | T9 | Comms | TS-090–TS-103 | 📋 planned |
 | T10 | CLI Surface | TS-110–TS-121 | 📋 planned |
-| T11 | PWA (Chrome plugin) | TS-130–TS-143 | 📋 planned |
+| T11 | PWA (Chrome plugin) | TS-130–TS-143 | 🔴 REQUIRED (Chrome plugin available) |
 | T12 | Advanced Features | TS-150–TS-159 | 📋 planned |
 | T13 | Docker Simulation | TS-160–TS-167 | 📋 planned |
 | T14 | Kubernetes Deployment | TS-170–TS-177 | 📋 planned |
@@ -1517,7 +1517,7 @@ The following are explicitly excluded from automated runs. They are documented h
 
 ## T11 — PWA (Chrome plugin)
 
-> **Note**: T11 stories require the `mcp__claude-in-chrome__*` tools (Chrome plugin). In automated mode without the plugin, all T11 stories SKIP. Run manually with Claude Code chrome plugin active.
+> **REQUIRED**: T11 stories require the `mcp__claude-in-chrome__*` tools (Chrome plugin). When plugin is available, PWA tests MUST run as part of E2E suite. These tests verify the web UI is functional and accessible. Do not skip.
 
 ### TS-130 — PWA loads at https://127.0.0.1:18443
 **Tags**: [surface:pwa] [feature:bootstrap] [conflict:pwa]  
