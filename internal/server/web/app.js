@@ -17986,7 +17986,7 @@ function _dashRenderSmoke() {
       const pass = d.pass || 0, fail = d.fail || 0, skip = d.skip || 0;
       const secs = d.sections || [];
       const total = d.total || 82;
-      const done = secs.length;
+      const done = secs.length > 0 ? secs.length : (pass + fail + skip);
       const remaining = Math.max(0, total - done - (d.active ? 1 : 0));
       const pct = Math.min(100, total > 0 ? Math.round(done / total * 100) : 0);
       const barColor = fail > 0 ? 'var(--error,#ef4444)' : d.active ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
@@ -17999,9 +17999,16 @@ function _dashRenderSmoke() {
       if (d.active && d.current_id) allRows.push({ id: d.current_id, name: d.current_name || d.current_id, result: 'active' });
       for (const s of secs) allRows.push(s);
 
+      // When sections is empty but pass/fail/skip counts exist, create synthetic rows for filtering
+      if (secs.length === 0 && (pass > 0 || fail > 0 || skip > 0)) {
+        if (pass > 0) allRows.push({ id: '_pass', name: `${pass} tests passed`, result: 'pass' });
+        if (fail > 0) allRows.push({ id: '_fail', name: `${fail} tests failed`, result: 'fail' });
+        if (skip > 0) allRows.push({ id: '_skip', name: `${skip} tests skipped`, result: 'skip' });
+      }
+
       let filtered;
       if (filt === 'all') filtered = allRows;
-      else if (filt === 'pending') filtered = [];
+      else if (filt === 'pending') filtered = []; // pending has no rows; count shown separately
       else filtered = allRows.filter(s => s.result === filt);
 
       const sRow = (s) => {
