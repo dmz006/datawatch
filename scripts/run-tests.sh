@@ -3349,9 +3349,9 @@ run_t17() {
     echo ""; echo "  >> TS-240: Research journey: memory → KG → MCP recall"
     # Step 1: store a memory
     ts=$(date +%s)
-    mem=$(api POST /api/memory/remember "{\"content\":\"e2e-research-journey-$ts\",\"source\":\"test\"}")
+    mem=$(api POST /api/memory/save "{\"content\":\"e2e-research-journey-$ts\"}")
     mem_id=$(echo "$mem" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
-    save_evidence "TS-240" "1_remember.json" "$mem"
+    save_evidence "TS-240" "1_save.json" "$mem"
     # Step 2: recall it
     recall=$(api GET "/api/memory/search?q=e2e-research-journey-$ts")
     save_evidence "TS-240" "2_recall.json" "$recall"
