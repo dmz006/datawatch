@@ -185,9 +185,11 @@ FAIL=0
 SKIP=0
 
 # BL303 — Dashboard progress tracking. Smoke writes
-# ~/.datawatch/smoke-progress.json before each section so the PWA
+# ~/.datawatch/smoke-runs/{run_id}.json before each section so the PWA
 # Smoke card can poll /api/smoke/progress and show live phase state.
-SMOKE_PROGRESS_FILE="${HOME}/.datawatch/smoke-progress.json"
+SMOKE_RUN_ID="smoke-$(date +%Y%m%dT%H%M%S)-$$"
+mkdir -p "${HOME}/.datawatch/smoke-runs"
+SMOKE_PROGRESS_FILE="${HOME}/.datawatch/smoke-runs/${SMOKE_RUN_ID}.json"
 SMOKE_STARTED_AT=$(date -u +%FT%TZ 2>/dev/null || echo "")
 SMOKE_CUR_SEC=""     # current section label (first token of H arg)
 SMOKE_CUR_NAME=""    # full section title
@@ -215,8 +217,8 @@ import json,sys
 lines=[l for l in sys.stdin.read().splitlines() if l.strip()]
 print(json.dumps([json.loads(l) for l in lines]))
 ' 2>/dev/null || echo "[]")
-  printf '{"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
-    "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
+  printf '{"run_id":"%s","type":"smoke","total":%d,"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
+    "${SMOKE_RUN_ID:-smoke}" "$TOTAL_SECS" "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
     "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" \
     "$PASS" "$FAIL" "$SKIP" "$secs_json" \
     > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true

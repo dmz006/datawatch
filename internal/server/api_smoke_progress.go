@@ -5,46 +5,203 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
-// handleSmokeProgress — GET /api/smoke/progress, DELETE /api/smoke/progress
-//
-// GET: returns the last smoke run state written by scripts/release-smoke.sh.
-//   Returns 204 when no file exists yet.
-// DELETE: removes the progress file so the dashboard shows a clean slate.
-func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
+// smokeRunsDir returns ~/.datawatch/smoke-runs, creating it on demand.
+func smokeRunsDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		http.Error(w, "could not find home dir", http.StatusInternalServerError)
+		return "", err
+	}
+	d := filepath.Join(home, ".datawatch", "smoke-runs")
+	if err := os.MkdirAll(d, 0755); err != nil {
+		return "", err
+	}
+	return d, nil
+}
+
+// legacyProgressPath returns the old single-file path for migration.
+func legacyProgressPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".datawatch", "smoke-progress.json")
+}
+
+// handleSmokeProgress — multi-envelope smoke run API
+//
+//	GET  /api/smoke/progress         → array of all run envelopes (newest first)
+//	GET  /api/smoke/progress/{id}    → full detail for one run
+//	DELETE /api/smoke/progress       → delete ALL runs
+//	DELETE /api/smoke/progress/{id}  → delete ONE run
+func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
+	// Extract optional run ID from path: /api/smoke/progress/{id}
+	runID := ""
+	base := "/api/smoke/progress"
+	if after, ok := strings.CutPrefix(r.URL.Path, base); ok && len(after) > 1 {
+		runID = strings.TrimPrefix(after, "/")
+	}
+
+	runsDir, err := smokeRunsDir()
+	if err != nil {
+		http.Error(w, "could not access smoke-runs dir: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	p := filepath.Join(home, ".datawatch", "smoke-progress.json")
+
+	// Migrate legacy single file into runs dir on first access
+	if legacy := legacyProgressPath(); runID == "" {
+		if data, err2 := os.ReadFile(legacy); err2 == nil {
+			var raw map[string]any
+			if json.Unmarshal(data, &raw) == nil {
+				id, _ := raw["run_id"].(string)
+				if id == "" {
+					id = "legacy"
+				}
+				dest := filepath.Join(runsDir, id+".json")
+				if _, statErr := os.Stat(dest); os.IsNotExist(statErr) {
+					_ = os.WriteFile(dest, data, 0644)
+				}
+				_ = os.Remove(legacy)
+			}
+		}
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if runID != "" {
+			// Delete single run
+			p := filepath.Join(runsDir, runID+".json")
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		// Delete all runs
+		entries, _ := os.ReadDir(runsDir)
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+				_ = os.Remove(filepath.Join(runsDir, e.Name()))
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodGet:
-		data, err := os.ReadFile(p)
-		if err != nil {
-			if os.IsNotExist(err) {
-				w.WriteHeader(http.StatusNoContent)
+		if runID != "" {
+			// Return full detail for one run
+			p := filepath.Join(runsDir, runID+".json")
+			data, err := os.ReadFile(p)
+			if err != nil {
+				if os.IsNotExist(err) {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data) //nolint:errcheck
 			return
 		}
-		var raw json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			http.Error(w, "smoke-progress.json is not valid JSON", http.StatusInternalServerError)
+
+		// Return array of all runs (envelope summary, newest first)
+		entries, err := os.ReadDir(runsDir)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]")) //nolint:errcheck
 			return
 		}
+
+		type envelope struct {
+			ID          string  `json:"id"`
+			Type        string  `json:"type"`
+			Pass        int     `json:"pass"`
+			Fail        int     `json:"fail"`
+			Skip        int     `json:"skip"`
+			Total       int     `json:"total"`
+			Active      bool    `json:"active"`
+			CurrentName string  `json:"current_name,omitempty"`
+			StartedAt   string  `json:"started_at,omitempty"`
+			UpdatedAt   string  `json:"updated_at,omitempty"`
+			Version     string  `json:"version,omitempty"`
+			Pct         float64 `json:"pct"`
+		}
+
+		var envelopes []envelope
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			data, readErr := os.ReadFile(filepath.Join(runsDir, e.Name()))
+			if readErr != nil {
+				continue
+			}
+			var raw map[string]any
+			if json.Unmarshal(data, &raw) != nil {
+				continue
+			}
+			id := strings.TrimSuffix(e.Name(), ".json")
+			if v, ok := raw["run_id"].(string); ok && v != "" {
+				id = v
+			}
+			total := 82 // default smoke total
+			if v, ok := raw["total"].(float64); ok {
+				total = int(v)
+			}
+			pass, _ := raw["pass"].(float64)
+			fail, _ := raw["fail"].(float64)
+			skip, _ := raw["skip"].(float64)
+			done := int(pass) + int(fail) + int(skip)
+			pct := 0.0
+			if total > 0 {
+				pct = float64(done) / float64(total) * 100
+				if pct > 100 {
+					pct = 100
+				}
+			}
+			runType, _ := raw["type"].(string)
+			if runType == "" {
+				runType = "smoke"
+			}
+			active, _ := raw["active"].(bool)
+			currentName, _ := raw["current_name"].(string)
+			startedAt, _ := raw["started_at"].(string)
+			updatedAt, _ := raw["updated_at"].(string)
+			version, _ := raw["version"].(string)
+
+			envelopes = append(envelopes, envelope{
+				ID:          id,
+				Type:        runType,
+				Pass:        int(pass),
+				Fail:        int(fail),
+				Skip:        int(skip),
+				Total:       total,
+				Active:      active,
+				CurrentName: currentName,
+				StartedAt:   startedAt,
+				UpdatedAt:   updatedAt,
+				Version:     version,
+				Pct:         pct,
+			})
+		}
+
+		// Sort newest first by UpdatedAt then StartedAt
+		sort.Slice(envelopes, func(i, j int) bool {
+			ti := envelopes[i].UpdatedAt
+			if ti == "" {
+				ti = envelopes[i].StartedAt
+			}
+			tj := envelopes[j].UpdatedAt
+			if tj == "" {
+				tj = envelopes[j].StartedAt
+			}
+			return ti > tj
+		})
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data) //nolint:errcheck
+		out, _ := json.Marshal(envelopes)
+		w.Write(out) //nolint:errcheck
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

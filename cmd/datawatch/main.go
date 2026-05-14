@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0"
+var Version = "7.0.0-alpha.58"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -878,16 +878,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		binaryPath, _ := os.Executable()
 		binaryPath, _ = filepath.EvalSymlinks(binaryPath)
 		if err := statspkg.CheckEBPFReady(binaryPath); err != nil {
-			fmt.Printf("[ebpf] Capabilities missing on %s\n", binaryPath)
-			fmt.Println("[ebpf] Attempting to set capabilities (may prompt for sudo)...")
-			if setErr := statspkg.SetCapBPF(binaryPath); setErr != nil {
-				// setcap failed — start without eBPF but don't block
-				fmt.Printf("[warn] Could not set CAP_BPF: %v\n", setErr)
-				fmt.Println("[warn] Starting without eBPF. To fix: datawatch setup ebpf")
-				fmt.Println("[warn] Or disable: datawatch setup ebpf --disable")
-			} else {
-				fmt.Println("[ebpf] Capabilities set successfully")
-			}
+			// Never auto-setcap at runtime — that belongs in `datawatch setup ebpf` only.
+			fmt.Printf("[warn] eBPF capabilities missing on %s — starting without eBPF\n", binaryPath)
+			fmt.Println("[warn] To enable: datawatch setup ebpf")
 		}
 		// Try loading regardless — if caps were just set, this will work
 		if statspkg.HasCapBPF(binaryPath) {

@@ -17529,20 +17529,42 @@ function _dashLoop(ts) {
     }).catch(() => {}).finally(() => { _dash._computeNodesFetching = false; });
   }
 
-  // Poll smoke progress — fast (2.5s) when active run, slow (30s) otherwise
-  const smokeInterval = (_dash._smokeData && _dash._smokeData.active) ? 75 : 900;
+  // Poll smoke envelopes — fast (2.5s) if any run is active, slow (30s) otherwise
+  const hasActiveSmoke = Array.isArray(_dash._smokeEnvelopes) && _dash._smokeEnvelopes.some(e => e.active);
+  const smokeInterval = hasActiveSmoke ? 75 : 900;
   if ((_dash._frameCount === 1 || _dash._frameCount % smokeInterval === 0) && !_dash._smokeFetching) {
     _dash._smokeFetching = true;
     fetch('/api/smoke/progress').then(r => {
-      if (r.status === 204) return null;
       if (!r.ok) throw new Error('smoke ' + r.status);
       return r.json();
     }).then(d => {
-      if (d) _dash._smokeData = d;
+      if (Array.isArray(d)) {
+        _dash._smokeEnvelopes = d;
+        // If expanded envelope is still in list, refresh its detail
+        if (_dash._smokeExpandedId) {
+          const env = d.find(e => e.id === _dash._smokeExpandedId);
+          if (!env) { _dash._smokeExpandedId = null; _dash._smokeExpandedData = null; }
+        }
+        // Auto-select latest active run for detail view
+        if (!_dash._smokeExpandedId) {
+          const active = d.find(e => e.active);
+          if (active) _dash._smokeExpandedId = active.id;
+        }
+      }
     }).catch(() => {}).finally(() => {
       _dash._smokeFetching = false;
       _dashRenderSmoke();
     });
+    // If an envelope is expanded, also refresh its section detail
+    if (_dash._smokeExpandedId && !_dash._smokeDetailFetching) {
+      _dash._smokeDetailFetching = true;
+      fetch('/api/smoke/progress/' + encodeURIComponent(_dash._smokeExpandedId)).then(r => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      }).then(d => {
+        if (d) _dash._smokeExpandedData = d;
+      }).catch(() => {}).finally(() => { _dash._smokeDetailFetching = false; _dashRenderSmoke(); });
+    }
   }
 
   _dash.rafId = requestAnimationFrame(_dashLoop);
@@ -17869,123 +17891,160 @@ function _dashRenderGuardrails() {
   el.innerHTML = html;
 }
 
-// Smoke run progress card ————————————————————————————————————————————————
-// Filter state: 'all' | 'pass' | 'fail' | 'skip' | 'active'
-if (!_dash._smokeFilter) _dash._smokeFilter = 'all';
+// Smoke run progress card — multi-envelope (BL303 S5 rev2)
+// State: _dash._smokeEnvelopes (array), _dash._smokeExpandedId, _dash._smokeExpandedData, _dash._smokeFilter
 
-function _smokeClearData() {
+if (!_dash._smokeFilter) _dash._smokeFilter = 'all';
+if (!_dash._smokeEnvelopes) _dash._smokeEnvelopes = [];
+
+function _smokeDeleteRun(id) {
+  fetch('/api/smoke/progress/' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+    .then(() => {
+      _dash._smokeEnvelopes = (_dash._smokeEnvelopes || []).filter(e => e.id !== id);
+      if (_dash._smokeExpandedId === id) { _dash._smokeExpandedId = null; _dash._smokeExpandedData = null; }
+      _dashRenderSmoke();
+    }).catch(() => {});
+}
+window._smokeDeleteRun = _smokeDeleteRun;
+
+function _smokeDeleteAll() {
   fetch('/api/smoke/progress', { method: 'DELETE', headers: tokenHeader() })
-    .then(() => { _dash._smokeData = null; _dashRenderSmoke(); })
+    .then(() => { _dash._smokeEnvelopes = []; _dash._smokeExpandedId = null; _dash._smokeExpandedData = null; _dashRenderSmoke(); })
     .catch(() => {});
 }
-window._smokeClearData = _smokeClearData;
+window._smokeDeleteAll = _smokeDeleteAll;
 
-function _smokSetFilter(f) {
-  _dash._smokeFilter = f;
+function _smokeSelectRun(id) {
+  if (_dash._smokeExpandedId === id) {
+    _dash._smokeExpandedId = null; _dash._smokeExpandedData = null;
+  } else {
+    _dash._smokeExpandedId = id;
+    _dash._smokeExpandedData = null;
+    // Fetch detail immediately
+    fetch('/api/smoke/progress/' + encodeURIComponent(id)).then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) { _dash._smokeExpandedData = d; _dashRenderSmoke(); } }).catch(() => {});
+  }
   _dashRenderSmoke();
 }
+window._smokeSelectRun = _smokeSelectRun;
+
+function _smokSetFilter(f) { _dash._smokeFilter = f; _dashRenderSmoke(); }
 window._smokSetFilter = _smokSetFilter;
 
 function _dashRenderSmoke() {
   const el = document.getElementById('dashSmokeCard');
   if (!el) return;
 
-  const d = _dash._smokeData;
-  if (!d) {
-    el.innerHTML = `<div style="padding:12px;color:var(--text2);font-size:11px;">No smoke data — run <code>scripts/release-smoke.sh</code></div>`;
+  const envelopes = _dash._smokeEnvelopes || [];
+  if (envelopes.length === 0) {
+    el.innerHTML = `<div style="padding:12px;color:var(--text2);font-size:11px;">No runs — start <code>release-smoke.sh</code> or <code>run-tests.sh</code></div>`;
     return;
   }
 
-  const pass = d.pass || 0, fail = d.fail || 0, skip = d.skip || 0;
-  const secs = d.sections || [];
-  const TOTAL_SECS = 82;
-  const done = secs.length;
-  const remaining = Math.max(0, TOTAL_SECS - done - (d.active ? 1 : 0));
-  const pct = Math.min(100, done > 0 ? Math.round(done / TOTAL_SECS * 100) : 0);
-  const barColor = fail > 0 ? 'var(--error,#ef4444)' : d.active ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
-  const statusLabel = d.active ? '🔄 Running' : fail > 0 ? '❌ Failed' : '✅ Passed';
-  const updated = d.updated_at ? new Date(d.updated_at).toLocaleTimeString() : '';
-
-  // Filter pills
-  const filt = _dash._smokeFilter || 'all';
-  const pillStyle = (k) => `display:inline-block;padding:3px 8px;border-radius:12px;font-size:10px;cursor:pointer;border:1px solid ${filt===k?'var(--accent)':'var(--border)'};background:${filt===k?'var(--accent)':'transparent'};color:${filt===k?'var(--bg)':'var(--text2)'};font-weight:${filt===k?'700':'400'};`;
-  const pillHtml = `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 8px;border-bottom:1px solid var(--border);flex-shrink:0;">
-    <span onclick="_smokSetFilter('all')" style="${pillStyle('all')}">All ${done+( d.active?1:0)}</span>
-    ${d.active ? `<span onclick="_smokSetFilter('active')" style="${pillStyle('active')}">▶ Active</span>` : ''}
-    <span onclick="_smokSetFilter('pass')" style="${pillStyle('pass')}">✓ ${pass}</span>
-    ${fail > 0 ? `<span onclick="_smokSetFilter('fail')" style="${pillStyle('fail')}">✗ ${fail}</span>` : ''}
-    ${skip > 0 ? `<span onclick="_smokSetFilter('skip')" style="${pillStyle('skip')}">⏭ ${skip}</span>` : ''}
-    ${remaining > 0 ? `<span onclick="_smokSetFilter('pending')" style="${pillStyle('pending')}">○ ${remaining} left</span>` : ''}
-    ${!d.active ? `<button onclick="_smokeClearData()" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:10px;color:var(--text2);cursor:pointer;font-size:10px;padding:2px 8px;">Clear</button>` : ''}
-  </div>`;
-
-  // Header: status + bar
-  const headerHtml = `<div style="padding:6px 8px 4px;flex-shrink:0;border-bottom:1px solid var(--border);">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-      <span style="font-weight:700;font-size:12px;">${statusLabel}</span>
-      <span style="font-size:10px;color:var(--text2);">${escHtml(d.version||'')} · ${updated}</span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text2);">${done}/${TOTAL_SECS} · ${pct}%</span>
-    </div>
-    <div style="height:5px;background:var(--border);border-radius:3px;">
-      <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.5s;"></div>
-    </div>
-  </div>`;
-
-  // Build section rows
-  // Active section appears at top of the list
-  let allRows = [];
-
-  // Currently active section
-  if (d.active && d.current_id) {
-    allRows.push({ id: d.current_id, name: d.current_name || d.current_id, result: 'active' });
-  }
-
-  // Completed sections (newest last, i.e. keep chronological order)
-  for (const s of secs) {
-    allRows.push(s);
-  }
-
-  // Pending slots (shown as placeholders when filter is 'pending' or 'all')
-  const pendingCount = remaining;
-
-  // Apply filter
-  let filtered;
-  if (filt === 'all') {
-    filtered = allRows; // pending shown separately below
-  } else if (filt === 'active') {
-    filtered = allRows.filter(s => s.result === 'active');
-  } else if (filt === 'pending') {
-    filtered = []; // show pending placeholder message
-  } else {
-    filtered = allRows.filter(s => s.result === filt);
-  }
-
-  const rowHtml = (s) => {
-    let col, icon, bg = 'transparent';
-    if (s.result === 'fail') { col = 'var(--error,#ef4444)'; icon = '✗'; bg = 'rgba(239,68,68,0.06)'; }
-    else if (s.result === 'skip') { col = 'var(--text2)'; icon = '⏭'; }
-    else if (s.result === 'active') { col = 'var(--warning,#f59e0b)'; icon = '▶'; bg = 'rgba(245,158,11,0.08)'; }
-    else { col = 'var(--success,#10b981)'; icon = '✓'; }
-    const nm = (s.name || s.id || '');
-    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:${bg};border-bottom:1px solid var(--border);" title="${escHtml(nm)}">
-      <span style="color:${col};flex-shrink:0;font-size:13px;width:14px;text-align:center;">${icon}</span>
-      <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${s.result==='active'?'var(--text)':s.result==='skip'?'var(--text2)':'var(--text)'};">${escHtml(nm)}</span>
+  // ── Envelope list (top section) ──────────────────────────────────────────
+  const envRow = (e) => {
+    const sel = _dash._smokeExpandedId === e.id;
+    const pct = Math.min(100, Math.round(e.pct || 0));
+    const barCol = e.fail > 0 ? 'var(--error,#ef4444)' : e.active ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+    const typeTag = e.type === 'e2e' ? 'E2E' : 'SMOKE';
+    const typeCol = e.type === 'e2e' ? '#6366f1' : '#0891b2';
+    const timeStr = e.updated_at ? new Date(e.updated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+    const status = e.active ? '▶' : e.fail > 0 ? '✗' : '✓';
+    const statusCol = e.active ? 'var(--warning,#f59e0b)' : e.fail > 0 ? 'var(--error,#ef4444)' : 'var(--success,#10b981)';
+    const bg = sel ? 'var(--accent-subtle,rgba(99,102,241,0.08))' : 'transparent';
+    const border = sel ? '2px solid var(--accent)' : '2px solid transparent';
+    return `<div onclick="_smokeSelectRun('${escHtml(e.id)}')" style="display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:pointer;background:${bg};border-left:${border};border-bottom:1px solid var(--border);">
+      <span style="color:${statusCol};font-size:12px;flex-shrink:0;">${status}</span>
+      <span style="font-size:9px;font-weight:700;color:#fff;background:${typeCol};padding:1px 4px;border-radius:3px;flex-shrink:0;">${typeTag}</span>
+      <span style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escHtml(e.version || e.id)}</span>
+      <span style="font-size:9px;color:var(--text2);flex-shrink:0;">${e.pass}✓ ${e.fail>0?e.fail+'✗ ':''}${timeStr}</span>
+      <div style="width:36px;height:4px;background:var(--border);border-radius:2px;flex-shrink:0;">
+        <div style="height:100%;width:${pct}%;background:${barCol};border-radius:2px;"></div>
+      </div>
+      <button onclick="event.stopPropagation();_smokeDeleteRun('${escHtml(e.id)}')" title="Delete" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:11px;padding:0 2px;flex-shrink:0;">✕</button>
     </div>`;
   };
 
-  let listHtml;
-  if (filtered.length === 0 && filt === 'pending' && pendingCount > 0) {
-    listHtml = `<div style="padding:12px 8px;color:var(--text2);font-size:11px;">⏳ ${pendingCount} sections not yet run</div>`;
-  } else if (filtered.length === 0) {
-    listHtml = `<div style="padding:12px 8px;color:var(--text2);font-size:11px;">— none —</div>`;
-  } else {
-    listHtml = filtered.map(rowHtml).join('');
-    if (filt === 'all' && pendingCount > 0) {
-      listHtml += `<div style="padding:5px 8px;color:var(--text2);font-size:11px;font-style:italic;">⏳ ${pendingCount} sections pending</div>`;
+  const listHeight = envelopes.length > 1 ? Math.min(envelopes.length * 38, 120) : 38;
+  const envListHtml = `<div style="flex-shrink:0;border-bottom:2px solid var(--border);overflow-y:auto;max-height:${listHeight}px;">
+    ${envelopes.map(envRow).join('')}
+    ${envelopes.length > 1 ? `<div style="padding:2px 8px;display:flex;justify-content:flex-end;"><button onclick="_smokeDeleteAll()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:9px;padding:2px 4px;">Clear all</button></div>` : ''}
+  </div>`;
+
+  // ── Expanded detail panel ────────────────────────────────────────────────
+  let detailHtml = '';
+  if (_dash._smokeExpandedId) {
+    const d = _dash._smokeExpandedData;
+    if (!d) {
+      detailHtml = `<div style="padding:12px;color:var(--text2);font-size:11px;">Loading…</div>`;
+    } else {
+      const pass = d.pass || 0, fail = d.fail || 0, skip = d.skip || 0;
+      const secs = d.sections || [];
+      const total = d.total || 82;
+      const done = secs.length;
+      const remaining = Math.max(0, total - done - (d.active ? 1 : 0));
+      const pct = Math.min(100, total > 0 ? Math.round(done / total * 100) : 0);
+      const barColor = fail > 0 ? 'var(--error,#ef4444)' : d.active ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+
+      // Filter pills
+      const filt = _dash._smokeFilter || 'all';
+      const pill = (k, label) => `<span onclick="_smokSetFilter('${k}')" style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;cursor:pointer;border:1px solid ${filt===k?'var(--accent)':'var(--border)'};background:${filt===k?'var(--accent)':'transparent'};color:${filt===k?'var(--bg)':'var(--text2)'};">${label}</span>`;
+
+      let allRows = [];
+      if (d.active && d.current_id) allRows.push({ id: d.current_id, name: d.current_name || d.current_id, result: 'active' });
+      for (const s of secs) allRows.push(s);
+
+      let filtered;
+      if (filt === 'all') filtered = allRows;
+      else if (filt === 'pending') filtered = [];
+      else filtered = allRows.filter(s => s.result === filt);
+
+      const sRow = (s) => {
+        let col, icon, bg = 'transparent';
+        if (s.result === 'fail') { col = 'var(--error,#ef4444)'; icon = '✗'; bg = 'rgba(239,68,68,0.06)'; }
+        else if (s.result === 'skip') { col = 'var(--text2)'; icon = '⏭'; }
+        else if (s.result === 'active') { col = 'var(--warning,#f59e0b)'; icon = '▶'; bg = 'rgba(245,158,11,0.08)'; }
+        else { col = 'var(--success,#10b981)'; icon = '✓'; }
+        return `<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:${bg};border-bottom:1px solid var(--border);" title="${escHtml(s.name||s.id||'')}">
+          <span style="color:${col};flex-shrink:0;font-size:11px;width:12px;text-align:center;">${icon}</span>
+          <span style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${s.result==='skip'?'var(--text2)':'var(--text)'};">${escHtml(s.name||s.id||'')}</span>
+        </div>`;
+      };
+
+      let rowsHtml;
+      if (filt === 'pending' && remaining > 0) rowsHtml = `<div style="padding:8px;color:var(--text2);font-size:10px;">⏳ ${remaining} pending</div>`;
+      else if (filtered.length === 0) rowsHtml = `<div style="padding:8px;color:var(--text2);font-size:10px;">— none —</div>`;
+      else {
+        rowsHtml = filtered.map(sRow).join('');
+        if (filt === 'all' && remaining > 0) rowsHtml += `<div style="padding:4px 8px;color:var(--text2);font-size:10px;font-style:italic;">⏳ ${remaining} pending</div>`;
+      }
+
+      detailHtml = `
+        <div style="padding:5px 8px 3px;flex-shrink:0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="font-size:10px;font-weight:700;">${d.active?'🔄 Running':fail>0?'❌ Failed':'✅ Done'}</span>
+            <span style="font-size:9px;color:var(--text2);">${done}/${total} · ${pct}%</span>
+            <span style="margin-left:auto;font-size:9px;color:var(--text2);">${pass}✓ ${fail}✗ ${skip}⏭</span>
+          </div>
+          <div style="height:4px;background:var(--border);border-radius:2px;">
+            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width 0.5s;"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;padding:3px 8px;border-bottom:1px solid var(--border);flex-shrink:0;">
+          ${pill('all','All '+(done+(d.active?1:0)))}
+          ${d.active?pill('active','▶ Active'):''}
+          ${pill('pass','✓ '+pass)}
+          ${fail>0?pill('fail','✗ '+fail):''}
+          ${skip>0?pill('skip','⏭ '+skip):''}
+          ${remaining>0?pill('pending','○ '+remaining):''}
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto;">${rowsHtml}</div>`;
     }
   }
 
-  el.innerHTML = headerHtml + pillHtml + `<div style="flex:1;min-height:0;overflow-y:auto;">${listHtml}</div>`;
+  el.innerHTML = envListHtml + (_dash._smokeExpandedId
+    ? `<div style="flex:1;min-height:0;display:flex;flex-direction:column;">${detailHtml}</div>`
+    : `<div style="padding:10px 8px;color:var(--text2);font-size:10px;">↑ Click a run to expand</div>`);
 }
 
 // Node click — session → session-detail, PRD → automata view ————————————————
