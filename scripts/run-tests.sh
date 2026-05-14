@@ -753,10 +753,10 @@ server:
   token: "$token"
   tls_auto_generate: true
   auth_enabled: true
+  channel_port: $chan_port
 mcp:
   sse_port: $mcp_port
   enabled: true
-channel_port: $chan_port
 session:
   llm_backend: ollama
   skip_permissions: true
