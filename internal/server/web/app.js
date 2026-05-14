@@ -3720,9 +3720,13 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   let focusBody = '';
   if (lastEvent) {
     const ts = new Date(lastEvent.ts).toLocaleString('en-GB', { hour12: false });
+    const focusText = board.current_focus && board.current_focus.task || (lastEvent.payload && lastEvent.payload.current_task) || '—';
+    const isMultiLine = focusText.includes('\n');
     focusBody = `
       <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
-        <div><strong>${escHtml(t('status_current_focus')||'Current focus')}:</strong> ${escHtml(board.current_focus && board.current_focus.task || (lastEvent.payload && lastEvent.payload.current_task) || '—')}</div>
+        ${isMultiLine
+          ? `<pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:12px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-word;margin:0;">${escHtml(focusText)}</pre>`
+          : `<div><strong>${escHtml(t('status_current_focus')||'Current focus')}:</strong> ${escHtml(focusText)}</div>`}
         <div style="font-size:11px;color:var(--text2);">last ${escHtml(lastEvent.event)}${lastEvent.tool ? ' · ' + escHtml(lastEvent.tool) : ''} · ${escHtml(ts)}</div>
         ${board.idle_since ? `<div style="font-size:11px;color:var(--warning,#f59e0b);">idle since ${escHtml(new Date(board.idle_since).toLocaleTimeString('en-GB', {hour12:false}))}</div>` : ''}
       </div>`;
@@ -3754,7 +3758,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
       <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
-    ${card(t('status_card_sprint')||'Sprint / PRD tree', sprintBody)}
+    ${card(t('status_card_sprint')||'Sprint / Automata', sprintBody)}
     ${card(t('status_card_tests')||'Tests', testsBody)}
     ${card(t('status_card_git')||'Git', gitBody)}
     <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields.')}</div>
@@ -8882,7 +8886,7 @@ function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);">Story ${escHtml(storyID)}</label>
       <select id="prdSetStoryProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${opts.join('')}</select>
-      <div style="font-size:10px;color:var(--text2);">${t('prd_set_story_profile_hint')||'Empty = inherit the PRD\'s default execution profile (PRD.project_profile). A name overrides for this story only.'}</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_set_story_profile_hint')||'Empty = inherit the Automaton\'s default execution profile. A name overrides for this story only.'}</div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
@@ -9620,7 +9624,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_spec_label')||'Spec'} ${micButtonHTML('prdEditSpec')}</label>
       <textarea id="prdEditSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;">${escHtml(currentSpec || '')}</textarea>
-      <div style="font-size:10px;color:var(--text2);">${t('prd_task_llm_hint')||'Per-task LLM override — empty inherits PRD then global.'}</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_task_llm_hint')||'Per-task LLM override — empty inherits Automaton then global.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend',${JSON.stringify(currentModel || '')})`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
@@ -9715,7 +9719,7 @@ function openPRDSetLLMModal(prdID, current) {
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
-      <strong>${t('prd_set_llm_title')||'PRD-level worker LLM'}</strong>
+      <strong>${t('prd_set_llm_title')||'Automaton-level worker LLM'}</strong>
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
@@ -14715,7 +14719,7 @@ function _renderDetailRulesTab(prd) {
   const r = prd.rules_result || null;
   return `
     <div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">
-      ${escHtml(t('prd_rules_help')||'AGENT.md / project-rules check. Verifies the PRD spec and any produced files comply with the operator-defined rules.')}
+      ${escHtml(t('prd_rules_help')||'AGENT.md / project-rules check. Verifies the Automaton spec and any produced files comply with the operator-defined rules.')}
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <button class="btn-icon prd-header-btn" onclick="prdAction(${escHtml(idJ)},'scan/rules','POST')" title="${escHtml(t('prd_rules_run_title')||'Run rules check')}">▶ ${escHtml(t('rules_run')||'Run Rules Check')}</button>
@@ -14733,7 +14737,7 @@ function _renderDetailScanTab(prd) {
   const idJ = JSON.stringify(id);
   return `
     <div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">
-      ${escHtml(t('prd_scan_help')||'Static analysis (SAST · secrets · dependencies · LLM grader) over the PRD spec and any associated files. Runs the configured scanners and reports a verdict + findings.')}
+      ${escHtml(t('prd_scan_help')||'Static analysis (SAST · secrets · dependencies · LLM grader) over the Automaton spec and any associated files. Runs the configured scanners and reports a verdict + findings.')}
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <button class="btn-icon prd-header-btn" onclick="runPRDScan(${escHtml(idJ)})" title="${escHtml(t('prd_scan_run_title')||'Run all configured scanners against this automaton')}">▶ ${escHtml(t('scan_run')||'Run Scan')}</button>
@@ -14766,7 +14770,7 @@ function _renderScanResult(el, prdId, r) {
       </span>
       <span style="color:var(--text2);font-size:11px;">${count} ${escHtml(t('scan_findings')||'findings')} · ${escHtml(r.at ? new Date(r.at).toLocaleString() : '')}</span>
       ${r.verdict !== 'pass' && count > 0 ? `
-        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="createScanFixPRD(${idJ})">${escHtml(t('scan_fix_prd')||'Create Fix PRD')}</button>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="createScanFixPRD(${idJ})">${escHtml(t('scan_fix_prd')||'Create Fix Automaton')}</button>
         <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="proposeScanRules(${idJ})">${escHtml(t('scan_propose_rules')||'Propose AGENT.md Rules')}</button>
       ` : ''}
     </div>
@@ -14798,7 +14802,7 @@ window.runPRDScan = function(prdId) {
 window.createScanFixPRD = function(prdId) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan/fix', { method: 'POST' })
     .then(prd => {
-      showToast('Fix PRD created: ' + (prd&&prd.id||''), 'success', 3000);
+      showToast('Fix Automaton created: ' + (prd&&prd.id||''), 'success', 3000);
       if (prd && prd.id) renderPRDDetailView(prd.id);
     })
     .catch(e => showToast(String(e.message||e), 'error'));
