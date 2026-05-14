@@ -1,4 +1,4 @@
-// BL303 S2 — MCP tools for the guardrail library + profiles.
+// BL303 S2/S3 — MCP tools for the guardrail library + profiles + session guardrail.
 //
 // Tools:
 //   guardrail_library_list       — list all registered guardrails
@@ -8,6 +8,7 @@
 //   guardrail_profile_update     — update a profile
 //   guardrail_profile_delete     — delete a profile
 //   per_automaton_guardrails_set — set per-Automaton guardrail overrides
+//   session_guardrail_run        — run a named guardrail on a session (S3 T15)
 
 package mcp
 
@@ -161,6 +162,27 @@ func (s *Server) handlePerAutomatonGuardrailsSet(_ context.Context, req mcpsdk.C
 		"per_story_guardrails": perStory,
 	}
 	data, err := s.proxyJSON(http.MethodPut, "/api/autonomous/prds/"+id+"/guardrails", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+// ── session_guardrail_run (BL303 S3 T15) ─────────────────────────────────
+
+func (s *Server) toolSessionGuardrailRun() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_guardrail_run",
+		mcpsdk.WithDescription("Run a named guardrail on a session's project directory. Appends the verdict to the session's telemetry."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID.")),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Guardrail name from the library (e.g. sast-scan, secrets-scan, deps-scan).")),
+	)
+}
+
+func (s *Server) handleSessionGuardrailRun(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	sid := req.GetString("session_id", "")
+	name := req.GetString("name", "")
+	body := map[string]any{"name": name}
+	data, err := s.proxyJSON(http.MethodPost, "/api/sessions/"+sid+"/guardrail", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}

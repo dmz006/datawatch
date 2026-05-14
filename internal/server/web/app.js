@@ -156,7 +156,7 @@ window.fetch = function(...args) {
 const state = {
   connected: false,
   sessions: [],
-  activeView: 'sessions', // sessions | new | settings | session-detail | alerts
+  activeView: 'sessions', // sessions | new | settings | session-detail | alerts | dashboard
   activeSession: null,    // session FullID being viewed
   activeOutputTab: 'tmux', // which output tab is active: 'tmux' | 'channel'
   ws: null,
@@ -793,6 +793,36 @@ function handleMessage(msg) {
             loadAutomataPanel();
           }
         }, 250);
+      }
+      break;
+    case 'hook_update':
+      // BL303 S3 T12 / S4 T14 — real-time Status tab + dashboard refresh.
+      if (msg.data && msg.data.session_id && msg.data.board) {
+        const hSid = msg.data.session_id;
+        updateSessionStatusBadge(msg.data.board);
+        // S4: cache board for dashboard expand panel
+        _dash._boards[hSid] = msg.data.board;
+        // S4: update dashboard node state + feed EKG
+        if (state.activeView === 'dashboard') {
+          const n = _dash.nodes[hSid];
+          if (n) {
+            n.hookHealth = msg.data.board.hook_health || 'missing';
+            n.state = msg.data.board.state || 'unknown';
+            const tel = msg.data.board.telemetry;
+            n.threats = tel && tel.guardrail_verdicts
+              ? tel.guardrail_verdicts.filter(v => v.outcome === 'block' || v.outcome === 'warn').length
+              : 0;
+            n.color = _dashNodeColor(msg.data.board.state || n.state);
+          }
+          _dash.ekg.push({ t: Date.now(), c: _dashNodeColor(msg.data.board.state), dy: 0.5 + Math.random() * 0.5 });
+          if (_dash.ekg.length > _dash.ekgMax) _dash.ekg.shift();
+          if (_dash.expandSid === hSid) _dashUpdateExpand(hSid);
+        }
+        if (state.activeView === 'session-detail' && state.activeSession === hSid &&
+            state.activeOutputTab === 'status') {
+          const area = document.getElementById('statusSubpaneStatus');
+          if (area) renderSessionStatusBoardInner(area, msg.data.board, hSid);
+        }
       }
       break;
   }
@@ -1634,6 +1664,12 @@ function navigate(view, sessionId, fromPopstate) {
     history.pushState({ view, sessionId: sessionId || null }, '');
   }
 
+  // BL303 S4 — cancel dashboard RAF loop when navigating away.
+  if (view !== 'dashboard' && _dash.rafId) {
+    cancelAnimationFrame(_dash.rafId);
+    _dash.rafId = null;
+  }
+
   state.activeView = view;
   // Persist view for refresh recovery
   localStorage.setItem('cs_active_view', view);
@@ -1776,6 +1812,10 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailId = null;
       _automataDetailBreadcrumb = [];
       renderAutonomousView();
+    } else if (view === 'dashboard') {
+      // BL303 S4 — /dashboard Mission Control.
+      headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
+      renderDashboardView();
     } else if (view === 'observer') {
       // BL247-followup v6.7.3 — Observer is a real top-level view that
       // hosts the (former) Monitor sub-tab cards plus a Federated Peers
@@ -2267,6 +2307,9 @@ function sessionCard(sess, idx, total) {
     actions += `<button onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart" style="${btnStyle}">&#8635; Restart</button>`;
     actions += `<button onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete" style="${btnStyle}border-color:var(--error);color:var(--error);">&#128465;</button>`;
   }
+  // BL303 S4 T10 — maximize button opens session in dashboard expand mode.
+  actions += `<button class="sess-maximize-btn" onclick="event.stopPropagation();window.openDashExpand('${escHtml(fullId)}')" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
+
   // Last-response button — operator follow-up: bottom-right next to the
   // time, not with action buttons. Different action (view what session
   // said) tied to the session, not lifecycle. Built separately below.
@@ -3753,28 +3796,157 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     gitBody = `<div style="font-size:13px;">branch: <code>${escHtml(g.branch||'—')}</code>${g.dirty ? ' · <span style="color:var(--warning,#f59e0b);">dirty</span>' : ''}</div>`;
   }
 
+  // BL303 S3 — LiveTaskTree + breadcrumb + verdicts + progress + parent link.
+  const telemetry = board.telemetry || null;
+  const sessionType = detectSessionType(board);
+  const parentLink = renderParentSessionLink(telemetry);
+  const breadcrumb = renderSprintBreadcrumb(board.sprint || (telemetry && telemetry.sprint));
+  const progressBar = renderProgressBar(telemetry);
+  const taskTree = renderLiveTaskTree(telemetry, sessionType);
+  const taskTreeCard = taskTree
+    ? card(t('status_card_tasks') || 'Live Task Tree', breadcrumb + progressBar + taskTree)
+    : (board.sprint && !board.telemetry)
+      ? card(t('status_card_sprint') || 'Sprint / Automata', breadcrumb + sprintBody)
+      : card(t('status_card_sprint') || 'Sprint / Automata', breadcrumb + sprintBody);
+
   area.innerHTML = `
+    ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
       <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
-    ${card(t('status_card_sprint')||'Sprint / Automata', sprintBody)}
+    ${taskTreeCard}
     ${card(t('status_card_tests')||'Tests', testsBody)}
     ${card(t('status_card_git')||'Git', gitBody)}
-    <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields.')}</div>
+    <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council / Skills / Tracker / closed-task summaries appear once hook payloads include those fields.')}</div>
   `;
 }
 
 function updateSessionStatusBadge(board) {
+  // BL303 S3 T01 — inline header badge: hook health dot + session state.
   const badge = document.getElementById('tabStatusBadge');
   if (!badge) return;
-  const map = { running: '🟢', waiting: '🟠', idle: '⚪', unknown: '' };
-  const sym = map[board.state] || '';
-  if (!sym) { badge.style.display = 'none'; return; }
+  const stateMap = { running: '🟢', waiting: '🟠', idle: '⚪', unknown: '' };
+  const stateSym = stateMap[board.state] || '';
+  const hookColor = board.hook_health === 'alive' ? 'var(--success,#10b981)' : board.hook_health === 'stale' ? 'var(--warning,#f59e0b)' : '';
+  const hookDot = hookColor ? `<span style="color:${hookColor};font-size:10px;" title="${escHtml('hooks ' + board.hook_health)}">●</span>` : '';
+  const parts = [hookDot, stateSym ? `<span style="font-size:11px;">${stateSym}</span>` : ''].filter(Boolean);
+  if (!parts.length) { badge.style.display = 'none'; return; }
   badge.style.display = 'inline';
-  badge.style.cssText = 'display:inline;margin-left:4px;font-size:11px;';
-  badge.textContent = sym;
+  badge.style.cssText = 'display:inline;margin-left:4px;';
+  badge.innerHTML = parts.join('');
 }
+
+// BL303 S3 — Live Task Tree helpers (T02-T11).
+
+// T03 — infer session type from board/telemetry fields.
+function detectSessionType(board) {
+  const t = board && board.telemetry;
+  if (!t) return 'unknown';
+  if (t.sprint && t.sprint.prd_id) return 'automata';
+  if (t.tasks && t.tasks.length && t.tasks[0].id && t.tasks[0].id.startsWith('todo-')) return 'cc';
+  if (t.tests) return 'test-runner';
+  if (board.sprint && board.sprint.council) return 'council';
+  return 'generic';
+}
+
+// T07 — sprint ancestry breadcrumb. Shows prd_id / sprint_id / task trail.
+function renderSprintBreadcrumb(sprint) {
+  if (!sprint) return '';
+  const parts = [];
+  if (sprint.prd_id) parts.push(`<a href="javascript:void(0)" onclick="if(typeof _automataOpenDetail==='function')_automataOpenDetail('${escHtml(sprint.prd_id||'')}')" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;">${escHtml(sprint.prd_id)}</a>`);
+  if (sprint.sprint_id) parts.push(`<span style="font-size:11px;color:var(--text2);">${escHtml(sprint.sprint_id)}</span>`);
+  if (sprint.title) parts.push(`<span style="font-size:11px;">${escHtml(sprint.title)}</span>`);
+  if (!parts.length) return '';
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${parts.join('<span style="color:var(--text2);"> / </span>')}</div>`;
+}
+
+// T09 — progress + ETA bar from telemetry.
+function renderProgressBar(telemetry) {
+  if (!telemetry || !telemetry.tasks || !telemetry.tasks.length) return '';
+  const total = telemetry.tasks.length;
+  const done = telemetry.tasks.filter(tk => tk.status === 'completed').length;
+  const failed = telemetry.tasks.filter(tk => tk.status === 'failed').length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const barColor = failed > 0 ? 'var(--error,#ef4444)' : done === total ? 'var(--success,#10b981)' : 'var(--accent2,#60a5fa)';
+  const override = telemetry.progress && telemetry.progress > 0 ? Math.round(telemetry.progress * 100) : pct;
+  return `<div style="margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;">
+      <span>${done}/${total} tasks${failed > 0 ? ` · <span style="color:var(--error,#ef4444);">${failed} failed</span>` : ''}</span>
+      <span>${override}%</span>
+    </div>
+    <div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;">
+      <div style="height:100%;width:${override}%;background:${barColor};border-radius:2px;transition:width 0.3s;"></div>
+    </div>
+  </div>`;
+}
+
+// T08/T10 — guardrail verdicts inline.
+function renderSessionGuardrailVerdicts(verdicts) {
+  if (!verdicts || !verdicts.length) return '';
+  const chips = verdicts.map(v => {
+    const cl = v.outcome === 'pass' ? 'var(--success,#10b981)' : v.outcome === 'block' ? 'var(--error,#ef4444)' : 'var(--warning,#f59e0b)';
+    return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg);border:1px solid ${cl};border-radius:4px;padding:1px 5px;font-size:10px;color:${cl};" title="${escHtml(v.summary||'')}">
+      ${escHtml(v.guardrail)} · ${escHtml(v.outcome)}
+    </span>`;
+  }).join(' ');
+  return `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${chips}</div>`;
+}
+
+// T10 — failed task drill-down panel (last 5 hook events before failure).
+function renderFailedDrilldown(telemetry, task) {
+  if (!telemetry || !telemetry.failed_task_buf || !telemetry.failed_task_buf.length) return '';
+  const idBuf = document.getElementById('_failedDrillKey_' + (task.id || ''));
+  if (idBuf) return ''; // already expanded elsewhere
+  const evts = telemetry.failed_task_buf.slice(-5);
+  const rows = evts.map(e => {
+    const ts = e.ts ? new Date(e.ts).toLocaleTimeString('en-GB', { hour12: false }) : '';
+    return `<div style="font-size:10px;color:var(--text2);padding:2px 0;">${escHtml(ts)} ${escHtml(e.event)}${e.tool ? ' · ' + escHtml(e.tool) : ''}</div>`;
+  }).join('');
+  return `<div style="margin-top:4px;padding:4px 8px;background:var(--bg);border-left:2px solid var(--error,#ef4444);border-radius:2px;">
+    <div style="font-size:10px;font-weight:600;color:var(--error,#ef4444);margin-bottom:2px;">${escHtml(t('status_last_events')||'Last 5 events before failure')}</div>
+    ${rows}
+  </div>`;
+}
+
+// T11 — parent session cross-link.
+function renderParentSessionLink(telemetry) {
+  if (!telemetry || !telemetry.parent_session_id) return '';
+  const pid = telemetry.parent_session_id;
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
+    ${escHtml(t('status_parent_session')||'Parent session:')} <a href="javascript:void(0)" onclick="navigate('session-detail','${escHtml(pid)}');switchOutputTab('status');" style="color:var(--accent2,#60a5fa);text-decoration:none;">${escHtml(pid)}</a>
+  </div>`;
+}
+
+// T02 — LiveTaskTree component: session-type-aware task tree from telemetry.
+// T04: Automata sessions show story tree from DB + overlay telemetry
+// T05: CC sessions build from TodoWrite hook events
+// T06: Test-runner sessions build from tasks array
+function renderLiveTaskTree(telemetry, sessionType) {
+  if (!telemetry) return '';
+  const tasks = telemetry.tasks || [];
+  if (!tasks.length) return '';
+  const ic = s => ({ completed: '✓', failed: '✗', in_progress: '▶', pending: '○' })[s] || '○';
+  const cl = s => ({ completed: 'var(--success,#10b981)', failed: 'var(--error,#ef4444)', in_progress: 'var(--accent2,#60a5fa)', pending: 'var(--text2)' })[s] || 'var(--text2)';
+  const rows = tasks.map(tk => {
+    const dur = tk.duration_ms ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">${(tk.duration_ms/1000).toFixed(1)}s</span>` : '';
+    const drill = tk.status === 'failed' ? renderFailedDrilldown(telemetry, tk) : '';
+    return `<div style="padding:3px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:5px;font-size:12px;">
+        <span style="color:${cl(tk.status)};flex-shrink:0;font-weight:700;">${ic(tk.status)}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(tk.title||tk.id)}">${escHtml(tk.title||tk.id)}</span>${dur}
+      </div>${drill}
+    </div>`;
+  }).join('');
+  const verdicts = renderSessionGuardrailVerdicts(telemetry.guardrail_verdicts || []);
+  return rows + verdicts;
+}
+
+// T13 — deep-link: navigate to a session's Status tab directly.
+window.gotoSessionStatus = function(sessionId) {
+  navigate('session-detail', sessionId);
+  setTimeout(() => switchOutputTab('status'), 80);
+};
 
 // v6.11.21 — font controls dropdown helpers.
 window.toggleTermFontDropdown = function(ev) {
@@ -4353,6 +4525,11 @@ function loadSavedCmdsQuick(sessionId) {
         optHtml += userSaved.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name || c.command)}</option>`).join('');
         optHtml += '</optgroup>';
       }
+      // BL303 S3 T14 — guardrail section: run built-in guardrail on session project dir.
+      optHtml += '<optgroup label="Guardrails">';
+      optHtml += ['sast-scan', 'secrets-scan', 'deps-scan'].map(g =>
+        `<option value="__guardrail__${g}">▶ ${g}</option>`).join('');
+      optHtml += '</optgroup>';
       optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
       // v5.19.0 — operator-reported regression: Response button + tmux
       // arrow group (shipped v5.2.0) were getting blown away when this
@@ -4397,6 +4574,23 @@ function handleQuickCmd(sel) {
   if (val === '__custom__') {
     const wrap = document.getElementById('customCmdWrap');
     if (wrap) { wrap.style.display = 'flex'; document.getElementById('customCmdInput')?.focus(); }
+    return;
+  }
+  // BL303 S3 T14 — guardrail runner.
+  if (val.startsWith('__guardrail__')) {
+    const guardrailName = val.slice('__guardrail__'.length);
+    const sid = state.activeSession;
+    if (!sid) { showToast(t('status_no_session_guardrail') || 'No active session', 'error', 2000); return; }
+    showToast((t('status_running_guardrail') || 'Running guardrail:') + ' ' + guardrailName, 'info', 1500);
+    apiFetch('/api/sessions/' + encodeURIComponent(sid) + '/guardrail', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: guardrailName }),
+    }).then(v => {
+      const outcome = v && v.outcome ? v.outcome : 'unknown';
+      const summary = v && v.summary ? v.summary : '';
+      showToast(guardrailName + ': ' + outcome + (summary ? ' — ' + summary.slice(0, 60) : ''), outcome === 'pass' ? 'success' : 'error', 4000);
+      if (state.activeOutputTab === 'status') renderSessionStatusBoard(sid);
+    }).catch(err => showToast('Guardrail error: ' + String(err), 'error', 3000));
     return;
   }
   sendSavedCmd(val);
@@ -8562,6 +8756,8 @@ function renderPRDRow(prd) {
     ? `<span style="font-size:10px;color:var(--text);margin-left:4px;background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:6px;" title="recursion depth from a root automaton">depth ${prd.depth}</span>`
     : '';
   const actions = renderPRDActions(prd);
+  // BL303 S4 T10 — maximize button opens automaton in dashboard expand mode.
+  const dashExpandBtn = `<button class="sess-maximize-btn" onclick="event.stopPropagation();window.openDashExpand(${JSON.stringify(id)})" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
   // v5.27.8 — .prd-card replaces inline border/padding so the card
   // visual matches the Sessions card style (BL208 #30). Status drives
   // the left-border colour via .prd-card-status-<status>.
@@ -8574,7 +8770,7 @@ function renderPRDRow(prd) {
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;">${actions}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
     </div>
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
       <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
@@ -8785,6 +8981,7 @@ function _renderStoryReadOnlyExtras(story) {
   const sessionRow = sessId
     ? `<div class="prd-story-session-row">
          <a class="prd-story-session-link" href="javascript:void(0)" onclick="navigate('session-detail','${escHtml(sessId)}')" title="Open the worker session that ran this story">&#8594; Session <code>${escHtml(sessId)}</code></a>
+         <a class="prd-story-session-link" href="javascript:void(0)" onclick="gotoSessionStatus('${escHtml(sessId)}')" title="Open session Status tab (BL303 S3 T13)" style="margin-left:8px;font-size:11px;">&#9640; Status</a>
        </div>`
     : '';
 
@@ -13026,6 +13223,19 @@ const _automataState = {
   pinned: new Set(JSON.parse(localStorage.getItem('cs_automata_pinned') || '[]')),
 };
 
+// BL303 S4 — /dashboard Mission Control state.
+const _dash = {
+  nodes: {},        // session_id → {x, y, vx, vy, color, label, hookHealth, state, threats, prd}
+  edges: [],        // [{from, to}]
+  ekg: [],          // [{t, c, dy}] ring buffer of hook events for EKG canvas
+  ekgMax: 400,
+  _boards: {},      // session_id → SessionStatusBoard (fed by hook_update WS)
+  _prds: [],        // running/active automata for sprint pipeline
+  expandSid: null,  // session_id currently shown in expand overlay
+  rafId: null,
+  _frameCount: 0,
+};
+
 // alpha.31 #272 — sort rank for active-first ordering. Lower = sooner.
 const _AUTOMATA_STATE_RANK = {
   waiting_input:    0,
@@ -16647,6 +16857,9 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .catch(() => {});
 
+  // BL303 S4 — Dashboard nav button is always visible (no feature flag).
+  _dashCheckEnabled();
+
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
   // (Federated Peers card). The standalone nav button + view path were
   // removed; the BL220-G1 visibility check that previously revealed the
@@ -16761,6 +16974,401 @@ window.loadStatsPanel = loadStatsPanel;
 window.killOrphanedTmux = killOrphanedTmux;
 
 // ── BL220-G1 Observer panel ───────────────────────────────────────────────────
+
+// ── /dashboard Mission Control (BL303 S4) ────────────────────────────────────
+
+function _dashNodeColor(stateStr) {
+  const s = stateStr || 'unknown';
+  if (s === 'running' || s === 'generating') return 'var(--accent)';
+  if (s === 'waiting_input' || s === 'waiting') return 'var(--warning)';
+  if (s === 'completed' || s === 'done') return '#22c55e';
+  if (s === 'failed' || s === 'blocked' || s === 'error') return 'var(--error)';
+  return 'var(--text2)';
+}
+
+function _dashInitNodes() {
+  _dash.nodes = {};
+  _dash.edges = [];
+  const svgEl = document.getElementById('constellationSvg');
+  const W = (svgEl && svgEl.clientWidth) || 320;
+  const H = (svgEl && svgEl.clientHeight) || 220;
+  const sessions = state.sessions;
+  if (!sessions.length) return;
+  const cx = W / 2, cy = H / 2;
+  sessions.forEach((s, i) => {
+    if (_dash.nodes[s.full_id]) return;
+    const angle = (2 * Math.PI * i) / sessions.length;
+    const r = Math.min(cx, cy) * 0.55;
+    _dash.nodes[s.full_id] = {
+      x: cx + Math.cos(angle) * r,
+      y: cy + Math.sin(angle) * r,
+      vx: 0, vy: 0,
+      color: _dashNodeColor(s.state),
+      label: (s.name || s.task || s.id || '?').slice(0, 18),
+      hookHealth: (_dash._boards[s.full_id] && _dash._boards[s.full_id].hook_health) || 'missing',
+      state: s.state || 'unknown',
+      threats: 0,
+      prd: false,
+    };
+  });
+  // Add Automata nodes (slightly larger radius)
+  for (const p of (_dash._prds || [])) {
+    if (!_dash.nodes[p.id]) {
+      _dash.nodes[p.id] = {
+        x: cx + (Math.random() - 0.5) * W * 0.4,
+        y: cy + (Math.random() - 0.5) * H * 0.4,
+        vx: 0, vy: 0,
+        color: _dashNodeColor(p.status),
+        label: (p.title || p.name || p.id || '?').slice(0, 18),
+        hookHealth: 'missing',
+        state: p.status || 'unknown',
+        threats: 0,
+        prd: true,
+      };
+    }
+  }
+  // Edges: session parent_id relationships
+  for (const s of sessions) {
+    if (s.parent_id && _dash.nodes[s.parent_id] && _dash.nodes[s.full_id]) {
+      _dash.edges.push({ from: s.parent_id, to: s.full_id });
+    }
+  }
+}
+
+function _dashForceStep() {
+  const ids = Object.keys(_dash.nodes);
+  if (ids.length < 2) return;
+  const svgEl = document.getElementById('constellationSvg');
+  if (!svgEl) return;
+  const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
+  const cx = W / 2, cy = H / 2;
+
+  // Repulsion
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = _dash.nodes[ids[i]], b = _dash.nodes[ids[j]];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d2 = dx*dx + dy*dy + 1;
+      const f = Math.min(2500 / d2, 3);
+      const fx = (dx / Math.sqrt(d2)) * f;
+      const fy = (dy / Math.sqrt(d2)) * f;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    }
+    // Gravity toward center
+    const n = _dash.nodes[ids[i]];
+    n.vx += (cx - n.x) * 0.008;
+    n.vy += (cy - n.y) * 0.008;
+  }
+
+  // Edge attraction
+  for (const e of _dash.edges) {
+    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
+    if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.sqrt(dx*dx + dy*dy) + 0.01;
+    const target = Math.min(W, H) * 0.22;
+    const f = (d - target) * 0.015;
+    const fx = (dx / d) * f, fy = (dy / d) * f;
+    a.vx += fx; a.vy += fy;
+    b.vx -= fx; b.vy -= fy;
+  }
+
+  // Integrate + clamp
+  for (const id of ids) {
+    const n = _dash.nodes[id];
+    const r = n.prd ? 20 : 14;
+    n.vx *= 0.72; n.vy *= 0.72;
+    n.x = Math.max(r + 2, Math.min(W - r - 2, n.x + n.vx));
+    n.y = Math.max(r + 14, Math.min(H - r - 2, n.y + n.vy));
+  }
+}
+
+function _drawConstellation() {
+  const svgEl = document.getElementById('constellationSvg');
+  if (!svgEl) return;
+  const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
+  svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const ids = Object.keys(_dash.nodes);
+  if (ids.length === 0) {
+    svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
+    return;
+  }
+
+  const now = Date.now();
+  let html = '<defs><style>.dbn{cursor:pointer;}</style></defs>';
+
+  // Edges
+  for (const e of _dash.edges) {
+    const a = _dash.nodes[e.from], b = _dash.nodes[e.to];
+    if (!a || !b) continue;
+    html += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+  }
+
+  // Nodes
+  for (const id of ids) {
+    const n = _dash.nodes[id];
+    const r = n.prd ? 20 : 14;
+    const active = n.state === 'running' || n.state === 'generating' || n.state === 'waiting_input';
+    const pulseR = active ? (r + 5 + Math.sin(now / 500) * 3) : 0;
+    const opacity = n.hookHealth === 'missing' && !n.prd ? '0.35' : '0.85';
+
+    if (active && pulseR > 0) {
+      const pulseAlpha = (0.2 + Math.sin(now / 400) * 0.15).toFixed(2);
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${pulseR.toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="1.5" opacity="${pulseAlpha}"/>`;
+    }
+    if (n.hookHealth === 'alive') {
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+3).toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="0.6" opacity="0.35"/>`;
+    } else if (n.hookHealth === 'stale') {
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+3).toFixed(1)}" fill="none" stroke="var(--warning)" stroke-width="0.6" opacity="0.35"/>`;
+    }
+
+    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" onclick="window.openDashExpand(${JSON.stringify(id)})" title="${escHtml(n.label)}">`;
+    html += `<title>${escHtml(n.label)} · ${escHtml(n.state)}</title></circle>`;
+
+    if (n.threats > 0) {
+      html += `<circle cx="${(n.x+r-5).toFixed(1)}" cy="${(n.y-r+5).toFixed(1)}" r="5.5" fill="var(--error)" opacity="0.95"/>`;
+      html += `<text x="${(n.x+r-5).toFixed(1)}" y="${(n.y-r+9).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fff" style="pointer-events:none">${n.threats}</text>`;
+    }
+
+    const label = n.label.length > 14 ? n.label.slice(0, 13) + '…' : n.label;
+    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+12).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text2)" style="pointer-events:none">${escHtml(label)}</text>`;
+  }
+
+  svgEl.innerHTML = html;
+}
+
+function _drawEKG() {
+  const canvas = document.getElementById('ekgCanvas');
+  if (!canvas) return;
+  const W = canvas.clientWidth || canvas.width;
+  const H = canvas.clientHeight || canvas.height;
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0f1117';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#2d3148';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 4]);
+  for (let y = H * 0.25; y < H; y += H * 0.25) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  if (_dash.ekg.length < 2) return;
+
+  const pts = _dash.ekg.slice(-W);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7c3aed';
+
+  // Decay spikes: each point decays toward baseline
+  ctx.beginPath();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.5;
+  let firstPoint = true;
+  for (let i = 0; i < pts.length; i++) {
+    const x = W - pts.length + i;
+    const decay = Math.exp(-(pts.length - i) / 60);
+    const y = H / 2 - pts[i].dy * decay * (H * 0.38);
+    if (firstPoint) { ctx.moveTo(x, y); firstPoint = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Left fade
+  const grad = ctx.createLinearGradient(0, 0, Math.min(60, W), 0);
+  grad.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0f1117');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, Math.min(60, W), H);
+
+  // Right cursor line
+  ctx.strokeStyle = 'var(--text2)';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath(); ctx.moveTo(W - 1, 0); ctx.lineTo(W - 1, H); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function _renderSprintPipeline() {
+  const pipeEl = document.getElementById('sprintPipeline');
+  if (!pipeEl) return;
+  const activePrds = (_dash._prds || []).filter(p => p.status === 'running' || p.status === 'blocked');
+  if (activePrds.length === 0) {
+    pipeEl.classList.remove('visible');
+    return;
+  }
+  pipeEl.classList.add('visible');
+  let html = `<div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('dash_sprint_pipeline') || 'Sprint Pipeline')}</div>`;
+  for (const prd of activePrds.slice(0, 3)) {
+    const stories = prd.stories || [];
+    html += `<div style="margin-bottom:6px;"><div style="font-size:10px;color:var(--text2);margin-bottom:3px;">${escHtml((prd.title || prd.name || prd.id).slice(0, 32))}</div>`;
+    html += `<div class="dboard-pipe-stages">`;
+    stories.forEach((st, i) => {
+      if (i > 0) {
+        const edgeClass = (stories[i-1] && (stories[i-1].status === 'completed')) ? 'active' : '';
+        const ringClass = (stories[i-1] && stories[i-1].verdicts && stories[i-1].verdicts.some(v => v.outcome === 'block')) ? 'fail' : (stories[i-1] && stories[i-1].status === 'completed' ? 'pass' : '');
+        html += `<div class="dboard-pipe-edge ${edgeClass}"></div>`;
+        html += `<div class="dboard-pipe-ring ${ringClass}"></div>`;
+        html += `<div class="dboard-pipe-edge ${edgeClass}"></div>`;
+      }
+      const nodeClass = st.status || 'draft';
+      const stLabel = (st.title || `Story ${i+1}`).slice(0, 14);
+      html += `<div class="dboard-pipe-node ${nodeClass}" title="${escHtml(st.title || '')}" onclick="window.openDashExpand(${JSON.stringify(prd.id)})">${escHtml(stLabel)}</div>`;
+    });
+    html += `</div></div>`;
+  }
+  pipeEl.innerHTML = html;
+}
+
+function _dashUpdateExpand(sid) {
+  const sess = state.sessions.find(s => s.full_id === sid || s.id === sid);
+  const board = _dash._boards[sid];
+
+  const titleEl = document.getElementById('dashExpandTitle');
+  if (titleEl) {
+    const name = sess ? (sess.name || sess.task || '') : '';
+    titleEl.textContent = (name || sid || '').slice(0, 40);
+  }
+
+  // Sidebar: live task tree
+  const treeEl = document.getElementById('dashExpandTree');
+  if (treeEl) {
+    const tel = board && board.telemetry;
+    const sessType = detectSessionType(board);
+    treeEl.innerHTML = `<div style="font-weight:600;font-size:11px;color:var(--text);margin-bottom:8px;">${escHtml(t('dash_task_tree') || 'Task Tree')}</div>`;
+    if (tel) {
+      treeEl.innerHTML += renderLiveTaskTree(tel, sessType);
+    } else {
+      treeEl.innerHTML += `<div style="color:var(--text2);font-size:11px;">${escHtml(t('dash_no_telemetry') || 'No telemetry yet')}</div>`;
+    }
+  }
+
+  // Main: status board
+  const mainEl = document.getElementById('dashExpandMain');
+  if (mainEl) {
+    if (board) {
+      renderSessionStatusBoardInner(mainEl, board, sid);
+    } else {
+      mainEl.innerHTML = `<div style="color:var(--text2);padding:12px;font-size:12px;">${escHtml(t('dash_expand_no_status') || 'No status data yet — hook events will populate this view.')}</div>`;
+      apiFetch('/api/sessions/' + encodeURIComponent(sid) + '/status')
+        .then(b => { _dash._boards[sid] = b; if (_dash.expandSid === sid) _dashUpdateExpand(sid); })
+        .catch(() => {});
+    }
+  }
+
+  // Verdicts rail
+  const verdEl = document.getElementById('dashExpandVerdicts');
+  if (verdEl) {
+    const verdicts = (board && board.telemetry && board.telemetry.guardrail_verdicts) || [];
+    verdEl.innerHTML = `<div style="font-weight:600;font-size:11px;color:var(--text);margin-bottom:8px;">${escHtml(t('dash_verdicts') || 'Verdicts')}</div>`;
+    if (verdicts.length > 0) {
+      verdEl.innerHTML += renderSessionGuardrailVerdicts(verdicts);
+    } else {
+      verdEl.innerHTML += `<div style="color:var(--text2);font-size:11px;">${escHtml(t('dash_no_verdicts') || 'No verdicts yet')}</div>`;
+    }
+  }
+}
+
+window.openDashExpand = function(sid) {
+  if (state.activeView !== 'dashboard') {
+    navigate('dashboard');
+    setTimeout(() => window.openDashExpand(sid), 80);
+    return;
+  }
+  _dash.expandSid = sid;
+  const expand = document.getElementById('dashExpand');
+  if (expand) {
+    expand.classList.remove('hidden');
+    _dashUpdateExpand(sid);
+  }
+};
+
+window.closeDashExpand = function() {
+  _dash.expandSid = null;
+  const expand = document.getElementById('dashExpand');
+  if (expand) expand.classList.add('hidden');
+};
+
+function _dashLoop(ts) {
+  if (state.activeView !== 'dashboard') { _dash.rafId = null; return; }
+  _dash._frameCount++;
+
+  // EKG at full rate
+  _drawEKG();
+
+  // Constellation at ~20fps
+  if (_dash._frameCount % 3 === 0) {
+    _dashForceStep();
+    _drawConstellation();
+  }
+
+  // Pipeline at ~10fps
+  if (_dash._frameCount % 6 === 0) {
+    _renderSprintPipeline();
+  }
+
+  _dash.rafId = requestAnimationFrame(_dashLoop);
+}
+
+function renderDashboardView() {
+  if (state.activeView !== 'dashboard') return;
+  const viewEl = document.getElementById('view');
+  if (!viewEl) return;
+
+  // Cancel any running loop before remount
+  if (_dash.rafId) { cancelAnimationFrame(_dash.rafId); _dash.rafId = null; }
+  _dash._frameCount = 0;
+
+  viewEl.innerHTML = `
+    <div class="dboard-wrap" id="dashboardWrap">
+      <canvas id="ekgCanvas" class="dboard-ekg"></canvas>
+      <div class="dboard-main">
+        <svg id="constellationSvg" class="dboard-svg"></svg>
+        <div id="sprintPipeline" class="dboard-pipeline"></div>
+      </div>
+      <div id="dashExpand" class="dboard-expand hidden">
+        <div class="dboard-expand-header">
+          <button class="dboard-expand-back" onclick="window.closeDashExpand()">&#8592; ${escHtml(t('common_back') || 'Back')}</button>
+          <span id="dashExpandTitle" style="font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+          <button style="background:none;border:1px solid var(--border);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:3px;cursor:pointer;" onclick="const s=document.getElementById('dashExpandTitle').textContent;navigate('session-detail',_dash.expandSid);" title="${escHtml(t('dash_open_session') || 'Open session detail')}">&#128172; ${escHtml(t('dash_open_session') || 'Open')}</button>
+        </div>
+        <div class="dboard-expand-inner">
+          <div id="dashExpandTree" class="dboard-expand-sidebar"></div>
+          <div id="dashExpandMain" class="dboard-expand-main"></div>
+          <div id="dashExpandVerdicts" class="dboard-expand-verdicts"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Fetch automata for sprint pipeline
+  const prdData = _automataState.allPrds;
+  if (prdData && prdData.length > 0) {
+    _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+  } else {
+    apiFetch('/api/autonomous/prds').then(d => {
+      _dash._prds = ((d && d.prds) || []).filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+    }).catch(() => {});
+  }
+
+  // Show the nav button (now that feature is enabled)
+  const navBtn = document.getElementById('navBtnDashboard');
+  if (navBtn) navBtn.style.display = '';
+
+  _dashInitNodes();
+  _dash.rafId = requestAnimationFrame(_dashLoop);
+}
+
+// BL303 S4 T10 — unhide dashboard nav button on boot (same pattern as Automata).
+function _dashCheckEnabled() {
+  const navBtn = document.getElementById('navBtnDashboard');
+  if (navBtn) navBtn.style.display = '';
+}
 
 // BL247-followup v6.7.3 — Observer view restored as a real top-level view.
 // Hosts what used to be Settings → Monitor sub-tab cards (system stats,

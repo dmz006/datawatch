@@ -22,6 +22,9 @@ Each flow is documented in its own file under `docs/flow/`.
 | [Proxy Mode Flow](flow/proxy-flow.md) | `flow/proxy-flow.md` | Remote server routing — session discovery, command forwarding, WS relay |
 | [Agent Spawn Flow](flow/agent-spawn-flow.md) | `flow/agent-spawn-flow.md` | Project + Cluster Profile → spawn → bootstrap → git clone → session → terminate |
 | [PRD-DAG Orchestrator Flow](flow/orchestrator-flow.md) | `flow/orchestrator-flow.md` | Operator intent → graph.Plan → Runner walks DAG → autonomous PRD run per node → guardrail attestation → block/warn/pass verdict → graph status |
+| [Telemetry Flow](flow/telemetry-flow.md) | `flow/telemetry-flow.md` | Hook script → POST hook-event → telemetry store → GET telemetry endpoint + persist-on-stop |
+| [Guardrail Flow](flow/guardrail-flow.md) | `flow/guardrail-flow.md` | Guardrail registry, scan unification, profiles, per-Automaton override |
+| [Dashboard Flow](flow/dashboard-flow.md) | `flow/dashboard-flow.md` | WS hook_update → constellation nodes + EKG waveform → sprint pipeline + expand panel |
 
 ---
 

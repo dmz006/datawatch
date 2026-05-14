@@ -34,6 +34,9 @@ func (s *Server) handleSessionsSubpath(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(rest, "/telemetry"):
 		// BL303 S1 — structured session telemetry with task timings + verdicts.
 		s.handleSessionTelemetry(w, r)
+	case strings.HasSuffix(rest, "/guardrail"):
+		// BL303 S3 T15 — on-demand guardrail invocation for a session.
+		s.handleSessionGuardrail(w, r)
 	default:
 		http.NotFound(w, r)
 	}

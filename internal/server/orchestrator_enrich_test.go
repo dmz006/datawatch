@@ -112,6 +112,9 @@ func (f *fakeOrchAutonomous) ListGuardrailProfiles() []any                      
 func (f *fakeOrchAutonomous) GetGuardrailProfile(string) (any, bool)                                            { return nil, false }
 func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string) (any, error)                  { return nil, nil }
 
+// BL303 S3 T15 — on-demand guardrail invocation stub.
+func (f *fakeOrchAutonomous) InvokeGuardrailByName(string, string) (any, error) { return nil, nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

@@ -129,6 +129,84 @@ management endpoints under `/api/autonomous/guardrails*`:
 Per-story approval payloads include `guardrail_verdicts` so Wear/Auto
 surfaces can surface block reasons without polling full telemetry.
 
+## Session Guardrail + Live Task Tree APIs (S3)
+
+On-demand guardrail invocation for a session and real-time Status tab data:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/sessions/{id}/guardrail` | POST | Run a named guardrail on a session's project dir; appends verdict to telemetry |
+| `/api/sessions/{id}/telemetry` | GET | Structured telemetry: task list with timings, guardrail verdicts, sprint ancestry |
+| `/api/sessions/{id}/status` | GET | Derived status board (current focus, tests, git, hook health) |
+
+**POST /api/sessions/{id}/guardrail body:**
+```json
+{"name": "sast-scan"}
+```
+
+**Response:**
+```json
+{
+  "guardrail": "sast-scan",
+  "outcome": "pass",
+  "summary": "0 finding(s)",
+  "verdict_at": "2026-05-13T12:34:56Z"
+}
+```
+
+**WebSocket `hook_update` event** — broadcast whenever a hook event or guardrail verdict is recorded:
+```json
+{
+  "type": "hook_update",
+  "data": {
+    "session_id": "myhost-abc123",
+    "board": { "hook_health": "alive", "state": "running", "telemetry": {...} }
+  }
+}
+```
+
+All three endpoints and the `hook_update` WS event are stable for Android/Wear/Auto consumption.
+
+---
+
+## Dashboard APIs (S4)
+
+The `/dashboard` view is PWA-only; mobile/Wear/Auto consume the same backend
+events and APIs that the dashboard visualises.
+
+**Node data for constellation equivalents (e.g. Wear summary tiles):**
+
+Each connected session surfaces its state via the existing `session_state` WS
+event:
+```json
+{
+  "type": "session_state",
+  "data": {
+    "full_id": "myhost-abc123",
+    "state": "running",
+    "name": "auth-refactor",
+    "hook_health": "alive"
+  }
+}
+```
+
+**Sprint pipeline data:**
+```
+GET /api/autonomous/prds
+```
+Returns the full list with `stories[].status` fields; filter for
+`status ∈ {running, blocked, planning}` to build pipeline equivalents.
+
+**Dashboard expand data (three-pane equivalent for mobile detail screens):**
+
+| Pane | Source |
+|------|--------|
+| Task tree | `hook_update.board.telemetry.tasks[]` |
+| Status board | `GET /api/sessions/{id}/status` or `hook_update.board` |
+| Verdicts | `hook_update.board.telemetry.guardrail_verdicts[]` |
+
+All APIs confirmed stable — documented in this file for Android/Wear/Auto integration.
+
 ---
 
 <!-- BL279 see-also footer -->
@@ -137,3 +215,4 @@ surfaces can surface block reasons without polling full telemetry.
 - [datawatch-definitions](../datawatch-definitions.md)
 - [architecture-overview](../architecture-overview.md)
 - [howto/guardrail-library](../howto/guardrail-library.md)
+- [howto/dashboard](../howto/dashboard.md)

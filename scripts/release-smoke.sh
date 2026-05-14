@@ -2237,6 +2237,41 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# BL303 S4 T27 — /dashboard API smoke tests
+# Tests that the APIs consumed by the dashboard are reachable.
+H "BL303 S4 — Dashboard API smoke"
+
+# S4.1: GET /api/autonomous/prds (sprint pipeline data)
+SM_DASH_PRDS=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/autonomous/prds" 2>/dev/null || echo "000")
+case "$SM_DASH_PRDS" in
+  200) ok "S4 — GET /api/autonomous/prds returns 200 (sprint pipeline data)" ;;
+  401|403) skip "S4 — GET /api/autonomous/prds: auth required (token not set)" ;;
+  *) ko "S4 — GET /api/autonomous/prds returned $SM_DASH_PRDS (expected 200)" ;;
+esac
+
+# S4.2: GET /api/sessions returns sessions list (constellation data)
+SM_DASH_SESS=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/sessions" 2>/dev/null || echo "000")
+case "$SM_DASH_SESS" in
+  200) ok "S4 — GET /api/sessions returns 200 (constellation data)" ;;
+  401|403) skip "S4 — GET /api/sessions: auth required" ;;
+  *) ko "S4 — GET /api/sessions returned $SM_DASH_SESS (expected 200)" ;;
+esac
+
+# S4.3: session status endpoint accessible (used by dashboard expand panel)
+# Uses the same session smoke-* sessions from the telemetry check if present.
+if [[ -n "${SMOKE_SESS_ID:-}" ]]; then
+  SM_DASH_STATUS=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/sessions/$SMOKE_SESS_ID/status" 2>/dev/null || echo "000")
+  case "$SM_DASH_STATUS" in
+    200) ok "S4 — GET /api/sessions/{id}/status returns 200 (expand panel data)" ;;
+    401|403) skip "S4 — GET /api/sessions/{id}/status: auth required" ;;
+    404) skip "S4 — GET /api/sessions/{id}/status: session not found (expected in LLM-gated env)" ;;
+    *) ko "S4 — GET /api/sessions/{id}/status returned $SM_DASH_STATUS" ;;
+  esac
+else
+  skip "S4 — expand panel status check: no smoke session available"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

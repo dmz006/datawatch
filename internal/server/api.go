@@ -105,7 +105,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "7.0.0-alpha.41"
+var Version = "7.0.0-alpha.56"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -441,6 +441,11 @@ type AutonomousAPI interface {
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)
 	SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (any, error)
+
+	// BL303 S3 T15 — on-demand guardrail invocation for a session.
+	// Runs the named guardrail against projectDir; result is appended to the
+	// session's telemetry verdicts by the HTTP handler.
+	InvokeGuardrailByName(name, projectDir string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

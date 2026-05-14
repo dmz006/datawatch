@@ -243,6 +243,31 @@ type skillGuardrailManifest struct {
 	Guardrails []string
 }
 
+// InvokeGuardrailByName looks up a guardrail by name and invokes it
+// against the supplied project directory. Scan-type guardrails run the
+// appropriate scanner; other types return a pass verdict with an
+// informational note. Returns an error when the name is not registered.
+// BL303 S3 T15 — backing method for POST /api/sessions/{id}/guardrail.
+func (m *Manager) InvokeGuardrailByName(name, projectDir string) (GuardrailVerdict, error) {
+	entry, ok := m.lookupGuardrailEntry(name)
+	if !ok {
+		return GuardrailVerdict{}, fmt.Errorf("guardrail %q not found in library", name)
+	}
+	inv := GuardrailInvocation{
+		Guardrail:  name,
+		ProjectDir: projectDir,
+	}
+	if entry.Type == "scan" {
+		return m.invokeScanGuardrail(entry, inv)
+	}
+	return GuardrailVerdict{
+		Guardrail: name,
+		Outcome:   "pass",
+		Summary:   fmt.Sprintf("on-demand invocation not supported for type %q (pass-through)", entry.Type),
+		VerdictAt: time.Now(),
+	}, nil
+}
+
 // newProfileID generates a short hex ID for a guardrail profile.
 func newProfileID() string {
 	b := make([]byte, 4)

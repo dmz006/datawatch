@@ -317,6 +317,9 @@ diagram with an arrow from a worker back to `Parent`.
 | PRD-DAG orchestrator + guardrails | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/orchestrator-flow.md) — shipped v4.0.0 |
 | Observer — unified stats + sub-process monitor | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing shipped v4.2.0 |
 | Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md), [flow diagram](flow/channel-mode-flow.md) — Node.js dependency documented v4.2.0; native Go rewrite design at [(plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
+| Session telemetry + Status tab | `internal/server/hook_events.go` | [docs/howto/session-telemetry.md](howto/session-telemetry.md), [flow diagram](flow/telemetry-flow.md) — hook payloads → structured task tree + persist-on-stop |
+| Guardrail Library + scan unification | `internal/autonomous/guardrail_registry.go` | [docs/howto/guardrail-library.md](howto/guardrail-library.md), [flow diagram](flow/guardrail-flow.md) — named guardrails, profiles, per-Automaton overrides |
+| /dashboard Mission Control | `internal/server/web/app.js` | [docs/howto/dashboard.md](howto/dashboard.md), [flow diagram](flow/dashboard-flow.md) — WS-driven session constellation + EKG waveform + sprint pipeline + expand mode |
 
 ---
 

@@ -285,6 +285,28 @@ func (s *hookEventStore) mergeTelemetry(board *SessionStatusBoard, ev *SessionHo
 	}
 }
 
+// appendVerdict adds a HookGuardrailVerdict to the session's telemetry.
+// BL303 S3 T15 — called by handleSessionGuardrail after on-demand invocation.
+func (s *hookEventStore) appendVerdict(sessionID string, v HookGuardrailVerdict) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.state[sessionID]
+	if !ok {
+		b = &SessionStatusBoard{
+			SessionID:  sessionID,
+			State:      "unknown",
+			HookHealth: "missing",
+			UpdatedAt:  time.Now().UTC(),
+		}
+		s.state[sessionID] = b
+	}
+	if b.Telemetry == nil {
+		b.Telemetry = &SessionTelemetry{}
+	}
+	b.Telemetry.GuardrailVerdicts = append(b.Telemetry.GuardrailVerdicts, v)
+	b.Telemetry.UpdatedAt = time.Now().UTC()
+}
+
 func (s *hookEventStore) board(sessionID string) *SessionStatusBoard {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -338,6 +360,10 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 		Payload:   body.Payload,
 	}
 	globalHookStore.record(sid, ev)
+	// BL303 S3 T12 — broadcast live hook update so PWA Status tab refreshes without polling.
+	if s.hub != nil {
+		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))
+	}
 	// Persist-on-stop: flush structured telemetry to episodic memory on Stop events.
 	if (body.Event == "Stop" || body.Event == "SubagentStop") &&
 		s.cfg != nil && s.cfg.Session.PersistTelemetryOnStop &&
@@ -444,6 +470,60 @@ func (s *Server) handleSessionTelemetry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSONOK(w, board.Telemetry)
+}
+
+// handleSessionGuardrail — POST /api/sessions/{id}/guardrail
+// Runs a named guardrail against the session's project directory and
+// appends the verdict to the session's telemetry. BL303 S3 T15.
+func (s *Server) handleSessionGuardrail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sid := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	sid = strings.TrimSuffix(sid, "/guardrail")
+	if sid == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "guardrail library not available", http.StatusServiceUnavailable)
+		return
+	}
+	projectDir := ""
+	if s.manager != nil {
+		if sess, ok := s.manager.GetSession(sid); ok {
+			projectDir = sess.ProjectDir
+		}
+	}
+	rawVerdict, err := s.autonomousMgr.InvokeGuardrailByName(body.Name, projectDir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Convert to HookGuardrailVerdict for telemetry storage (JSON round-trip).
+	raw, _ := json.Marshal(rawVerdict)
+	var hgv HookGuardrailVerdict
+	_ = json.Unmarshal(raw, &hgv)
+	if hgv.Guardrail == "" {
+		hgv.Guardrail = body.Name
+	}
+	globalHookStore.appendVerdict(sid, hgv)
+	if s.hub != nil {
+		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))
+	}
+	writeJSONOK(w, rawVerdict)
 }
 
 // flushTelemetryToMemory serializes a session's structured telemetry to

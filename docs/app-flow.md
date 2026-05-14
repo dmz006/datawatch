@@ -216,6 +216,45 @@ sequenceDiagram
 
 ---
 
+## 6b. /dashboard Navigation + Expand Mode (BL303 S4)
+
+```mermaid
+sequenceDiagram
+    participant User as Operator
+    participant PWA as PWA / navigate()
+    participant WS as WebSocket Hub
+    participant API as REST API
+
+    User->>PWA: tap ⊞ Dashboard nav
+    PWA->>PWA: renderDashboardView()
+    Note over PWA: mounts EKG canvas + SVG constellation
+    PWA->>API: GET /api/autonomous/prds (sprint pipeline data)
+    API-->>PWA: {prds: [...]}
+    PWA->>PWA: _dashInitNodes() — positions sessions in SVG
+    PWA->>PWA: requestAnimationFrame(_dashLoop)
+
+    Note over WS: hook event arrives
+    WS->>PWA: hook_update {session_id, board}
+    PWA->>PWA: update _dash.nodes[sid] colour/health
+    PWA->>PWA: push EKG spike to _dash.ekg[]
+
+    User->>PWA: click session node (or ⊞ on session card)
+    PWA->>PWA: openDashExpand(sid)
+    alt board cached
+        PWA->>PWA: _dashUpdateExpand(sid) — render 3-col overlay
+    else no cached board
+        PWA->>API: GET /api/sessions/{id}/status
+        API-->>PWA: SessionStatusBoard
+        PWA->>PWA: _dashUpdateExpand(sid)
+    end
+
+    Note over WS: subsequent hook_update while expand open
+    WS->>PWA: hook_update {session_id: sid, board}
+    PWA->>PWA: _dashUpdateExpand(sid) — refresh all 3 panes
+```
+
+---
+
 ## 7. QR Linking Flow
 
 Two paths for linking a Signal device.

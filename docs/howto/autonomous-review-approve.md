@@ -251,9 +251,18 @@ the spec — the daemon picks up the changes on next run.
 
 ---
 
+## Story approval in the Status tab
+
+Each story in the Automata detail view shows a "→ Session" link and a
+"● Status" quick-link. Click "● Status" to jump directly to the worker
+session's **Status** tab where you can see the live task tree, guardrail
+verdicts, and the last 5 hook events before any failure — all the
+information you need to make an informed Approve or Reject decision.
+
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-planning](autonomous-planning.md)
-- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)
+- [howto/automata-orchestrator](automata-orchestrator.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [api/autonomous](../api/autonomous.md)

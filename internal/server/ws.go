@@ -33,6 +33,7 @@ const (
 	MsgSessionAware  MessageType = "session_aware"  // session awareness broadcast (BL76)
 	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
 	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
+	MsgHookUpdate     MessageType = "hook_update"     // BL303 S3 — session hook state changed {session_id, board} so Status tab refreshes in real-time
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
@@ -249,6 +250,13 @@ func (h *Hub) BroadcastSessionAwareness(sessionID, summary, task, state string) 
 	h.Broadcast(MsgSessionAware, map[string]string{
 		"session_id": sessionID, "summary": summary, "task": task, "state": state,
 	})
+}
+
+// BroadcastHookUpdate sends the updated session status board to all clients
+// when a hook event is received, enabling real-time Status tab refresh.
+// BL303 S3 T12/T18.
+func (h *Hub) BroadcastHookUpdate(sessionID string, board interface{}) {
+	h.Broadcast(MsgHookUpdate, map[string]interface{}{"session_id": sessionID, "board": board})
 }
 
 // BroadcastNotification sends a general notification to all clients

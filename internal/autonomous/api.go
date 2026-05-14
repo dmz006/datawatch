@@ -585,3 +585,12 @@ func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory []string
 	a.M.EmitPRDUpdate(prdID)
 	return prd, nil
 }
+
+// InvokeGuardrailByName (BL303 S3 T15) — on-demand invocation.
+func (a *API) InvokeGuardrailByName(name, projectDir string) (any, error) {
+	verdict, err := a.M.InvokeGuardrailByName(name, projectDir)
+	if err != nil {
+		return nil, err
+	}
+	return verdict, nil
+}

@@ -307,11 +307,54 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 - **Killing a session while reading its output.** Safe — kill closes
   the pipe and marks state Killed; the log file stays for inspection.
 
+## Live Task Tree + Status Tab Dashboard
+
+The **Status** sub-tab now shows a live task tree populated from structured
+telemetry. It updates in real-time via WebSocket `hook_update` events — no
+manual refresh needed.
+
+**Session types detected automatically:**
+
+| Type | Source | Notes |
+|------|--------|-------|
+| `automata` | Sprint `prd_id` in telemetry | Links to Automata detail |
+| `cc` | TodoWrite hook events | Task IDs start with `todo-` |
+| `test-runner` | `tests` in telemetry | Pass/fail/skip counts |
+| `generic` | Fallback | Shows raw task list |
+
+**On-demand guardrail invocation** from the Status tab: use the
+Commands dropdown → Guardrails group to run `sast-scan`, `secrets-scan`,
+or `deps-scan` against the session's project directory. The verdict is
+appended to the session's telemetry immediately.
+
+```sh
+# Via CLI
+datawatch session guardrail <session-id> sast-scan
+
+# Via REST
+curl -X POST https://localhost:8443/api/sessions/<id>/guardrail \
+     -H 'Authorization: Bearer TOKEN' \
+     -d '{"name":"sast-scan"}'
+```
+
+**Sprint ancestry breadcrumb** — when `telemetry.sprint.prd_id` is
+present, the task tree card shows a clickable breadcrumb linking to the
+Automata detail view.
+
+**Parent session link** — if `telemetry.parent_session_id` is set, a
+link appears at the top of the Status pane to navigate to the spawning
+session.
+
+**Deep-link from Automata detail**: each story's worker session row now
+has a "● Status" button that navigates directly to that session's Status
+sub-tab.
+
 ## Linked references
 
 - Channel state engine: [`channel-state-engine.md`](channel-state-engine.md)
 - Profiles: [`profiles.md`](profiles.md)
 - Architecture: `../architecture-overview.md`
+- Guardrails: [`guardrail-library.md`](guardrail-library.md)
 - See also: `daemon-operations.md` for restart + log management
 
 ## Screenshots

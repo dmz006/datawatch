@@ -1,4 +1,4 @@
-// BL303 S2 — comm-channel verbs for the guardrail library + profiles.
+// BL303 S2/S3 — comm-channel verbs for the guardrail library + profiles + session run.
 //
 // Supported verbs (all proxied through the in-process REST loopback):
 //
@@ -8,6 +8,7 @@
 //	"guardrail profile get <id>"                       → get profile
 //	"guardrail profile delete <id>"                    → delete profile
 //	"guardrail automaton set <id> [...]"               → per-Automaton override
+//	"guardrail session run <session-id> <name>"        → run guardrail on session (S3 T15)
 
 package router
 
@@ -29,8 +30,10 @@ func (r *Router) handleGuardrailCmd(cmd Command) {
 		r.guardrailProfile(args[1:])
 	case "automaton":
 		r.guardrailAutomaton(args[1:])
+	case "session":
+		r.guardrailSession(args[1:])
 	default:
-		r.send(fmt.Sprintf("guardrail: unknown subcommand %q. Try: library | profile | automaton", args[0]))
+		r.send(fmt.Sprintf("guardrail: unknown subcommand %q. Try: library | profile | automaton | session", args[0]))
 	}
 }
 
@@ -149,6 +152,22 @@ func (r *Router) guardrailAutomaton(args []string) {
 		return
 	}
 	r.send(resp)
+}
+
+// guardrailSession handles "guardrail session run <session-id> <name>". BL303 S3 T15.
+func (r *Router) guardrailSession(args []string) {
+	if len(args) < 3 || args[0] != "run" {
+		r.send("usage: guardrail session run <session-id> <name>")
+		return
+	}
+	sid, name := args[1], args[2]
+	payload, _ := json.Marshal(map[string]string{"name": name})
+	body, err := r.commJSON(http.MethodPost, "/api/sessions/"+sid+"/guardrail", string(payload))
+	if err != nil {
+		r.send("guardrail session run error: " + err.Error())
+		return
+	}
+	r.send(body)
 }
 
 func splitCSV(s string) []string {

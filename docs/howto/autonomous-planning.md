@@ -280,11 +280,19 @@ the spec without re-decomposing.
 
 ---
 
+## Live progress in the Status tab
+
+While an Automaton is running, open any of its worker sessions and switch to
+the **Status** tab to see a live task tree updated in real time via WebSocket.
+Each story in the Automata detail view also shows a "● Status" quick-link to
+jump directly to that worker session's Status tab.
+
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
-- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)
+- [howto/automata-orchestrator](automata-orchestrator.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/algorithm-mode](algorithm-mode.md)
 - [howto/evals](evals.md)
 - [howto/council-mode](council-mode.md)

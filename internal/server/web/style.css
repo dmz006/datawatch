@@ -4918,3 +4918,181 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     margin-top: 4px;
   }
 }
+
+/* ── Dashboard (/dashboard Mission Control) BL303 S4 ───────────────────────── */
+.dboard-wrap {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px - 56px);
+  background: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+.dboard-ekg {
+  width: 100%;
+  height: 72px;
+  flex-shrink: 0;
+  display: block;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.dboard-main {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.dboard-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: default;
+}
+.dboard-pipeline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, var(--bg));
+  padding: 6px 14px 10px;
+  display: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.dboard-pipeline.visible { display: block; }
+.dboard-pipe-stages {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-width: max-content;
+}
+.dboard-pipe-node {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dboard-pipe-node:hover { background: var(--bg3); }
+.dboard-pipe-node.running { color: var(--accent); border-color: var(--accent); background: rgba(124,58,237,0.1); }
+.dboard-pipe-node.completed { color: #22c55e; border-color: #22c55e; }
+.dboard-pipe-node.blocked,
+.dboard-pipe-node.failed { color: var(--error); border-color: var(--error); }
+.dboard-pipe-node.needs_review,
+.dboard-pipe-node.revisions_asked { color: var(--warning); border-color: var(--warning); }
+.dboard-pipe-edge {
+  width: 18px;
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.dboard-pipe-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  flex-shrink: 0;
+}
+.dboard-pipe-ring.pass { border-color: #22c55e; }
+.dboard-pipe-ring.fail { border-color: var(--error); }
+
+/* Expand overlay */
+.dboard-expand {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.dboard-expand.hidden { display: none; }
+.dboard-expand-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  background: var(--bg2);
+}
+.dboard-expand-back {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.dboard-expand-back:hover { background: var(--bg3); }
+.dboard-expand-inner {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.dboard-expand-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border);
+  font-size: 12px;
+}
+.dboard-expand-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.dboard-expand-verdicts {
+  width: 190px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 10px 8px;
+  border-left: 1px solid var(--border);
+  font-size: 12px;
+}
+/* Tablet: wider columns */
+@media (min-width: 768px) {
+  .dboard-expand-sidebar  { width: 260px; }
+  .dboard-expand-verdicts { width: 230px; }
+  .dboard-wrap { height: calc(100vh - 56px - 56px); }
+}
+/* Tablet 2-col for the wrapper: constellation + pipeline side by side */
+@media (min-width: 900px) {
+  .dboard-pipeline {
+    position: relative;
+    border-top: 1px solid var(--border);
+    padding: 8px 16px;
+    background: var(--bg2);
+  }
+  .dboard-pipeline.visible { display: block; }
+}
+
+/* Session/Automata maximize button (T10) */
+.sess-maximize-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.sess-maximize-btn:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
+
+/* Empty-state hint for the constellation */
+.dboard-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text2);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}

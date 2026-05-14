@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.55"
+var Version = "7.0.0-alpha.57"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6969,6 +6969,21 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// BL303 S3 T15: session guardrail <id> <name> — run a guardrail on a session
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "guardrail <id> <name>",
+		Short: "Run a named guardrail on a session's project directory",
+		Long:  "Invokes a guardrail from the library against the session's project directory. Appends the verdict to the session's telemetry.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionGuardrail(cfg, args[0], args[1])
+		},
+	})
+
 	// session stop-all — kill all running sessions on this host
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "stop-all",
@@ -7745,6 +7760,43 @@ func runSessionTelemetry(cfg *config.Config, id string) error {
 	if len(tel.Tests) > 0 {
 		fmt.Printf("\nTests: %v\n", tel.Tests)
 	}
+	return nil
+}
+
+// runSessionGuardrail — BL303 S3 T15: datawatch session guardrail <id> <name>
+func runSessionGuardrail(cfg *config.Config, id, name string) error {
+	client := daemonClient()
+	body, _ := json.Marshal(map[string]string{"name": name})
+	resp, err := client.Post(fmt.Sprintf("%s/api/sessions/%s/guardrail", daemonURL(), id),
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("daemon unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	var v struct {
+		Guardrail string `json:"guardrail"`
+		Outcome   string `json:"outcome"`
+		Summary   string `json:"summary"`
+	}
+	if err := json.Unmarshal(respBody, &v); err != nil {
+		fmt.Println(string(respBody))
+		return nil
+	}
+	icon := "✓"
+	if v.Outcome == "warn" {
+		icon = "⚠"
+	} else if v.Outcome == "block" {
+		icon = "✗"
+	}
+	fmt.Printf("%s %s: %s", icon, v.Guardrail, v.Outcome)
+	if v.Summary != "" {
+		fmt.Printf(" — %s", v.Summary)
+	}
+	fmt.Println()
 	return nil
 }
 

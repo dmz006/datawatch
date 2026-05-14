@@ -359,6 +359,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolGuardrailProfileUpdate(), tracked(s.handleGuardrailProfileUpdate))
 	mcpSrv.AddTool(s.toolGuardrailProfileDelete(), tracked(s.handleGuardrailProfileDelete))
 	mcpSrv.AddTool(s.toolPerAutomatonGuardrailsSet(), tracked(s.handlePerAutomatonGuardrailsSet))
+	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun)) // BL303 S3 T15
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -852,6 +853,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGuardrailProfileUpdate, "guardrail_profile_update"},
 		{s.toolGuardrailProfileDelete, "guardrail_profile_delete"},
 		{s.toolPerAutomatonGuardrailsSet, "per_automaton_guardrails_set"},
+		{s.toolSessionGuardrailRun, "session_guardrail_run"},
 	}
 
 	var docs []ToolDoc
