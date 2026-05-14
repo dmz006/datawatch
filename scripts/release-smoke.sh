@@ -217,8 +217,9 @@ import json,sys
 lines=[l for l in sys.stdin.read().splitlines() if l.strip()]
 print(json.dumps([json.loads(l) for l in lines]))
 ' 2>/dev/null || echo "[]")
+  local total_secs=$((PASS + FAIL + SKIP))
   printf '{"run_id":"%s","type":"smoke","total":%d,"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
-    "${SMOKE_RUN_ID:-smoke}" "$TOTAL_SECS" "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
+    "${SMOKE_RUN_ID:-smoke}" "$total_secs" "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
     "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" \
     "$PASS" "$FAIL" "$SKIP" "$secs_json" \
     > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true
