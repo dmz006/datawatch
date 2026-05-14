@@ -787,7 +787,7 @@ start_mock_channel_server() {
   python3 -c "
 import http.server
 import json
-class H(http.server.BaseRequestHandler):
+class H(http.server.BaseHTTPRequestHandler):
   def do_POST(self):
     self.send_response(200)
     self.send_header('Content-Type', 'application/json')
