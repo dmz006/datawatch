@@ -2483,13 +2483,22 @@ run_t10() {
 # ---------------------------------------------------------------------------
 
 t11_ts130_pwa_loads() {
-  local resp
-  resp=$(curl -sk --max-time 30 -o /dev/null -w "%{http_code}" "$TEST_TLS/")
+  local resp attempts=0
+  # Retry for TLS cert initialization (happens async)
+  while [[ $attempts -lt 5 ]]; do
+    resp=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" "$TEST_TLS/" 2>/dev/null || echo "000")
+    save_evidence TS-130 "http_response_attempt_$((attempts+1)).txt" "$resp"
+    if [[ "$resp" != "000" ]]; then
+      break
+    fi
+    [[ $attempts -lt 4 ]] && sleep 1
+    attempts=$((attempts+1))
+  done
   save_evidence TS-130 "http_response.txt" "$resp"
   if [[ "$resp" == "200" || "$resp" == "301" || "$resp" == "302" || "$resp" == "404" ]]; then
     ok "PWA responds at $TEST_TLS (HTTP $resp)"
   else
-    ko "PWA not responding at $TEST_TLS (HTTP $resp)"
+    ko "PWA not responding at $TEST_TLS (HTTP $resp, attempts=$attempts)"
   fi
 }
 
