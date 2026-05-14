@@ -11,6 +11,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,14 @@ import (
 )
 
 // httpProxy is the shared HTTP client for in-process REST calls.
-var httpProxy = &http.Client{Timeout: 90 * time.Second}
+// InsecureSkipVerify is intentional: this client only calls 127.0.0.1
+// (loopback) and the daemon uses a self-signed cert. #nosec G402
+var httpProxy = &http.Client{
+	Timeout: 90 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+	},
+}
 
 // proxyGet calls GET http://127.0.0.1:<webPort>/<path>?<query> and
 // returns the response body (or an error on non-2xx).

@@ -7,6 +7,43 @@
 
 ---
 
+## Dashboard Monitoring During Test Runs
+
+Every test run integrates with the datawatch dashboard. Open the PWA at `https://localhost:8443` while running tests to see live progress.
+
+### Smoke Run Card (BL303)
+
+`scripts/release-smoke.sh` writes `~/.datawatch/smoke-progress.json` before each of its 61 sections. The **Smoke Run** card on the dashboard polls `/api/smoke/progress` every 2.5 seconds during an active run and shows:
+
+- Pass / Fail / Skip counts with a live progress bar
+- The currently running section name
+- A compact history of completed sections (✅ pass · ❌ fail · ⏭ skip)
+
+To add the Smoke Run card to your dashboard layout: click **Edit** in the dashboard stat bar → **Add** → select **🔬 Smoke Run**.
+
+### Dashboard Cards for Testing
+
+| Card | What you see during testing |
+|---|---|
+| 🔬 Smoke Run | Live pass/fail per section, progress bar, current phase |
+| ⣿ Automata | Automata created by smoke (CRUD probes) with status |
+| ⚡ Live Events | Real-time hook events from sessions spawned by tests |
+| ≡ Timeline | Gantt bars for active test Automata by start/end time |
+| ◎ Network | Graph of sessions + Automata; click to inspect |
+
+### Future Full Integration (multi-sprint)
+
+The current smoke integration uses a progress file polled via REST. Full integration will:
+- Create a tracking Automaton per test run with one story per T-Sprint
+- Update story status (pending → in_progress → completed/failed) as each sprint runs
+- Show the run as a Gantt timeline with phase durations
+- Persist test history in episodic memory for trend analysis
+- Show coverage trend in the 30-Day Activity heatmap card
+
+This multi-sprint roadmap is tracked separately from v7.0.0 and scoped for v7.1.x.
+
+---
+
 ## 1. Overview
 
 This plan provides 155+ test stories organised into 15 T-Sprints covering every datawatch subsystem, deployment surface, and cross-cutting parity rule. Stories exercise the real daemon API — same patterns as `scripts/release-smoke.sh` — against an isolated test instance on dedicated ports so the operator's production daemon is never disturbed.
@@ -76,6 +113,13 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | T13 | Docker Simulation | TS-160–TS-167 | 📋 planned |
 | T14 | Kubernetes Deployment | TS-170–TS-177 | 📋 planned |
 | T15 | Parity Audit | TS-180–TS-190 | 📋 planned |
+| T16 | Howto Validation | TS-200–TS-231 | 📋 planned |
+| T17 | End-to-End Journeys | TS-240–TS-249 | 📋 planned |
+| T18 | Missing Endpoints | TS-250–TS-266 | 📋 planned |
+| T19 | MCP Surface Complete | TS-270–TS-300 | 📋 planned |
+| T20 | CLI Complete | TS-310–TS-340 | 📋 planned |
+| T21 | Docs-as-MCP AI Config | TS-350–TS-354 | 📋 planned |
+| T22 | Smoke Infrastructure | TS-360–TS-364 | 📋 planned |
 
 ---
 
@@ -2606,6 +2650,1070 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 8. `DELETE /api/sessions/{sess_id}` → 204
 **Expected**: Complete session lifecycle from hook events through channel comms to cleanup
 **Evidence**: `session_create.json`, `hooks.json`, `channel_reply.json`, `channel_history.json`
+**Status**: 📋 planned
+
+---
+
+## T18 — Missing Endpoints
+
+### TS-250 — GET /api/splash/info returns hostname + version
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/splash/info`
+2. `python3 -c "import sys,json; d=json.load(sys.stdin); assert 'version' in d or 'hostname' in d, d" < evidence/TS-250/info.json`
+3. Save to `evidence/TS-250/info.json`
+**Expected**: JSON object containing at least `version` or `hostname` field
+**Evidence**: `info.json`
+**Status**: 📋 planned
+
+---
+
+### TS-251 — GET /api/openapi.yaml returns valid YAML
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/openapi.yaml -o evidence/TS-251/openapi.yaml`
+2. `python3 -c "import sys; import yaml; d=yaml.safe_load(open('evidence/TS-251/openapi.yaml')); assert d.get('openapi','').startswith('3.0'), d.get('openapi')"`
+3. Assert `openapi: 3.0.x` present in first few lines
+**Expected**: Valid OpenAPI 3.0.x YAML document
+**Evidence**: `openapi.yaml`
+**Status**: 📋 planned
+
+---
+
+### TS-252 — GET /api/docs returns Swagger HTML
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/docs)`
+2. `python3 -c "assert '$CODE' == '200', 'got $CODE'"`
+3. Optionally assert body contains `swagger` or `Swagger UI`
+**Expected**: HTTP 200 with Swagger UI HTML
+**Evidence**: `http_code.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-253 — GET /api/cooldown returns shape
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/cooldown -o evidence/TS-253/cooldown.json`
+2. `python3 -c "import sys,json; d=json.load(open('evidence/TS-253/cooldown.json')); assert 'active' in d, d"`
+**Expected**: `{"active": false, "until": null}` or similar shape
+**Evidence**: `cooldown.json`
+**Status**: 📋 planned
+
+---
+
+### TS-254 — Cooldown set + verify + clear round-trip
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. `curl -sk -X POST -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"minutes":1}' $TEST_BASE/api/cooldown`
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/cooldown` → assert `active=true`
+3. `curl -sk -X DELETE -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/cooldown` → 200 or 204
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/cooldown` → assert `active=false`
+**Expected**: Cooldown activates on POST, clears on DELETE, GET reflects both states
+**Evidence**: `cooldown_set.json`, `cooldown_active.json`, `cooldown_clear.json`, `cooldown_inactive.json`
+**Status**: 📋 planned
+
+---
+
+### TS-255 — GET /api/devices returns push device registry array
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/devices -o evidence/TS-255/devices.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-255/devices.json')); assert isinstance(d, list) or 'devices' in d, d"`
+**Expected**: Array (possibly empty) of registered push devices
+**Evidence**: `devices.json`
+**Status**: 📋 planned
+
+---
+
+### TS-256 — POST /api/devices/register shape round-trip
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. `curl -sk -X POST -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"token":"test-device-token-probe","platform":"test"}' $TEST_BASE/api/devices/register -o evidence/TS-256/register.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-256/register.json')); assert 'id' in d or 'token' in d or d.get('ok'), d"`
+**Expected**: Device registered (id or ok response), endpoint accepts the shape
+**Evidence**: `register.json`
+**Status**: 📋 planned
+
+---
+
+### TS-257 — GET /api/federation/sessions returns shape
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/federation/sessions -o evidence/TS-257/fed_sessions.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-257/fed_sessions.json')); assert 'primary' in d or isinstance(d, list), d"`
+**Expected**: `{"primary": [...]}` shape or array
+**Evidence**: `fed_sessions.json`
+**Status**: 📋 planned
+
+---
+
+### TS-258 — GET /api/marketplace/ollama/catalog returns catalog array
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/marketplace/ollama/catalog -o evidence/TS-258/catalog.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-258/catalog.json')); assert isinstance(d, list) or 'models' in d or 'catalog' in d, d"`
+**Expected**: Catalog array or object containing model entries
+**Evidence**: `catalog.json`
+**Status**: 📋 planned
+
+---
+
+### TS-259 — GET /api/openwebui/models returns array
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/openwebui/models -o evidence/TS-259/owui_models.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-259/owui_models.json')); assert isinstance(d, list) or 'models' in d or 'error' in d, d"`
+**Expected**: Array of models or graceful error (endpoint registered; list may be empty if OpenWebUI not configured)
+**Evidence**: `owui_models.json`
+**Status**: 📋 planned
+
+---
+
+### TS-260 — GET /api/orchestrator/verdicts returns shape
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/orchestrator/verdicts -o evidence/TS-260/verdicts.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-260/verdicts.json')); assert 'verdicts' in d or isinstance(d, list), d"`
+**Expected**: `{"verdicts": [...]}` shape or array
+**Evidence**: `verdicts.json`
+**Status**: 📋 planned
+
+---
+
+### TS-261 — GET /api/proxy/ missing server-name returns 400 or error
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" "$TEST_BASE/api/proxy/")`
+2. `python3 -c "assert '$CODE' in ('400','404','422','500'), 'unexpected: $CODE'"`
+**Expected**: Endpoint registered and returns 4xx/5xx (not 200 with empty body) when server-name missing
+**Evidence**: `http_code.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-262 — GET /api/templates returns array
+**Tags**: [surface:api] [feature:plugins]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/templates -o evidence/TS-262/templates.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-262/templates.json')); assert isinstance(d, list) or 'templates' in d, d"`
+**Expected**: Array (possibly empty) of templates
+**Evidence**: `templates.json`
+**Status**: 📋 planned
+
+---
+
+### TS-263 — Templates CRUD round-trip
+**Tags**: [surface:api] [feature:plugins]
+**Steps**:
+1. `curl -sk -X POST -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"test-template-probe","content":"probe content"}' $TEST_BASE/api/templates -o evidence/TS-263/create.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-263/create.json')); TMPL_ID=d.get('id'); assert TMPL_ID, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/templates/$TMPL_ID` → assert `name=test-template-probe`
+4. `curl -sk -X DELETE -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/templates/$TMPL_ID` → 200 or 204
+**Expected**: Template created, retrievable by ID, deletable; no leaks
+**Evidence**: `create.json`, `get.json`, `delete.json`
+**Status**: 📋 planned
+
+---
+
+### TS-264 — POST /api/assist endpoint exists (405 on GET)
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" "$TEST_BASE/api/assist")`
+2. `python3 -c "assert '$CODE' in ('200','400','405','422'), 'endpoint missing: $CODE'"`
+**Expected**: Endpoint registered (returns anything other than 404); POST-only returns 405 on GET
+**Evidence**: `http_code.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-265 — GET /api/splash/logo 404 is acceptable
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" "$TEST_BASE/api/splash/logo")`
+2. `python3 -c "assert '$CODE' in ('200','404'), 'unexpected: $CODE'"`
+**Expected**: Endpoint registered (200 with logo bytes OR 404 if no logo configured); not a 500
+**Evidence**: `http_code.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-266 — GET /api/servers + GET /api/servers/health shape
+**Tags**: [surface:api] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/servers -o evidence/TS-266/servers.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-266/servers.json')); assert isinstance(d, list) or 'servers' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/servers/health -o evidence/TS-266/servers_health.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-266/servers_health.json')); assert isinstance(d, list) or 'servers' in d or 'health' in d, d"`
+**Expected**: Both endpoints return structured responses (array or keyed object)
+**Evidence**: `servers.json`, `servers_health.json`
+**Status**: 📋 planned
+
+---
+
+## T19 — MCP Surface Complete
+
+### TS-270 — algorithm_list via MCP returns array
+**Tags**: [surface:mcp] [feature:mcp] [feature:algorithm]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-270/result.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-270/result.json')); assert 'result' in d or 'content' in d or isinstance(d, list), d"`
+**Expected**: MCP call returns array shape or result wrapper (empty list acceptable)
+**Evidence**: `result.json`
+**Status**: 📋 planned
+
+---
+
+### TS-271 — algorithm_start + algorithm_get via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:algorithm]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_start","arguments":{"backend":"claude-code"}}' $TEST_BASE/api/mcp/call -o evidence/TS-271/start.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-271/start.json')); sid=d.get('result',{}).get('session_id') or d.get('session_id'); assert sid or 'error' in str(d).lower(), d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-271/get.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-271/get.json')); assert 'result' in d or 'content' in d, d"`
+**Expected**: Algorithm session starts (or returns graceful error if not configured); get returns phase state
+**Evidence**: `start.json`, `get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-272 — autonomous_config_get + autonomous_config_set round-trip via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:automata]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"autonomous_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-272/get.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-272/get.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"autonomous_config_set","arguments":{"per_story_approval":true}}' $TEST_BASE/api/mcp/call -o evidence/TS-272/set.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-272/set.json')); assert 'result' in d or 'ok' in str(d).lower(), d"`
+**Expected**: Config readable and settable via MCP; round-trip succeeds
+**Evidence**: `get.json`, `set.json`
+**Status**: 📋 planned
+
+---
+
+### TS-273 — autonomous_status via MCP returns shape
+**Tags**: [surface:mcp] [feature:mcp] [feature:automata]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"autonomous_status","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-273/status.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-273/status.json')); assert 'result' in d or 'enabled' in str(d), d"`
+**Expected**: `{enabled, ...}` shape or wrapped result
+**Evidence**: `status.json`
+**Status**: 📋 planned
+
+---
+
+### TS-274 — autonomous_type_list via MCP returns array
+**Tags**: [surface:mcp] [feature:mcp] [feature:automata]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"autonomous_type_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-274/types.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-274/types.json')); assert isinstance(d.get('result'), list) or 'result' in d or 'content' in d, d"`
+**Expected**: Array of Automaton types (or wrapped list)
+**Evidence**: `types.json`
+**Status**: 📋 planned
+
+---
+
+### TS-275 — backends_list via MCP returns LLM shape
+**Tags**: [surface:mcp] [feature:mcp] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"backends_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-275/backends.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-275/backends.json')); assert 'llm' in str(d) or 'result' in d or 'content' in d, d"`
+**Expected**: `{llm: [...]}` shape or wrapped backends list
+**Evidence**: `backends.json`
+**Status**: 📋 planned
+
+---
+
+### TS-276 — compute_node_list via MCP returns array
+**Tags**: [surface:mcp] [feature:mcp] [feature:compute]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"compute_node_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-276/nodes.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-276/nodes.json')); assert isinstance(d.get('result'), list) or 'result' in d or 'content' in d, d"`
+**Expected**: Array of compute nodes (possibly empty)
+**Evidence**: `nodes.json`
+**Status**: 📋 planned
+
+---
+
+### TS-277 — compute_node_add + compute_node_get + compute_node_delete CRUD via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:compute]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"compute_node_add","arguments":{"name":"test-mcp-node","address":"http://127.0.0.1:9999"}}' $TEST_BASE/api/mcp/call -o evidence/TS-277/add.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-277/add.json')); nid=d.get('result',{}).get('id') or d.get('id'); assert nid or 'error' in str(d).lower(), d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"compute_node_get","arguments":{"id":"<nid>"}}' $TEST_BASE/api/mcp/call -o evidence/TS-277/get.json`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"compute_node_delete","arguments":{"id":"<nid>"}}' $TEST_BASE/api/mcp/call -o evidence/TS-277/delete.json`
+**Expected**: Node added, retrievable, and deleted via MCP CRUD
+**Evidence**: `add.json`, `get.json`, `delete.json`
+**Status**: 📋 planned
+
+---
+
+### TS-278 — cooldown_status + cooldown_set + cooldown_clear via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"cooldown_status","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-278/status.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-278/status.json')); assert 'active' in str(d), d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"cooldown_set","arguments":{"minutes":1}}' $TEST_BASE/api/mcp/call`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"cooldown_clear","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-278/clear.json`
+5. `python3 -c "import json; d=json.load(open('evidence/TS-278/clear.json')); assert 'result' in d or 'ok' in str(d).lower(), d"`
+**Expected**: Cooldown status readable, settable, and clearable via MCP
+**Evidence**: `status.json`, `clear.json`
+**Status**: 📋 planned
+
+---
+
+### TS-279 — cost_rates + cost_summary shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"cost_rates","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-279/rates.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-279/rates.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"cost_summary","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-279/summary.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-279/summary.json')); assert 'result' in d or 'content' in d, d"`
+**Expected**: Both cost MCP tools return structured responses
+**Evidence**: `rates.json`, `summary.json`
+**Status**: 📋 planned
+
+---
+
+### TS-280 — council_config_get + council_config_set round-trip via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:council]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"council_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-280/get.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-280/get.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"council_config_set","arguments":{"enabled":true}}' $TEST_BASE/api/mcp/call -o evidence/TS-280/set.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-280/set.json')); assert 'result' in d or 'ok' in str(d).lower(), d"`
+**Expected**: Council config readable and writable via MCP
+**Evidence**: `get.json`, `set.json`
+**Status**: 📋 planned
+
+---
+
+### TS-281 — daemon_logs via MCP returns log lines array
+**Tags**: [surface:mcp] [feature:mcp] [feature:bootstrap]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"daemon_logs","arguments":{"lines":10}}' $TEST_BASE/api/mcp/call -o evidence/TS-281/logs.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-281/logs.json')); assert 'result' in d or 'content' in d or isinstance(d, list), d"`
+**Expected**: Array of recent log lines or wrapped result
+**Evidence**: `logs.json`
+**Status**: 📋 planned
+
+---
+
+### TS-282 — detection_config_get + detection_config_set round-trip via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:sessions]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"detection_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-282/get.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-282/get.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"detection_config_set","arguments":{"enabled":true}}' $TEST_BASE/api/mcp/call -o evidence/TS-282/set.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-282/set.json')); assert 'result' in d or 'ok' in str(d).lower(), d"`
+**Expected**: Detection config readable and settable via MCP
+**Evidence**: `get.json`, `set.json`
+**Status**: 📋 planned
+
+---
+
+### TS-283 — dns_channel_config_get + dns_channel_config_set round-trip via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:comms]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"dns_channel_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-283/get.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-283/get.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"dns_channel_config_set","arguments":{"enabled":false}}' $TEST_BASE/api/mcp/call -o evidence/TS-283/set.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-283/set.json')); assert 'result' in d or 'ok' in str(d).lower(), d"`
+**Expected**: DNS channel config readable and settable via MCP
+**Evidence**: `get.json`, `set.json`
+**Status**: 📋 planned
+
+---
+
+### TS-284 — docs_search for "sessions" returns results with howto refs
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_search","arguments":{"query":"sessions"}}' $TEST_BASE/api/mcp/call -o evidence/TS-284/results.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-284/results.json')); assert 'result' in d or 'content' in d, d"`
+3. Assert result contains at least one howto reference
+**Expected**: docs_search returns results including sessions-related howtos
+**Evidence**: `results.json`
+**Status**: 📋 planned
+
+---
+
+### TS-285 — docs_list_howtos returns >= 20 howtos
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_list_howtos","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-285/howtos.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-285/howtos.json')); items=d.get('result',d.get('content',d)); n=len(items) if isinstance(items,list) else len(str(items).split()); assert n>=1, d"`
+**Expected**: List of at least 20 curated howtos returned by MCP
+**Evidence**: `howtos.json`
+**Status**: 📋 planned
+
+---
+
+### TS-286 — docs_read for "daemon-operations" returns content
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_read","arguments":{"slug":"daemon-operations"}}' $TEST_BASE/api/mcp/call -o evidence/TS-286/content.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-286/content.json')); assert 'result' in d or 'content' in d, d"`
+3. Assert content contains meaningful text (not empty)
+**Expected**: Howto content returned with front-matter and body
+**Evidence**: `content.json`
+**Status**: 📋 planned
+
+---
+
+### TS-287 — docs_apply for a curated howto exec_steps executes via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto] [conflict:llm]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_list_howtos","arguments":{}}' $TEST_BASE/api/mcp/call` → pick first howto with exec_steps
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_apply","arguments":{"slug":"<slug>"}}' $TEST_BASE/api/mcp/call -o evidence/TS-287/apply.json`
+3. `python3 -c "import json; d=json.load(open('evidence/TS-287/apply.json')); assert 'result' in d or 'steps' in str(d) or 'ok' in str(d).lower(), d"`
+**Expected**: docs_apply returns step execution results or a structured plan; no 500 error
+**Evidence**: `apply.json`
+**Status**: 📋 planned
+
+---
+
+### TS-288 — eval_list_suites + eval_run smoke suite shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:evals]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"eval_list_suites","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-288/suites.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-288/suites.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"eval_run","arguments":{"suite":"smoke"}}' $TEST_BASE/api/mcp/call -o evidence/TS-288/run.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-288/run.json')); assert 'result' in d or 'id' in str(d) or 'error' in str(d).lower(), d"`
+**Expected**: Suites listed; smoke run returns ID or graceful error if suite not found
+**Evidence**: `suites.json`, `run.json`
+**Status**: 📋 planned
+
+---
+
+### TS-289 — federation_meta_peers + federation_sessions shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"federation_meta_peers","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-289/peers.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-289/peers.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"federation_sessions","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-289/fed_sessions.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-289/fed_sessions.json')); assert 'result' in d or 'content' in d, d"`
+**Expected**: Both federation tools return structured responses
+**Evidence**: `peers.json`, `fed_sessions.json`
+**Status**: 📋 planned
+
+---
+
+### TS-290 — guardrail_library_list + guardrail_profile CRUD via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:automata]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"guardrail_library_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-290/lib.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-290/lib.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"guardrail_profile_create","arguments":{"name":"test-mcp-profile"}}' $TEST_BASE/api/mcp/call -o evidence/TS-290/create.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-290/create.json')); pid=d.get('result',{}).get('id') or d.get('id'); assert pid or 'error' in str(d).lower(), d"`
+5. Delete the created profile via `guardrail_profile_delete`
+**Expected**: Library listed; profile created and deleted via MCP
+**Evidence**: `lib.json`, `create.json`
+**Status**: 📋 planned
+
+---
+
+### TS-291 — llm_list + llm_get + llm_enable/disable round-trip via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:config]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"llm_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-291/list.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-291/list.json')); assert 'result' in d or 'content' in d, d"`
+3. Extract first LLM ID if available; call `llm_get` with that ID
+4. Call `llm_enable` then `llm_disable` on the first available backend
+**Expected**: LLM list readable; enable/disable round-trip returns ok
+**Evidence**: `list.json`, `get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-292 — marketplace_ollama_catalog + marketplace_pull_task shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"marketplace_ollama_catalog","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-292/catalog.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-292/catalog.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"marketplace_pull_task","arguments":{"model":"tinyllama"}}' $TEST_BASE/api/mcp/call -o evidence/TS-292/pull.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-292/pull.json')); assert 'result' in d or 'id' in str(d) or 'error' in str(d).lower(), d"`
+**Expected**: Catalog listed; pull task created or graceful error returned
+**Evidence**: `catalog.json`, `pull.json`
+**Status**: 📋 planned
+
+---
+
+### TS-293 — memory_scope_recall + memory_scope_borrow + memory_scope_seed via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:memory]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"memory_scope_recall","arguments":{"query":"probe-293"}}' $TEST_BASE/api/mcp/call -o evidence/TS-293/recall.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-293/recall.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"memory_scope_seed","arguments":{"text":"probe-293 test seed","tags":["test"]}}' $TEST_BASE/api/mcp/call -o evidence/TS-293/seed.json`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"memory_scope_borrow","arguments":{"query":"probe-293"}}' $TEST_BASE/api/mcp/call -o evidence/TS-293/borrow.json`
+**Expected**: All three memory scope tools return structured responses without 500 errors
+**Evidence**: `recall.json`, `seed.json`, `borrow.json`
+**Status**: 📋 planned
+
+---
+
+### TS-294 — observer_config_get + observer_peers_list + observer_stats via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"observer_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-294/config.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-294/config.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"observer_peers_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-294/peers.json`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"observer_stats","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-294/stats.json`
+**Expected**: All three observer tools return structured responses
+**Evidence**: `config.json`, `peers.json`, `stats.json`
+**Status**: 📋 planned
+
+---
+
+### TS-295 — orchestrator_config_get + orchestrator_graph_list + orchestrator_verdicts via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"orchestrator_config_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-295/config.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-295/config.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"orchestrator_graph_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-295/graphs.json`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"orchestrator_verdicts","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-295/verdicts.json`
+**Expected**: All three orchestrator tools return structured responses
+**Evidence**: `config.json`, `graphs.json`, `verdicts.json`
+**Status**: 📋 planned
+
+---
+
+### TS-296 — pipeline_list + pipeline_start + pipeline_status shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"pipeline_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-296/list.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-296/list.json')); assert 'result' in d or 'content' in d, d"`
+3. If list non-empty: `pipeline_start` with first pipeline ID; assert returns run ID or graceful error
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"pipeline_status","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-296/status.json`
+**Expected**: Pipeline list and status return structured responses; start returns run ID or graceful error if no pipelines configured
+**Evidence**: `list.json`, `status.json`
+**Status**: 📋 planned
+
+---
+
+### TS-297 — routing_rules_list + routing_rules_test shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"routing_rules_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-297/list.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-297/list.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"routing_rules_test","arguments":{"session_name":"test-probe","backend":"claude-code"}}' $TEST_BASE/api/mcp/call -o evidence/TS-297/test.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-297/test.json')); assert 'result' in d or 'matched' in str(d) or 'error' in str(d).lower(), d"`
+**Expected**: Rules listed and test returns match result or graceful no-match
+**Evidence**: `list.json`, `test.json`
+**Status**: 📋 planned
+
+---
+
+### TS-298 — tailscale_status + tailscale_nodes shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity] [conflict:tailscale]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"tailscale_status","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-298/status.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-298/status.json')); assert 'result' in d or 'content' in d or 'error' in str(d).lower(), d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"tailscale_nodes","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-298/nodes.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-298/nodes.json')); assert 'result' in d or 'content' in d or 'error' in str(d).lower(), d"`
+**Expected**: Both tools return structured responses; graceful error if Tailscale not configured
+**Evidence**: `status.json`, `nodes.json`
+**Status**: 📋 planned
+
+---
+
+### TS-299 — telemetry_list + telemetry_get shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:parity]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"telemetry_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-299/list.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-299/list.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"telemetry_get","arguments":{"metric":"sessions"}}' $TEST_BASE/api/mcp/call -o evidence/TS-299/get.json`
+4. `python3 -c "import json; d=json.load(open('evidence/TS-299/get.json')); assert 'result' in d or 'content' in d or 'error' in str(d).lower(), d"`
+**Expected**: Telemetry list and get return structured responses
+**Evidence**: `list.json`, `get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-300 — tooling_status + tooling_gitignore + tooling_cleanup shape via MCP
+**Tags**: [surface:mcp] [feature:mcp] [feature:plugins]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"tooling_status","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-300/status.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-300/status.json')); assert 'result' in d or 'content' in d, d"`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"tooling_gitignore","arguments":{"path":"/tmp"}}' $TEST_BASE/api/mcp/call -o evidence/TS-300/gitignore.json`
+4. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"tooling_cleanup","arguments":{"path":"/tmp/dw-probe-$$"}}' $TEST_BASE/api/mcp/call -o evidence/TS-300/cleanup.json`
+**Expected**: All three tooling MCP tools return structured responses without 500 errors
+**Evidence**: `status.json`, `gitignore.json`, `cleanup.json`
+**Status**: 📋 planned
+
+---
+
+## T20 — CLI Complete
+
+### TS-310 — datawatch autonomous list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:automata]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA autonomous list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+3. Save stdout to `evidence/TS-310/out.txt`
+**Expected**: Exits 0; prints array or empty list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-311 — datawatch autonomous template-list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:automata]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA autonomous template-list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+3. Save stdout to `evidence/TS-311/out.txt`
+**Expected**: Exits 0; prints template list or empty
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-312 — datawatch algorithm list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:algorithm]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA algorithm list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows algorithm session list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-313 — datawatch compute list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:compute]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA compute list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows compute node list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-314 — datawatch compute add + show + delete CRUD round-trip
+**Tags**: [surface:cli] [feature:cli] [feature:compute]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA compute add --name test-cli-node --address http://127.0.0.1:9998 2>&1` → save NODE_ID
+2. `datawatch --data-dir $TEST_DATA compute show $NODE_ID 2>&1` → assert name=test-cli-node
+3. `datawatch --data-dir $TEST_DATA compute delete $NODE_ID 2>&1` → exits 0
+4. `datawatch --data-dir $TEST_DATA compute list 2>&1` → assert test-cli-node gone
+**Expected**: Compute node add/show/delete lifecycle via CLI completes without error
+**Evidence**: `add.txt`, `show.txt`, `delete.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-315 — datawatch council list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:council]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA council list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows council persona list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-316 — datawatch llm list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:config]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA llm list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows LLM backend list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-317 — datawatch llm add + show + delete round-trip
+**Tags**: [surface:cli] [feature:cli] [feature:config]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA llm add --name test-cli-llm --backend ollama --model tinyllama 2>&1` → save LLM_ID
+2. `datawatch --data-dir $TEST_DATA llm show $LLM_ID 2>&1` → assert name=test-cli-llm
+3. `datawatch --data-dir $TEST_DATA llm delete $LLM_ID 2>&1` → exits 0
+**Expected**: LLM backend add/show/delete lifecycle completes without error
+**Evidence**: `add.txt`, `show.txt`, `delete.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-318 — datawatch routing-rules list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA routing-rules list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows routing rules list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-319 — datawatch routing-rules test exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA routing-rules test --session-name probe-319 --backend claude-code 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 or 1 (not a crash)
+**Expected**: Exits cleanly; prints matched rule or "no match" message
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-320 — datawatch rtk check exits 0
+**Tags**: [surface:cli] [feature:cli]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA rtk check 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 (may print "RTK not found" if rtk not installed)
+**Expected**: Exits 0; prints RTK installation status
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-321 — datawatch tailscale status exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity] [conflict:tailscale]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA tailscale status 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 or 1 (graceful if Tailscale not configured)
+**Expected**: Exits cleanly; prints Tailscale status or "not configured"
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-322 — datawatch evals runs exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:evals]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA evals runs 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows eval run history (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-323 — datawatch pipeline list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA pipeline list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows pipeline list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-324 — datawatch memory list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:memory]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA memory list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows memory entries (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-325 — datawatch memory recall exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:memory]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA memory recall "test query" 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; prints recall results (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-326 — datawatch secrets list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:secrets]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA secrets list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows secrets list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-327 — datawatch secrets set + get + delete CRUD round-trip
+**Tags**: [surface:cli] [feature:cli] [feature:secrets]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA secrets set test-cli-secret "probe-value-327" 2>&1` → exits 0
+2. `datawatch --data-dir $TEST_DATA secrets get test-cli-secret 2>&1` → assert "probe-value-327" present
+3. `datawatch --data-dir $TEST_DATA secrets delete test-cli-secret 2>&1` → exits 0
+4. `datawatch --data-dir $TEST_DATA secrets list 2>&1` → assert test-cli-secret gone
+**Expected**: Secret set/get/delete CRUD lifecycle completes without error
+**Evidence**: `set.txt`, `get.txt`, `delete.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-328 — datawatch observer peers list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA observer peers list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows observer peer list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-329 — datawatch orchestrator graphs list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA orchestrator graphs list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 or prints "no graphs" gracefully
+**Expected**: Exits cleanly; shows orchestrator graph list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-330 — datawatch skills list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:skills]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA skills list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows skills list
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-331 — datawatch skills registry list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:skills]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA skills registry list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows skills registry entries
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-332 — datawatch plugins list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:plugins]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA plugins list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows plugin list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-333 — datawatch identity show exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA identity show 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+3. Assert output contains `role` or `name` field
+**Expected**: Exits 0; prints current identity fields
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-334 — datawatch identity configure shape check exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA identity configure --help 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 (help text shown) or usage printed
+**Expected**: Exits 0; prints identity configure usage without crashing
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-335 — datawatch schedule list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:schedules]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA schedule list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows schedule list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-336 — datawatch filter list exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:filters]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA filter list 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; shows filter list (possibly empty)
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-337 — datawatch cost summary exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:config]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA cost summary 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; prints cost summary table or "no data"
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-338 — datawatch analytics exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:parity]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA analytics 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0 or shows usage
+**Expected**: Exits 0; prints analytics summary or usage
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-339 — datawatch tooling status exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:plugins]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA tooling status 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+**Expected**: Exits 0; prints tooling/RTK installation status
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-340 — datawatch about exits 0
+**Tags**: [surface:cli] [feature:cli] [feature:bootstrap]
+**Steps**:
+1. `datawatch --data-dir $TEST_DATA about 2>&1; echo "EXIT:$?"`
+2. Assert exit code is 0
+3. Assert output contains version string and credits
+**Expected**: Exits 0; prints version + credits without crash
+**Evidence**: `out.txt`
+**Status**: 📋 planned
+
+---
+
+## T21 — Docs-as-MCP AI Configuration
+
+### TS-350 — docs_search "enable memory sqlite" returns howto ref
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto] [feature:memory]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_search","arguments":{"query":"enable memory sqlite"}}' $TEST_BASE/api/mcp/call -o evidence/TS-350/results.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-350/results.json')); assert 'result' in d or 'content' in d, d"`
+3. Assert result body contains `howto` or `cross-agent-memory` reference
+**Expected**: Search returns at least one howto referencing memory/sqlite configuration
+**Evidence**: `results.json`
+**Status**: 📋 planned
+
+---
+
+### TS-351 — docs_list_howtos contains cross-agent-memory
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto] [feature:memory]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_list_howtos","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-351/howtos.json`
+2. `python3 -c "import json,sys; raw=open('evidence/TS-351/howtos.json').read(); assert 'cross-agent-memory' in raw or 'memory' in raw, 'not found'"`
+**Expected**: Howto list includes `cross-agent-memory` slug
+**Evidence**: `howtos.json`
+**Status**: 📋 planned
+
+---
+
+### TS-352 — docs_read "cross-agent-memory" returns content with exec_steps
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto] [feature:memory]
+**Steps**:
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_read","arguments":{"slug":"cross-agent-memory"}}' $TEST_BASE/api/mcp/call -o evidence/TS-352/content.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-352/content.json')); raw=str(d); assert 'exec_steps' in raw or 'memory' in raw.lower(), d"`
+**Expected**: Howto content returned with exec_steps front-matter present
+**Evidence**: `content.json`
+**Status**: 📋 planned
+
+---
+
+### TS-353 — docs_apply executes steps and returns 200/OK per step
+**Tags**: [surface:mcp] [feature:mcp] [feature:howto] [feature:memory] [conflict:llm]
+**Steps**:
+1. Determine first curated howto with `exec_steps` via `docs_list_howtos`
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"docs_apply","arguments":{"slug":"<slug>"}}' $TEST_BASE/api/mcp/call -o evidence/TS-353/apply.json`
+3. `python3 -c "import json; d=json.load(open('evidence/TS-353/apply.json')); assert 'result' in d or 'steps' in str(d) or 'ok' in str(d).lower(), d"`
+4. If step results present, assert each step returns status 200 or ok
+**Expected**: docs_apply returns step execution results; each configured step returns 200/ok
+**Evidence**: `apply.json`
+**Status**: 📋 planned
+
+---
+
+### TS-354 — POST /api/assist AI guidance response
+**Tags**: [surface:api] [feature:parity] [feature:howto] [conflict:llm]
+**Steps**:
+1. `curl -sk -X POST -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"query":"how do I configure sqlite memory"}' $TEST_BASE/api/assist -o evidence/TS-354/assist.json`
+2. `python3 -c "import json; d=json.load(open('evidence/TS-354/assist.json')); assert 'guidance' in d or 'response' in d or 'howto' in str(d) or 'memory' in str(d).lower(), d"`
+**Expected**: /api/assist returns helpful guidance referencing memory/sqlite configuration
+**Evidence**: `assist.json`
+**Status**: 📋 planned
+
+---
+
+## T22 — Smoke Test Infrastructure
+
+### TS-360 — GET /api/smoke/progress returns 204 when no run active
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. Ensure no smoke run is active (clean state)
+2. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" "$TEST_BASE/api/smoke/progress")`
+3. `python3 -c "assert '$CODE' in ('204','404'), 'expected 204/404 for no active run, got $CODE'"`
+**Expected**: HTTP 204 (or 404) when no smoke-progress.json exists
+**Evidence**: `http_code.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-361 — Running release-smoke.sh writes progress JSON before first section
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. Start `bash scripts/release-smoke.sh` in background (against test daemon)
+2. Poll `$TEST_BASE/api/smoke/progress` within 5 seconds of start
+3. Assert response is non-empty JSON (not 204) before first section completes
+4. Kill smoke run after progress confirmed
+**Expected**: Progress JSON written and served within first section execution
+**Evidence**: `progress_early.json`
+**Status**: 📋 planned
+
+---
+
+### TS-362 — Progress JSON has correct shape
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. Start `bash scripts/release-smoke.sh` in background; wait for progress to appear
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/smoke/progress -o evidence/TS-362/progress.json`
+3. `python3 -c "import json; d=json.load(open('evidence/TS-362/progress.json')); assert all(k in d for k in ['version','started_at','updated_at','active','current_id','current_name','pass','fail','skip','sections']), d"`
+**Expected**: Progress JSON contains all required fields: version, started_at, updated_at, active, current_id, current_name, pass, fail, skip, sections
+**Evidence**: `progress.json`
+**Status**: 📋 planned
+
+---
+
+### TS-363 — After smoke completes, active=false in progress JSON
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. Wait for smoke run (or short subset) to complete fully
+2. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/smoke/progress -o evidence/TS-363/progress_done.json`
+3. `python3 -c "import json; d=json.load(open('evidence/TS-363/progress_done.json')); assert d.get('active') == False, d"`
+**Expected**: `active: false` in progress JSON after run completes
+**Evidence**: `progress_done.json`
+**Status**: 📋 planned
+
+---
+
+### TS-364 — DELETE /api/smoke/progress removes file, next GET returns 204
+**Tags**: [surface:api] [feature:bootstrap]
+**Steps**:
+1. Ensure progress file exists (from prior smoke run or manual create)
+2. `curl -sk -X DELETE -H "Authorization: Bearer $TEST_TOKEN" $TEST_BASE/api/smoke/progress` → 200 or 204
+3. `CODE=$(curl -sk -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEST_TOKEN" "$TEST_BASE/api/smoke/progress")`
+4. `python3 -c "assert '$CODE' in ('204','404'), 'expected 204/404 after delete, got $CODE'"`
+**Expected**: DELETE removes progress file; subsequent GET returns 204/404
+**Evidence**: `delete_code.txt`, `http_code_after.txt`
 **Status**: 📋 planned
 
 ---

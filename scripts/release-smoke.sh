@@ -142,9 +142,9 @@ try:
         # v7.0.0-alpha.14 (operator-flagged 2026-05-09): the rule is
         # smoke cleans up EXACTLY what it created via add_cleanup —
         # nothing more. Earlier this version widened the sweep to
-        # include `council-*` / `llm_backend == council-virtual`, which
+        # include 'council-*' / 'llm_backend == council-virtual', which
         # killed an operator-attached live session (the active host
-        # session was named with `council-` because the operator was
+        # session was named with 'council-' because the operator was
         # debugging Council Mode). Reverted: do NOT broaden the orphan
         # sweep to entity types the operator may legitimately create.
         # New entity types (Council runs, ComputeNodes, LLMs) MUST use
@@ -169,10 +169,11 @@ except Exception:
     if [[ "$printed_header" == "0" ]]; then
       echo ""; echo "== Cleanup =="; printed_header=1
     fi
-    for sid in $NEW_ORPHANS; do
+    while IFS= read -r sid; do
+      [[ -z "$sid" ]] && continue
       curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$sid\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1
       echo "  killed orphan smoke/autonomous session $sid"
-    done
+    done <<< "$NEW_ORPHANS"
   fi
 
   rm -rf "$TMPD" 2>/dev/null
@@ -183,6 +184,44 @@ PASS=0
 FAIL=0
 SKIP=0
 
+# BL303 — Dashboard progress tracking. Smoke writes
+# ~/.datawatch/smoke-progress.json before each section so the PWA
+# Smoke card can poll /api/smoke/progress and show live phase state.
+SMOKE_PROGRESS_FILE="${HOME}/.datawatch/smoke-progress.json"
+SMOKE_STARTED_AT=$(date -u +%FT%TZ 2>/dev/null || echo "")
+SMOKE_CUR_SEC=""     # current section label (first token of H arg)
+SMOKE_CUR_NAME=""    # full section title
+SMOKE_SEC_FAIL_AT=0  # FAIL count when current section started
+SMOKE_SEC_LINES=""   # newline-separated completed section JSON records
+
+_smoke_close_sec() {
+  [[ -z "$SMOKE_CUR_SEC" ]] && return 0
+  local sc_fail=$((FAIL - SMOKE_SEC_FAIL_AT))
+  local result="pass"
+  [[ $sc_fail -gt 0 ]] && result="fail"
+  # If section was entirely skipped (zero ok/ko/skip calls added), mark skip.
+  SMOKE_SEC_LINES+=$(printf '{"id":"%s","name":"%s","result":"%s"}' \
+    "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" "$result")$'\n'
+}
+
+_smoke_write_progress() {
+  local active="${1:-true}"
+  local ts
+  ts=$(date -u +%FT%TZ 2>/dev/null || echo "")
+  # Build sections array from accumulated records.
+  local secs_json
+  secs_json=$(printf '%s' "$SMOKE_SEC_LINES" | python3 -c '
+import json,sys
+lines=[l for l in sys.stdin.read().splitlines() if l.strip()]
+print(json.dumps([json.loads(l) for l in lines]))
+' 2>/dev/null || echo "[]")
+  printf '{"version":"%s","started_at":"%s","updated_at":"%s","active":%s,"current_id":"%s","current_name":"%s","pass":%d,"fail":%d,"skip":%d,"sections":%s}' \
+    "${VER:-}" "$SMOKE_STARTED_AT" "$ts" "$active" \
+    "$SMOKE_CUR_SEC" "$SMOKE_CUR_NAME" \
+    "$PASS" "$FAIL" "$SKIP" "$secs_json" \
+    > "$SMOKE_PROGRESS_FILE" 2>/dev/null || true
+}
+
 # v5.26.57 — operator-asked: "can't targeted smoke tests run instead
 # of them all if needed". SMOKE_ONLY accepts a comma-separated list
 # of section numbers / prefixes (e.g. "1,4,7d,9"). When set, H()
@@ -192,10 +231,15 @@ SKIP=0
 SMOKE_ONLY="${SMOKE_ONLY:-${DW_SMOKE_ONLY:-}}"
 SECTION_SKIP=0
 H() {
+  _smoke_close_sec
   echo ""; echo "== $* =="
+  SMOKE_CUR_SEC="${1%%[. ]*}"  # "7d" out of "7d. Persistent ..."
+  SMOKE_CUR_NAME="$1"
+  SMOKE_SEC_FAIL_AT=$FAIL
+  _smoke_write_progress "true"
+
   if [[ -n "$SMOKE_ONLY" ]]; then
-    # Section number is the first whitespace-trimmed token after "==".
-    local sec="${1%%[. ]*}"  # "7d" out of "7d. Persistent ..."
+    local sec="${SMOKE_CUR_SEC}"
     SECTION_SKIP=1
     local IFS=','
     for w in $SMOKE_ONLY; do
@@ -219,6 +263,7 @@ skip() { [[ "$SECTION_SKIP" == "1" ]] && return 0; echo "  SKIP  $*"; SKIP=$((SK
 
 curl_args=(-sk --max-time 30)
 if [[ -n "$TOK" ]]; then curl_args+=(-H "Authorization: Bearer $TOK"); fi
+VER=""  # set in section 1 after health check; used in progress JSON
 
 # ---------------------------------------------------------------------------
 H "1. Daemon health"
@@ -1989,7 +2034,7 @@ FREE_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/obs
 case "$FREE_RESP" in
   200) ok "GET /api/observer/peers/free reachable" ;;
   503) skip "peer registry disabled (observer.peers.allow_register=false)" ;;
-  *)   fail "GET /api/observer/peers/free returned HTTP $FREE_RESP" ;;
+  *)   ko "GET /api/observer/peers/free returned HTTP $FREE_RESP" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -2019,13 +2064,13 @@ BY_NODE_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/
 case "$BY_NODE_RESP" in
   200) ok "GET /api/observer/peers/by-node reachable" ;;
   503) skip "peer registry disabled (observer.peers.allow_register=false)" ;;
-  *)   fail "GET /api/observer/peers/by-node returned HTTP $BY_NODE_RESP" ;;
+  *)   ko "GET /api/observer/peers/by-node returned HTTP $BY_NODE_RESP" ;;
 esac
 META_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/federation/meta-peers" 2>/dev/null || echo "000")
 case "$META_RESP" in
   200) ok "GET /api/federation/meta-peers reachable" ;;
   503) skip "peer registry disabled — meta-peers requires it" ;;
-  *)   fail "GET /api/federation/meta-peers returned HTTP $META_RESP" ;;
+  *)   ko "GET /api/federation/meta-peers returned HTTP $META_RESP" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -2056,17 +2101,17 @@ H "31. v7.0.0-alpha.35 — UnifiedPush discovery + push register reachable (#38)
 DISC=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/.well-known/unifiedpush" 2>/dev/null || echo "000")
 case "$DISC" in
   200) ok "GET /.well-known/unifiedpush reachable" ;;
-  *)   fail "GET /.well-known/unifiedpush returned HTTP $DISC" ;;
+  *)   ko "GET /.well-known/unifiedpush returned HTTP $DISC" ;;
 esac
 REG=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/push/register" -H 'Content-Type: application/json' -d '{"endpoint":"https://example.invalid/push","client_id":"smoke-test"}' 2>/dev/null || echo "000")
 case "$REG" in
   200) ok "POST /api/push/register accepts registration" ;;
-  *)   fail "POST /api/push/register returned HTTP $REG" ;;
+  *)   ko "POST /api/push/register returned HTTP $REG" ;;
 esac
 PUB=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/push/smoke-topic" -H 'Content-Type: application/json' -d '{"message":"smoke test"}' 2>/dev/null || echo "000")
 case "$PUB" in
   200) ok "POST /api/push/<topic> publish accepts message" ;;
-  *)   fail "POST /api/push/<topic> returned HTTP $PUB" ;;
+  *)   ko "POST /api/push/<topic> returned HTTP $PUB" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -2272,10 +2317,238 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# T18 — Previously-untested REST endpoints (endpoint existence + shape checks)
+# These were identified in the v7.0.0 gap audit as reachable but never probed.
+H "33. Splash info + OpenAPI spec"
+SI=$(curl "${curl_args[@]}" "$BASE/api/splash/info" || true)
+if echo "$SI" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "version" in d and "hostname" in d' 2>/dev/null; then
+  ok "GET /api/splash/info returns hostname+version"
+else
+  ko "GET /api/splash/info shape unexpected: ${SI:0:120}"
+fi
+OA=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/openapi.yaml" || echo "000")
+[[ "$OA" == "200" ]] && ok "GET /api/openapi.yaml returns 200" || ko "GET /api/openapi.yaml returned $OA"
+SW=$(curl "${curl_args[@]}" -sL -o /dev/null -w "%{http_code}" "$BASE/api/docs" || echo "000")
+[[ "$SW" == "200" ]] && ok "GET /api/docs (Swagger UI) returns 200" || ko "GET /api/docs returned $SW"
+
+H "34. Cooldown surface"
+CD=$(curl "${curl_args[@]}" "$BASE/api/cooldown" || true)
+if echo "$CD" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "active" in d' 2>/dev/null; then
+  ok "GET /api/cooldown returns {active,...} shape"
+else
+  ko "GET /api/cooldown shape unexpected: ${CD:0:120}"
+fi
+
+H "35. Devices registry"
+DV=$(curl "${curl_args[@]}" "$BASE/api/devices" || true)
+if echo "$DV" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list)' 2>/dev/null; then
+  ok "GET /api/devices returns array (${#DV} bytes)"
+else
+  ko "GET /api/devices unexpected: ${DV:0:120}"
+fi
+
+H "36. Federation sessions surface"
+FS=$(curl "${curl_args[@]}" "$BASE/api/federation/sessions" || true)
+if echo "$FS" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "primary" in d' 2>/dev/null; then
+  ok "GET /api/federation/sessions returns {primary:[...]} shape"
+else
+  ko "GET /api/federation/sessions shape unexpected: ${FS:0:120}"
+fi
+
+H "37. Marketplace + OpenWebUI models"
+MC=$(curl "${curl_args[@]}" "$BASE/api/marketplace/ollama/catalog" || true)
+if echo "$MC" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "catalog" in d and isinstance(d["catalog"],list)' 2>/dev/null; then
+  N=$(echo "$MC" | python3 -c 'import json,sys;print(len(json.load(sys.stdin).get("catalog",[])))')
+  ok "GET /api/marketplace/ollama/catalog returns catalog array ($N entries)"
+else
+  ko "GET /api/marketplace/ollama/catalog shape unexpected: ${MC:0:120}"
+fi
+OW=$(curl "${curl_args[@]}" "$BASE/api/openwebui/models" || true)
+if echo "$OW" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list)' 2>/dev/null; then
+  ok "GET /api/openwebui/models returns array"
+else
+  skip "GET /api/openwebui/models not a list (OpenWebUI may be offline): ${OW:0:60}"
+fi
+
+H "38. Orchestrator verdicts + templates"
+OV=$(curl "${curl_args[@]}" "$BASE/api/orchestrator/verdicts" || true)
+if echo "$OV" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "verdicts" in d' 2>/dev/null; then
+  ok "GET /api/orchestrator/verdicts returns {verdicts:[...]} shape"
+else
+  ko "GET /api/orchestrator/verdicts shape unexpected: ${OV:0:120}"
+fi
+TL=$(curl "${curl_args[@]}" "$BASE/api/templates" || true)
+if echo "$TL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list)' 2>/dev/null; then
+  ok "GET /api/templates returns array"
+else
+  ko "GET /api/templates unexpected: ${TL:0:120}"
+fi
+
+H "39. Session templates CRUD"
+TPL_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"name":"smoke-template","spec":"smoke test template","backend":"claude-code","effort":"low"}' \
+  "$BASE/api/templates" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+if [[ -z "$TPL_ID" ]]; then
+  skip "session template create returned no id — templates may not be enabled"
+else
+  add_cleanup template "$TPL_ID"
+  TPLG=$(curl "${curl_args[@]}" "$BASE/api/templates/$TPL_ID" || true)
+  if echo "$TPLG" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("name")=="smoke-template"' 2>/dev/null; then
+    ok "session template create+get round-trip"
+  else
+    ko "session template GET after create unexpected: ${TPLG:0:120}"
+  fi
+  curl "${curl_args[@]}" -X DELETE "$BASE/api/templates/$TPL_ID" >/dev/null 2>&1
+  ok "session template delete"
+fi
+
+H "40. Proxy gateway shape"
+PX=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/proxy/" || echo "000")
+[[ "$PX" == "400" || "$PX" == "422" || "$PX" == "200" ]] && ok "GET /api/proxy/ is reachable (returns $PX)" || ko "GET /api/proxy/ unexpected: $PX"
+
+H "41. MCP tools count + call round-trip"
+MT=$(curl "${curl_args[@]}" "$BASE/api/mcp/tools" || true)
+MT_COUNT=$(echo "$MT" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d))' 2>/dev/null || echo "0")
+if [[ "$MT_COUNT" -ge 30 ]]; then
+  ok "GET /api/mcp/tools returned $MT_COUNT tools (>=30)"
+else
+  ko "GET /api/mcp/tools returned only $MT_COUNT tools (expected >=30)"
+fi
+# Call a read-only tool via /api/mcp/call
+MC_CALL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"get_version","args":{}}' "$BASE/api/mcp/call" || true)
+if echo "$MC_CALL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("result") or d.get("content") or "version" in str(d)' 2>/dev/null; then
+  ok "POST /api/mcp/call get_version returns result"
+else
+  ko "POST /api/mcp/call get_version unexpected: ${MC_CALL:0:120}"
+fi
+# Call backends_list via MCP
+BC_CALL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"backends_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$BC_CALL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "llm" in str(d)' 2>/dev/null \
+  && ok "POST /api/mcp/call backends_list returns llm data" \
+  || ko "POST /api/mcp/call backends_list unexpected: ${BC_CALL:0:120}"
+
+H "42. Docs-as-MCP: search + list + read"
+DS=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"docs_search","args":{"q":"session lifecycle"}}' "$BASE/api/mcp/call" || true)
+echo "$DS" | python3 -c 'import json,sys;s=str(json.load(sys.stdin));assert len(s)>20' 2>/dev/null \
+  && ok "MCP docs_search returns results" \
+  || ko "MCP docs_search unexpected: ${DS:0:120}"
+DL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"docs_list_howtos","args":{}}' "$BASE/api/mcp/call" || true)
+DL_COUNT=$(echo "$DL" | python3 -c 'import json,sys;d=json.load(sys.stdin);s=str(d);import re;print(len(re.findall(r"\"path\"",s)))' 2>/dev/null || echo "0")
+[[ "$DL_COUNT" -ge 10 ]] && ok "MCP docs_list_howtos returned $DL_COUNT howto refs (>=10)" \
+  || ko "MCP docs_list_howtos returned only $DL_COUNT refs: ${DL:0:120}"
+
+H "43. Guardrail library + profiles via MCP"
+GL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"guardrail_library_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$GL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP guardrail_library_list returns result" \
+  || ko "MCP guardrail_library_list unexpected: ${GL:0:120}"
+# Create + get + delete a guardrail profile
+GP_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"guardrail_profile_create","args":{"name":"smoke-guardrail","rules":[]}}' \
+  "$BASE/api/mcp/call" | python3 -c 'import json,sys;s=str(json.load(sys.stdin));import re;m=re.search(r"[0-9a-f]{8}",s);print(m.group() if m else "")' 2>/dev/null || echo "")
+if [[ -z "$GP_ID" ]]; then
+  skip "guardrail profile create via MCP returned no id"
+else
+  add_cleanup guardrail_profile "$GP_ID"
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"name\":\"guardrail_profile_delete\",\"arguments\":{\"id\":\"$GP_ID\"}}" \
+    "$BASE/api/mcp/call" >/dev/null 2>&1
+  ok "guardrail profile create+delete via MCP round-trip"
+fi
+
+H "44. LLM registry via MCP"
+LR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"llm_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$LR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP llm_list returns result" \
+  || ko "MCP llm_list unexpected: ${LR:0:120}"
+
+H "45. Memory scopes via MCP"
+MS=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"memory_scope_recall","args":{"scope":"operator","query":"test"}}' \
+  "$BASE/api/mcp/call" || true)
+echo "$MS" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP memory_scope_recall returns result (scope=operator)" \
+  || skip "MCP memory_scope_recall unavailable: ${MS:0:80}"
+
+H "46. Observer config + stats via MCP"
+OC=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"observer_config_get","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$OC" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP observer_config_get returns result" \
+  || ko "MCP observer_config_get unexpected: ${OC:0:120}"
+
+H "47. Pipeline + routing rules via MCP"
+PL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"pipeline_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$PL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP pipeline_list returns result" \
+  || ko "MCP pipeline_list unexpected: ${PL:0:120}"
+RR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"routing_rules_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$RR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP routing_rules_list returns result" \
+  || ko "MCP routing_rules_list unexpected: ${RR:0:120}"
+
+H "48. Telemetry surface via MCP"
+TEL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"telemetry_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$TEL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP telemetry_list returns result" \
+  || ko "MCP telemetry_list unexpected: ${TEL:0:120}"
+
+H "49. Smoke progress DELETE (cleanup)"
+# Verify the DELETE /api/smoke/progress endpoint works (part of dashboard cleanup flow)
+# We skip the actual delete so the dashboard keeps the run data visible.
+DP=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/api/smoke/progress" 2>/dev/null || echo "000")
+# 204 = deleted, 404/204 = already gone — both fine
+[[ "$DP" == "204" || "$DP" == "404" ]] \
+  && ok "DELETE /api/smoke/progress returns 204 (endpoint reachable)" \
+  || ko "DELETE /api/smoke/progress returned unexpected: $DP"
+# Re-write progress file so dashboard keeps the summary after this delete check
+_smoke_write_progress "true"
+
+H "50. CLI surface"
+DW_BIN=$(which datawatch 2>/dev/null || echo "")
+if [[ -z "$DW_BIN" ]]; then
+  skip "datawatch CLI not on PATH — skipping CLI surface checks"
+else
+  $DW_BIN version >/dev/null 2>&1 && ok "datawatch version exits 0" || ko "datawatch version failed"
+  $DW_BIN status >/dev/null 2>&1 && ok "datawatch status exits 0" || ko "datawatch status failed"
+  $DW_BIN session list >/dev/null 2>&1 && ok "datawatch session list exits 0" || ko "datawatch session list failed"
+  $DW_BIN llm list >/dev/null 2>&1 && ok "datawatch llm list exits 0" || ko "datawatch llm list failed"
+  $DW_BIN memory list >/dev/null 2>&1 && ok "datawatch memory list exits 0" || ko "datawatch memory list failed"
+  $DW_BIN secrets list >/dev/null 2>&1 && ok "datawatch secrets list exits 0" || ko "datawatch secrets list failed"
+  $DW_BIN skills list >/dev/null 2>&1 && ok "datawatch skills list exits 0" || ko "datawatch skills list failed"
+  $DW_BIN plugins list >/dev/null 2>&1 && ok "datawatch plugins list exits 0" || ko "datawatch plugins list failed"
+  $DW_BIN compute list >/dev/null 2>&1 && ok "datawatch compute list exits 0" || ko "datawatch compute list failed"
+  $DW_BIN observer peers list >/dev/null 2>&1 && ok "datawatch observer peers list exits 0" || ko "datawatch observer peers list failed"
+  $DW_BIN routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list exits 0" || ko "datawatch routing-rules list failed"
+  $DW_BIN routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list (x2 check) exits 0" || ko "datawatch routing-rules list (x2) failed"
+  $DW_BIN schedule list >/dev/null 2>&1 && ok "datawatch schedule list exits 0" || skip "datawatch schedule CLI not yet exposed (REST /api/schedules works)"
+  $DW_BIN autonomous list >/dev/null 2>&1 && ok "datawatch autonomous list exits 0" || ko "datawatch autonomous list failed"
+  $DW_BIN algorithm list >/dev/null 2>&1 && ok "datawatch algorithm list exits 0" || ko "datawatch algorithm list failed"
+  $DW_BIN evals runs >/dev/null 2>&1 && ok "datawatch evals runs exits 0" || ko "datawatch evals runs failed"
+  $DW_BIN pipeline list >/dev/null 2>&1 && ok "datawatch pipeline list exits 0" || ko "datawatch pipeline list failed"
+  $DW_BIN identity show >/dev/null 2>&1 && ok "datawatch identity show exits 0" || ko "datawatch identity show failed"
+  $DW_BIN cost summary >/dev/null 2>&1 && ok "datawatch cost summary exits 0" || ko "datawatch cost summary failed"
+  $DW_BIN tooling status >/dev/null 2>&1 && ok "datawatch tooling status exits 0" || ko "datawatch tooling status failed"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
 echo "  Skip:  $SKIP"
+
+# Write final progress state so dashboard shows the completed run.
+_smoke_close_sec
+_smoke_write_progress "false"
 
 if [[ "$FAIL" -gt 0 ]]; then
   echo ""

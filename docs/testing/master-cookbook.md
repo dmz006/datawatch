@@ -2,6 +2,8 @@
 
 **How to update**: Run `bash scripts/run-tests.sh` — updates this file automatically after every run.
 
+**Monitor live**: Open the dashboard at `https://localhost:8443` — the **🔬 Smoke Run** card shows real-time progress while `release-smoke.sh` runs (polls `/api/smoke/progress`). Add it via Edit → Add Card → Smoke Run.
+
 ---
 
 ## Latest Run Summary
@@ -225,6 +227,95 @@
 | T17 | TS-247 | Journey: MCP tools (recall + kg_query) | surface:mcp feature:journey feature:mcp feature:memory feature:kg | 📋 planned | — | — |
 | T17 | TS-248 | Journey: schedule lifecycle | surface:api feature:journey | 📋 planned | — | — |
 | T17 | TS-249 | Journey: full session lifecycle | surface:api surface:comms feature:journey feature:sessions | 📋 planned | — | — |
+| T18 | TS-250 | GET /api/splash/info returns hostname+version | surface:api feature:bootstrap | 📋 planned | — | — |
+| T18 | TS-251 | GET /api/openapi.yaml returns valid YAML with openapi: 3.0.x | surface:api feature:bootstrap | 📋 planned | — | — |
+| T18 | TS-252 | GET /api/docs returns Swagger HTML (200) | surface:api feature:bootstrap | 📋 planned | — | — |
+| T18 | TS-253 | GET /api/cooldown returns {active, until} shape | surface:api feature:config | 📋 planned | — | — |
+| T18 | TS-254 | POST /api/cooldown set + GET verify + DELETE clear | surface:api feature:config | 📋 planned | — | — |
+| T18 | TS-255 | GET /api/devices returns array (push device registry) | surface:api feature:config | 📋 planned | — | — |
+| T18 | TS-256 | POST /api/devices/register shape round-trip | surface:api feature:config | 📋 planned | — | — |
+| T18 | TS-257 | GET /api/federation/sessions returns {primary:[]} shape | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-258 | GET /api/marketplace/ollama/catalog returns catalog array | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-259 | GET /api/openwebui/models returns array | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-260 | GET /api/orchestrator/verdicts returns {verdicts:[]} shape | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-261 | GET /api/proxy/ missing-server-name 400/error | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-262 | GET /api/templates returns array | surface:api feature:plugins | 📋 planned | — | — |
+| T18 | TS-263 | POST /api/templates creates; GET retrieves; DELETE removes | surface:api feature:plugins | 📋 planned | — | — |
+| T18 | TS-264 | POST /api/assist endpoint exists (405 on GET) | surface:api feature:parity | 📋 planned | — | — |
+| T18 | TS-265 | GET /api/splash/logo 404 is acceptable | surface:api feature:bootstrap | 📋 planned | — | — |
+| T18 | TS-266 | GET /api/servers + GET /api/servers/health shape | surface:api feature:parity | 📋 planned | — | — |
+| T19 | TS-270 | algorithm_list via MCP returns array | surface:mcp feature:mcp feature:algorithm | 📋 planned | — | — |
+| T19 | TS-271 | algorithm_start + algorithm_get via MCP | surface:mcp feature:mcp feature:algorithm | 📋 planned | — | — |
+| T19 | TS-272 | autonomous_config_get + autonomous_config_set round-trip via MCP | surface:mcp feature:mcp feature:automata | 📋 planned | — | — |
+| T19 | TS-273 | autonomous_status via MCP returns {enabled,...} shape | surface:mcp feature:mcp feature:automata | 📋 planned | — | — |
+| T19 | TS-274 | autonomous_type_list via MCP returns array | surface:mcp feature:mcp feature:automata | 📋 planned | — | — |
+| T19 | TS-275 | backends_list via MCP returns {llm:[...]} shape | surface:mcp feature:mcp feature:config | 📋 planned | — | — |
+| T19 | TS-276 | compute_node_list via MCP returns array | surface:mcp feature:mcp feature:compute | 📋 planned | — | — |
+| T19 | TS-277 | compute_node_add + compute_node_get + compute_node_delete CRUD via MCP | surface:mcp feature:mcp feature:compute | 📋 planned | — | — |
+| T19 | TS-278 | cooldown_status + cooldown_set + cooldown_clear via MCP | surface:mcp feature:mcp feature:config | 📋 planned | — | — |
+| T19 | TS-279 | cost_rates + cost_summary shape via MCP | surface:mcp feature:mcp feature:config | 📋 planned | — | — |
+| T19 | TS-280 | council_config_get + council_config_set round-trip via MCP | surface:mcp feature:mcp feature:council | 📋 planned | — | — |
+| T19 | TS-281 | daemon_logs via MCP returns log lines array | surface:mcp feature:mcp feature:bootstrap | 📋 planned | — | — |
+| T19 | TS-282 | detection_config_get + detection_config_set round-trip via MCP | surface:mcp feature:mcp feature:sessions | 📋 planned | — | — |
+| T19 | TS-283 | dns_channel_config_get + dns_channel_config_set round-trip via MCP | surface:mcp feature:mcp feature:comms | 📋 planned | — | — |
+| T19 | TS-284 | docs_search for "sessions" returns results with howto refs | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
+| T19 | TS-285 | docs_list_howtos returns >=20 howtos | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
+| T19 | TS-286 | docs_read for "daemon-operations" returns content | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
+| T19 | TS-287 | docs_apply for curated howto exec_steps executes via MCP | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
+| T19 | TS-288 | eval_list_suites + eval_run smoke suite shape via MCP | surface:mcp feature:mcp feature:evals | 📋 planned | — | — |
+| T19 | TS-289 | federation_meta_peers + federation_sessions shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-290 | guardrail_library_list + guardrail_profile CRUD via MCP | surface:mcp feature:mcp feature:automata | 📋 planned | — | — |
+| T19 | TS-291 | llm_list + llm_get + llm_enable/disable round-trip via MCP | surface:mcp feature:mcp feature:config | 📋 planned | — | — |
+| T19 | TS-292 | marketplace_ollama_catalog + marketplace_pull_task shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-293 | memory_scope_recall + memory_scope_borrow + memory_scope_seed via MCP | surface:mcp feature:mcp feature:memory | 📋 planned | — | — |
+| T19 | TS-294 | observer_config_get + observer_peers_list + observer_stats via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-295 | orchestrator_config_get + orchestrator_graph_list + orchestrator_verdicts via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-296 | pipeline_list + pipeline_start + pipeline_status shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-297 | routing_rules_list + routing_rules_test shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-298 | tailscale_status + tailscale_nodes shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-299 | telemetry_list + telemetry_get shape via MCP | surface:mcp feature:mcp feature:parity | 📋 planned | — | — |
+| T19 | TS-300 | tooling_status + tooling_gitignore + tooling_cleanup shape via MCP | surface:mcp feature:mcp feature:plugins | 📋 planned | — | — |
+| T20 | TS-310 | datawatch autonomous list exits 0 | surface:cli feature:cli feature:automata | 📋 planned | — | — |
+| T20 | TS-311 | datawatch autonomous template-list exits 0 | surface:cli feature:cli feature:automata | 📋 planned | — | — |
+| T20 | TS-312 | datawatch algorithm list exits 0 | surface:cli feature:cli feature:algorithm | 📋 planned | — | — |
+| T20 | TS-313 | datawatch compute list exits 0 | surface:cli feature:cli feature:compute | 📋 planned | — | — |
+| T20 | TS-314 | datawatch compute add + show + delete CRUD round-trip | surface:cli feature:cli feature:compute | 📋 planned | — | — |
+| T20 | TS-315 | datawatch council list exits 0 | surface:cli feature:cli feature:council | 📋 planned | — | — |
+| T20 | TS-316 | datawatch llm list exits 0 | surface:cli feature:cli feature:config | 📋 planned | — | — |
+| T20 | TS-317 | datawatch llm add + show + delete round-trip | surface:cli feature:cli feature:config | 📋 planned | — | — |
+| T20 | TS-318 | datawatch routing-rules list exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-319 | datawatch routing-rules test exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-320 | datawatch rtk check exits 0 | surface:cli feature:cli | 📋 planned | — | — |
+| T20 | TS-321 | datawatch tailscale status exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-322 | datawatch evals runs exits 0 | surface:cli feature:cli feature:evals | 📋 planned | — | — |
+| T20 | TS-323 | datawatch pipeline list exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-324 | datawatch memory list exits 0 | surface:cli feature:cli feature:memory | 📋 planned | — | — |
+| T20 | TS-325 | datawatch memory recall "test query" exits 0 | surface:cli feature:cli feature:memory | 📋 planned | — | — |
+| T20 | TS-326 | datawatch secrets list exits 0 | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
+| T20 | TS-327 | datawatch secrets set + get + delete CRUD round-trip | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
+| T20 | TS-328 | datawatch observer peers list exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-329 | datawatch orchestrator graphs list exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-330 | datawatch skills list exits 0 | surface:cli feature:cli feature:skills | 📋 planned | — | — |
+| T20 | TS-331 | datawatch skills registry list exits 0 | surface:cli feature:cli feature:skills | 📋 planned | — | — |
+| T20 | TS-332 | datawatch plugins list exits 0 | surface:cli feature:cli feature:plugins | 📋 planned | — | — |
+| T20 | TS-333 | datawatch identity show exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-334 | datawatch identity configure shape check exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-335 | datawatch schedule list exits 0 | surface:cli feature:cli feature:schedules | 📋 planned | — | — |
+| T20 | TS-336 | datawatch filter list exits 0 | surface:cli feature:cli feature:filters | 📋 planned | — | — |
+| T20 | TS-337 | datawatch cost summary exits 0 | surface:cli feature:cli feature:config | 📋 planned | — | — |
+| T20 | TS-338 | datawatch analytics exits 0 | surface:cli feature:cli feature:parity | 📋 planned | — | — |
+| T20 | TS-339 | datawatch tooling status exits 0 | surface:cli feature:cli feature:plugins | 📋 planned | — | — |
+| T20 | TS-340 | datawatch about exits 0 (version + credits) | surface:cli feature:cli feature:bootstrap | 📋 planned | — | — |
+| T21 | TS-350 | docs_search "enable memory sqlite" returns result with howto ref | surface:mcp feature:mcp feature:howto feature:memory | 📋 planned | — | — |
+| T21 | TS-351 | docs_list_howtos contains cross-agent-memory | surface:mcp feature:mcp feature:howto feature:memory | 📋 planned | — | — |
+| T21 | TS-352 | docs_read "cross-agent-memory" returns content with exec_steps | surface:mcp feature:mcp feature:howto feature:memory | 📋 planned | — | — |
+| T21 | TS-353 | docs_apply executes steps and returns 200/OK per step | surface:mcp feature:mcp feature:howto feature:memory | 📋 planned | — | — |
+| T21 | TS-354 | POST /api/assist "how do I configure sqlite memory" returns guidance | surface:api feature:parity feature:howto | 📋 planned | — | — |
+| T22 | TS-360 | GET /api/smoke/progress returns 204 when no run active | surface:api feature:bootstrap | 📋 planned | — | — |
+| T22 | TS-361 | Running release-smoke.sh writes progress JSON before first section | surface:api feature:bootstrap | 📋 planned | — | — |
+| T22 | TS-362 | Progress JSON has correct shape (version/started_at/active/sections/...) | surface:api feature:bootstrap | 📋 planned | — | — |
+| T22 | TS-363 | After smoke completes, active=false in progress JSON | surface:api feature:bootstrap | 📋 planned | — | — |
+| T22 | TS-364 | DELETE /api/smoke/progress removes file, next GET returns 204 | surface:api feature:bootstrap | 📋 planned | — | — |
 
 ---
 
@@ -312,7 +403,7 @@ bash scripts/run-tests.sh
 ## Runner Quick Reference
 
 ```bash
-# Full run (all 17 sprints)
+# Full run (all 22 sprints)
 bash scripts/run-tests.sh
 
 # Single story
@@ -328,8 +419,16 @@ bash scripts/run-tests.sh --fail-fast-blocking
 bash scripts/run-tests.sh --surface=api
 bash scripts/run-tests.sh --feature=memory
 
+# Specific sprint
+bash scripts/run-tests.sh --sprint=T18
+bash scripts/run-tests.sh --sprint=T19
+bash scripts/run-tests.sh --sprint=T20
+
 # Skip external-dependency tests
-bash scripts/run-tests.sh --skip-conflict=llm --skip-conflict=signal
+bash scripts/run-tests.sh --skip-conflict=llm --skip-conflict=signal --skip-conflict=tailscale
+
+# Cost-gated tests (requires live LLM backend)
+DW_MAJOR=1 bash scripts/run-tests.sh
 
 # Exit codes
 # 0 — all passed/skipped

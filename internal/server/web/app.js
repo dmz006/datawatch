@@ -816,6 +816,37 @@ function handleMessage(msg) {
           }
           _dash.ekg.push({ t: Date.now(), c: _dashNodeColor(msg.data.board.state), dy: 0.5 + Math.random() * 0.5 });
           if (_dash.ekg.length > _dash.ekgMax) _dash.ekg.shift();
+          // Live event log entry
+          const le = msg.data.board.last_event;
+          const sess = state.sessions ? state.sessions.find(s => s.full_id === hSid || s.id === hSid) : null;
+          _dash._eventLog.push({
+            t: Date.now(),
+            sid: hSid,
+            name: (sess && (sess.name || sess.task)) || hSid.slice(0, 8),
+            event: (le && le.event) || 'update',
+            tool: le && le.tool || '',
+            task: (le && le.payload && le.payload.current_task) || (msg.data.board.current_focus && msg.data.board.current_focus.task) || '',
+            state: msg.data.board.state || '',
+            color: _dashNodeColor(msg.data.board.state),
+          });
+          if (_dash._eventLog.length > _dash._eventLogMax) _dash._eventLog.shift();
+          // Update Gantt timing for this session's active story
+          const tel2 = msg.data.board.telemetry;
+          if (tel2 && tel2.sprint && tel2.sprint.prd_id) {
+            const gPrd = (_dash._prds || []).find(p => p.id === tel2.sprint.prd_id);
+            if (gPrd) {
+              const gSi = (gPrd.stories || []).findIndex(s =>
+                s.id === tel2.sprint.sprint_id || s.title === tel2.sprint.title);
+              if (gSi >= 0) {
+                const gKey = tel2.sprint.prd_id + ':' + gSi;
+                if (!_dash._ganttTimings[gKey]) {
+                  _dash._ganttTimings[gKey] = { start: Date.now(), end: null, lastSeen: Date.now() };
+                } else {
+                  _dash._ganttTimings[gKey].lastSeen = Date.now();
+                }
+              }
+            }
+          }
           if (_dash.expandSid === hSid) _dashUpdateExpand(hSid);
         }
         if (state.activeView === 'session-detail' && state.activeSession === hSid &&
@@ -2709,10 +2740,10 @@ function renderSessionDetail(sessionId) {
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
-          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
-          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
-          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
-          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A',event)" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B',event)" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D',event)" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C',event)" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
         </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
@@ -4026,9 +4057,12 @@ window.sendTmuxKey = sendTmuxKey;
 
 // #255 (alpha.27) — hold-to-repeat arrow keys for terminal scrolling.
 // Initial fire on press, then 250ms delay, then repeat at 80ms.
+// evt is passed from ontouchstart to call preventDefault(), blocking the
+// synthesized mousedown that would otherwise double-fire the key.
 let _arrowRepeatTimer = null;
 let _arrowRepeatDelay = null;
-window.startArrowRepeat = function(sessionId, escSeq) {
+window.startArrowRepeat = function(sessionId, escSeq, evt) {
+  if (evt && evt.preventDefault) evt.preventDefault();
   stopArrowRepeat();
   sendTmuxKey(sessionId, escSeq);
   _arrowRepeatDelay = setTimeout(() => {
@@ -4550,10 +4584,10 @@ function loadSavedCmdsQuick(sessionId) {
       // outputs / pickers). ESC + Enter stay one-shot.
       const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[D')" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[C')" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[A',event)" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[B',event)" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[D',event)" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
+        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[C',event)" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
       </span>` : '';
       panel.innerHTML =
@@ -8981,7 +9015,7 @@ function _renderStoryReadOnlyExtras(story) {
   const sessionRow = sessId
     ? `<div class="prd-story-session-row">
          <a class="prd-story-session-link" href="javascript:void(0)" onclick="navigate('session-detail','${escHtml(sessId)}')" title="Open the worker session that ran this story">&#8594; Session <code>${escHtml(sessId)}</code></a>
-         <a class="prd-story-session-link" href="javascript:void(0)" onclick="gotoSessionStatus('${escHtml(sessId)}')" title="Open session Status tab (BL303 S3 T13)" style="margin-left:8px;font-size:11px;">&#9640; Status</a>
+         <a class="prd-story-session-link" href="javascript:void(0)" onclick="gotoSessionStatus('${escHtml(sessId)}')" title="Open session Status tab" style="margin-left:8px;font-size:11px;">&#9640; Status</a>
        </div>`
     : '';
 
@@ -13231,9 +13265,29 @@ const _dash = {
   ekgMax: 400,
   _boards: {},      // session_id → SessionStatusBoard (fed by hook_update WS)
   _prds: [],        // running/active automata for sprint pipeline
+  _prdsLastFetch: 0, // timestamp of last /api/autonomous/prds fetch
+  _prdsFetching: false, // guard against concurrent fetches
+  _ganttTimings: {}, // 'prdId:storyIdx' → {start,end,lastSeen} from hook events
+  _ganttTreeExpand: {}, // prdId → bool (default true)
+  _costToday: null,  // cached cost summary
+  _costFetching: false,
+  _eventLog: [],    // last 40 hook events for live ticker
+  _eventLogMax: 40,
   expandSid: null,  // session_id currently shown in expand overlay
   rafId: null,
   _frameCount: 0,
+  // BL303 S5 — card grid layout
+  _layout: null,           // [{id, cs}] current card layout
+  _layoutLoading: false,
+  _layoutSaving: false,
+  _editing: false,
+  _heatmapData: null,      // analytics buckets for heatmap card
+  _heatmapFetching: false,
+  _computeNodes: [],       // compute node registry for runtime badges
+  _computeNodesFetching: false,
+  _smokeData: null,        // last /api/smoke/progress payload
+  _smokeFetching: false,
+  _smokePollMs: 2500,      // fast poll during active run
 };
 
 // alpha.31 #272 — sort rank for active-first ordering. Lower = sooner.
@@ -13473,6 +13527,7 @@ window.exitAutomataSelectMode = function() {
 };
 
 function renderProgressBar(prd) {
+  if (!prd) return '';
   const stories = prd.stories || [];
   const total = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
   if (total === 0) return '';
@@ -17035,6 +17090,78 @@ function _dashInitNodes() {
   }
 }
 
+function _dashReconcileNodes() {
+  const sessions = state.sessions || [];
+  const svgEl = document.getElementById('constellationSvg');
+  const W = (svgEl && svgEl.clientWidth) || 320;
+  const H = (svgEl && svgEl.clientHeight) || 220;
+  const cx = W / 2, cy = H / 2;
+
+  // Build live ID sets
+  const liveSessIds = new Set(sessions.map(s => s.full_id).filter(Boolean));
+  const livePrdIds = new Set((_dash._prds || []).map(p => p.id).filter(Boolean));
+
+  // Remove nodes whose session/prd no longer exists
+  for (const id of Object.keys(_dash.nodes)) {
+    if (!liveSessIds.has(id) && !livePrdIds.has(id)) {
+      delete _dash.nodes[id];
+      // Clean up stale board cache too
+      delete _dash._boards[id];
+    }
+  }
+
+  // Add newly appeared sessions
+  sessions.forEach((s, i) => {
+    if (!s.full_id || _dash.nodes[s.full_id]) return;
+    // Spawn near center with small random offset so it drifts outward
+    _dash.nodes[s.full_id] = {
+      x: cx + (Math.random() - 0.5) * 60,
+      y: cy + (Math.random() - 0.5) * 60,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      color: _dashNodeColor(s.state),
+      label: (s.name || s.task || s.id || '?').slice(0, 18),
+      hookHealth: (_dash._boards[s.full_id] && _dash._boards[s.full_id].hook_health) || 'missing',
+      state: s.state || 'unknown',
+      threats: 0,
+      prd: false,
+    };
+  });
+
+  // Add newly appeared automata
+  for (const p of (_dash._prds || [])) {
+    if (!p.id || _dash.nodes[p.id]) continue;
+    _dash.nodes[p.id] = {
+      x: cx + (Math.random() - 0.5) * W * 0.3,
+      y: cy + (Math.random() - 0.5) * H * 0.3,
+      vx: 0, vy: 0,
+      color: _dashNodeColor(p.status),
+      label: (p.title || p.name || p.id || '?').slice(0, 18),
+      hookHealth: 'missing',
+      state: p.status || 'unknown',
+      threats: 0,
+      prd: true,
+    };
+  }
+
+  // Rebuild edges to match current live nodes
+  _dash.edges = [];
+  for (const s of sessions) {
+    if (s.parent_id && _dash.nodes[s.parent_id] && _dash.nodes[s.full_id]) {
+      _dash.edges.push({ from: s.parent_id, to: s.full_id });
+    }
+  }
+
+  // Update state/color for still-alive session nodes from current state.sessions
+  for (const s of sessions) {
+    const n = _dash.nodes[s.full_id];
+    if (!n) continue;
+    n.state = s.state || n.state;
+    n.color = _dashNodeColor(n.state);
+    n.label = (s.name || s.task || s.id || '?').slice(0, 18);
+  }
+}
+
 function _dashForceStep() {
   const ids = Object.keys(_dash.nodes);
   if (ids.length < 2) return;
@@ -17097,7 +17224,15 @@ function _drawConstellation() {
   }
 
   const now = Date.now();
-  let html = '<defs><style>.dbn{cursor:pointer;}</style></defs>';
+  let html = `<defs>
+    <style>
+      .dbn { cursor:pointer; transition:opacity 0.1s; }
+      .dbn:hover { opacity:1 !important; filter:brightness(1.25); }
+    </style>
+  </defs>`;
+
+  // Hint text bottom-left
+  html += `<text x="8" y="${H-6}" font-size="10" fill="var(--text2)" opacity="0.5" style="pointer-events:none">Click a node to inspect</text>`;
 
   // Edges
   for (const e of _dash.edges) {
@@ -17109,37 +17244,44 @@ function _drawConstellation() {
   // Nodes
   for (const id of ids) {
     const n = _dash.nodes[id];
-    const r = n.prd ? 20 : 14;
+    const r = n.prd ? 22 : 16;
     const active = n.state === 'running' || n.state === 'generating' || n.state === 'waiting_input';
-    const pulseR = active ? (r + 5 + Math.sin(now / 500) * 3) : 0;
-    const opacity = n.hookHealth === 'missing' && !n.prd ? '0.35' : '0.85';
+    const pulseR = active ? (r + 6 + Math.sin(now / 500) * 4) : 0;
+    const opacity = n.hookHealth === 'missing' && !n.prd ? '0.4' : '0.9';
 
     if (active && pulseR > 0) {
-      const pulseAlpha = (0.2 + Math.sin(now / 400) * 0.15).toFixed(2);
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${pulseR.toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="1.5" opacity="${pulseAlpha}"/>`;
+      const pulseAlpha = (0.25 + Math.sin(now / 400) * 0.15).toFixed(2);
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${pulseR.toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="2" opacity="${pulseAlpha}"/>`;
     }
     if (n.hookHealth === 'alive') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+3).toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="0.6" opacity="0.35"/>`;
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="${n.color}" stroke-width="1" opacity="0.4"/>`;
     } else if (n.hookHealth === 'stale') {
-      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+3).toFixed(1)}" fill="none" stroke="var(--warning)" stroke-width="0.6" opacity="0.35"/>`;
+      html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="var(--warning)" stroke-width="1" opacity="0.4"/>`;
     }
 
-    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" onclick="window.openDashExpand(${JSON.stringify(id)})" title="${escHtml(n.label)}">`;
-    html += `<title>${escHtml(n.label)} · ${escHtml(n.state)}</title></circle>`;
+    // Filled node + invisible larger hit target for easier clicking
+    html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+6).toFixed(1)}" fill="transparent" style="cursor:pointer;" onclick="window._dashNodeClick(${JSON.stringify(id)})"/>`;
+    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" onclick="window._dashNodeClick(${JSON.stringify(id)})">`;
+    html += `<title>${escHtml(n.label)} · ${escHtml(n.state)} — click to open</title></circle>`;
+
+    // State initial inside node
+    const stateInitial = ({running:'▶', generating:'▶', waiting_input:'⏸', completed:'✓', failed:'✗', blocked:'!', idle:'○'})[n.state] || '·';
+    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+4).toFixed(1)}" text-anchor="middle" font-size="${n.prd ? 11 : 9}" fill="rgba(255,255,255,0.85)" style="pointer-events:none;font-weight:700;">${stateInitial}</text>`;
 
     if (n.threats > 0) {
-      html += `<circle cx="${(n.x+r-5).toFixed(1)}" cy="${(n.y-r+5).toFixed(1)}" r="5.5" fill="var(--error)" opacity="0.95"/>`;
-      html += `<text x="${(n.x+r-5).toFixed(1)}" y="${(n.y-r+9).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fff" style="pointer-events:none">${n.threats}</text>`;
+      html += `<circle cx="${(n.x+r-4).toFixed(1)}" cy="${(n.y-r+4).toFixed(1)}" r="6" fill="var(--error)" opacity="0.95"/>`;
+      html += `<text x="${(n.x+r-4).toFixed(1)}" y="${(n.y-r+8).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fff" style="pointer-events:none;font-weight:700;">${n.threats}</text>`;
     }
 
-    const label = n.label.length > 14 ? n.label.slice(0, 13) + '…' : n.label;
-    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+12).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text2)" style="pointer-events:none">${escHtml(label)}</text>`;
+    const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
+    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text)" opacity="0.75" style="pointer-events:none">${escHtml(label)}</text>`;
+    html += `<text x="${n.x.toFixed(1)}" y="${(n.y+r+24).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text2)" opacity="0.55" style="pointer-events:none">${escHtml(n.state)}</text>`;
   }
 
   svgEl.innerHTML = html;
 }
 
-function _drawEKG() {
+function _drawMultiEKG() {
   const canvas = document.getElementById('ekgCanvas');
   if (!canvas) return;
   const W = canvas.clientWidth || canvas.width;
@@ -17147,49 +17289,75 @@ function _drawEKG() {
   if (canvas.width !== W) canvas.width = W;
   if (canvas.height !== H) canvas.height = H;
   const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0f1117';
+  const css = getComputedStyle(document.documentElement);
+  const bgColor = css.getPropertyValue('--bg').trim() || '#0f1117';
+  const borderColor = css.getPropertyValue('--border').trim() || '#2d3148';
+  const accentColor = css.getPropertyValue('--accent').trim() || '#7c3aed';
+  const text2Color = css.getPropertyValue('--text2').trim() || '#64748b';
+  ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, W, H);
-
-  // Subtle grid
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#2d3148';
-  ctx.lineWidth = 0.5;
-  ctx.setLineDash([2, 4]);
-  for (let y = H * 0.25; y < H; y += H * 0.25) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  const activeSessions = (state.sessions || [])
+    .filter(s => s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input' || s.state === 'idle')
+    .slice(0, 6);
+  const LABEL_W = 72;
+  if (activeSessions.length === 0) {
+    if (_dash.ekg.length >= 2) {
+      const pts = _dash.ekg.slice(-W);
+      ctx.beginPath(); ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5;
+      let fp = true;
+      for (let i = 0; i < pts.length; i++) {
+        const x = W - pts.length + i;
+        const dec = Math.exp(-(pts.length - i) / 60);
+        const y = H / 2 - pts[i].dy * dec * (H * 0.38);
+        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    return;
   }
-  ctx.setLineDash([]);
-
-  if (_dash.ekg.length < 2) return;
-
-  const pts = _dash.ekg.slice(-W);
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7c3aed';
-
-  // Decay spikes: each point decays toward baseline
-  ctx.beginPath();
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 1.5;
-  let firstPoint = true;
-  for (let i = 0; i < pts.length; i++) {
-    const x = W - pts.length + i;
-    const decay = Math.exp(-(pts.length - i) / 60);
-    const y = H / 2 - pts[i].dy * decay * (H * 0.38);
-    if (firstPoint) { ctx.moveTo(x, y); firstPoint = false; }
-    else ctx.lineTo(x, y);
+  const channelH = H / activeSessions.length;
+  for (let ci = 0; ci < activeSessions.length; ci++) {
+    const sess = activeSessions[ci];
+    const sid = sess.full_id || sess.id;
+    const color = _dashNodeColor(sess.state);
+    const chanY = ci * channelH;
+    if (ci % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,0.015)'; ctx.fillRect(0, chanY, W, channelH); }
+    ctx.fillStyle = color; ctx.font = `bold 9px monospace`;
+    ctx.fillText((sess.name || sess.id || '?').slice(0, 9), 3, chanY + channelH * 0.5 + 3);
+    const board = _dash._boards[sid];
+    const hDot = !board ? '○' : board.hook_health === 'alive' ? '●' : '◐';
+    const hColor = !board ? text2Color : board.hook_health === 'alive' ? '#10b981' : '#f59e0b';
+    ctx.fillStyle = hColor; ctx.font = '8px monospace';
+    ctx.fillText(hDot, 3, chanY + channelH * 0.85);
+    const sessEvents = _dash.ekg.filter(e => !e.sid || e.sid === sid);
+    const barW = W - LABEL_W;
+    const pts = sessEvents.slice(-barW);
+    if (pts.length >= 2) {
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+      let fp = true;
+      for (let i = 0; i < pts.length; i++) {
+        const x = LABEL_W + barW - pts.length + i;
+        const dec = Math.exp(-(pts.length - i) / 50);
+        const mid = chanY + channelH / 2;
+        const y = mid - pts[i].dy * dec * (channelH * 0.38);
+        if (fp) { ctx.moveTo(x, y); fp = false; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.globalAlpha = 0.25;
+      ctx.moveTo(LABEL_W, chanY + channelH / 2); ctx.lineTo(W, chanY + channelH / 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (ci < activeSessions.length - 1) {
+      ctx.strokeStyle = borderColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.moveTo(0, chanY + channelH); ctx.lineTo(W, chanY + channelH); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
-  ctx.stroke();
-
-  // Left fade
-  const grad = ctx.createLinearGradient(0, 0, Math.min(60, W), 0);
-  grad.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0f1117');
-  grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, Math.min(60, W), H);
-
-  // Right cursor line
-  ctx.strokeStyle = 'var(--text2)';
-  ctx.lineWidth = 0.5;
-  ctx.setLineDash([2, 4]);
+  const grad = ctx.createLinearGradient(LABEL_W, 0, LABEL_W + 16, 0);
+  grad.addColorStop(0, bgColor); grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad; ctx.fillRect(LABEL_W, 0, 16, H);
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
   ctx.beginPath(); ctx.moveTo(W - 1, 0); ctx.lineTo(W - 1, H); ctx.stroke();
   ctx.setLineDash([]);
 }
@@ -17218,7 +17386,7 @@ function _renderSprintPipeline() {
       }
       const nodeClass = st.status || 'draft';
       const stLabel = (st.title || `Story ${i+1}`).slice(0, 14);
-      html += `<div class="dboard-pipe-node ${nodeClass}" title="${escHtml(st.title || '')}" onclick="window.openDashExpand(${JSON.stringify(prd.id)})">${escHtml(stLabel)}</div>`;
+      html += `<div class="dboard-pipe-node ${nodeClass}" title="${escHtml(st.title || '')}" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">${escHtml(stLabel)}</div>`;
     });
     html += `</div></div>`;
   }
@@ -17298,44 +17466,586 @@ function _dashLoop(ts) {
   if (state.activeView !== 'dashboard') { _dash.rafId = null; return; }
   _dash._frameCount++;
 
-  // EKG at full rate
-  _drawEKG();
+  // Canvas renders at full rate
+  _drawMultiEKG();
+  _dashForceStep();
 
-  // Constellation at ~20fps
-  if (_dash._frameCount % 3 === 0) {
-    _dashForceStep();
+  // Orbital + Gantt at ~10fps
+  if (_dash._frameCount % 6 === 0) {
     _drawConstellation();
+    _drawGantt();
   }
 
-  // Pipeline at ~10fps
-  if (_dash._frameCount % 6 === 0) {
-    _renderSprintPipeline();
+  // Sparklines + heatmap at ~5fps
+  if (_dash._frameCount % 12 === 0) {
+    _drawSparklines();
+    _drawHeatmap();
+  }
+
+  // Stat bar + tree + event feed + burn rate + guardrails + smoke at ~5fps
+  if (_dash._frameCount % 12 === 0) {
+    _dashUpdateStatBar();
+    _dashRenderTree();
+    _dashRenderEventFeed();
+    _dashRenderBurnRate();
+    _dashRenderGuardrails();
+    _dashRenderSmoke();
+  }
+
+  // Node reconcile at ~2fps
+  if (_dash._frameCount % 30 === 0) {
+    _dashReconcileNodes();
+  }
+
+  // Re-fetch automata every ~5s
+  if (_dash._frameCount % 150 === 0 && !_dash._prdsFetching) {
+    _dash._prdsFetching = true;
+    apiFetch('/api/autonomous/prds').then(d => {
+      _dash._prds = ((d && d.prds) || []).filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+      _dash._prdsLastFetch = Date.now();
+    }).catch(() => {}).finally(() => { _dash._prdsFetching = false; });
+  }
+
+  // Fetch cost every ~30s
+  if (_dash._frameCount % 900 === 0 && !_dash._costFetching) {
+    _dash._costFetching = true;
+    apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
+  }
+
+  // Fetch heatmap data every ~60s
+  if ((_dash._frameCount === 1 || _dash._frameCount % 1800 === 0) && !_dash._heatmapFetching) {
+    _dash._heatmapFetching = true;
+    apiFetch('/api/analytics?range=30d').then(d => {
+      _dash._heatmapData = (d && d.buckets) || [];
+    }).catch(() => {}).finally(() => { _dash._heatmapFetching = false; });
+  }
+
+  // Fetch compute nodes every ~60s for runtime badges
+  if ((_dash._frameCount === 1 || _dash._frameCount % 1800 === 0) && !_dash._computeNodesFetching) {
+    _dash._computeNodesFetching = true;
+    apiFetch('/api/compute/nodes').then(d => {
+      _dash._computeNodes = (d && (d.nodes || d)) || [];
+      if (!Array.isArray(_dash._computeNodes)) _dash._computeNodes = [];
+    }).catch(() => {}).finally(() => { _dash._computeNodesFetching = false; });
+  }
+
+  // Poll smoke progress — fast (2.5s) when active run, slow (30s) otherwise
+  const smokeInterval = (_dash._smokeData && _dash._smokeData.active) ? 75 : 900;
+  if ((_dash._frameCount === 1 || _dash._frameCount % smokeInterval === 0) && !_dash._smokeFetching) {
+    _dash._smokeFetching = true;
+    fetch('/api/smoke/progress').then(r => {
+      if (r.status === 204) return null;
+      if (!r.ok) throw new Error('smoke ' + r.status);
+      return r.json();
+    }).then(d => {
+      if (d) _dash._smokeData = d;
+    }).catch(() => {}).finally(() => {
+      _dash._smokeFetching = false;
+      _dashRenderSmoke();
+    });
   }
 
   _dash.rafId = requestAnimationFrame(_dashLoop);
+}
+
+// ── BL303 S5 — Dashboard Card Grid ───────────────────────────────────────────
+
+const DASH_CARD_DEFS = [
+  { id: 'tree',       label: 'Automata',       icon: '⣿',  defaultCs: 2,
+    body: () => '<div id="dashTree" style="height:100%;overflow-y:auto;"></div>' },
+  { id: 'orbital',    label: 'Network',         icon: '◎',  defaultCs: 6,
+    body: () => '<svg id="constellationSvg" style="width:100%;height:100%;display:block;"></svg>' },
+  { id: 'events',     label: 'Live Events',     icon: '⚡', defaultCs: 2,
+    body: () => '<div id="dashEventFeed" style="height:100%;overflow-y:auto;font-family:monospace;font-size:10px;"></div>' },
+  { id: 'sparklines', label: 'Sessions',        icon: '▬',  defaultCs: 2,
+    body: () => '<canvas id="dashSparkCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
+  { id: 'gantt',      label: 'Timeline · 6h',  icon: '≡',  defaultCs: 12,
+    body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;"></svg></div>' },
+  { id: 'heatmap',    label: '30-Day Activity', icon: '🔥', defaultCs: 3,
+    body: () => '<canvas id="dashHeatmapCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
+  { id: 'guardrails', label: 'Guardrails',      icon: '🛡',  defaultCs: 3,
+    body: () => '<div id="dashGuardrailsCard" style="height:100%;overflow-y:auto;padding:6px 8px;"></div>' },
+  { id: 'ekg',        label: 'Multi-EKG',       icon: '♡',  defaultCs: 6,
+    body: () => '<div style="height:100%;display:flex;"><canvas id="ekgCanvas" style="flex:1;min-width:0;height:100%;display:block;"></canvas><div id="dashBurnRate" style="width:72px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 6px;font-size:10px;font-family:monospace;color:var(--text2);"></div></div>' },
+  { id: 'smoke',      label: 'Smoke Run',       icon: '🔬', defaultCs: 6,
+    body: () => '<div id="dashSmokeCard" style="height:100%;display:flex;flex-direction:column;font-size:11px;user-select:none;"></div>' },
+];
+
+const DASH_DEFAULT_LAYOUT = [
+  { id: 'tree',       cs: 2,  rs: 2 },
+  { id: 'orbital',    cs: 6,  rs: 2 },
+  { id: 'events',     cs: 2,  rs: 2 },
+  { id: 'sparklines', cs: 2,  rs: 1 },
+  { id: 'gantt',      cs: 12, rs: 1 },
+  { id: 'heatmap',    cs: 3,  rs: 1 },
+  { id: 'guardrails', cs: 3,  rs: 1 },
+  { id: 'ekg',        cs: 6,  rs: 2 },
+  { id: 'smoke',      cs: 6,  rs: 2 },
+];
+
+function _dashLoadLayout() {
+  if (_dash._layoutLoading) return;
+  _dash._layoutLoading = true;
+  apiFetch('/api/dashboard/layout').then(d => {
+    if (d && Array.isArray(d.cards) && d.cards.length > 0) {
+      _dash._layout = d.cards;
+    } else {
+      _dash._layout = DASH_DEFAULT_LAYOUT.map(c => ({ id: c.id, cs: c.cs }));
+    }
+    _dashBuildGrid(_dash._layout);
+  }).catch(() => {
+    _dash._layout = DASH_DEFAULT_LAYOUT.map(c => ({ id: c.id, cs: c.cs }));
+    _dashBuildGrid(_dash._layout);
+  }).finally(() => { _dash._layoutLoading = false; });
+}
+
+function _dashSaveLayout() {
+  if (_dash._layoutSaving) return;
+  _dash._layoutSaving = true;
+  apiFetch('/api/dashboard/layout', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cards: _dash._layout }),
+  }).catch(() => {}).finally(() => { _dash._layoutSaving = false; });
+}
+
+const SPAN_CYCLE = [2, 3, 4, 6, 8, 12];
+const ROW_CYCLE  = [1, 2];
+
+function _dashCardHTML(entry) {
+  const def = DASH_CARD_DEFS.find(d => d.id === entry.id);
+  if (!def) return '';
+  const cs = entry.cs || def.defaultCs;
+  const rs = entry.rs || 1;
+  return `<div class="dboard-card" data-cs="${cs}" data-rs="${rs}" data-card-id="${entry.id}" draggable="true"
+    ondragstart="window._dashDragStart(event)" ondragover="window._dashDragOver(event)"
+    ondrop="window._dashDrop(event)" ondragleave="window._dashDragLeave(event)"
+    ondragend="window._dashDragEnd(event)">
+    <div class="dboard-card-hdr">
+      <span class="dboard-card-drag">⣿</span>
+      <span class="dboard-card-title">${def.icon} ${escHtml(def.label)}</span>
+      <span class="dboard-card-span" onclick="window._dashCycleSpan('${entry.id}')" title="Width (click to cycle)">${cs}w</span>
+      <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
+      <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
+    </div>
+    <div class="dboard-card-body">${def.body()}</div>
+  </div>`;
+}
+
+window._dashCycleSpan = function(cardId) {
+  if (!_dash._editing) return;
+  const entry = (_dash._layout || []).find(c => c.id === cardId);
+  if (!entry) return;
+  const idx = SPAN_CYCLE.indexOf(entry.cs);
+  entry.cs = SPAN_CYCLE[(idx + 1) % SPAN_CYCLE.length];
+  _dashBuildGrid(_dash._layout);
+};
+
+window._dashCycleRows = function(cardId) {
+  if (!_dash._editing) return;
+  const entry = (_dash._layout || []).find(c => c.id === cardId);
+  if (!entry) return;
+  const idx = ROW_CYCLE.indexOf(entry.rs || 1);
+  entry.rs = ROW_CYCLE[(idx + 1) % ROW_CYCLE.length];
+  _dashBuildGrid(_dash._layout);
+};
+
+function _dashBuildGrid(layout) {
+  const grid = document.getElementById('dashCardGrid');
+  if (!grid) return;
+  grid.innerHTML = (layout || []).map(_dashCardHTML).join('');
+  _dashUpdateStatBar();
+  _dashRenderTree();
+  _dashRenderEventFeed();
+  _dashRenderBurnRate();
+  _dashRenderGuardrails();
+  _drawGantt();
+  _dashForceStep();
+  _drawConstellation();
+}
+
+window._dashStartEdit = function() {
+  _dash._editing = true;
+  const wrap = document.getElementById('dashboardWrap');
+  if (wrap) wrap.classList.add('dboard-editing');
+  const btn = document.getElementById('dashEditBtn');
+  if (btn) { btn.textContent = '✓ Done'; btn.onclick = window._dashStopEdit; }
+  const addBtn = document.getElementById('dashAddCardBtn');
+  if (addBtn) addBtn.style.display = '';
+};
+
+window._dashStopEdit = function() {
+  _dash._editing = false;
+  const wrap = document.getElementById('dashboardWrap');
+  if (wrap) wrap.classList.remove('dboard-editing');
+  const btn = document.getElementById('dashEditBtn');
+  if (btn) { btn.textContent = '✎ Edit'; btn.onclick = window._dashStartEdit; }
+  const addBtn = document.getElementById('dashAddCardBtn');
+  if (addBtn) addBtn.style.display = 'none';
+  _dashSaveLayout();
+};
+
+window._dashRemoveCard = function(cardId) {
+  if (!_dash._editing) return;
+  _dash._layout = (_dash._layout || []).filter(c => c.id !== cardId);
+  _dashBuildGrid(_dash._layout);
+};
+
+window._dashShowAddPanel = function() {
+  const existing = (_dash._layout || []).map(c => c.id);
+  let html = `<div class="dboard-add-panel" id="dashAddPanel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span style="font-weight:700;font-size:13px;color:var(--text);">Add Card</span>
+      <button onclick="document.getElementById('dashAddPanel').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;line-height:1;">×</button>
+    </div>
+    <div class="dboard-add-grid">`;
+  for (const def of DASH_CARD_DEFS) {
+    const used = existing.includes(def.id);
+    html += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${def.id}');document.getElementById('dashAddPanel').remove();"`}>
+      <span>${def.icon}</span><span>${escHtml(def.label)}</span>
+    </div>`;
+  }
+  html += `</div></div>`;
+  const old = document.getElementById('dashAddPanel');
+  if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window._dashAddCard = function(cardId) {
+  if (!_dash._editing) return;
+  const def = DASH_CARD_DEFS.find(d => d.id === cardId);
+  if (!def) return;
+  _dash._layout = _dash._layout || [];
+  _dash._layout.push({ id: cardId, cs: def.defaultCs });
+  _dashBuildGrid(_dash._layout);
+};
+
+let _dashDragSrcId = null;
+
+window._dashDragStart = function(e) {
+  if (!_dash._editing) { e.preventDefault(); return; }
+  _dashDragSrcId = e.currentTarget.dataset.cardId;
+  e.currentTarget.classList.add('dboard-dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', _dashDragSrcId);
+};
+
+window._dashDragOver = function(e) {
+  if (!_dash._editing || !_dashDragSrcId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (e.currentTarget.dataset.cardId !== _dashDragSrcId) {
+    e.currentTarget.classList.add('dboard-drag-over');
+  }
+};
+
+window._dashDragLeave = function(e) {
+  e.currentTarget.classList.remove('dboard-drag-over');
+};
+
+window._dashDrop = function(e) {
+  e.preventDefault();
+  const target = e.currentTarget;
+  target.classList.remove('dboard-drag-over');
+  const srcId = _dashDragSrcId;
+  const tgtId = target.dataset.cardId;
+  if (!srcId || !tgtId || srcId === tgtId) return;
+  const layout = _dash._layout || [];
+  const si = layout.findIndex(c => c.id === srcId);
+  const ti = layout.findIndex(c => c.id === tgtId);
+  if (si < 0 || ti < 0) return;
+  const [moved] = layout.splice(si, 1);
+  layout.splice(ti, 0, moved);
+  _dashBuildGrid(layout);
+};
+
+window._dashDragEnd = function(e) {
+  _dashDragSrcId = null;
+  document.querySelectorAll('.dboard-dragging,.dboard-drag-over').forEach(el => {
+    el.classList.remove('dboard-dragging', 'dboard-drag-over');
+  });
+};
+
+// 30-day GitHub-style heatmap ————————————————————————————
+function _drawHeatmap() {
+  const canvas = document.getElementById('dashHeatmapCanvas');
+  if (!canvas) return;
+  const W = canvas.clientWidth || canvas.width || 240;
+  const H = canvas.clientHeight || canvas.height || 90;
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
+  const bdr = css.getPropertyValue('--border').trim() || '#2d3148';
+  const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
+  const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
+  ctx.fillStyle = bg2;
+  ctx.fillRect(0, 0, W, H);
+  const buckets = _dash._heatmapData || [];
+  if (buckets.length === 0) {
+    ctx.fillStyle = txt2; ctx.font = '10px sans-serif';
+    ctx.fillText('Loading…', 10, H / 2 + 4);
+    return;
+  }
+  const COLS = Math.min(buckets.length, 30);
+  const PAD = 10, LBL_H = 14;
+  const cellPad = 2;
+  const cellW = Math.max(4, Math.floor((W - PAD * 2) / COLS) - cellPad);
+  const cellH = Math.max(4, H - PAD * 2 - LBL_H);
+  const maxCount = Math.max(1, ...buckets.map(b => b.session_count || 0));
+  for (let i = 0; i < COLS; i++) {
+    const b = buckets[buckets.length - COLS + i];
+    const x = PAD + i * (cellW + cellPad);
+    const errors = (b.failed || 0) + (b.killed || 0);
+    const errRate = b.session_count ? errors / b.session_count : 0;
+    let fill;
+    if (!b.session_count) {
+      fill = bdr;
+    } else if (errRate > 0.3) {
+      fill = 'rgba(239,68,68,0.7)';
+    } else {
+      const t = b.session_count / maxCount;
+      fill = t < 0.25 ? 'rgba(124,58,237,0.25)' : t < 0.5 ? 'rgba(124,58,237,0.5)' : t < 0.75 ? 'rgba(124,58,237,0.75)' : acc;
+    }
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, PAD, cellW, cellH, 2);
+    else ctx.rect(x, PAD, cellW, cellH);
+    ctx.fill();
+  }
+  ctx.fillStyle = txt2; ctx.font = '8px monospace';
+  for (let i = 0; i < COLS; i += 7) {
+    const b = buckets[buckets.length - COLS + i];
+    if (!b) continue;
+    ctx.fillText((b.date || '').slice(5), PAD + i * (cellW + cellPad), PAD + cellH + 10);
+  }
+  const total = buckets.reduce((n, b) => n + (b.session_count || 0), 0);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${total} / 30d`, W - PAD, PAD + cellH + 10);
+  ctx.textAlign = 'left';
+}
+
+// Guardrail verdicts bar chart ————————————————————————————
+function _dashRenderGuardrails() {
+  const el = document.getElementById('dashGuardrailsCard');
+  if (!el) return;
+  let block = 0, warn = 0, pass = 0;
+  const byRule = {};
+  for (const b of Object.values(_dash._boards)) {
+    const gv = (b.telemetry && b.telemetry.guardrail_verdicts) || [];
+    for (const v of gv) {
+      if (v.outcome === 'block') block++;
+      else if (v.outcome === 'warn') warn++;
+      else pass++;
+      const r = v.rule_id || v.rule || 'unknown';
+      if (!byRule[r]) byRule[r] = { block: 0, warn: 0, pass: 0 };
+      byRule[r][v.outcome === 'block' ? 'block' : v.outcome === 'warn' ? 'warn' : 'pass']++;
+    }
+  }
+  const total = block + warn + pass;
+  if (total === 0) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">No verdicts yet</div>`;
+    return;
+  }
+  let html = `<div style="display:flex;gap:10px;margin-bottom:6px;">
+    <span style="color:var(--error,#ef4444);font-size:11px;font-weight:700;">⛔ ${block}</span>
+    <span style="color:var(--warning,#f59e0b);font-size:11px;font-weight:700;">⚠ ${warn}</span>
+    <span style="color:var(--success,#10b981);font-size:11px;font-weight:700;">✓ ${pass}</span>
+  </div>`;
+  const rules = Object.entries(byRule).sort((a, b2) => (b2[1].block + b2[1].warn) - (a[1].block + a[1].warn));
+  const maxV = Math.max(1, ...rules.map(([, v]) => v.block + v.warn + v.pass));
+  for (const [rule, v] of rules.slice(0, 8)) {
+    const tot = v.block + v.warn + v.pass;
+    const pct = Math.round(tot / maxV * 100);
+    const color = v.block > 0 ? 'var(--error,#ef4444)' : v.warn > 0 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+    html += `<div style="margin-bottom:5px;">
+      <div style="font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(rule)}">${escHtml(rule.length > 28 ? rule.slice(0, 27) + '…' : rule)}</div>
+      <div style="height:5px;background:var(--border);border-radius:2px;margin-top:2px;">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;"></div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+// Smoke run progress card ————————————————————————————————————————————————
+// Filter state: 'all' | 'pass' | 'fail' | 'skip' | 'active'
+if (!_dash._smokeFilter) _dash._smokeFilter = 'all';
+
+function _smokeClearData() {
+  fetch('/api/smoke/progress', { method: 'DELETE', headers: tokenHeader() })
+    .then(() => { _dash._smokeData = null; _dashRenderSmoke(); })
+    .catch(() => {});
+}
+window._smokeClearData = _smokeClearData;
+
+function _smokSetFilter(f) {
+  _dash._smokeFilter = f;
+  _dashRenderSmoke();
+}
+window._smokSetFilter = _smokSetFilter;
+
+function _dashRenderSmoke() {
+  const el = document.getElementById('dashSmokeCard');
+  if (!el) return;
+
+  const d = _dash._smokeData;
+  if (!d) {
+    el.innerHTML = `<div style="padding:12px;color:var(--text2);font-size:11px;">No smoke data — run <code>scripts/release-smoke.sh</code></div>`;
+    return;
+  }
+
+  const pass = d.pass || 0, fail = d.fail || 0, skip = d.skip || 0;
+  const secs = d.sections || [];
+  const TOTAL_SECS = 82;
+  const done = secs.length;
+  const remaining = Math.max(0, TOTAL_SECS - done - (d.active ? 1 : 0));
+  const pct = Math.min(100, done > 0 ? Math.round(done / TOTAL_SECS * 100) : 0);
+  const barColor = fail > 0 ? 'var(--error,#ef4444)' : d.active ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+  const statusLabel = d.active ? '🔄 Running' : fail > 0 ? '❌ Failed' : '✅ Passed';
+  const updated = d.updated_at ? new Date(d.updated_at).toLocaleTimeString() : '';
+
+  // Filter pills
+  const filt = _dash._smokeFilter || 'all';
+  const pillStyle = (k) => `display:inline-block;padding:3px 8px;border-radius:12px;font-size:10px;cursor:pointer;border:1px solid ${filt===k?'var(--accent)':'var(--border)'};background:${filt===k?'var(--accent)':'transparent'};color:${filt===k?'var(--bg)':'var(--text2)'};font-weight:${filt===k?'700':'400'};`;
+  const pillHtml = `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 8px;border-bottom:1px solid var(--border);flex-shrink:0;">
+    <span onclick="_smokSetFilter('all')" style="${pillStyle('all')}">All ${done+( d.active?1:0)}</span>
+    ${d.active ? `<span onclick="_smokSetFilter('active')" style="${pillStyle('active')}">▶ Active</span>` : ''}
+    <span onclick="_smokSetFilter('pass')" style="${pillStyle('pass')}">✓ ${pass}</span>
+    ${fail > 0 ? `<span onclick="_smokSetFilter('fail')" style="${pillStyle('fail')}">✗ ${fail}</span>` : ''}
+    ${skip > 0 ? `<span onclick="_smokSetFilter('skip')" style="${pillStyle('skip')}">⏭ ${skip}</span>` : ''}
+    ${remaining > 0 ? `<span onclick="_smokSetFilter('pending')" style="${pillStyle('pending')}">○ ${remaining} left</span>` : ''}
+    ${!d.active ? `<button onclick="_smokeClearData()" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:10px;color:var(--text2);cursor:pointer;font-size:10px;padding:2px 8px;">Clear</button>` : ''}
+  </div>`;
+
+  // Header: status + bar
+  const headerHtml = `<div style="padding:6px 8px 4px;flex-shrink:0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-weight:700;font-size:12px;">${statusLabel}</span>
+      <span style="font-size:10px;color:var(--text2);">${escHtml(d.version||'')} · ${updated}</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text2);">${done}/${TOTAL_SECS} · ${pct}%</span>
+    </div>
+    <div style="height:5px;background:var(--border);border-radius:3px;">
+      <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.5s;"></div>
+    </div>
+  </div>`;
+
+  // Build section rows
+  // Active section appears at top of the list
+  let allRows = [];
+
+  // Currently active section
+  if (d.active && d.current_id) {
+    allRows.push({ id: d.current_id, name: d.current_name || d.current_id, result: 'active' });
+  }
+
+  // Completed sections (newest last, i.e. keep chronological order)
+  for (const s of secs) {
+    allRows.push(s);
+  }
+
+  // Pending slots (shown as placeholders when filter is 'pending' or 'all')
+  const pendingCount = remaining;
+
+  // Apply filter
+  let filtered;
+  if (filt === 'all') {
+    filtered = allRows; // pending shown separately below
+  } else if (filt === 'active') {
+    filtered = allRows.filter(s => s.result === 'active');
+  } else if (filt === 'pending') {
+    filtered = []; // show pending placeholder message
+  } else {
+    filtered = allRows.filter(s => s.result === filt);
+  }
+
+  const rowHtml = (s) => {
+    let col, icon, bg = 'transparent';
+    if (s.result === 'fail') { col = 'var(--error,#ef4444)'; icon = '✗'; bg = 'rgba(239,68,68,0.06)'; }
+    else if (s.result === 'skip') { col = 'var(--text2)'; icon = '⏭'; }
+    else if (s.result === 'active') { col = 'var(--warning,#f59e0b)'; icon = '▶'; bg = 'rgba(245,158,11,0.08)'; }
+    else { col = 'var(--success,#10b981)'; icon = '✓'; }
+    const nm = (s.name || s.id || '');
+    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:${bg};border-bottom:1px solid var(--border);" title="${escHtml(nm)}">
+      <span style="color:${col};flex-shrink:0;font-size:13px;width:14px;text-align:center;">${icon}</span>
+      <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${s.result==='active'?'var(--text)':s.result==='skip'?'var(--text2)':'var(--text)'};">${escHtml(nm)}</span>
+    </div>`;
+  };
+
+  let listHtml;
+  if (filtered.length === 0 && filt === 'pending' && pendingCount > 0) {
+    listHtml = `<div style="padding:12px 8px;color:var(--text2);font-size:11px;">⏳ ${pendingCount} sections not yet run</div>`;
+  } else if (filtered.length === 0) {
+    listHtml = `<div style="padding:12px 8px;color:var(--text2);font-size:11px;">— none —</div>`;
+  } else {
+    listHtml = filtered.map(rowHtml).join('');
+    if (filt === 'all' && pendingCount > 0) {
+      listHtml += `<div style="padding:5px 8px;color:var(--text2);font-size:11px;font-style:italic;">⏳ ${pendingCount} sections pending</div>`;
+    }
+  }
+
+  el.innerHTML = headerHtml + pillHtml + `<div style="flex:1;min-height:0;overflow-y:auto;">${listHtml}</div>`;
+}
+
+// Node click — session → session-detail, PRD → automata view ————————————————
+window._dashNodeClick = function(id) {
+  const node = _dash.nodes[id];
+  if (!node) return;
+  if (node.prd) {
+    navigate('autonomous');
+    // Give the automata view a moment to render then open the detail
+    setTimeout(() => {
+      if (typeof window.openAutomataDetail === 'function') window.openAutomataDetail(id);
+    }, 80);
+  } else {
+    navigate('session-detail', id);
+  }
+};
+
+// Runtime badge for session nodes ————————————————————————
+function _runtimeBadge(sess) {
+  const cnr = sess.compute_node_ref || '';
+  const bf = (sess.backend_family || '').toLowerCase();
+  if (cnr) {
+    const cn = (_dash._computeNodes || []).find(n => n.id === cnr || n.name === cnr);
+    const rt = cn ? (cn.runtime_type || cn.type || '').toLowerCase() : '';
+    if (rt.includes('k8s') || rt.includes('kube')) return '☸';
+    if (rt.includes('docker')) return '🐳';
+    return '🌐';
+  }
+  if (bf.includes('proxy')) return '⇢';
+  if (bf === 'claude-code' || bf === 'opencode-acp' || bf === 'local') return '🖥';
+  if (bf) return '🌐';
+  return '';
 }
 
 function renderDashboardView() {
   if (state.activeView !== 'dashboard') return;
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
-
-  // Cancel any running loop before remount
   if (_dash.rafId) { cancelAnimationFrame(_dash.rafId); _dash.rafId = null; }
   _dash._frameCount = 0;
 
   viewEl.innerHTML = `
-    <div class="dboard-wrap" id="dashboardWrap">
-      <canvas id="ekgCanvas" class="dboard-ekg"></canvas>
-      <div class="dboard-main">
-        <svg id="constellationSvg" class="dboard-svg"></svg>
-        <div id="sprintPipeline" class="dboard-pipeline"></div>
+    <div class="dboard-cards" id="dashboardWrap">
+      <div class="dboard-stat-bar">
+        <span style="font-weight:700;letter-spacing:0.7px;color:var(--accent);font-size:11px;">⬡ DASHBOARD</span>
+        <span id="dashStatSessions" style="color:var(--text2);">—</span>
+        <span id="dashStatTasks" style="color:var(--text2);"></span>
+        <span id="dashStatGuardrails" style="color:var(--text2);"></span>
+        <span style="flex:1;"></span>
+        <span style="color:var(--text2);opacity:0.4;font-size:9px;font-family:monospace;">live · ws</span>
+        <button id="dashAddCardBtn" onclick="window._dashShowAddPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:6px;">+ Card</button>
+        <button id="dashEditBtn" onclick="window._dashStartEdit()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:4px;">✎ Edit</button>
       </div>
+      <div class="dboard-card-grid" id="dashCardGrid"></div>
+      <!-- Expand overlay (sits outside the grid, overlays the whole view) -->
       <div id="dashExpand" class="dboard-expand hidden">
         <div class="dboard-expand-header">
           <button class="dboard-expand-back" onclick="window.closeDashExpand()">&#8592; ${escHtml(t('common_back') || 'Back')}</button>
           <span id="dashExpandTitle" style="font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-          <button style="background:none;border:1px solid var(--border);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:3px;cursor:pointer;" onclick="const s=document.getElementById('dashExpandTitle').textContent;navigate('session-detail',_dash.expandSid);" title="${escHtml(t('dash_open_session') || 'Open session detail')}">&#128172; ${escHtml(t('dash_open_session') || 'Open')}</button>
+          <button style="background:none;border:1px solid var(--border);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:3px;cursor:pointer;" onclick="navigate('session-detail',_dash.expandSid);" title="${escHtml(t('dash_open_session') || 'Open session detail')}">&#128172; ${escHtml(t('dash_open_session') || 'Open')}</button>
         </div>
         <div class="dboard-expand-inner">
           <div id="dashExpandTree" class="dboard-expand-sidebar"></div>
@@ -17346,7 +18056,6 @@ function renderDashboardView() {
     </div>
   `;
 
-  // Fetch automata for sprint pipeline
   const prdData = _automataState.allPrds;
   if (prdData && prdData.length > 0) {
     _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
@@ -17355,12 +18064,15 @@ function renderDashboardView() {
       _dash._prds = ((d && d.prds) || []).filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
     }).catch(() => {});
   }
-
-  // Show the nav button (now that feature is enabled)
+  if (!_dash._costFetching) {
+    _dash._costFetching = true;
+    apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
+  }
   const navBtn = document.getElementById('navBtnDashboard');
   if (navBtn) navBtn.style.display = '';
-
   _dashInitNodes();
+  // Load layout from server; falls back to default and calls _dashBuildGrid
+  _dashLoadLayout();
   _dash.rafId = requestAnimationFrame(_dashLoop);
 }
 
@@ -17369,6 +18081,332 @@ function _dashCheckEnabled() {
   const navBtn = document.getElementById('navBtnDashboard');
   if (navBtn) navBtn.style.display = '';
 }
+
+function _dashUpdateStatBar() {
+  const sessions = state.sessions || [];
+  const running = sessions.filter(s => s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input');
+  let taskDone = 0, taskTotal = 0, verdictBlock = 0, verdictWarn = 0;
+  for (const b of Object.values(_dash._boards)) {
+    const tasks = (b.telemetry && b.telemetry.tasks) || [];
+    taskTotal += tasks.length;
+    taskDone += tasks.filter(t => t.status === 'completed').length;
+    const gv = (b.telemetry && b.telemetry.guardrail_verdicts) || [];
+    verdictBlock += gv.filter(v => v.outcome === 'block').length;
+    verdictWarn += gv.filter(v => v.outcome === 'warn').length;
+  }
+  let costStr = '';
+  if (_dash._costToday) {
+    const c = _dash._costToday;
+    const tot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
+      : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+    if (tot > 0) costStr = ` · <span style="color:var(--text2);">$${tot.toFixed(2)}</span>`;
+  }
+  const elS = document.getElementById('dashStatSessions');
+  const elT = document.getElementById('dashStatTasks');
+  const elG = document.getElementById('dashStatGuardrails');
+  if (elS) elS.innerHTML = `<span style="color:var(--text);">${sessions.length}</span> sess · <span style="color:var(--accent);">${running.length} active</span>${costStr}`;
+  if (elT) elT.innerHTML = taskTotal > 0 ? `<span style="color:var(--success,#10b981);">${taskDone}</span>/<span style="color:var(--text);">${taskTotal}</span> tasks` : '';
+  if (elG) elG.innerHTML = verdictBlock > 0
+    ? `<span style="color:var(--error);font-weight:700;">⚠ ${verdictBlock} blk</span>${verdictWarn > 0 ? ` <span style="color:var(--warning);">${verdictWarn} warn</span>` : ''}`
+    : verdictWarn > 0 ? `<span style="color:var(--warning);">${verdictWarn} warn</span>` : '';
+}
+
+function _dashRenderTree() {
+  const el = document.getElementById('dashTree');
+  if (!el) return;
+  const prds = _dash._prds || [];
+  let html = `<div style="padding:5px 10px 3px;font-size:9px;font-weight:700;color:var(--text2);letter-spacing:0.8px;text-transform:uppercase;">Automata</div>`;
+  if (prds.length === 0) {
+    html += `<div style="color:var(--text2);padding:5px 10px;font-size:10px;opacity:0.7;">no active automata</div>`;
+  } else {
+    for (const prd of prds) {
+      const stories = prd.stories || [];
+      const taskTotal = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+      const taskDone = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
+      const pct = taskTotal > 0 ? Math.round(taskDone / taskTotal * 100) : 0;
+      const expanded = _dash._ganttTreeExpand[prd.id] !== false;
+      const pc = { running: 'var(--accent)', blocked: 'var(--error)', planning: 'var(--warning)' }[prd.status] || 'var(--text2)';
+      html += `<div style="border-left:2px solid ${pc};margin:1px 6px 0;border-radius:0 3px 3px 0;">
+        <div style="padding:5px 7px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="window._dashToggleGanttRow(${JSON.stringify(prd.id)})">
+          <span style="color:${pc};font-size:9px;flex-shrink:0;">${expanded ? '▼' : '▶'}</span>
+          <span style="color:var(--text);font-size:10px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(prd.title || prd.id)}">${escHtml((prd.title || prd.id).slice(0, 20))}</span>
+          <span style="color:${pc};font-size:9px;flex-shrink:0;">${pct}%</span>
+        </div>
+        <div style="margin:0 8px 4px;height:2px;background:var(--border);border-radius:1px;"><div style="height:100%;width:${pct}%;background:${pc};border-radius:1px;transition:width 0.5s;"></div></div>`;
+      if (expanded) {
+        for (let si = 0; si < stories.length; si++) {
+          const st = stories[si];
+          const sc = { completed: 'var(--success,#10b981)', running: 'var(--accent)', in_progress: 'var(--accent)', blocked: 'var(--error)', needs_review: 'var(--warning)' }[st.status] || 'var(--text2)';
+          const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
+          const tDone2 = (st.tasks || []).filter(t => t.status === 'completed').length;
+          const tTotal2 = (st.tasks || []).length;
+          html += `<div style="padding:2px 7px 2px 14px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">
+            <span style="color:${sc};font-size:9px;flex-shrink:0;">${sIcon}</span>
+            <span style="color:var(--text);font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml((st.title || `S${si + 1}`).slice(0, 18))}</span>
+            ${tTotal2 > 0 ? `<span style="color:var(--text2);font-size:8px;flex-shrink:0;">${tDone2}/${tTotal2}</span>` : ''}
+          </div>`;
+        }
+      }
+      html += `</div>`;
+    }
+  }
+  const activeSessions = (state.sessions || []).filter(s =>
+    s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input');
+  if (activeSessions.length > 0) {
+    html += `<div style="margin-top:10px;padding:5px 10px 3px;font-size:9px;font-weight:700;color:var(--text2);letter-spacing:0.8px;text-transform:uppercase;">Active Sessions</div>`;
+    for (const s of activeSessions.slice(0, 8)) {
+      const sc2 = { running: 'var(--accent)', generating: 'var(--accent)', waiting_input: 'var(--warning)' }[s.state] || 'var(--text2)';
+      const board2 = _dash._boards[s.full_id || s.id];
+      const hDot = !board2 ? '○' : board2.hook_health === 'alive' ? '●' : '◐';
+      const hColor = !board2 ? 'var(--text2)' : board2.hook_health === 'alive' ? 'var(--success,#10b981)' : 'var(--warning)';
+      const focus2 = board2 && board2.current_focus && board2.current_focus.task || '';
+      const rtBadge = _runtimeBadge(s);
+      html += `<div style="padding:4px 7px;cursor:pointer;border-left:2px solid ${sc2};margin:1px 6px 0;border-radius:0 3px 3px 0;" onclick="navigate('session-detail',${JSON.stringify(s.full_id || s.id)})">
+        <div style="display:flex;align-items:center;gap:3px;">
+          <span style="color:${hColor};font-size:8px;">${hDot}</span>
+          <span style="color:var(--text);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escHtml((s.name || s.task || s.id || '').slice(0, 20))}</span>
+          ${rtBadge ? `<span style="font-size:10px;flex-shrink:0;" title="${escHtml(s.backend_family||'')}${escHtml(s.compute_node_ref ? ' · '+s.compute_node_ref : '')}">${rtBadge}</span>` : ''}
+        </div>
+        ${focus2 ? `<div style="color:var(--text2);font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:10px;">▸ ${escHtml(focus2.slice(0, 24))}</div>` : ''}
+      </div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function _dashRenderEventFeed() {
+  const feedEl = document.getElementById('dashEventFeed');
+  if (!feedEl) return;
+  const log = _dash._eventLog;
+  if (log.length === 0) {
+    feedEl.innerHTML = `<div style="color:var(--text2);padding:6px 10px;font-size:10px;opacity:0.6;">Waiting for hook events…</div>`;
+    return;
+  }
+  feedEl.innerHTML = [...log].reverse().map(e => {
+    const ts = new Date(e.t).toLocaleTimeString('en-GB', { hour12: false });
+    const toolBadge = e.tool ? `<span style="color:var(--accent2,#60a5fa);margin-left:3px;font-size:9px;">${escHtml(e.tool.slice(0, 14))}</span>` : '';
+    const taskLine = e.task ? `<div style="color:var(--text2);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:10px;" title="${escHtml(e.task)}">▸ ${escHtml(e.task.slice(0, 32))}</div>` : '';
+    const evIcon = { Stop: '◼', PostToolUse: '▶', UserPromptSubmit: '💬', SubagentStop: '◻', update: '·' }[e.event] || '·';
+    return `<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.03);">
+      <div style="display:flex;align-items:center;gap:2px;flex-wrap:nowrap;overflow:hidden;">
+        <span style="color:var(--text2);font-size:8px;flex-shrink:0;">${ts}</span>
+        <span style="color:${e.color};font-size:8px;flex-shrink:0;">${evIcon}</span>
+        <span style="color:var(--text);font-size:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px;" title="${escHtml(e.name)}">${escHtml(e.name)}</span>
+        ${toolBadge}
+      </div>
+      ${taskLine}
+    </div>`;
+  }).join('');
+}
+
+function _drawGantt() {
+  const svgEl = document.getElementById('dashGanttSvg');
+  if (!svgEl) return;
+  const container = svgEl.parentElement;
+  if (!container) return;
+  const W = container.clientWidth || 600;
+  const LABEL_W = 164;
+  const BAR_X = LABEL_W;
+  const BAR_W = W - LABEL_W - 24;
+  const now = Date.now();
+  const WIN_MS = 6 * 3600000;
+  const winStart = now - WIN_MS;
+  const HEADER_H = 24, AUTO_H = 28, STORY_H = 22, GAP = 8;
+  const prds = _dash._prds || [];
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue('--bg').trim() || '#0f1117';
+  const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
+  const bdr = css.getPropertyValue('--border').trim() || '#2d3148';
+  const txt = css.getPropertyValue('--text').trim() || '#e2e8f0';
+  const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
+  const acc = css.getPropertyValue('--accent').trim() || '#7c3aed';
+  const stC = s => ({ completed: '#10b981', running: acc, in_progress: acc, blocked: '#ef4444', needs_review: '#f59e0b', planning: '#8b5cf6', failed: '#ef4444' }[s] || txt2);
+  const tsX = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / WIN_MS)) * BAR_W;
+  let totalH = HEADER_H + GAP;
+  for (const p of prds) {
+    totalH += AUTO_H;
+    if (_dash._ganttTreeExpand[p.id] !== false) totalH += (p.stories || []).length * STORY_H;
+    totalH += GAP;
+  }
+  totalH = Math.max(totalH, 80);
+  let html = '';
+  html += `<rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="${bg2}"/>`;
+  const startH = Math.ceil(winStart / 3600000), endH = Math.floor(now / 3600000);
+  for (let h = startH; h <= endH; h++) {
+    const ts = h * 3600000;
+    const x = tsX(ts);
+    if (x < BAR_X - 2 || x > W - 10) continue;
+    const d = new Date(ts);
+    const lbl = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    html += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${totalH}" stroke="${bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
+    html += `<text x="${x.toFixed(1)}" y="14" text-anchor="middle" font-size="9" fill="${txt2}">${escHtml(lbl)}</text>`;
+  }
+  const nowX = tsX(now);
+  html += `<line x1="${nowX.toFixed(1)}" y1="0" x2="${nowX.toFixed(1)}" y2="${totalH}" stroke="${acc}" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>`;
+  html += `<text x="${nowX.toFixed(1)}" y="10" text-anchor="middle" font-size="8" fill="${acc}" font-weight="bold">NOW</text>`;
+  let y = HEADER_H + GAP;
+  if (prds.length === 0) {
+    html += `<text x="${W / 2}" y="${HEADER_H + 50}" text-anchor="middle" font-size="13" fill="${txt2}" opacity="0.6">No active automata — start an Automaton to see its timeline</text>`;
+    html += `<text x="${W / 2}" y="${HEADER_H + 68}" text-anchor="middle" font-size="10" fill="${txt2}" opacity="0.4">Live story bars appear here as hooks fire</text>`;
+  }
+  for (const prd of prds) {
+    const stories = prd.stories || [];
+    const tTotal = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+    const tDone = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
+    const pct = tTotal > 0 ? Math.round(tDone / tTotal * 100) : 0;
+    const prdColor = stC(prd.status);
+    const expanded = _dash._ganttTreeExpand[prd.id] !== false;
+    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="window._dashToggleGanttRow(${JSON.stringify(prd.id)})"/>`;
+    html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${prdColor}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
+    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">${escHtml((prd.title || prd.id).slice(0, 26))}</text>`;
+    const pbX = W - 96, pbY = y + AUTO_H / 2 - 5, pbW = 72, pbH = 7;
+    html += `<rect x="${pbX}" y="${pbY}" width="${pbW}" height="${pbH}" rx="3" fill="${bdr}"/>`;
+    html += `<rect x="${pbX}" y="${pbY}" width="${(pbW * pct / 100).toFixed(1)}" height="${pbH}" rx="3" fill="${prdColor}" opacity="0.8"/>`;
+    html += `<text x="${pbX + pbW + 4}" y="${pbY + pbH - 1}" font-size="9" fill="${txt2}">${pct}%</text>`;
+    y += AUTO_H;
+    if (!expanded) { y += GAP; continue; }
+    const completedCount = stories.filter(s => s.status === 'completed').length;
+    for (let si = 0; si < stories.length; si++) {
+      const st = stories[si];
+      const key = prd.id + ':' + si;
+      const timing = _dash._ganttTimings[key];
+      let barStart, barEnd;
+      if (timing && timing.start) {
+        barStart = timing.start;
+        barEnd = st.status === 'completed' ? (timing.end || timing.lastSeen || now) : now;
+      } else {
+        const slotMs = WIN_MS / Math.max(stories.length, 1);
+        if (st.status === 'completed') {
+          barStart = winStart + si * slotMs;
+          barEnd = winStart + (si + 1) * slotMs;
+        } else if (st.status === 'running' || st.status === 'in_progress') {
+          barStart = winStart + completedCount * slotMs;
+          barEnd = now;
+        } else {
+          barStart = now + (si - completedCount) * (WIN_MS / 12);
+          barEnd = barStart + WIN_MS / 12;
+        }
+      }
+      const bx = tsX(barStart);
+      const bx2 = Math.min(W - 16, tsX(barEnd));
+      const bw = Math.max(3, bx2 - bx);
+      const color = stC(st.status);
+      const isPending = !st.status || st.status === 'draft' || st.status === 'not_started';
+      const rowY = y + 2, rowH = STORY_H - 4;
+      html += `<rect x="0" y="${y}" width="${W}" height="${STORY_H}" fill="transparent" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})" style="cursor:pointer;"/>`;
+      const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
+      html += `<text x="${LABEL_W - 8}" y="${y + STORY_H / 2 + 4}" text-anchor="end" font-size="10" fill="${color}">${sIcon}</text>`;
+      html += `<text x="8" y="${y + STORY_H / 2 - 1}" font-size="9" fill="${txt}" opacity="0.8">${escHtml((st.title || `Story ${si + 1}`).slice(0, 24))}</text>`;
+      const tD2 = (st.tasks || []).filter(t => t.status === 'completed').length;
+      const tT2 = (st.tasks || []).length;
+      if (tT2 > 0) html += `<text x="8" y="${y + STORY_H / 2 + 9}" font-size="8" fill="${txt2}">${tD2}/${tT2}</text>`;
+      if (isPending) {
+        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="none" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.35"/>`;
+      } else {
+        const op = st.status === 'completed' ? '0.55' : '0.82';
+        html += `<rect x="${bx.toFixed(1)}" y="${rowY}" width="${bw.toFixed(1)}" height="${rowH}" rx="2" fill="${color}" opacity="${op}"/>`;
+        if (bw > 44) {
+          const bl = (st.status === 'running' || st.status === 'in_progress')
+            ? `▶ ${(st.title || `S${si + 1}`).slice(0, 14)}`
+            : (st.title || `S${si + 1}`).slice(0, 16);
+          html += `<text x="${(bx + Math.min(bw, 120) / 2).toFixed(1)}" y="${rowY + rowH / 2 + 4}" text-anchor="middle" font-size="9" fill="white" opacity="0.92" style="pointer-events:none;">${escHtml(bl)}</text>`;
+        }
+        if ((st.verdicts || []).some(v => v.outcome === 'block')) {
+          html += `<text x="${(bx + bw + 4).toFixed(1)}" y="${rowY + rowH - 1}" font-size="10" fill="#ef4444">⛔</text>`;
+        }
+      }
+      y += STORY_H;
+    }
+    y += GAP;
+  }
+  svgEl.setAttribute('height', totalH);
+  svgEl.setAttribute('width', W);
+  svgEl.setAttribute('viewBox', `0 0 ${W} ${totalH}`);
+  svgEl.innerHTML = html;
+}
+
+function _drawSparklines() {
+  const canvas = document.getElementById('dashSparkCanvas');
+  if (!canvas) return;
+  const W = canvas.clientWidth || 240;
+  const H = canvas.clientHeight || 130;
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
+  const bdr = css.getPropertyValue('--border').trim() || '#2d3148';
+  const txt2 = css.getPropertyValue('--text2').trim() || '#64748b';
+  ctx.fillStyle = bg2;
+  ctx.fillRect(0, 0, W, H);
+  const allSessions = (state.sessions || []).filter(s =>
+    s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input' || s.state === 'idle'
+  ).slice(0, 5);
+  if (allSessions.length === 0) {
+    ctx.fillStyle = txt2; ctx.font = '9px monospace';
+    ctx.fillText('no sessions', 8, 18); return;
+  }
+  const rowH = Math.floor(H / allSessions.length);
+  const LABEL_W = 76;
+  const SPARK_W = W - LABEL_W - 4;
+  const now2 = Date.now();
+  const BUCKETS = 60, BUCKET_MS = 2000;
+  const sparkStart = now2 - BUCKETS * BUCKET_MS;
+  for (let ci = 0; ci < allSessions.length; ci++) {
+    const sess = allSessions[ci];
+    const sid = sess.full_id || sess.id;
+    const color = _dashNodeColor(sess.state);
+    const rowY = ci * rowH;
+    if (ci > 0) {
+      ctx.strokeStyle = bdr; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(0, rowY); ctx.lineTo(W, rowY); ctx.stroke();
+    }
+    ctx.fillStyle = color; ctx.font = 'bold 9px monospace';
+    ctx.fillText((sess.name || sess.id || '?').slice(0, 9), 4, rowY + rowH * 0.45);
+    ctx.fillStyle = txt2; ctx.font = '8px monospace';
+    ctx.fillText(sess.state || '', 4, rowY + rowH * 0.78);
+    const buckets = new Array(BUCKETS).fill(0);
+    for (const e of _dash.ekg) {
+      if (e.t >= sparkStart) {
+        const bi = Math.min(BUCKETS - 1, Math.floor((e.t - sparkStart) / BUCKET_MS));
+        buckets[bi]++;
+      }
+    }
+    const maxB = Math.max(1, ...buckets);
+    const barW = SPARK_W / BUCKETS;
+    for (let bi = 0; bi < BUCKETS; bi++) {
+      const bh = Math.max(0, (buckets[bi] / maxB) * (rowH - 5));
+      if (bh < 0.5) continue;
+      ctx.fillStyle = color; ctx.globalAlpha = 0.65;
+      ctx.fillRect(LABEL_W + bi * barW, rowY + rowH - 3 - bh, Math.max(1, barW - 0.5), bh);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function _dashRenderBurnRate() {
+  const el = document.getElementById('dashBurnRate');
+  if (!el) return;
+  const sessions = (state.sessions || []).filter(s => s.state === 'running' || s.state === 'generating');
+  let html = '';
+  if (_dash._costToday) {
+    const c = _dash._costToday;
+    const tot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
+      : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+    if (tot > 0) {
+      html += `<div style="color:var(--success,#10b981);font-weight:700;">$${tot.toFixed(2)}</div><div style="font-size:8px;opacity:0.6;">today</div>`;
+    }
+  }
+  html += `<div style="margin-top:3px;color:var(--accent);font-size:9px;">${sessions.length} running</div>`;
+  const prds = _dash._prds || [];
+  if (prds.length > 0) html += `<div style="font-size:8px;color:var(--text2);">${prds.length} automata</div>`;
+  el.innerHTML = html;
+}
+
+window._dashToggleGanttRow = function(prdId) {
+  _dash._ganttTreeExpand[prdId] = (_dash._ganttTreeExpand[prdId] === false) ? true : false;
+  _dashRenderTree();
+};
 
 // BL247-followup v6.7.3 — Observer view restored as a real top-level view.
 // Hosts what used to be Settings → Monitor sub-tab cards (system stats,

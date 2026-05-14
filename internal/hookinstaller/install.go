@@ -60,12 +60,39 @@ func Install(projectDir, sessionFullID, daemonURL, token string) error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	// Per-event entry we want present.
-	wantEntry := func(cmd string) map[string]any {
-		return map[string]any{"type": "command", "command": cmd}
+	// wantGroup returns the hook group entry in the current Claude Code
+	// nested format: {"hooks":[{"type":"command","command":"<cmd>"}]}.
+	// An optional "matcher" key is omitted (defaults to empty = match all).
+	wantGroup := func(cmd string) map[string]any {
+		return map[string]any{
+			"hooks": []any{map[string]any{"type": "command", "command": cmd}},
+		}
+	}
+	// hasOurEntry scans an event array for a nested group entry that contains
+	// our hookCmdBase. Only the new nested format is checked — old flat entries
+	// {"type":"command","command":"..."} are left in place (they are ignored by
+	// current Claude Code) but do NOT prevent a fresh nested entry from being
+	// appended. This ensures sessions with stale flat entries get upgraded.
+	hasOurEntry := func(arr []any) bool {
+		for _, item := range arr {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			// New nested format only: {"hooks":[{"type":"command","command":"..."}]}
+			if inner, ok := m["hooks"].([]any); ok {
+				for _, ih := range inner {
+					if im, ok := ih.(map[string]any); ok {
+						if c, ok := im["command"].(string); ok && len(c) >= len(hookCmdBase) && c[:len(hookCmdBase)] == hookCmdBase {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return false
 	}
 	addIfMissing := func(eventName, cmd string) {
-		// Find the event's existing array.
 		var arr []any
 		switch v := hooks[eventName].(type) {
 		case []any:
@@ -75,15 +102,10 @@ func Install(projectDir, sessionFullID, daemonURL, token string) error {
 				arr = append(arr, m)
 			}
 		}
-		// Idempotent: skip if any entry's command starts with hookCmdBase.
-		for _, item := range arr {
-			if m, ok := item.(map[string]any); ok {
-				if c, ok := m["command"].(string); ok && len(c) >= len(hookCmdBase) && c[:len(hookCmdBase)] == hookCmdBase {
-					return // ours already present
-				}
-			}
+		if hasOurEntry(arr) {
+			return // already present in either old or new format
 		}
-		arr = append(arr, wantEntry(cmd))
+		arr = append(arr, wantGroup(cmd))
 		hooks[eventName] = arr
 	}
 	addIfMissing("Stop", hookCmdBase+" Stop")

@@ -3,6 +3,38 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.0.0 — Dashboard mission control + comprehensive test coverage (2026-05-14)
+
+### Added
+- **BL303 S1-S5 — Mission Control Dashboard** — live task tree, orbital constellation, guardrail profiles, smoke run card, hook installer. Dashboard stores layout server-side at `GET/PUT /api/dashboard/layout`; 9 card types (task tree, orbital, event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrails, multi-EKG, smoke run). Cards are draggable, width/height editable, and persist across sessions.
+- **Smoke run card redesigned** — single scrollable list replaces 3-view tabs. Filter pills (All / Active / Pass / Fail / Skip / Pending) with 11px text. Progress header with `X/82 · %` bar. Active section highlighted amber, failures highlighted red. Clear button removes progress file. Swipe support dropped in favor of persistent filter state.
+- **DELETE `/api/smoke/progress`** — clears the progress file so dashboard shows a clean slate; used by the smoke card's Clear button.
+- **Comprehensive smoke test — 82 sections** — extends the original 64 sections with §33-§50: splash info + OpenAPI spec, cooldown surface, devices registry, federation sessions, marketplace + OpenWebUI models, orchestrator verdicts + templates, session templates CRUD, proxy gateway, MCP tools count + call round-trip, Docs-as-MCP (search/list/read), guardrail library + profiles via MCP, LLM registry via MCP, memory scopes via MCP, observer config + stats via MCP, pipeline + routing rules via MCP, telemetry via MCP, smoke progress DELETE, CLI surface (20 commands).
+- **Test plan v7.0.0** — 3810-line plan with T18–T22 sprints (TS-250–TS-364) covering 89 additional stories for REST, MCP, CLI, Docs-as-MCP, and smoke infrastructure. Master cookbook grows from 204 to 293 planned story rows.
+- **MCP loopback TLS fix** — `httpProxy` in MCP tools now uses `InsecureSkipVerify: true` so tools can reach the daemon's self-signed HTTPS endpoint after the HTTP→HTTPS redirect; previously all MCP tools that proxy back to the daemon failed TLS verification.
+- **Hook installer** — at claude-code session start, writes `<project_dir>/.claude/sprint/post-event.sh` + `.dw-env` + hooks into `settings.json`. Feeds Stop/PostToolUse/UserPromptSubmit/SubagentStop events to the Status board.
+
+### Fixed
+- **Dashboard 2× height on small screens** — removed `grid-row:span 1` overrides from all three responsive breakpoints (900px, 600px, 480px) that were preventing `data-rs="2"` cards from working.
+- **Arrow d-pad double-fire on touch** — `startArrowRepeat` now calls `evt.preventDefault()` to block the synthesized `mousedown` from `touchstart`.
+- **Smoke progress bar >100%** — was counting individual assertions; fixed to count completed sections against `TOTAL_SECS=82`.
+- **MCP call field name** — `POST /api/mcp/call` expects `tool` not `name`; smoke script corrected for all 10 MCP call payloads.
+- **CLI command names** — `datawatch sessions list` → `datawatch session list`; `datawatch filter list` replaced with `datawatch routing-rules list`.
+- **`/api/docs` redirect** — smoke check now uses `-L` to follow 301 redirect from Swagger UI path.
+
+### Known limitations
+- `datawatch schedule list` CLI not yet exposed (REST `/api/schedules` works); smoke skips this check.
+- PWA E2E testing via Chrome automation — not in this release; covered by mobile team for app surfaces.
+- DW_MAJOR=1 cost-gated tests (state engine, full automata execute) — skipped; require live LLM backend.
+
+### Rule audit
+- 7-surface parity: REST ✓ MCP ✓ CLI ✓ Comm ✓ PWA ✓ Mobile (mobile team) ✓ YAML ✓
+- Smoke: 82 sections — pass/fail/skip reported per run
+- Locale: no new user-facing strings added
+- Plans hygiene: historical plans archived; `post-v7-llm-kinds.md` + `post-v7-routing.md` unclassified (manual review)
+- Mobile-parity: no new UI surfaces requiring app issue
+- Cookbook: 293 story rows (T1–T22), 22 sprints
+
 ## [Unreleased]
 
 _(BL299, BL300, BL301 filed — see backlog tracker.)_
