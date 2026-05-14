@@ -758,6 +758,7 @@ mcp:
 session:
   llm_backend: ollama
   skip_permissions: true
+  max_sessions: 50
 ollama:
   enabled: true
   host: http://datawatch:11434
