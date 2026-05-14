@@ -2907,7 +2907,7 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 COPY datawatch /usr/local/bin/
 RUN chmod +x /usr/local/bin/datawatch
 EXPOSE 18180 18543 18281 18533
-ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--config", "/config/config.yaml", "--port", "18180"]
+ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--host", "0.0.0.0", "--config", "/config/config.yaml", "--port", "18180"]
 DOCKEREOF
 
   # Copy binary into build context (ensure it exists first)
