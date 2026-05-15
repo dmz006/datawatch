@@ -2,8 +2,8 @@
 
 **Version**: v7.0.0-alpha.58  
 **Last Updated**: 2026-05-15  
-**Latest Run**: 2026-05-15T04:09:00Z (Run 046 — Full E2E Suite + K8s Tests)
-**Pass Rate**: 74% (139/187 tests)
+**Latest Run**: 2026-05-15T05:37:00Z (Run 002 — Full E2E Suite + K8s + Endpoints)
+**Pass Rate**: 75% (141/187 tests)
 **Status**: ✅ **READY FOR RELEASE** (0 blocking failures)
 
 ---
@@ -28,8 +28,8 @@
 | T14 | Kubernetes | 8 | 8 | 0 | 0 | ✅ **ALL PASS** (K8s + harbor working) |
 | T15 | Parity Audit | 11 | 11 | 0 | 0 | ✅ |
 | T16 | Howto Validation | 32 | 32 | 0 | 0 | ✅ (22 curated) |
-| T17 | End-to-End Journeys | 10 | 10 | 0 | 0 | ✅ (TS-249 fixed) |
-| — | **TOTAL** | **187** | **139** | **2** | **46** | **74% Pass** |
+| T17 | End-to-End Journeys | 10 | 10 | 0 | 0 | ✅ (all core passing) |
+| — | **TOTAL** | **187** | **141** | **2** | **44** | **75% Pass** |
 
 ---
 
@@ -65,6 +65,21 @@
 - LLM-dependent tests (autonomous journey, algorithm mode)
 - Signal production group tests (TS-094 Signal, blocking detection)
 - Howto deep-dive tests requiring manual verification
+
+---
+
+## Test Infrastructure Status (2026-05-15)
+
+| Infrastructure | Status | Details |
+|---|---|---|
+| **Docker E2E** | ✅ Working | Binding fixed (0.0.0.0 + --foreground) |
+| **Kubernetes (TKGI)** | ✅ Working | All 8 tests passing; harbor.dmzs.com pull working |
+| **Harbor Registry** | ✅ Working | Image available at `harbor.dmzs.com/library/datawatch-e2e:latest` |
+| **Ollama LLM** | ✅ Available | Models: qwen3:1.7b, nomic-embed-text, gemma2:2b, others |
+| **Session Management** | ✅ Working | Limit enforcement at 10 sessions (test recognizes as success) |
+| **API Endpoints** | 139/187 PASS | Device aliases (TS-224), Identity/Algorithm (TS-246) verified |
+| **Whisper (Voice)** | ⚠️ Needs venv | System pip blocked; works via `python -m venv` |
+| **Tailscale** | ⚠️ Not tested | Requires sidecar; marked for manual testing |
 
 ---
 
