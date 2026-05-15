@@ -3961,9 +3961,11 @@ run_t17() {
     fi
 
     if [[ "$pcount" -gt 0 ]]; then
-      run=$(api POST /api/council/runs '{"prompt":"e2e-journey-test","max_rounds":1}')
+      # Get first persona name for the run (handle both wrapped and unwrapped format)
+      first_persona=$(echo "$personas" | python3 -c "import json,sys; d=json.load(sys.stdin); lst=d.get('personas',d) if isinstance(d,dict) else d; print(lst[0]['name'] if isinstance(lst,list) and lst else '')" 2>/dev/null || echo "security-skeptic")
+      run=$(api POST /api/council/run "{\"proposal\":\"What is the best approach for e2e testing in v7.0.0?\",\"personas\":[\"$first_persona\"],\"mode\":\"quick\"}")
       save_evidence "TS-244" "2_run.json" "$run"
-      run_id=$(echo "$run" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
+      run_id=$(echo "$run" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('run_id',d.get('id','')))" 2>/dev/null || echo "")
       if [[ -n "$run_id" ]]; then
         cancel=$(api POST "/api/council/runs/$run_id/cancel" '{}')
         save_evidence "TS-244" "3_cancel.json" "$cancel"
