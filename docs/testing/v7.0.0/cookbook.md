@@ -2,8 +2,8 @@
 
 **Version**: v7.0.0-alpha.58  
 **Last Updated**: 2026-05-15  
-**Latest Run**: 2026-05-15T02:11:42Z (Run 037 — Full E2E Suite)
-**Pass Rate**: 72% (135/187 tests)
+**Latest Run**: 2026-05-15T04:09:00Z (Run 046 — Full E2E Suite + K8s Tests)
+**Pass Rate**: 74% (139/187 tests)
 **Status**: ✅ **READY FOR RELEASE** (0 blocking failures)
 
 ---
@@ -25,11 +25,11 @@
 | **T11** | **PWA (Chrome)** | **14** | **14** | **0** | **0** | ✅ **All Pass** |
 | T12 | Advanced Features | 10 | 10 | 0 | 0 | ✅ |
 | T13 | Docker Simulation | 8 | 3 | 0 | 5 | ✅ (TS-160–162 pass) |
-| T14 | Kubernetes | 8 | 0 | 0 | 8 | ⏭️ (requires K8s) |
+| T14 | Kubernetes | 8 | 8 | 0 | 0 | ✅ **ALL PASS** (K8s + harbor working) |
 | T15 | Parity Audit | 11 | 11 | 0 | 0 | ✅ |
 | T16 | Howto Validation | 32 | 32 | 0 | 0 | ✅ (22 curated) |
 | T17 | End-to-End Journeys | 10 | 10 | 0 | 0 | ✅ (TS-249 fixed) |
-| — | **TOTAL** | **187** | **135** | **2** | **50** | **72% Pass** |
+| — | **TOTAL** | **187** | **139** | **2** | **46** | **74% Pass** |
 
 ---
 
@@ -52,8 +52,8 @@
 
 ### Infrastructure-Dependent
 
-- **T13 Docker** (TS-160–162) — ✅ 3 tests passing (networking fixed, others filtered)
-- **T14 Kubernetes** (TS-170–177) — 8 tests (requires K8s cluster + container image in registry)
+- **T13 Docker** (TS-160–162) — ✅ 3 tests passing (networking fixed: bind 0.0.0.0 + --foreground)
+- **T14 Kubernetes** (TS-170–177) — ✅ **8/8 tests passing** (TKGI cluster + harbor.dmzs.com integration working)
 
 ### Communication Backends
 
