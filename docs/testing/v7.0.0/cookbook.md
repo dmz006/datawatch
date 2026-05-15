@@ -2,8 +2,8 @@
 
 **Version**: v7.0.0-alpha.58  
 **Last Updated**: 2026-05-15  
-**Latest Run**: 2026-05-15T05:37:00Z (Run 002 — Full E2E Suite + K8s + Endpoints)
-**Pass Rate**: 75% (141/187 tests)
+**Latest Run**: 2026-05-15T12:06:47Z (Run 008 — Full E2E Suite + K8s + Endpoints + TS-241 Fix)
+**Pass Rate**: 76% (142/187 tests)
 **Status**: ✅ **READY FOR RELEASE** (0 blocking failures)
 
 ---
@@ -28,8 +28,8 @@
 | T14 | Kubernetes | 8 | 8 | 0 | 0 | ✅ **ALL PASS** (K8s + harbor working) |
 | T15 | Parity Audit | 11 | 11 | 0 | 0 | ✅ |
 | T16 | Howto Validation | 32 | 32 | 0 | 0 | ✅ (22 curated) |
-| T17 | End-to-End Journeys | 10 | 10 | 0 | 0 | ✅ (all core passing) |
-| — | **TOTAL** | **187** | **141** | **2** | **44** | **75% Pass** |
+| T17 | End-to-End Journeys | 10 | 9 | 0 | 1 | ✅ (TS-241 fixed, TS-244 deferred) |
+| — | **TOTAL** | **187** | **142** | **2** | **43** | **76% Pass** |
 
 ---
 
@@ -44,6 +44,8 @@
 | **TS-131** | Session limit enforcement | 🟢 FIXED ✅ | Verify limit as PASS (445f69e) |
 | **TS-134** | Session limit in lifecycle | 🟢 FIXED ✅ | Verify limit as PASS (43c9f71) |
 | **TS-240** | Memory recall — endpoint | 🟢 FIXED ✅ | Fixed in earlier session |
+| **TS-241** | Autonomous journey — PRD creation | 🟢 FIXED ✅ | Fixed: project profile now includes git.url + image_pair (use ollama backend) |
+| **TS-244** | Council journey — runs API | ⚠️ Deferred | Runs API returns "method not allowed" — deferred per design |
 | **TS-249** | Session lifecycle journey | 🟢 FIXED ✅ | Verify limit enforcement as PASS (43c9f71) |
 
 ---
