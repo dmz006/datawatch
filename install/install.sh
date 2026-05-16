@@ -355,6 +355,19 @@ install_binary() {
       fi
     fi
 
+    # c) Try plain "datawatch" asset (manual uploads without arch suffix)
+    if ! $INSTALLED; then
+      local PLAIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_NAME}"
+      info "Trying plain binary asset: ${PLAIN_URL} ..."
+      if wget -q --show-progress -O "${TMPARCHIVE}/${BINARY_NAME}" "${PLAIN_URL}" 2>/dev/null || \
+         curl -fsSL -o "${TMPARCHIVE}/${BINARY_NAME}" "${PLAIN_URL}" 2>/dev/null; then
+        if [[ -s "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
+          install -m 755 "${TMPARCHIVE}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+          INSTALLED=true
+        fi
+      fi
+    fi
+
     rm -rf "${TMPARCHIVE}"
     if $INSTALLED; then
       success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
