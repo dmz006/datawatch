@@ -371,6 +371,21 @@ install_binary() {
     rm -rf "${TMPARCHIVE}"
     if $INSTALLED; then
       success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
+      # Also install the datawatch-channel Go MCP bridge (non-fatal fallback to JS if missing).
+      local CHAN_NAME="datawatch-channel"
+      local CHAN_RAW="${CHAN_NAME}-linux-${GOARCH}"
+      local CHAN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${CHAN_RAW}"
+      local CHAN_TMP; CHAN_TMP=$(mktemp -d)
+      if wget -q -O "${CHAN_TMP}/${CHAN_RAW}" "${CHAN_URL}" 2>/dev/null || \
+         curl -fsSL -o "${CHAN_TMP}/${CHAN_RAW}" "${CHAN_URL}" 2>/dev/null; then
+        if [[ -s "${CHAN_TMP}/${CHAN_RAW}" ]]; then
+          install -m 755 "${CHAN_TMP}/${CHAN_RAW}" "${INSTALL_DIR}/${CHAN_NAME}"
+          success "MCP channel bridge installed to ${INSTALL_DIR}/${CHAN_NAME}."
+        fi
+      else
+        info "No prebuilt datawatch-channel for this version — JS bridge will be used (install Node.js if sessions fail)."
+      fi
+      rm -rf "${CHAN_TMP}"
       return
     fi
     warn "Prebuilt binary not available for v${VERSION} (${GOARCH}). Falling back to build from source."
@@ -394,12 +409,16 @@ install_binary() {
     info "Building from local source (${REPO_ROOT})..."
     go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
       -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
+    go build -C "${REPO_ROOT}" \
+      -o "${INSTALL_DIR}/datawatch-channel" ./cmd/datawatch-channel/
   elif command -v git &>/dev/null; then
     info "Cloning source and building..."
     local TMPBUILD; TMPBUILD=$(mktemp -d)
     git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
     go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
       -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
+    go build -C "${TMPBUILD}" \
+      -o "${INSTALL_DIR}/datawatch-channel" ./cmd/datawatch-channel/
     rm -rf "${TMPBUILD}"
   else
     error "Cannot install datawatch: no prebuilt binary for v${VERSION}, git is not available, and Go is not installed.
