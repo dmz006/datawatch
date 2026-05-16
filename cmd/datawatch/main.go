@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.64"
+var Version = "7.0.0-alpha.65"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2616,15 +2616,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// 2026-05-09: "promote all differences to new
 				// configuration, the old version can be deprecating.
 				// on-start migration and 'just-work'".
+				// v6→v7 migration: promote explicitly-configured v6 backend
+				// blocks into the LLM registry. claude-code is intentionally
+				// excluded — it is auto-detected (not a v6 cfg value) and
+				// must not trigger the migration toast on fresh installs.
 				legacyBackends := []inference.LegacyBackend{
-					// Inference protocols
+					// Inference protocols — only migrate when explicitly set
 					{Name: "ollama", Kind: inference.KindOllama, Model: cfg.Ollama.Model, Address: cfg.Ollama.Host},
 					{Name: "openwebui", Kind: inference.KindOpenWebUI, Model: cfg.OpenWebUI.Model, APIKeyRef: owuiKey, Address: cfg.OpenWebUI.URL},
-					// Session-backend kinds (binaries / bins). v6 had
-					// these as cfg.<Backend>.Binary; we promote each
-					// non-empty entry into the LLM registry as a
-					// resolvable name. Sessions resolve at start-time.
-					{Name: "claude-code", Kind: inference.KindClaudeCode, Address: claudeBin},
+					// Session-backend binaries — only non-empty means user configured
 					{Name: "opencode", Kind: inference.KindOpenCode, Address: cfg.OpenCode.Binary},
 					{Name: "opencode-acp", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
 					{Name: "opencode-prompt", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
@@ -2637,11 +2637,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				for _, name := range created {
 					fmt.Printf("[inference] auto-migrated legacy cfg → llm/%s\n", name)
 				}
-				// Persist a migration-status note so the PWA can show a
-				// one-time toast on next load.
+				// Show migration toast only when genuine v6→v7 backends were
+				// promoted. Never show it for fresh installs.
 				if len(created) > 0 {
 					_ = writeMigrationStatus(expandHome(cfg.DataDir), created)
 				}
+				// Ensure claude-code exists in the registry without counting
+				// it as a migration (it's auto-detected from PATH, not a v6
+				// config value). No-ops if already present.
+				inference.EnsureClaudeCode(llmReg, claudeBin)
 				// Strip any *-default suffixes from entries created by
 				// earlier alpha builds (alpha.15 named them "ollama-default"
 				// etc.). Idempotent: skips targets that already exist.

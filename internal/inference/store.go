@@ -157,6 +157,28 @@ func MigrateAllLegacyBackends(reg *Registry, backends []LegacyBackend) []string 
 	return created
 }
 
+// EnsureClaudeCode guarantees that a "claude-code" entry exists in the registry.
+// Unlike MigrateAllLegacyBackends, this does NOT count as a v6→v7 migration and
+// does NOT trigger a migration toast — it is pure auto-detection for fresh installs.
+// Idempotent: no-ops when the entry already exists.
+func EnsureClaudeCode(reg *Registry, binary string) {
+	if binary == "" {
+		binary = "claude"
+	}
+	if _, err := reg.Get("claude-code"); err != ErrNotFound {
+		return // already present
+	}
+	_ = reg.Add(&LLM{
+		Name:                 "claude-code",
+		Kind:                 KindClaudeCode,
+		Binary:               binary,
+		ChannelEnabled:       true,
+		SkipPermissions:      true,
+		DefaultEffort:        "normal",
+		AutoCreated:          true,
+	})
+}
+
 // KindDefaultOutputMode returns the canonical output mode for a session-backend kind.
 // Matches the per-kind logic in cfg.GetOutputMode (config.go).
 func KindDefaultOutputMode(k Kind) string {

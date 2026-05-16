@@ -1551,14 +1551,9 @@ func DefaultConfig() *Config {
 			SSEPort:         8081,
 			TLSAutoGenerate: true,
 		},
-		Ollama: OllamaConfig{
-			Model: "llama3",
-			Host:  "http://localhost:11434",
-		},
-		OpenWebUI: OpenWebUIConfig{
-			URL:   "http://localhost:3000",
-			Model: "llama3",
-		},
+		// Backend addresses and binaries are intentionally empty in the default
+		// config so fresh installs don't trigger spurious v6→v7 migration toasts.
+		// Operators configure them explicitly via `datawatch setup llm <name>`.
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},
@@ -1569,10 +1564,6 @@ func DefaultConfig() *Config {
 			Language: "en",
 			VenvPath: ".venv",
 		},
-		Aider:         AiderConfig{Binary: "aider"},
-		Goose:         GooseConfig{Binary: "goose"},
-		Gemini:        GeminiConfig{Binary: "gemini"},
-		OpenCode:      OpenCodeConfig{Binary: "opencode"},
 	}
 }
 
