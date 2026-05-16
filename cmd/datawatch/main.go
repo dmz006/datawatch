@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.68"
+var Version = "7.0.0-alpha.69"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3210,13 +3210,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				askBody["model"] = amgrCfg.DecompositionModel
 			}
 			body, _ := json.Marshal(askBody)
-			// GATE alpha.36 #286 (operator 2026-05-10): cap decompose
-			// at 5 min so a hung LLM (e.g. Ollama cold-loading a large
-			// model that never finishes) can't park the PRD in
-			// "planning" forever. The manager's roll-back-to-draft
-			// path fires when this returns an error, so a clean
-			// timeout produces a clean retry path for the operator.
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			// GATE alpha.36 #286: timeout scales with PRD effort (#48).
+			// high/max → 15 min; quick/low → 2 min; default → 5 min.
+			// Roll-back-to-draft fires on timeout so operator can retry.
+			decomposeTimeout := 5 * time.Minute
+			switch req.Effort {
+			case autonomouspkg.EffortHigh, autonomouspkg.EffortMax:
+				decomposeTimeout = 15 * time.Minute
+			case autonomouspkg.EffortQuick, autonomouspkg.EffortLow:
+				decomposeTimeout = 2 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), decomposeTimeout)
 			defer cancel()
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",

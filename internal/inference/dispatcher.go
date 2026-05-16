@@ -208,17 +208,25 @@ func ResolveModel(llm *LLM, req Request) string {
 	return llm.Model
 }
 
-// ResolveTimeout picks the effective per-call timeout. Defaults: 300s
-// for local kinds (cold-model latency observation per v5.26.9), 60s
-// for cloud kinds.
+// ResolveTimeout picks the effective per-call timeout. Explicit
+// TimeoutSeconds takes precedence, then DefaultEffort scales the base
+// (quick=0.4×, normal=1×, high=3× — #48). Defaults: 300s local, 60s cloud.
 func ResolveTimeout(llm *LLM) time.Duration {
 	if llm.TimeoutSeconds > 0 {
 		return time.Duration(llm.TimeoutSeconds) * time.Second
 	}
+	base := 300 * time.Second
 	if isCloudKind(llm.Kind) {
-		return 60 * time.Second
+		base = 60 * time.Second
 	}
-	return 300 * time.Second
+	switch llm.DefaultEffort {
+	case "quick":
+		return time.Duration(float64(base) * 0.4)
+	case "high":
+		return time.Duration(float64(base) * 3.0)
+	default: // "normal" or ""
+		return base
+	}
 }
 
 // FormatChatPrompt is a tiny helper — adapters that take a single

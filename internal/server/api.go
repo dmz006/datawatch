@@ -1668,7 +1668,11 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 		namespaces := s.projectStore.EffectiveNamespacesFor(profileName)
 		results, err := s.memoryAPI.SearchInNamespaces(query, namespaces, 10)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// Return empty JSON array (not text/plain) so clients can parse (#49).
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Datawatch-Warning", err.Error())
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("[]"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1678,7 +1682,11 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.memoryAPI.Search(query, 10)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Return empty JSON array (not text/plain) so clients can parse (#49).
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Datawatch-Warning", err.Error())
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
