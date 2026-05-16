@@ -90,6 +90,7 @@ func isLoopbackRemote(remoteAddr string) bool {
 var loopbackBypassPaths = []string{
 	"/api/channel/",      // prefix
 	"/api/ask",           // exact
+	"/api/config",        // exact — MCP get_config; self-signed cert blocks HTTPS redirect
 	"/api/sessions",      // exact (collection)
 	"/api/sessions/",     // prefix (per-session sub-paths)
 	"/api/orchestrator/", // prefix

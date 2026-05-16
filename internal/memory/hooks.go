@@ -89,26 +89,21 @@ func InstallClaudeHooks(projectDir, hooksDir string, saveInterval int) error {
 	return os.WriteFile(settingsPath, append(data, '\n'), 0644)
 }
 
-// EnsureHookScripts writes the hook shell scripts to the given directory
-// if they don't already exist. Called on daemon startup.
+// EnsureHookScripts writes the hook shell scripts to the given directory,
+// always overwriting so upgrades pick up URL/flag fixes in the templates.
+// Called on daemon startup.
 func EnsureHookScripts(hooksDir string) {
 	os.MkdirAll(hooksDir, 0755) //nolint:errcheck
-
 	saveScript := filepath.Join(hooksDir, "datawatch_save_hook.sh")
-	if _, err := os.Stat(saveScript); err != nil {
-		os.WriteFile(saveScript, []byte(saveHookScript), 0755) //nolint:errcheck
-	}
-
+	os.WriteFile(saveScript, []byte(saveHookScript), 0755) //nolint:errcheck
 	precompactScript := filepath.Join(hooksDir, "datawatch_precompact_hook.sh")
-	if _, err := os.Stat(precompactScript); err != nil {
-		os.WriteFile(precompactScript, []byte(precompactHookScript), 0755) //nolint:errcheck
-	}
+	os.WriteFile(precompactScript, []byte(precompactHookScript), 0755) //nolint:errcheck
 }
 
 const saveHookScript = `#!/bin/bash
 # DATAWATCH MEMORY SAVE HOOK — Auto-save every N exchanges
 SAVE_INTERVAL=${DATAWATCH_HOOK_INTERVAL:-15}
-DATAWATCH_URL=${DATAWATCH_URL:-http://localhost:8080}
+DATAWATCH_URL=${DATAWATCH_URL:-https://localhost:8443}
 STATE_DIR="$HOME/.datawatch/hook_state"
 mkdir -p "$STATE_DIR"
 INPUT=$(cat)
@@ -166,7 +161,7 @@ recent = msgs[-4:] if len(msgs) >= 4 else msgs
 print(' | '.join(f"{m['role']}: {m['content'][:100]}" for m in recent))
 PYEOF
 2>/dev/null)
-    [ -n "$SUMMARY" ] && curl -s -X POST "$DATAWATCH_URL/api/test/message" \
+    [ -n "$SUMMARY" ] && curl -sk -X POST "$DATAWATCH_URL/api/test/message" \
       -H "Content-Type: application/json" \
       -d "{\"text\":\"remember: [auto-save] $SUMMARY\"}" > /dev/null 2>&1
   fi
@@ -176,7 +171,7 @@ echo "{}"
 
 const precompactHookScript = `#!/bin/bash
 # DATAWATCH PRE-COMPACT HOOK — Save before context compression
-DATAWATCH_URL=${DATAWATCH_URL:-http://localhost:8080}
+DATAWATCH_URL=${DATAWATCH_URL:-https://localhost:8443}
 INPUT=$(cat)
 TRANSCRIPT_PATH=$(echo "$INPUT" | python3 -c "
 import sys, json, re
@@ -201,7 +196,7 @@ with open(sys.argv[1]) as f:
 print('[pre-compact] Topics: ' + '; '.join(list(topics)[:5]))
 PYEOF
 2>/dev/null)
-  [ -n "$SUMMARY" ] && curl -s -X POST "$DATAWATCH_URL/api/test/message" \
+  [ -n "$SUMMARY" ] && curl -sk -X POST "$DATAWATCH_URL/api/test/message" \
     -H "Content-Type: application/json" \
     -d "{\"text\":\"remember: $SUMMARY\"}" > /dev/null 2>&1
 fi
