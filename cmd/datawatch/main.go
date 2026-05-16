@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.72"
+var Version = "7.0.0-alpha.73"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -220,6 +220,7 @@ var (
 	verbose    bool
 	secureMode bool
 	serverName string // --server flag: name of remote server to target
+	serverURL  string // --url/-u flag: direct base URL override (test/dev targeting)
 )
 
 func main() {
@@ -235,6 +236,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose/debug logging")
 	root.PersistentFlags().BoolVar(&secureMode, "secure", false, "use encrypted config file (prompts for password)")
 	root.PersistentFlags().StringVar(&serverName, "server", "", "name of remote datawatch server to target (see 'setup server')")
+	root.PersistentFlags().StringVarP(&serverURL, "url", "u", "", "direct base URL of target daemon (e.g. http://localhost:18080); overrides --server")
 
 	root.AddCommand(
 		newStartCmd(),
@@ -5563,6 +5565,9 @@ func coalesceHost(h string) string {
 // validateLoopback (below) hits /healthz at startup to confirm the
 // resolved URL actually accepts connections; logs a warning if not.
 func loopbackBaseURL(cfg *config.Config) string {
+	if serverURL != "" {
+		return strings.TrimRight(serverURL, "/")
+	}
 	host := ""
 	port := 8080
 	if cfg != nil {
@@ -7296,6 +7301,9 @@ func hasLetter(s string) bool {
 // daemonAPIURL returns the HTTP API /api/command URL for the target daemon.
 // If --server is set, targets the named remote server from config.Servers.
 func daemonAPIURL(cfg *config.Config) string {
+	if serverURL != "" {
+		return strings.TrimRight(serverURL, "/") + "/api/command"
+	}
 	if serverName != "" && serverName != "local" {
 		for _, s := range cfg.Servers {
 			if s.Name == serverName && s.Enabled {
@@ -7310,6 +7318,14 @@ func daemonAPIURL(cfg *config.Config) string {
 
 // daemonHTTPClient returns an http.Client with the appropriate auth header for the target server.
 func daemonHTTPClient(cfg *config.Config) (*http.Client, string) {
+	if serverURL != "" {
+		// -u/--url mode: use DATAWATCH_TOKEN env var if set, else local token.
+		tok := cfg.Server.Token
+		if ev := os.Getenv("DATAWATCH_TOKEN"); ev != "" {
+			tok = ev
+		}
+		return &http.Client{Timeout: 15 * time.Second}, tok
+	}
 	token := cfg.Server.Token
 	if serverName != "" && serverName != "local" {
 		for _, s := range cfg.Servers {
