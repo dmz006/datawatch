@@ -117,7 +117,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | T8 | MCP Surface | TS-070–TS-081 | 📋 planned |
 | T9 | Comms | TS-090–TS-103 | 📋 planned |
 | T10 | CLI Surface | TS-110–TS-121 | 📋 planned |
-| T11 | PWA (Chrome plugin) | TS-130–TS-143 | 🔴 REQUIRED (Chrome plugin available) |
+| T11 | PWA (Chrome CDP) | TS-130–TS-143 | ✅ Integrated (Chrome CDP + API fallback) |
 | T12 | Advanced Features | TS-150–TS-159 | 📋 planned |
 | T13 | Docker Simulation | TS-160–TS-167 | 📋 planned |
 | T14 | Kubernetes Deployment | TS-170–TS-177 | 📋 planned |
@@ -139,7 +139,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 |---|---|
 | `[surface:api]` | REST API surface |
 | `[surface:cli]` | CLI (datawatch subcommands) |
-| `[surface:pwa]` | PWA web app (Chrome plugin required) |
+| `[surface:pwa]` | PWA web app (Chrome headless CDP; fallback to API-only if Chrome unavailable) |
 | `[surface:mcp]` | MCP tool/resource/prompt surface |
 | `[surface:comms]` | Communication backends |
 | `[surface:docker]` | Docker deployment simulation |
@@ -176,7 +176,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | `[conflict:signal]` | ✅ runs automatically | Signal CLI available: account `+18435409771`, production group configured as default |
 | `[conflict:llm]` | ✅ runs automatically | Ollama at `http://datawatch:11434`, model `qwen3:1.7b` pulled; daemon wired in test config |
 | `[conflict:k8s]` | ✅ runs automatically | `kubectl --context=testing`, 3-node cluster; full deploy stories (TS-172/173/174/176) honest-skip (no container image) |
-| `[conflict:pwa]` | ⎈ separate agent | Chrome plugin available; T11 stories run by a browser automation agent, not by `run-tests.sh` |
+| `[conflict:pwa]` | opt-out | T11 tests run automatically via Chrome CDP (`pwa_cdp.py`); pass `--skip-conflict=pwa` to skip browser tests entirely |
 | `[conflict:db-write]` | ✅ runs automatically | Mutates test data dir only; cleaned up after every run |
 | `[conflict:keepassxc]` | ⛔ always skip | `keepassxc-cli` not installed on this machine |
 | `[conflict:op]` | ⛔ always skip | `op` (1Password CLI) not installed on this machine |
@@ -191,7 +191,7 @@ The following are explicitly excluded from automated runs. They are documented h
 - **ntfy** (`[conflict:ntfy]`): `TEST_NTFY_TOPIC` not set. TS-099 skips unless the env var is provided at runtime.
 - **Slack, Discord, Telegram, Matrix, Twilio, Email comm backends**: Not configured on this machine. T9 stubs for these backends always skip.
 - **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): No container image exists yet. These skip with an honest "no image" message; the namespace/configmap/probe-pod stories (TS-170, TS-171, TS-175, TS-177) do run.
-- **T11 PWA stories**: Run separately by a browser automation agent using `mcp__claude-in-chrome__*` tools; not included in `run-tests.sh`.
+- **T11 PWA stories**: Integrated into `run-tests.sh` via `pwa_cdp.py` (Chrome DevTools Protocol). Chrome headless auto-detected; API fallback per-test if Chrome unavailable. `--skip-conflict=pwa` suppresses all T11 tests.
 
 ---
 

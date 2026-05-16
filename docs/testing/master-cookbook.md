@@ -31,7 +31,7 @@ TEST_PORT_OFFSET=10 bash run-tests.sh &  # ports 18090/18453/18091/18443
 | Signal | Account `+18435409771`, group: `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`, config: `/home/dmz/.local/share/signal-cli` |
 | Kubernetes | `kubectl --context=testing` (3-node cluster) — use `import-kubectl-context.sh` to inject |
 | GitHub | Via local `gh` CLI authenticated to operator account; test repos created with random names + deleted on cleanup |
-| PWA testing | Chrome plugin (`mcp__claude-in-chrome__*`) — run separately, not via `run-tests.sh` |
+| PWA testing | Chrome headless via CDP (`pwa_cdp.py`) — auto-detected in `run-tests.sh`; falls back to API-only if Chrome unavailable |
 | KeePass | NOT AVAILABLE — `keepassxc-cli` not installed |
 | 1Password | NOT AVAILABLE — `op` CLI not installed |
 | ntfy | NOT AVAILABLE by default — set `TEST_NTFY_TOPIC` to enable TS-099 |
@@ -84,7 +84,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 - **ntfy** (`[conflict:ntfy]`): `TEST_NTFY_TOPIC` not set. TS-099 skips unless the env var is provided at runtime.
 - **Slack, Discord, Telegram, Matrix, Twilio, Email comm backends**: Not configured. T9 stubs always skip.
 - **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): Requires full Helm deployment workflow — skip in unit runs; namespace/configmap/probe-pod/configmap-shape stories (TS-170, TS-171, TS-175, TS-177) run normally against `kubectl --context=testing`.
-- **T11 PWA stories**: Run separately by a browser automation agent using `mcp__claude-in-chrome__*` — not included in `run-tests.sh`.
+- **T11 PWA stories**: Fully integrated into `run-tests.sh` via `pwa_cdp.py` (Chrome DevTools Protocol). Chrome headless starts automatically on port `CHROME_DEBUG_PORT` (default 19222). If Chrome is not available, each test falls back to an API-only assertion. Suppress with `--skip-conflict=pwa`.
 
 ---
 
