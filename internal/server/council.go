@@ -177,7 +177,12 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
-		writeJSONOK(w, map[string]any{"personas": s.councilOrch.Personas()})
+		// Return bare array for mobile client compat (#60); wrapped envelope removed.
+		personas := s.councilOrch.Personas()
+		if personas == nil {
+			personas = []council.Persona{}
+		}
+		writeJSONOK(w, personas)
 
 	case rest == "" && r.Method == http.MethodPost:
 		// Add a new persona — operator-defined name + role + system_prompt.
@@ -401,7 +406,11 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSONOK(w, map[string]any{"runs": runs})
+		// Return bare array for mobile client compat (#60).
+		if runs == nil {
+			runs = []*council.Run{}
+		}
+		writeJSONOK(w, runs)
 		return
 	}
 	if r.Method != http.MethodGet {

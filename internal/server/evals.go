@@ -61,7 +61,8 @@ func (s *Server) handleEvalsSuites(w http.ResponseWriter, r *http.Request) {
 			"case_count":     len(ss.Cases),
 		})
 	}
-	writeJSONOK(w, map[string]any{"suites": suites})
+	// Return bare array for mobile client compat (#60).
+	writeJSONOK(w, suites)
 }
 
 func (s *Server) handleEvalsRun(w http.ResponseWriter, r *http.Request) {

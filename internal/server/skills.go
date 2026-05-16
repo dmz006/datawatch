@@ -104,7 +104,12 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSONOK(w, map[string]any{"registries": s.skillsMgr.Store().ListRegistries()})
+			// Return bare array for mobile client compat (#60).
+			regs := s.skillsMgr.Store().ListRegistries()
+			if regs == nil {
+				regs = []*skills.Registry{}
+			}
+			writeJSONOK(w, regs)
 		case http.MethodPost:
 			var req skills.Registry
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -274,12 +279,18 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/skills")
 	rest = strings.TrimPrefix(rest, "/")
 
-	if rest == "" {
+	if rest == "" || rest == "synced" {
+		// "synced" is a mobile compat alias for GET /api/skills (#60).
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSONOK(w, map[string]any{"skills": s.skillsMgr.Store().ListSynced("")})
+		// Return bare array for mobile client compat (#60).
+		items := s.skillsMgr.Store().ListSynced("")
+		if items == nil {
+			items = []*skills.Synced{}
+		}
+		writeJSONOK(w, items)
 		return
 	}
 
