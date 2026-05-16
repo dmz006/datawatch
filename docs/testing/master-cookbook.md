@@ -4,9 +4,16 @@
 
 **Testing folder**: `../datawatch-testing/` (sibling of the `datawatch` repo, not inside it)
 - Script: `../datawatch-testing/run-tests.sh`
-- Data dir: `../datawatch-testing/.datawatch-test/` (isolated test daemon, never touches production)
+- Data dir: `../datawatch-testing/.datawatch-test-<hash>/` — unique per invocation (hash = shell PID); prevents parallel-run conflicts
 - Evidence: `../datawatch-testing/runs/YYYY-MM-DD-NNN/`
 - Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced from testing folder after each run)
+
+**Parallel run isolation**: Each invocation automatically gets a unique `TEST_RUN_HASH` (from `$$`) so data dirs don't collide. For full port isolation between parallel runs, set `TEST_PORT_OFFSET=<N>` (shifts all daemon ports by N) or override `TEST_BASE`/`TEST_TLS` directly:
+```bash
+# Two parallel runs on different port sets:
+TEST_PORT_OFFSET=0 bash run-tests.sh  &  # ports 18080/18443/18081/18433
+TEST_PORT_OFFSET=10 bash run-tests.sh &  # ports 18090/18453/18091/18443
+```
 
 **Monitor live**: Open the dashboard at `https://localhost:8443` — the **🔬 Smoke Run** card shows real-time progress while `release-smoke.sh` or `run-tests.sh` runs. The card polls `GET /api/smoke/progress` and shows a selectable list of run envelopes written to `~/.datawatch/smoke-runs/`. Add it via Edit → Add Card → Smoke Run.
 
@@ -76,7 +83,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 - **1Password backend** (`[conflict:op]`): `op` CLI not installed. TS-059 always skips.
 - **ntfy** (`[conflict:ntfy]`): `TEST_NTFY_TOPIC` not set. TS-099 skips unless the env var is provided at runtime.
 - **Slack, Discord, Telegram, Matrix, Twilio, Email comm backends**: Not configured. T9 stubs always skip.
-- **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): No container image yet. Honest-skip with a clear message; namespace/configmap/probe-pod stories (TS-170, TS-171, TS-175, TS-177) run normally.
+- **K8s full deployment** (TS-172, TS-173, TS-174, TS-176): Requires full Helm deployment workflow — skip in unit runs; namespace/configmap/probe-pod/configmap-shape stories (TS-170, TS-171, TS-175, TS-177) run normally against `kubectl --context=testing`.
 - **T11 PWA stories**: Run separately by a browser automation agent using `mcp__claude-in-chrome__*` — not included in `run-tests.sh`.
 
 ---

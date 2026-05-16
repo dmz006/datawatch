@@ -66,13 +66,13 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 | Decision | Choice |
 |---|---|
-| Isolation | Same host; custom data dir `.datawatch-test/` at repo root (gitignored); ports 18080/18443/18081/18433 |
+| Isolation | Same host; unique data dir `.datawatch-test-<hash>/` (hash = shell PID) prevents parallel-run conflicts; ports 18080/18443/18081/18433 |
 | Evidence | Structured JSON + screenshots saved to `docs/testing/v7.0.0/evidence/TS-NNN/` (gitignored) |
 | Organisation | T1–T10 native features, T11 PWA, T12 Advanced, T13 Docker simulation, T14 Kubernetes |
 | Comms scope | DNS (T9/full), Generic Webhook (T9/full), ntfy (T9/conditional — skip if `TEST_NTFY_TOPIC` unset), Signal (T9/full — production group at `+18435409771`, auto-runs) |
 | Comms future | Slack, Discord, Telegram, Matrix, Twilio, Email, GitHub Webhook — not configured on this machine; T9 future stubs, always skip |
-| Parallelism | Tag-based; single-thread now, parallel later via runner flag |
-| Cleanup | After every run: stop test daemon, remove `.datawatch-test/`, remove evidence/, remove all `test-*` resources |
+| Parallelism | Full isolation via `TEST_RUN_HASH` (data dir) + `TEST_PORT_OFFSET` (daemon ports); both auto-set per invocation |
+| Cleanup | After every run: stop test daemon, remove `.datawatch-test-<hash>/`, remove evidence/, remove all `test-*` resources |
 | Pass criteria | HTTP response matches expected shape (asserted via python3); CLI stdout matches pattern; PWA screenshot saved + no console errors |
 
 ---
@@ -81,12 +81,15 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 
 | Variable | Default | Description |
 |---|---|---|
-| `TEST_BASE` | `https://127.0.0.1:18443` | Base URL for test daemon |
+| `TEST_RUN_HASH` | `<pid>` (5-digit shell PID) | Unique suffix for data dir; auto-set per invocation for parallel-run safety |
+| `TEST_PORT_OFFSET` | `0` | Shift all daemon ports by N (e.g. `10` → 18090/18453/18091/18443); for full parallel isolation |
+| `TEST_BASE` | `http://127.0.0.1:18080` | Base URL for test daemon (HTTP) |
+| `TEST_TLS` | `https://127.0.0.1:18443` | TLS base URL |
 | `TEST_HTTP` | `http://127.0.0.1:18080` | HTTP (non-TLS) base |
 | `TEST_MCP_PORT` | `18081` | MCP SSE port |
 | `TEST_CHAN_PORT` | `18433` | Channel port |
 | `TEST_TOKEN` | `dw-test-token-12345` | Bearer token |
-| `TEST_DATA` | `.datawatch-test` | Data directory (relative to repo root) |
+| `TEST_DATA` | `.datawatch-test-<hash>` | Data directory (in testing folder, never inside repo) |
 | `TEST_BINARY` | `./bin/datawatch` | Path to daemon binary |
 | `TEST_SIGNAL_GROUP` | `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=` | Signal group ID for comm tests (production group) |
 | `TEST_NTFY_TOPIC` | *(unset)* | ntfy topic for comm tests — skip TS-099 if unset |
