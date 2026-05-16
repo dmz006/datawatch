@@ -235,9 +235,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)             // BL289 — Settings test button
 	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions) // issue #3
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics)              // BL12
-	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout) // BL303 card layout
-	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)    // BL303 smoke progress (list)
-	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)   // BL303 (detail + delete with sub-paths)
+	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout)         // BL303 card layout
+	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)            // BL303 smoke progress (list)
+	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)           // BL303 (detail + delete with sub-paths)
+	apiMux.HandleFunc("/api/dashboard/smoke-progress", api.handleSmokeProgress)  // #57 dashboard alias (POST/PUT write)
+	apiMux.HandleFunc("/api/dashboard/smoke-progress/", api.handleSmokeProgress) // #57 dashboard alias (sub-paths)
+	apiMux.HandleFunc("/api/dashboard/smoke-runs", api.handleSmokeProgress)      // #57 dashboard alias (GET list)
+	apiMux.HandleFunc("/api/dashboard/smoke-runs/", api.handleSmokeProgress)     // #57 dashboard alias (detail + DELETE)
 	apiMux.HandleFunc("/api/diagnose", api.handleDiagnose)   // BL37
 	apiMux.HandleFunc("/api/reload", api.handleReload)       // BL17
 	apiMux.HandleFunc("/api/ask", api.handleAsk)             // BL34

@@ -70,6 +70,34 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
+	case http.MethodPost, http.MethodPut:
+		// Write / update a smoke-run envelope.
+		// Body: JSON progress object with at least a "run_id" field.
+		// POST /api/smoke/progress        — upsert by run_id in body
+		// PUT  /api/smoke/progress/{id}   — upsert by path id
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		id := runID
+		if id == "" {
+			if v, ok := body["run_id"].(string); ok && v != "" {
+				id = v
+			}
+		}
+		if id == "" {
+			http.Error(w, "run_id required in body or path", http.StatusBadRequest)
+			return
+		}
+		data, _ := json.Marshal(body)
+		dest := filepath.Join(runsDir, id+".json")
+		if err := os.WriteFile(dest, data, 0644); err != nil {
+			http.Error(w, "write failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, map[string]any{"ok": true, "id": id})
+
 	case http.MethodDelete:
 		if runID != "" {
 			// Delete single run
