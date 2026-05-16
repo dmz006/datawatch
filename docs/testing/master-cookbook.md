@@ -213,6 +213,9 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T11 | TS-141 | PWA: Secrets panel renders | surface:pwa feature:pwa feature:secrets conflict:pwa | 📋 planned | — | — |
 | T11 | TS-142 | PWA: Plugins panel renders | surface:pwa feature:pwa feature:plugins conflict:pwa | 📋 planned | — | — |
 | T11 | TS-143 | PWA: Full page load no console errors | surface:pwa feature:pwa conflict:pwa | 📋 planned | — | — |
+| T11 | TS-144 | PWA: Dashboard panel renders smoke cards | surface:pwa feature:pwa feature:bootstrap conflict:pwa | 📋 planned | — | — |
+| T11 | TS-145 | PWA: LLM edit panel shows session field toggles | surface:pwa feature:pwa feature:config conflict:pwa | 📋 planned | — | — |
+| T11 | TS-146 | PWA: Guardrail library list renders | surface:pwa feature:pwa feature:automata conflict:pwa | 📋 planned | — | — |
 | T12 | TS-150 | Filters CRUD round-trip | surface:api feature:parity | 📋 planned | — | — |
 | T12 | TS-151 | Schedules CRUD round-trip | surface:api feature:parity | 📋 planned | — | — |
 | T12 | TS-152 | GET /api/observer/peers shape | surface:api feature:parity | 📋 planned | — | — |
@@ -385,6 +388,17 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T22 | TS-362 | Progress JSON has correct shape (version/started_at/active/sections/...) | surface:api feature:bootstrap | 📋 planned | — | — |
 | T22 | TS-363 | After smoke completes, active=false in progress JSON | surface:api feature:bootstrap | 📋 planned | — | — |
 | T22 | TS-364 | DELETE /api/smoke/progress removes file, next GET returns 204 | surface:api feature:bootstrap | 📋 planned | — | — |
+| T23 | TS-365 | POST /api/sessions/{id}/input sends text with Enter | surface:api feature:sessions | 📋 planned | — | — |
+| T23 | TS-366 | GET /api/autonomous/guardrails returns library array | surface:api feature:automata | 📋 planned | — | — |
+| T23 | TS-367 | POST /api/autonomous/guardrail-profiles creates profile | surface:api feature:automata | 📋 planned | — | — |
+| T23 | TS-368 | GET /api/autonomous/guardrail-profiles/{id} round-trip | surface:api feature:automata | 📋 planned | — | — |
+| T23 | TS-369 | PUT /api/autonomous/guardrail-profiles/{id} updates profile | surface:api feature:automata | 📋 planned | — | — |
+| T23 | TS-370 | DELETE /api/autonomous/guardrail-profiles/{id} returns 200 | surface:api feature:automata | 📋 planned | — | — |
+| T24 | TS-371 | LLM add with session fields round-trip | surface:api feature:config | 📋 planned | — | — |
+| T24 | TS-372 | LLM PATCH session field update | surface:api feature:config | 📋 planned | — | — |
+| T24 | TS-373 | datawatch secrets import github exits 0 | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
+| T24 | TS-374 | datawatch secrets import claude exits 0 | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
+| T24 | TS-375 | GET /api/sessions/{id}/telemetry returns shape | surface:api feature:sessions feature:automata | 📋 planned | — | — |
 
 ---
 
