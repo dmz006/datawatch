@@ -258,6 +258,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/identity", api.handleIdentity)                   // BL257 P1 v6.8.0 (GET/PUT/PATCH)
 	apiMux.HandleFunc("/api/algorithm", api.handleAlgorithm)                 // BL258 v6.9.0 (list)
 	apiMux.HandleFunc("/api/algorithm/", api.handleAlgorithm)                // BL258 v6.9.0 (per-session + actions)
+	apiMux.HandleFunc("/api/evals", api.handleEvalsCompat)                    // #42 compat: GET → { runs:[{id,name,status,score,created_at}] }
 	apiMux.HandleFunc("/api/evals/suites", api.handleEvalsSuites)            // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/evals/run", api.handleEvalsRun)                  // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/evals/runs", api.handleEvalsRuns)                // BL259 P1 v6.10.0

@@ -132,6 +132,40 @@ func (s *Server) handleEvalsRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, run)
 }
 
+// handleEvalsCompat — GET /api/evals
+// Returns { runs: [{id, name, status, score, created_at}] } matching the
+// field shape expected by the datawatch-app EvalsCard (#42).
+func (s *Server) handleEvalsCompat(w http.ResponseWriter, r *http.Request) {
+	if s.evalsRunner == nil {
+		writeJSONOK(w, map[string]any{"runs": []any{}})
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	runs, err := s.evalsRunner.ListRuns("", 50)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := make([]map[string]any, 0, len(runs))
+	for _, run := range runs {
+		status := "fail"
+		if run.Pass {
+			status = "pass"
+		}
+		out = append(out, map[string]any{
+			"id":         run.ID,
+			"name":       run.Suite,
+			"status":     status,
+			"score":      run.PassRate,
+			"created_at": run.StartedAt,
+		})
+	}
+	writeJSONOK(w, map[string]any{"runs": out})
+}
+
 func (s *Server) auditEvals(suite, runID, action string) {
 	if s.auditLog == nil {
 		return
