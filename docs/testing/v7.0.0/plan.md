@@ -3736,6 +3736,266 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 
 ---
 
+## T23 — Send Input + Guardrail Profiles (alpha.65)
+
+### TS-365 — POST /api/sessions/{id}/input sends text with Enter
+**Tags**: [surface:api] [feature:sessions]
+**Steps**:
+1. Create session via `POST /api/sessions/start`
+2. `POST /api/sessions/{id}/input {"text":"echo hello\n"}`
+3. Assert `sent: true` in response
+**Expected**: Input accepted and echoed to session; `sent: true` returned
+**Evidence**: `1_create.json`, `2_input.json`
+**Status**: 📋 planned
+
+---
+
+### TS-366 — GET /api/autonomous/guardrails returns library array
+**Tags**: [surface:api] [feature:guardrails]
+**Steps**:
+1. `GET /api/autonomous/guardrails`
+2. Assert response is an array (or `{guardrails:[...]}` shape)
+**Expected**: Guardrail library list returned (empty array acceptable)
+**Evidence**: `library.json`
+**Status**: 📋 planned
+
+---
+
+### TS-367 — POST /api/autonomous/guardrail-profiles creates profile
+**Tags**: [surface:api] [feature:guardrails]
+**Steps**:
+1. `POST /api/autonomous/guardrail-profiles {"name":"e2e-gp-<ts>","description":"E2E test profile","rules":[]}`
+2. Assert response contains `id` field
+3. Add to cleanup
+**Expected**: Profile created with unique ID returned
+**Evidence**: `create.json`
+**Status**: 📋 planned
+
+---
+
+### TS-368 — GET /api/autonomous/guardrail-profiles/{id} round-trip
+**Tags**: [surface:api] [feature:guardrails]
+**Steps**:
+1. Create profile via POST
+2. `GET /api/autonomous/guardrail-profiles/{id}`
+3. Assert response has `id` or `name` field matching creation
+**Expected**: Profile retrievable by ID after creation
+**Evidence**: `1_create.json`, `2_get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-369 — PUT /api/autonomous/guardrail-profiles/{id} updates profile
+**Tags**: [surface:api] [feature:guardrails]
+**Steps**:
+1. Create profile via POST
+2. `PUT /api/autonomous/guardrail-profiles/{id} {"name":"...","description":"updated","rules":[]}`
+3. Assert non-error response
+**Expected**: Profile updated; response contains updated description
+**Evidence**: `1_create.json`, `2_update.json`
+**Status**: 📋 planned
+
+---
+
+### TS-370 — DELETE /api/autonomous/guardrail-profiles/{id} returns 200
+**Tags**: [surface:api] [feature:guardrails]
+**Steps**:
+1. Create profile via POST
+2. `DELETE /api/autonomous/guardrail-profiles/{id}`
+3. Assert HTTP 200 or 204
+**Expected**: Profile deleted; subsequent GET returns 404
+**Evidence**: `1_create.json`, `2_delete.json`
+**Status**: 📋 planned
+
+---
+
+## T24 — LLM Session Fields + Telemetry (alpha.66)
+
+### TS-371 — LLM add with session fields round-trip
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. `POST /api/llms {"name":"e2e-llm-<ts>","backend":"claude-code","model":"claude-sonnet-4-5","session":{"system_prompt":"test"}}`
+2. Assert response contains `id`
+3. `GET /api/llms/{id}` — verify session fields present
+**Expected**: LLM with session fields created and retrievable
+**Evidence**: `1_create.json`, `2_get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-372 — LLM PATCH session field update
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. Create LLM via POST
+2. `PATCH /api/llms/{id} {"session":{"system_prompt":"updated-prompt"}}`
+3. `GET /api/llms/{id}` — assert session.system_prompt updated
+**Expected**: Session field patched and reflected in subsequent GET
+**Evidence**: `1_create.json`, `2_patch.json`, `3_get.json`
+**Status**: 📋 planned
+
+---
+
+### TS-373 — skip — secrets import github (requires external token)
+**Tags**: [surface:api] [feature:secrets] [conflict:github]
+**Steps**:
+1. Skip — requires valid GitHub personal access token
+**Expected**: SKIP
+**Evidence**: N/A
+**Status**: 📋 planned
+
+---
+
+### TS-374 — skip — secrets import claude (requires API key)
+**Tags**: [surface:api] [feature:secrets] [conflict:claude-api]
+**Steps**:
+1. Skip — requires valid Anthropic API key
+**Expected**: SKIP
+**Evidence**: N/A
+**Status**: 📋 planned
+
+---
+
+### TS-375 — GET /api/sessions/{id}/telemetry returns shape
+**Tags**: [surface:api] [feature:sessions]
+**Steps**:
+1. Create session via `POST /api/sessions/start`
+2. `GET /api/sessions/{id}/telemetry`
+3. Assert response has any shape (not 500)
+**Expected**: Telemetry endpoint responds with structured data or empty object
+**Evidence**: `1_create.json`, `2_telemetry.json`
+**Status**: 📋 planned
+
+---
+
+## T25 — LLM Enable, Evals, Memory, Push, Locale, Decompose (alpha.70)
+
+### TS-376 — LLM enable toggle skips pretest for session-backend kinds
+**Tags**: [surface:api] [feature:config]
+**Steps**:
+1. List LLMs via `GET /api/llms`
+2. Find a backend with `kind` in `["aider","goose","shell","claude-code","opencode"]`
+3. `POST /api/llms/{id}/enable` or `PUT /api/llms/{id} {"enabled":true}`
+4. Assert HTTP 200 (no pretest timeout)
+**Expected**: Enable succeeds without running inference pretest for session backends; fixes #46
+**Evidence**: `list.json`, `enable.json`
+**Status**: 📋 planned
+
+---
+
+### TS-377 — LLM enable toggle runs pretest for inference kinds
+**Tags**: [surface:api] [feature:config] [conflict:ollama]
+**Steps**:
+1. Skip if no ollama backend configured
+2. Find ollama/openwebui backend in LLM list
+3. `POST /api/llms/{id}/enable`
+4. Assert pretest runs (may take up to 30s) and returns result
+**Expected**: Enable runs inference pretest for ollama/openwebui; skip if ollama not available
+**Evidence**: `list.json`, `enable.json`
+**Status**: 📋 planned
+
+---
+
+### TS-378 — GET /api/evals returns {runs:[{id,name,status,score,created_at}]} shape
+**Tags**: [surface:api] [feature:evals]
+**Steps**:
+1. `GET /api/evals`
+2. Assert response is `{runs:[...]}` where each item has `id`, `name`, `status`, `score`, `created_at`
+3. Assert no 500 error
+**Expected**: Evals endpoint returns correct app-compat shape with all required fields; fixes #42
+**Evidence**: `evals.json`
+**Status**: 📋 planned
+
+---
+
+### TS-379 — GET /api/memory/search returns [] JSON (not 500) when embedder unavailable
+**Tags**: [surface:api] [feature:memory]
+**Steps**:
+1. `GET /api/memory/search?q=probe-379`
+2. Assert HTTP 200 with JSON array (not HTTP 500)
+3. Assert Content-Type: application/json
+**Expected**: Memory search returns empty array gracefully when embedder not configured; fixes #49
+**Evidence**: `search.json`, `headers.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-380 — skip — decompose effort timeout (requires local LLM)
+**Tags**: [surface:api] [feature:automata] [conflict:llm]
+**Steps**:
+1. Skip — requires local LLM (ollama) to run decompose within timeout
+**Expected**: SKIP — fixes #48 (when LLM available, decompose completes in < 120s)
+**Evidence**: N/A
+**Status**: 📋 planned
+
+---
+
+### TS-381 — GET /api/push/<topic> streams SSE events (ntfy-compat)
+**Tags**: [surface:api] [feature:push]
+**Steps**:
+1. `curl --max-time 2 $TEST_BASE/api/push/test-381` — check Content-Type header
+2. Assert Content-Type: text/event-stream
+**Expected**: Push subscribe endpoint returns SSE stream; fixes #39
+**Evidence**: `headers.txt`
+**Status**: 📋 planned
+
+---
+
+### TS-382 — POST /api/push/<topic> publishes event to subscribers
+**Tags**: [surface:api] [feature:push]
+**Steps**:
+1. `POST /api/push/test-382 {"message":"e2e-test"}`
+2. Assert response `ok: true`
+**Expected**: Publish endpoint accepts message and confirms delivery
+**Evidence**: `publish.json`
+**Status**: 📋 planned
+
+---
+
+### TS-383 — GET /.well-known/unifiedpush returns discovery doc with version:1
+**Tags**: [surface:api] [feature:push]
+**Steps**:
+1. `GET /.well-known/unifiedpush`
+2. Assert response is `{unifiedpush:{version:1,...}}`
+**Expected**: UnifiedPush discovery document served with version:1
+**Evidence**: `wellknown.json`
+**Status**: 📋 planned
+
+---
+
+### TS-384 — POST /api/push/register stores endpoint idempotent by client_id
+**Tags**: [surface:api] [feature:push]
+**Steps**:
+1. `POST /api/push/register {"client_id":"e2e-client-<ts>","endpoint":"https://push.example.com/notify/<ts>"}`
+2. Assert response `ok: true` and `client_id` present
+3. Re-register same client_id — assert idempotent (no 500)
+**Expected**: Registration succeeds; duplicate registration is idempotent
+**Evidence**: `register.json`, `register2.json`
+**Status**: 📋 planned
+
+---
+
+### TS-385 — PWA /locales/en.json loads 200 with >100 keys
+**Tags**: [surface:pwa] [feature:locale]
+**Steps**:
+1. `GET /locales/en.json`
+2. Assert HTTP 200
+3. Assert JSON object has > 100 keys
+**Expected**: English locale bundle fully populated; verifies #32
+**Evidence**: `en.json`
+**Status**: 📋 planned
+
+---
+
+### TS-386 — skip — PWA locale switcher (requires browser automation)
+**Tags**: [surface:pwa] [feature:locale] [conflict:browser]
+**Steps**:
+1. Skip — requires browser automation (Playwright or claude-in-chrome)
+**Expected**: SKIP — PWA locale switcher covered by manual/browser test run
+**Evidence**: N/A
+**Status**: 📋 planned
+
+---
+
 ## 6. Evidence Policy
 
 ```
