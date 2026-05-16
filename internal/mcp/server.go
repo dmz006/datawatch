@@ -556,6 +556,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolToolingStatus(), tracked(s.handleToolingStatus))
 	mcpSrv.AddTool(s.toolToolingGitignore(), tracked(s.handleToolingGitignore))
 	mcpSrv.AddTool(s.toolToolingCleanup(), tracked(s.handleToolingCleanup))
+	// #57/#58 — dashboard card layout CRUD.
+	mcpSrv.AddTool(s.toolDashboardConfigGet(), tracked(s.handleDashboardConfigGetMCP))
+	mcpSrv.AddTool(s.toolDashboardCardsList(), tracked(s.handleDashboardCardsListMCP))
+	mcpSrv.AddTool(s.toolDashboardCardUpdate(), tracked(s.handleDashboardCardUpdateMCP))
+	mcpSrv.AddTool(s.toolDashboardCardAdd(), tracked(s.handleDashboardCardAddMCP))
+	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
 
 	s.srv = mcpSrv
 	return s

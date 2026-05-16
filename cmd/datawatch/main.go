@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.74"
+var Version = "7.0.0-alpha.75"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -311,6 +311,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
+		newDashboardCmd(),  // #57/#58 — dashboard card layout CRUD
 	)
 
 	if err := root.Execute(); err != nil {
