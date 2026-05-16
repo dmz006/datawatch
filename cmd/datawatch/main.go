@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.60"
+var Version = "7.0.0-alpha.61"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -192,12 +192,18 @@ func claudeDisclaimerResponse(line string) string {
 		strings.Contains(lower, "quick safety check"),
 		strings.Contains(lower, "yes, i trust"):
 		return "1\n"
+	case strings.Contains(lower, "yes, i accept"):
+		// bypass-permissions disclaimer: "2. Yes, I accept" is option 2.
+		// Sending "2\n" selects it. Unique to the bypassPermissions flow.
+		return "2\n"
 	case strings.Contains(lower, "enter to confirm"),
 		strings.Contains(lower, "esc to cancel"),
 		strings.Contains(lower, "i am using this for local development"),
 		strings.Contains(lower, "loading development channels"):
-		// "Enter to confirm · Esc to cancel" appears after option 1 is
-		// already highlighted; pressing Enter accepts the pre-selected choice.
+		// "Enter to confirm · Esc to cancel" footer. For folder-trust the
+		// pre-selected option is "Yes, I trust" (Enter accepts). For the
+		// bypass-permissions disclaimer the pre-selected option is "No, exit"
+		// — handled above by matching "yes, i accept" first.
 		return "\n"
 	}
 	return ""

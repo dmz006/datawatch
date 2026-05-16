@@ -166,6 +166,8 @@ var promptPatterns = []string{
 	"Would you like", "Proceed?", "[A]llow", "[D]eny",
 	// claude-code folder trust (numbered menu)
 	"Yes, I trust", "No, exit", "trust this folder", "Quick safety check",
+	// claude-code bypassPermissions disclaimer ("2. Yes, I accept")
+	"Yes, I accept",
 	"Is this a project", "1. Yes", "2. No",
 	// generic numbered menu
 	"❯ 1.", "❯ 2.",
