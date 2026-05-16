@@ -216,6 +216,11 @@ func (s *Server) handleLLMEnabledToggle(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	pretest := body.Pretest == nil || *body.Pretest
+	// Session-backend kinds (aider, goose, gemini, shell, claude-code …)
+	// have no inference adapter — skip pretest, enable directly (#46).
+	if pretest && inference.IsSessionBackendKind(llm.Kind) {
+		pretest = false
+	}
 	if body.Enabled && pretest && s.inferenceDisp != nil {
 		// Pretest before flipping enabled.
 		timeout := inference.ResolveTimeout(llm)

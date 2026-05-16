@@ -200,6 +200,18 @@ func isCloudKind(k Kind) bool {
 	return k == KindClaude
 }
 
+// IsSessionBackendKind returns true for coding-agent kinds that run in a
+// tmux session and have no inference adapter (#46). Callers (e.g. the
+// enable-pretest path) skip dispatcher.Call for these kinds.
+func IsSessionBackendKind(k Kind) bool {
+	switch k {
+	case KindClaudeCode, KindOpenCodeACP, KindOpenCodePrompt,
+		KindAider, KindGoose, KindGemini, KindShell:
+		return true
+	}
+	return false
+}
+
 // ResolveModel picks the effective model name for a call.
 func ResolveModel(llm *LLM, req Request) string {
 	if req.ModelOverride != "" {

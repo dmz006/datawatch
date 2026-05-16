@@ -405,6 +405,17 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T24 | TS-373 | datawatch secrets import github exits 0 | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
 | T24 | TS-374 | datawatch secrets import claude exits 0 | surface:cli feature:cli feature:secrets | 📋 planned | — | — |
 | T24 | TS-375 | GET /api/sessions/{id}/telemetry returns shape | surface:api feature:sessions feature:automata | 📋 planned | — | — |
+| T25 | TS-376 | LLM enable toggle skips pretest for session-backend kinds (aider/goose/shell) | surface:api feature:config | 📋 planned | — | — |
+| T25 | TS-377 | LLM enable toggle runs pretest for inference kinds (ollama/openwebui) | surface:api feature:config | 📋 planned | — | — |
+| T25 | TS-378 | GET /api/evals returns {runs:[{id,name,status,score,created_at}]} shape | surface:api feature:evals | 📋 planned | — | — |
+| T25 | TS-379 | GET /api/memory/search returns [] JSON (not 500) when embedder unavailable | surface:api feature:memory | 📋 planned | — | — |
+| T25 | TS-380 | POST /api/autonomous/prds/{id}/decompose respects effort timeout (high→15min) | surface:api feature:automata conflict:llm | 📋 planned | — | — |
+| T25 | TS-381 | GET /api/push/<topic> streams SSE events (ntfy-compat) | surface:api feature:push | 📋 planned | — | — |
+| T25 | TS-382 | POST /api/push/<topic> publishes event to subscribers | surface:api feature:push | 📋 planned | — | — |
+| T25 | TS-383 | GET /.well-known/unifiedpush returns discovery doc with version:1 | surface:api feature:push | 📋 planned | — | — |
+| T25 | TS-384 | POST /api/push/register stores endpoint idempotent by client_id | surface:api feature:push | 📋 planned | — | — |
+| T25 | TS-385 | PWA /locales/en.json, de.json, es.json, fr.json, ja.json all load 200 | surface:pwa feature:locale | 📋 planned | — | — |
+| T25 | TS-386 | PWA locale switcher persists selection and reloads with translated strings | surface:pwa feature:locale | 📋 planned | — | — |
 
 ---
 
