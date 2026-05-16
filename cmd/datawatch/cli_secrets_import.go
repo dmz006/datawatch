@@ -23,12 +23,14 @@ import (
 func newSecretsImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Import external credentials into secrets store (Phase 2)",
+		Short: "Import external credentials into secrets store",
 	}
 	cmd.AddCommand(newSecretsImportKubectlCmd())
 	cmd.AddCommand(newSecretsImportClaudeCmd())
 	cmd.AddCommand(newSecretsImportGithubCmd())
 	cmd.AddCommand(newSecretsImportSSHCmd())
+	cmd.AddCommand(newSecretsImportOpenAICmd())
+	cmd.AddCommand(newSecretsImportGeminiCmd())
 	return cmd
 }
 
@@ -216,5 +218,105 @@ func newSecretsImportSSHCmd() *cobra.Command {
 
 	c.Flags().StringVar(&keyPath, "key-path", "", "Path to SSH public key file (required, e.g. ~/.ssh/id_rsa.pub)")
 	c.Flags().StringVar(&secretName, "name", "", "Secret name in store (default: ssh-test-pubkey)")
+	return c
+}
+
+// newSecretsImportOpenAICmd imports an OpenAI-compatible API key from environment.
+//
+// Covers: memory embeddings (memory.openai_key), aider backend, any
+// OpenAI-compat LLM configured with api_key_ref: ${secret:openai-api-key}.
+//
+// Usage:
+//	export OPENAI_API_KEY=sk-...
+//	datawatch secrets import openai --from-env OPENAI_API_KEY
+//	datawatch secrets import openai --from-env GROQ_API_KEY --name groq-api-key
+func newSecretsImportOpenAICmd() *cobra.Command {
+	var fromEnv string
+	var secretName string
+
+	c := &cobra.Command{
+		Use:   "openai",
+		Short: "Import OpenAI-compatible API key from environment variable",
+		Long: `Import an OpenAI-compatible API key into the secrets store.
+
+Covers: memory embeddings (memory.openai_key), aider backend (OPENAI_API_KEY),
+and any LLM registered with api_key_ref: ${secret:<name>}.
+
+Also works for OpenAI-compatible providers (Groq, Together AI, Mistral, etc.)
+by using --from-env with their respective env var and --name for a distinct key.`,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if fromEnv == "" {
+				return fmt.Errorf("--from-env is required (e.g. OPENAI_API_KEY)")
+			}
+
+			apiKey := os.Getenv(fromEnv)
+			if apiKey == "" {
+				return fmt.Errorf("environment variable %s is not set", fromEnv)
+			}
+
+			if secretName == "" {
+				secretName = "openai-api-key"
+			}
+
+			return daemonJSON(http.MethodPost, "/api/secrets", map[string]any{
+				"name":        secretName,
+				"value":       apiKey,
+				"tags":        []string{"llm", "openai", "openai-compat"},
+				"description": fmt.Sprintf("OpenAI-compatible API key from $%s", fromEnv),
+			})
+		},
+	}
+
+	c.Flags().StringVar(&fromEnv, "from-env", "", "Environment variable containing API key (required, e.g. OPENAI_API_KEY)")
+	c.Flags().StringVar(&secretName, "name", "", "Secret name in store (default: openai-api-key)")
+	return c
+}
+
+// newSecretsImportGeminiCmd imports a Gemini API key from environment.
+//
+// The Gemini CLI binary reads GEMINI_API_KEY (or GOOGLE_GENERATIVE_AI_API_KEY
+// as an alias). Once stored, inject at session spawn via AgentSettings or by
+// extending spawn env injection to include this secret.
+//
+// Usage:
+//	export GEMINI_API_KEY=AIza...
+//	datawatch secrets import gemini --from-env GEMINI_API_KEY
+func newSecretsImportGeminiCmd() *cobra.Command {
+	var fromEnv string
+	var secretName string
+
+	c := &cobra.Command{
+		Use:   "gemini",
+		Short: "Import Gemini API key from environment variable",
+		Long: `Import a Gemini API key into the secrets store.
+
+The Gemini CLI backend reads GEMINI_API_KEY (alias: GOOGLE_GENERATIVE_AI_API_KEY).
+Once stored, reference it via ${secret:gemini-api-key} in config or inject it
+at session spawn time through AgentSettings env extension.`,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if fromEnv == "" {
+				return fmt.Errorf("--from-env is required (e.g. GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY)")
+			}
+
+			apiKey := os.Getenv(fromEnv)
+			if apiKey == "" {
+				return fmt.Errorf("environment variable %s is not set", fromEnv)
+			}
+
+			if secretName == "" {
+				secretName = "gemini-api-key"
+			}
+
+			return daemonJSON(http.MethodPost, "/api/secrets", map[string]any{
+				"name":        secretName,
+				"value":       apiKey,
+				"tags":        []string{"llm", "gemini", "google"},
+				"description": fmt.Sprintf("Gemini API key from $%s (GEMINI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY)", fromEnv),
+			})
+		},
+	}
+
+	c.Flags().StringVar(&fromEnv, "from-env", "", "Environment variable containing API key (required, e.g. GEMINI_API_KEY)")
+	c.Flags().StringVar(&secretName, "name", "", "Secret name in store (default: gemini-api-key)")
 	return c
 }
