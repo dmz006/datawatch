@@ -15,11 +15,9 @@ bash scripts/run-tests.sh
 
 ### With Kubernetes Tests
 ```bash
-# 1. Import kubectl context
-./scripts/import-kubectl-context.sh \
-  --context=testing \
-  --target-daemon=http://localhost:18080 \
-  --token=dw-test-token-12345
+# 1. Export kubectl context to secrets (future: datawatch secrets import kubectl)
+kubectl config view --context=testing --flatten | \
+  datawatch --config .datawatch-test/config.yaml secrets set k8s-context-testing "$(cat)" --tags test,k8s
 
 # 2. Run tests
 bash scripts/run-tests.sh
@@ -181,31 +179,30 @@ claude:
 
 ## Kubernetes Context Import
 
-### Step 1: Export Context to Secrets
+### Via CLI (Recommended)
 
 ```bash
-./scripts/import-kubectl-context.sh \
-  --context=testing \
-  --target-daemon=http://localhost:18080 \
-  --token=dw-test-token-12345
+# Export kubectl context to secrets
+kubectl config view --context=testing --flatten | \
+  datawatch --config .datawatch-test/config.yaml secrets set k8s-context-testing "$(cat)" --tags test,k8s
+
+# Verify stored
+datawatch --config .datawatch-test/config.yaml secrets get k8s-context-testing
 ```
 
-This:
-1. Exports kubectl context to JSON
-2. POSTs to test daemon's `/api/secrets`
-3. Stores as `k8s-context-testing`
-
-### Step 2: Use in Tests
+### Use in Tests
 
 ```bash
 # Retrieve kubeconfig from secrets
 KUBECONFIG=/tmp/kubeconfig-test
-api GET /api/secrets/k8s-context-testing > "$KUBECONFIG"
+cli_test secrets get k8s-context-testing > "$KUBECONFIG"
 export KUBECONFIG
 
-# Now kubectl commands target test daemon's K8s context
+# Now kubectl commands work
 kubectl get pods
 ```
+
+**Future**: Planned `datawatch secrets import kubectl --context=testing` subcommand.
 
 ---
 
@@ -213,23 +210,24 @@ kubectl get pods
 
 For tests that need SSH authentication:
 
-```bash
-./scripts/export-ssh-pubkey.sh \
-  --key-path=$HOME/.ssh/id_rsa.pub \
-  --target-daemon=http://localhost:18080 \
-  --token=dw-test-token-12345
-```
+### Via CLI (Recommended)
 
-This:
-1. Reads SSH public key
-2. POSTs to test daemon's `/api/secrets`
-3. Stores as `ssh-test-pubkey`
+```bash
+# Store SSH public key in secrets
+datawatch --config .datawatch-test/config.yaml secrets set ssh-test-pubkey "$(cat ~/.ssh/id_rsa.pub)" --tags test,ssh
+
+# Verify stored
+datawatch --config .datawatch-test/config.yaml secrets get ssh-test-pubkey
+```
 
 Usage in test code:
 ```bash
-pubkey=$(api GET /api/secrets/ssh-test-pubkey | jq -r '.value')
+# Retrieve public key from secrets
+pubkey=$(cli_test secrets get ssh-test-pubkey)
 echo "$pubkey" >> ~/.ssh/authorized_keys
 ```
+
+**Future**: Planned `datawatch secrets import ssh --key-path ~/.ssh/id_rsa.pub` subcommand.
 
 ---
 
@@ -282,10 +280,9 @@ tail -50 .datawatch-test/daemon.log | grep -i claude
 
 ### Files Modified
 
-- `scripts/run-tests.sh` — Added credential injection, PID validation, GitHub repo creation
-- `scripts/import-kubectl-context.sh` — New utility for K8s context import
-- `scripts/import-claude-credentials.sh` — New utility for Claude API key import
-- `scripts/export-ssh-pubkey.sh` — New utility for SSH key export
+- `scripts/run-tests.sh` — Added PID validation, GitHub repo creation, credential injection via `datawatch secrets set` CLI
+- `datawatch secrets set` CLI — Used for all credential storage (existing, no changes)
+- **Planned**: `datawatch secrets import` subcommands (kubectl, claude, github, ssh) for Phase 2
 
 ### Environment Variables
 

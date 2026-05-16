@@ -879,22 +879,22 @@ _create_test_repo() {
   fi
 }
 
-# Setup test credentials in secrets manager
+# Setup test credentials in secrets manager via CLI (not shell scripts)
 _setup_test_secrets() {
   # GitHub PAT (if available)
   if gh auth status &>/dev/null; then
     local gh_token
     gh_token=$(gh auth token 2>/dev/null) || gh_token=""
     if [[ -n "$gh_token" ]]; then
-      api POST /api/secrets '{"name":"test-github-pat","value":"'"$gh_token"'","tags":"test,github","scopes":"test:*"}' >/dev/null 2>&1
-      echo "test:test-github-pat" >> "$CLEANUP_LOG"
+      cli_test secrets set test-github-pat "$gh_token" --tags test,github --scope "test:*" >/dev/null 2>&1
+      echo "secret:test-github-pat" >> "$CLEANUP_LOG"
     fi
   fi
 
   # Claude API key (if provided via env)
   if [[ -n "$CLAUDE_API_KEY" ]]; then
-    api POST /api/secrets '{"name":"claude-test-api-key","value":"'"$CLAUDE_API_KEY"'","tags":"test,claude","scopes":"test:*"}' >/dev/null 2>&1
-    echo "test:claude-test-api-key" >> "$CLEANUP_LOG"
+    cli_test secrets set claude-test-api-key "$CLAUDE_API_KEY" --tags test,claude --scope "test:*" >/dev/null 2>&1
+    echo "secret:claude-test-api-key" >> "$CLEANUP_LOG"
   fi
 }
 
@@ -999,14 +999,23 @@ cleanup_all() {
     fi
   fi
 
-  # Cleanup created GitHub repos (from CLEANUP_LOG)
+  # Cleanup created GitHub repos and secrets (from CLEANUP_LOG)
   if [[ -s "$CLEANUP_LOG" ]]; then
+    # Cleanup repos
     grep "^repo:" "$CLEANUP_LOG" | cut -d: -f2 | while read -r repo; do
       if [[ -n "$repo" ]] && command -v gh &>/dev/null; then
         echo "  Deleting test repository: $repo"
         gh repo delete "$repo" --confirm 2>/dev/null || echo "    WARNING: failed to delete repo $repo"
       fi
     done
+    # Cleanup secrets via CLI
+    if [[ -n "$DAEMON_PID" ]] && _validate_test_daemon_pid "$DAEMON_PID" 18080; then
+      grep "^secret:" "$CLEANUP_LOG" | cut -d: -f2 | while read -r secret_name; do
+        if [[ -n "$secret_name" ]]; then
+          cli_test secrets delete "$secret_name" >/dev/null 2>&1 && echo "  deleted secret $secret_name" || true
+        fi
+      done
+    fi
   fi
 
   # Remove data directories
