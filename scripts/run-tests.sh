@@ -519,6 +519,12 @@ api_code() {
   fi
 }
 
+# cli_test — run datawatch CLI command against test daemon (ISOLATED)
+# All test CLI commands MUST use this to avoid accidentally killing the production daemon
+cli_test() {
+  "$TEST_BINARY" --config "$TEST_DATA/config.yaml" "$@"
+}
+
 # ---------------------------------------------------------------------------
 # Evidence helpers
 # ---------------------------------------------------------------------------
@@ -743,9 +749,12 @@ write_test_config() {
   local token="${6:-$TEST_TOKEN}"
 
   mkdir -p "$data_dir"
-  cat > "$data_dir/config.yaml" <<EOF
+
+  cat > "$data_dir/config.yaml" <<'EOF'
 data_dir: "$data_dir"
 server:
+  enabled: true
+  host: 127.0.0.1
   port: $port
   tls_port: $tls_port
   token: "$token"
@@ -777,6 +786,17 @@ comm:
     group_id: YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=
     config_dir: /home/dmz/.local/share/signal-cli
 EOF
+
+  # Inject Claude section if API key is available (for major releases)
+  if [[ -n "$CLAUDE_API_KEY" ]]; then
+    cat >> "$data_dir/config.yaml" <<'EOF'
+claude:
+  enabled: true
+  api_key_ref: ${secret:claude-test-api-key}
+  model: claude-haiku-4-5-20251001
+  default_effort: quick
+EOF
+  fi
 }
 
 start_mock_channel_server() {
@@ -797,6 +817,87 @@ server.serve_forever()
 " 2>/dev/null &
 }
 
+# Validate that a PID is the test daemon (not production) before killing
+# Returns 0 if valid, 1 otherwise
+_validate_test_daemon_pid() {
+  local pid="$1"
+  local expected_port="${2:-18080}"
+
+  # Check if PID exists
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 1
+  fi
+
+  # On macOS, use lsof; on Linux, use both lsof and /proc
+  if command -v lsof &>/dev/null; then
+    if lsof -p "$pid" 2>/dev/null | grep -q "TCP.*:$expected_port (LISTEN)"; then
+      return 0
+    fi
+  fi
+
+  # Fallback: check /proc on Linux
+  if [[ -d "/proc/$pid/fd" ]]; then
+    # Check if any socket file descriptor is bound to the expected port
+    for fd in /proc/$pid/fd/*; do
+      if [[ -L "$fd" ]] && readlink "$fd" 2>/dev/null | grep -q "socket"; then
+        return 0
+      fi
+    done
+  fi
+
+  return 1
+}
+
+# Create random private GitHub test repo via gh CLI
+# Returns repo name on success, exits with error on failure
+_create_test_repo() {
+  local timestamp=$(date +%s)
+  local repo_name="datawatch-test-${timestamp}"
+
+  # Verify gh is available and authenticated
+  if ! command -v gh &>/dev/null; then
+    echo "  WARNING: gh CLI not available, skipping GitHub test repo creation"
+    return 1
+  fi
+
+  if ! gh auth status &>/dev/null; then
+    echo "  WARNING: gh not authenticated, skipping GitHub test repo creation"
+    return 1
+  fi
+
+  echo ""
+  echo "  Creating test repository: $repo_name"
+
+  # Create private repo with minimal structure
+  if gh repo create "$repo_name" --private --source=. --remote=origin --push 2>&1 | head -5; then
+    echo "  repo:$repo_name" >> "$CLEANUP_LOG"
+    echo "$repo_name"
+    return 0
+  else
+    echo "  WARNING: failed to create test repository"
+    return 1
+  fi
+}
+
+# Setup test credentials in secrets manager
+_setup_test_secrets() {
+  # GitHub PAT (if available)
+  if gh auth status &>/dev/null; then
+    local gh_token
+    gh_token=$(gh auth token 2>/dev/null) || gh_token=""
+    if [[ -n "$gh_token" ]]; then
+      api POST /api/secrets '{"name":"test-github-pat","value":"'"$gh_token"'","tags":"test,github","scopes":"test:*"}' >/dev/null 2>&1
+      echo "test:test-github-pat" >> "$CLEANUP_LOG"
+    fi
+  fi
+
+  # Claude API key (if provided via env)
+  if [[ -n "$CLAUDE_API_KEY" ]]; then
+    api POST /api/secrets '{"name":"claude-test-api-key","value":"'"$CLAUDE_API_KEY"'","tags":"test,claude","scopes":"test:*"}' >/dev/null 2>&1
+    echo "test:claude-test-api-key" >> "$CLEANUP_LOG"
+  fi
+}
+
 start_test_daemon() {
   echo ""
   echo "== Starting test daemon =="
@@ -810,7 +911,7 @@ start_test_daemon() {
   "$TEST_BINARY" start --foreground --config "$TEST_DATA/config.yaml" --port 18080 \
     > "$TEST_DATA/daemon.log" 2>&1 &
   DAEMON_PID=$!
-  echo "  Daemon PID: $DAEMON_PID"
+  echo "  Daemon PID: $DAEMON_PID (port 18080)"
 
   # Wait for health on HTTP port (TLS cert generation happens async)
   local attempts=0
@@ -820,6 +921,13 @@ start_test_daemon() {
       ver=$(curl -s --max-time 3 "$TEST_HTTP/api/health" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version","?"))' 2>/dev/null)
       echo "  Daemon ready: version=$ver (HTTP :18080)"
       DAEMON_VERSION="$ver"
+
+      # Setup test secrets (GitHub PAT, Claude API key, etc.)
+      _setup_test_secrets
+
+      # Create test GitHub repository for GitHub integration tests
+      _create_test_repo || true
+
       return 0
     fi
     sleep 1
@@ -880,11 +988,25 @@ cleanup_all() {
     wait "$CHANNEL_PID" 2>/dev/null || true
   fi
 
-  # Stop test daemon
+  # Stop test daemon (with PID validation)
   if [[ -n "$DAEMON_PID" ]]; then
-    kill "$DAEMON_PID" 2>/dev/null || true
-    wait "$DAEMON_PID" 2>/dev/null || true
-    echo "  stopped test daemon (PID $DAEMON_PID)"
+    if _validate_test_daemon_pid "$DAEMON_PID" 18080; then
+      kill "$DAEMON_PID" 2>/dev/null || true
+      wait "$DAEMON_PID" 2>/dev/null || true
+      echo "  stopped test daemon (PID $DAEMON_PID, port 18080)"
+    else
+      echo "  WARNING: PID $DAEMON_PID is not test daemon on port 18080, NOT killing"
+    fi
+  fi
+
+  # Cleanup created GitHub repos (from CLEANUP_LOG)
+  if [[ -s "$CLEANUP_LOG" ]]; then
+    grep "^repo:" "$CLEANUP_LOG" | cut -d: -f2 | while read -r repo; do
+      if [[ -n "$repo" ]] && command -v gh &>/dev/null; then
+        echo "  Deleting test repository: $repo"
+        gh repo delete "$repo" --confirm 2>/dev/null || echo "    WARNING: failed to delete repo $repo"
+      fi
+    done
   fi
 
   # Remove data directories
@@ -2316,7 +2438,7 @@ run_t9() {
 
 t10_ts110_version() {
   local out
-  out=$("$TEST_BINARY" version 2>&1 || true)
+  out=$(cli_test version 2>&1 || true)
   save_evidence TS-110 "version.txt" "$out"
   if echo "$out" | grep -qE "v[0-9]+\.[0-9]+"; then
     ok "datawatch version: $out"
@@ -2327,7 +2449,7 @@ t10_ts110_version() {
 
 t10_ts112_sessions_list() {
   local out
-  out=$("$TEST_BINARY" sessions list 2>&1 || true)
+  out=$(cli_test sessions list 2>&1 || true)
   save_evidence TS-112 "sessions.txt" "$out"
   if [[ $? -eq 0 ]] || echo "$out" | grep -qE "NAME|session|ID|list"; then
     ok "datawatch sessions list returned output"
@@ -2338,7 +2460,7 @@ t10_ts112_sessions_list() {
 
 t10_ts117_update_check() {
   local out
-  out=$("$TEST_BINARY" update --check 2>&1 || true)
+  out=$(cli_test update --check 2>&1 || true)
   save_evidence TS-117 "update_check.txt" "$out"
   if echo "$out" | grep -qiE "up.to.date|update.available|current|latest"; then
     ok "update --check returns status without installing"
@@ -2349,7 +2471,7 @@ t10_ts117_update_check() {
 
 t10_ts111_status() {
   local out
-  out=$("$TEST_BINARY" status 2>&1 || true)
+  out=$(cli_test status 2>&1 || true)
   save_evidence TS-111 "status.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch status returned output: $(echo "$out" | head -c 100)"
@@ -2372,7 +2494,7 @@ print(",".join(have))
     return
   fi
   local out
-  out=$("$TEST_BINARY" sessions start --backend shell --task "e2e-cli-session-$$" 2>&1 || true)
+  out=$(cli_test sessions start --backend shell --task "e2e-cli-session-$$" 2>&1 || true)
   save_evidence TS-113 "start.txt" "$out"
   if echo "$out" | grep -qiE "started|session|id|created"; then
     ok "datawatch sessions start output: $(echo "$out" | head -c 100)"
@@ -2392,8 +2514,8 @@ t10_ts114_sessions_stop() {
     return
   fi
   local out
-  out=$("$TEST_BINARY" sessions stop --id "$sid" 2>&1 || \
-        "$TEST_BINARY" sessions kill --id "$sid" 2>&1 || true)
+  out=$(cli_test sessions stop --id "$sid" 2>&1 || \
+        cli_test sessions kill --id "$sid" 2>&1 || true)
   save_evidence TS-114 "stop.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch sessions stop returned: $(echo "$out" | head -c 100)"
@@ -2407,8 +2529,8 @@ t10_ts114_sessions_stop() {
 
 t10_ts115_config_get_cli() {
   local out
-  out=$("$TEST_BINARY" config get 2>&1 || \
-        "$TEST_BINARY" config 2>&1 || true)
+  out=$(cli_test config get 2>&1 || \
+        cli_test config 2>&1 || true)
   save_evidence TS-115 "config_get.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch config get returned output"
@@ -2419,8 +2541,8 @@ t10_ts115_config_get_cli() {
 
 t10_ts116_config_set_cli() {
   local out
-  out=$("$TEST_BINARY" config set --key session.skip_permissions --value true 2>&1 || \
-        "$TEST_BINARY" config set session.skip_permissions true 2>&1 || true)
+  out=$(cli_test config set --key session.skip_permissions --value true 2>&1 || \
+        cli_test config set session.skip_permissions true 2>&1 || true)
   save_evidence TS-116 "config_set.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch config set returned: $(echo "$out" | head -c 100)"
@@ -2431,7 +2553,7 @@ t10_ts116_config_set_cli() {
 
 t10_ts118_plugins_list() {
   local out
-  out=$("$TEST_BINARY" plugins list 2>&1 || true)
+  out=$(cli_test plugins list 2>&1 || true)
   save_evidence TS-118 "plugins.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch plugins list returned output"
@@ -2442,8 +2564,8 @@ t10_ts118_plugins_list() {
 
 t10_ts119_secrets_list_cli() {
   local out
-  out=$("$TEST_BINARY" secrets list 2>&1 || \
-        "$TEST_BINARY" secret list 2>&1 || true)
+  out=$(cli_test secrets list 2>&1 || \
+        cli_test secret list 2>&1 || true)
   save_evidence TS-119 "secrets_list.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch secrets list returned output"
@@ -2454,8 +2576,8 @@ t10_ts119_secrets_list_cli() {
 
 t10_ts120_agents_list_cli() {
   local out
-  out=$("$TEST_BINARY" agents list 2>&1 || \
-        "$TEST_BINARY" agent list 2>&1 || true)
+  out=$(cli_test agents list 2>&1 || \
+        cli_test agent list 2>&1 || true)
   save_evidence TS-120 "agents_list.txt" "$out"
   if [[ -n "$out" ]]; then
     ok "datawatch agents list returned output"

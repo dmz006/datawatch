@@ -8,17 +8,59 @@
 
 ## Test Environment
 
+### Infrastructure
+
 | Component | Value |
 |-----------|-------|
-| LLM backend | Ollama at `http://datawatch:11434`, model: `qwen3:1.7b` |
+| LLM backend (default) | Ollama at `http://datawatch:11434`, model: `qwen3:1.7b` |
+| LLM backend (Claude) | Requires `CLAUDE_API_KEY` env var; uses `claude-haiku-4-5` with `quick` effort |
 | Memory embedder | Ollama `nomic-embed-text` at `http://datawatch:11434` |
 | Signal | Account `+18435409771`, group: `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`, config: `/home/dmz/.local/share/signal-cli` |
-| Kubernetes | `kubectl --context=testing` (3-node cluster) |
+| Kubernetes | `kubectl --context=testing` (3-node cluster) — use `import-kubectl-context.sh` to inject |
+| GitHub | Via local `gh` CLI authenticated to operator account; test repos created with random names + deleted on cleanup |
 | PWA testing | Chrome plugin (`mcp__claude-in-chrome__*`) — run separately, not via `run-tests.sh` |
 | KeePass | NOT AVAILABLE — `keepassxc-cli` not installed |
 | 1Password | NOT AVAILABLE — `op` CLI not installed |
 | ntfy | NOT AVAILABLE by default — set `TEST_NTFY_TOPIC` to enable TS-099 |
 | Slack / Discord / Telegram / Matrix / Twilio / Email | NOT CONFIGURED — always skip |
+
+### Credential Management (Secrets-Driven Architecture)
+
+**Isolation model**: Test daemon (ports 18xxx) runs completely isolated from production (8xxx). All external service credentials are injected via secrets manager at startup.
+
+**GitHub credentials**:
+- Master script creates random private test repo: `gh repo create datawatch-test-<timestamp> --private`
+- Repo deleted during cleanup: `gh repo delete --confirm`
+- Test code uses local `gh` CLI with operator's authenticated account
+- No hardcoded GitHub PATs in test scripts
+
+**Claude credentials** (major releases only, via `CLAUDE_API_KEY` env):
+```bash
+# Before running tests:
+export CLAUDE_API_KEY="sk-ant-..."
+bash scripts/run-tests.sh
+
+# At daemon startup:
+# - Config includes claude block with api_key_ref: ${secret:claude-test-api-key}
+# - Secrets manager injects CLAUDE_API_KEY automatically
+```
+
+**Kubernetes credentials**:
+```bash
+# Import kubectl context to test daemon:
+./scripts/import-kubectl-context.sh --context=testing --target-daemon=http://localhost:18080 --token=$TEST_TOKEN
+
+# Kubectl config retrieved from secrets during test setup
+```
+
+**Auth Import/Export Utilities**:
+- `scripts/import-kubectl-context.sh` — export K8s context to secrets
+- `scripts/import-claude-credentials.sh` — import Claude API key to secrets
+- `scripts/export-ssh-pubkey.sh` — export SSH public key for agent auth
+
+**PID Validation** (prevents accidental production daemon kill):
+- All test daemon kill commands validate: PID exists AND process listens on port 18080 (not 8080)
+- `_validate_test_daemon_pid()` helper ensures kill targets correct daemon
 
 ### Cannot Be Tested
 
