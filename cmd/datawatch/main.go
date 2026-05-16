@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.61"
+var Version = "7.0.0-alpha.64"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -208,6 +208,12 @@ func claudeDisclaimerResponse(line string) string {
 	}
 	return ""
 }
+
+// claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
+// has already been launched. Multiple DetectPrompt filter matches fire in
+// rapid succession at session start (trust-folder, MCP, bypass); we gate
+// on this map so only ONE goroutine is spawned per startup sequence.
+var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
 
 var (
 	cfgPath    string
@@ -1695,14 +1701,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if !ok || sess.BackendFamily != "claude-code" {
 				return
 			}
-			resp := claudeDisclaimerResponse(line)
-			if resp == "" {
+			if claudeDisclaimerResponse(line) == "" {
+				return
+			}
+			// Gate: only ONE goroutine per session startup sequence.
+			// Claude Code renders trust-folder, MCP, and bypass-permissions
+			// prompts to the log in rapid succession (~50-200 ms apart),
+			// triggering multiple DetectPrompt callbacks. A single goroutine
+			// reading the live pane at t+750 ms is sufficient to accept
+			// whichever prompt is actually on screen. Subsequent filter
+			// callbacks are skipped via this LoadOrStore guard.
+			if _, loaded := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); loaded {
 				return
 			}
 			go func() {
+				defer claudeStartupAccepted.Delete(sessID)
 				time.Sleep(750 * time.Millisecond)
-				if err := mgr.SendInput(sessID, resp, "auto-accept-disclaimer"); err != nil {
-					fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+				// Handle startup prompts sequentially: trust-folder → channel →
+				// bypass-permissions. Each iteration checks the live pane and
+				// sends the appropriate response. Loop exits when no known
+				// startup prompt is on screen (all accepted, or session dead).
+				for i := 0; i < 5; i++ {
+					liveResp := mgr.GetActiveStartupPromptInput(sessID)
+					if liveResp == "" {
+						break
+					}
+					if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
+						fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
 				}
 			}()
 		},
@@ -10531,6 +10559,8 @@ var seededFilters = []session.FilterPattern{
 	{Pattern: `Enter to confirm|Esc to cancel`, Action: session.FilterActionDetectPrompt},
 	{Pattern: `Yes, I trust|trust this folder|Quick safety check`, Action: session.FilterActionDetectPrompt},
 	{Pattern: `I am using this for local development|Loading development channels`, Action: session.FilterActionDetectPrompt},
+	// bypass-permissions disclaimer: "2. Yes, I accept" — send "2\n" via claudeDisclaimerResponse
+	{Pattern: `Yes, I accept`, Action: session.FilterActionDetectPrompt},
 }
 
 func newSeedCmd() *cobra.Command {

@@ -2770,6 +2770,45 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 	}
 }
 
+// GetActiveStartupPromptInput captures the live tmux pane for sessID and
+// returns the appropriate auto-accept keystroke for whichever Claude Code
+// startup prompt is currently on screen, or "" if no known prompt is visible.
+//
+// Priority (checked in order):
+//  1. Bypass-permissions disclaimer ("Yes, I accept" + "No, exit") → "2\n"
+//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → "1\n"
+//  3. MCP server trust prompt ("New MCP server found")                 → "1\n"
+//  4. Nothing recognisable                                             → ""
+//
+// The "" return signals the caller to skip sending entirely — important when
+// this goroutine fires after all startup prompts have already been accepted.
+func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return ""
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil || content == "" {
+		return ""
+	}
+	lower := strings.ToLower(StripANSI(content))
+	switch {
+	case strings.Contains(lower, "yes, i accept") && strings.Contains(lower, "no, exit"):
+		return "2\n"
+	case strings.Contains(lower, "quick safety check"),
+		strings.Contains(lower, "trust this folder"),
+		strings.Contains(lower, "yes, i trust"):
+		return "1\n"
+	case strings.Contains(lower, "new mcp server found"),
+		strings.Contains(lower, "use this mcp server"):
+		return "1\n"
+	case strings.Contains(lower, "i am using this for local development"),
+		strings.Contains(lower, "loading development channels"):
+		return "1\n"
+	}
+	return ""
+}
+
 // KillAll terminates all running and waiting sessions on this host.
 // ReconnectBackends restores in-memory backend state for running sessions after daemon restart.
 // It reads backend_state.json from each session's tracking dir and calls the provided
