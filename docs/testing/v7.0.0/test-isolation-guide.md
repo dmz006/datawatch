@@ -15,12 +15,32 @@ bash scripts/run-tests.sh
 
 ### With Kubernetes Tests
 ```bash
-# 1. Export kubectl context to secrets (future: datawatch secrets import kubectl)
-kubectl config view --context=testing --flatten | \
-  datawatch --config .datawatch-test/config.yaml secrets set k8s-context-testing "$(cat)" --tags test,k8s
+# 1. Start test daemon
+bash scripts/run-tests.sh --surface=k8s
+# run-tests.sh auto-imports K8S_CONTEXT (default: "testing") via secrets import kubectl
 
-# 2. Run tests
-bash scripts/run-tests.sh
+# Or manually import a context before running:
+K8S_CONTEXT=testing bash scripts/run-tests.sh
+```
+
+### Manual Credential Import
+
+After starting the test daemon separately, import any credential type:
+
+```bash
+# kubectl context
+datawatch --config .datawatch-test/config.yaml secrets import kubectl --context=testing
+
+# Claude API key (from env)
+ANTHROPIC_API_KEY=sk-ant-... \
+  datawatch --config .datawatch-test/config.yaml secrets import claude --from-env ANTHROPIC_API_KEY
+
+# GitHub PAT (from env)
+GITHUB_TOKEN=ghp_... \
+  datawatch --config .datawatch-test/config.yaml secrets import github --from-env GITHUB_TOKEN
+
+# SSH public key
+datawatch --config .datawatch-test/config.yaml secrets import ssh --key-path ~/.ssh/id_rsa.pub
 ```
 
 ---
@@ -162,8 +182,16 @@ bash scripts/run-tests.sh
 This automatically:
 1. Detects `CLAUDE_API_KEY` env var
 2. Adds Claude section to test daemon config
-3. Uses `claude-haiku-4-5` with `quick` effort (minimizes cost)
-4. Tests can now use `backend:claude-code` in automaton specs
+3. Imports the key via `secrets import claude --from-env CLAUDE_API_KEY`
+4. Uses `claude-haiku-4-5` with `quick` effort (minimizes cost)
+5. Tests can now use `backend:claude-code` in automaton specs
+
+You can also import manually before running tests:
+
+```bash
+# Import Claude key into a running test daemon
+datawatch --config .datawatch-test/config.yaml secrets import claude --from-env ANTHROPIC_API_KEY
+```
 
 ### Test Config (Auto-Generated)
 
@@ -179,16 +207,18 @@ claude:
 
 ## Kubernetes Context Import
 
-### Via CLI (Recommended)
-
 ```bash
-# Export kubectl context to secrets
-kubectl config view --context=testing --flatten | \
-  datawatch --config .datawatch-test/config.yaml secrets set k8s-context-testing "$(cat)" --tags test,k8s
+# Import kubectl context into secrets (Phase 2 command)
+datawatch --config .datawatch-test/config.yaml secrets import kubectl --context=testing
+
+# Custom secret name
+datawatch --config .datawatch-test/config.yaml secrets import kubectl --context=prod --name=k8s-prod-context
 
 # Verify stored
 datawatch --config .datawatch-test/config.yaml secrets get k8s-context-testing
 ```
+
+The import command runs `kubectl config view --context=<context> --flatten` internally and stores the YAML kubeconfig in the secrets store.
 
 ### Use in Tests
 
@@ -202,19 +232,19 @@ export KUBECONFIG
 kubectl get pods
 ```
 
-**Future**: Planned `datawatch secrets import kubectl --context=testing` subcommand.
+The `run-tests.sh` script automatically imports the `$K8S_CONTEXT` (default: `testing`) via `_setup_test_secrets()` if kubectl is available.
 
 ---
 
-## SSH Public Key Export
-
-For tests that need SSH authentication:
-
-### Via CLI (Recommended)
+## SSH Public Key Import
 
 ```bash
-# Store SSH public key in secrets
-datawatch --config .datawatch-test/config.yaml secrets set ssh-test-pubkey "$(cat ~/.ssh/id_rsa.pub)" --tags test,ssh
+# Import SSH public key from default path
+datawatch --config .datawatch-test/config.yaml secrets import ssh --key-path ~/.ssh/id_rsa.pub
+
+# Or ed25519 key with custom name
+datawatch --config .datawatch-test/config.yaml secrets import ssh \
+  --key-path ~/.ssh/id_ed25519.pub --name ssh-prod-pubkey
 
 # Verify stored
 datawatch --config .datawatch-test/config.yaml secrets get ssh-test-pubkey
@@ -227,7 +257,7 @@ pubkey=$(cli_test secrets get ssh-test-pubkey)
 echo "$pubkey" >> ~/.ssh/authorized_keys
 ```
 
-**Future**: Planned `datawatch secrets import ssh --key-path ~/.ssh/id_rsa.pub` subcommand.
+The `run-tests.sh` script automatically imports `~/.ssh/id_rsa.pub` or `~/.ssh/id_ed25519.pub` via `_setup_test_secrets()` if either exists.
 
 ---
 
@@ -280,9 +310,9 @@ tail -50 .datawatch-test/daemon.log | grep -i claude
 
 ### Files Modified
 
-- `scripts/run-tests.sh` — Added PID validation, GitHub repo creation, credential injection via `datawatch secrets set` CLI
-- `datawatch secrets set` CLI — Used for all credential storage (existing, no changes)
-- **Planned**: `datawatch secrets import` subcommands (kubectl, claude, github, ssh) for Phase 2
+- `scripts/run-tests.sh` — PID validation, GitHub repo creation, credential injection via `datawatch secrets import` CLI
+- `cmd/datawatch/cli_secrets_import.go` — `secrets import` subcommands (kubectl, claude, github, ssh)
+- `cmd/datawatch/cli_secrets.go` — Registered `import` under the `secrets` command tree
 
 ### Environment Variables
 

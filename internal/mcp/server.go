@@ -83,6 +83,7 @@ type Server struct {
 	// "unavailable" message.
 	agentAuditPath string
 	agentAuditCEF  bool
+	token          string // bearer token for internal API calls
 }
 
 // SetAgentAuditPath wires the audit file path for the agent_audit
@@ -562,6 +563,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 
 // SetWebPort sets the web server port for internal API calls.
 func (s *Server) SetWebPort(port int) { s.webPort = port }
+
+// SetToken sets the bearer token for internal API calls.
+func (s *Server) SetToken(token string) { s.token = token }
 
 // Invoke calls a registered MCP tool by name with the given arguments
 // and returns the concatenated text content (the most common payload

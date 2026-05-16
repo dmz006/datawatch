@@ -881,20 +881,37 @@ _create_test_repo() {
 
 # Setup test credentials in secrets manager via CLI (not shell scripts)
 _setup_test_secrets() {
-  # GitHub PAT (if available)
+  # GitHub PAT (via gh auth token, stored with secrets set)
   if gh auth status &>/dev/null; then
     local gh_token
     gh_token=$(gh auth token 2>/dev/null) || gh_token=""
     if [[ -n "$gh_token" ]]; then
-      cli_test secrets set test-github-pat "$gh_token" --tags test,github --scope "test:*" >/dev/null 2>&1
+      cli_test secrets set test-github-pat "$gh_token" --tags test,github >/dev/null 2>&1
       echo "secret:test-github-pat" >> "$CLEANUP_LOG"
     fi
   fi
 
-  # Claude API key (if provided via env)
-  if [[ -n "$CLAUDE_API_KEY" ]]; then
-    cli_test secrets set claude-test-api-key "$CLAUDE_API_KEY" --tags test,claude --scope "test:*" >/dev/null 2>&1
+  # Claude API key (via secrets import claude --from-env)
+  if [[ -n "${CLAUDE_API_KEY:-}" ]]; then
+    CLAUDE_API_KEY="$CLAUDE_API_KEY" cli_test secrets import claude --from-env CLAUDE_API_KEY >/dev/null 2>&1
     echo "secret:claude-test-api-key" >> "$CLEANUP_LOG"
+  fi
+
+  # kubectl context (via secrets import kubectl --context=<K8S_CONTEXT>)
+  if [[ -n "${K8S_CONTEXT:-}" ]] && command -v kubectl &>/dev/null; then
+    if kubectl config get-contexts "$K8S_CONTEXT" &>/dev/null; then
+      cli_test secrets import kubectl --context="$K8S_CONTEXT" >/dev/null 2>&1
+      echo "secret:k8s-context-${K8S_CONTEXT}" >> "$CLEANUP_LOG"
+    fi
+  fi
+
+  # SSH public key (if default key exists)
+  if [[ -f "$HOME/.ssh/id_rsa.pub" ]]; then
+    cli_test secrets import ssh --key-path "$HOME/.ssh/id_rsa.pub" >/dev/null 2>&1
+    echo "secret:ssh-test-pubkey" >> "$CLEANUP_LOG"
+  elif [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then
+    cli_test secrets import ssh --key-path "$HOME/.ssh/id_ed25519.pub" >/dev/null 2>&1
+    echo "secret:ssh-test-pubkey" >> "$CLEANUP_LOG"
   fi
 }
 

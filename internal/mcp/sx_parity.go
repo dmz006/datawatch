@@ -43,7 +43,14 @@ func (s *Server) proxyGet(path string, q url.Values) ([]byte, error) {
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	resp, err := httpProxy.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+	resp, err := httpProxy.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +78,9 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
 	resp, err := httpProxy.Do(req)
 	if err != nil {
 		return nil, err
