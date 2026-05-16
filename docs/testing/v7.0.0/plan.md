@@ -2,8 +2,9 @@
 
 **Version**: v7.0.0-alpha  
 **Date**: 2026-05-13  
-**Test runner**: `scripts/run-tests.sh`  
-**Evidence root**: `docs/testing/v7.0.0/evidence/` (gitignored, cleaned after run)
+**Test runner**: `../datawatch-testing/run-tests.sh` (lives outside the repo)  
+**Evidence root**: `../datawatch-testing/runs/YYYY-MM-DD-NNN/` (outside repo, never committed)  
+**Sync-back**: after each run, summary + cookbook are automatically copied to `datawatch/docs/testing/`
 
 ---
 

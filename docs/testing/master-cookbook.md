@@ -1,6 +1,12 @@
 # datawatch Master Test Cookbook
 
-**How to update**: Run `bash scripts/run-tests.sh` — updates this file automatically after every run.
+**How to update**: Run `bash ../datawatch-testing/run-tests.sh` from anywhere — the script lives outside the repo in the sibling `datawatch-testing/` folder. After each run it automatically syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
+
+**Testing folder**: `../datawatch-testing/` (sibling of the `datawatch` repo, not inside it)
+- Script: `../datawatch-testing/run-tests.sh`
+- Data dir: `../datawatch-testing/.datawatch-test/` (isolated test daemon, never touches production)
+- Evidence: `../datawatch-testing/runs/YYYY-MM-DD-NNN/`
+- Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced from testing folder after each run)
 
 **Monitor live**: Open the dashboard at `https://localhost:8443` — the **🔬 Smoke Run** card shows real-time progress while `release-smoke.sh` or `run-tests.sh` runs. The card polls `GET /api/smoke/progress` and shows a selectable list of run envelopes written to `~/.datawatch/smoke-runs/`. Add it via Edit → Add Card → Smoke Run.
 
