@@ -37,6 +37,9 @@ func (s *Server) handleSessionsSubpath(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(rest, "/guardrail"):
 		// BL303 S3 T15 — on-demand guardrail invocation for a session.
 		s.handleSessionGuardrail(w, r)
+	case strings.HasSuffix(rest, "/input"):
+		// #53 — send text input to a running session.
+		s.handleSessionInput(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -86,4 +89,33 @@ func (s *Server) handleSessionRollback(w http.ResponseWriter, r *http.Request) {
 		"reset_to":    "datawatch-pre-" + sess.ID,
 		"force":       req.Force,
 	})
+}
+
+func (s *Server) handleSessionInput(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.manager == nil {
+		http.Error(w, "manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id := strings.TrimSuffix(path, "/input")
+	if id == "" {
+		http.Error(w, "session id required in path", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.SendInput(id, req.Text, "api"); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSONOK(w, map[string]any{"session_id": id, "sent": true})
 }
