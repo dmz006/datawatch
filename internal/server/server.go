@@ -240,6 +240,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/dashboard/cards/", api.handleDashboardCards)          // #57 card CRUD (get/update/delete by id)
 	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)            // BL303 smoke progress (list)
 	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)           // BL303 (detail + delete with sub-paths)
+	apiMux.HandleFunc("/api/smoke/forward-url", api.handleSmokeForwardURL)       // #54 cross-instance forward config
 	apiMux.HandleFunc("/api/dashboard/smoke-progress", api.handleSmokeProgress)  // #57 dashboard alias (POST/PUT write)
 	apiMux.HandleFunc("/api/dashboard/smoke-progress/", api.handleSmokeProgress) // #57 dashboard alias (sub-paths)
 	apiMux.HandleFunc("/api/dashboard/smoke-runs", api.handleSmokeProgress)      // #57 dashboard alias (GET list)
@@ -838,6 +839,13 @@ func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc =
 func (s *HTTPServer) SetMCPBridge(b mcpBridgeAPI) { s.api.SetMCPBridge(b) }
 func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
 func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
+
+// SetSmokeForward (#54) — wires cross-instance smoke-run forwarding.
+func (s *HTTPServer) SetSmokeForward(url, token string) {
+	if s.api != nil {
+		s.api.SetSmokeForward(url, token)
+	}
+}
 
 // NotifyAlert broadcasts a new alert to all WebSocket clients.
 func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {

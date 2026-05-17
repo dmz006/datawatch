@@ -397,11 +397,27 @@ type Config struct {
 	// entirely via REST/MCP/CLI/comm/PWA.
 	Council CouncilConfig `yaml:"council,omitempty" json:"council,omitempty"`
 
+	// #54 — smoke-run cross-instance reporting. When ForwardURL is set,
+	// the smoke-progress handler also POSTs each write to that URL so a
+	// production dashboard can display test-daemon runs without sharing
+	// the same data directory.
+	Smoke SmokeConfig `yaml:"smoke,omitempty" json:"smoke,omitempty"`
+
 	// v7.0.0 S1 — ComputeNode registry seed. Each entry becomes a
 	// Node in the registry on daemon start (only if no JSON entry
 	// already exists for that name — operator runtime edits win).
 	// Schema: see internal/compute/node.go::Node.
 	ComputeNodes []ComputeNodeYAML `yaml:"compute_nodes,omitempty" json:"compute_nodes,omitempty"`
+}
+
+// SmokeConfig controls smoke-run cross-instance reporting (#54).
+type SmokeConfig struct {
+	// ForwardURL, if set, receives a POST copy of every smoke-run write
+	// so a remote production dashboard sees test-daemon progress.
+	// Example: "https://prod.example.com:8443"
+	ForwardURL string `yaml:"forward_url,omitempty" json:"forward_url,omitempty"`
+	// ForwardToken is the bearer token sent with forwarded requests.
+	ForwardToken string `yaml:"forward_token,omitempty" json:"forward_token,omitempty"`
 }
 
 // ComputeNodeYAML mirrors compute.Node for cfg-side seeding without

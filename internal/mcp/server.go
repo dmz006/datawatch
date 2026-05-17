@@ -556,6 +556,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolToolingStatus(), tracked(s.handleToolingStatus))
 	mcpSrv.AddTool(s.toolToolingGitignore(), tracked(s.handleToolingGitignore))
 	mcpSrv.AddTool(s.toolToolingCleanup(), tracked(s.handleToolingCleanup))
+	// #54 — smoke-run cross-instance forwarding.
+	mcpSrv.AddTool(s.toolSmokeForwardConfigGet(), tracked(s.handleSmokeForwardConfigGetMCP))
+	mcpSrv.AddTool(s.toolSmokeForwardConfigSet(), tracked(s.handleSmokeForwardConfigSetMCP))
 	// #57/#58 — dashboard card layout CRUD.
 	mcpSrv.AddTool(s.toolDashboardConfigGet(), tracked(s.handleDashboardConfigGetMCP))
 	mcpSrv.AddTool(s.toolDashboardCardsList(), tracked(s.handleDashboardCardsListMCP))

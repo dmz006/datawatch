@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -26,6 +27,63 @@ func smokeRunsDir() (string, error) {
 func legacyProgressPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".datawatch", "smoke-progress.json")
+}
+
+// smokeForwardClient is a shared HTTP client for forwarding smoke progress.
+var smokeForwardClient = &http.Client{Timeout: 5e9} // 5 s
+
+// smokeForward fires a fire-and-forget POST to the configured forward URL.
+func (s *Server) smokeForward(body []byte) {
+	if s.smokeForwardURL == "" {
+		return
+	}
+	url := strings.TrimRight(s.smokeForwardURL, "/") + "/api/smoke/progress"
+	go func() {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if s.smokeForwardToken != "" {
+			req.Header.Set("Authorization", "Bearer "+s.smokeForwardToken)
+		}
+		resp, err := smokeForwardClient.Do(req)
+		if err != nil {
+			return
+		}
+		resp.Body.Close()
+	}()
+}
+
+// handleSmokeForwardURL — GET/PUT /api/smoke/forward-url
+// Allows reading and updating the cross-instance forward URL at runtime (#54).
+func (s *Server) handleSmokeForwardURL(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSONOK(w, map[string]any{
+			"forward_url":   s.smokeForwardURL,
+			"forward_token": s.smokeForwardToken != "",
+		})
+	case http.MethodPut:
+		var req struct {
+			ForwardURL   string `json:"forward_url"`
+			ForwardToken string `json:"forward_token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.smokeForwardURL = req.ForwardURL
+		if req.ForwardToken != "" {
+			s.smokeForwardToken = req.ForwardToken
+		}
+		writeJSONOK(w, map[string]any{
+			"ok":          true,
+			"forward_url": s.smokeForwardURL,
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleSmokeProgress — multi-envelope smoke run API
@@ -96,6 +154,8 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "write failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// #54 — forward to production dashboard if configured.
+		s.smokeForward(data)
 		writeJSONOK(w, map[string]any{"ok": true, "id": id})
 
 	case http.MethodDelete:

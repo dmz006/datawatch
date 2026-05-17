@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.75"
+var Version = "7.0.0-alpha.76"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -312,6 +312,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
 		newDashboardCmd(),  // #57/#58 — dashboard card layout CRUD
+		newSmokeCmd(),      // #54 — smoke-run cross-instance forwarding
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2511,6 +2512,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetAgentManager(agentMgr)
 		httpServer.SetAgentAuditPath(agentAuditPath, agentAuditCEF)
+		// #54 — smoke-run cross-instance forwarding.
+		if cfg.Smoke.ForwardURL != "" {
+			httpServer.SetSmokeForward(cfg.Smoke.ForwardURL, cfg.Smoke.ForwardToken)
+		}
 		// BL255 v6.7.0 — wire the skills manager so REST + MCP can serve.
 		if skillsMgr != nil {
 			httpServer.SetSkillsManager(server.SkillsManagerAdapter{M: skillsMgr})

@@ -300,6 +300,18 @@ type Server struct {
 	// creds (v5.26.22 path). main.go's brokerAdapter satisfies the
 	// interface.
 	gitMinter GitTokenMinter
+
+	// #54 — smoke-run cross-instance forwarding.
+	// When non-empty, every smoke progress write is also POSTed to
+	// {smokeForwardURL}/api/smoke/progress asynchronously.
+	smokeForwardURL   string
+	smokeForwardToken string
+}
+
+// SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).
+func (s *Server) SetSmokeForward(url, token string) {
+	s.smokeForwardURL = url
+	s.smokeForwardToken = token
 }
 
 // SetGitTokenMinter wires the BL113 token broker for daemon-side
