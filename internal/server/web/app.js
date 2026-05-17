@@ -222,9 +222,10 @@ function buildWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('cs_token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
-  // Route through proxy when a remote server is selected
+  // Route through proxy when a specific remote server is selected
+  // ('all' mode stays on local WS — aggregated data is fetched via HTTP)
   const srv = state.activeServer;
-  const wsPath = (srv && srv !== 'local') ? '/api/proxy/' + encodeURIComponent(srv) + '/ws' : '/ws';
+  const wsPath = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + '/ws' : '/ws';
   return `${proto}//${location.host}${wsPath}${q}`;
 }
 
@@ -454,9 +455,10 @@ function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  // Route through proxy when a remote server is selected
+  // Route through proxy when a specific remote server is selected
+  // ('all' mode uses local API — aggregated endpoint handles fan-out)
   const srv = state.activeServer;
-  const url = (srv && srv !== 'local') ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const url = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
   return fetch(url, Object.assign({}, opts, { headers }))
     .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))));
 }
@@ -12097,17 +12099,38 @@ function loadServers() {
 
 function selectServer(name) {
   const prev = state.activeServer;
+  // Toggle back to null (local) if same button clicked; otherwise switch
   state.activeServer = (state.activeServer === name) ? null : name;
   loadServers();
-  // Reconnect WS to the new server (or back to local)
   if (state.activeServer !== prev) {
     state.sessions = [];
     state.channelReady = {};
     state.outputBuffer = {};
-    if (state.ws) { state.ws.close(); state.ws = null; }
-    connect();
-    showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
+    if (state.activeServer === 'all') {
+      // BL312 S4 — "All" mode: stay on local WS, load aggregated sessions
+      if (state.ws) { state.ws.close(); state.ws = null; }
+      connect(); // reconnects to local WS
+      _loadAllServersSessions();
+      showToast(t('toast_all_servers') || 'Viewing all servers', 'info');
+    } else {
+      if (state.ws) { state.ws.close(); state.ws = null; }
+      connect();
+      showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
+    }
   }
+}
+
+// BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
+function _loadAllServersSessions() {
+  fetch('/api/sessions/aggregated', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) return;
+      // data is [{...session, server:"name"}, ...] — merge with local sessions already in state
+      state.sessions = data;
+      if (state.activeView === 'sessions') renderSessionsView();
+    })
+    .catch(() => {});
 }
 
 // ── BL312 S2 — Remote Servers Settings Card ────────────────────────────────────
@@ -12208,7 +12231,7 @@ function testServerEntry(name, btnEl) {
 // ── BL312 S3 — Per-tab server picker component ─────────────────────────────────
 
 // Returns HTML for a compact server picker bar.
-// Shows "Local" + one chip per enabled remote server.
+// Shows "All" + "Local" + one chip per enabled remote server.
 // Hidden when no remote servers are registered.
 function _serverPickerBar() {
   const servers = (state.servers && Array.isArray(state.servers.servers)
@@ -12216,7 +12239,11 @@ function _serverPickerBar() {
     : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
   if (!servers.length) return '';
   const active = state.activeServer || null;
-  const chips = [{ name: null, label: t('server_local_label') || 'Local' }, ...servers.map(s => ({ name: s.name, label: s.label || s.name }))];
+  const chips = [
+    { name: 'all', label: t('server_all_label') || 'All' },
+    { name: null, label: t('server_local_label') || 'Local' },
+    ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
+  ];
   const btns = chips.map(c => {
     const isActive = c.name === active;
     return `<button onclick="selectServer(${c.name ? JSON.stringify(c.name) : 'null'})" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}</button>`;

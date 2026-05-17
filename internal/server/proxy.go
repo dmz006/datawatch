@@ -102,14 +102,42 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// findServer looks up a remote server by name from config.
+// findServer looks up a remote server by name — checks cfg.Servers first,
+// then falls back to the runtime store (BL312 S4).
 func (s *Server) findServer(name string) *config.RemoteServerConfig {
 	for i := range s.cfg.Servers {
 		if s.cfg.Servers[i].Name == name && s.cfg.Servers[i].Enabled {
 			return &s.cfg.Servers[i]
 		}
 	}
+	if s.serverStore != nil {
+		if e, ok := s.serverStore.Get(name); ok && e.Enabled {
+			return &config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: e.Enabled}
+		}
+	}
 	return nil
+}
+
+// runtimeServers returns all enabled servers from both cfg.Servers and the
+// runtime store (BL312 S4). Callers get a merged, deduplicated slice.
+func (s *Server) runtimeServers() []config.RemoteServerConfig {
+	seen := map[string]bool{}
+	out := []config.RemoteServerConfig{}
+	for _, srv := range s.cfg.Servers {
+		if srv.Enabled && !seen[srv.Name] {
+			seen[srv.Name] = true
+			out = append(out, srv)
+		}
+	}
+	if s.serverStore != nil {
+		for _, e := range s.serverStore.List() {
+			if e.Enabled && !seen[e.Name] {
+				seen[e.Name] = true
+				out = append(out, config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: true})
+			}
+		}
+	}
+	return out
 }
 
 // handleAggregatedSessions returns sessions from all remote servers + local,
@@ -127,17 +155,15 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 		results = append(results, taggedSession{Session: sess, Server: "local"})
 	}
 
-	// Remote sessions — fetch in parallel with timeout
+	// Remote sessions — fetch in parallel with timeout (BL312 S4: includes runtime store)
 	type fetchResult struct {
 		server   string
 		sessions []taggedSession
 	}
-	ch := make(chan fetchResult, len(s.cfg.Servers))
+	remotes := s.runtimeServers()
+	ch := make(chan fetchResult, len(remotes))
 
-	for _, sv := range s.cfg.Servers {
-		if !sv.Enabled {
-			continue
-		}
+	for _, sv := range remotes {
 		go func(sv config.RemoteServerConfig) {
 			client := &http.Client{Timeout: 5 * time.Second}
 			apiURL := strings.TrimRight(sv.URL, "/") + "/api/sessions"
@@ -172,13 +198,7 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 	}
 
 	// Collect results
-	enabledCount := 0
-	for _, sv := range s.cfg.Servers {
-		if sv.Enabled {
-			enabledCount++
-		}
-	}
-	for i := 0; i < enabledCount; i++ {
+	for i := 0; i < len(remotes); i++ {
 		result := <-ch
 		results = append(results, result.sessions...)
 	}

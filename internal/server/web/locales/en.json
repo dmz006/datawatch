@@ -1181,5 +1181,7 @@
   "server_delete_btn": "Delete",
   "server_enabled_label": "Enabled",
   "server_picker_label": "Server:",
-  "server_local_label": "Local"
+  "server_local_label": "Local",
+  "server_all_label": "All",
+  "toast_all_servers": "Viewing all servers"
 }

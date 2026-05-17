@@ -4810,14 +4810,8 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find server config
-	var remote *config.RemoteServerConfig
-	for i := range s.cfg.Servers {
-		if s.cfg.Servers[i].Name == serverName && s.cfg.Servers[i].Enabled {
-			remote = &s.cfg.Servers[i]
-			break
-		}
-	}
+	// Find server config — cfg.Servers first, then runtime store (BL312 S4)
+	remote := s.findServer(serverName)
 	if remote == nil {
 		http.Error(w, fmt.Sprintf("server %q not found or disabled", serverName), http.StatusNotFound)
 		return
