@@ -35,6 +35,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Mobile-parity: no new UI surfaces requiring app issue
 - Cookbook: 293 story rows (T1–T22), 22 sprints
 
+## v7.1.1 — BL313: Dashboard nav gated behind autonomous.enabled (2026-05-17)
+
+### Fixed
+- **BL313 — Dashboard nav button now gated behind `autonomous.enabled`** — The Dashboard button in the left nav was always visible regardless of whether the autonomous subsystem was enabled in config. Fixed to follow the same pattern as the Automata button: starts `display:none` in HTML, unhidden only when `GET /api/autonomous/config` returns `enabled: true`. Installations without `autonomous.enabled: true` in `cfg.yaml` no longer show a nav button that leads to a view with no data.
+
+### Rule audit
+- 7-surface: PWA ✓ (single-surface fix — no REST/MCP/CLI/comm/locale changes needed)
+- Smoke: no new sections needed (gating logic, not a new feature)
+- Tests: 1994 pass (no new tests — DOM-only change)
+- Deviations: none
+
 ## v7.1.0 — BL302: MCP Resources, Prompts, Sampling + Elicitation (2026-05-17)
 
 ### Added

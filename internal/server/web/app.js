@@ -17162,11 +17162,11 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
       if (btn && cfg && cfg.enabled === true) btn.style.display = '';
+      // BL313 — Dashboard is part of the autonomous subsystem; gate it on the same flag.
+      const dashBtn = document.getElementById('navBtnDashboard');
+      if (dashBtn && cfg && cfg.enabled === true) dashBtn.style.display = '';
     })
     .catch(() => {});
-
-  // BL303 S4 — Dashboard nav button is always visible (no feature flag).
-  _dashCheckEnabled();
 
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
   // (Federated Peers card). The standalone nav button + view path were
@@ -18392,18 +18392,23 @@ function renderDashboardView() {
     _dash._costFetching = true;
     apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
   }
-  const navBtn = document.getElementById('navBtnDashboard');
-  if (navBtn) navBtn.style.display = '';
+  _dashCheckEnabled();
   _dashInitNodes();
   // Load layout from server; falls back to default and calls _dashBuildGrid
   _dashLoadLayout();
   _dash.rafId = requestAnimationFrame(_dashLoop);
 }
 
-// BL303 S4 T10 — unhide dashboard nav button on boot (same pattern as Automata).
+// BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
+// Called when dashboard view activates (ensures nav is visible after navigate()).
 function _dashCheckEnabled() {
-  const navBtn = document.getElementById('navBtnDashboard');
-  if (navBtn) navBtn.style.display = '';
+  fetch('/api/autonomous/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const navBtn = document.getElementById('navBtnDashboard');
+      if (navBtn && cfg && cfg.enabled === true) navBtn.style.display = '';
+    })
+    .catch(() => {});
 }
 
 function _dashUpdateStatBar() {
