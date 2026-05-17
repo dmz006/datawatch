@@ -1636,7 +1636,9 @@ else
   fi
   # Verify pai is in the list now
   PAI_LISTED=$(curl "${curl_args[@]}" "$BASE/api/skills/registries" 2>/dev/null | python3 -c 'import json,sys
-d=json.load(sys.stdin); names=[r.get("name","") for r in d.get("registries",[])]
+d=json.load(sys.stdin)
+regs=d if isinstance(d,list) else d.get("registries",[])
+names=[r.get("name","") for r in regs]
 print("yes" if "pai" in names else "no")' 2>/dev/null || echo "no")
   if [[ "$PAI_LISTED" == "yes" ]]; then
     ok "skills registry list: pai present"

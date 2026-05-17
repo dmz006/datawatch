@@ -881,7 +881,7 @@ paths:
       responses: {"200": {description: "{children: [PRD, ...]}"}}
   /api/autonomous/prds/{id}/plan:
     post:
- summary: Run LLM planning phase for a PRD (BL304 canonical)
+ summary: Run LLM planning phase for a PRD
       operationId: autonomousPRDPlan
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
