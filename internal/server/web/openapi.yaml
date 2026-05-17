@@ -2207,10 +2207,960 @@ paths:
       responses: {"200": {description: OK}}
   /api/ollama/stats:
     get:
- summary: Ollama-specific stats — running models, queue depth
+      summary: Ollama-specific stats — running models, queue depth
       operationId: ollamaStats
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
+
+  # ─── Push notifications (v7.0.0-alpha.35) ───────────────────────────────────
+
+  /api/push/{topic}:
+    parameters:
+      - {name: topic, in: path, required: true, schema: {type: string}, description: "Topic name (e.g. alerts, session-abc1)"}
+    get:
+      summary: Subscribe to SSE push stream (ntfy-compat)
+      description: Returns a Server-Sent Events stream. Emits an open event on connect, message events on publish, and a keepalive comment every 25s.
+      operationId: pushSubscribe
+      tags: [Push]
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Publish an event to a push topic
+      description: Fans out to all SSE subscribers + every registered UnifiedPush mobile endpoint.
+      operationId: pushPublish
+      tags: [Push]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                message: {type: string}
+                priority: {type: integer, minimum: 1, maximum: 5, description: "1=min, 3=default, 5=max"}
+                tags: {type: array, items: {type: string}}
+                click: {type: string, description: "URL to open on tap"}
+                extras: {type: object}
+      responses:
+        "200": {description: Published}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/register:
+    post:
+      summary: Register a UnifiedPush mobile endpoint
+      description: Idempotent on client_id.
+      operationId: pushRegister
+      tags: [Push]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, client_id]
+              properties:
+                endpoint: {type: string, description: UnifiedPush endpoint URL}
+                client_id: {type: string, description: Stable client identifier}
+                token: {type: string, description: Optional token for endpoint auth}
+      responses:
+        "200": {description: Registered}
+        "400": {description: Missing endpoint or client_id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /.well-known/unifiedpush:
+    get:
+      summary: UnifiedPush discovery document
+      description: Returns the UnifiedPush spec v1 discovery document so clients can auto-discover the push URL.
+      operationId: unifiedPushDiscovery
+      tags: [Push]
+      security: []
+      responses:
+        "200":
+          description: Discovery document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: integer, example: 1}
+                  unifiedpush: {type: object}
+
+  # ─── LLM Registry (v7.0.0) ──────────────────────────────────────────────────
+
+  /api/llms:
+    get:
+      summary: List named LLMs in the inference registry
+      operationId: llmList
+      tags: [LLM]
+      responses:
+        "200":
+          description: LLM list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  llms:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LLMEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a named LLM to the registry
+      operationId: llmAdd
+      tags: [LLM]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LLMEntry"
+      responses:
+        "200": {description: Created}
+        "409": {description: Name already exists}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get a named LLM by name
+      operationId: llmGet
+      tags: [LLM]
+      responses:
+        "200":
+          description: LLM entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMEntry"
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Replace a named LLM entry
+      operationId: llmUpdate
+      tags: [LLM]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LLMEntry"
+      responses:
+        "200": {description: Updated}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Delete a named LLM (409 if active bindings exist)
+      operationId: llmDelete
+      tags: [LLM]
+      responses:
+        "200": {description: Deleted}
+        "404": {description: Not found}
+        "409": {description: Active bindings exist — use reassign or force_delete}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}/enabled:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    patch:
+      summary: Enable or disable a named LLM
+      operationId: llmSetEnabled
+      tags: [LLM]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+                pretest: {type: boolean, description: "Run connectivity probe before enabling"}
+      responses:
+        "200": {description: Updated}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}/in_use:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: List active bindings for a named LLM
+      operationId: llmInUse
+      tags: [LLM]
+      parameters:
+        - {name: filter, in: query, required: false, schema: {type: string}}
+        - {name: page, in: query, required: false, schema: {type: integer}}
+        - {name: size, in: query, required: false, schema: {type: integer}}
+      responses:
+        "200":
+          description: Bindings list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bindings: {type: array, items: {type: object}}
+                  total: {type: integer}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}/refresh_models:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Trigger model list refresh from compute nodes
+      operationId: llmRefreshModels
+      tags: [LLM]
+      responses:
+        "200": {description: Refresh triggered}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}/reassign:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Reassign all active bindings to another LLM then delete this one
+      operationId: llmReassign
+      tags: [LLM]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_llm]
+              properties:
+                to_llm: {type: string}
+                to_model: {type: string}
+      responses:
+        "200": {description: Reassigned and deleted}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llms/{name}/force_delete:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Cancel all active bindings then delete this LLM
+      operationId: llmForceDelete
+      tags: [LLM]
+      responses:
+        "200": {description: Deleted}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/set_llm_ref:
+    post:
+      summary: Surgically update a running session's LLM registry binding
+      operationId: sessionSetLLMRef
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, llm_ref]
+              properties:
+                id: {type: string}
+                llm_ref: {type: string}
+      responses:
+        "200": {description: Updated}
+        "404": {description: Session not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Compute Nodes (v7.0.0) ─────────────────────────────────────────────────
+
+  /api/compute/nodes:
+    get:
+      summary: List compute nodes
+      operationId: computeNodeList
+      tags: [Compute]
+      responses:
+        "200":
+          description: Node list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ComputeNode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a compute node (runs save-time probe unless ?probe=skip)
+      operationId: computeNodeAdd
+      tags: [Compute]
+      parameters:
+        - {name: probe, in: query, required: false, schema: {type: string, enum: [skip]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComputeNode"
+      responses:
+        "200": {description: Created}
+        "400": {description: Validation error}
+        "502": {description: Probe failed — node unreachable}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get a compute node by name
+      operationId: computeNodeGet
+      tags: [Compute]
+      responses:
+        "200":
+          description: Node detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComputeNode"
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Update a compute node
+      operationId: computeNodeUpdate
+      tags: [Compute]
+      parameters:
+        - {name: probe, in: query, required: false, schema: {type: string, enum: [skip]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComputeNode"
+      responses:
+        "200": {description: Updated}
+        "404": {description: Not found}
+        "502": {description: Probe failed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Delete a compute node
+      operationId: computeNodeDelete
+      tags: [Compute]
+      responses:
+        "200": {description: Deleted}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}/enabled:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    patch:
+      summary: Enable or disable a compute node
+      operationId: computeNodeSetEnabled
+      tags: [Compute]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200": {description: Updated}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}/models:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Kind-aware model list from this compute node
+      operationId: computeNodeModels
+      tags: [Compute]
+      parameters:
+        - {name: kind, in: query, required: false, schema: {type: string}, description: "ollama | openai-compat"}
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models: {type: array, items: {type: string}}
+                  kind: {type: string}
+                  node: {type: string}
+        "404": {description: Not found}
+        "502": {description: Probe to node failed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}/models/pull:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Pull a model to this compute node in the background
+      operationId: computeNodePullModel
+      tags: [Compute]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: {type: string, example: "llama3.1:8b"}
+      responses:
+        "200":
+          description: Task descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}/models/{model}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+      - {name: model, in: path, required: true, schema: {type: string}}
+    delete:
+      summary: Remove a model from this compute node
+      operationId: computeNodeRemoveModel
+      tags: [Compute]
+      responses:
+        "200": {description: Removed}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/compute/nodes/{name}/observer-peer:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    put:
+      summary: Bind a compute node to an observer peer
+      operationId: computeNodeAttachObserver
+      tags: [Compute]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [peer]
+              properties:
+                peer: {type: string, description: "Observer peer name from /api/observer/peers"}
+      responses:
+        "200": {description: Bound}
+        "404": {description: Node or peer not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Remove observer peer binding from a compute node
+      operationId: computeNodeDetachObserver
+      tags: [Compute]
+      responses:
+        "200": {description: Cleared}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/observer/peers/free:
+    get:
+      summary: List observer peers with no bound compute node
+      operationId: observerPeersFree
+      tags: [Observer]
+      responses:
+        "200":
+          description: Free peer list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/observer/peers/by-node:
+    get:
+      summary: Observer peers grouped by bound compute node
+      operationId: observerPeersByNode
+      tags: [Observer]
+      responses:
+        "200":
+          description: Grouped peers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  by_node: {type: object, additionalProperties: {type: array, items: {type: object}}}
+                  unbound: {type: array, items: {type: object}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/federation/meta-peers:
+    get:
+      summary: Federation meta-peers aggregator (peers grouped per compute node across all primaries)
+      operationId: federationMetaPeers
+      tags: [Observer]
+      responses:
+        "200": {description: Meta-peer map}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Marketplace (v7.0.0-alpha.33) ──────────────────────────────────────────
+
+  /api/marketplace/ollama/catalog:
+    get:
+      summary: Embedded Ollama model catalog with size and RAM estimates
+      operationId: marketplaceOllamaCatalog
+      tags: [Marketplace]
+      responses:
+        "200":
+          description: Catalog array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    description: {type: string}
+                    tags: {type: array, items: {type: object}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/ollama/tasks/{task_id}:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Poll background model pull progress
+      operationId: marketplacePullTask
+      tags: [Marketplace]
+      responses:
+        "200":
+          description: Task status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [running, done, error]}
+                  progress: {type: number}
+                  error: {type: string}
+        "404": {description: Task not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Migration (v7.0.0-alpha.23) ────────────────────────────────────────────
+
+  /api/migration/compute-kinds:
+    get:
+      summary: List compute nodes with deprecated kinds needing migration
+      operationId: migrationComputeKindsCheck
+      tags: [Migration]
+      responses:
+        "200":
+          description: Migration status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes: {type: array, items: {type: object}}
+                  supported: {type: array, items: {type: string}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/migration/compute-kinds/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    put:
+      summary: Update a compute node's kind to a supported value
+      operationId: migrationComputeKindUpdate
+      tags: [Migration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: {type: string, enum: [ollama, openai-compat]}
+      responses:
+        "200": {description: Updated}
+        "400": {description: Unsupported kind}
+        "404": {description: Not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Dashboard (BL303 v7.0.0) ───────────────────────────────────────────────
+
+  /api/dashboard/layout:
+    get:
+      summary: Get the saved dashboard card layout
+      operationId: dashboardLayoutGet
+      tags: [Dashboard]
+      responses:
+        "200":
+          description: Layout JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cards: {type: array, items: {type: object}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Save the dashboard card layout
+      operationId: dashboardLayoutPut
+      tags: [Dashboard]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cards]
+              properties:
+                cards: {type: array, items: {type: object}}
+      responses:
+        "200": {description: Saved}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Session hook events + status board (v7.0.0-alpha.34) ───────────────────
+
+  /api/sessions/{id}/hook-event:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Ingest a hook event for a session (called by hook scripts)
+      operationId: sessionHookEvent
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: {type: string, enum: [Stop, PostToolUse, UserPromptSubmit, SubagentStop, Activity, Start]}
+                current_focus: {type: string}
+                sprint: {type: object}
+                tests: {type: object}
+                git: {type: object}
+      responses:
+        "200": {description: Ingested}
+        "404": {description: Session not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/{id}/status:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get the derived session status board (hook health, sprint, tests, git)
+      operationId: sessionStatus
+      tags: [Sessions]
+      responses:
+        "200":
+          description: Status board
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: {type: string}
+                  last_event: {type: string}
+                  idle_since: {type: string, format: date-time}
+                  hook_health: {type: string, enum: [alive, stale, missing]}
+                  sprint: {type: object}
+                  tests: {type: object}
+                  git: {type: object}
+                  current_focus: {type: string}
+        "404": {description: Session not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── MCP Resources + Prompts + Sampling + Elicitation (BL302 v7.1.0) ────────
+
+  /api/mcp/resources:
+    get:
+      summary: List all MCP resources (static + live + templates)
+      operationId: mcpResourcesList
+      tags: [MCP]
+      responses:
+        "200":
+          description: Resource list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    uri: {type: string}
+                    name: {type: string}
+                    description: {type: string}
+                    mimeType: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/mcp/resources/read:
+    get:
+      summary: Read the content of an MCP resource by URI
+      operationId: mcpResourcesRead
+      tags: [MCP]
+      parameters:
+        - {name: uri, in: query, required: true, schema: {type: string}, description: "datawatch:// URI"}
+      responses:
+        "200":
+          description: Resource content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contents: {type: array, items: {type: object}}
+        "404": {description: URI not found}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/mcp/resources/templates:
+    get:
+      summary: List MCP URI templates (parameterised resources)
+      operationId: mcpResourcesTemplates
+      tags: [MCP]
+      responses:
+        "200":
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    uriTemplate: {type: string}
+                    name: {type: string}
+                    description: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/mcp/sample:
+    post:
+      summary: Fire an MCP sampling request through the connected MCP host
+      description: Blocks until the host returns a completion or the timeout expires. Returns {error} when no host is connected.
+      operationId: mcpSample
+      tags: [MCP]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trigger: {type: string, description: "Built-in trigger name (e.g. alert_triage)"}
+                prompt: {type: string, description: "Custom prompt (used when trigger is omitted)"}
+                context: {type: object, description: "Extra context passed to the trigger template"}
+                max_tokens: {type: integer}
+      responses:
+        "200":
+          description: Sampling result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  response: {type: string}
+                  error: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/mcp/sampling-log:
+    get:
+      summary: Browse the last 50 sampling results
+      operationId: mcpSamplingLog
+      tags: [MCP]
+      responses:
+        "200":
+          description: Sampling log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    trigger: {type: string}
+                    prompt_excerpt: {type: string}
+                    response_excerpt: {type: string}
+                    status: {type: string}
+                    timestamp: {type: string, format: date-time}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/mcp/elicit:
+    post:
+      summary: Prompt the operator for structured input via the connected MCP host
+      description: Blocks until the operator responds or the timeout expires.
+      operationId: mcpElicit
+      tags: [MCP]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schema]
+              properties:
+                schema:
+                  type: string
+                  enum: [approval, text_input, choice]
+                prompt: {type: string}
+                options: {type: array, items: {type: string}, description: "Required for schema=choice"}
+                placeholder: {type: string, description: "Hint for schema=text_input"}
+                context: {type: object}
+      responses:
+        "200":
+          description: Elicitation response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approved: {type: boolean, description: "schema=approval only"}
+                  value: {type: string, description: "schema=text_input only"}
+                  choice: {type: string, description: "schema=choice only"}
+                  index: {type: integer, description: "schema=choice only"}
+                  error: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Smoke progress (v7.0.0) ────────────────────────────────────────────────
+
+  /api/smoke/progress:
+    get:
+      summary: Current smoke run progress (used by Dashboard smoke-run card)
+      operationId: smokeProgressGet
+      tags: [Singletons]
+      responses:
+        "200":
+          description: Progress JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: string}
+                  started_at: {type: string, format: date-time}
+                  active: {type: boolean}
+                  sections: {type: array, items: {type: object}}
+        "204": {description: No active smoke run}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Clear the smoke run progress file
+      operationId: smokeProgressDelete
+      tags: [Singletons]
+      responses:
+        "204": {description: Cleared}
+        "404": {description: No progress file}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Evals (v7.0.0) ─────────────────────────────────────────────────────────
+
+  /api/evals:
+    get:
+      summary: List eval run history
+      operationId: evalListRuns
+      tags: [Evals]
+      responses:
+        "200":
+          description: Runs list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        name: {type: string}
+                        status: {type: string}
+                        score: {type: number}
+                        created_at: {type: string, format: date-time}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/evals/run:
+    post:
+      summary: Run an eval suite
+      operationId: evalRun
+      tags: [Evals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [suite]
+              properties:
+                suite: {type: string, description: "Suite name from ~/.datawatch/evals/"}
+                session_id: {type: string, description: "Session to evaluate (optional)"}
+      responses:
+        "200":
+          description: Run result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  status: {type: string}
+                  score: {type: number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
 components:
   securitySchemes:
@@ -2563,3 +3513,247 @@ components:
         created_at:
           type: string
           format: date-time
+
+    LLMEntry:
+      type: object
+      description: A named LLM registry entry
+      properties:
+        name:
+          type: string
+          description: Unique name for this LLM entry
+          example: "claude-sonnet"
+        kind:
+          type: string
+          description: LLM backend kind
+          enum: [claude-code, openwebui, ollama, session-backend]
+          example: "claude-code"
+        model:
+          type: string
+          description: Model identifier within the backend
+          example: "claude-sonnet-4-6"
+        compute_nodes:
+          type: array
+          items:
+            type: string
+          description: Compute node names this LLM can use
+          example: ["gpu-node-1"]
+        enabled_models:
+          type: array
+          items:
+            type: string
+          description: Models enabled for use (subset of available)
+        enabled:
+          type: boolean
+          description: Whether this LLM entry is active
+          default: true
+        llm_ref:
+          type: string
+          description: Reference alias for use in session start and automata config
+          example: "claude-sonnet"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ComputeNode:
+      type: object
+      description: A compute node that can run LLM inference
+      properties:
+        name:
+          type: string
+          description: Unique name for this compute node
+          example: "gpu-node-1"
+        kind:
+          type: string
+          description: Compute node kind
+          enum: [ollama, openai-compat]
+          example: "ollama"
+        endpoint:
+          type: string
+          description: Base URL for the compute node API
+          example: "http://gpu-box:11434"
+        enabled:
+          type: boolean
+          description: Whether this node is available for routing
+          default: true
+        models:
+          type: array
+          items:
+            type: string
+          description: Models currently available on this node
+        observer_peer:
+          type: string
+          description: Observer peer name bound to this node for metrics
+        health:
+          type: string
+          description: Last health check result
+          enum: [ok, degraded, unreachable, unknown]
+          example: "ok"
+        last_probe_ms:
+          type: integer
+          description: Last save-time probe latency in milliseconds
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ServerEntry:
+      type: object
+      description: A remote datawatch server entry
+      properties:
+        name:
+          type: string
+          description: Unique name for this server
+          example: "prod-eu"
+        url:
+          type: string
+          description: Base URL of the remote datawatch server
+          example: "https://eu.example.com:8443"
+        token:
+          type: string
+          description: Bearer token for the remote server (write-only on create/update)
+          example: "***"
+        enabled:
+          type: boolean
+          description: Whether this server is included in aggregated queries
+          default: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DashboardLayout:
+      type: object
+      description: Persisted dashboard card layout configuration
+      properties:
+        cards:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Unique card identifier
+              type:
+                type: string
+                description: Card type
+                enum: [task_tree, orbital, ekg, gantt, heatmap, guardrails, smoke_run, event_feed, sparklines]
+              col:
+                type: integer
+                description: Column position (0-based)
+              row:
+                type: integer
+                description: Row position (0-based)
+              w:
+                type: integer
+                description: Card width in columns
+              h:
+                type: integer
+                description: Card height in rows
+              config:
+                type: object
+                description: Card-specific configuration
+                additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+
+    SamplingRequest:
+      type: object
+      description: MCP sampling request
+      properties:
+        trigger:
+          type: string
+          description: Built-in trigger name
+          enum: [alert_triage, anomaly_analysis, morning_briefing, council_deliberation, automaton_decision]
+          example: "alert_triage"
+        prompt:
+          type: string
+          description: Custom prompt (used when trigger is omitted)
+          example: "Summarise my open sessions"
+        context:
+          type: object
+          description: Additional context passed to the trigger template
+          additionalProperties: true
+        max_tokens:
+          type: integer
+          description: Max tokens for the completion
+          example: 512
+
+    SamplingResult:
+      type: object
+      description: A sampling result entry from the ring buffer
+      properties:
+        id:
+          type: string
+          description: Unique result identifier
+        trigger:
+          type: string
+          description: Trigger name or "custom"
+        prompt_excerpt:
+          type: string
+          description: First 200 chars of the prompt
+        response_excerpt:
+          type: string
+          description: First 200 chars of the response
+        status:
+          type: string
+          enum: [ok, error, unsupported]
+        created_at:
+          type: string
+          format: date-time
+
+    ElicitationRequest:
+      type: object
+      description: MCP elicitation request
+      required: [schema, prompt]
+      properties:
+        schema:
+          type: string
+          description: Elicitation schema type
+          enum: [approval, text_input, choice]
+          example: "approval"
+        prompt:
+          type: string
+          description: Prompt shown to the operator
+          example: "Approve deletion of 12 stale sessions?"
+        context:
+          type: object
+          description: Additional context (shown alongside approval prompts)
+          additionalProperties: true
+        placeholder:
+          type: string
+          description: Placeholder text for text_input schema
+          example: "e.g. refactor-auth-module"
+        options:
+          type: array
+          items:
+            type: string
+          description: Choice options for choice schema
+          example: ["quick", "normal", "thorough"]
+
+    ElicitationResponse:
+      type: object
+      description: Operator response to an elicitation
+      properties:
+        approved:
+          type: boolean
+          description: Present for approval schema
+        reason:
+          type: string
+          description: Optional reason text (approval schema)
+        value:
+          type: string
+          description: Operator-entered text (text_input schema)
+        choice:
+          type: string
+          description: Selected option (choice schema)
+        index:
+          type: integer
+          description: Zero-based index of selected option (choice schema)

@@ -56,6 +56,11 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automata list](#automata-list)
   - [Launch Automation form](#launch-automation-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
+- [Dashboard](#dashboard)
+  - [Session constellation](#session-constellation)
+  - [EKG waveform](#ekg-waveform)
+  - [Sprint pipeline](#sprint-pipeline)
+  - [Expand panel](#expand-panel)
 - [Observer](#observer)
   - [Federated peers](#federated-peers)
   - [Process envelopes](#process-envelopes)
@@ -172,6 +177,42 @@ The header strip carries Status badge + Settings (`openPRDSettingsModal` — typ
 [howto/evals](howto/evals.md) ·
 [howto/council-mode](howto/council-mode.md) ·
 [howto/skills-sync](howto/skills-sync.md)
+
+---
+
+## Dashboard
+
+Mission control for your entire fleet — a live, full-screen view of every running session, active Automata, and system health indicators. Requires `autonomous.enabled: true` in `datawatch.yaml`; the nav button is hidden otherwise (BL313).
+
+The layout is fully customisable: drag cards to reorder, resize with the width/height handle. Layout persists server-side at `GET/PUT /api/dashboard/layout` so it survives browser refreshes and re-logins.
+
+### Session constellation
+
+Force-directed SVG graph where each node is a session. Node colour reflects state (green = running, amber = waiting, grey = done). A pulsing ring indicates activity; a guardrail ring shows hook health from the session's status board.
+
+Click any node to open the **expand panel** for that session.
+
+### EKG waveform
+
+Scrolling canvas trace driven by every incoming `hook_update` WebSocket event. Spikes decay over time, giving a visual heartbeat of fleet activity. Flat line = quiet; busy fleet = rhythmic spikes.
+
+### Sprint pipeline
+
+Shown when Automata are running. Horizontal stage bar with story nodes, gate rings (pass/fail from guardrail verdicts), and stage colours matching story status. Lets you see at a glance how far along the active sprint is and where blockers have appeared.
+
+### Expand panel
+
+Three-column overlay opened by clicking a constellation node or a session card's `⊞` button:
+- **Left sidebar** — live task tree (reuses the telemetry task tree renderer).
+- **Main area** — session status board: hook health ring, current focus, test counts, git state.
+- **Right rail** — guardrail verdicts from the session's telemetry.
+
+**Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt, 30-day heatmap, guardrail profiles view, multi-session EKG overlay, smoke run progress.
+
+**See also:**
+[howto/dashboard.md](howto/dashboard.md) ·
+[howto/session-telemetry.md](howto/session-telemetry.md) ·
+[howto/claude-hooks.md](howto/claude-hooks.md)
 
 ---
 
@@ -297,9 +338,30 @@ Comm-channel → backend routing. Each rule is a (sender / channel / pattern) �
 
 ### Settings — LLM
 
-#### LLM Configuration
+#### LLM Registry
 
-Per-backend enable/disable + setup. Each backend card carries its own setup wizard (e.g. claude-code asks for `~/.claude.json`; ollama asks for the host URL; openwebui asks for the API key). Status row shows whether the backend is reachable + the model list it advertises.
+The v7 named-LLM registry. Each entry gives a friendly name to an LLM backend + model + compute node combination so you can reference it by name throughout the system (session start, Automata planning, pipeline tasks).
+
+**Card columns:** name, kind (ollama / openwebui / claude-code / etc.), compute nodes (failover order), enabled toggle, Test button.
+
+**Add / Edit form fields:**
+- **Name** — short kebab-case slug (e.g. `my-gpu-ollama`); immutable after save
+- **Kind** — adapter type; determines how the daemon routes inference calls
+- **Compute Nodes** — multi-select from the Compute Nodes registry; first entry is primary, rest are failover in order
+- **Enabled Models** — per-node model list with optional Auto-add toggle (auto-appends newly-discovered models)
+- **Enabled** toggle — disabled LLMs are rejected at session-start and excluded from pickers
+
+**Delete guard:** if active sessions or Automata are using the LLM, delete is blocked. The modal lists offenders and offers **Reassign + Delete** (move all active bindings to another LLM then delete) or **Force Delete** (cascade-cancel all bindings first).
+
+**In-use view:** expandable section per LLM showing active bindings (sessions/Automata/personas) with pagination and substring filter.
+
+**CLI:** `datawatch llm list | get | add | update | delete | enable | disable | test | models list|add|remove | in-use | refresh-models | reassign | force-delete`
+
+**See also:** [`howto/llm-registry.md`](howto/llm-registry.md)
+
+#### LLM Configuration (legacy)
+
+Per-backend enable/disable + setup for the original adapter system. Each backend card carries its own setup wizard (e.g. claude-code asks for `~/.claude.json`; ollama asks for the host URL). For new deployments, use the LLM Registry above.
 
 #### Cost Rates (USD / 1K tokens)
 
@@ -310,6 +372,32 @@ Per-backend per-model input + output token rates the daemon multiplies session t
 Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
 
 ### Settings — Agents
+
+#### Compute Nodes
+
+The v7 Compute Node registry — the hardware or remote endpoints that run LLM inference. Each node is one entry; LLMs reference nodes by name for failover routing.
+
+**Supported kinds:**
+- `ollama` — any host running the Ollama API (local or remote)
+- `openai-compat` — any OpenAI-compatible endpoint (OpenWebUI, vLLM, LMStudio, etc.)
+
+**Card columns:** name, kind, address, GPU/RAM summary, enabled sliding switch, Edit / Test / Delete buttons.
+
+**Edit form sections:**
+- **Connection** — kind, address URL
+- **Hardware** — OS, arch, GPU vendor/model/count, VRAM, RAM, CPU cores. The daemon auto-suggests "Computed max" concurrent requests based on VRAM × GPU count.
+- **Capacity** — declared max concurrent requests (operator override)
+- **Observer peer** — bind this node to a registered federated observer peer for live process/GPU stats correlation
+
+**Save-time probe:** the daemon runs a connectivity check on every create/update. Use `?probe=skip` to bypass for emergency saves when the node is temporarily unreachable.
+
+**Ollama marketplace:** click "Browse marketplace" on an Ollama-kind node to open the embedded catalog (llama3.1, qwen3, gemma3, deepseek-r1, etc.) with size/VRAM requirements and one-click background pull.
+
+**Migration banner:** shown when any node still uses a deprecated kind (`local`, `remote`, `ssh`, `docker`, `k8s`). Click to re-pick a supported kind per node.
+
+**CLI:** `datawatch compute node list | get | add | update | delete | detail | health | pull-model | remove-model | attach-observer | detach-observer | observer-free | observer-by-node | federation-meta-peers`
+
+**See also:** [`howto/compute-nodes.md`](howto/compute-nodes.md) · [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) · [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md)
 
 #### Project Profiles
 
@@ -384,7 +472,19 @@ Ten pre-built slash commands that inject live context before routing to the LLM:
 
 Access via: MCP `prompts/list` + `prompts/get` · `GET /api/mcp/prompts` · `datawatch mcp prompts list` · `!mcp prompts` in comm channels.
 
-**See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md) · [`howto/mcp-prompts.md`](howto/mcp-prompts.md)
+#### MCP Sampling
+
+The daemon can request LLM completions from the connected Claude Code / Claude Desktop session via `sampling/createMessage`. Five built-in triggers (`alert_triage`, `anomaly_analysis`, `morning_briefing`, `council_deliberation`, `automaton_decision`) come with pre-built prompt templates that inject live daemon state. Custom prompts also supported. Results stored in a 50-entry ring buffer viewable in the **Sampling log** tab. Degrades gracefully when no MCP host is connected.
+
+Config: `mcp.sampling.enabled`, `mcp.sampling.max_tokens`, `mcp.sampling.timeout_seconds`.
+
+#### MCP Elicitation
+
+The daemon can prompt the operator for structured input through the connected MCP host — without the operator leaving Claude Code. Three built-in schemas: `approval` (yes/no), `text_input` (free text), `choice` (pick one). Calls block until the operator responds or the timeout expires. Used by Automata approval gates, plugin confirmation dialogs, and autonomous decision prompts.
+
+Config: `mcp.elicitation.enabled`, `mcp.elicitation.timeout_seconds`.
+
+**See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md) · [`howto/mcp-prompts.md`](howto/mcp-prompts.md) · [`howto/mcp-sampling.md`](howto/mcp-sampling.md) · [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md)
 
 ### Settings — About
 
@@ -481,8 +581,18 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
 | Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | BL312 v7.2.0 | REST proxy + aggregated endpoints |
 | MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | BL302 v7.1.0 | MCP protocol spec |
-| MCP Resources | [`howto/mcp-tools.md`](howto/mcp-tools.md) | BL302 v7.1.0 | MCP protocol spec |
+| MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | BL302 v7.1.0 | MCP protocol spec |
+| MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | BL302 v7.1.0 | MCP protocol spec |
+| MCP Elicitation | [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md) | BL302 v7.1.0 | MCP protocol spec |
 | Docs-as-MCP-Interface | [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md) | BL274 v6.21.0 | hybrid search index |
+| Dashboard (mission control) | [`howto/dashboard.md`](howto/dashboard.md) | BL303 v7.0.0 | WebSocket-driven layout |
+| LLM Registry | [`howto/llm-registry.md`](howto/llm-registry.md) | v7.0.0 | `/api/llms` CRUD + named routing |
+| Compute Nodes | [`howto/compute-nodes.md`](howto/compute-nodes.md) | v7.0.0 | `/api/compute/nodes` CRUD |
+| Push notifications | [`howto/push-notifications.md`](howto/push-notifications.md) | v7.0.0-alpha.35 | UnifiedPush + ntfy SSE |
+| Claude hooks | [`howto/claude-hooks.md`](howto/claude-hooks.md) | v7.0.0-alpha.34 | hook scripts + status board |
+| Alerts & notifications | [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) | v7.0.0 | alert dock + per-channel delivery |
+| Guardrail library | [`howto/guardrail-library.md`](howto/guardrail-library.md) | v7.0.0 | SAST/secrets/deps/LLM scan profiles |
+| Ollama marketplace | [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) | v7.0.0-alpha.33 | embedded catalog + background pull |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
@@ -507,8 +617,13 @@ Comms + LLM:
 - [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) — most-common chat × backend pairings
 - [`howto/comm-channels.md`](howto/comm-channels.md) — all 11 messaging backends
 - [`howto/voice-input.md`](howto/voice-input.md) — transcription backends
+- [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) — alert dock, per-channel delivery, push notifications
+- [`howto/push-notifications.md`](howto/push-notifications.md) — UnifiedPush registration, ntfy-compat SSE streams
 - [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
+- [`howto/mcp-resources.md`](howto/mcp-resources.md) — 21 URI-addressed live resources
 - [`howto/mcp-prompts.md`](howto/mcp-prompts.md) — 10 prompt slash commands with live context injection
+- [`howto/mcp-sampling.md`](howto/mcp-sampling.md) — LLM completions routed through the connected MCP host
+- [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md) — structured operator input via approval/text/choice schemas
 
 Automata + orchestration:
 - [`howto/autonomous-planning.md`](howto/autonomous-planning.md) — submit a free-form spec, watch it decompose
@@ -523,6 +638,13 @@ Infrastructure:
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password backends
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
 - [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker, all-servers aggregation
+- [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
+- [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) — migrate deprecated compute node kinds to ollama/openai-compat
+- [`howto/llm-registry.md`](howto/llm-registry.md) — named LLM registry, per-node model lists, failover routing
+- [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) — browse and pull models from the embedded Ollama catalog
+- [`howto/guardrail-library.md`](howto/guardrail-library.md) — SAST/secrets/deps/LLM grader scan profiles
+- [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
+- [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 
 Memory + ops:
 - [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph across sessions

@@ -436,6 +436,42 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T26 | TS-397 | GET /api/mcp/prompts returns 10 prompts with name+description+arguments | surface:api feature:mcp-prompts | 📋 planned | — | — |
 | T26 | TS-398 | POST /api/mcp/prompts/get with name=diagnose-system returns messages array | surface:api feature:mcp-prompts | 📋 planned | — | — |
 | T26 | TS-399 | datawatch mcp prompts list exits 0 and lists 10 entries | surface:cli feature:mcp-prompts feature:cli | 📋 planned | — | — |
+| T27 | TS-400 | GET /api/dashboard/layout returns valid JSON shape | surface:api feature:dashboard | 📋 planned | — | — |
+| T27 | TS-401 | PUT /api/dashboard/layout round-trips (save + reload preserves cards) | surface:api feature:dashboard | 📋 planned | — | — |
+| T27 | TS-402 | POST /api/sessions/{id}/hook-event accepts PostToolUse payload | surface:api feature:sessions feature:hooks | 📋 planned | — | — |
+| T27 | TS-403 | GET /api/sessions/{id}/status returns hook_health + state fields | surface:api feature:sessions feature:hooks | 📋 planned | — | — |
+| T27 | TS-404 | GET /api/smoke/progress returns {active,version,sections} shape when smoke running | surface:api feature:dashboard | 📋 planned | — | — |
+| T27 | TS-405 | GET /api/mcp/resources returns array with ≥5 entries each having uri field | surface:api feature:mcp-resources | 📋 planned | — | — |
+| T27 | TS-406 | GET /api/mcp/resources/read?uri=datawatch://version returns text content | surface:api feature:mcp-resources | 📋 planned | — | — |
+| T27 | TS-407 | GET /api/mcp/resources/templates returns array with uriTemplate field | surface:api feature:mcp-resources | 📋 planned | — | — |
+| T27 | TS-408 | POST /api/mcp/sample with trigger=morning_briefing returns ok:true or error:sampling not supported | surface:api feature:mcp-sampling | 📋 planned | — | — |
+| T27 | TS-409 | POST /api/mcp/elicit with schema=approval returns form shape or error:elicitation not supported | surface:api feature:mcp-elicitation | 📋 planned | — | — |
+| T28 | TS-410 | POST /api/compute/nodes creates entry, GET /api/compute/nodes returns it | surface:api feature:compute | 📋 planned | — | — |
+| T28 | TS-411 | DELETE /api/compute/nodes/{name} returns 200; GET returns 404 | surface:api feature:compute | 📋 planned | — | — |
+| T28 | TS-412 | GET /api/compute/nodes/{name}/models?kind=ollama returns {models:[],kind,node} shape | surface:api feature:compute | 📋 planned | — | — |
+| T28 | TS-413 | GET /api/observer/peers/free returns array (free peers with no bound compute node) | surface:api feature:compute feature:observer | 📋 planned | — | — |
+| T28 | TS-414 | GET /api/observer/peers/by-node returns {by_node:{},unbound:[]} shape | surface:api feature:observer | 📋 planned | — | — |
+| T28 | TS-415 | GET /api/llms returns {llms:[]} or array with llm entries | surface:api feature:llm-registry | 📋 planned | — | — |
+| T28 | TS-416 | POST /api/llms creates entry; GET /api/llms/{name} round-trips | surface:api feature:llm-registry | 📋 planned | — | — |
+| T28 | TS-417 | GET /api/llms/{name}/in_use returns {bindings:[]} shape | surface:api feature:llm-registry | 📋 planned | — | — |
+| T28 | TS-418 | POST /api/llms/{name}/refresh_models returns 200 | surface:api feature:llm-registry | 📋 planned | — | — |
+| T28 | TS-419 | GET /api/marketplace/ollama/catalog returns array with name+tags fields | surface:api feature:compute | 📋 planned | — | — |
+| T29 | TS-420 | GET /api/migration/compute-kinds returns {nodes:[],supported:[]} shape | surface:api feature:compute | 📋 planned | — | — |
+| T29 | TS-421 | GET /api/secrets returns list shape (name+scopes, no values) | surface:api feature:secrets | 📋 planned | — | — |
+| T29 | TS-422 | POST /api/secrets/{name} sets secret; DELETE /api/secrets/{name} removes it | surface:api feature:secrets | 📋 planned | — | — |
+| T29 | TS-423 | POST /api/sessions/set_llm_ref updates session llm_ref binding | surface:api feature:sessions feature:llm-registry | 📋 planned | — | — |
+| T29 | TS-424 | GET /api/federation/meta-peers returns {by_node:{},unbound:[]} shape | surface:api feature:observer | 📋 planned | — | — |
+| T29 | TS-425 | GET /api/mcp/sampling-log returns array (may be empty) | surface:api feature:mcp-sampling | 📋 planned | — | — |
+| T29 | TS-426 | datawatch llm list exits 0 | surface:cli feature:llm-registry feature:cli | 📋 planned | — | — |
+| T29 | TS-427 | datawatch compute node list exits 0 | surface:cli feature:compute feature:cli | 📋 planned | — | — |
+| T30 | TS-428 | GET /api/mcp/tools returns ≥50 tools with name field | surface:api feature:mcp-tools | 📋 planned | — | — |
+| T30 | TS-429 | POST /api/mcp/call with tool=get_version returns version string | surface:api feature:mcp-tools | 📋 planned | — | — |
+| T30 | TS-430 | GET /api/evals returns {runs:[{id,name,status}]} shape (or empty runs array) | surface:api feature:evals | 📋 planned | — | — |
+| T30 | TS-431 | PATCH /api/compute/nodes/{name}/enabled toggles enabled field | surface:api feature:compute | 📋 planned | — | — |
+| T30 | TS-432 | docs_search "compute node" returns result referencing compute-nodes howto | surface:mcp feature:mcp feature:howto feature:compute | 📋 planned | — | — |
+| T30 | TS-433 | docs_search "mcp sampling" returns result referencing mcp-sampling howto | surface:mcp feature:mcp feature:howto feature:mcp-sampling | 📋 planned | — | — |
+| T30 | TS-434 | docs_list_howtos contains dashboard and compute-nodes and mcp-sampling | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
+| T30 | TS-435 | GET /api/secrets/{name}/exists returns {exists:true|false} without leaking value | surface:api feature:secrets | 📋 planned | — | — |
 
 ---
 

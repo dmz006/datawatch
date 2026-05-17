@@ -2572,7 +2572,7 @@ echo "$BC_CALL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "llm
 
 H "42. Docs-as-MCP: search + list + read"
 # Verify v7.x howto files exist on disk (regression guard)
-for _HF in "docs/howto/multi-servers.md" "docs/howto/mcp-prompts.md"; do
+for _HF in "docs/howto/multi-servers.md" "docs/howto/mcp-prompts.md" "docs/howto/mcp-sampling.md" "docs/howto/mcp-elicitation.md"; do
   _FP="$SMOKE_DIR/../$_HF"
   [[ -f "$_FP" ]] \
     && ok "howto file exists: $_HF" \
