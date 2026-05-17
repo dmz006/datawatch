@@ -270,6 +270,18 @@ func (r *Registry) List() []*LLM {
 	return out
 }
 
+// ResolveKind maps a named LLM to its adapter kind string.
+// Returns ("", false) when the name is unknown or the entry is disabled.
+// Satisfies the pipeline.KindResolver interface so the pipeline executor
+// can route named LLMs to the correct adapter without importing this package.
+func (r *Registry) ResolveKind(name string) (string, bool) {
+	l, err := r.Get(name)
+	if err != nil || l.Disabled {
+		return "", false
+	}
+	return string(l.Kind), true
+}
+
 // Get returns a copy of the named LLM, or ErrNotFound.
 func (r *Registry) Get(name string) (*LLM, error) {
 	r.mu.RLock()

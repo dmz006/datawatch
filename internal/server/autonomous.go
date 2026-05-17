@@ -18,6 +18,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -614,6 +615,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
+		// BL308 — validate backend against the inference registry when present.
+		if req.Backend != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(req.Backend); err != nil {
+				http.Error(w, "unknown LLM "+strconv.Quote(req.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
+		}
 		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -643,6 +651,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Actor == "" {
 			req.Actor = "operator"
+		}
+		// BL308 — validate backend against the inference registry when present.
+		if req.Backend != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(req.Backend); err != nil {
+				http.Error(w, "unknown LLM "+strconv.Quote(req.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
 		}
 		updated, err := s.autonomousMgr.SetTaskLLM(id, req.TaskID, req.Backend, req.Effort, req.Model, req.Actor)
 		if err != nil {

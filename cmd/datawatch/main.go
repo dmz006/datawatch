@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.77"
+var Version = "7.0.0-alpha.78"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1806,6 +1806,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer *server.HTTPServer
 		pipeExec   *pipelinePkg.Executor
 		pipeAdapter *pipelinePkg.RouterAdapter
+		// BL309 — keep a direct pointer so the inference registry can be
+		// wired as KindResolver after both objects are created.
+		pipeManagerAdapter *pipelinePkg.ManagerAdapter
 		// BL244 — filled after plugin registry is created; routers and
 		// the autonomous manager both check it at call time (not at wiring time).
 		autonomousMgrRef *autonomouspkg.Manager
@@ -2140,10 +2143,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			r.SetKnowledgeGraph(kgAdapter)
 		}
 		// Pipeline executor (F15)
-		pipeExec = pipelinePkg.NewExecutor(
-			pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
-			cfg.Session.LLMBackend,
-		)
+		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
+		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
 		// BL28 — wire quality-gate config into executor.
 		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
 			Enabled:           cfg.Pipeline.QualityGates.Enabled,
@@ -2743,6 +2744,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				disp.RegisterAdapter(&adapters.OpenCode{})
 				disp.RegisterAdapter(&adapters.Claude{})
 				httpServer.SetInference(llmReg, disp)
+				// BL309 — pipeline executor resolves named LLMs (e.g. "ollama-datawatch")
+				// to their adapter kind via the inference registry.
+				if pipeManagerAdapter != nil {
+					pipeManagerAdapter.SetKindResolver(llmReg)
+				}
 
 				// v7.0.0 S3 — wire the council orchestrator to use the
 				// dispatcher (real LLM debates; STUB strings stripped).

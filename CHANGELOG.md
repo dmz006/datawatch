@@ -39,6 +39,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311 filed — see backlog tracker.)_
 
+## v7.0.0-alpha.78 — BL308/BL309: LLM registry validation in set-llm + pipeline kind resolution
+
+### Fixed
+- **BL308 — `set_llm` / `set_task_llm` now validate backend against the inference registry** — `POST /api/autonomous/prds/{id}/set_llm` and `/set_task_llm` now reject unknown LLM names with HTTP 400 when the inference registry is present. Previously any raw string was accepted and silently stored, causing confusing failures later. Empty backend (inherit global default) bypasses validation. Installs without the registry continue to accept any string for backward compatibility.
+- **BL309 — Pipeline executor resolves named LLMs to adapter kind** — `inference.Registry.ResolveKind(name)` added; maps named registry entries (e.g. "ollama-datawatch") to their adapter kind string ("ollama") while excluding disabled entries. The pipeline `ManagerAdapter` now calls this resolver when starting sessions so named LLMs no longer silently fall back to the global default.
+
+### Added
+- **`inference.Registry.ResolveKind(name string) (string, bool)`** — satisfies the new `pipeline.KindResolver` interface; wired from `main.go` after the registry is loaded.
+- **`pipeline.KindResolver` interface** — decouples the pipeline package from the inference package; `ManagerAdapter.SetKindResolver` accepts any implementation.
+- **5 new tests for BL308** — `TestSetLLM_RejectsUnknownBackend`, `TestSetLLM_AcceptsKnownBackend`, `TestSetLLM_EmptyBackendSkipsValidation`, `TestSetLLM_NoRegistryPassesThrough`, `TestSetTaskLLM_RejectsUnknownBackend` in `bl308_set_llm_validation_test.go`.
+- **4 new tests for BL309** — `TestResolveKind_KnownLLM`, `TestResolveKind_UnknownLLM`, `TestResolveKind_DisabledLLM`, `TestResolveKind_MultipleLLMs` in `bl309_resolve_kind_test.go`.
+
+### Rule audit
+- 7-surface parity: validation is at the REST layer (server/autonomous.go) — CLI/comm/MCP surface still passes through without client-side validation (acceptable: server rejects bad names). PWA pickers already show only registry-listed LLMs after BL305.
+- Smoke: no new smoke sections (REST validation covered by unit tests).
+- Locale: no new user-facing strings.
+- Plans hygiene: no new plan docs required.
+- Mobile-parity: server-side only — mobile apps calling `/api/autonomous/prds/{id}/set_llm` now receive clear 400 errors for invalid LLMs.
+- Cookbook: updated in this entry.
+
 ### Backlog
 - **BL304 — Rename "decomposition" → "planning" everywhere (complete the BL221 Q13 intent)** — Design doc `2026-05-02-bl221-autonomous-task-redesign.md` (Q13) agreed to rename `decomposing`/`decomposition` → `planning` throughout. The status-code rename landed (`PRDPlanning` + back-compat alias + `"decomposing"` normalization on read), but the bulk of the rename was never implemented. Surfaces to audit and rename:
   - **Go config structs** — `DecompositionBackend`→`PlanningBackend`, `DecompositionEffort`→`PlanningEffort`, `DecompositionModel`→`PlanningModel` (`internal/config/config.go`, `internal/autonomous/manager.go`)
