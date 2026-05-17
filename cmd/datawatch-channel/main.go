@@ -68,6 +68,12 @@ When you need permission for a tool and permission relay is active,
 the request will be forwarded to the user automatically.`),
 	)
 
+	// BL302 S3 — advertise sampling capability so the daemon can request
+	// LLM completions from this client via sampling/createMessage.
+	// The SDK's StdioServer handles the createMessage request/response
+	// roundtrip automatically once the capability is declared here.
+	mcpSrv.EnableSampling()
+
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	mcpSrv.AddTool(bridge.replyTool(), bridge.handleReply)
 
@@ -106,6 +112,18 @@ the request will be forwarded to the user automatically.`),
 			mcpSrv.AddResourceTemplate(t.asMCPTemplate(), bridge.makeTemplateForwarder())
 		}
 		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d resource templates\n", len(templates))
+	}
+
+	// BL302 S4 — discover prompts and register forwarding handlers.
+	prompts, err := bridge.discoverPrompts()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] prompt discovery failed (non-fatal): %v\n", err)
+	} else {
+		for _, p := range prompts {
+			p := p
+			mcpSrv.AddPrompt(p.asMCPPrompt(), bridge.makePromptForwarder(p.Name))
+		}
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d prompts\n", len(prompts))
 	}
 
 	// Start the HTTP listener first so the daemon and channel can begin

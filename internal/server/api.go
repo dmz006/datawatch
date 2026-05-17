@@ -154,6 +154,9 @@ type mcpBridgeAPI interface {
 	ResourcesJSON() ([]byte, error)
 	ResourceReadJSON(ctx context.Context, uri string) ([]byte, error)
 	ResourceTemplatesJSON() ([]byte, error)
+	// BL302 S4 — prompt surface.
+	PromptsListJSON() []byte
+	PromptsGetJSON(ctx context.Context, name string, args map[string]string) ([]byte, error)
 }
 
 // startTime records when the daemon started (for uptime calculation).
@@ -817,6 +820,54 @@ func (s *Server) handleMCPElicit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"result": res}) //nolint:errcheck
+}
+
+// handleMCPPromptsList returns all registered MCP prompts as JSON (BL302 S4).
+// GET /api/mcp/prompts → {"prompts":[...]}
+func (s *Server) handleMCPPromptsList(w http.ResponseWriter, r *http.Request) {
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(s.mcpBridge.PromptsListJSON()) //nolint:errcheck
+}
+
+// handleMCPPromptsGet renders a prompt by name with given arguments (BL302 S4).
+// POST /api/mcp/prompts/get — body: {"name":"<prompt-name>","arguments":{...}}
+// Returns {"name","description","messages":[{"role","content"},...]} on success.
+func (s *Server) handleMCPPromptsGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Name      string            `json:"name"`
+		Arguments map[string]string `json:"arguments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Arguments == nil {
+		req.Arguments = map[string]string{}
+	}
+	data, err := s.mcpBridge.PromptsGetJSON(r.Context(), req.Name, req.Arguments)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
 }
 
 // handleMCPDocs returns MCP tool documentation as JSON or HTML.

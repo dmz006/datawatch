@@ -768,7 +768,41 @@ func (r *Router) handleMCPResCmd(cmd Command) {
 			return
 		}
 		r.reply("mcp sample", body)
+	case lower == "prompts" || lower == "prompt list":
+		// BL302 S4 — !mcp prompts → GET /api/mcp/prompts
+		body, err := r.commGet("/api/mcp/prompts", nil)
+		if err != nil {
+			r.reply("mcp prompts failed", err.Error())
+			return
+		}
+		r.reply("mcp prompts", body)
+	case strings.HasPrefix(lower, "prompt "):
+		// BL302 S4 — !mcp prompt <name> [key=val...] → POST /api/mcp/prompts/get
+		rest := strings.TrimSpace(cmd.Text[7:])
+		parts := strings.Fields(rest)
+		if len(parts) == 0 {
+			r.reply("mcp prompt", "usage: mcp prompt <name> [key=val...]")
+			return
+		}
+		name := parts[0]
+		argMap := map[string]string{}
+		for _, kv := range parts[1:] {
+			idx := strings.IndexByte(kv, '=')
+			if idx > 0 {
+				argMap[kv[:idx]] = kv[idx+1:]
+			}
+		}
+		jsonPayload, _ := json.Marshal(map[string]any{
+			"name":      name,
+			"arguments": argMap,
+		})
+		body, err := r.commJSON("POST", "/api/mcp/prompts/get", string(jsonPayload))
+		if err != nil {
+			r.reply("mcp prompt failed", err.Error())
+			return
+		}
+		r.reply("mcp prompt "+name, body)
 	default:
-		r.reply("mcp", "usage: mcp resources | mcp templates | mcp read <uri> | mcp sample <message>")
+		r.reply("mcp", "usage: mcp resources | mcp templates | mcp read <uri> | mcp sample <message> | mcp prompts | mcp prompt <name> [key=val...]")
 	}
 }

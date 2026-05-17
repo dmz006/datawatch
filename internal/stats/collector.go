@@ -105,6 +105,9 @@ type SystemStats struct {
 
 	// Communication channel stats
 	CommStats []CommChannelStat `json:"comm_stats,omitempty"`
+
+	// MCP extended stats (BL302 S1)
+	MCPStats *MCPStatsBlock `json:"mcp_stats,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.

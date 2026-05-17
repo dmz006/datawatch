@@ -1523,6 +1523,23 @@ else
   ko "datawatch://alerts read failed or missing alerts key (got: ${ALERTS_CONTENT:0:100})"
 fi
 
+H "7ad. MCP prompts surface check (BL302 S4)"
+PROMPTS_RES=$(curl "${curl_args[@]}" "$BASE/api/mcp/prompts" 2>/dev/null || true)
+PROMPT_COUNT=$(echo "$PROMPTS_RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("prompts",[])))' 2>/dev/null || echo 0)
+if [ "$PROMPT_COUNT" -ge 10 ]; then
+  ok "prompts list: $PROMPT_COUNT prompts registered (expected ≥10)"
+else
+  ko "prompts list: $PROMPT_COUNT prompts (expected ≥10, got: ${PROMPTS_RES:0:100})"
+fi
+DIAG_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"name":"diagnose-system","arguments":{}}' \
+  "$BASE/api/mcp/prompts/get" 2>/dev/null || true)
+if echo "$DIAG_RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "messages" in d and len(d["messages"])>0' 2>/dev/null; then
+  ok "prompts/get diagnose-system returns messages"
+else
+  ko "prompts/get diagnose-system failed or missing messages (got: ${DIAG_RES:0:100})"
+fi
+
 H "7ae. MCP sampling endpoint surface check (BL302 S3)"
 SAMPLE_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
   -d '{"trigger":"smoke","messages":[{"role":"user","content":"ping"}]}' \

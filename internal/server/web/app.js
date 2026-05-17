@@ -6350,6 +6350,19 @@ function renderSettingsView() {
                 <div id="mcpSamplingList" style="margin-top:8px;"></div>
               </div>
             </div>
+            <!-- BL302 S4 — MCP Prompts panel (list + get + copy-to-clipboard) -->
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+              <div class="settings-label" style="font-weight:600;">${t('mcp.prompts.tab')||'Prompts'}</div>
+              <div id="mcpPromptsPanel" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;">
+                <button onclick="loadMCPPrompts()" style="background:var(--accent2);color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;">Load Prompts</button>
+                <div id="mcpPromptsList" style="margin-top:8px;"></div>
+                <div id="mcpPromptResult" style="margin-top:8px;display:none;">
+                  <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:4px;" id="mcpPromptResultLabel"></div>
+                  <pre id="mcpPromptResultBody" style="background:var(--bg);padding:8px;border-radius:4px;overflow:auto;max-height:300px;font-size:11px;white-space:pre-wrap;word-break:break-all;"></pre>
+                  <button onclick="copyMCPPromptResult()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-top:4px;">${t('mcp.prompts.copy')||'Copy'}</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -11351,6 +11364,107 @@ function loadMCPSamplingLog() {
   // Schedule next refresh.
   if (_mcpSamplingRefreshTimer) clearTimeout(_mcpSamplingRefreshTimer);
   _mcpSamplingRefreshTimer = setTimeout(function() { loadMCPSamplingLog(); }, 30000);
+}
+
+// BL302 S4 — MCP Prompts panel: list + get + copy-to-clipboard.
+function loadMCPPrompts() {
+  var listEl = document.getElementById('mcpPromptsList');
+  if (!listEl) return;
+  listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">Loading…</span>';
+  fetch('/api/mcp/prompts', {headers: tokenHeader()})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var prompts = d.prompts || [];
+      if (!prompts.length) {
+        listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">' +
+          (window._t && window._t('mcp.prompts.empty') || 'No prompts registered') + '</span>';
+        return;
+      }
+      var rows = prompts.map(function(p) {
+        var argHtml = '';
+        if (p.arguments && p.arguments.length) {
+          var inputs = p.arguments.map(function(a) {
+            return '<label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px;margin-top:3px;">' +
+              escHtml(a.name) + (a.required ? '*' : '') + ': ' +
+              '<input type="text" data-arg="' + escHtml(a.name) + '" placeholder="' + escHtml(a.description || '') + '" ' +
+              'style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-size:10px;" /></label>';
+          }).join('');
+          argHtml = '<div class="mcp-prompt-args" style="margin-top:4px;">' + inputs + '</div>';
+        }
+        var safeId = escHtml(p.name).replace(/[^a-zA-Z0-9-]/g, '_');
+        return '<div id="mcp-prompt-' + safeId + '" style="margin:4px 0;padding:6px 8px;background:var(--bg);border-radius:4px;">' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-weight:600;font-size:11px;color:var(--accent2);">' + escHtml(p.name) + '</span>' +
+          '<span style="font-size:10px;color:var(--text2);flex:1;">' + escHtml(p.description || '') + '</span>' +
+          '<button onclick="getMCPPrompt(\'' + escHtml(p.name) + '\', this)" ' +
+          'style="background:var(--accent2);color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;">' +
+          (window._t && window._t('mcp.prompts.get') || 'Get') + '</button>' +
+          '</div>' + argHtml + '</div>';
+      });
+      listEl.innerHTML = rows.join('');
+    })
+    .catch(function(e) {
+      if (listEl) listEl.innerHTML = '<span style="color:var(--error);font-size:11px;">' + escHtml(String(e)) + '</span>';
+    });
+}
+
+function getMCPPrompt(name, btn) {
+  // Collect args from sibling inputs in the same prompt row.
+  var row = btn.closest ? btn.closest('[id^="mcp-prompt-"]') : btn.parentNode;
+  var args = {};
+  if (row) {
+    var inputs = row.querySelectorAll ? row.querySelectorAll('[data-arg]') : [];
+    for (var i = 0; i < inputs.length; i++) {
+      var val = inputs[i].value;
+      if (val) args[inputs[i].getAttribute('data-arg')] = val;
+    }
+  }
+  var resultEl = document.getElementById('mcpPromptResult');
+  var labelEl = document.getElementById('mcpPromptResultLabel');
+  var bodyEl = document.getElementById('mcpPromptResultBody');
+  if (resultEl) resultEl.style.display = 'none';
+  fetch('/api/mcp/prompts/get', {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, tokenHeader()),
+    body: JSON.stringify({name: name, arguments: args})
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!resultEl || !bodyEl) return;
+      resultEl.style.display = '';
+      if (labelEl) labelEl.textContent = (window._t && window._t('mcp.prompts.name') || 'Prompt') + ': ' + name;
+      if (d.error) {
+        bodyEl.textContent = 'Error: ' + d.error;
+        return;
+      }
+      var text = (d.messages || []).map(function(m) {
+        return '[' + m.role + ']\n' + m.content;
+      }).join('\n\n---\n\n');
+      bodyEl.textContent = text;
+    })
+    .catch(function(e) {
+      if (resultEl) resultEl.style.display = '';
+      if (bodyEl) bodyEl.textContent = String(e);
+    });
+}
+
+function copyMCPPromptResult() {
+  var bodyEl = document.getElementById('mcpPromptResultBody');
+  if (!bodyEl) return;
+  var text = bodyEl.textContent || '';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast((window._t && window._t('mcp.prompts.copy') || 'Copy') + ' ✔', 'success', 1500);
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast((window._t && window._t('mcp.prompts.copy') || 'Copy') + ' ✔', 'success', 1500);
+  }
 }
 
 // Detect whether a backend has been configured (has any non-empty credential/url field)

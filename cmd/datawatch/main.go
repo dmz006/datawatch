@@ -4604,6 +4604,13 @@ Return STRICT JSON:
 		mcpSrv.RegisterResources()
 	}
 
+	// BL302 S4 — register MCP prompts when prompts enabled.
+	// Stats counters are nil here (the prompt server nil-guards them); the
+	// daemon's HTTP stats handler reads the globalPromptRegistry directly.
+	if cfg.MCP.Prompts.Enabled {
+		mcpSrv.RegisterPrompts(nil)
+	}
+
 	// BL302 S3 — wire sampling + elicitation dispatchers to the HTTP server.
 	if httpServer != nil && cfg.MCP.Sampling.Enabled {
 		httpServer.SetMCPSamplingDispatcher(newSamplingAdapter(mcpSrv.SamplingDispatcher()))
@@ -8341,6 +8348,8 @@ Remote AI config (SSE):
 	// BL302 S3 — mcp sample + elicit subcommands.
 	cmd.AddCommand(newMCPSampleCmd())
 	cmd.AddCommand(newMCPElicitCmd())
+	// BL302 S4 — mcp prompts subcommand group.
+	cmd.AddCommand(newMCPPromptsCmd())
 	return cmd
 }
 
@@ -8553,6 +8562,132 @@ func mcpElicitRun(schema, message string, options []string) error {
 	}
 	defer resp.Body.Close()
 	out, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(out))
+	return nil
+}
+
+// ---- BL302 S4 — CLI: datawatch mcp prompts list / get ----
+
+func newMCPPromptsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prompts",
+		Short: "Manage MCP prompts (BL302 S4)",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List all registered MCP prompts",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return mcpPromptsList()
+			},
+		},
+		&cobra.Command{
+			Use:   "get <name> [key=val...]",
+			Short: "Get (render) a named MCP prompt with optional arguments",
+			Args:  cobra.MinimumNArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				name := args[0]
+				argMap := map[string]string{}
+				for _, kv := range args[1:] {
+					parts := strings.SplitN(kv, "=", 2)
+					if len(parts) == 2 {
+						argMap[parts[0]] = parts[1]
+					}
+				}
+				return mcpPromptsGet(name, argMap)
+			},
+		},
+	)
+	return cmd
+}
+
+func mcpPromptsList() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Get(base + "/api/mcp/prompts")
+	if err != nil {
+		return fmt.Errorf("GET /api/mcp/prompts: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	// Pretty-print the JSON table.
+	var env struct {
+		Prompts []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Arguments   []struct {
+				Name     string `json:"name"`
+				Required bool   `json:"required"`
+			} `json:"arguments"`
+		} `json:"prompts"`
+	}
+	if json.Unmarshal(body, &env) == nil && len(env.Prompts) > 0 {
+		fmt.Printf("%-25s %-50s %s\n", "NAME", "DESCRIPTION", "ARGS")
+		fmt.Printf("%-25s %-50s %s\n", "----", "-----------", "----")
+		for _, p := range env.Prompts {
+			argNames := []string{}
+			for _, a := range p.Arguments {
+				if a.Required {
+					argNames = append(argNames, a.Name+"*")
+				} else {
+					argNames = append(argNames, a.Name)
+				}
+			}
+			desc := p.Description
+			if len(desc) > 50 {
+				desc = desc[:47] + "..."
+			}
+			fmt.Printf("%-25s %-50s %s\n", p.Name, desc, strings.Join(argNames, ","))
+		}
+		return nil
+	}
+	fmt.Println(string(body))
+	return nil
+}
+
+func mcpPromptsGet(name string, args map[string]string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{
+		"name":      name,
+		"arguments": args,
+	})
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Post(base+"/api/mcp/prompts/get", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("POST /api/mcp/prompts/get: %w", err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	// Pretty-print messages.
+	var env struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Messages    []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(out, &env) == nil {
+		if env.Error != "" {
+			return fmt.Errorf("prompt error: %s", env.Error)
+		}
+		fmt.Printf("Prompt: %s\n", env.Name)
+		if env.Description != "" {
+			fmt.Printf("Description: %s\n", env.Description)
+		}
+		fmt.Println("---")
+		for _, m := range env.Messages {
+			fmt.Printf("[%s]\n%s\n\n", m.Role, m.Content)
+		}
+		return nil
+	}
 	fmt.Println(string(out))
 	return nil
 }

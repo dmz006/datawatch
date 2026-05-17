@@ -199,6 +199,103 @@ func (b *bridge) makeTemplateForwarder() server.ResourceTemplateHandlerFunc {
 	}
 }
 
+// ── Prompt discovery + forwarding (BL302 S4) ──────────────────────────────
+
+// daemonPrompt describes a prompt returned by GET /api/mcp/prompts.
+type daemonPrompt struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Arguments   []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Required    bool   `json:"required"`
+	} `json:"arguments,omitempty"`
+}
+
+// asMCPPrompt converts a daemonPrompt to an MCP Prompt.
+func (d daemonPrompt) asMCPPrompt() mcpsdk.Prompt {
+	opts := []mcpsdk.PromptOption{
+		mcpsdk.WithPromptDescription(d.Description),
+	}
+	for _, a := range d.Arguments {
+		var argOpts []mcpsdk.ArgumentOption
+		argOpts = append(argOpts, mcpsdk.ArgumentDescription(a.Description))
+		if a.Required {
+			argOpts = append(argOpts, mcpsdk.RequiredArgument())
+		}
+		opts = append(opts, mcpsdk.WithArgument(a.Name, argOpts...))
+	}
+	return mcpsdk.NewPrompt(d.Name, opts...)
+}
+
+// discoverPrompts fetches the daemon's prompt list via GET /api/mcp/prompts.
+func (b *bridge) discoverPrompts() ([]daemonPrompt, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := b.callParent(ctx, http.MethodGet, "/api/mcp/prompts", nil)
+	if err != nil {
+		return nil, fmt.Errorf("GET /api/mcp/prompts: %w", err)
+	}
+	var envelope struct {
+		Prompts []daemonPrompt `json:"prompts"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return nil, fmt.Errorf("parse prompts: %w", err)
+	}
+	return envelope.Prompts, nil
+}
+
+// makePromptForwarder returns a PromptHandlerFunc that proxies to POST /api/mcp/prompts/get.
+func (b *bridge) makePromptForwarder(name string) server.PromptHandlerFunc {
+	return func(ctx context.Context, req mcpsdk.GetPromptRequest) (*mcpsdk.GetPromptResult, error) {
+		args := req.Params.Arguments
+		if args == nil {
+			args = map[string]string{}
+		}
+		payload := map[string]any{
+			"name":      name,
+			"arguments": args,
+		}
+		out, err := b.callParent(ctx, http.MethodPost, "/api/mcp/prompts/get", payload)
+		if err != nil {
+			return nil, fmt.Errorf("prompt %s: %w", name, err)
+		}
+		// Decode the response and reconstruct a GetPromptResult.
+		var env struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Messages    []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(out, &env); err != nil {
+			// Return raw text as a single user message.
+			return &mcpsdk.GetPromptResult{
+				Messages: []mcpsdk.PromptMessage{
+					mcpsdk.NewPromptMessage(mcpsdk.RoleUser, mcpsdk.TextContent{Type: "text", Text: string(out)}),
+				},
+			}, nil
+		}
+		if env.Error != "" {
+			return nil, fmt.Errorf("prompt %s: %s", name, env.Error)
+		}
+		msgs := make([]mcpsdk.PromptMessage, 0, len(env.Messages))
+		for _, m := range env.Messages {
+			role := mcpsdk.RoleUser
+			if m.Role == "assistant" {
+				role = mcpsdk.RoleAssistant
+			}
+			msgs = append(msgs, mcpsdk.NewPromptMessage(role, mcpsdk.TextContent{Type: "text", Text: m.Content}))
+		}
+		return &mcpsdk.GetPromptResult{
+			Description: env.Description,
+			Messages:    msgs,
+		}, nil
+	}
+}
+
 // makeForwarder returns a ToolHandlerFunc that forwards the call to POST /api/mcp/call.
 func (b *bridge) makeForwarder(toolName string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

@@ -1160,5 +1160,12 @@
   "mcp.sampling.trigger": "Trigger",
   "mcp.sampling.result": "Result",
   "mcp.sampling.latency": "Latency",
-  "mcp.sampling.empty": "No sampling requests recorded"
+  "mcp.sampling.empty": "No sampling requests recorded",
+  "mcp.prompts.tab": "プロンプト",
+  "mcp.prompts.name": "名前",
+  "mcp.prompts.description": "説明",
+  "mcp.prompts.get": "取得",
+  "mcp.prompts.copy": "コピー",
+  "mcp.prompts.empty": "プロンプトが登録されていません",
+  "mcp.prompts.args": "引数"
 }

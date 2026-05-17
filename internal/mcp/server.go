@@ -75,6 +75,8 @@ type Server struct {
 	// BL302 S3 — sampling and elicitation dispatchers.
 	samplingDisp   *SamplingDispatcher
 	elicitationDisp *ElicitationDispatcher
+	// BL302 S4 — prompt server (10 MCP prompts).
+	promptServer *MCPPromptServer
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
 	// webPort for internal API calls (config, stats)
@@ -812,6 +814,29 @@ type ParamDoc struct {
 // SetChannelStats sets the stats counters for MCP request/response tracking.
 func (s *Server) SetChannelStats(cs *stats.ChannelCounters) {
 	s.chanStats = cs
+}
+
+// RegisterPrompts registers all 10 BL302 S4 prompts. It creates an MCPPromptServer
+// using the daemon's stats counters and calls RegisterPrompts on it. The prompt
+// server is stored so PromptsListJSON / PromptsGetJSON are available.
+// sc may be nil (stats recording is skipped).
+func (s *Server) RegisterPrompts(sc *stats.MCPStatsCounters) {
+	ps := NewMCPPromptServer(s, s.srv, sc)
+	ps.RegisterPrompts()
+	s.promptServer = ps
+}
+
+// PromptsListJSON returns all registered prompts as JSON for GET /api/mcp/prompts.
+func (s *Server) PromptsListJSON() []byte {
+	return PromptsListJSON()
+}
+
+// PromptsGetJSON renders a prompt by name with the given arguments.
+func (s *Server) PromptsGetJSON(ctx context.Context, name string, args map[string]string) ([]byte, error) {
+	if s.promptServer == nil {
+		return nil, fmt.Errorf("prompts not registered")
+	}
+	return s.promptServer.PromptsGetJSON(ctx, name, args)
 }
 
 // SamplingDispatcher returns the daemon's SamplingDispatcher.

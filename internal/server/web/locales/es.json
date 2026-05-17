@@ -1160,5 +1160,12 @@
   "mcp.sampling.trigger": "Trigger",
   "mcp.sampling.result": "Result",
   "mcp.sampling.latency": "Latency",
-  "mcp.sampling.empty": "No sampling requests recorded"
+  "mcp.sampling.empty": "No sampling requests recorded",
+  "mcp.prompts.tab": "Prompts",
+  "mcp.prompts.name": "Nombre",
+  "mcp.prompts.description": "Descripción",
+  "mcp.prompts.get": "Obtener",
+  "mcp.prompts.copy": "Copiar",
+  "mcp.prompts.empty": "No hay prompts registrados",
+  "mcp.prompts.args": "Argumentos"
 }

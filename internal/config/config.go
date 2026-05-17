@@ -967,6 +967,12 @@ type MCPElicitationConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
+// MCPPromptsConfig controls MCP prompt exposure (BL302 S4).
+type MCPPromptsConfig struct {
+	// Enabled controls whether MCP prompts are registered and served. Default: true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
 // MCPConfig holds MCP server configuration for IDE and remote AI integrations.
 type MCPConfig struct {
 	// Enabled controls whether the MCP server is available via `datawatch mcp`.
@@ -980,6 +986,9 @@ type MCPConfig struct {
 
 	// Elicitation controls daemon-initiated elicitation (BL302 S3).
 	Elicitation MCPElicitationConfig `yaml:"elicitation" json:"elicitation"`
+
+	// Prompts controls the MCP prompts surface (BL302 S4).
+	Prompts MCPPromptsConfig `yaml:"prompts" json:"prompts"`
 
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
@@ -1634,6 +1643,7 @@ func DefaultConfig() *Config {
 			Resources:       MCPResourcesConfig{Enabled: true},
 			Sampling:        MCPSamplingConfig{Enabled: true},
 			Elicitation:     MCPElicitationConfig{Enabled: true},
+			Prompts:         MCPPromptsConfig{Enabled: true},
 		},
 		// Backend addresses and binaries are intentionally empty in the default
 		// config so fresh installs don't trigger spurious v6→v7 migration toasts.

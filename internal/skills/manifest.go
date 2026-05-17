@@ -66,6 +66,21 @@ type Manifest struct {
 	Guardrails      []string `yaml:"guardrails,omitempty" json:"guardrails,omitempty"`
 	GuardrailProfile string  `yaml:"guardrail_profile,omitempty" json:"guardrail_profile,omitempty"`
 
+	// BL302 S3 — sampling_hook declares an optional MCP sampling trigger
+	// that fires after this skill executes, sending the skill output to
+	// Claude Code for commentary/summarization.  The value is a Go
+	// text/template string with access to {{.Name}}, {{.Output}}, {{.Error}}.
+	//
+	// Example SKILL.md frontmatter:
+	//   sampling_hook: "Skill {{.Name}} produced: {{.Output}}. Summarize key findings."
+	//
+	// Future wiring: when a skill with sampling_hook is loaded and there is
+	// an active MCP sampling dispatcher (BL302 S3), the daemon fires
+	// SamplingDispatcher.Sample after execution with TriggerAlertTriage-style
+	// context.  Implementation lives in BL302 S4 (future sprint) — this
+	// declaration is here so skill manifests can already opt-in.
+	SamplingHook string `yaml:"sampling_hook,omitempty" json:"sampling_hook,omitempty"`
+
 	// Extra captures any YAML key the parser doesn't know about so they
 	// round-trip when the registry is re-synced. Per the Skills-Awareness
 	// Rule, unknown fields are surfaced (not hidden) and preserved.
