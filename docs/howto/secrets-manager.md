@@ -27,7 +27,7 @@ exec_steps:
       name: "{{params.name}}"
     read_only: true
 ---
-# How-to: Secrets Manager — native + KeePass + 1Password
+# How-to: Secrets Manager — native + KeePass + 1Password + Vault
 
 One `${secret:name}` syntax across YAML configs, plugin manifests, and
 per-session env injection. Three backend choices. Audit-logged on
@@ -37,8 +37,8 @@ every read.
 
 Centralized credential store. The native AES-256-GCM database at
 `~/.datawatch/secrets.db` is the default and requires nothing to set
-up. Optional KeePass and 1Password backends for operators who already
-use them.
+up. Optional KeePass, 1Password, and HashiCorp Vault / OpenBao backends for
+operators who already use them.
 
 `${secret:name}` references in any YAML get resolved at load / spawn
 time. Resolved values never appear in the session log; per-secret tags
@@ -49,6 +49,7 @@ time. Resolved values never appear in the session log; per-secret tags
 | `native` (default) | Zero | Single-host operators; lab work |
 | `keepass` | KeePassXC + DB file | Operators on KeePass already |
 | `onepassword` | `op` CLI + service account token | Org-mandated 1Password |
+| `vault` | HashiCorp Vault / OpenBao KV v2; `DATAWATCH_VAULT_TOKEN` | Enterprise or OSS vault already in infra |
 
 ## Base requirements
 
@@ -76,6 +77,42 @@ Set the unlock secret in env (NOT in YAML — chicken-and-egg):
 export DATAWATCH_KEEPASS_PASSWORD='...'
 datawatch restart
 ```
+
+For HashiCorp Vault / OpenBao, edit `~/.datawatch/datawatch.yaml`:
+
+```yaml
+secrets:
+  backend: vault
+  vault:
+    address: https://vault.example.com:8200
+    namespace: ""                    # Vault Enterprise namespace; leave empty for OSS
+    auth_method: token               # only 'token' supported currently
+    kv_mount: secret                 # KV v2 mount path
+    path_prefix: datawatch/          # all secrets stored under this prefix
+    path_layout: flat                # 'flat' (default) or 'tag_aware' (one subdir per tag)
+    tls_ca_file: ""                  # path to custom CA bundle; empty = system CAs
+    tls_skip_verify: false           # do NOT set true in production
+    request_timeout: 10s
+```
+
+Set the Vault token via environment (never in YAML):
+
+```sh
+export DATAWATCH_VAULT_TOKEN='hvs.CAESXXXXXX'
+datawatch restart
+```
+
+The `token` YAML field also accepts `${secret:name}` references into the built-in
+store — letting you bootstrap Vault access via the native AES-256-GCM store:
+
+```yaml
+vault:
+  token: ${secret:vault-token}
+```
+
+**Limitations in v6.15:** Vault is the single active backend for all secrets —
+per-agent Vault isolation (BL284) is a future enhancement. KV v1 and Vault
+AppRole/Kubernetes auth (BL281) are also deferred.
 
 ## Two happy paths
 
@@ -162,6 +199,32 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/secrets/GITHUB_TOKEN
 # Delete.
 curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/secrets/GITHUB_TOKEN
 ```
+
+### Vault status
+
+When `secrets.backend: vault`, a status row appears in Settings → Secrets Store:
+
+```sh
+# CLI
+datawatch secrets vault status
+# → address: https://vault.example.com:8200
+#   reachable: true
+#   kv_mount: secret, path_prefix: datawatch/
+#   last success: 2026-05-09T14:30:01Z
+#   last request_id: 01HZQ...
+
+# REST
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  https://localhost:8443/api/secrets/vault/status
+
+# MCP
+{ "tool": "secrets_vault_status", "args": {} }
+
+# Comm
+secrets vault status
+```
+
+The Settings nav button shows a red `!` badge when Vault is the active backend but unreachable.
 
 ### 5c. MCP
 

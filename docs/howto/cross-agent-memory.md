@@ -230,6 +230,109 @@ kg:
    Knowledge graph (triples) lives alongside; queried separately.
 ```
 
+## Memory scope hierarchy
+
+Beyond flat recall/remember, the daemon organizes memory into a
+**4-scope hierarchy** that lets agents share context across sessions
+while keeping session-private notes separate.
+
+```
+persona-global          ← shared across all projects for a persona
+  └─ persona-in-project ← persona's memory within a specific project
+       └─ project-shared ← all agents on a project see this
+            └─ session-local ← private to the current session
+```
+
+Use **borrow** to read a higher scope without polluting it. Use
+**seed** to copy curated entries into a lower scope. Use **promote**
+to surface a session discovery into a shared scope (adds a breadcrumb
+so provenance is traceable).
+
+### 4a. CLI
+
+```sh
+# Recall — walk layers from persona-global down to session-local.
+datawatch memory scope recall \
+  --persona alice \
+  --project /home/me/web \
+  --session sess1
+
+# Borrow — read another scope as read-only context (doesn't mutate it).
+datawatch memory scope borrow \
+  --scope project-shared \
+  --project /home/me/web \
+  --top-k 5
+
+# Seed — copy N entries from a higher scope into a lower one.
+datawatch memory scope seed \
+  --from-scope project-shared --from-project /home/me/web \
+  --to-scope session-local --to-project /home/me/marketing \
+  --to-session marketing-sess \
+  --content-substring "branding"
+
+# Promote — move a session discovery into a shared scope.
+datawatch memory scope promote \
+  --memory-id 42 \
+  --from-scope session-local --from-project /home/me/web --from-session sess1 \
+  --to-scope project-shared --to-project /home/me/web \
+  --persona alice
+```
+
+### 5b. REST
+
+```sh
+BASE=https://localhost:8443; TOKEN=$(cat ~/.datawatch/token)
+
+# Recall
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/memory/scopes/recall?persona=alice&project=/home/me/web&session=sess1"
+
+# Borrow
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/memory/scopes/borrow?scope=project-shared&project=/home/me/web&top_k=5"
+
+# Seed
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"from":{"scope":"project-shared","project":"/home/me/web"},"to":{"scope":"session-local","project":"/home/me/mkt","session":"mkt-1"},"content_substring":"branding"}' \
+  $BASE/api/memory/scopes/seed
+
+# Promote
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"memory_id":42,"from":{"scope":"session-local","project":"/home/me/web","session":"sess1"},"to":{"scope":"project-shared","project":"/home/me/web"},"persona":"alice"}' \
+  $BASE/api/memory/scopes/promote
+```
+
+### 5c. MCP
+
+```json
+{ "tool": "memory_scope_recall", "args": { "persona": "alice", "project": "/home/me/web", "session": "sess1" } }
+{ "tool": "memory_scope_borrow", "args": { "scope": "project-shared", "project": "/home/me/web", "top_k": 5 } }
+{ "tool": "memory_scope_seed",   "args": { "from_scope": "project-shared", "from_project": "/home/me/web", "to_scope": "session-local", "to_project": "/home/me/mkt", "to_session": "mkt-1" } }
+{ "tool": "memory_scope_promote","args": { "memory_id": 42, "from_scope": "session-local", "from_project": "/home/me/web", "from_session": "sess1", "to_scope": "project-shared", "to_project": "/home/me/web" } }
+```
+
+### 5d. Comm
+
+```
+memory scope recall persona=alice project=/home/me/web session=sess1
+memory scope borrow scope=project-shared project=/home/me/web
+memory scope seed from-scope=project-shared from-project=/home/me/web to-scope=session-local to-project=/home/me/mkt to-session=mkt-1
+memory scope promote memory-id=42 from-scope=session-local from-project=/home/me/web from-session=sess1 to-scope=project-shared to-project=/home/me/web
+```
+
+### Breadcrumbs
+
+Both `seed` and `promote` append a breadcrumb to the destination entry:
+```
+_(seeded from project-shared:/home/me/web at 2026-05-09T14:32:00Z)_
+_(promoted session-local → project-shared at 2026-05-09T14:32:00Z by alice)_
+```
+
+This makes provenance traceable when browsing the promoted scope — you
+can always trace a memory back to the session that originally captured it.
+
 ## Common pitfalls
 
 - **Embedder slow.** Ollama embedding is fast on a GPU, painfully

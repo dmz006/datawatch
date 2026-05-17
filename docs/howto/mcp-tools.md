@@ -214,6 +214,60 @@ ACL rules use the same scope syntax as the secrets manager
              └──────────────────────┘
 ```
 
+## Channel bridge — dynamic MCP proxy
+
+The `datawatch-channel` binary bridges the daemon's MCP tools into Claude
+Code (and any other MCP-aware host). Since v7.0.0 it operates as a
+**fully dynamic proxy** — it no longer contains hardcoded tool stubs.
+
+### How it works
+
+On connection, the bridge calls `GET /api/mcp/tools` to discover every
+tool the daemon currently exposes, then registers forwarding handlers
+that call `POST /api/mcp/call`. Any new daemon tool automatically appears
+in Claude Code sessions with zero bridge changes.
+
+```
+Claude Code ←── MCP ──→ datawatch-channel ←── REST ──→ daemon
+                          GET /api/mcp/tools        (discover)
+                          POST /api/mcp/call         (dispatch)
+```
+
+### Auto-install
+
+The daemon auto-installs `datawatch-channel` from the release asset at
+startup if it isn't already present:
+
+```
+~/.datawatch/channel/datawatch-channel   ← auto-installed on first run
+```
+
+Run `datawatch setup channel` to force a reinstall. The daemon log shows:
+```
+[channel] installed datawatch-channel v7.x.x to ~/.datawatch/channel/
+[channel] using Go bridge (dynamic proxy)
+```
+
+### Proxy endpoints (daemon-side)
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/mcp/tools` | Returns full tool manifest (all registered MCP tools) |
+| `POST /api/mcp/call` | Dispatches a named tool call; returns result JSON |
+
+Both are loopback-only and on the TLS bypass list (no token needed from `localhost`).
+
+### Verifying the bridge is active
+
+```sh
+datawatch mcp status
+# → bridge: Go dynamic proxy (v7.x.x)
+#   tools discovered: 247
+
+# From Claude Code:
+# /mcp status  →  shows datawatch server connected with N tools
+```
+
 ## Common pitfalls
 
 - **MCP host can't find datawatch.** Verify `command` resolves to the

@@ -14,13 +14,13 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 
 - **Long-lived AI sessions** that survive daemon restarts and re-attach cleanly. xterm.js streaming in the PWA, full tmux underneath, full event history captured.
 - **Ephemeral container workers** in Docker or Kubernetes, spawned on demand with PQC bootstrap, distroless images, per-pod auth, and Tailscale mesh.
-- **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work.
+- **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work. The **scope hierarchy** (persona-global → persona-in-project → project-shared → session-local) lets you borrow cross-agent context without polluting higher scopes, seed curated knowledge into a narrower scope, and promote session discoveries up to shared scopes with breadcrumb provenance.
 - **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper.
 - **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell.
 - **Operator identity** — a structured self-description you write once and the daemon injects into every spawned session as the L0 wake-up layer.
 - **Algorithm Mode** — a 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) you can drive a session through with output captured at each gate.
 - **Evals Framework** — rubric-based grading suites (string / regex / binary / LLM-rubric) with capability vs regression thresholds.
-- **Council Mode** — multi-persona debate. 10 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy). Quick (1 round) for fast checks, debate (3 rounds) for serious decisions.
+- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Async-first with SSE live-watch; AI persona wizard drafts `system_prompt` via LLM interview.
 - **Skill registries** — git-backed PAI-format skill manifests synced into your workspaces on demand.
 - **Secrets manager** — native AES-256-GCM store at `~/.datawatch/secrets.db` plus optional KeePass and 1Password backends; `${secret:name}` references resolve in YAML, plugin manifests, spawn-time env injection.
 - **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
@@ -135,6 +135,23 @@ Process metrics for the session's process tree (CPU ring, RSS, threads, FDs, net
 **See also:**
 [howto/federated-observer](howto/federated-observer.md) ·
 [architecture-overview](architecture-overview.md)
+
+### Inside a session — status tab
+
+The **Status** sub-tab (session detail → Status) shows a live sprint/git/test dashboard assembled from hook events the session's coding agent emits. Updated via `POST /api/sessions/{id}/hook-event`; readable at `GET /api/sessions/{id}/status`. Four panels:
+
+| Panel | What it shows |
+|---|---|
+| **Current focus** | Last hook event description |
+| **Sprint** | Task name + completion % |
+| **Tests** | Last test run outcome (pass/fail/skip counts) |
+| **Git** | Current branch + recent commit |
+
+For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths.
+
+**CLI:** `datawatch session status <id>` · **REST:** `GET /api/sessions/{id}/status` · **MCP:** `session_timeline`
+
+**See also:** [`howto/claude-hooks.md`](howto/claude-hooks.md)
 
 ---
 
@@ -286,7 +303,7 @@ The daily-driver knobs.
 - **Session templates** — named bundles of (backend, effort, model, profile, skills) saved as `~/.datawatch/session-templates/<name>.yaml`. Used when starting new sessions to skip the picker.
 - **Device aliases** — friendly names for the device IDs in your federation. Cosmetic; helps observer rows / audit log read more cleanly.
 - **Backend artifact lifecycle** — per-backend cleanup policy (e.g. claude `.mcp.json` removal post-session, opencode workspace teardown). Defaults are sensible; only touch if you see leftover artifacts.
-- **Secrets store** — credentials, tokens, environment values. Native AES-256-GCM at `~/.datawatch/secrets.db` plus optional KeePass / 1Password backends. `${secret:name}` references in YAML/plugins/spawn-time env injection. Per-secret tags + scope. Audit-logged on every read.
+- **Secrets store** — credentials, tokens, environment values. Native AES-256-GCM at `~/.datawatch/secrets.db` plus optional KeePass, 1Password, and HashiCorp Vault / OpenBao (KV v2, static-token auth) backends. `${secret:name}` references in YAML/plugins/spawn-time env injection. Per-secret tags + scope. Audit-logged on every read. Vault status card shows reachability + last request ID; nav badge turns red when Vault is active but unreachable.
 - **Docs Search (Docs-as-MCP-Interface)** — every doc, howto, and plan is searchable through a hybrid index (vector primary + keyword fallback). The same surface drives docs read, how-to listing, and plan-then-execute: a curated how-to declares its MCP-call sequence in front-matter; the operator approves once and an agent runs the steps. Per-step risk gate available for write operations. Skills + plugins must be opted-in before their docs land in the index. See [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md).
 - **Federated Observer (findability)** — quick-link to the Observer view (where shape A/B/C config + Federated Peers card + per-peer stats live). The card itself only links; the full observer surface is the Observer view + REST/MCP/CLI/comm parity.
 
@@ -336,7 +353,9 @@ Connection pooling + circuit breaker policies for outbound HTTP from the daemon 
 
 Comm-channel → backend routing. Each rule is a (sender / channel / pattern) → (backend / profile / model / effort) mapping. Used by the channel adapters to pick which LLM handles an inbound message. Empty list = all messages route to the default backend. Click a rule to edit; reorder by drag.
 
-### Settings — LLM
+### Settings — Compute
+
+> **v7 rename:** The "LLM" tab was renamed to "Compute" in v7.0.0 and the "Agents" tab was eliminated. All content from both tabs now lives here. If you're on a saved `cs_settings_tab=llm` or `cs_settings_tab=agents` bookmark, the PWA auto-redirects to `compute`.
 
 #### LLM Registry
 
@@ -370,8 +389,6 @@ Per-backend per-model input + output token rates the daemon multiplies session t
 #### Detection filters
 
 Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
-
-### Settings — Agents
 
 #### Compute Nodes
 
@@ -427,7 +444,7 @@ Automaton-related cards.
 - **Identity / Telos** — same content as Settings → General → Operator identity, surfaced here too because Telos drives autonomous prioritization.
 - **Algorithm Mode** — PAI's 7-phase per-session harness (Observe → Orient → Decide → Act → Measure → Learn → Improve). This card lists active sessions, current phase, captured output per gate. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure}`.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
-- **Council Mode** — multi-persona debate. 10 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy). View / edit / **add** any persona via the **⚙ View / edit / add personas** button in the card (v6.13.7 — promoted from a small text link to a real button so it's discoverable). The modal lists all personas with their `system_prompt`, an `×` per-row to delete (records the deletion so daemon restarts don't recreate it), and an **+ Add Persona** form at the bottom (name + role + system_prompt — writes a new YAML at `~/.datawatch/council/personas/<name>.yaml`). Modes: quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Synthesizer combines outputs into consensus + dissent.
+- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Each run is **async** by default: `POST /api/council/run` returns `{id, events_path}` immediately; subscribe to `GET /api/council/runs/{id}/events` for SSE streaming as each persona responds round-by-round. The PWA shows collapsible live-watch cards per run. Cancel with `POST /api/council/runs/{id}/cancel`. Milestone messages (run started / round complete / consensus reached) push to all configured comm channels; `council.comm_firehose: true` also sends per-persona response previews. Config: `council.llm_ref` (which LLM to use), `council.max_parallel` (concurrent personas per round, default 2). **AI persona wizard** (v6.22.3): the + Add Persona flow can draft a `system_prompt` via LLM — answer 5 interview questions; each answer has a Refine button; result is saved to `~/.datawatch/council/personas/<name>.yaml`. Re-interview any existing persona via the 🤖 button on its row. See [`howto/council-mode.md`](howto/council-mode.md).
 - **Skill Registries** — git-backed PAI-format skill manifests. Connect a registry → browse → sync. Synced skills get copied into a session's `<projectDir>/.datawatch/skills/<name>/` at spawn time when listed in the session's Skills field.
 
 **See also:**
@@ -567,7 +584,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Algorithm Mode | [`howto/algorithm-mode.md`](howto/algorithm-mode.md) | ✓ | ✓ |
 | Evals | [`howto/evals.md`](howto/evals.md) | ✓ | ✓ |
 | Identity / Telos | [`howto/identity-and-telos.md`](howto/identity-and-telos.md) | ✓ | ✓ |
-| Secrets Manager | [`howto/secrets-manager.md`](howto/secrets-manager.md) | ✓ | covered in `architecture.md` |
+| Secrets Manager | [`howto/secrets-manager.md`](howto/secrets-manager.md) | ✓ (native/KeePass/1Password/Vault) | covered in `architecture.md` |
 | Container workers | [`howto/container-workers.md`](howto/container-workers.md) | ✓ | ✓ |
 | Federated observer | [`howto/federated-observer.md`](howto/federated-observer.md) | ✓ | ✓ |
 | Comm channels | [`howto/comm-channels.md`](howto/comm-channels.md) | ✓ | ✓ |
@@ -635,7 +652,7 @@ Infrastructure:
 - [`howto/profiles.md`](howto/profiles.md) — Project + Cluster Profiles
 - [`howto/container-workers.md`](howto/container-workers.md) — Docker / Kubernetes ephemeral workers
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
-- [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password backends
+- [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password + Vault backends
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
 - [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker, all-servers aggregation
 - [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
@@ -647,7 +664,7 @@ Infrastructure:
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 
 Memory + ops:
-- [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph across sessions
+- [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph + 4-scope hierarchy (persona-global → project-shared → session-local) with borrow/seed/promote
 - [`howto/daemon-operations.md`](howto/daemon-operations.md) — start / stop / restart / upgrade / logs
 - [`howto/setup-and-install.md`](howto/setup-and-install.md) — first-time install end-to-end
 

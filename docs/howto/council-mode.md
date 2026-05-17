@@ -72,11 +72,24 @@ blocks. The `dissent` is usually the high-signal part.
 
 - `datawatch start` — daemon up.
 - An LLM backend the council inference path can call. Configure under
-  `council.backend` in `~/.datawatch/datawatch.yaml`; defaults to the
-  daemon's primary backend.
+  `council.llm_ref` in `~/.datawatch/datawatch.yaml`; defaults to
+  `ollama-default`. Set `council.max_parallel` (default 2) for
+  concurrent per-persona inference.
 - Disk space for persona YAMLs + run history (negligible).
 
 ## Setup
+
+Default config works out of the box if you have an LLM configured.
+To point Council at a specific LLM registry entry:
+
+```yaml
+council:
+  llm_ref: claude-sonnet          # any name from Settings → Compute → LLMs
+  max_parallel: 2                 # personas that run concurrently per round
+  comm_firehose: false            # true = per-persona responses also pushed to comm channels
+```
+
+Run `datawatch reload` after editing.
 
 The daemon seeds the 12 default persona YAMLs into
 `~/.datawatch/council/personas/` on first start. Confirm:
@@ -102,25 +115,21 @@ datawatch council personas
 #    hacker                 Adversarial security tester
 #    ...
 
-# 2. Quick check — 1 round, 3 personas, immediate read.
+# 2. Quick check — 1 round, 3 personas. Run returns immediately with ID.
 datawatch council run \
   --proposal "Should we switch the autonomous executor to fan-out workers per story?" \
   --personas security-skeptic,perf-hawk,simplicity-advocate \
   --mode quick
-#  → started run abc123; returns summary on completion (~30s)
+#  → run started: abc123 (watching SSE for completion...)
+#    consensus: Fan-out workers are useful but add complexity...
+#    dissent:   [security-skeptic] New IPC surface needs auth...
 
-# 3. Fetch the result.
-datawatch council get-run abc123
-#  → consensus: ...
-#    dissent: ...
-#    rounds:
-#      - persona: security-skeptic
-#        response: "Fan-out workers introduce a new IPC surface ..."
-#      ...
+# 3. Cancel an in-flight run.
+datawatch council cancel abc123
 
-# 4. Debate — 3 rounds, full council, longer wait but richer output.
+# 4. Debate — 3 rounds, full council, richer output.
 datawatch council run --proposal "Same proposal" --mode debate
-#  → started run def456; ~3-5 min for full council × 3 rounds
+#  → run started: def456
 
 # 5. Inspect past runs.
 datawatch council runs --limit 20
@@ -197,11 +206,23 @@ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   $BASE/api/council/personas/contrarian/restore
 
-# Run.
+# Run (async by default — returns immediately with a run ID).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"proposal":"...","personas":["security-skeptic","perf-hawk"],"mode":"quick"}' \
   $BASE/api/council/run
+# → {"id":"abc123","status":"running","events_path":"/api/council/runs/abc123/events","cancel_path":"/api/council/runs/abc123/cancel"}
+
+# Watch live SSE stream (streams events as each persona responds).
+curl -sk -N -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/council/runs/abc123/events
+
+# Cancel an in-flight run.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/council/runs/abc123/cancel
+
+# Get final result (poll until status=completed or watch SSE).
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/council/runs/abc123
 
 # Past runs.
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/council/runs?limit=20
@@ -210,13 +231,18 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/council/runs/<run-id>
 
 ### 5c. MCP
 
-Tools: `council_personas`, `council_personas_add`,
-`council_personas_delete`, `council_personas_restore`, `council_run`,
-`council_runs`, `council_get_run`.
+Tools: `council_personas`, `council_personas_get`, `council_personas_set`,
+`council_run`, `council_list_runs`, `council_get_run`,
+`council_run_cancel`, `council_config_get`, `council_config_set`,
+`council_persona_oneshot`, `council_persona_draft_start`,
+`council_persona_draft_answer`, `council_persona_draft_refine`,
+`council_persona_draft_save`, `council_persona_draft_list`,
+`council_persona_draft_purge`.
 
 `council_run` args: `{ "proposal": "...", "personas": [...], "mode": "quick"|"debate" }`.
-Returns a run object once complete (synchronous from the MCP host's
-perspective; the daemon parallelizes per-persona inference internally).
+Returns `{id, status:"running", events_path}` immediately (async by default). Poll
+`council_get_run` for completion or watch the SSE stream at `events_path`.
+Use `council_run_cancel` to abort an in-flight run.
 
 ### 5d. Comm channel
 
@@ -226,6 +252,12 @@ perspective; the daemon parallelizes per-persona inference internally).
 | `council debate "<proposal>"` | 3-round run, default personas. |
 | `council quick personas=security-skeptic,perf-hawk "<proposal>"` | scoped run |
 | `council personas` | List currently loaded. |
+| `council cancel <run-id>` | Cancel an in-flight run. |
+
+Milestone messages (run started / round complete / consensus reached) are
+pushed to all configured comm channels automatically. Set
+`council.comm_firehose: true` in YAML to also receive per-persona
+response previews.
 
 ### 5e. YAML
 
@@ -332,6 +364,53 @@ the YAML AND drops the name from `.seeded`.
   │   per persona)       │    └──────────────────┘
   └──────────────────────┘
 ```
+
+## Creating personas with the AI wizard
+
+Instead of writing a `system_prompt` by hand, the wizard interviews you
+with 5 questions and drafts the YAML via LLM. Available since v6.22.3.
+
+### PWA
+
+1. Settings → Automate → Council Mode → **View / edit personas**.
+2. Click **+ Add Persona** → choose the **🤖 AI wizard** option.
+3. Select a backend LLM (defaults to configured `council.llm_ref`).
+4. Answer the 5 interview questions; each question has a **Refine**
+   button that lets you iterate the LLM's draft.
+5. **Save** writes the final YAML to
+   `~/.datawatch/council/wizard-sessions.db` then to disk.
+6. To re-interview an existing persona: click **🤖 Re-interview** on
+   its row.
+
+### CLI (one-shot)
+
+```sh
+datawatch council persona-wizard one-shot \
+  --name security-architect \
+  --role "Security Architect" \
+  --focus "threat-modeling, trust-boundaries, least-privilege"
+# → Drafts + saves the persona in a single LLM call.
+```
+
+### MCP
+
+```json
+{ "tool": "council_persona_oneshot", "args": { "name": "security-architect", "role": "Security Architect", "focus": "threat-modeling" } }
+```
+
+For multi-step refinement: `council_persona_draft_start` → `council_persona_draft_answer` × 5 → `council_persona_draft_refine` → `council_persona_draft_save`. List drafts with `council_persona_draft_list`; clean up with `council_persona_draft_purge`.
+
+### Comm channel
+
+```
+council persona-wizard start name=cost-watcher role="Cost analyst"
+# → question 1 of 5: ...
+council persona-wizard answer <draft-id> "Focus on infra and third-party API spend"
+council persona-wizard save <draft-id>
+```
+
+Drafts are stored in SQLite (`~/.datawatch/council/wizard-sessions.db`)
+and auto-deleted after 7 days (configurable via `council.draft_retention_days`).
 
 ## Common pitfalls
 
