@@ -14116,12 +14116,15 @@ function loadAutomataPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  // BL312 S5 — use aggregated endpoint in all-servers mode
+  const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds';
   Promise.all([
-    apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
+    apiFetch(prdsEndpoint).catch(() => ({ prds: [] })),
     apiFetch('/api/llms').catch(() => null),
   ]).then(([data, backendsResp]) => {
     state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
-    _automataState.allPrds = (data && data.prds) || [];
+    // Aggregated returns array; single-server returns {prds:[...]}
+    _automataState.allPrds = Array.isArray(data) ? data : ((data && data.prds) || []);
     // rebuild child index for renderPRDRow child sections
     const childIdx = {};
     for (const p of _automataState.allPrds) {
@@ -15711,8 +15714,10 @@ function renderAlertsView() {
   view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
   _injectServerPickerBar(view, renderAlertsView); // BL312 S3
 
+  // BL312 S5 — use aggregated endpoint in all-servers mode
+  const alertsEndpoint = state.activeServer === 'all' ? '/api/alerts/aggregated' : '/api/alerts';
   Promise.all([
-    fetch('/api/alerts', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []),
     fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
   ]).then(([data, cmds, freshSessions]) => {
@@ -15722,7 +15727,9 @@ function renderAlertsView() {
     }
     const el = document.getElementById('alertsList');
     if (!el) return;
-    if (!data || !data.alerts || data.alerts.length === 0) {
+    // Normalise: aggregated returns array, single-server returns {alerts:[...]}
+    const alertList = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
+    if (!alertList || alertList.length === 0) {
       el.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
       return;
     }
@@ -15734,7 +15741,7 @@ function renderAlertsView() {
 
     // Group by session (BL226: source=system or no session_id → __system__)
     const groups = new Map();
-    for (const a of data.alerts) {
+    for (const a of alertList) {
       const key = (a.source === 'system' || !a.session_id) ? '__system__' : a.session_id;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(a);

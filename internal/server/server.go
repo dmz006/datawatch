@@ -310,6 +310,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 	apiMux.HandleFunc("/api/autonomous/config", api.handleAutonomousConfig)
 	apiMux.HandleFunc("/api/autonomous/status", api.handleAutonomousStatus)
+	apiMux.HandleFunc("/api/autonomous/prds/aggregated", api.handleAggregatedPRDs) // BL312 S5
 	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/learnings", api.handleAutonomousLearnings)
@@ -356,6 +357,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
 	apiMux.HandleFunc("/api/filters", api.handleFilters)
+	apiMux.HandleFunc("/api/alerts/aggregated", api.handleAggregatedAlerts) // BL312 S5
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
