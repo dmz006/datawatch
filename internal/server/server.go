@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
@@ -225,8 +226,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/agents/", api.handleAgents)
 	// Bootstrap is the only unauthenticated path; registered on the
 	// public (pre-auth) mux below.
-	apiMux.HandleFunc("/api/servers", api.handleListServers)
+	// BL312 S1 — multi-server CRUD registry. The new handler falls back
+	// to the legacy static-list when the store is nil (store is wired
+	// from main.go after init). /api/servers/health is kept for the
+	// circuit-breaker view; /api/servers/ catch-all handles CRUD + test.
+	apiMux.HandleFunc("/api/servers", api.handleBL312Servers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
+	apiMux.HandleFunc("/api/servers/", api.handleBL312Servers)
 	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)       // BL102
 	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister) // issue #1
 	apiMux.HandleFunc("/api/devices", api.handleDevicesList)              // issue #1 (list)
@@ -632,6 +638,13 @@ func (s *HTTPServer) ComputeRegistry() *compute.Registry {
 func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispatcher) {
 	if s.api != nil {
 		s.api.SetInference(reg, disp)
+	}
+}
+
+// SetServerStore (BL312 S1) — wires the runtime multi-server registry.
+func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
+	if s.api != nil {
+		s.api.SetServerStore(st)
 	}
 }
 

@@ -1171,5 +1171,13 @@
   "mcp.prompts.get": "Get",
   "mcp.prompts.copy": "Copy",
   "mcp.prompts.empty": "No prompts registered",
-  "mcp.prompts.args": "Arguments"
+  "mcp.prompts.args": "Arguments",
+  "server_settings_title": "Remote Servers",
+  "server_add_btn": "Add Server",
+  "server_name_label": "Name",
+  "server_url_label": "URL",
+  "server_token_label": "Token",
+  "server_test_btn": "Test",
+  "server_delete_btn": "Delete",
+  "server_enabled_label": "Enabled"
 }

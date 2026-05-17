@@ -85,6 +85,7 @@ import (
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/server"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
@@ -308,6 +309,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newDocsCmd(),       // BL274 v6.16.0
 		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
+		newServerCmd(),     // BL312 S1 — multi-server registry
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
@@ -2615,6 +2617,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[compute] migrated auto-tags out of Tags on %d node(s)\n", mig)
 			}
 			httpServer.SetComputeRegistry(computeReg)
+
+			// BL312 S1 — multi-server registry.
+			// JSON store at <data-dir>/servers.json; YAML cfg.Servers
+			// are seeded as read-only builtins.
+			if multiSrvStore, merr := multiserver.NewStore(
+				expandHome(cfg.DataDir), cfg.Servers,
+			); merr == nil {
+				httpServer.SetServerStore(multiSrvStore)
+			} else {
+				fmt.Printf("[servers] store init failed: %v\n", merr)
+			}
 
 			// v7.0.0 S2 — LLM-inference registry + dispatcher.
 			// JSON store at <data-dir>/inference/llms.json. Auto-

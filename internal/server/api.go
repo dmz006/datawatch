@@ -36,6 +36,7 @@ import (
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
 )
@@ -369,6 +370,11 @@ type Server struct {
 	// {smokeForwardURL}/api/smoke/progress asynchronously.
 	smokeForwardURL   string
 	smokeForwardToken string
+
+	// BL312 S1 — runtime-mutable multi-server registry.
+	// Nil when not wired; handleBL312Servers falls back to the legacy
+	// static-list handler in that case.
+	serverStore *multiserver.Store
 }
 
 // SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).

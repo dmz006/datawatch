@@ -1167,5 +1167,13 @@
   "mcp.prompts.get": "取得",
   "mcp.prompts.copy": "コピー",
   "mcp.prompts.empty": "プロンプトが登録されていません",
-  "mcp.prompts.args": "引数"
+  "mcp.prompts.args": "引数",
+  "server_settings_title": "リモートサーバー",
+  "server_add_btn": "サーバーを追加",
+  "server_name_label": "名前",
+  "server_url_label": "URL",
+  "server_token_label": "トークン",
+  "server_test_btn": "テスト",
+  "server_delete_btn": "削除",
+  "server_enabled_label": "有効"
 }

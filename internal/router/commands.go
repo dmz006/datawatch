@@ -270,6 +270,14 @@ const (
 	//   "mcp templates"          → list resource templates
 	CmdMCPRes CommandType = "mcp"
 
+	// BL312 S1 — multi-server registry over chat.
+	//   "server"                              → list
+	//   "server list"                         → list
+	//   "server add <name> <url> [token=<t>]" → add
+	//   "server delete <name>"                → remove
+	//   "server test <name>"                  → ping
+	CmdServer CommandType = "server"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -994,6 +1002,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("memory "):])
 		}
 		return Command{Type: CmdMemory, Text: rest}
+
+	case lower == "server" || strings.HasPrefix(lower, "server "):
+		rest := ""
+		if lower != "server" {
+			rest = strings.TrimSpace(text[len("server "):])
+		}
+		return Command{Type: CmdServer, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

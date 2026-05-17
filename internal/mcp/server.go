@@ -581,6 +581,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
 
 	s.srv = mcpSrv
+
+	// BL312 S1 — multi-server registry tools.
+	// RegisterServerTools adds the 6 server_* tools after s.srv is set.
+	s.RegisterServerTools()
+
 	return s
 }
 

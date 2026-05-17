@@ -1167,5 +1167,13 @@
   "mcp.prompts.get": "Abrufen",
   "mcp.prompts.copy": "Kopieren",
   "mcp.prompts.empty": "Keine Prompts registriert",
-  "mcp.prompts.args": "Argumente"
+  "mcp.prompts.args": "Argumente",
+  "server_settings_title": "Remote-Server",
+  "server_add_btn": "Server hinzufügen",
+  "server_name_label": "Name",
+  "server_url_label": "URL",
+  "server_token_label": "Token",
+  "server_test_btn": "Testen",
+  "server_delete_btn": "Löschen",
+  "server_enabled_label": "Aktiviert"
 }

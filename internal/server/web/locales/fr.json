@@ -1167,5 +1167,13 @@
   "mcp.prompts.get": "Obtenir",
   "mcp.prompts.copy": "Copier",
   "mcp.prompts.empty": "Aucun prompt enregistré",
-  "mcp.prompts.args": "Arguments"
+  "mcp.prompts.args": "Arguments",
+  "server_settings_title": "Serveurs Distants",
+  "server_add_btn": "Ajouter un Serveur",
+  "server_name_label": "Nom",
+  "server_url_label": "URL",
+  "server_token_label": "Jeton",
+  "server_test_btn": "Tester",
+  "server_delete_btn": "Supprimer",
+  "server_enabled_label": "Activé"
 }

@@ -1560,6 +1560,41 @@ else
   ko "elicitation endpoint missing or returning unexpected shape (got: ${ELICIT_RES:0:100})"
 fi
 
+H "7ag. BL312 S1 — multi-server CRUD surface check"
+SRV_NAME="smoke-srv-$(date +%s)"
+SRV_CREATE=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" \
+  -d "{\"name\":\"$SRV_NAME\",\"url\":\"http://127.0.0.1:9999\",\"enabled\":false}" \
+  "$BASE/api/servers" 2>/dev/null || true)
+if echo "$SRV_CREATE" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") or d.get("name")' 2>/dev/null; then
+  ok "server create: $SRV_NAME"
+  SRV_GET=$(curl "${curl_args[@]}" -s "$BASE/api/servers/$SRV_NAME" 2>/dev/null || true)
+  if echo "$SRV_GET" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("name") == "'$SRV_NAME'"' 2>/dev/null; then
+    ok "server get: $SRV_NAME found"
+  else
+    ko "server get: unexpected response: ${SRV_GET:0:120}"
+  fi
+  SRV_DEL=$(curl "${curl_args[@]}" -s -X DELETE "$BASE/api/servers/$SRV_NAME" 2>/dev/null || true)
+  if echo "$SRV_DEL" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok")' 2>/dev/null; then
+    ok "server delete: $SRV_NAME removed"
+  else
+    ko "server delete failed: ${SRV_DEL:0:120}"
+  fi
+  SRV_GONE=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/servers/$SRV_NAME" 2>/dev/null || echo "000")
+  if [[ "$SRV_GONE" == "404" ]]; then
+    ok "server get after delete: 404 confirmed"
+  else
+    ko "server get after delete: expected 404, got $SRV_GONE"
+  fi
+else
+  ko "server create failed: ${SRV_CREATE:0:120}"
+fi
+SRV_LIST=$(curl "${curl_args[@]}" -s "$BASE/api/servers" 2>/dev/null || true)
+if echo "$SRV_LIST" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "servers" in d or isinstance(d, list)' 2>/dev/null; then
+  ok "server list: endpoint responds with server collection"
+else
+  ko "server list: unexpected shape: ${SRV_LIST:0:120}"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
