@@ -1428,6 +1428,43 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		Version        string `json:"version,omitempty"`
 	}
 
+	// BL305 (v7.0.0) — when the LLM registry is present, it is the
+	// source of truth: return all non-disabled registry entries.
+	// Old-style availableBackends (YAML-flag-gated adapters) are
+	// included only for names not already in the registry, so
+	// pre-migration installs don't regress.
+	if s.inferenceReg != nil {
+		regLLMs := s.inferenceReg.List()
+		out := make([]backendInfo, 0, len(regLLMs))
+		seen := make(map[string]bool, len(regLLMs))
+		for _, l := range regLLMs {
+			seen[l.Name] = true
+			if l.Disabled {
+				continue
+			}
+			out = append(out, backendInfo{
+				Name:           l.Name,
+				Enabled:        true,
+				Available:      true,
+				PromptRequired: s.llmPromptRequired(string(l.Kind)),
+			})
+		}
+		// Include any old-style compiled-in backends not yet migrated.
+		for _, name := range s.availableBackends {
+			if !seen[name] && s.llmEnabled(name) {
+				out = append(out, backendInfo{
+					Name:           name,
+					Enabled:        true,
+					Available:      true,
+					PromptRequired: s.llmPromptRequired(name),
+				})
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"llm": out, "active": s.manager.ActiveBackend()}) //nolint:errcheck
+		return
+	}
+
 	s.versionCacheMu.RLock()
 	cached := s.versionCache
 	cacheAge := time.Since(s.versionCacheAt)

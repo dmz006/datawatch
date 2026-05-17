@@ -6510,7 +6510,6 @@ function renderSettingsView() {
   loadPipelinesPanel();
   loadFilters();
   loadVersionInfo();
-  loadLLMConfig();
   loadLLMTabConfig();
   loadGeneralConfig();
   loadDaemonLog(0);
@@ -8614,9 +8613,9 @@ function loadPRDPanel() {
   if (!panel) return;
   Promise.all([
     apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
-    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([data, backendsResp]) => {
-    state._prdBackends = (backendsResp && backendsResp.llm) || [];
+    state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
     const allPrds = (data && data.prds) || [];
     // v5.26.12 — operator-reported: children should load with
     // everything else, not lazy. Build a parent_id → [children] index
@@ -8675,7 +8674,7 @@ function renderBackendSelect(id, current, onchange) {
       return;
     }
     if (!b || !b.name) return;
-    if (b.enabled === false) return;
+    if (b.disabled === true) return;
     if (NON_LLM_BACKENDS.has(b.name)) return;
     seen.add(b.name);
     opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
@@ -9629,7 +9628,7 @@ function openPRDCreateModal() {
   // /api/profiles/{projects,clusters} alongside the backend lists.
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
+    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureModels = (state._availableModels !== undefined)
     ? Promise.resolve()
     : Promise.all([
@@ -10191,56 +10190,6 @@ function openPRDInstantiateModal(templateID) {
 }
 window.openPRDInstantiateModal = openPRDInstantiateModal;
 
-function loadLLMConfig() {
-  const el = document.getElementById('llmConfigList');
-  if (!el) return;
-  fetch('/api/backends', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      if (!data) { el.textContent = t('state_unavailable') || 'Unavailable'; return; }
-      const backends = data.llm || [];
-      if (backends.length === 0) { el.textContent = t('llm_no_backends') || 'No LLM backends registered.'; return; }
-      // Map backend name to config key for enable/disable
-      const cfgKeyMap = {
-        'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
-        'opencode':'opencode','opencode-acp':'opencode-acp','opencode-prompt':'opencode-prompt','openwebui':'openwebui','shell':'shell'
-      };
-      el.innerHTML = backends.map(b => {
-        const name = typeof b === 'string' ? b : b.name;
-        const avail = typeof b === 'string' ? true : b.available;
-        const enabled = typeof b === 'object' ? b.enabled : false;
-        const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">${escHtml(b.version)}</span>` : '';
-        const isDefault = name === data.active;
-        const cfgKey = cfgKeyMap[name];
-
-        if (!avail && !enabled) {
-          return `<div class="settings-row backend-row" style="justify-content:space-between;">
-            <div class="settings-label"><strong>${escHtml(name)}</strong></div>
-            <span style="font-size:11px;color:var(--text2);">not configured</span>
-            <button class="btn-secondary backend-btn" style="font-size:11px;" onclick="openLLMSetup('${escHtml(name)}')">Configure</button>
-          </div>`;
-        }
-
-        const toggleKey = cfgKey ? cfgKey + '.enabled' : '';
-        return `<div class="settings-row backend-row" style="justify-content:space-between;">
-          <div class="settings-label" style="flex:1;">
-            <strong>${escHtml(name)}</strong>${ver}
-            ${isDefault ? ' <span style="color:var(--accent);font-size:10px;">(default)</span>' : ''}
-          </div>
-          ${cfgKey ? `<button class="btn-icon" style="font-size:12px;opacity:0.5;" onclick="openLLMSetup('${escHtml(name)}')" title="Edit configuration">✎</button>` : ''}
-          <label class="toggle-switch" title="${enabled ? 'Enabled' : 'Disabled'}">
-            <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleLLM('${escHtml(toggleKey)}', this.checked, '${escHtml(name)}')" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>`;
-      }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Toggle enables/disables backends. The <strong>(default)</strong> backend is used for new sessions unless overridden.
-        Change default via <code>session.backend_family</code> in General Configuration.
-      </div>`;
-    })
-    .catch(() => { if (el) el.textContent = t('state_failed_to_load') || 'Failed to load'; });
-}
-
 function toggleLLM(cfgKey, enabled, name) {
   if (!cfgKey) return;
   fetch('/api/config', {
@@ -10251,7 +10200,7 @@ function toggleLLM(cfgKey, enabled, name) {
     .then(r => {
       if (r.ok) {
         showToast(name + (enabled ? ' enabled' : ' disabled'), 'success', 2000);
-        loadLLMConfig();
+        loadLLMTabConfig();
       } else showToast('Save failed', 'error');
     })
     .catch(() => showToast('Save failed', 'error'));
@@ -10289,7 +10238,7 @@ function setActiveLLM(name) {
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'session.backend_family': name }),
   })
-    .then(r => r.ok ? loadLLMConfig() : showToast('Save failed', 'error'))
+    .then(r => r.ok ? loadLLMTabConfig() : showToast('Save failed', 'error'))
     .catch(() => showToast('Save failed', 'error'));
 }
 
@@ -10697,12 +10646,12 @@ function loadLLMTabConfig() {
 function loadGeneralConfig() {
   Promise.all([
     fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
   ]).then(([cfg, backendsData, interfaces]) => {
       if (!cfg) return;
       state._interfaces = interfaces || [];
-      const enabledBackends = (backendsData?.llm || []).filter(b => b.enabled).map(b => b.name);
+      const enabledBackends = (backendsData?.llms || []).filter(b => !b.disabled).map(b => b.name);
       for (const sec of GENERAL_CONFIG_FIELDS) {
         const el = document.getElementById('gcfg_' + sec.id);
         if (!el) continue;
@@ -10792,11 +10741,11 @@ function loadGeneralConfig() {
             const modelSelector = f.pairedModelKey ? `'gcfg-llmbk-${f.pairedModelKey.replace(/\W+/g,'-')}-wrap'` : "''";
             const modelInner = f.pairedModelKey ? `'gcfg-llmbk-${f.pairedModelKey.replace(/\W+/g,'-')}-inner'` : "''";
             const opts = ['<option value="">(inherit)</option>'];
-            (state._prdBackends || enabledBackends.map(n => ({name:n, enabled:true}))).forEach(b => {
+            (state._prdBackends || enabledBackends.map(n => ({name:n, disabled:false}))).forEach(b => {
               const name = (typeof b === 'string') ? b : (b && b.name);
               if (!name) return;
               if (NON_LLM_BACKENDS.has(name)) return;
-              if (typeof b !== 'string' && b.enabled === false) return;
+              if (typeof b !== 'string' && b.disabled === true) return;
               opts.push(`<option value="${escHtml(name)}" ${String(val) === name ? 'selected' : ''}>${escHtml(name)}</option>`);
             });
             if (val && !opts.some(o => o.includes(`value="${escHtml(String(val))}"`))) {
@@ -11530,7 +11479,7 @@ function saveBackendConfig(service) {
       // Delay reload to let server cache refresh
       setTimeout(() => {
         loadConfigStatus();
-        loadLLMConfig();
+        loadLLMTabConfig();
       }, 500);
       // Auto-restart if configured
       if (state.autoRestartOnConfig) {
@@ -13658,9 +13607,9 @@ function loadAutomataPanel() {
   panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
   Promise.all([
     apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
-    apiFetch('/api/backends').catch(() => null),
+    apiFetch('/api/llms').catch(() => null),
   ]).then(([data, backendsResp]) => {
-    state._prdBackends = (backendsResp && backendsResp.llm) || [];
+    state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
     _automataState.allPrds = (data && data.prds) || [];
     // rebuild child index for renderPRDRow child sections
     const childIdx = {};
@@ -14091,7 +14040,7 @@ function openLaunchAutomatonWizard() {
   // Pre-fetch backends + profiles (same as openPRDCreateModal)
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
-    : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
+    : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
   const ensureProfiles = Promise.all([
     fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -19829,7 +19778,6 @@ window.saveBackendConfig = saveBackendConfig;
 window.testBackendConnection = testBackendConnection;
 window.pageCmd = pageCmd;
 window.pageFilter = pageFilter;
-window.loadLLMConfig = loadLLMConfig;
 window.setActiveLLM = setActiveLLM;
 window.toggleLLM = toggleLLM;
 window.openLLMSetup = openLLMSetup;
