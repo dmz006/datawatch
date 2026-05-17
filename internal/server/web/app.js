@@ -18613,6 +18613,7 @@ function renderDashboardView() {
   // Load layout from server; falls back to default and calls _dashBuildGrid
   _dashLoadLayout();
   _dash.rafId = requestAnimationFrame(_dashLoop);
+  _injectServerPickerBar(viewEl, renderDashboardView); // BL312 S6
 }
 
 // BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
@@ -19134,6 +19135,7 @@ function renderObserverView() {
   loadAuditPanel();
   loadKgPanel();
   renderObserverPeersCard();
+  _injectServerPickerBar(view, renderObserverView); // BL312 S6
 }
 window.renderObserverView = renderObserverView;
 
