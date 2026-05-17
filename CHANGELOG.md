@@ -39,6 +39,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311, BL312, BL313 filed — see backlog tracker.)_
 
+## v7.1.0-alpha.3 — BL302 S3: MCP Sampling + Elicitation
+
+### Added
+- **BL302 S3 — Sampling + Elicitation** — `SamplingDispatcher` with ring buffer (last 50 entries) and graceful `ErrSamplingNotSupported` degradation when no Claude Code session is connected. 5 built-in trigger constants (`alert_triage`, `anomaly_analysis`, `morning_briefing`, `council_deliberation`, `automaton_decision`) with prompt templates in `TriggerRegistry`. `ElicitationDispatcher` with 3 named schemas: `approval`, `text_input`, `choice`. REST `POST /api/mcp/sample` + `POST /api/mcp/elicit`. Channel bridge enables sampling capability (SDK-native). CLI `datawatch mcp sample/elicit`. Comm `!mcp sample`. PWA Sampling log tab (last 50, auto-refresh 30s). Config `mcp.sampling.*` + `mcp.elicitation.*` + `council.include_claude_code`. Locale keys × 5 bundles. Smoke §7ae + §7af surface checks. Plugin manifest `sampling_triggers` field. Howtos `mcp-sampling.md` + `mcp-elicitation.md`.
+
+### Rule audit (S3)
+- 7-surface: REST ✓ MCP ✓ Channel-bridge ✓ CLI ✓ Comm ✓ PWA ✓ locale ✓ mobile-issue (manual: 2 issues for Sampling log + Elicitation UX)
+- Smoke: §7ae (sampling surface check) + §7af (elicitation surface check)
+- Locale: new keys × 5 bundles
+- Tests: 1989 pass (+15 S3 tests)
+
 ## v7.1.0-alpha.1 — BL302 S1+S2: MCP Resources foundation + live resources
 
 ### Added
