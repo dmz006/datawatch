@@ -50,6 +50,7 @@ _(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311 fi
 - **`pipeline.KindResolver` interface** — decouples the pipeline package from the inference package; `ManagerAdapter.SetKindResolver` accepts any implementation.
 - **5 new tests for BL308** — `TestSetLLM_RejectsUnknownBackend`, `TestSetLLM_AcceptsKnownBackend`, `TestSetLLM_EmptyBackendSkipsValidation`, `TestSetLLM_NoRegistryPassesThrough`, `TestSetTaskLLM_RejectsUnknownBackend` in `bl308_set_llm_validation_test.go`.
 - **4 new tests for BL309** — `TestResolveKind_KnownLLM`, `TestResolveKind_UnknownLLM`, `TestResolveKind_DisabledLLM`, `TestResolveKind_MultipleLLMs` in `bl309_resolve_kind_test.go`.
+- **4 new tests for BL311 (partial)** — `TestHandleLLMsCRUD` (full HTTP CRUD round-trip for `/api/llms`), `TestHandleLLMs_ConflictOnDuplicate`, `TestLLMEnabled_KnownAdapters` (pins hardcoded switch + documents that named LLMs always return false — root cause of BL305), `TestHandleLLMs_DisabledRegistryReturns503`. Covers BL311 gaps #5 and #6. 1933/1933 tests pass.
 
 ### Rule audit
 - 7-surface parity: validation is at the REST layer (server/autonomous.go) — CLI/comm/MCP surface still passes through without client-side validation (acceptable: server rejects bad names). PWA pickers already show only registry-listed LLMs after BL305.
