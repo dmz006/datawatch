@@ -148,7 +148,7 @@ datawatch orchestrator unblock $GRAPH_ID --prd implement \
    `draft`. Click into it.
 4. Detail view shows a graph visualization (nodes = Automata; edges =
    `depends_on`) and a control toolbar:
-   - **Decompose all** — kicks off LLM decomposition for every child
+   - **Plan all** — kicks off LLM planning for every child
      Automaton in parallel.
    - **Review** — opens the per-Automaton review pane (same UI as
      [`autonomous-review-approve.md`](autonomous-review-approve.md)).

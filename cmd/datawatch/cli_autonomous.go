@@ -16,8 +16,8 @@ import (
 func newAutonomousCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "autonomous",
-		Short: "Autonomous PRD decomposition + verification",
-		Long: `LLM-driven Product Requirements Document → Stories → Tasks decomposition,
+		Short: "Autonomous Automata planning + verification",
+		Long: `LLM-driven Product Requirements Document → Stories → Tasks planning,
 each Task spawned as a worker session with independent verification.
 
 Subcommands:
@@ -27,14 +27,15 @@ Subcommands:
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
-  prd-decompose <id>              Run the LLM decomposition for a PRD
+  prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
+  prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD
   prd-cancel <id>                 Cancel + archive a PRD
   prd-delete <id>                 Hard-delete a PRD + descendants
   prd-edit <id>                   Edit PRD title + spec
-  prd-approve <id>                Approve decomposed PRD
-  prd-reject <id>                 Reject a PRD decomposition
-  prd-request-revision <id>       Request fresh decomposition
+  prd-approve <id>                Approve planned PRD
+  prd-reject <id>                 Reject a PRD plan
+  prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
@@ -64,7 +65,7 @@ Subcommands:
 		newAutonomousPRDListCmd(),
 		newAutonomousPRDCreateCmd(),
 		newAutonomousPRDGetCmd(),
-		newAutonomousPRDDecomposeCmd(),
+		newAutonomousPRDPlanCmd(),
 		newAutonomousPRDRunCmd(),
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
@@ -206,15 +207,25 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 	}
 }
 
-func newAutonomousPRDDecomposeCmd() *cobra.Command {
+func newAutonomousPRDPlanCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "prd-decompose <id>",
-		Short: "Run the LLM decomposition for a PRD",
-		Args:  cobra.ExactArgs(1),
+		Use:     "prd-plan <id>",
+		Short:   "Run the LLM planning phase for a PRD (alias: prd-decompose)",
+		Aliases: []string{"prd-decompose"},
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/decompose", nil)
 		},
 	}
+}
+
+// newAutonomousPRDDecomposeCmd is a back-compat alias for newAutonomousPRDPlanCmd.
+func newAutonomousPRDDecomposeCmd() *cobra.Command {
+	cmd := newAutonomousPRDPlanCmd()
+	cmd.Use = "prd-decompose <id>"
+	cmd.Short = "Run the LLM planning phase for a PRD (alias: prd-plan)"
+	cmd.Aliases = []string{"prd-plan"}
+	return cmd
 }
 
 func newAutonomousPRDRunCmd() *cobra.Command {
@@ -301,7 +312,7 @@ func newAutonomousPRDApproveCmd() *cobra.Command {
 	var note string
 	cmd := &cobra.Command{
 		Use:   "prd-approve <id>",
-		Short: "Approve a decomposed PRD so Run is allowed",
+		Short: "Approve a planned PRD so Run is allowed",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
@@ -316,7 +327,7 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
 		Use:   "prd-reject <id>",
-		Short: "Reject a PRD; the decomposition stays for inspection but never runs",
+		Short: "Reject a PRD; the plan stays for inspection but never runs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"actor": "operator", "reason": reason})
@@ -331,14 +342,14 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 	var note string
 	cmd := &cobra.Command{
 		Use:   "prd-request-revision <id>",
-		Short: "Ask for a fresh decomposition; status moves back to revisions_asked",
+		Short: "Ask for a fresh planning run; status moves back to revisions_asked",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
 		},
 	}
-	cmd.Flags().StringVar(&note, "note", "", "what's wrong with the current decomposition")
+	cmd.Flags().StringVar(&note, "note", "", "what's wrong with the current plan")
 	return cmd
 }
 

@@ -1,4 +1,4 @@
-// BL24+BL25 — REST surface for autonomous PRD decomposition.
+// BL24+BL25 — REST surface for autonomous Automata planning.
 //
 // Endpoints (all bearer-authenticated):
 //   GET    /api/autonomous/config              read current config
@@ -8,7 +8,8 @@
 //   GET    /api/autonomous/prds                list all PRDs (newest first)
 //   GET    /api/autonomous/prds/{id}           fetch one with story tree
 //   DELETE /api/autonomous/prds/{id}           cancel + archive
-//   POST   /api/autonomous/prds/{id}/decompose run the LLM decomposition
+//   POST   /api/autonomous/prds/{id}/plan      run the LLM planning phase (BL304 canonical)
+//   POST   /api/autonomous/prds/{id}/decompose run the LLM planning phase (back-compat alias)
 //   POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 //   GET    /api/autonomous/prds/{id}/children  list child PRDs (BL191 Q4 — recursion)
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
@@ -242,7 +243,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	case "decompose":
+	case "decompose", "plan": // BL304: "plan" is the canonical alias; "decompose" kept for back-compat
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

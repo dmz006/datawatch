@@ -1,7 +1,7 @@
-# Autonomous PRD decomposition (v3.10.0 — BL24 + BL25)
+# Autonomous PRD planning (v3.10.0 — BL24 + BL25)
 
 **Shipped in v3.10.0.** LLM-driven Product Requirements Document →
-Stories → Tasks decomposition with independent verification. Each
+Stories → Tasks planning with independent verification. Each
 Task can be spawned as a worker session under F10. Inspired by
 HackingDave/nightwire's autonomous module; the design map is in
 `docs/plans/2026-04-20-bl24-autonomous-decomposition.md`.
@@ -35,10 +35,11 @@ GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
 DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descendants spawned via SpawnPRD             [v5.19.0]
-POST   /api/autonomous/prds/{id}/decompose run LLM decomposition (creates stories+tasks)
+POST   /api/autonomous/prds/{id}/plan      run LLM planning phase (creates stories+tasks) [BL304 canonical]
+POST   /api/autonomous/prds/{id}/decompose run LLM planning phase (back-compat alias for /plan)
 POST   /api/autonomous/prds/{id}/approve   review/approve gate                                                       [v5.2.0  / BL191 Q1]
-POST   /api/autonomous/prds/{id}/reject    operator rejects the decomposition; body: {actor, reason}                 [v5.2.0  / BL191 Q1]
-POST   /api/autonomous/prds/{id}/request_revision  ask for a re-decompose; body: {actor, note}                       [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {actor, reason}                          [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
 POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override                                             [v5.4.0  / BL203]
@@ -73,9 +74,9 @@ autonomous:
   enabled:                false       # off by default; opt-in
   poll_interval_seconds:  30          # background loop tick
   max_parallel_tasks:     3           # in-flight worker cap (per-PRD)
-  decomposition_backend:  ""          # empty = inherit session.llm_backend
+  planning_backend:       ""          # empty = inherit session.llm_backend (BL304; old key decomposition_backend still accepted)
   verification_backend:   ""          # empty = inherit; set differently for cross-backend independence
-  decomposition_effort:   "thorough"  # BL41 effort hint
+  planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
   verification_effort:    "normal"
   stale_task_seconds:     0           # 0 = inherit session.stale_timeout_seconds
   auto_fix_retries:       1           # re-prompt count on verifier failure
@@ -93,7 +94,7 @@ datawatch autonomous config-set '{"enabled":true,"max_parallel_tasks":4}'
 datawatch autonomous prd-list
 datawatch autonomous prd-create "Add OAuth login with Google + GitHub"
 datawatch autonomous prd-get <id>
-datawatch autonomous prd-decompose <id>
+datawatch autonomous prd-plan <id>        # canonical (prd-decompose is a back-compat alias)
 datawatch autonomous prd-run <id>
 datawatch autonomous prd-cancel <id>
 datawatch autonomous learnings
@@ -114,14 +115,14 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_list`       | list all PRDs |
 | `autonomous_prd_create`     | create draft PRD |
 | `autonomous_prd_get`        | fetch one PRD with tree |
-| `autonomous_prd_decompose`  | run LLM decomposition |
+| `autonomous_prd_decompose`  | run LLM planning phase (creates stories+tasks) |
 | `autonomous_prd_run`        | kick executor |
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
 
 Typical AI workflow:
 1. `autonomous_prd_create(spec="…", project_dir="…")` → `{id}`
-2. `autonomous_prd_decompose(id)` → populates stories + tasks
+2. `autonomous_prd_decompose(id)` → runs planning phase, populates stories + tasks
 3. `autonomous_prd_get(id)` → review tree
 4. `autonomous_prd_run(id)` → start execution
 5. Poll `autonomous_status` until done
@@ -137,7 +138,7 @@ parity through the existing `rest` passthrough:
 ```
 rest GET /api/autonomous/status
 rest POST /api/autonomous/prds {"spec":"add pagination","project_dir":"/srv/app"}
-rest POST /api/autonomous/prds/abcd1234/decompose
+rest POST /api/autonomous/prds/abcd1234/plan
 rest POST /api/autonomous/prds/abcd1234/run
 ```
 
@@ -164,7 +165,7 @@ count outgrows JSON-lines.
 
 ## What ships in v3.10.0 (and what doesn't)
 
-**In:** data models, JSONL store, decomposition prompt + parser,
+**In:** data models, JSONL store, planning prompt + parser,
 security scanner, manager + executor with auto-fix-retry verification
 loop, REST endpoints, MCP tools, CLI commands, comm `rest`
 passthrough parity, full config parity, operator + AI-ready docs.

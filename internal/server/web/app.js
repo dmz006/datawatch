@@ -9174,7 +9174,7 @@ function renderTask(prd, story, task, editable) {
     ? `<span class="prd-task-llm-badge">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
     : '';
   const spawnBadge = task.spawn_prd
-    ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Decompose + Approve + Run">&#8627; spawn</span>`
+    ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
   const childLink = task.child_prd_id
     ? `<span class="prd-task-child-link">&rarr; child <code>${escHtml(task.child_prd_id)}</code></span>`
@@ -9291,9 +9291,9 @@ window.toggleVerdictDrilldown = function(groupId, idx) {
 // ┌─────────────────┬──────────────────────────────────────────────────────┐
 // │ Status          │ Buttons                                              │
 // ├─────────────────┼──────────────────────────────────────────────────────┤
-// │ draft           │ Decompose · LLM · Edit · Delete                      │
+// │ draft           │ Plan · LLM · Edit · Delete                           │
 // │ needs_review    │ LLM · Approve · Reject · Revise · Edit · Delete      │
-// │ revisions_asked │ Decompose · LLM · Approve · Reject · Revise · Edit · Delete │
+// │ revisions_asked │ Plan · LLM · Approve · Reject · Revise · Edit · Delete │
 // │ approved        │ LLM · Run · Edit · Delete                            │
 // │ running         │ Cancel · Delete                                      │
 // │ completed       │ Edit · Delete                                        │
@@ -9319,7 +9319,7 @@ function renderPRDActions(prd) {
     return a('Instantiate', `openPRDInstantiateModal(${idJ})`);
   }
   const btns = [];
-  if (status === 'draft' || status === 'revisions_asked') btns.push(a('Decompose', `prdAction(${idJ},'decompose','POST')`));
+  if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
   // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
   if (status !== 'running' && status !== 'completed') {
     const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '' });
@@ -9544,9 +9544,9 @@ function renderLifecycleStrip(prd) {
   // current-step hint above the strip so the workflow position is
   // obvious without parsing colors / chevrons.
   const currentLabels = {
-    plan:    t('lifecycle_hint_plan')    || 'Next: Plan — decompose your spec into stories + tasks',
-    review:  t('lifecycle_hint_review')  || 'Decomposing… review will become available shortly',
-    approve: t('lifecycle_hint_approve') || 'Next: Review the decomposition and Approve / Reject / Revise',
+    plan:    t('lifecycle_hint_plan')    || 'Next: Plan — break your spec into stories + tasks',
+    review:  t('lifecycle_hint_review')  || 'Planning… review will become available shortly',
+    approve: t('lifecycle_hint_approve') || 'Next: Review the plan and Approve / Reject / Revise',
     run:     status === 'running'
               ? (t('lifecycle_hint_running') || 'Running — Cancel below if needed')
               : (t('lifecycle_hint_run')     || 'Next: Run the approved automaton'),
@@ -10328,7 +10328,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
-  { id: 'autonomous', section: 'Autonomous Automata decomposition', docs: 'howto/autonomous-planning.md', fields: [
+  { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
@@ -10336,8 +10336,8 @@ const GENERAL_CONFIG_FIELDS = [
     // same dropdown as the New PRD modal (enabled+available, no
     // shell), with a paired model dropdown that refreshes on backend
     // change.
-    { key: 'autonomous.decomposition_backend', label: 'Decomposition backend', type: 'llm_backend', pairedModelKey: 'autonomous.decomposition_model' },
-    { key: 'autonomous.decomposition_model', label: 'Decomposition model', type: 'llm_model', backendKey: 'autonomous.decomposition_backend' },
+    { key: 'autonomous.planning_backend', label: 'Planning backend', type: 'llm_backend', pairedModelKey: 'autonomous.planning_model' },
+    { key: 'autonomous.planning_model', label: 'Planning model', type: 'llm_model', backendKey: 'autonomous.planning_backend' },
     { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
@@ -13858,7 +13858,7 @@ window.openTemplateInstantiateModal = function(id) {
             <input id="tmplInstDir" type="text" class="form-input" placeholder="${escHtml(t('automata_wizard_workspace'))}" style="font-size:13px;">
             <select id="tmplInstBackend" class="form-input" style="font-size:13px;">
               <option value="">${escHtml(t('automata_wizard_backend_default'))}</option>
-              ${(state._prdBackends||[]).map(b=>`<option value="${escHtml(b)}">${escHtml(b)}</option>`).join('')}
+              ${(state._prdBackends||[]).filter(b=>b&&(b.name||typeof b==='string')&&!NON_LLM_BACKENDS.has(b.name||b)).map(b=>{const n=typeof b==='string'?b:b.name;return `<option value="${escHtml(n)}">${escHtml(n)}</option>`;}).join('')}
             </select>
             <select id="tmplInstEffort" class="form-input" style="font-size:13px;">
               <option value="">— ${escHtml(t('automata_wizard_effort'))} —</option>

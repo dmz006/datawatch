@@ -110,9 +110,9 @@ type PRD struct {
 	// be set; ProjectDir is still honored when profiles are empty.
 	ProjectProfile string `json:"project_profile,omitempty"`
 	ClusterProfile string `json:"cluster_profile,omitempty"`
-	// Phase 3 (v5.26.60) — explicit decomposition profile distinct
+	// Phase 3 (v5.26.60) — explicit planning profile distinct
 	// from the default execution profile. Empty falls back to the
-	// global autonomous.decomposition_backend config knob. The
+	// global autonomous.planning_backend config knob (BL304). The
 	// existing ProjectProfile field is re-purposed as the *default
 	// execution profile* for stories that don't override.
 	DecompositionProfile string `json:"decomposition_profile,omitempty"`
@@ -297,7 +297,7 @@ type Story struct {
 // BL203 (v5.4.0) — flexible LLM selection at the task level. Backend /
 // Effort / Model fields override PRD-level defaults when set. Most-
 // specific wins:
-//   per-task → per-PRD → per-stage (autonomous.{decomposition,verification}_backend) → global session.llm_backend
+//   per-task → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
 type Task struct {
 	ID            string     `json:"id"`
 	StoryID       string     `json:"story_id"`

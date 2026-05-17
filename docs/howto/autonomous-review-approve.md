@@ -6,11 +6,11 @@ exec_params:
   - {name: prd_id, required: true, description: "Automaton ID (8-char hex)"}
 exec_steps:
   - tool: autonomous_prd_get
-    description: Read the Automaton record + current decomposition
+    description: Read the Automaton record + current plan
     args: {id: "{{params.prd_id}}"}
     read_only: true
   - tool: autonomous_prd_approve
-    description: Approve the decomposition for execution
+    description: Approve the plan for execution
     args: {id: "{{params.prd_id}}"}
     read_only: false
   - tool: autonomous_prd_get
@@ -21,14 +21,14 @@ exec_steps:
 # How-to: Review and approve an Automaton
 
 [`autonomous-planning.md`](autonomous-planning.md) showed the spawn →
-decompose → run loop. This howto zooms into the review gate — what to
+plan → run loop. This howto zooms into the review gate — what to
 look at when an Automaton lands in `needs_review`, how to approve / reject /
 request-revision per-story or whole-Automaton, and the audit trail you get
 back.
 
 ## What it is
 
-After `decompose`, an Automaton sits in `needs_review` until the operator
+After `plan`, an Automaton sits in `needs_review` until the operator
 acts. Three actions:
 
 - **Approve** — promotes to `approved`, ready to run. Per-story
@@ -36,14 +36,14 @@ acts. Three actions:
   Run.
 - **Reject** — terminal; the Automaton won't run. Use for "this isn't
   what I meant; throw it away".
-- **Request revision** — bounces back to the LLM for re-decomposition
+- **Request revision** — bounces back to the LLM for re-planning
   with operator notes. Status returns to `planning`.
 
 Every action is recorded in the Decisions tab + audit log.
 
 ## Base requirements
 
-- An Automaton in `needs_review` (i.e. you've already run `decompose`).
+- An Automaton in `needs_review` (i.e. you've already run `plan`).
 - Operator role (review actions are gated).
 
 ## Setup
@@ -61,7 +61,7 @@ PRD_ID=abc123
 datawatch autonomous get $PRD_ID | jq .status
 #  → "needs_review"
 
-# 2. Skim the decomposition.
+# 2. Skim the plan.
 datawatch autonomous get $PRD_ID | jq '.stories[] | {title, n_tasks: (.tasks|length)}'
 #  → {"title":"Audit current auth flow","n_tasks":3}
 #  → {"title":"Implement JWT issuance","n_tasks":4}
@@ -82,7 +82,7 @@ datawatch autonomous reject  $PRD_ID --story 2 --reason "Out of scope; defer to 
 # 6. Or request revision.
 datawatch autonomous request-revision $PRD_ID \
   --notes "Story 2 is too broad — split into 'Migrate sessions' + 'Migrate cookies' as two separate stories"
-#  → status: planning; LLM re-decomposing
+#  → status: planning; LLM re-planning
 
 # 7. Read the audit trail.
 datawatch autonomous decisions $PRD_ID
@@ -106,7 +106,7 @@ datawatch autonomous decisions $PRD_ID
      the rendered task spec.
 4. Approve story-by-story OR click the **Approve all** button at
    the top of the Stories tab.
-5. To request a re-decomposition: toolbar → **Request Revision**.
+5. To request a re-plan: toolbar → **Request Revision**.
    Modal asks for notes (free text); on submit, status flips back to
    `planning`.
 6. To reject the whole Automaton: toolbar → **Delete** (or set status to

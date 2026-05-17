@@ -1,4 +1,4 @@
-// BL24 — LLM-driven PRD → stories+tasks decomposition.
+// BL24 — LLM-driven PRD → stories+tasks planning.
 //
 // The LLM is asked to return JSON shaped like:
 //   {
@@ -28,9 +28,9 @@ import (
 	"strings"
 )
 
-// DecompositionPrompt is the system+user prompt prefix the LLM sees.
-// Operators can override via autonomous.decomposition_prompt config.
-const DecompositionPrompt = `You are decomposing a feature request into a structured Product Requirements Document with stories and tasks.
+// PlanningPrompt is the system+user prompt prefix the LLM sees.
+// Operators can override via autonomous.planning_prompt config.
+const PlanningPrompt = `You are planning a feature request into a structured Product Requirements Document with stories and tasks.
 
 Return ONLY a JSON object with this shape:
 {
@@ -78,9 +78,9 @@ type DecomposeRequest struct {
 // while production wires through to /api/ask or a session.Manager.Start.
 type DecomposeFn func(req DecomposeRequest) (jsonResponse string, err error)
 
-// ParseDecomposition cleans common LLM JSON pathologies (fences,
+// ParsePlanning cleans common LLM JSON pathologies (fences,
 // smart quotes, // comments) and unmarshals into a Story slice.
-func ParseDecomposition(raw string) (title string, stories []Story, err error) {
+func ParsePlanning(raw string) (title string, stories []Story, err error) {
 	cleaned := cleanLLMJSON(raw)
 	var doc struct {
 		Title   string  `json:"title"`
@@ -140,3 +140,10 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// BL304 — backward-compat aliases so any external callers still compile.
+// DecompositionPrompt is an alias for PlanningPrompt.
+const DecompositionPrompt = PlanningPrompt
+
+// ParseDecomposition is an alias for ParsePlanning.
+func ParseDecomposition(raw string) (string, []Story, error) { return ParsePlanning(raw) }

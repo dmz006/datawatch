@@ -1189,8 +1189,8 @@ type CostRateConfig struct {
 	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
 }
 
-// AutonomousConfig (BL24+BL25) — operator knobs for LLM-driven PRD
-// decomposition. Mirrors internal/autonomous.Config; copied here so
+// AutonomousConfig (BL24+BL25) — operator knobs for LLM-driven Automata
+// planning. Mirrors internal/autonomous.Config; copied here so
 // YAML loading + REST /api/config exposure don't pull in the package.
 type AutonomousConfig struct {
 	// Enabled gates the background loop. Off by default.
@@ -1199,22 +1199,34 @@ type AutonomousConfig struct {
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
 	// MaxParallelTasks is the per-PRD in-flight worker cap (default 3).
 	MaxParallelTasks int `yaml:"max_parallel_tasks,omitempty" json:"max_parallel_tasks,omitempty"`
-	// DecompositionBackend overrides session.llm_backend for the LLM
-	// decomposition call. Empty = inherit.
-	DecompositionBackend string `yaml:"decomposition_backend,omitempty" json:"decomposition_backend,omitempty"`
+	// PlanningBackend overrides session.llm_backend for the LLM
+	// planning call. Empty = inherit.
+	// BL304: renamed from DecompositionBackend; old key still accepted on read.
+	PlanningBackend string `yaml:"planning_backend,omitempty" json:"planning_backend,omitempty"`
+	// decomposition_backend is the legacy YAML key for PlanningBackend;
+	// accepted on read for back-compat, never written.
+	DecompositionBackendLegacy string `yaml:"decomposition_backend,omitempty" json:"-"`
 	// VerificationBackend selects the BL25 verifier backend. Empty =
 	// inherit. For cross-backend independence, set this to a distinct
-	// backend (e.g. ollama when decomposition is claude-code).
+	// backend (e.g. ollama when planning is claude-code).
 	VerificationBackend string `yaml:"verification_backend,omitempty" json:"verification_backend,omitempty"`
-	// DecompositionEffort is the BL41 effort hint for the LLM call.
-	DecompositionEffort string `yaml:"decomposition_effort,omitempty" json:"decomposition_effort,omitempty"`
+	// PlanningEffort is the BL41 effort hint for the LLM call.
+	// BL304: renamed from DecompositionEffort; old key still accepted on read.
+	PlanningEffort string `yaml:"planning_effort,omitempty" json:"planning_effort,omitempty"`
+	// decomposition_effort is the legacy YAML key for PlanningEffort;
+	// accepted on read for back-compat, never written.
+	DecompositionEffortLegacy string `yaml:"decomposition_effort,omitempty" json:"-"`
 	// VerificationEffort is the BL41 effort hint for the verifier.
 	VerificationEffort string `yaml:"verification_effort,omitempty" json:"verification_effort,omitempty"`
-	// v5.26.16 — operator-reported: decomposition + verification need
+	// v5.26.16 — operator-reported: planning + verification need
 	// optional per-backend Model overrides like the per-PRD/per-task
 	// LLM dropdowns. Empty = backend default.
-	DecompositionModel string `yaml:"decomposition_model,omitempty" json:"decomposition_model,omitempty"`
-	VerificationModel  string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	// BL304: renamed from DecompositionModel; old key still accepted on read.
+	PlanningModel string `yaml:"planning_model,omitempty" json:"planning_model,omitempty"`
+	// decomposition_model is the legacy YAML key for PlanningModel;
+	// accepted on read for back-compat, never written.
+	DecompositionModelLegacy string `yaml:"decomposition_model,omitempty" json:"-"`
+	VerificationModel        string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
 	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
@@ -1851,6 +1863,17 @@ func applyDefaults(cfg *Config) {
 		if wd, err := os.Getwd(); err == nil {
 			cfg.Session.RootPath = wd
 		}
+	}
+	// BL304 — migrate legacy decomposition_* YAML keys → planning_* Go fields.
+	// Old configs that set decomposition_backend/effort/model still work.
+	if cfg.Autonomous.PlanningBackend == "" && cfg.Autonomous.DecompositionBackendLegacy != "" {
+		cfg.Autonomous.PlanningBackend = cfg.Autonomous.DecompositionBackendLegacy
+	}
+	if cfg.Autonomous.PlanningEffort == "" && cfg.Autonomous.DecompositionEffortLegacy != "" {
+		cfg.Autonomous.PlanningEffort = cfg.Autonomous.DecompositionEffortLegacy
+	}
+	if cfg.Autonomous.PlanningModel == "" && cfg.Autonomous.DecompositionModelLegacy != "" {
+		cfg.Autonomous.PlanningModel = cfg.Autonomous.DecompositionModelLegacy
 	}
 }
 

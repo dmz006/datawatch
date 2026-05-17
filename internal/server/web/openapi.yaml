@@ -794,7 +794,7 @@ paths:
         "101":
           description: Switching Protocols
 
-  # ─── Autonomous PRD decomposition (BL24+BL25, v3.10.0) ─────────
+  # ─── Autonomous PRD planning (BL24+BL25, v3.10.0; BL304 rename) ──
   /api/autonomous/status:
     get:
  summary: Loop status snapshot
@@ -879,9 +879,16 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: "{children: [PRD, ...]}"}}
+  /api/autonomous/prds/{id}/plan:
+    post:
+ summary: Run LLM planning phase for a PRD (BL304 canonical)
+      operationId: autonomousPRDPlan
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}/decompose:
     post:
- summary: Run LLM decomposition for a PRD
+ summary: Run LLM planning phase for a PRD (back-compat alias for /plan)
       operationId: autonomousPRDDecompose
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]

@@ -462,9 +462,9 @@ profiles:
 # Configured under session.fallback_chain in the session section above.
 # Example: fallback_chain: ["claude-personal", "gemini-fallback"]
 
-# ── Autonomous PRD Decomposition (BL24+BL25 — v3.10.0) ──
+# ── Autonomous PRD Planning (BL24+BL25 — v3.10.0, BL304 rename) ──
 # LLM-driven Product Requirements Document → Stories → Tasks
-# decomposition with independent verification. Disabled by default.
+# planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
 autonomous:
   # Opt-in switch. When false every /api/autonomous/* returns 503.
@@ -473,14 +473,16 @@ autonomous:
   poll_interval_seconds: 30
   # Per-PRD in-flight worker cap.
   max_parallel_tasks: 3
-  # LLM backend used for the decomposition call (empty = inherit session.llm_backend).
-  decomposition_backend: ""
+  # LLM backend used for the planning call (empty = inherit session.llm_backend).
+  # BL304: renamed from decomposition_backend; old key still accepted on read.
+  planning_backend: ""
   # BL25 verifier backend. Empty = inherit. Set to a different backend
-  # (e.g. ollama when decomposition is claude-code) for cross-backend
+  # (e.g. ollama when planning backend is claude-code) for cross-backend
   # independence.
   verification_backend: ""
-  # BL41 effort hint for the decomposition LLM call.
-  decomposition_effort: "thorough"
+  # BL41 effort hint for the planning LLM call.
+  # BL304: renamed from decomposition_effort; old key still accepted on read.
+  planning_effort: "thorough"
   # BL41 effort hint for the verifier.
   verification_effort: "normal"
   # 0 = inherit session.stale_timeout_seconds.

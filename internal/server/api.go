@@ -3371,17 +3371,21 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// Settings cards render empty fields on reload even though
 		// the PUT path now persists correctly.
 		"autonomous": map[string]interface{}{
-			"enabled":                s.cfg.Autonomous.Enabled,
-			"poll_interval_seconds":  s.cfg.Autonomous.PollIntervalSeconds,
-			"max_parallel_tasks":     s.cfg.Autonomous.MaxParallelTasks,
-			"decomposition_backend":  s.cfg.Autonomous.DecompositionBackend,
-			"verification_backend":   s.cfg.Autonomous.VerificationBackend,
-			"decomposition_effort":   s.cfg.Autonomous.DecompositionEffort,
-			"verification_effort":    s.cfg.Autonomous.VerificationEffort,
-			"stale_task_seconds":     s.cfg.Autonomous.StaleTaskSeconds,
-			"auto_fix_retries":       s.cfg.Autonomous.AutoFixRetries,
-			"security_scan":          s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":     s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"enabled":               s.cfg.Autonomous.Enabled,
+			"poll_interval_seconds": s.cfg.Autonomous.PollIntervalSeconds,
+			"max_parallel_tasks":    s.cfg.Autonomous.MaxParallelTasks,
+			// BL304: new key. Also emit legacy key for back-compat with old clients.
+			"planning_backend":      s.cfg.Autonomous.PlanningBackend,
+			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
+			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
+			// BL304: new key + legacy alias.
+			"planning_effort":       s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":   s.cfg.Autonomous.VerificationEffort,
+			"stale_task_seconds":    s.cfg.Autonomous.StaleTaskSeconds,
+			"auto_fix_retries":      s.cfg.Autonomous.AutoFixRetries,
+			"security_scan":         s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":    s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 		},
 		"plugins": map[string]interface{}{
 			"enabled":    s.cfg.Plugins.Enabled,
@@ -4108,17 +4112,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PollIntervalSeconds = n }
 		case "autonomous.max_parallel_tasks":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.MaxParallelTasks = n }
-		case "autonomous.decomposition_backend":
-			cfg.Autonomous.DecompositionBackend = toString(v)
+		// BL304: accept both new planning_* and legacy decomposition_* keys.
+		case "autonomous.planning_backend", "autonomous.decomposition_backend":
+			cfg.Autonomous.PlanningBackend = toString(v)
 		case "autonomous.verification_backend":
 			cfg.Autonomous.VerificationBackend = toString(v)
-		case "autonomous.decomposition_effort":
-			cfg.Autonomous.DecompositionEffort = toString(v)
+		case "autonomous.planning_effort", "autonomous.decomposition_effort":
+			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
 			cfg.Autonomous.VerificationEffort = toString(v)
-		// v5.26.16 — operator-pinned model overrides.
-		case "autonomous.decomposition_model":
-			cfg.Autonomous.DecompositionModel = toString(v)
+		// v5.26.16 — operator-pinned model overrides. BL304: accept both new and legacy keys.
+		case "autonomous.planning_model", "autonomous.decomposition_model":
+			cfg.Autonomous.PlanningModel = toString(v)
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
 		case "autonomous.stale_task_seconds":

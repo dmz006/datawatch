@@ -48,9 +48,9 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_parallel_tasks", mcpsdk.Description("Per-PRD worker cap (default 3)")),
-		mcpsdk.WithString("decomposition_backend", mcpsdk.Description("LLM backend for the PRD-decomposition call (empty = inherit)")),
+		mcpsdk.WithString("planning_backend", mcpsdk.Description("LLM backend for the Automata planning call (empty = inherit); alias: decomposition_backend")),
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
-		mcpsdk.WithString("decomposition_effort", mcpsdk.Description("BL41 effort hint for decomposition")),
+		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
@@ -68,8 +68,19 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			body[k] = int(v)
 		}
 	}
-	for _, k := range []string{"decomposition_backend", "verification_backend",
-		"decomposition_effort", "verification_effort"} {
+	// BL304: accept new planning_* params; also check legacy decomposition_* for back-compat.
+	for _, pair := range [][2]string{
+		{"planning_backend", "decomposition_backend"},
+		{"planning_effort", "decomposition_effort"},
+	} {
+		newKey, oldKey := pair[0], pair[1]
+		if v := req.GetString(newKey, ""); v != "" {
+			body[newKey] = v
+		} else if v := req.GetString(oldKey, ""); v != "" {
+			body[newKey] = v
+		}
+	}
+	for _, k := range []string{"verification_backend", "verification_effort"} {
 		if v := req.GetString(k, ""); v != "" {
 			body[k] = v
 		}
@@ -136,7 +147,7 @@ func (s *Server) handleAutonomousPRDGet(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDDecompose() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_decompose",
-		mcpsdk.WithDescription("BL24 — run the LLM decomposition for a PRD (creates stories+tasks)."),
+		mcpsdk.WithDescription("BL24 — run the LLM planning phase for a PRD (creates stories+tasks)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }
@@ -183,7 +194,7 @@ func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAutonomousPRDApprove() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_approve",
-		mcpsdk.WithDescription("BL191 — approve a decomposed PRD; required before autonomous_prd_run."),
+		mcpsdk.WithDescription("BL191 — approve a planned PRD; required before autonomous_prd_run."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("note", mcpsdk.Description("optional free-form note saved on the Decision row")),
 	)
@@ -200,7 +211,7 @@ func (s *Server) handleAutonomousPRDApprove(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) toolAutonomousPRDReject() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reject",
-		mcpsdk.WithDescription("BL191 — reject a decomposed PRD; the decomposition stays for inspection but the loop won't run it."),
+		mcpsdk.WithDescription("BL191 — reject a planned PRD; the plan stays for inspection but the loop won't run it."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("reason", mcpsdk.Description("optional rejection reason")),
 	)
@@ -217,9 +228,9 @@ func (s *Server) handleAutonomousPRDReject(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAutonomousPRDRequestRevision() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_request_revision",
-		mcpsdk.WithDescription("BL191 — ask for a fresh decomposition; status moves back to revisions_asked."),
+		mcpsdk.WithDescription("BL191 — ask for a fresh planning run; status moves back to revisions_asked."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
-		mcpsdk.WithString("note", mcpsdk.Description("what's wrong with the current decomposition")),
+		mcpsdk.WithString("note", mcpsdk.Description("what's wrong with the current plan")),
 	)
 }
 func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

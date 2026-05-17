@@ -70,8 +70,8 @@ PRD_ID=$(datawatch autonomous create \
   --backend claude-code \
   --profile prod-audit 2>&1 | grep -oP 'id=\K[0-9a-f]+')
 
-# 2. Trigger decomposition (LLM-driven; async).
-datawatch autonomous decompose $PRD_ID
+# 2. Trigger planning (LLM-driven; async).
+datawatch autonomous prd-plan $PRD_ID
 sleep 60
 datawatch autonomous get $PRD_ID
 #  → status: needs_review

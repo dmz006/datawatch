@@ -100,7 +100,7 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/alerts` | `get_alerts` | Complete | |
 | `POST /api/alerts` (mark read) | `mark_alert_read` | Complete | |
 
-### Autonomous PRD Decomposition
+### Autonomous PRD Planning
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
@@ -308,7 +308,7 @@ documenting coverage gaps and the reasoning behind them.
 | Agents (ephemeral workers) | 6 | 6 | **100%** |
 | Singleton operations | 7 | 7 | **100%** |
 | Voice + Channel | 2 | 0 | **0%** (file uploads + internal callbacks) |
-| Autonomous PRD decomposition | 10 | 10 | **100%** |
+| Autonomous PRD planning | 10 | 10 | **100%** |
 | Observer (unified stats + envelopes) | 4 | 4 | **100%** |
 | Plugin framework | 6 | 6 | **100%** |
 | PRD-DAG orchestrator | 9 | 9 | **100%** |

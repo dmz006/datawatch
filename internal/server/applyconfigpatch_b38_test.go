@@ -44,8 +44,9 @@ func TestApplyConfigPatch_AutonomousPluginsOrchestrator(t *testing.T) {
 	if cfg.Autonomous.MaxParallelTasks != 5 {
 		t.Errorf("max_parallel_tasks = %d, want 5", cfg.Autonomous.MaxParallelTasks)
 	}
-	if cfg.Autonomous.DecompositionBackend != "claude-code" {
-		t.Errorf("decomposition_backend = %q, want claude-code", cfg.Autonomous.DecompositionBackend)
+	// BL304: field renamed to PlanningBackend; old key "decomposition_backend" still accepted.
+	if cfg.Autonomous.PlanningBackend != "claude-code" {
+		t.Errorf("planning_backend (via legacy decomposition_backend key) = %q, want claude-code", cfg.Autonomous.PlanningBackend)
 	}
 	if cfg.Autonomous.VerificationBackend != "ollama" {
 		t.Errorf("verification_backend = %q, want ollama", cfg.Autonomous.VerificationBackend)

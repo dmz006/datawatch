@@ -38,13 +38,17 @@ type Config struct {
 	Enabled              bool   `json:"enabled"`
 	PollIntervalSeconds  int    `json:"poll_interval_seconds,omitempty"`
 	MaxParallelTasks     int    `json:"max_parallel_tasks,omitempty"`
-	DecompositionBackend string `json:"decomposition_backend,omitempty"`
-	VerificationBackend  string `json:"verification_backend,omitempty"`
-	DecompositionEffort  string `json:"decomposition_effort,omitempty"`
-	VerificationEffort   string `json:"verification_effort,omitempty"`
+	// BL304: renamed from DecompositionBackend; JSON key updated to planning_backend.
+	// Old key "decomposition_backend" still accepted via SetConfig migration.
+	PlanningBackend     string `json:"planning_backend,omitempty"`
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
+	PlanningEffort     string `json:"planning_effort,omitempty"`
+	VerificationEffort string `json:"verification_effort,omitempty"`
 	// v5.26.16 — operator-pinned model overrides paired with the
 	// backend fields above. Empty = backend default.
-	DecompositionModel   string `json:"decomposition_model,omitempty"`
+	// BL304: renamed from DecompositionModel; JSON key updated to planning_model.
+	PlanningModel string `json:"planning_model,omitempty"`
 	VerificationModel    string `json:"verification_model,omitempty"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
@@ -320,7 +324,7 @@ func (m *Manager) SetSkillsDir(dir string) {
 // BL191 (v5.2.0) — status transitions: PRDDraft (or PRDRevisionsAsked)
 // → PRDPlanning → PRDNeedsReview. The operator must explicitly
 // Approve before Run is allowed; see Manager.Approve and Manager.Run.
-// Decomposition records a Decision row on the PRD with the LLM call
+// Planning records a Decision row on the PRD with the LLM call
 // metadata (backend, prompt size, response size).
 func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
@@ -335,27 +339,27 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	}
 	backend := prd.Backend
 	if backend == "" {
-		backend = m.cfg.DecompositionBackend
+		backend = m.cfg.PlanningBackend
 	}
 	effort := prd.Effort
 	if effort == "" {
-		effort = Effort(m.cfg.DecompositionEffort)
+		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
 	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
 	_ = m.store.SavePRD(prd)
 
-	prompt := fmt.Sprintf(DecompositionPrompt, prd.Spec)
+	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
 	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort})
 	if err != nil {
 		// Roll back to draft so the operator can re-trigger.
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()
 		_ = m.store.SavePRD(prd)
-		return nil, fmt.Errorf("LLM decompose: %w", err)
+		return nil, fmt.Errorf("LLM plan: %w", err)
 	}
-	title, stories, err := ParseDecomposition(raw)
+	title, stories, err := ParsePlanning(raw)
 	if err != nil {
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()

@@ -56,6 +56,8 @@ func (a *API) Config() any { return a.M.Config() }
 
 // SetConfig accepts json.RawMessage (what the REST handler passes) so
 // callers don't need to know our concrete Config shape.
+// BL304: also accepts legacy decomposition_backend/effort/model JSON keys
+// and maps them to the new planning_backend/effort/model fields.
 func (a *API) SetConfig(v any) error {
 	raw, ok := v.(json.RawMessage)
 	if !ok {
@@ -65,6 +67,31 @@ func (a *API) SetConfig(v any) error {
 			return fmt.Errorf("config: %w", err)
 		}
 		raw = b
+	}
+	// BL304 — migrate old decomposition_* keys to planning_* before
+	// unmarshaling. Parse as a generic map, rename keys, re-marshal.
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err == nil {
+		legacyMap := map[string]string{
+			"decomposition_backend": "planning_backend",
+			"decomposition_effort":  "planning_effort",
+			"decomposition_model":   "planning_model",
+		}
+		changed := false
+		for old, newKey := range legacyMap {
+			if val, exists := m[old]; exists {
+				if _, hasNew := m[newKey]; !hasNew {
+					m[newKey] = val
+				}
+				delete(m, old)
+				changed = true
+			}
+		}
+		if changed {
+			if b, err := json.Marshal(m); err == nil {
+				raw = b
+			}
+		}
 	}
 	var cfg Config
 	if err := json.Unmarshal(raw, &cfg); err != nil {

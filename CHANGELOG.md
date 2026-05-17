@@ -39,15 +39,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311, BL312, BL313 filed — see backlog tracker.)_
 
+## v7.0.0-alpha.79 — BL304/BL305/BL306/BL307/BL310/BL311: planning rename + routing fix + test coverage
+
+### Fixed
+- **BL305 — Template instantiation modal rendered LLM objects as `[object Object]`** — `state._prdBackends` is now an array of LLM objects (from `/api/llms`) but the "Use Template" modal mapped them with `escHtml(b)` instead of extracting `b.name`. Fixed to filter by `NON_LLM_BACKENDS` and render `b.name`. All other Automata pickers already used `/api/llms` correctly.
+- **BL306 — `decomposeFn` / `verifyFn` / `guardrailFn` now route named LLMs correctly** — Added `resolveAskBackend()` that looks up named LLMs in the inference registry and returns their adapter kind + model. Named LLMs of kind `ollama`/`openwebui` now route to `/api/ask` with the correct adapter kind; named LLMs of kind `claude-code` (or other non-ask-compatible kinds) return a clear error rather than silently falling back. `autonomousInferenceReg` captured from the outer var block so the registry is available in the closures. Verification and guardrail functions updated with the same pattern.
+
+### Changed
+- **BL304 — Rename "decomposition" → "planning" across all surfaces** — Go config structs (`DecompositionBackend/Effort/Model` → `PlanningBackend/Effort/Model`) with legacy YAML shadow fields for back-compat; Go symbols (`DecompositionPrompt` → `PlanningPrompt`, `ParseDecomposition()` → `ParsePlanning()`) with aliases; MCP tool params (`decomposition_backend/effort` → `planning_backend/effort`); CLI `prd-plan` canonical + `prd-decompose` alias; HTTP `/api/autonomous/prds/{id}/plan` alias alongside `/decompose`; app.js labels, lifecycle hints, config keys; docs and OpenAPI spec updated throughout.
+
+### Added
+- **BL311 — 11 new tests across 6 remaining coverage gaps** — Gap #1: `TestLLMsHTTPRoundTrip_ShapeValidation` (JSON shape at each CRUD step); Gap #2: `TestNamedLLMNotInBackends` + `TestNamedLLMInBackendsWhenRegistryWired` (registry disconnect proof); Gap #3: `TestSessionStart_WithNamedLLM` + `TestSessionStart_UnknownNamedLLM` (named-LLM session start); Gap #4: `TestSessionStart_NamedVsAdapterType` (path distinction); Gap #7: `TestAutonomousManager_PlanningBackend_NamedLLM` + 2 variants; Gap #8: `TestBackendsResponseShape` + `TestBackendsResponseShape_NoRegistry`. **1948 tests pass.**
+
+### Verified closed (no code change needed)
+- **BL307 — `loadLLMConfig()` / `#llmConfigList` dead code** — already removed in a prior release.
+- **BL310 — Smoke TS-201 wrong URL `/api/llm`** — `release-smoke.sh` already uses `/api/llms`; corrected in a prior release.
+
+### Rule audit
+- 7-surface parity: BL304 rename covers REST ✓ MCP ✓ CLI ✓ Comm ✓ PWA ✓ locale (no new strings) ✓ mobile-issue: file datawatch-app issue for Planning label parity. BL306 is server-side Go only (no new surfaces).
+- Smoke: existing LLM smoke sections correct; new tests cover gaps.
+- Locale: no new user-facing strings added.
+- Plans hygiene: BL304/BL305/BL306/BL307/BL310/BL311 cleared from open backlog.
+- Mobile-parity: BL304 label changes require datawatch-app issue for "Planning backend" label translation.
+
 ### Backlog (new)
 
 - **BL312 — Multi-server support for PWA: per-tab server picker, all-servers mode, server CRUD** — Matches datawatch-app v0.121.0 multi-server feature. Parity reference: issue #63 and app `SENTINEL_ALL_SERVERS` pattern. Six sprints:
   - **S1 — Server CRUD REST API + 7-surface parity**: `POST/PUT/PATCH/DELETE /api/servers` backed by existing `saveConfig()`. New `handleServerCRUD` handler in `api.go`. 7-surface: MCP tools (`server_add`, `server_update`, `server_delete`, `server_enable`, `server_disable`) in new `internal/mcp/servers.go`; CLI subcommands in new `cmd/datawatch/cli_servers.go`; comm verbs in `sx2_parity.go`; locale keys in all 5 bundles. Guards: `"local"` is immutable; duplicate name → 409; unknown name → 404. File datawatch-app issue with new endpoint spec.
+    - **Rule audit (S1)**: 7-surface — REST ✓ MCP ✓ CLI ✓ comm ✓ PWA (S2) locale ✓ mobile-issue ✓ | Smoke: server CRUD round-trip | Plans hygiene: no new plan doc | Deviations: none.
   - **S2 — Settings Card Add/Edit/Delete UI**: `loadServers()` gains "+ Add Server" button and per-row Edit/Delete. `showServerModal(server|null)` modal with Name/URL/Token/Enabled fields. Calls S1 endpoints. Locale strings for modal labels.
+    - **Rule audit (S2)**: 7-surface — REST (S1) MCP (S1) CLI (S1) comm (S1) PWA ✓ locale ✓ mobile-issue: file datawatch-app issue for Settings card parity | Smoke: modal open/save/delete | Plans hygiene: none | Deviations: none.
   - **S3 — Per-tab server picker component**: `state.tabServer = {}` keyed by tab name (persisted to `localStorage`). Sentinel `'__all__'` = "All servers" (Sessions/Automata/Alerts only; Observer/Dashboard offer single-server list only). `serverPickerHtml(tab, allowAll)` rendered in each tab's toolbar title slot — replaces static page-name text (matching app's TopAppBar title slot pattern). No page name displayed; picker label is the only title.
-  - **S4 — Sessions all-servers mode**: Fan out via existing `/api/federation/sessions?include=proxied`. Merge flat list with `_server` field per session. Inline `<span class="server-chip">` badge per row. Operations (kill/restart/input) thread `_server` through proxy routing. Live WS = local only in all-servers mode; remote sessions polled at 5s interval (multi-WS fan-out deferred as follow-up). ⚠️ Federation design iteration required before this sprint starts.
-  - **S5 — Automata + Alerts all-servers mode**: Automata: parallel `GET /api/proxy/{name}/api/autonomous/prds`; 404 = not enabled → silent skip. Alerts: parallel fetch alerts + sessions per server for active/historical classification; group labels use `server/shortId` format. Server chip per row. Operations routed to source server. ⚠️ Federation design iteration required before this sprint starts.
-  - **S6 — Observer + Dashboard single-server pickers**: Picker wired to all Observer/Dashboard fetches via `getTabServer(tab)`. No all-servers option on these tabs. ⚠️ Federation design iteration required before this sprint starts.
+    - **Rule audit (S3)**: 7-surface — PWA ✓ locale (picker labels) ✓ mobile-issue: file datawatch-app issue for tab-level server picker | Smoke: picker renders, localStorage persists | Plans hygiene: none | Deviations: none.
+  - **S4 — Sessions all-servers mode**: Federation design confirmed. Fan-out: hybrid — registered federation peers via `/api/federation/sessions?include=proxied`; manually-added servers (not peers) via client-side `GET /api/proxy/{name}/api/sessions`. Merge flat list with `_server` field per row. Inline `<span class="server-chip">` badge. Operations (kill/restart/input) auto-route via `_server` through proxy. WS = local only; remotes polled at 5s in `__all__` mode.
+    - **Rule audit (S4)**: 7-surface — REST (federation/sessions already exists) MCP (federation_sessions tool) CLI (sessions --server=all) comm PWA ✓ locale (server chip labels) ✓ mobile-issue: file datawatch-app issue for all-servers sessions | Smoke: all-servers list loads, op routes to correct server | Plans hygiene: none | Deviations: multi-WS deferred as follow-up.
+  - **S5 — Automata + Alerts all-servers mode**: New `/api/federation/prds` and `/api/federation/alerts` server-side endpoints (matching federation/sessions pattern; required for MCP/CLI 7-surface parity). Automata: 404 on non-enabled server = silent skip. Alerts: group labels use `server/shortId` format. Server chip per row. Operations auto-routed to source server via `_server`.
+    - **Rule audit (S5)**: 7-surface — REST ✓ (new federation endpoints) MCP ✓ CLI ✓ comm ✓ PWA ✓ locale (server chip, error labels) ✓ mobile-issue: file datawatch-app issue for all-servers Automata + Alerts | Smoke: federation/prds + federation/alerts respond; PWA merges rows | Plans hygiene: none | Deviations: none.
+  - **S6 — Observer + Dashboard single-server pickers**: Picker wired to all Observer/Dashboard fetches via `getTabServer(tab)`. No `__all__` option on these tabs. Observer: proxies full Observer view from selected server (real observer state, not local-peer filter). Dashboard: proxies stats from selected server.
+    - **Rule audit (S6)**: 7-surface — PWA ✓ locale (picker labels, "Local" default) ✓ mobile-issue: file datawatch-app issue for Observer/Dashboard server picker | Smoke: picking server X loads Observer from X via proxy | Plans hygiene: archive sprint docs after cut | Deviations: none.
   - Filed 2026-05-17. GitHub issue: #63.
 
 - **BL313 — Dashboard nav button not gated behind `autonomous.enabled`** — The Automata tab nav button is hidden until `GET /api/autonomous/config` returns `enabled: true`. The Dashboard nav button (`navBtnDashboard`) does not apply the same gate — it is always visible (or always hidden, depending on default). Per datawatch-app v0.121.0 tab visibility rules (issue #63): Dashboard visibility condition = `autonomous.enabled === true`, same as Automata. Fix: apply the same `autonomous.enabled` probe to `navBtnDashboard` on startup and on config reload. Filed 2026-05-17. GitHub issue: #62.

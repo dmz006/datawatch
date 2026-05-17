@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.78"
+var Version = "7.0.0-alpha.79"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1812,6 +1812,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL244 — filled after plugin registry is created; routers and
 		// the autonomous manager both check it at call time (not at wiring time).
 		autonomousMgrRef *autonomouspkg.Manager
+		// BL306 — captured at inference-registry init so decomposeFn/verifyFn
+		// can resolve named LLMs to their adapter kind at call time.
+		autonomousInferenceReg *inference.Registry
 	)
 
 	// Batch output lines per session to prevent WebSocket flood.
@@ -2749,6 +2752,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if pipeManagerAdapter != nil {
 					pipeManagerAdapter.SetKindResolver(llmReg)
 				}
+				// BL306 — capture registry for decomposeFn/verifyFn named-LLM resolution.
+				autonomousInferenceReg = llmReg
 
 				// v7.0.0 S3 — wire the council orchestrator to use the
 				// dispatcher (real LLM debates; STUB strings stripped).
@@ -3146,23 +3151,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if offlineQueue != nil {
 			httpServer.SetOfflineQueue(offlineQueue)
 		}
-		// BL24+BL25 (v3.10.0) — autonomous PRD decomposition manager.
+		// BL24+BL25 (v3.10.0) — autonomous Automata planning manager.
 		// Always wired (so the REST surface is reachable for opt-in
 		// configuration); the loop only starts when autonomous.enabled
-		// flips true. DecomposeFn is wired via /api/ask loopback so the
+		// flips true. decomposeFn is wired via /api/ask loopback so the
 		// LLM call honors the operator's session.llm_backend / routing
 		// rules / cost rates without re-deriving here.
 		acfgIn := cfg.Autonomous
 		amgrCfg := autonomouspkg.Config{
-			Enabled:              acfgIn.Enabled,
-			PollIntervalSeconds:  acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:     acfgIn.MaxParallelTasks,
-			DecompositionBackend: acfgIn.DecompositionBackend,
-			VerificationBackend:  acfgIn.VerificationBackend,
-			DecompositionModel:   acfgIn.DecompositionModel,
-			VerificationModel:    acfgIn.VerificationModel,
-			DecompositionEffort:  acfgIn.DecompositionEffort,
-			VerificationEffort:   acfgIn.VerificationEffort,
+			Enabled:             acfgIn.Enabled,
+			PollIntervalSeconds: acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:    acfgIn.MaxParallelTasks,
+			PlanningBackend:     acfgIn.PlanningBackend,
+			VerificationBackend: acfgIn.VerificationBackend,
+			PlanningModel:       acfgIn.PlanningModel,
+			VerificationModel:   acfgIn.VerificationModel,
+			PlanningEffort:      acfgIn.PlanningEffort,
+			VerificationEffort:  acfgIn.VerificationEffort,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			SecurityScan:         acfgIn.SecurityScan,
@@ -3192,36 +3197,69 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if amgrCfg.MaxParallelTasks == 0 {
 			amgrCfg.MaxParallelTasks = 3
 		}
-		// DecomposeFn — REST loopback to /api/ask.
+		// decomposeFn — REST loopback to /api/ask.
 		//
 		// v5.26.9 — backend resolution overhauled:
 		//   1. /api/ask only supports ollama + openwebui as headless
 		//      "ask any backend" targets. Sending claude-code / opencode
 		//      / etc. returns 400 "unsupported backend" — autonomous
-		//      decompose has therefore never worked when prd.Backend was
+		//      planning has therefore never worked when prd.Backend was
 		//      a session-style backend.
 		//   2. The PRD's Backend is for the *worker* (per BL203); the
-		//      decomposer is a separate concern that should always run
+		//      planner is a separate concern that should always run
 		//      against an ask-compatible backend.
-		// Resolution order: amgrCfg.DecompositionBackend → req.Backend
-		// (only if ask-compatible) → "ollama" default.
+		// Resolution order: amgrCfg.PlanningBackend → req.Backend
+		// (only if ask-compatible after kind resolution) → "ollama" default.
+		// BL306: named LLMs from /api/llms are resolved to their adapter kind
+		// before the askCompatible check, so "ollama-datawatch" (kind=ollama)
+		// routes correctly. claude-code kind returns an explicit error rather
+		// than silently falling back.
 		askCompatible := func(b string) bool { return b == "ollama" || b == "openwebui" }
+		// resolveAskBackend maps a raw backend string to (askKind, model, err).
+		// If the string is a named LLM in the registry, its kind is returned.
+		// If the kind is not ask-compatible, an error is returned.
+		resolveAskBackend := func(raw string) (kind, model string, err error) {
+			if autonomousInferenceReg != nil {
+				if llm, regErr := autonomousInferenceReg.Get(raw); regErr == nil && !llm.Disabled {
+					kind = string(llm.Kind)
+					model = llm.Model
+					if !askCompatible(kind) {
+						return "", "", fmt.Errorf("planning backend %q has kind %q which does not support headless planning via /api/ask; use an ollama or openwebui LLM for planning", raw, kind)
+					}
+					return kind, model, nil
+				}
+			}
+			// Raw adapter type string (not in named registry).
+			return raw, "", nil
+		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			backend := amgrCfg.DecompositionBackend
-			if backend == "" && askCompatible(req.Backend) {
-				backend = req.Backend
+			rawBackend := amgrCfg.PlanningBackend
+			if rawBackend == "" {
+				rawBackend = req.Backend
 			}
-			if backend == "" {
-				backend = "ollama"
+			if rawBackend == "" {
+				rawBackend = "ollama"
+			}
+			backend, resolvedModel, resolveErr := resolveAskBackend(rawBackend)
+			if resolveErr != nil {
+				return "", resolveErr
+			}
+			if !askCompatible(backend) {
+				backend = "ollama" // legacy fallback for bare adapter types
 			}
 			askBody := map[string]any{
 				"question": req.Spec,
 				"backend":  backend,
 			}
-			if amgrCfg.DecompositionModel != "" {
-				askBody["model"] = amgrCfg.DecompositionModel
+			// Prefer explicitly configured model, then the resolved LLM model.
+			planModel := amgrCfg.PlanningModel
+			if planModel == "" {
+				planModel = resolvedModel
+			}
+			if planModel != "" {
+				askBody["model"] = planModel
 			}
 			body, _ := json.Marshal(askBody)
 			// GATE alpha.36 #286: timeout scales with PRD effort (#48).
@@ -3377,13 +3415,18 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
 			vbackend := amgrCfg.VerificationBackend
-			if !askCompatible(vbackend) { vbackend = "ollama" } // v5.26.9 — fall back when configured backend isn't ask-compatible
+			if vbackend == "" { vbackend = "ollama" }
+			// BL306: resolve named LLMs for verification backend too.
+			vkind, vmodel, _ := resolveAskBackend(vbackend)
+			if !askCompatible(vkind) { vkind = "ollama" }
+			verifyModel := amgrCfg.VerificationModel
+			if verifyModel == "" { verifyModel = vmodel }
 			askBody := map[string]any{
 				"question": prompt,
-				"backend":  vbackend,
+				"backend":  vkind,
 			}
-			if amgrCfg.VerificationModel != "" {
-				askBody["model"] = amgrCfg.VerificationModel
+			if verifyModel != "" {
+				askBody["model"] = verifyModel
 			}
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -3433,13 +3476,17 @@ Reply with STRICT JSON:
 				port = 8080
 			}
 			gbackend := amgrCfg.VerificationBackend
-			if !askCompatible(gbackend) { gbackend = "ollama" }
+			if gbackend == "" { gbackend = "ollama" }
+			gkind, gmodel, _ := resolveAskBackend(gbackend)
+			if !askCompatible(gkind) { gkind = "ollama" }
+			guardrailModel := amgrCfg.VerificationModel
+			if guardrailModel == "" { guardrailModel = gmodel }
 			askBody := map[string]any{
 				"question": prompt,
-				"backend":  gbackend,
+				"backend":  gkind,
 			}
-			if amgrCfg.VerificationModel != "" {
-				askBody["model"] = amgrCfg.VerificationModel
+			if guardrailModel != "" {
+				askBody["model"] = guardrailModel
 			}
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -3504,7 +3551,7 @@ Reply with STRICT JSON:
 				if port == 0 {
 					port = 8080
 				}
-				backend := amgrCfg.DecompositionBackend
+				backend := amgrCfg.PlanningBackend
 				if backend == "" {
 					backend = "ollama"
 				}
