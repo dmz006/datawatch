@@ -544,7 +544,7 @@ paths:
 
   /api/servers:
     get:
- summary: List remote servers
+      summary: List remote servers
       description: Returns the list of configured remote datawatch server connections.
       operationId: listServers
       tags: [System]
@@ -557,6 +557,125 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/RemoteServer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a remote server
+      description: Register a new remote datawatch server connection. Returns 409 if name already exists.
+      operationId: addServer
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoteServer"
+            example:
+              name: "nas"
+              url: "http://192.168.1.100:8080"
+              token: "my-bearer-token"
+              enabled: true
+      responses:
+        "200":
+          description: Server created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteServer"
+        "400":
+          description: Missing name or url
+        "409":
+          description: Server name already exists
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/servers/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Server short name
+        example: "nas"
+    get:
+      summary: Get a remote server by name
+      operationId: getServer
+      tags: [System]
+      responses:
+        "200":
+          description: Server entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteServer"
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Update a remote server
+      description: Update URL, token, or enabled flag for an existing server entry.
+      operationId: updateServer
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoteServer"
+      responses:
+        "200":
+          description: Updated server entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteServer"
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Remove a remote server
+      operationId: deleteServer
+      tags: [System]
+      responses:
+        "200":
+          description: Deleted
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/servers/{name}/test:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Server short name
+    post:
+      summary: Test connectivity to a remote server
+      description: Sends a GET /api/health probe to the named server. Returns {ok:true,version:"..."} on success.
+      operationId: testServer
+      tags: [System]
+      responses:
+        "200":
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  version:
+                    type: string
+                  error:
+                    type: string
+        "404":
+          description: Server not found
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -711,6 +830,31 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/alerts/aggregated:
+    get:
+      summary: Aggregated alerts across all runtime servers
+      description: Fans out to all runtime-registered servers and merges alerts into a flat array. Each alert is tagged with a server field identifying its origin. Local alerts are tagged with "local".
+      operationId: alertsAggregated
+      tags: [Alerts]
+      responses:
+        "200":
+          description: Flat array of alerts from all servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/Alert"
+                    - type: object
+                      properties:
+                        server:
+                          type: string
+                          description: Source server name ("local" for the local instance)
+                          example: "nas"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/alerts:
     get:
  summary: List alerts
@@ -817,6 +961,28 @@ paths:
           application/json:
             schema: {type: object}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/autonomous/prds/aggregated:
+    get:
+      summary: Aggregated Automata (PRDs) across all runtime servers
+      description: Fans out to all runtime-registered servers and merges Automata lists into a flat array. Each entry is tagged with a server field. Local automata are tagged with "local".
+      operationId: autonomousPRDsAggregated
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Flat array of Automata from all servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    server:
+                      type: string
+                      description: Source server name ("local" for the local instance)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/autonomous/prds:
     get:
  summary: List PRDs (newest first)

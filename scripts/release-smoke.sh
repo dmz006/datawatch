@@ -2571,6 +2571,13 @@ echo "$BC_CALL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "llm
   || ko "POST /api/mcp/call backends_list unexpected: ${BC_CALL:0:120}"
 
 H "42. Docs-as-MCP: search + list + read"
+# Verify v7.x howto files exist on disk (regression guard)
+for _HF in "docs/howto/multi-servers.md" "docs/howto/mcp-prompts.md"; do
+  _FP="$SMOKE_DIR/../$_HF"
+  [[ -f "$_FP" ]] \
+    && ok "howto file exists: $_HF" \
+    || ko "howto file missing: $_HF (required for docs-as-MCP index)"
+done
 DS=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
   -d '{"tool":"docs_search","args":{"q":"session lifecycle"}}' "$BASE/api/mcp/call" || true)
 echo "$DS" | python3 -c 'import json,sys;s=str(json.load(sys.stdin));assert len(s)>20' 2>/dev/null \

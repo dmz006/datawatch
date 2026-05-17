@@ -70,6 +70,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [LLM](#settings-llm)
   - [Agents](#settings-agents)
   - [Automate](#settings-automate)
+  - [MCP](#settings-mcp)
   - [About](#settings-about)
 - [Documentation index](#documentation-index)
 
@@ -260,9 +261,27 @@ Installed plugins listed with their declared surface — comm verbs (chat comman
 
 Bearer token controls. The **Browser token** field is the credential this PWA tab presents on every API call (stored in localStorage). The **Server bearer token** row shows whether the daemon is enforcing token auth and lets you rotate it. CA certificate download buttons retrieve the daemon's auto-generated TLS root so you can trust it on a remote device.
 
-#### Servers
+#### Remote Servers
 
-The list of remote datawatch instances this PWA can switch to (`switch server` lets you pivot between hosts without changing the URL). Add a server with its base URL + bearer token; the PWA validates by hitting `/api/health`.
+Manage the list of remote datawatch instances this PWA can connect to. Adding a server lets you pivot between hosts without changing the browser URL and without exposing remote bearer tokens to the browser — the local daemon proxies all requests.
+
+**Server list** — each row shows name, URL, enabled toggle, Test button (probes `/api/health` on the remote), Edit button, and Delete. YAML-seeded servers appear with a **Builtin** badge and cannot be deleted from the UI; remove them from `datawatch.yaml` instead.
+
+**Add / Edit form** — fields: **Name** (short slug used in picker chips, e.g. `nas`), **URL** (base URL including port), **Bearer token** (stored server-side, masked in UI), **Enabled** toggle.
+
+**Per-tab picker** — once servers are registered, every main view (Sessions, Alerts, Automata, Observer, Dashboard) shows a chip bar at the top:
+- **All** — aggregated fetch from every server; returns items tagged with their `server` origin.
+- **Local** — only this daemon's data (default).
+- **\<name\>** — proxy mode; REST and WebSocket calls route through `/api/proxy/{name}/...` on the local daemon.
+
+**Aggregated endpoints** used by the All chip:
+- `GET /api/sessions/aggregated` — sessions from all servers
+- `GET /api/alerts/aggregated` — alerts from all servers
+- `GET /api/autonomous/prds/aggregated` — Automata from all servers
+
+**Relationship to Federated Observer:** multi-server (active query, per-tab switching) and Federated Observer (passive push stats) are complementary. You can register a server here for UI switching AND configure it as a federated peer for process/GPU/network telemetry — they use different auth tokens and different push/pull directions.
+
+**See also:** [`howto/multi-servers.md`](howto/multi-servers.md)
 
 #### Communication Configuration
 
@@ -316,7 +335,7 @@ Per-channel preference for daemon-emitted events: state changes, needs-input, ra
 
 Automaton-related cards.
 
-- **Orchestrator** — multi-graph PRD-DAG executor. Approve / hold / cancel automated runs from this card.
+- **Orchestrator** — multi-graph PRD-DAG executor. Approve / hold / cancel automated runs from this card. The **Dashboard nav button** in the bottom navigation is only shown when `autonomous.enabled: true` in `datawatch.yaml` — keeping the nav clean for operators not using Automata.
 - **Identity / Telos** — same content as Settings → General → Operator identity, surfaced here too because Telos drives autonomous prioritization.
 - **Algorithm Mode** — PAI's 7-phase per-session harness (Observe → Orient → Decide → Act → Measure → Learn → Improve). This card lists active sessions, current phase, captured output per gate. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure}`.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
@@ -333,6 +352,39 @@ Automaton-related cards.
 [howto/secrets-manager](howto/secrets-manager.md) ·
 [howto/comm-channels](howto/comm-channels.md) ·
 [howto/tailscale-mesh](howto/tailscale-mesh.md)
+
+### Settings — MCP
+
+Datawatch acts as an MCP server (Model Context Protocol), exposing tools, resources, and prompts to any MCP-aware client (Claude Code, Claude Desktop, Cursor, etc.).
+
+#### MCP Tools
+
+Every datawatch capability — session management, memory, Automata, Council, evals, secrets, plugins — is available as an MCP tool. The tool catalogue is served at `GET /api/mcp/docs` (human-readable) and via the MCP `tools/list` protocol. See [`howto/mcp-tools.md`](howto/mcp-tools.md).
+
+#### MCP Resources
+
+Live daemon data served as readable MCP resources: sessions, Automata, alerts, memory entries, knowledge graph, observer stats. Resources update automatically; clients subscribe and receive push notifications. Resource URIs follow the pattern `datawatch:///<kind>/<id>` (e.g. `datawatch:///sessions/abc1`). Available via `GET /api/mcp/resources` and the MCP `resources/list` protocol.
+
+#### MCP Prompts
+
+Ten pre-built slash commands that inject live context before routing to the LLM:
+
+| Prompt | Args | Context injected |
+|--------|------|-----------------|
+| `analyze-session` | `session_id` (opt) | session detail + history |
+| `review-automaton` | `automaton_id` | Automaton spec + status |
+| `triage-alert` | `alert_id` | alert + system stats |
+| `morning-briefing` | `since` (opt) | sessions + alerts + memory + stats |
+| `research-topic` | `topic` | memory + KG entities |
+| `council-brief` | `council_id` | council run + personas |
+| `session-summary` | `session_id` | session history |
+| `diagnose-system` | — | stats + alerts + config |
+| `explore-kg` | `entity` (opt) | KG entities + triples |
+| `plan-sprint` | `context` (opt) | memory + version |
+
+Access via: MCP `prompts/list` + `prompts/get` · `GET /api/mcp/prompts` · `datawatch mcp prompts list` · `!mcp prompts` in comm channels.
+
+**See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md) · [`howto/mcp-prompts.md`](howto/mcp-prompts.md)
 
 ### Settings — About
 
@@ -427,6 +479,10 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
+| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | BL312 v7.2.0 | REST proxy + aggregated endpoints |
+| MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | BL302 v7.1.0 | MCP protocol spec |
+| MCP Resources | [`howto/mcp-tools.md`](howto/mcp-tools.md) | BL302 v7.1.0 | MCP protocol spec |
+| Docs-as-MCP-Interface | [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md) | BL274 v6.21.0 | hybrid search index |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
@@ -452,6 +508,7 @@ Comms + LLM:
 - [`howto/comm-channels.md`](howto/comm-channels.md) — all 11 messaging backends
 - [`howto/voice-input.md`](howto/voice-input.md) — transcription backends
 - [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
+- [`howto/mcp-prompts.md`](howto/mcp-prompts.md) — 10 prompt slash commands with live context injection
 
 Automata + orchestration:
 - [`howto/autonomous-planning.md`](howto/autonomous-planning.md) — submit a free-form spec, watch it decompose
@@ -464,7 +521,8 @@ Infrastructure:
 - [`howto/container-workers.md`](howto/container-workers.md) — Docker / Kubernetes ephemeral workers
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password backends
-- [`howto/federated-observer.md`](howto/federated-observer.md) — multi-host stats aggregation
+- [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
+- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, per-tab picker, all-servers aggregation
 
 Memory + ops:
 - [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph across sessions

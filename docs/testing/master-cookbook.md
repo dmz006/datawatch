@@ -423,6 +423,19 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T25 | TS-384 | POST /api/push/register stores endpoint idempotent by client_id | surface:api feature:push | 📋 planned | — | — |
 | T25 | TS-385 | PWA /locales/en.json, de.json, es.json, fr.json, ja.json all load 200 | surface:pwa feature:locale | 📋 planned | — | — |
 | T25 | TS-386 | PWA locale switcher persists selection and reloads with translated strings | surface:pwa feature:locale | 📋 planned | — | — |
+| T26 | TS-387 | POST /api/servers creates entry, GET /api/servers returns it | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-388 | GET /api/servers/{name} returns single entry; 404 on unknown | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-389 | PUT /api/servers/{name} updates URL+token; change visible on next GET | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-390 | DELETE /api/servers/{name} returns 200; GET returns 404 | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-391 | POST /api/servers/{name}/test returns {ok:true} for live local server | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-392 | GET /api/alerts/aggregated returns array with server field per item | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-393 | GET /api/autonomous/prds/aggregated returns array with server field per item | surface:api feature:multi-server | 📋 planned | — | — |
+| T26 | TS-394 | datawatch server list exits 0 | surface:cli feature:multi-server feature:cli | 📋 planned | — | — |
+| T26 | TS-395 | datawatch server add --name smoke-remote --url ... exits 0 | surface:cli feature:multi-server feature:cli | 📋 planned | — | — |
+| T26 | TS-396 | server_list MCP tool returns array | surface:mcp feature:multi-server | 📋 planned | — | — |
+| T26 | TS-397 | GET /api/mcp/prompts returns 10 prompts with name+description+arguments | surface:api feature:mcp-prompts | 📋 planned | — | — |
+| T26 | TS-398 | POST /api/mcp/prompts/get with name=diagnose-system returns messages array | surface:api feature:mcp-prompts | 📋 planned | — | — |
+| T26 | TS-399 | datawatch mcp prompts list exits 0 and lists 10 entries | surface:cli feature:mcp-prompts feature:cli | 📋 planned | — | — |
 
 ---
 
