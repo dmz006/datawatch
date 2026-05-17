@@ -5801,6 +5801,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
+  if (tab === 'servers') loadServersList();
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -5840,6 +5841,7 @@ function renderSettingsView() {
     ['comms',        t('settings_tab_comms')],
     ['compute',      t('settings_tab_compute') || 'Compute'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
+    ['servers',      t('server_settings_title') || 'Servers'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -6366,6 +6368,39 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL312 S2 — Remote Servers management card -->
+        <div class="settings-section" data-group="servers" style="${stab!=='servers'?'display:none':''}">
+          <div class="settings-section-title">${t('server_settings_title')||'Remote Servers'}</div>
+          <div style="margin-bottom:8px;">
+            <button onclick="showServerForm(null)" style="background:var(--accent2);color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${t('server_add_btn')||'Add Server'}</button>
+          </div>
+          <div id="serversList" style="margin-bottom:12px;"></div>
+          <div id="serverFormWrap" style="display:none;background:var(--bg2);border-radius:6px;padding:12px;margin-top:8px;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px;" id="serverFormTitle">Add Server</div>
+            <input type="hidden" id="serverFormEditName" value="" />
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <label style="font-size:12px;color:var(--text2);">${t('server_name_label')||'Name'}<br>
+                <input type="text" id="serverFormName" placeholder="e.g. prod, pi" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+              </label>
+              <label style="font-size:12px;color:var(--text2);">${t('server_url_label')||'URL'}<br>
+                <input type="text" id="serverFormUrl" placeholder="https://host:8443" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+              </label>
+              <label style="font-size:12px;color:var(--text2);">${t('server_token_label')||'Token'} (optional)<br>
+                <input type="password" id="serverFormToken" placeholder="Bearer token" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+              </label>
+              <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="serverFormEnabled" checked />
+                ${t('server_enabled_label')||'Enabled'}
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button onclick="saveServer()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Save</button>
+              <button onclick="closeServerForm()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Cancel</button>
+            </div>
+            <div id="serverFormError" style="color:var(--error,#ef4444);font-size:11px;margin-top:6px;display:none;"></div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
           <div style="text-align:center;padding:16px 0 8px;">
@@ -6560,6 +6595,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
+  if (_settingsTab === 'servers') loadServersList(); // BL312 S2
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -12069,6 +12105,101 @@ function selectServer(name) {
     connect();
     showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
   }
+}
+
+// ── BL312 S2 — Remote Servers Settings Card ────────────────────────────────────
+
+function loadServersList() {
+  const el = document.getElementById('serversList');
+  if (!el) return;
+  el.textContent = 'Loading…';
+  apiFetch('/api/servers').then(d => {
+    const list = (d && d.servers) ? d.servers : [];
+    if (!list.length) {
+      el.innerHTML = '<div style="color:var(--text-dim,#888);font-size:12px;">No remote servers configured.</div>';
+      return;
+    }
+    el.innerHTML = list.map(s => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.label||s.name)}</div>
+          <div style="font-size:11px;color:var(--text-dim,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.url||'')}${s.builtin?' · built-in':''}</div>
+        </div>
+        <span style="font-size:11px;padding:2px 6px;border-radius:10px;background:${s.enabled!==false?'var(--accent2,#4f8)':'var(--bg3,#2d3148)'};color:${s.enabled!==false?'#fff':'var(--text-dim,#888)'};">${s.enabled!==false?'on':'off'}</span>
+        <button onclick="testServerEntry(${JSON.stringify(s.name)},this)" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('server_test_btn')||'Test'}</button>
+        ${s.builtin?'':`<button onclick="showServerForm(${JSON.stringify(s)})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">Edit</button>`}
+        ${s.builtin?'':`<button onclick="deleteServer(${JSON.stringify(s.name)})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--danger,#f66);border:1px solid var(--border);cursor:pointer;">${t('server_delete_btn')||'Delete'}</button>`}
+      </div>`).join('');
+  }).catch(() => {
+    el.innerHTML = '<div style="color:var(--danger,#f66);font-size:12px;">Failed to load servers.</div>';
+  });
+}
+
+function showServerForm(entry) {
+  const wrap = document.getElementById('serverFormWrap');
+  const nameEl = document.getElementById('serverFormName');
+  const urlEl = document.getElementById('serverFormURL');
+  const tokenEl = document.getElementById('serverFormToken');
+  const enabledEl = document.getElementById('serverFormEnabled');
+  const editNameEl = document.getElementById('serverFormEditName');
+  const errEl = document.getElementById('serverFormError');
+  if (!wrap || !nameEl || !urlEl) return;
+  nameEl.value = entry ? (entry.name||'') : '';
+  nameEl.disabled = !!(entry);
+  urlEl.value = entry ? (entry.url||'') : '';
+  tokenEl.value = '';
+  if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
+  if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
+  if (errEl) errEl.textContent = '';
+  wrap.style.display = '';
+}
+
+function closeServerForm() {
+  const wrap = document.getElementById('serverFormWrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function saveServer() {
+  const nameEl = document.getElementById('serverFormName');
+  const urlEl = document.getElementById('serverFormURL');
+  const tokenEl = document.getElementById('serverFormToken');
+  const enabledEl = document.getElementById('serverFormEnabled');
+  const editNameEl = document.getElementById('serverFormEditName');
+  const errEl = document.getElementById('serverFormError');
+  if (!nameEl || !urlEl) return;
+  const name = nameEl.value.trim();
+  const url = urlEl.value.trim();
+  if (!name || !url) {
+    if (errEl) errEl.textContent = 'Name and URL are required.';
+    return;
+  }
+  const editName = editNameEl ? editNameEl.value : '';
+  const body = { name, url, enabled: enabledEl ? enabledEl.checked : true };
+  if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
+  const isEdit = !!(editName);
+  const method = isEdit ? 'PUT' : 'POST';
+  const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';
+  apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+    .then(() => { closeServerForm(); loadServersList(); })
+    .catch(e => { if (errEl) errEl.textContent = e.message || 'Save failed.'; });
+}
+
+function deleteServer(name) {
+  if (!confirm(`Delete server "${name}"?`)) return;
+  apiFetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    .then(() => loadServersList())
+    .catch(e => showToast(e.message || 'Delete failed', 'error'));
+}
+
+function testServerEntry(name, btnEl) {
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+  apiFetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' })
+    .then(d => {
+      const msg = d.ok ? `${d.latency_ms}ms v${d.version||'?'}` : `fail: ${d.error||'err'}`;
+      showToast(`${name}: ${msg}`, d.ok ? 'success' : 'error');
+    })
+    .catch(e => showToast(`${name}: ${e.message||'error'}`, 'error'))
+    .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = t('server_test_btn')||'Test'; } });
 }
 
 // ── Signal Device Linking ──────────────────────────────────────────────────────
