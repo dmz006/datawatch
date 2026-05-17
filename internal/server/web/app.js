@@ -2085,6 +2085,7 @@ function renderSessionsView() {
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
       </div>`;
+    _injectServerPickerBar(view, renderSessionsView);
     return;
   }
 
@@ -2120,6 +2121,8 @@ function renderSessionsView() {
   } else if (selectBar) {
     selectBar.remove();
   }
+  // BL312 S3 — prepend server picker bar if remote servers are registered
+  _injectServerPickerBar(view, renderSessionsView);
 }
 
 function loadGlobalScheduleBadge() {
@@ -12202,6 +12205,52 @@ function testServerEntry(name, btnEl) {
     .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = t('server_test_btn')||'Test'; } });
 }
 
+// ── BL312 S3 — Per-tab server picker component ─────────────────────────────────
+
+// Returns HTML for a compact server picker bar.
+// Shows "Local" + one chip per enabled remote server.
+// Hidden when no remote servers are registered.
+function _serverPickerBar() {
+  const servers = (state.servers && Array.isArray(state.servers.servers)
+    ? state.servers.servers
+    : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
+  if (!servers.length) return '';
+  const active = state.activeServer || null;
+  const chips = [{ name: null, label: t('server_local_label') || 'Local' }, ...servers.map(s => ({ name: s.name, label: s.label || s.name }))];
+  const btns = chips.map(c => {
+    const isActive = c.name === active;
+    return `<button onclick="selectServer(${c.name ? JSON.stringify(c.name) : 'null'})" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}</button>`;
+  }).join('');
+  return `<div class="server-picker-bar" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-dim,#888);flex-shrink:0;">${escHtml(t('server_picker_label') || 'Server:')}</span>${btns}</div>`;
+}
+
+// Injects the server picker bar into the top of containerEl.
+// Fetches server list if not yet loaded, then re-renders via rerenderFn.
+function _injectServerPickerBar(containerEl, rerenderFn) {
+  if (!containerEl) return;
+  if (state._serverPickerLoading) return;
+  if (state.servers === undefined) {
+    state._serverPickerLoading = true;
+    fetch('/api/servers', { headers: tokenHeader() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        state.servers = d;
+        state._serverPickerLoading = false;
+        if (rerenderFn) rerenderFn();
+      })
+      .catch(() => { state.servers = null; state._serverPickerLoading = false; });
+    return;
+  }
+  const html = _serverPickerBar();
+  if (!html) return;
+  const existing = containerEl.querySelector('.server-picker-bar');
+  if (existing) { existing.outerHTML = html; return; }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const bar = tmp.firstChild;
+  if (bar) containerEl.insertBefore(bar, containerEl.firstChild);
+}
+
 // ── Signal Device Linking ──────────────────────────────────────────────────────
 
 function loadLinkStatus() {
@@ -15595,6 +15644,7 @@ function renderAutonomousView() {
     </div>
   `;
   loadAutomataPanel();
+  _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
 
@@ -15632,6 +15682,7 @@ function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  _injectServerPickerBar(view, renderAlertsView); // BL312 S3
 
   Promise.all([
     fetch('/api/alerts', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),

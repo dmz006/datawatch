@@ -1175,5 +1175,7 @@
   "server_token_label": "トークン",
   "server_test_btn": "テスト",
   "server_delete_btn": "削除",
-  "server_enabled_label": "有効"
+  "server_enabled_label": "有効",
+  "server_picker_label": "Server:",
+  "server_local_label": "Local"
 }

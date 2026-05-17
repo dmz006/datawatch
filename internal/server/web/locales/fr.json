@@ -1175,5 +1175,7 @@
   "server_token_label": "Jeton",
   "server_test_btn": "Tester",
   "server_delete_btn": "Supprimer",
-  "server_enabled_label": "Activé"
+  "server_enabled_label": "Activé",
+  "server_picker_label": "Server:",
+  "server_local_label": "Local"
 }

@@ -1175,5 +1175,7 @@
   "server_token_label": "Token",
   "server_test_btn": "Testen",
   "server_delete_btn": "Löschen",
-  "server_enabled_label": "Aktiviert"
+  "server_enabled_label": "Aktiviert",
+  "server_picker_label": "Server:",
+  "server_local_label": "Local"
 }

@@ -1179,5 +1179,7 @@
   "server_token_label": "Token",
   "server_test_btn": "Test",
   "server_delete_btn": "Delete",
-  "server_enabled_label": "Enabled"
+  "server_enabled_label": "Enabled",
+  "server_picker_label": "Server:",
+  "server_local_label": "Local"
 }
