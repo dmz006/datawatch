@@ -78,6 +78,8 @@ func (s *Server) toolMemoryRemember() mcpsdk.Tool {
 		mcpsdk.WithDescription("Store a memory/fact for future retrieval. Embedded with vector search for semantic recall."),
 		mcpsdk.WithString("text", mcpsdk.Required(), mcpsdk.Description("The text to remember")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("Project directory (default: session default)")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+		mcpsdk.WithDestructiveHintAnnotation(false),
 	)
 }
 
@@ -101,6 +103,7 @@ func (s *Server) toolMemoryRecall() mcpsdk.Tool {
 	return mcpsdk.NewTool("memory_recall",
 		mcpsdk.WithDescription("Semantic search across all memories. Returns top matches ranked by similarity."),
 		mcpsdk.WithString("query", mcpsdk.Required(), mcpsdk.Description("Search query")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -292,6 +295,7 @@ func (s *Server) toolGetPrompt() mcpsdk.Tool {
 	return mcpsdk.NewTool("get_prompt",
 		mcpsdk.WithDescription("Get the last user prompt sent to a session."),
 		mcpsdk.WithString("session_id", mcpsdk.Description("Session ID. Empty = most recent.")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -342,6 +346,7 @@ func (s *Server) toolResearchSessions() mcpsdk.Tool {
 		mcpsdk.WithDescription("Deep cross-session research: searches across ALL session outputs, memories, and knowledge graph for a topic. Returns synthesized results with session context."),
 		mcpsdk.WithString("query", mcpsdk.Required(), mcpsdk.Description("Research query — what to search for across sessions")),
 		mcpsdk.WithNumber("max_results", mcpsdk.Description("Maximum results to return (default 10)")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -547,6 +552,7 @@ func (s *Server) toolKGQuery() mcpsdk.Tool {
 		mcpsdk.WithDescription("Query the knowledge graph for all relationships involving an entity. Optionally filter by date."),
 		mcpsdk.WithString("entity", mcpsdk.Required(), mcpsdk.Description("Entity name to query")),
 		mcpsdk.WithString("as_of", mcpsdk.Description("Point-in-time filter (YYYY-MM-DD). Empty = all time.")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -575,6 +581,8 @@ func (s *Server) toolKGAdd() mcpsdk.Tool {
 		mcpsdk.WithString("object", mcpsdk.Required(), mcpsdk.Description("Object entity")),
 		mcpsdk.WithString("valid_from", mcpsdk.Description("Start date (YYYY-MM-DD). Default: today.")),
 		mcpsdk.WithString("source", mcpsdk.Description("Source context (e.g. session ID)")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+		mcpsdk.WithDestructiveHintAnnotation(false),
 	)
 }
 
@@ -665,6 +673,7 @@ func (s *Server) toolCopyResponse() mcpsdk.Tool {
 	return mcpsdk.NewTool("copy_response",
 		mcpsdk.WithDescription("Get the last captured LLM response for a session. If no session_id given, uses the most recently updated session."),
 		mcpsdk.WithString("session_id", mcpsdk.Description("Session ID (short or full). Empty = most recent.")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 

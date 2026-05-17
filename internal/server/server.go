@@ -367,6 +367,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/mcp/tools", api.handleMCPTools)
 	apiMux.HandleFunc("/api/mcp/call", api.handleMCPCall)
+	// BL302 S1 — MCP resources surface.
+	apiMux.HandleFunc("/api/mcp/resources/read", api.handleMCPResourcesRead)
+	apiMux.HandleFunc("/api/mcp/resources/templates", api.handleMCPResourcesTemplates)
+	apiMux.HandleFunc("/api/mcp/resources", api.handleMCPResourcesList)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)

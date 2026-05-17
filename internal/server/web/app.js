@@ -6327,6 +6327,20 @@ function renderSettingsView() {
                 <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch('/api/mcp/docs',{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
               </div>
             </div>
+            <!-- BL302 S1 — MCP Resources panel (read-only list + content view) -->
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+              <div class="settings-label" style="font-weight:600;">${t('mcp.resources.tab')||'Resources'}</div>
+              <div id="mcpResourcesPanel" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;">
+                <button onclick="loadMCPResources()" style="background:var(--accent2);color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;">Load Resources</button>
+                <div id="mcpResourcesList" style="margin-top:8px;"></div>
+                <div style="margin-top:8px;font-weight:600;font-size:11px;color:var(--text2);">${t('mcp.resources.templates')||'Templates'}</div>
+                <div id="mcpTemplatesList" style="margin-top:4px;"></div>
+                <div id="mcpResourceContent" style="margin-top:8px;display:none;">
+                  <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:4px;" id="mcpResourceContentLabel"></div>
+                  <pre id="mcpResourceContentBody" style="background:var(--bg);padding:8px;border-radius:4px;overflow:auto;max-height:200px;font-size:11px;white-space:pre-wrap;word-break:break-all;"></pre>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -11161,6 +11175,123 @@ function runUpdate() {
 function tokenHeader() {
   const t = localStorage.getItem('cs_token') || '';
   return t ? { 'Authorization': 'Bearer ' + t } : {};
+}
+
+// BL302 S1/S2 — MCP Resources panel helpers.
+// S2 update: resources are grouped by category with count per category.
+
+// Category definitions for BL302 S2 categorized resource panel.
+var _mcpResourceCategories = [
+  {key: 'system',  label: 'System',           prefixes: ['datawatch://version','datawatch://config','datawatch://channel/info']},
+  {key: 'docs',    label: 'Docs',             prefixes: ['datawatch://docs']},
+  {key: 'sessions',label: 'Sessions',         prefixes: ['datawatch://sessions']},
+  {key: 'stats',   label: 'Stats & Alerts',   prefixes: ['datawatch://stats','datawatch://alerts']},
+  {key: 'memory',  label: 'Memory',           prefixes: ['datawatch://memory']},
+  {key: 'automata',label: 'Automata',         prefixes: ['datawatch://automata']},
+  {key: 'council', label: 'Council',          prefixes: ['datawatch://council']},
+  {key: 'kg',      label: 'Knowledge Graph',  prefixes: ['datawatch://kg']},
+];
+
+function _mcpCategoryForURI(uri) {
+  for (var i = 0; i < _mcpResourceCategories.length; i++) {
+    var cat = _mcpResourceCategories[i];
+    for (var j = 0; j < cat.prefixes.length; j++) {
+      if (uri === cat.prefixes[j] || uri.startsWith(cat.prefixes[j] + '/') || uri.startsWith(cat.prefixes[j] + '{')) {
+        return cat;
+      }
+    }
+  }
+  return {key: 'other', label: 'Other'};
+}
+
+function loadMCPResources() {
+  const listEl = document.getElementById('mcpResourcesList');
+  const tmplEl = document.getElementById('mcpTemplatesList');
+  if (listEl) listEl.innerHTML = '<span style="color:var(--text2)">Loading…</span>';
+  if (tmplEl) tmplEl.innerHTML = '';
+  fetch('/api/mcp/resources', {headers: tokenHeader()})
+    .then(r => r.json())
+    .then(d => {
+      const resources = d.resources || [];
+      if (!listEl) return;
+      if (resources.length === 0) {
+        listEl.innerHTML = '<span style="color:var(--text2)">' + (window._t && window._t('mcp.resources.empty') || 'No resources registered') + '</span>';
+        return;
+      }
+      // Group resources by category (BL302 S2).
+      const byCategory = {};
+      resources.forEach(function(r) {
+        const cat = _mcpCategoryForURI(r.uri);
+        if (!byCategory[cat.key]) byCategory[cat.key] = {label: cat.label, items: []};
+        byCategory[cat.key].items.push(r);
+      });
+      let html = '';
+      _mcpResourceCategories.forEach(function(cat) {
+        if (!byCategory[cat.key]) return;
+        const group = byCategory[cat.key];
+        html += '<div style="margin-bottom:6px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:2px;">' +
+          escHtml(group.label) +
+          ' <span style="color:var(--accent2);font-weight:400;">(' + group.items.length + ')</span></div>';
+        html += group.items.map(function(r) {
+          return '<div style="margin:2px 0 2px 8px;display:flex;align-items:center;gap:6px;">' +
+            '<code style="color:var(--accent2);font-size:10px;">' + escHtml(r.uri) + '</code>' +
+            '<span style="color:var(--text2);font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(r.description||'') + '</span>' +
+            '<button onclick="readMCPResource('+JSON.stringify(r.uri)+')" style="background:var(--bg);border:1px solid var(--border);padding:2px 6px;border-radius:3px;cursor:pointer;font-size:10px;flex-shrink:0;">' +
+            (window._t && window._t('mcp.resources.read') || 'Read') + '</button></div>';
+        }).join('');
+        html += '</div>';
+      });
+      // Anything in "other" category.
+      if (byCategory['other']) {
+        const group = byCategory['other'];
+        html += '<div style="margin-bottom:6px;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:2px;">Other (' + group.items.length + ')</div>';
+        html += group.items.map(function(r) {
+          return '<div style="margin:2px 0 2px 8px;display:flex;align-items:center;gap:6px;">' +
+            '<code style="color:var(--accent2);font-size:10px;">' + escHtml(r.uri) + '</code>' +
+            '<span style="color:var(--text2);font-size:10px;flex:1;">' + escHtml(r.description||'') + '</span>' +
+            '<button onclick="readMCPResource('+JSON.stringify(r.uri)+')" style="background:var(--bg);border:1px solid var(--border);padding:2px 6px;border-radius:3px;cursor:pointer;font-size:10px;flex-shrink:0;">' +
+            (window._t && window._t('mcp.resources.read') || 'Read') + '</button></div>';
+        }).join('');
+        html += '</div>';
+      }
+      listEl.innerHTML = html;
+    })
+    .catch(e => { if (listEl) listEl.innerHTML = '<span style="color:var(--error)">' + escHtml(String(e)) + '</span>'; });
+  fetch('/api/mcp/resources/templates', {headers: tokenHeader()})
+    .then(r => r.json())
+    .then(d => {
+      const templates = d.templates || [];
+      if (!tmplEl) return;
+      if (templates.length === 0) { tmplEl.innerHTML = ''; return; }
+      tmplEl.innerHTML = templates.map(t =>
+        '<div style="margin:2px 0;color:var(--text2);font-size:10px;">' +
+        '<code style="color:var(--accent);">' + escHtml(t.uri_template) + '</code>' +
+        ' — ' + escHtml(t.description||'') + '</div>'
+      ).join('');
+    })
+    .catch(() => {});
+}
+
+function readMCPResource(uri) {
+  const contentEl = document.getElementById('mcpResourceContent');
+  const labelEl = document.getElementById('mcpResourceContentLabel');
+  const bodyEl = document.getElementById('mcpResourceContentBody');
+  if (!contentEl || !labelEl || !bodyEl) return;
+  contentEl.style.display = 'block';
+  labelEl.textContent = uri;
+  bodyEl.textContent = 'Loading…';
+  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent(uri), {headers: tokenHeader()})
+    .then(r => r.json())
+    .then(d => {
+      const contents = d.contents || [];
+      if (contents.length > 0) {
+        bodyEl.textContent = contents[0].text || JSON.stringify(d, null, 2);
+      } else {
+        bodyEl.textContent = JSON.stringify(d, null, 2);
+      }
+    })
+    .catch(e => { bodyEl.textContent = String(e); });
 }
 
 // Detect whether a backend has been configured (has any non-empty credential/url field)

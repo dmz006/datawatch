@@ -99,6 +99,10 @@ type mcpBridgeAPI interface {
 	MCPToolsJSON() ([]byte, error)
 	// MCPCallJSON invokes a named tool with the given args and returns the result as JSON.
 	MCPCallJSON(ctx context.Context, name string, args map[string]any) ([]byte, error)
+	// BL302 S1 — resource surface.
+	ResourcesJSON() ([]byte, error)
+	ResourceReadJSON(ctx context.Context, uri string) ([]byte, error)
+	ResourceTemplatesJSON() ([]byte, error)
 }
 
 // startTime records when the daemon started (for uptime calculation).
@@ -628,6 +632,56 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, err := s.mcpBridge.MCPCallJSON(r.Context(), req.Tool, req.Args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
+}
+
+// handleMCPResourcesList returns all registered MCP resources as JSON (BL302 S1).
+func (s *Server) handleMCPResourcesList(w http.ResponseWriter, r *http.Request) {
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	data, err := s.mcpBridge.ResourcesJSON()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
+}
+
+// handleMCPResourcesRead reads a resource by URI and returns the result as JSON (BL302 S1).
+func (s *Server) handleMCPResourcesRead(w http.ResponseWriter, r *http.Request) {
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	uri := r.URL.Query().Get("uri")
+	if uri == "" {
+		http.Error(w, "uri query parameter is required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.mcpBridge.ResourceReadJSON(r.Context(), uri)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data) //nolint:errcheck
+}
+
+// handleMCPResourcesTemplates returns all registered MCP resource templates as JSON (BL302 S1).
+func (s *Server) handleMCPResourcesTemplates(w http.ResponseWriter, r *http.Request) {
+	if s.mcpBridge == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	data, err := s.mcpBridge.ResourceTemplatesJSON()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

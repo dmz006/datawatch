@@ -264,6 +264,12 @@ const (
 	//   "guardrail automaton set <id> [...]"          → per-Automaton override
 	CmdGuardrail CommandType = "guardrail"
 
+	// BL302 S1 — MCP resources over chat.
+	//   "mcp resources"          → list resources
+	//   "mcp read <uri>"         → read resource by URI
+	//   "mcp templates"          → list resource templates
+	CmdMCPRes CommandType = "mcp"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -428,6 +434,14 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[10:])
 		}
 		return Command{Type: CmdGuardrail, Text: rest}
+
+	// BL302 S1 — MCP resources over chat.
+	case lower == "mcp" || strings.HasPrefix(lower, "mcp "):
+		rest := ""
+		if strings.HasPrefix(lower, "mcp ") {
+			rest = strings.TrimSpace(text[4:])
+		}
+		return Command{Type: CmdMCPRes, Text: rest}
 
 	case strings.HasPrefix(lower, "send "):
 		// format: "send <id>: <text>"

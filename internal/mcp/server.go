@@ -160,6 +160,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		"datawatch",
 		"1.0.0",
 		server.WithToolCapabilities(true),
+		// BL302 S1 — enable resource + prompt capabilities.
+		// subscribe=false for resources (deferred to v7.2.0 per D1/D9).
+		// listChanged=false for prompts (added in S4 when prompts land).
+		server.WithResourceCapabilities(false, false),
+		server.WithPromptCapabilities(false),
 	)
 
 	// tracked wraps an MCP handler with channel stats tracking

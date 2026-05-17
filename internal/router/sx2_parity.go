@@ -722,3 +722,35 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
 	}
 }
+
+// handleMCPResCmd handles the !mcp resources / !mcp read / !mcp templates chat commands (BL302 S1).
+func (r *Router) handleMCPResCmd(cmd Command) {
+	lower := strings.ToLower(strings.TrimSpace(cmd.Text))
+	switch {
+	case lower == "" || lower == "resources" || lower == "list":
+		body, err := r.commGet("/api/mcp/resources", nil)
+		if err != nil {
+			r.reply("mcp resources failed", err.Error())
+			return
+		}
+		r.reply("mcp resources", body)
+	case lower == "templates":
+		body, err := r.commGet("/api/mcp/resources/templates", nil)
+		if err != nil {
+			r.reply("mcp templates failed", err.Error())
+			return
+		}
+		r.reply("mcp templates", body)
+	case strings.HasPrefix(lower, "read "):
+		uri := strings.TrimSpace(cmd.Text[5:])
+		q := url.Values{"uri": {uri}}
+		body, err := r.commGet("/api/mcp/resources/read", q)
+		if err != nil {
+			r.reply("mcp read failed", err.Error())
+			return
+		}
+		r.reply("mcp read "+uri, body)
+	default:
+		r.reply("mcp", "usage: mcp resources | mcp templates | mcp read <uri>")
+	}
+}

@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.79"
+var Version = "7.1.0-alpha.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4599,6 +4599,11 @@ Return STRICT JSON:
 		httpServer.SetMCPBridge(mcpSrv)
 	}
 
+	// BL302 S1 — register MCP resources (static + templates) when resources enabled.
+	if cfg.MCP.Resources.Enabled {
+		mcpSrv.RegisterResources()
+	}
+
 	// Wire MCP tool docs to the HTTP server
 	if httpServer != nil {
 		httpServer.SetMCPDocsFunc(func() interface{} {
@@ -8322,7 +8327,91 @@ Remote AI config (SSE):
 		RunE: runMCP,
 	}
 	cmd.Flags().Bool("sse", false, "Start SSE server for remote AI clients (uses config mcp.sse_port)")
+
+	// BL302 S1 — mcp resources subcommand group.
+	cmd.AddCommand(newMCPResourcesCmd())
 	return cmd
+}
+
+// newMCPResourcesCmd returns the `datawatch mcp resources` subcommand group (BL302 S1).
+func newMCPResourcesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resources",
+		Short: "Manage MCP resources (BL302)",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List all registered MCP resources",
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return mcpResourcesList(cmd)
+			},
+		},
+		&cobra.Command{
+			Use:   "templates",
+			Short: "List all registered MCP resource templates",
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return mcpResourcesTemplates(cmd)
+			},
+		},
+		&cobra.Command{
+			Use:   "read <uri>",
+			Short: "Read a MCP resource by URI (e.g. datawatch://version)",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return mcpResourcesRead(cmd, args[0])
+			},
+		},
+	)
+	return cmd
+}
+
+func mcpResourcesList(_ *cobra.Command) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Get(base + "/api/mcp/resources")
+	if err != nil {
+		return fmt.Errorf("GET /api/mcp/resources: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	return nil
+}
+
+func mcpResourcesTemplates(_ *cobra.Command) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Get(base + "/api/mcp/resources/templates")
+	if err != nil {
+		return fmt.Errorf("GET /api/mcp/resources/templates: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	return nil
+}
+
+func mcpResourcesRead(_ *cobra.Command, uri string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Get(base + "/api/mcp/resources/read?uri=" + uri)
+	if err != nil {
+		return fmt.Errorf("GET /api/mcp/resources/read: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	return nil
 }
 
 func runMCP(cmd *cobra.Command, _ []string) error {

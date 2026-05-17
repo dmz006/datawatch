@@ -5,6 +5,10 @@
 // Tool calls are dispatched to POST /api/mcp/call on the daemon, which executes
 // the tool in-process and returns the result as JSON.
 //
+// BL302 S1 adds discoverResources and discoverResourceTemplates which fetch
+// /api/mcp/resources and /api/mcp/resources/templates and register forwarding
+// handlers that proxy to /api/mcp/resources/read?uri=<uri>.
+//
 // The reply tool is the only hardcoded stub — it is outbound-only and not
 // reachable via the daemon tool surface.
 package main
@@ -45,6 +49,154 @@ func (b *bridge) discoverTools() ([]daemonTool, error) {
 		return nil, fmt.Errorf("parse tool list: %w", err)
 	}
 	return tools, nil
+}
+
+// ── Resource discovery + forwarding (BL302 S1) ────────────────────────────
+
+// daemonResource describes a resource returned by GET /api/mcp/resources.
+type daemonResource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MIMEType    string `json:"mime_type"`
+}
+
+// daemonResourceTemplate describes a resource template from GET /api/mcp/resources/templates.
+type daemonResourceTemplate struct {
+	URITemplate string `json:"uri_template"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MIMEType    string `json:"mime_type"`
+}
+
+// asMCPResource converts a daemonResource to an MCP Resource.
+func (d daemonResource) asMCPResource() mcpsdk.Resource {
+	return mcpsdk.NewResource(d.URI, d.Name,
+		mcpsdk.WithResourceDescription(d.Description),
+		mcpsdk.WithMIMEType(d.MIMEType),
+	)
+}
+
+// asMCPTemplate converts a daemonResourceTemplate to an MCP ResourceTemplate.
+func (d daemonResourceTemplate) asMCPTemplate() mcpsdk.ResourceTemplate {
+	return mcpsdk.NewResourceTemplate(d.URITemplate, d.Name,
+		mcpsdk.WithTemplateDescription(d.Description),
+		mcpsdk.WithTemplateMIMEType(d.MIMEType),
+	)
+}
+
+// discoverResources fetches the daemon's resource list via GET /api/mcp/resources.
+func (b *bridge) discoverResources() ([]daemonResource, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := b.callParent(ctx, http.MethodGet, "/api/mcp/resources", nil)
+	if err != nil {
+		return nil, fmt.Errorf("GET /api/mcp/resources: %w", err)
+	}
+	var envelope struct {
+		Resources []daemonResource `json:"resources"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return nil, fmt.Errorf("parse resources: %w", err)
+	}
+	return envelope.Resources, nil
+}
+
+// discoverResourceTemplates fetches the daemon's resource templates via GET /api/mcp/resources/templates.
+func (b *bridge) discoverResourceTemplates() ([]daemonResourceTemplate, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := b.callParent(ctx, http.MethodGet, "/api/mcp/resources/templates", nil)
+	if err != nil {
+		return nil, fmt.Errorf("GET /api/mcp/resources/templates: %w", err)
+	}
+	var envelope struct {
+		Templates []daemonResourceTemplate `json:"templates"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return nil, fmt.Errorf("parse resource templates: %w", err)
+	}
+	return envelope.Templates, nil
+}
+
+// makeResourceForwarder returns a ResourceHandlerFunc that proxies to /api/mcp/resources/read?uri=<uri>.
+func (b *bridge) makeResourceForwarder(uri string) server.ResourceHandlerFunc {
+	return func(ctx context.Context, req mcpsdk.ReadResourceRequest) ([]mcpsdk.ResourceContents, error) {
+		target := "/api/mcp/resources/read?uri=" + uri
+		out, err := b.callParent(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return nil, fmt.Errorf("resource read %s: %w", uri, err)
+		}
+		// Decode the envelope and return TextResourceContents.
+		var envelope struct {
+			URI      string `json:"uri"`
+			Contents []struct {
+				URI      string `json:"uri"`
+				MIMEType string `json:"mimeType"`
+				Text     string `json:"text"`
+			} `json:"contents"`
+		}
+		if err := json.Unmarshal(out, &envelope); err != nil {
+			// Fallback: return raw text
+			return []mcpsdk.ResourceContents{
+				mcpsdk.TextResourceContents{URI: uri, MIMEType: "application/json", Text: string(out)},
+			}, nil
+		}
+		var contents []mcpsdk.ResourceContents
+		for _, c := range envelope.Contents {
+			contents = append(contents, mcpsdk.TextResourceContents{
+				URI:      c.URI,
+				MIMEType: c.MIMEType,
+				Text:     c.Text,
+			})
+		}
+		if len(contents) == 0 {
+			contents = []mcpsdk.ResourceContents{
+				mcpsdk.TextResourceContents{URI: uri, MIMEType: "application/json", Text: string(out)},
+			}
+		}
+		return contents, nil
+	}
+}
+
+// makeTemplateForwarder returns a ResourceTemplateHandlerFunc that proxies to /api/mcp/resources/read?uri=<resolved-uri>.
+func (b *bridge) makeTemplateForwarder() server.ResourceTemplateHandlerFunc {
+	return func(ctx context.Context, req mcpsdk.ReadResourceRequest) ([]mcpsdk.ResourceContents, error) {
+		// The resolved URI comes from req.Params.URI (the client's actual URI, e.g. datawatch://sessions/abc123)
+		resolvedURI := req.Params.URI
+		target := "/api/mcp/resources/read?uri=" + resolvedURI
+		out, err := b.callParent(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return nil, fmt.Errorf("resource read %s: %w", resolvedURI, err)
+		}
+		var envelope struct {
+			URI      string `json:"uri"`
+			Contents []struct {
+				URI      string `json:"uri"`
+				MIMEType string `json:"mimeType"`
+				Text     string `json:"text"`
+			} `json:"contents"`
+		}
+		if err := json.Unmarshal(out, &envelope); err != nil {
+			return []mcpsdk.ResourceContents{
+				mcpsdk.TextResourceContents{URI: resolvedURI, MIMEType: "application/json", Text: string(out)},
+			}, nil
+		}
+		var contents []mcpsdk.ResourceContents
+		for _, c := range envelope.Contents {
+			contents = append(contents, mcpsdk.TextResourceContents{
+				URI:      c.URI,
+				MIMEType: c.MIMEType,
+				Text:     c.Text,
+			})
+		}
+		if len(contents) == 0 {
+			contents = []mcpsdk.ResourceContents{
+				mcpsdk.TextResourceContents{URI: resolvedURI, MIMEType: "application/json", Text: string(out)},
+			}
+		}
+		return contents, nil
+	}
 }
 
 // makeForwarder returns a ToolHandlerFunc that forwards the call to POST /api/mcp/call.

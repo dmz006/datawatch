@@ -1153,5 +1153,11 @@
   "guardrail_automaton_save": "Save override",
   "guardrail_type_scan": "scan",
   "guardrail_type_custom": "custom",
-  "guardrail_type_skill": "skill"
+  "guardrail_type_skill": "skill",
+  "mcp.resources.tab": "Resources",
+  "mcp.resources.uri": "URI",
+  "mcp.resources.description": "Description",
+  "mcp.resources.read": "Read",
+  "mcp.resources.templates": "Templates",
+  "mcp.resources.empty": "No resources registered"
 }

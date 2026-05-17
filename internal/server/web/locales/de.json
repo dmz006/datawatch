@@ -1149,5 +1149,11 @@
   "widget_description": "Laufende / wartende / Gesamtsitzungsanzahl auf einen Blick.",
   "widget_monitor_description": "CPU-Last, Speicher und Sitzungsanzahl des aktiven Datawatch-Servers.",
   "widget_monitor_label": "Datawatch-Monitor",
-  "widget_sessions_label": "Datawatch-Sitzungen"
+  "widget_sessions_label": "Datawatch-Sitzungen",
+  "mcp.resources.tab": "Resources",
+  "mcp.resources.uri": "URI",
+  "mcp.resources.description": "Description",
+  "mcp.resources.read": "Read",
+  "mcp.resources.templates": "Templates",
+  "mcp.resources.empty": "No resources registered"
 }

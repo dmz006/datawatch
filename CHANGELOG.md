@@ -39,6 +39,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311, BL312, BL313 filed — see backlog tracker.)_
 
+## v7.1.0-alpha.1 — BL302 S1+S2: MCP Resources foundation + live resources
+
+### Added
+- **BL302 S1 — MCP Resources foundation** — Enabled resource + prompt capabilities on the MCP server. Tool annotations added to all existing tools (`memory_recall`, `kg_query`, `research_sessions`, `get_prompt`, `copy_response` marked readOnly; `memory_remember`, `kg_add` marked not-readOnly). MCPStatsBlock type added to stats. REST: `GET /api/mcp/resources`, `GET /api/mcp/resources/read?uri=`, `GET /api/mcp/resources/templates`. Static resources: `datawatch://version`, `datawatch://config` (secrets redacted), `datawatch://channel/info`, `datawatch://docs`, `datawatch://docs/{path}`. 8 resource templates for sessions, automata, memory, alerts, council. Channel bridge discovers and proxies resources + templates. CLI `datawatch mcp resources list/read/templates`. Comm `!mcp resources/read/templates`. PWA MCP panel Resources tab. Config `mcp.resources.enabled`. 6 locale keys × 5 bundles. Smoke §7ac. Howto `docs/howto/mcp-resources.md`.
+- **BL302 S2 — MCP Live Resources** — 16 live resource handlers backed by daemon state, all with graceful empty-JSON fallback when subsystems unavailable: `datawatch://sessions`, `datawatch://stats`, `datawatch://stats/mcp`, `datawatch://alerts`, `datawatch://memory/recent`, `datawatch://automata`, `datawatch://council/personas`, `datawatch://kg/entities`, `datawatch://kg/triples` plus parameterized templates for `/{id}` variants. PWA Resources tab groups by category with count-per-group. Smoke §7ac extended with 3 live-resource checks. 21 total resources. Howto updated with full URI catalogue.
+
+### Rule audit (S1+S2)
+- 7-surface: REST ✓ MCP ✓ Channel-bridge ✓ CLI ✓ Comm ✓ PWA ✓ locale ✓ mobile-issue (manual: file datawatch-app issue for MCP Resources panel)
+- Smoke: §7ac (static + 3 live resources)
+- Locale: 6 keys × 5 bundles
+- Plans hygiene: plan doc updated
+- Tests: 1974 pass (+20 new S2 tests, +6 S1 tests)
+
 ## v7.0.0-alpha.79 — BL304/BL305/BL306/BL307/BL310/BL311: planning rename + routing fix + test coverage
 
 ### Fixed

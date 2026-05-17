@@ -1479,6 +1479,50 @@ else
   skip "channel bridge: /api/channel/info unavailable or unexpected shape ($BRIDGE)"
 fi
 
+H "7ac. MCP resources/read round-trip (BL302 S1)"
+RES=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources" 2>/dev/null || true)
+COUNT=$(echo "$RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("resources",[])))' 2>/dev/null || echo 0)
+if [ "$COUNT" -gt 0 ]; then
+  ok "resources list: $COUNT resources registered"
+else
+  ko "resources list: 0 resources (expected >0)"
+fi
+VERSION_CONTENT=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources/read?uri=datawatch://version" 2>/dev/null || true)
+if echo "$VERSION_CONTENT" | python3 -c 'import json,sys; d=json.load(sys.stdin); cs=d.get("contents",[]); assert len(cs)>0 and "version" in (cs[0].get("text","") if cs else "")' 2>/dev/null; then
+  ok "datawatch://version read returns version field"
+else
+  ko "datawatch://version read failed or missing version field (got: ${VERSION_CONTENT:0:100})"
+fi
+TEMPLATES_RES=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources/templates" 2>/dev/null || true)
+TMPL_COUNT=$(echo "$TEMPLATES_RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("templates",[])))' 2>/dev/null || echo 0)
+if [ "$TMPL_COUNT" -gt 0 ]; then
+  ok "resource templates list: $TMPL_COUNT templates registered"
+else
+  ko "resource templates list: 0 templates (expected >0)"
+fi
+
+# BL302 S2 — live resource checks (sessions, stats, alerts).
+SESSIONS_CONTENT=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources/read?uri=datawatch://sessions" 2>/dev/null || true)
+if echo "$SESSIONS_CONTENT" | python3 -c 'import json,sys; d=json.load(sys.stdin); cs=d.get("contents",[]); t=cs[0].get("text","") if cs else ""; assert "sessions" in t' 2>/dev/null; then
+  ok "datawatch://sessions returns sessions key"
+else
+  ko "datawatch://sessions read failed or missing sessions key (got: ${SESSIONS_CONTENT:0:100})"
+fi
+
+STATS_CONTENT=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources/read?uri=datawatch://stats" 2>/dev/null || true)
+if echo "$STATS_CONTENT" | python3 -c 'import json,sys; d=json.load(sys.stdin); cs=d.get("contents",[]); assert len(cs)>0' 2>/dev/null; then
+  ok "datawatch://stats read returns content"
+else
+  ko "datawatch://stats read failed (got: ${STATS_CONTENT:0:100})"
+fi
+
+ALERTS_CONTENT=$(curl "${curl_args[@]}" "$BASE/api/mcp/resources/read?uri=datawatch://alerts" 2>/dev/null || true)
+if echo "$ALERTS_CONTENT" | python3 -c 'import json,sys; d=json.load(sys.stdin); cs=d.get("contents",[]); t=cs[0].get("text","") if cs else ""; assert "alerts" in t' 2>/dev/null; then
+  ok "datawatch://alerts returns alerts key"
+else
+  ko "datawatch://alerts read failed or missing alerts key (got: ${ALERTS_CONTENT:0:100})"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

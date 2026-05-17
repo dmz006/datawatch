@@ -59,6 +59,8 @@ func main() {
 	mcpSrv := server.NewMCPServer(
 		bridgeName, bridgeVersion,
 		server.WithToolCapabilities(true),
+		// BL302 S1 — resource capability (subscribe=false).
+		server.WithResourceCapabilities(false, false),
 		server.WithInstructions(`You are connected to the datawatch monitoring system.
 Events arrive as <channel source="datawatch" ...>. Read and act on them.
 When you have a response, use the reply tool to send it back.
@@ -81,6 +83,29 @@ the request will be forwarded to the user automatically.`),
 			mcpSrv.AddTool(t.asMCPTool(), bridge.makeForwarder(t.Name))
 		}
 		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d daemon tools\n", len(tools))
+	}
+
+	// BL302 S1 — discover resources + templates and register forwarding handlers.
+	resources, err := bridge.discoverResources()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] resource discovery failed (non-fatal): %v\n", err)
+	} else {
+		for _, r := range resources {
+			r := r
+			mcpSrv.AddResource(r.asMCPResource(), bridge.makeResourceForwarder(r.URI))
+		}
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d resources\n", len(resources))
+	}
+
+	templates, err := bridge.discoverResourceTemplates()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] resource template discovery failed (non-fatal): %v\n", err)
+	} else {
+		for _, t := range templates {
+			t := t
+			mcpSrv.AddResourceTemplate(t.asMCPTemplate(), bridge.makeTemplateForwarder())
+		}
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] discovered %d resource templates\n", len(templates))
 	}
 
 	// Start the HTTP listener first so the daemon and channel can begin

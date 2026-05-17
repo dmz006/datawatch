@@ -923,10 +923,20 @@ type ServerConfig struct {
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
 }
 
+// MCPResourcesConfig controls MCP resource exposure (BL302 S1).
+type MCPResourcesConfig struct {
+	// Enabled controls whether MCP resources (datawatch://) are registered and served.
+	// Default: true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
 // MCPConfig holds MCP server configuration for IDE and remote AI integrations.
 type MCPConfig struct {
 	// Enabled controls whether the MCP server is available via `datawatch mcp`.
 	Enabled bool `yaml:"enabled"`
+
+	// Resources controls the MCP resources surface (BL302).
+	Resources MCPResourcesConfig `yaml:"resources" json:"resources"`
 
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
@@ -1578,6 +1588,7 @@ func DefaultConfig() *Config {
 			SSEHost:         "127.0.0.1",
 			SSEPort:         8081,
 			TLSAutoGenerate: true,
+			Resources:       MCPResourcesConfig{Enabled: true},
 		},
 		// Backend addresses and binaries are intentionally empty in the default
 		// config so fresh installs don't trigger spurious v6→v7 migration toasts.

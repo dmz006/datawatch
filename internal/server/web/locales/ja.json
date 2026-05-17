@@ -1149,5 +1149,11 @@
   "widget_description": "実行中 / 待機中 / 合計セッション数を一目で確認。",
   "widget_monitor_description": "アクティブなdatawatchサーバーのCPU負荷、メモリ、セッション数。",
   "widget_monitor_label": "datawatchモニター",
-  "widget_sessions_label": "datawatchセッション"
+  "widget_sessions_label": "datawatchセッション",
+  "mcp.resources.tab": "Resources",
+  "mcp.resources.uri": "URI",
+  "mcp.resources.description": "Description",
+  "mcp.resources.read": "Read",
+  "mcp.resources.templates": "Templates",
+  "mcp.resources.empty": "No resources registered"
 }

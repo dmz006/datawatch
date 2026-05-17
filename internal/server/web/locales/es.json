@@ -1149,5 +1149,11 @@
   "widget_description": "Recuentos de sesiones en ejecución / en espera / totales de un vistazo.",
   "widget_monitor_description": "Carga de CPU, memoria y recuentos de sesiones del servidor datawatch activo.",
   "widget_monitor_label": "Monitor de datawatch",
-  "widget_sessions_label": "Sesiones de datawatch"
+  "widget_sessions_label": "Sesiones de datawatch",
+  "mcp.resources.tab": "Resources",
+  "mcp.resources.uri": "URI",
+  "mcp.resources.description": "Description",
+  "mcp.resources.read": "Read",
+  "mcp.resources.templates": "Templates",
+  "mcp.resources.empty": "No resources registered"
 }
