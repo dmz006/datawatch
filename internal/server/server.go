@@ -371,6 +371,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/mcp/resources/read", api.handleMCPResourcesRead)
 	apiMux.HandleFunc("/api/mcp/resources/templates", api.handleMCPResourcesTemplates)
 	apiMux.HandleFunc("/api/mcp/resources", api.handleMCPResourcesList)
+	// BL302 S3 — sampling + elicitation surface.
+	apiMux.HandleFunc("/api/mcp/sample", api.handleMCPSample)
+	apiMux.HandleFunc("/api/mcp/elicit", api.handleMCPElicit)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
@@ -841,6 +844,16 @@ func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc =
 
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
 func (s *HTTPServer) SetMCPBridge(b mcpBridgeAPI) { s.api.SetMCPBridge(b) }
+
+// SetMCPSamplingDispatcher wires the sampling dispatcher (BL302 S3).
+func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
+	s.api.SetMCPSamplingDispatcher(d)
+}
+
+// SetMCPElicitationDispatcher wires the elicitation dispatcher (BL302 S3).
+func (s *HTTPServer) SetMCPElicitationDispatcher(d MCPElicitationAPI) {
+	s.api.SetMCPElicitationDispatcher(d)
+}
 func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
 func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
 

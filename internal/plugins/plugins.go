@@ -110,6 +110,31 @@ type Manifest struct {
 	// docs_search/list-howtos when the plugin's source is trusted. files is
 	// required; howtos is optional metadata (topic + params hint per howto).
 	Docs *PluginDocs `yaml:"docs,omitempty" json:"docs,omitempty"`
+
+	// BL302 S3 — sampling_triggers declares MCP sampling hooks for this plugin.
+	// The daemon fires SamplingDispatcher.Sample when the named event matches
+	// a lifecycle hook call.  Plugin lifecycle hooks check this list at invoke time.
+	//
+	// Example manifest.yaml fragment:
+	//
+	//   sampling_triggers:
+	//     - event: on_complete
+	//       prompt: "Plugin {{.Name}} completed: {{.Output}}. Summarize key findings."
+	//       max_tokens: 256
+	//     - event: on_error
+	//       prompt: "Plugin {{.Name}} failed: {{.Error}}. Diagnose and suggest remediation."
+	SamplingTriggers []PluginSamplingTrigger `yaml:"sampling_triggers,omitempty" json:"sampling_triggers,omitempty"`
+}
+
+// PluginSamplingTrigger declares a lifecycle event that triggers MCP sampling.
+// BL302 S3.
+type PluginSamplingTrigger struct {
+	// Event is the lifecycle event name: "on_complete", "on_error", "on_schedule".
+	Event string `yaml:"event" json:"event"`
+	// Prompt is a Go text/template string with access to {{.Name}}, {{.Output}}, {{.Error}}.
+	Prompt string `yaml:"prompt" json:"prompt"`
+	// MaxTokens is the max tokens for the sampling response (default 512).
+	MaxTokens int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
 }
 
 // PluginDocs declares the docs the plugin contributes to docs_search /

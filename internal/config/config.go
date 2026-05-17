@@ -492,6 +492,13 @@ type CouncilConfig struct {
 	//
 	// BL296 — YAML surface for persona customization.
 	Personas []CouncilPersonaOverride `yaml:"personas,omitempty" json:"personas,omitempty"`
+
+	// IncludeClaudeCode wires Claude Code (via MCP sampling) as an additional
+	// deliberation participant alongside local LLM personas. When true, the
+	// Council orchestrator calls SamplingDispatcher.Sample with trigger
+	// "council_deliberation" before synthesizing the final answer.
+	// Default false. BL302 S3 (D8).
+	IncludeClaudeCode bool `yaml:"include_claude_code,omitempty" json:"include_claude_code,omitempty"`
 }
 
 // SkillsConfig is the YAML side of the skills subsystem. Storage of
@@ -930,6 +937,36 @@ type MCPResourcesConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
+// MCPSamplingTriggersConfig controls which built-in sampling triggers are active.
+type MCPSamplingTriggersConfig struct {
+	// AlertTriage enables sampling on alert creation (severity ≥ WARNING). Default false.
+	AlertTriage bool `yaml:"alert_triage" json:"alert_triage"`
+	// AnomalyAnalysis enables sampling when the gap-watcher fires. Default false.
+	AnomalyAnalysis bool `yaml:"anomaly_analysis" json:"anomaly_analysis"`
+	// MorningBriefing enables the daily briefing cron trigger. Default false.
+	MorningBriefing bool `yaml:"morning_briefing" json:"morning_briefing"`
+}
+
+// MCPSamplingConfig controls daemon-initiated sampling (BL302 S3).
+type MCPSamplingConfig struct {
+	// Enabled controls whether sampling requests are dispatched. Default true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// PluginTriggers lists plugin events that may trigger sampling
+	// (e.g. "on_complete", "on_error"). Empty = no plugin sampling.
+	PluginTriggers []string `yaml:"plugin_triggers,omitempty" json:"plugin_triggers,omitempty"`
+	// CouncilEnabled wires Claude Code as a deliberation participant when
+	// Council `include_claude_code: true` is set. Default false.
+	CouncilEnabled bool `yaml:"council_enabled" json:"council_enabled"`
+	// Triggers configures individual built-in sampling triggers.
+	Triggers MCPSamplingTriggersConfig `yaml:"triggers" json:"triggers"`
+}
+
+// MCPElicitationConfig controls daemon-initiated elicitation (BL302 S3).
+type MCPElicitationConfig struct {
+	// Enabled controls whether elicitation requests are dispatched. Default true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
 // MCPConfig holds MCP server configuration for IDE and remote AI integrations.
 type MCPConfig struct {
 	// Enabled controls whether the MCP server is available via `datawatch mcp`.
@@ -937,6 +974,12 @@ type MCPConfig struct {
 
 	// Resources controls the MCP resources surface (BL302).
 	Resources MCPResourcesConfig `yaml:"resources" json:"resources"`
+
+	// Sampling controls daemon-initiated sampling (BL302 S3).
+	Sampling MCPSamplingConfig `yaml:"sampling" json:"sampling"`
+
+	// Elicitation controls daemon-initiated elicitation (BL302 S3).
+	Elicitation MCPElicitationConfig `yaml:"elicitation" json:"elicitation"`
 
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
@@ -1589,6 +1632,8 @@ func DefaultConfig() *Config {
 			SSEPort:         8081,
 			TLSAutoGenerate: true,
 			Resources:       MCPResourcesConfig{Enabled: true},
+			Sampling:        MCPSamplingConfig{Enabled: true},
+			Elicitation:     MCPElicitationConfig{Enabled: true},
 		},
 		// Backend addresses and binaries are intentionally empty in the default
 		// config so fresh installs don't trigger spurious v6→v7 migration toasts.

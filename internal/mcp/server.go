@@ -72,6 +72,9 @@ type Server struct {
 	memoryAPI MemoryMCP
 	// kgAPI provides knowledge graph operations (nil when memory disabled)
 	kgAPI KGMCP
+	// BL302 S3 — sampling and elicitation dispatchers.
+	samplingDisp   *SamplingDispatcher
+	elicitationDisp *ElicitationDispatcher
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
 	// webPort for internal API calls (config, stats)
@@ -166,6 +169,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		server.WithResourceCapabilities(false, false),
 		server.WithPromptCapabilities(false),
 	)
+
+	// BL302 S3 — enable sampling so connected clients see the capability
+	// in the server's initialize response and can handle createMessage requests.
+	mcpSrv.EnableSampling()
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -805,6 +812,25 @@ type ParamDoc struct {
 // SetChannelStats sets the stats counters for MCP request/response tracking.
 func (s *Server) SetChannelStats(cs *stats.ChannelCounters) {
 	s.chanStats = cs
+}
+
+// SamplingDispatcher returns the daemon's SamplingDispatcher.
+// It is initialised lazily on first call (using the server's MCPServer and nil stats).
+// Callers in main.go should call this after the server is fully set up.
+func (s *Server) SamplingDispatcher() *SamplingDispatcher {
+	if s.samplingDisp == nil {
+		s.samplingDisp = NewSamplingDispatcher(s.srv, nil)
+	}
+	return s.samplingDisp
+}
+
+// ElicitationDispatcher returns the daemon's ElicitationDispatcher.
+// It is initialised lazily on first call.
+func (s *Server) ElicitationDispatcher() *ElicitationDispatcher {
+	if s.elicitationDisp == nil {
+		s.elicitationDisp = NewElicitationDispatcher(s.srv, nil)
+	}
+	return s.elicitationDisp
 }
 
 // trackCall records a tool call in the channel stats.

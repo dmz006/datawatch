@@ -723,7 +723,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 	}
 }
 
-// handleMCPResCmd handles the !mcp resources / !mcp read / !mcp templates chat commands (BL302 S1).
+// handleMCPResCmd handles the !mcp resources / !mcp read / !mcp templates / !mcp sample
+// chat commands (BL302 S1 + S3).
 func (r *Router) handleMCPResCmd(cmd Command) {
 	lower := strings.ToLower(strings.TrimSpace(cmd.Text))
 	switch {
@@ -750,7 +751,24 @@ func (r *Router) handleMCPResCmd(cmd Command) {
 			return
 		}
 		r.reply("mcp read "+uri, body)
+	case strings.HasPrefix(lower, "sample "):
+		// BL302 S3 — !mcp sample <message> → POST /api/mcp/sample
+		message := strings.TrimSpace(cmd.Text[7:])
+		if message == "" {
+			r.reply("mcp sample", "usage: mcp sample <message>")
+			return
+		}
+		jsonPayload, _ := json.Marshal(map[string]any{
+			"trigger":  "comm",
+			"messages": []map[string]string{{"role": "user", "content": message}},
+		})
+		body, err := r.commJSON("POST", "/api/mcp/sample", string(jsonPayload))
+		if err != nil {
+			r.reply("mcp sample failed", err.Error())
+			return
+		}
+		r.reply("mcp sample", body)
 	default:
-		r.reply("mcp", "usage: mcp resources | mcp templates | mcp read <uri>")
+		r.reply("mcp", "usage: mcp resources | mcp templates | mcp read <uri> | mcp sample <message>")
 	}
 }

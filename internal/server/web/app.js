@@ -6341,6 +6341,15 @@ function renderSettingsView() {
                 </div>
               </div>
             </div>
+            <!-- BL302 S3 — MCP Sampling log panel (read-only ring buffer, last 50) -->
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+              <div class="settings-label" style="font-weight:600;">${t('mcp.sampling.tab')||'Sampling'}</div>
+              <div id="mcpSamplingPanel" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;">
+                <button onclick="loadMCPSamplingLog()" style="background:var(--accent2);color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;">Refresh</button>
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">Auto-refresh every 30s · read-only</span>
+                <div id="mcpSamplingList" style="margin-top:8px;"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -11292,6 +11301,56 @@ function readMCPResource(uri) {
       }
     })
     .catch(e => { bodyEl.textContent = String(e); });
+}
+
+// BL302 S3 — MCP Sampling log panel (read-only, last 50 entries, auto-refresh 30s).
+var _mcpSamplingRefreshTimer = null;
+function loadMCPSamplingLog() {
+  const listEl = document.getElementById('mcpSamplingList');
+  if (!listEl) return;
+  listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">Loading…</span>';
+  // The sampling log is embedded in the datawatch://stats/mcp resource.
+  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp'), {headers: tokenHeader()})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      const contents = d.contents || [];
+      if (!contents.length) {
+        listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">' +
+          (window._t && window._t('mcp.sampling.empty') || 'No sampling requests recorded') + '</span>';
+        return;
+      }
+      let data = {};
+      try { data = JSON.parse(contents[0].text || '{}'); } catch(e) {}
+      const log = data.sampling_log || [];
+      if (!log.length) {
+        listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">' +
+          (window._t && window._t('mcp.sampling.empty') || 'No sampling requests recorded') + '</span>';
+        return;
+      }
+      // Reverse to show newest first.
+      const rows = log.slice().reverse().map(function(e) {
+        const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+        const trigger = escHtml(e.trigger || '');
+        const preview = escHtml((e.request_preview || '').slice(0, 80));
+        const result = escHtml((e.content || e.error || '').slice(0, 80));
+        const latency = e.latency_ms != null ? e.latency_ms + 'ms' : '';
+        const errStyle = e.error ? 'color:var(--error);' : '';
+        return '<div style="margin:3px 0;padding:4px 6px;background:var(--bg);border-radius:4px;font-size:10px;' + errStyle + '">' +
+          '<span style="color:var(--text2);margin-right:6px;">' + ts + '</span>' +
+          '<span style="font-weight:600;color:var(--accent2);margin-right:6px;">' + trigger + '</span>' +
+          '<span style="color:var(--text2);margin-right:4px;">' + (window._t && window._t('mcp.sampling.latency') || 'latency') + ':' + latency + '</span>' +
+          '<div style="margin-top:2px;color:var(--text);">' + preview + '</div>' +
+          (result ? '<div style="margin-top:1px;color:var(--text2);">→ ' + result + '</div>' : '') +
+          '</div>';
+      });
+      listEl.innerHTML = rows.join('');
+    })
+    .catch(function(e) {
+      if (listEl) listEl.innerHTML = '<span style="color:var(--error);font-size:11px;">' + escHtml(String(e)) + '</span>';
+    });
+  // Schedule next refresh.
+  if (_mcpSamplingRefreshTimer) clearTimeout(_mcpSamplingRefreshTimer);
+  _mcpSamplingRefreshTimer = setTimeout(function() { loadMCPSamplingLog(); }, 30000);
 }
 
 // Detect whether a backend has been configured (has any non-empty credential/url field)

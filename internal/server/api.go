@@ -92,6 +92,57 @@ type KGAPI interface {
 	Stats() map[string]interface{}
 }
 
+// mcpSamplingAPI is the interface for daemon-initiated sampling (BL302 S3).
+// The concrete implementation is *mcp.SamplingDispatcher wired from main.go.
+type MCPSamplingAPI interface {
+	Sample(ctx context.Context, req MCPSamplingRequest) (*MCPSamplingResult, error)
+}
+
+// mcpSamplingRequest mirrors mcp.SamplingRequest without the import cycle.
+type MCPSamplingRequest struct {
+	Trigger      string               `json:"trigger"`
+	Messages     []MCPSamplingMessage `json:"messages"`
+	SystemPrompt string               `json:"system_prompt,omitempty"`
+	MaxTokens    int                  `json:"max_tokens,omitempty"`
+}
+
+// mcpSamplingMessage mirrors mcp.SamplingMessage without the import cycle.
+type MCPSamplingMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// mcpSamplingResult mirrors mcp.SamplingResult without the import cycle.
+type MCPSamplingResult struct {
+	Trigger    string    `json:"trigger"`
+	Content    string    `json:"content"`
+	Model      string    `json:"model,omitempty"`
+	StopReason string    `json:"stop_reason,omitempty"`
+	LatencyMs  int64     `json:"latency_ms"`
+	Timestamp  time.Time `json:"timestamp"`
+	Error      string    `json:"error,omitempty"`
+}
+
+// mcpElicitationAPI is the interface for daemon-initiated elicitation (BL302 S3).
+// The concrete implementation is *mcp.ElicitationDispatcher wired from main.go.
+type MCPElicitationAPI interface {
+	Elicit(ctx context.Context, req MCPElicitationRequest) (*MCPElicitationResult, error)
+	Schemas() map[string]map[string]any
+}
+
+// mcpElicitationRequest mirrors mcp.ElicitationRequest without the import cycle.
+type MCPElicitationRequest struct {
+	Schema  string   `json:"schema"`
+	Message string   `json:"message"`
+	Options []string `json:"options,omitempty"`
+}
+
+// mcpElicitationResult mirrors mcp.ElicitationResult without the import cycle.
+type MCPElicitationResult struct {
+	Action  string         `json:"action"`
+	Content map[string]any `json:"content,omitempty"`
+}
+
 // mcpBridgeAPI is the subset of mcp.Server used by the channel-bridge REST surface.
 // The concrete implementation is wired from main.go via SetMCPBridge.
 type mcpBridgeAPI interface {
@@ -219,6 +270,11 @@ type Server struct {
 	// mcpBridge is the daemon MCP server; wired at startup via SetMCPBridge.
 	// Provides /api/mcp/tools and /api/mcp/call for the channel bridge proxy.
 	mcpBridge mcpBridgeAPI
+
+	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
+	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
+	mcpSamplingDisp   MCPSamplingAPI
+	mcpElicitationDisp MCPElicitationAPI
 
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
 	// The progress callback is invoked with (downloaded, total) byte counts
@@ -594,6 +650,12 @@ func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
 func (s *Server) SetMCPBridge(b mcpBridgeAPI) { s.mcpBridge = b }
 
+// SetMCPSamplingDispatcher wires the sampling dispatcher for POST /api/mcp/sample (BL302 S3).
+func (s *Server) SetMCPSamplingDispatcher(d MCPSamplingAPI) { s.mcpSamplingDisp = d }
+
+// SetMCPElicitationDispatcher wires the elicitation dispatcher for POST /api/mcp/elicit (BL302 S3).
+func (s *Server) SetMCPElicitationDispatcher(d MCPElicitationAPI) { s.mcpElicitationDisp = d }
+
 // handleMCPTools returns all daemon MCP tools as JSON for the channel bridge.
 func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
 	if s.mcpBridge == nil {
@@ -688,6 +750,73 @@ func (s *Server) handleMCPResourcesTemplates(w http.ResponseWriter, r *http.Requ
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data) //nolint:errcheck
+}
+
+// handleMCPSample dispatches a daemon-initiated sampling request (BL302 S3).
+// POST /api/mcp/sample — body: {trigger, messages, system_prompt, max_tokens}
+// Returns {"result":{...}} on success or {"error":"..."} when no MCP client connected.
+func (s *Server) handleMCPSample(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req MCPSamplingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Trigger == "" {
+		req.Trigger = "manual"
+	}
+	if len(req.Messages) == 0 {
+		http.Error(w, "messages is required", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if s.mcpSamplingDisp == nil {
+		// MCP not enabled or sampling not configured — return structured error.
+		json.NewEncoder(w).Encode(map[string]string{"error": "sampling not enabled"}) //nolint:errcheck
+		return
+	}
+	res, err := s.mcpSamplingDisp.Sample(r.Context(), req)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"result": res}) //nolint:errcheck
+}
+
+// handleMCPElicit dispatches a daemon-initiated elicitation request (BL302 S3).
+// POST /api/mcp/elicit — body: {schema, message, options}
+// Returns {"result":{...}} on success or {"error":"..."} when no MCP client connected.
+func (s *Server) handleMCPElicit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req MCPElicitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Schema == "" {
+		http.Error(w, "schema is required", http.StatusBadRequest)
+		return
+	}
+	if req.Message == "" {
+		req.Message = "Please provide input"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if s.mcpElicitationDisp == nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": "elicitation not enabled"}) //nolint:errcheck
+		return
+	}
+	res, err := s.mcpElicitationDisp.Elicit(r.Context(), req)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"result": res}) //nolint:errcheck
 }
 
 // handleMCPDocs returns MCP tool documentation as JSON or HTML.

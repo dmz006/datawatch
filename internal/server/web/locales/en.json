@@ -1159,5 +1159,10 @@
   "mcp.resources.description": "Description",
   "mcp.resources.read": "Read",
   "mcp.resources.templates": "Templates",
-  "mcp.resources.empty": "No resources registered"
+  "mcp.resources.empty": "No resources registered",
+  "mcp.sampling.tab": "Sampling",
+  "mcp.sampling.trigger": "Trigger",
+  "mcp.sampling.result": "Result",
+  "mcp.sampling.latency": "Latency",
+  "mcp.sampling.empty": "No sampling requests recorded"
 }

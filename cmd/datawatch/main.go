@@ -4604,6 +4604,14 @@ Return STRICT JSON:
 		mcpSrv.RegisterResources()
 	}
 
+	// BL302 S3 — wire sampling + elicitation dispatchers to the HTTP server.
+	if httpServer != nil && cfg.MCP.Sampling.Enabled {
+		httpServer.SetMCPSamplingDispatcher(newSamplingAdapter(mcpSrv.SamplingDispatcher()))
+	}
+	if httpServer != nil && cfg.MCP.Elicitation.Enabled {
+		httpServer.SetMCPElicitationDispatcher(newElicitationAdapter(mcpSrv.ElicitationDispatcher()))
+	}
+
 	// Wire MCP tool docs to the HTTP server
 	if httpServer != nil {
 		httpServer.SetMCPDocsFunc(func() interface{} {
@@ -8330,6 +8338,9 @@ Remote AI config (SSE):
 
 	// BL302 S1 — mcp resources subcommand group.
 	cmd.AddCommand(newMCPResourcesCmd())
+	// BL302 S3 — mcp sample + elicit subcommands.
+	cmd.AddCommand(newMCPSampleCmd())
+	cmd.AddCommand(newMCPElicitCmd())
 	return cmd
 }
 
@@ -8411,6 +8422,138 @@ func mcpResourcesRead(_ *cobra.Command, uri string) error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
+	return nil
+}
+
+// ---- BL302 S3 — sampling adapter (bridges server.MCPSamplingAPI → mcp.SamplingDispatcher) ----
+
+type samplingAdapter struct{ d *mcp.SamplingDispatcher }
+
+func newSamplingAdapter(d *mcp.SamplingDispatcher) *samplingAdapter { return &samplingAdapter{d: d} }
+
+func (a *samplingAdapter) Sample(ctx context.Context, req server.MCPSamplingRequest) (*server.MCPSamplingResult, error) {
+	msgs := make([]mcp.SamplingMessage, len(req.Messages))
+	for i, m := range req.Messages {
+		msgs[i] = mcp.SamplingMessage{Role: m.Role, Content: m.Content}
+	}
+	res, err := a.d.Sample(ctx, mcp.SamplingRequest{
+		Trigger:      req.Trigger,
+		Messages:     msgs,
+		SystemPrompt: req.SystemPrompt,
+		MaxTokens:    req.MaxTokens,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &server.MCPSamplingResult{
+		Trigger:    res.Trigger,
+		Content:    res.Content,
+		Model:      res.Model,
+		StopReason: res.StopReason,
+		LatencyMs:  res.LatencyMs,
+		Timestamp:  res.Timestamp,
+		Error:      res.Error,
+	}, nil
+}
+
+// ---- BL302 S3 — elicitation adapter (bridges server.MCPElicitationAPI → mcp.ElicitationDispatcher) ----
+
+type elicitationAdapter struct{ d *mcp.ElicitationDispatcher }
+
+func newElicitationAdapter(d *mcp.ElicitationDispatcher) *elicitationAdapter {
+	return &elicitationAdapter{d: d}
+}
+
+func (a *elicitationAdapter) Elicit(ctx context.Context, req server.MCPElicitationRequest) (*server.MCPElicitationResult, error) {
+	res, err := a.d.Elicit(ctx, mcp.ElicitationRequest{
+		Schema:  req.Schema,
+		Message: req.Message,
+		Options: req.Options,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &server.MCPElicitationResult{
+		Action:  res.Action,
+		Content: res.Content,
+	}, nil
+}
+
+func (a *elicitationAdapter) Schemas() map[string]map[string]any {
+	return a.d.Schemas()
+}
+
+// ---- BL302 S3 — CLI: datawatch mcp sample / elicit ----
+
+func newMCPSampleCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sample <message>",
+		Short: "Send a daemon-initiated sampling request (BL302 S3)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mcpSampleRun(args)
+		},
+	}
+}
+
+func mcpSampleRun(args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	msg := strings.Join(args, " ")
+	body, _ := json.Marshal(map[string]any{
+		"trigger":  "manual",
+		"messages": []map[string]string{{"role": "user", "content": msg}},
+	})
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Post(base+"/api/mcp/sample", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("POST /api/mcp/sample: %w", err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(out))
+	return nil
+}
+
+func newMCPElicitCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "elicit <schema> [message]",
+		Short: "Send a daemon-initiated elicitation request (BL302 S3)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			schema := args[0]
+			msg := "Please provide input"
+			if len(args) > 1 {
+				msg = strings.Join(args[1:], " ")
+			}
+			options, _ := cmd.Flags().GetStringSlice("options")
+			return mcpElicitRun(schema, msg, options)
+		},
+	}
+	cmd.Flags().StringSlice("options", nil, "Options for 'choice' schema (comma-separated)")
+	return cmd
+}
+
+func mcpElicitRun(schema, message string, options []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{
+		"schema":  schema,
+		"message": message,
+		"options": options,
+	})
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	resp, err := http.Post(base+"/api/mcp/elicit", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("POST /api/mcp/elicit: %w", err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(out))
 	return nil
 }
 

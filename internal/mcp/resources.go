@@ -529,29 +529,28 @@ func (s *Server) handleStatsResource(_ context.Context, req mcpsdk.ReadResourceR
 
 func (s *Server) handleStatsMCPResource(_ context.Context, req mcpsdk.ReadResourceRequest) ([]mcpsdk.ResourceContents, error) {
 	raw, err := s.proxyGet("/api/stats", nil)
-	if err != nil {
-		out, _ := json.Marshal(map[string]interface{}{"error": err.Error()})
-		return []mcpsdk.ResourceContents{
-			mcpsdk.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(out)},
-		}, nil
-	}
-	// Extract mcp_stats sub-block if present; fall back to full stats.
-	var full map[string]interface{}
-	if json.Unmarshal(raw, &full) == nil {
-		if mcpStats, ok := full["mcp_stats"]; ok {
-			out, _ := json.Marshal(mcpStats)
-			return []mcpsdk.ResourceContents{
-				mcpsdk.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(out)},
-			}, nil
+	result := map[string]interface{}{}
+	if err == nil {
+		var full map[string]interface{}
+		if json.Unmarshal(raw, &full) == nil {
+			if mc, ok := full["mcp_stats"]; ok {
+				if m, ok2 := mc.(map[string]interface{}); ok2 {
+					for k, v := range m {
+						result[k] = v
+					}
+				}
+			}
 		}
-		// mcp_stats not present; return empty object.
-		out, _ := json.Marshal(map[string]interface{}{})
-		return []mcpsdk.ResourceContents{
-			mcpsdk.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(out)},
-		}, nil
+	} else {
+		result["error"] = err.Error()
 	}
+	// BL302 S3 — attach sampling ring buffer to the stats/mcp resource.
+	if s.samplingDisp != nil {
+		result["sampling_log"] = s.samplingDisp.Log()
+	}
+	out, _ := json.Marshal(result)
 	return []mcpsdk.ResourceContents{
-		mcpsdk.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(raw)},
+		mcpsdk.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(out)},
 	}, nil
 }
 

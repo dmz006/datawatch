@@ -1523,6 +1523,26 @@ else
   ko "datawatch://alerts read failed or missing alerts key (got: ${ALERTS_CONTENT:0:100})"
 fi
 
+H "7ae. MCP sampling endpoint surface check (BL302 S3)"
+SAMPLE_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"trigger":"smoke","messages":[{"role":"user","content":"ping"}]}' \
+  "$BASE/api/mcp/sample" 2>/dev/null || true)
+if echo "$SAMPLE_RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "error" in d or "result" in d' 2>/dev/null; then
+  ok "sampling endpoint returns structured response (no active session is ok)"
+else
+  ko "sampling endpoint missing or returning unexpected shape (got: ${SAMPLE_RES:0:100})"
+fi
+
+H "7af. MCP elicitation endpoint surface check (BL302 S3)"
+ELICIT_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"schema":"approval","message":"smoke test"}' \
+  "$BASE/api/mcp/elicit" 2>/dev/null || true)
+if echo "$ELICIT_RES" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "error" in d or "result" in d' 2>/dev/null; then
+  ok "elicitation endpoint returns structured response (no active session is ok)"
+else
+  ko "elicitation endpoint missing or returning unexpected shape (got: ${ELICIT_RES:0:100})"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
