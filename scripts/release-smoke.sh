@@ -1595,6 +1595,26 @@ else
   ko "server list: unexpected shape: ${SRV_LIST:0:120}"
 fi
 
+H "7ah. BL312 S4/S5 — aggregated sessions + alerts + PRDs endpoints"
+AGG_SESS=$(curl "${curl_args[@]}" -s "$BASE/api/sessions/aggregated" 2>/dev/null || true)
+if echo "$AGG_SESS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d, list)' 2>/dev/null; then
+  ok "sessions/aggregated: returns array"
+else
+  ko "sessions/aggregated: unexpected: ${AGG_SESS:0:120}"
+fi
+AGG_ALERTS=$(curl "${curl_args[@]}" -s "$BASE/api/alerts/aggregated" 2>/dev/null || true)
+if echo "$AGG_ALERTS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d, list)' 2>/dev/null; then
+  ok "alerts/aggregated: returns array"
+else
+  ko "alerts/aggregated: unexpected: ${AGG_ALERTS:0:120}"
+fi
+AGG_PRDS=$(curl "${curl_args[@]}" -s "$BASE/api/autonomous/prds/aggregated" 2>/dev/null || true)
+if echo "$AGG_PRDS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d, list)' 2>/dev/null; then
+  ok "prds/aggregated: returns array"
+else
+  ko "prds/aggregated: unexpected: ${AGG_PRDS:0:120}"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

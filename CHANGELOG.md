@@ -3,6 +3,34 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.2.0 — Multi-server PWA + BL302 prompts + BL313 (2026-05-17)
+
+### Added
+- **BL312 S1 — Multi-server runtime registry** — `GET/POST/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test`. YAML-seeded entries are builtin (read-only). Runtime entries persist to `servers.json`. 7-surface parity: REST · MCP (6 tools: server\_list/add/get/update/delete/test) · CLI (`datawatch server list/get/add/update/delete/test`) · Comm (server list/add/delete/test) · PWA Settings card · 5 locale bundles · mobile issue.
+- **BL312 S2 — Remote Servers settings card** — Servers tab in Settings with add/edit/delete/test UI. Built-in entries shown read-only.
+- **BL312 S3 — Per-tab server picker component** — compact chip bar (All / Local / [server names]) injected at top of Sessions, Automata, Alerts, Observer, and Dashboard views. Auto-fetches server list on first view.
+- **BL312 S4 — Sessions all-servers mode** — "All" chip fetches `GET /api/sessions/aggregated`; session cards show `server` badge. `findServer()` and `handleProxy` now also look up runtime store entries so proxy routing works for runtime-registered servers.
+- **BL312 S5 — Automata + Alerts all-servers mode** — `GET /api/alerts/aggregated` and `GET /api/autonomous/prds/aggregated` fan out to all runtimeServers() in parallel, tagging each item with `{server: name}`. Automata and Alerts views use these endpoints when activeServer === 'all'.
+- **BL312 S6 — Observer + Dashboard single-server pickers** — server picker injected into Observer and Dashboard views; existing `apiFetch` proxy routing means all stats/WS data transparently targets the selected server.
+- **BL302 S4 — 10 MCP prompt slash commands** — analyze-session, review-automaton, triage-alert, morning-briefing, research-topic, council-brief, session-summary, diagnose-system, explore-kg, plan-sprint; always on when MCP server is running.
+- **`GET /api/alerts/aggregated`** — fan-out to local + all runtime servers; each alert tagged `{server: name}`.
+- **`GET /api/autonomous/prds/aggregated`** — fan-out to local + all runtime servers.
+
+### Fixed
+- **BL313** — Dashboard nav button hidden when `autonomous.enabled = false`; shown only after checking `/api/autonomous/config`.
+
+### Rule audit
+- 7-surface parity: REST ✓ MCP ✓ CLI ✓ Comm ✓ PWA ✓ locale ✓ mobile-issue ✓
+- Smoke: §7ad (MCP prompts), §7ag (server CRUD) — both pass
+- Plans hygiene: no stale docs
+- Mobile-parity: datawatch-app issue filed for BL312 S1-S6 server picker
+- Deviations: none
+
+## v7.1.1 — Dashboard autonomous gate (2026-05-17)
+
+### Fixed
+- **BL313** — Dashboard nav button is now gated behind `autonomous.enabled`; previously always visible regardless of config.
+
 ## v7.0.0 — Dashboard mission control + comprehensive test coverage (2026-05-14)
 
 ### Added
