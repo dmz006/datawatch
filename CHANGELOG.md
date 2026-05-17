@@ -37,7 +37,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-_(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311 filed — see backlog tracker.)_
+_(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311, BL312, BL313 filed — see backlog tracker.)_
+
+### Backlog (new)
+
+- **BL312 — Multi-server support for PWA: per-tab server picker, all-servers mode, server CRUD** — Matches datawatch-app v0.121.0 multi-server feature. Parity reference: issue #63 and app `SENTINEL_ALL_SERVERS` pattern. Six sprints:
+  - **S1 — Server CRUD REST API + 7-surface parity**: `POST/PUT/PATCH/DELETE /api/servers` backed by existing `saveConfig()`. New `handleServerCRUD` handler in `api.go`. 7-surface: MCP tools (`server_add`, `server_update`, `server_delete`, `server_enable`, `server_disable`) in new `internal/mcp/servers.go`; CLI subcommands in new `cmd/datawatch/cli_servers.go`; comm verbs in `sx2_parity.go`; locale keys in all 5 bundles. Guards: `"local"` is immutable; duplicate name → 409; unknown name → 404. File datawatch-app issue with new endpoint spec.
+  - **S2 — Settings Card Add/Edit/Delete UI**: `loadServers()` gains "+ Add Server" button and per-row Edit/Delete. `showServerModal(server|null)` modal with Name/URL/Token/Enabled fields. Calls S1 endpoints. Locale strings for modal labels.
+  - **S3 — Per-tab server picker component**: `state.tabServer = {}` keyed by tab name (persisted to `localStorage`). Sentinel `'__all__'` = "All servers" (Sessions/Automata/Alerts only; Observer/Dashboard offer single-server list only). `serverPickerHtml(tab, allowAll)` rendered in each tab's toolbar title slot — replaces static page-name text (matching app's TopAppBar title slot pattern). No page name displayed; picker label is the only title.
+  - **S4 — Sessions all-servers mode**: Fan out via existing `/api/federation/sessions?include=proxied`. Merge flat list with `_server` field per session. Inline `<span class="server-chip">` badge per row. Operations (kill/restart/input) thread `_server` through proxy routing. Live WS = local only in all-servers mode; remote sessions polled at 5s interval (multi-WS fan-out deferred as follow-up). ⚠️ Federation design iteration required before this sprint starts.
+  - **S5 — Automata + Alerts all-servers mode**: Automata: parallel `GET /api/proxy/{name}/api/autonomous/prds`; 404 = not enabled → silent skip. Alerts: parallel fetch alerts + sessions per server for active/historical classification; group labels use `server/shortId` format. Server chip per row. Operations routed to source server. ⚠️ Federation design iteration required before this sprint starts.
+  - **S6 — Observer + Dashboard single-server pickers**: Picker wired to all Observer/Dashboard fetches via `getTabServer(tab)`. No all-servers option on these tabs. ⚠️ Federation design iteration required before this sprint starts.
+  - Filed 2026-05-17. GitHub issue: #63.
+
+- **BL313 — Dashboard nav button not gated behind `autonomous.enabled`** — The Automata tab nav button is hidden until `GET /api/autonomous/config` returns `enabled: true`. The Dashboard nav button (`navBtnDashboard`) does not apply the same gate — it is always visible (or always hidden, depending on default). Per datawatch-app v0.121.0 tab visibility rules (issue #63): Dashboard visibility condition = `autonomous.enabled === true`, same as Automata. Fix: apply the same `autonomous.enabled` probe to `navBtnDashboard` on startup and on config reload. Filed 2026-05-17. GitHub issue: #62.
 
 ## v7.0.0-alpha.78 — BL308/BL309: LLM registry validation in set-llm + pipeline kind resolution
 
