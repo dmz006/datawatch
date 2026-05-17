@@ -35,9 +35,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Mobile-parity: no new UI surfaces requiring app issue
 - Cookbook: 293 story rows (T1–T22), 22 sprints
 
+## v7.1.0 — BL302: MCP Resources, Prompts, Sampling + Elicitation (2026-05-17)
+
+### Added
+- **BL302 — MCP Resources (S1+S2)** — Enabled resource + prompt capabilities on the MCP server. Tool annotations added to all existing tools. MCPStatsBlock type in stats. REST: `GET /api/mcp/resources`, `GET /api/mcp/resources/read?uri=`, `GET /api/mcp/resources/templates`. 5 static resources (`datawatch://version`, `datawatch://config`, `datawatch://channel/info`, `datawatch://docs`, `datawatch://docs/{path}`). 8 resource templates. 16 live resource handlers (`datawatch://sessions`, `datawatch://stats`, `datawatch://stats/mcp`, `datawatch://alerts`, `datawatch://memory/recent`, `datawatch://automata`, `datawatch://council/personas`, `datawatch://kg/entities`, `datawatch://kg/triples` + parameterized variants). All live handlers use REST loopback with graceful empty-JSON fallback. Channel bridge discovers and proxies resources + templates. CLI `datawatch mcp resources list/read/templates`. Comm `!mcp resources/read/templates`. PWA MCP Resources tab with category groups. Config `mcp.resources.enabled`. 6 locale keys × 5 bundles. Smoke §7ac. Howto `docs/howto/mcp-resources.md`. 21 total registered resources.
+- **BL302 — MCP Prompts (S4)** — 10 MCP prompt slash commands registered on the MCP server, each injecting live resource data: `analyze-session`, `review-automaton`, `triage-alert`, `morning-briefing`, `research-topic`, `council-brief`, `session-summary`, `diagnose-system`, `explore-kg`, `plan-sprint`. REST `GET /api/mcp/prompts` + `POST /api/mcp/prompts/get`. Channel bridge discovers and proxies prompts. CLI `datawatch mcp prompts list/get`. Comm `!mcp prompts` + `!mcp prompt <name> [key=val...]`. PWA MCP Prompts panel (load, render, copy to clipboard). 5 locale keys × 5 bundles. Smoke §7ad. Howto `docs/howto/mcp-prompts.md`. 99 tests in mcp package.
+- **BL302 — MCP Sampling + Elicitation (S3)** — `SamplingDispatcher` with ring buffer (last 50 entries) and graceful `ErrSamplingNotSupported` degradation when no Claude Code session is connected. 5 built-in trigger constants with prompt templates in `TriggerRegistry`. `ElicitationDispatcher` with 3 named schemas: `approval`, `text_input`, `choice`. REST `POST /api/mcp/sample` + `POST /api/mcp/elicit`. Channel bridge enables sampling capability. CLI `datawatch mcp sample/elicit`. Comm `!mcp sample`. PWA Sampling log tab (last 50, auto-refresh 30s). Config `mcp.sampling.*` + `mcp.elicitation.*` + `council.include_claude_code`. Locale keys × 5 bundles. Smoke §7ae + §7af. Plugin manifest `sampling_triggers` field. Howtos `mcp-sampling.md` + `mcp-elicitation.md`.
+
+### Rule audit
+- 7-surface: REST ✓ MCP ✓ Channel-bridge ✓ CLI ✓ Comm ✓ PWA ✓ locale (5 bundles) ✓ mobile-issue (file datawatch-app issues for Resources, Prompts, Sampling panels)
+- Smoke: §7ac (resources), §7ad (prompts), §7ae (sampling), §7af (elicitation)
+- Locale: 17 new keys × 5 bundles across S1–S4
+- Plans hygiene: alpha entries below superseded by this release
+- Mobile-parity: 3 new UI panels → 3 datawatch-app issues required
+- Tests: 1994 pass (+105 new across S1–S4)
+- Deviations: none
+
 ## [Unreleased]
 
-_(BL299, BL300, BL301, BL304, BL305, BL306, BL307, BL308, BL309, BL310, BL311, BL312, BL313 filed — see backlog tracker.)_
+_(BL312, BL313 filed — see backlog tracker.)_
 
 ## v7.1.0-alpha.3 — BL302 S3: MCP Sampling + Elicitation
 
