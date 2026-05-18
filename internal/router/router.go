@@ -1779,9 +1779,15 @@ func (r *Router) send(text string) {
 	if r.chanTracker != nil {
 		r.chanTracker.RecordSent(len(text))
 	}
+	// Capture backend at call time so HandleTestMessage's backend swap
+	// is visible to the goroutine even if it's scheduled after the swap reverts.
+	b := r.backend
+	if b == nil {
+		return
+	}
 	go func() {
-		if err := r.backend.Send(r.groupID, text); err != nil {
-			fmt.Printf("ERROR sending to %s: %v\n", r.backend.Name(), err)
+		if err := b.Send(r.groupID, text); err != nil {
+			fmt.Printf("ERROR sending to %s: %v\n", b.Name(), err)
 			if r.chanTracker != nil {
 				r.chanTracker.RecordError()
 			}

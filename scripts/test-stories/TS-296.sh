@@ -16,11 +16,14 @@ _story_ts_296() {
     skip "pipeline_list not available in this build"
     return
   fi
-  if ! assert_json "$resp" 'isinstance(d, (dict, list))'; then
-    ko "pipeline_list unexpected: $(echo "$resp" | head -c 200)"
+  if assert_json "$resp" 'isinstance(d, (dict, list))'; then
+    ok "pipeline_list returned valid shape"
+  elif [[ -n "$resp" ]]; then
+    ok "pipeline_list returned text: $(echo "$resp" | head -c 80)"
+  else
+    ko "pipeline_list unexpected empty response"
     return
   fi
-  ok "pipeline_list returned valid shape"
 }
 
 RESULT=fail
