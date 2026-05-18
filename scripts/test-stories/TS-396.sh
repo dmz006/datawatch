@@ -9,6 +9,7 @@ story_preflight "surface:mcp feature:multi-server" || return 0
 _story_ts_396() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"server_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-396 "resp.json" "$resp"
   if assert_json "$resp" 'isinstance(d, list)'; then
     ok "server_list MCP tool returns array"

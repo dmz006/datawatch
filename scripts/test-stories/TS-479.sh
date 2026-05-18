@@ -12,8 +12,19 @@ _story_ts_479() {
     skip "no LLMs configured"
     return
   fi
+  # Get second LLM name for reassignment target
+  local to_llm
+  to_llm=$(api GET /api/llms | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+llms=d.get("llms",d) if isinstance(d,dict) else d
+names=[l["name"] for l in llms if isinstance(llms,list) and l.get("name")]
+print(names[1] if len(names)>1 else names[0] if names else "")
+' 2>/dev/null || echo "")
+  local payload="{}"
+  [[ -n "$to_llm" ]] && payload="{\"to_llm\":\"$to_llm\"}"
   local resp code
-  resp=$(api_code POST "/api/llms/$llm_name/reassign" '{}')
+  resp=$(api_code POST "/api/llms/$llm_name/reassign" "$payload")
   save_evidence TS-479 "reassign.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   if echo "$resp" | grep -qi "not found\|__HTTP_CODE_404__"; then

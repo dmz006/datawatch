@@ -13,8 +13,8 @@ _story_ts_259() {
     ok "openwebui/models returns array"
   elif assert_json "$resp" 'isinstance(d, dict) and ("models" in d or "data" in d)'; then
     ok "openwebui/models returns dict with models key"
-  elif echo "$resp" | grep -qi "not found\|404\|no route"; then
-    skip "openwebui/models not available in this build"
+  elif echo "$resp" | grep -qi "not found\|404\|no route\|connection refused\|no such host\|not configured\|not enabled"; then
+    skip "openwebui not available or not configured in this deployment"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
   fi

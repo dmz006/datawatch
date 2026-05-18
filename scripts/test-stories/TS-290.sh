@@ -11,6 +11,7 @@ _story_ts_290() {
 
   # List library
   resp=$(api POST /api/mcp/call '{"tool":"guardrail_library_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-290 "library.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "guardrail_library_list not available in this build"
@@ -19,6 +20,7 @@ _story_ts_290() {
 
   # Create profile
   resp=$(api POST /api/mcp/call "{\"tool\":\"guardrail_profile_create\",\"params\":{\"name\":\"$profile_name\",\"rules\":[]}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-290 "create.json" "$resp"
   profile_id=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",d.get("name","")))' 2>/dev/null || echo "")
   if [[ -z "$profile_id" ]]; then
@@ -28,10 +30,12 @@ _story_ts_290() {
 
   # Get profile
   resp=$(api POST /api/mcp/call "{\"tool\":\"guardrail_profile_get\",\"params\":{\"id\":\"$profile_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-290 "get.json" "$resp"
 
   # Delete profile
   resp=$(api POST /api/mcp/call "{\"tool\":\"guardrail_profile_delete\",\"params\":{\"id\":\"$profile_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-290 "delete.json" "$resp"
 
   ok "guardrail_library_list + guardrail_profile CRUD completed"

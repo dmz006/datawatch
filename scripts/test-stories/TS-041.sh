@@ -10,6 +10,7 @@ _story_ts_041() {
   if [[ "$(t5_check_memory)" != "yes" ]]; then skip "memory subsystem not enabled"; return; fi
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"memory_recall","params":{"query":"v7.0.0 e2e testing"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-041 "recall.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "memory_recall MCP call returned dict"

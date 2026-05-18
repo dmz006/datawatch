@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:mcp feature:bootstrap" || return 0
 _story_ts_281() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"daemon_logs","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-281 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "daemon_logs not available in this build"

@@ -18,6 +18,7 @@ _story_ts_293() {
 
   # memory_scope_recall
   resp=$(api POST /api/mcp/call '{"tool":"memory_scope_recall","params":{"query":"test"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-293 "recall.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "memory_scope_recall not available in this build"
@@ -26,10 +27,12 @@ _story_ts_293() {
 
   # memory_scope_borrow
   resp=$(api POST /api/mcp/call '{"tool":"memory_scope_borrow","params":{"scope":"global"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-293 "borrow.json" "$resp"
 
   # memory_scope_seed
   resp=$(api POST /api/mcp/call '{"tool":"memory_scope_seed","params":{"scope":"session","content":"e2e test seed"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-293 "seed.json" "$resp"
 
   ok "memory_scope_recall + borrow + seed executed via MCP"

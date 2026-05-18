@@ -11,6 +11,7 @@ _story_ts_498() {
   llm_name=$(api GET /api/llms | python3 -c 'import json,sys;d=json.load(sys.stdin);llms=d.get("llms",d) if isinstance(d,dict) else d;print(llms[0]["name"] if isinstance(llms,list) and llms else "")' 2>/dev/null || echo "shell")
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_prd_set_llm\",\"params\":{\"id\":\"$AUTOMATON_ID\",\"llm_ref\":\"$llm_name\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-498 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "autonomous_prd_set_llm tool not available"

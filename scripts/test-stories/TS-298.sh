@@ -10,6 +10,7 @@ _story_ts_298() {
 
   # tailscale_status
   resp=$(api POST /api/mcp/call '{"tool":"tailscale_status","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-298 "status.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool\|not configured\|not running"; then
     skip "tailscale not available/configured in this build"
@@ -22,6 +23,7 @@ _story_ts_298() {
 
   # tailscale_nodes
   resp=$(api POST /api/mcp/call '{"tool":"tailscale_nodes","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-298 "nodes.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "tailscale_status + tailscale_nodes both return valid shapes"

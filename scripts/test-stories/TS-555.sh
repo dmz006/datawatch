@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:howto" || return 0
 _story_ts_555() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"docs_list_howtos","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-555 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "docs_list_howtos tool not available"

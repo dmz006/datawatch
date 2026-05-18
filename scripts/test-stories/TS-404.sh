@@ -15,7 +15,9 @@ _story_ts_404() {
   if [[ "$code" == "204" ]]; then
     skip "no smoke run active (204) — shape check requires running smoke"
   elif [[ "$code" == "200" ]]; then
-    if assert_json "$body" '"active" in d'; then
+    if echo "$body" | python3 -c 'import json,sys; v=json.load(sys.stdin); assert v is None' 2>/dev/null; then
+      skip "no smoke run active (null response) — shape check requires running smoke"
+    elif assert_json "$body" '"active" in d'; then
       ok "GET /api/smoke/progress returns shape with active field"
     else
       ko "progress JSON missing active field: $body"

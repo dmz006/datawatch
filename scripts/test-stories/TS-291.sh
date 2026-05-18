@@ -10,6 +10,7 @@ _story_ts_291() {
 
   # List LLMs
   resp=$(api POST /api/mcp/call '{"tool":"llm_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-291 "list.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "llm_list not available in this build"
@@ -38,6 +39,7 @@ elif isinstance(d,dict):
 
   # Get specific LLM
   resp=$(api POST /api/mcp/call "{\"tool\":\"llm_get\",\"params\":{\"id\":\"$llm_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-291 "get.json" "$resp"
   if ! assert_json "$resp" 'isinstance(d, dict)'; then
     ok "llm_list returned LLMs; llm_get: $(echo "$resp" | head -c 80)"

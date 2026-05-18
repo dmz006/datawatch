@@ -9,23 +9,29 @@ story_preflight "surface:api feature:secrets" || return 0
 _story_ts_422() {
   local secret_name="test-secret-ts422-$$"
   local resp code body
-  # POST to set secret
-  resp=$(api_code POST "/api/secrets/$secret_name" \
+  # Try PUT first (canonical method), fallback to POST
+  resp=$(api_code PUT "/api/secrets/$secret_name" \
     '{"value":"test-value-ts422","scope":"global"}')
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+  if [[ "$code" == "405" ]]; then
+    resp=$(api_code POST "/api/secrets/$secret_name" \
+      '{"value":"test-value-ts422","scope":"global"}')
+    code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+    body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+  fi
   save_evidence TS-422 "set_resp.json" "$body"
   if [[ "$code" == "404" ]]; then
-    skip "POST /api/secrets endpoint not available (404)"
+    skip "secrets endpoint not available (404)"
     return
   fi
   if [[ "$code" != "200" && "$code" != "201" && "$code" != "204" ]]; then
     # Try without scope
-    resp=$(api_code POST "/api/secrets/$secret_name" '{"value":"test-value-ts422"}')
+    resp=$(api_code PUT "/api/secrets/$secret_name" '{"value":"test-value-ts422"}')
     code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
     body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
     if [[ "$code" != "200" && "$code" != "201" && "$code" != "204" ]]; then
-      ko "POST /api/secrets/$secret_name returned $code: $body"
+      ko "PUT|POST /api/secrets/$secret_name returned $code: $body"
       return
     fi
   fi

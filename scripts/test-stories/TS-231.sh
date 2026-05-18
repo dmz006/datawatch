@@ -8,6 +8,7 @@ story_preflight "surface:api feature:howto" || return 0
 _story_ts_231() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"query":"screenshots"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-231 "search.json" "$resp"
   # Accept empty result — screenshots howto may not exist
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then

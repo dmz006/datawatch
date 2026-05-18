@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:federation feature:observer" || return 0
 _story_ts_459() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"federation_meta_peers","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-459 "resp.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "federation_meta_peers tool returned valid JSON"

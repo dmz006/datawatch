@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:mcp feature:howto feature:memory" || return
 _story_ts_352() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"docs_read","params":{"howto":"cross-agent-memory"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-352 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "docs_read not available in this build"

@@ -34,6 +34,8 @@ _story_ts_412() {
     ok "GET /api/compute/nodes/$node_name/models returns dict"
   elif echo "$resp" | grep -qi "not found\|404\|not available"; then
     skip "compute node models endpoint not available"
+  elif echo "$resp" | grep -qi "connection refused\|dial tcp\|no such host\|connect: connection"; then
+    skip "ollama not reachable at configured address — skipping models probe"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
   fi

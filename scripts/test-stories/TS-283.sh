@@ -10,6 +10,7 @@ _story_ts_283() {
 
   # GET
   resp=$(api POST /api/mcp/call '{"tool":"dns_channel_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-283 "get.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "dns_channel_config_get not available in this build"
@@ -24,6 +25,7 @@ _story_ts_283() {
   local enabled
   enabled=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("enabled",False)).lower())' 2>/dev/null || echo "false")
   resp=$(api POST /api/mcp/call "{\"tool\":\"dns_channel_config_set\",\"params\":{\"enabled\":$enabled}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-283 "set.json" "$resp"
   if echo "$resp" | grep -qi "read.only\|not allowed\|immutable"; then
     skip "dns_channel_config_set is read-only in this environment"

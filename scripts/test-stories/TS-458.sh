@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:observer" || return 0
 _story_ts_458() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"observer_peers_by_node","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-458 "resp.json" "$resp"
   if assert_json "$resp" '"by_node" in d and "unbound" in d'; then
     ok "observer_peers_by_node tool returned by_node+unbound shape"

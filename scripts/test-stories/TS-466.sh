@@ -9,6 +9,7 @@ _story_ts_466() {
   ensure_test_automaton || return
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_prd_decompose\",\"params\":{\"id\":\"$AUTOMATON_ID\",\"planning_backend\":\"default\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-466 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not found\|not enabled"; then
     skip "autonomous_prd_decompose tool not available"

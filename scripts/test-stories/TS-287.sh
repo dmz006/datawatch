@@ -10,6 +10,7 @@ _story_ts_287() {
 
   # Try docs_apply — use a benign howto name
   resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto":"daemon-operations"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-287 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "docs_apply not available in this build"

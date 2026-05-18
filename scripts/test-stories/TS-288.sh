@@ -10,6 +10,7 @@ _story_ts_288() {
 
   # List suites
   resp=$(api POST /api/mcp/call '{"tool":"eval_list_suites","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-288 "suites.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "eval_list_suites not available in this build"
@@ -39,6 +40,7 @@ elif isinstance(d,dict):
 
   # Run the suite
   resp=$(api POST /api/mcp/call "{\"tool\":\"eval_run\",\"params\":{\"suite\":\"$suite_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-288 "run.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "eval_list_suites + eval_run returned valid shapes"

@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:observer" || return 0
 _story_ts_457() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"observer_peers_free","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-457 "resp.json" "$resp"
   if assert_json "$resp" 'isinstance(d, list)'; then
     ok "observer_peers_free tool returned array"

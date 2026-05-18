@@ -9,6 +9,7 @@ _story_ts_495() {
   ensure_test_automaton || return
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_prd_set_type\",\"params\":{\"id\":\"$AUTOMATON_ID\",\"type\":\"operational\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-495 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "autonomous_prd_set_type tool not available"

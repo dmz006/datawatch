@@ -11,6 +11,7 @@ _story_ts_247() {
     tools=$(api GET /api/mcp/tools)
     save_evidence "TS-247" "1_tools.json" "$tools"
     call=$(api POST /api/mcp/call '{"tool":"health_check","arguments":{}}' 2>/dev/null || echo '{"error":"not callable"}')
+    call=$(mcp_unwrap "$call")
     save_evidence "TS-247" "2_call.json" "$call"
     stats=$(api GET /api/stats)
     save_evidence "TS-247" "3_stats.json" "$stats"

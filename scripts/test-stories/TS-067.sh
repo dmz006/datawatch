@@ -10,6 +10,7 @@ _story_ts_067() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"tooling_status","params":{}}' 2>/dev/null || \
         api GET /api/tooling/status 2>/dev/null || echo '{}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-067 "tooling_status.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "tooling_status MCP/REST call returns dict"

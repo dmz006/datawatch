@@ -10,6 +10,7 @@ _story_ts_272() {
 
   # GET config
   resp=$(api POST /api/mcp/call '{"tool":"autonomous_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-272 "get.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "autonomous_config_get not available in this build"
@@ -24,6 +25,7 @@ _story_ts_272() {
   local current_enabled
   current_enabled=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("enabled",False)).lower())' 2>/dev/null || echo "false")
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_config_set\",\"params\":{\"enabled\":$current_enabled}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-272 "set.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "autonomous_config_get + set round-trip succeeded"

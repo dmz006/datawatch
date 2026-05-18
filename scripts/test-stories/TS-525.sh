@@ -11,6 +11,7 @@ _story_ts_525() {
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"memory_scope_promote","params":{"from_scope":"session","to_scope":"project"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-525 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "memory_scope_promote tool not available"

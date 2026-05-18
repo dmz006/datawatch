@@ -10,6 +10,7 @@ _story_ts_040() {
   if [[ "$(t5_check_memory)" != "yes" ]]; then skip "memory subsystem not enabled"; return; fi
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"memory_remember","params":{"content":"test-memory-e2e-001: this is a test memory entry for v7.0.0 e2e testing"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-040 "remember.json" "$resp"
   MEM_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);r=d.get("result",d);print(r.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$MEM_ID" ]]; then

@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:council" || return 0
 _story_ts_552() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"council_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-552 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "council_config_get tool not available"

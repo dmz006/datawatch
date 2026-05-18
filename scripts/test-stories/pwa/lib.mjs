@@ -53,8 +53,8 @@ export async function connectToPWA(page, { base = env.http, token = env.token, t
   // First load — may show splash, 401, or unstyled page. Just need the origin.
   await page.goto(base, { waitUntil: 'domcontentloaded', timeout });
 
-  // Inject token — the PWA reads from localStorage key 'dw_token'.
-  await page.evaluate((t) => localStorage.setItem('dw_token', t), token);
+  // Inject token — the PWA reads from localStorage key 'cs_token'.
+  await page.evaluate((t) => localStorage.setItem('cs_token', t), token);
 
   // Reload with token in place.
   await page.reload({ waitUntil: 'domcontentloaded', timeout });
@@ -71,6 +71,7 @@ export async function waitForSplash(page, timeout = 20000) {
              window.getComputedStyle(el).display === 'none' ||
              window.getComputedStyle(el).opacity === '0';
     },
+    null,
     { timeout },
   );
 }

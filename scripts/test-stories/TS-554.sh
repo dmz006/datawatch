@@ -11,6 +11,7 @@ _story_ts_554() {
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"memory_recall","params":{"query":"test"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-554 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "memory_recall tool not available"

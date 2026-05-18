@@ -23,6 +23,7 @@ _story_ts_460() {
   fi
   local attach_resp
   attach_resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_attach_observer\",\"params\":{\"name\":\"$cname\",\"peer_id\":\"$peer_id\"}}")
+  attach_resp=$(mcp_unwrap "$attach_resp")
   save_evidence TS-460 "attach.json" "$attach_resp"
   if echo "$attach_resp" | grep -qi "unknown tool\|not found\|not enabled"; then
     skip "compute_node_attach_observer tool not available"

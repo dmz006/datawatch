@@ -11,6 +11,7 @@ _story_ts_473() {
   [[ "$a_enabled" != "yes" ]] && { skip "autonomous disabled"; return; }
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"autonomous_prd_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-473 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not found\|not enabled"; then
     skip "autonomous_prd_list tool not available"

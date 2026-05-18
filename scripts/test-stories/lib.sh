@@ -131,6 +131,34 @@ assert_json() {
   echo "$content" | python3 -c "import json,sys; d=json.load(sys.stdin); assert $expr" 2>/dev/null
 }
 
+# api_mcp <tool> [params_json] — POST to /api/mcp/call and unwrap content envelope
+api_mcp() {
+  local tool="$1" params="${2:-{}}"
+  local raw
+  raw=$(api POST /api/mcp/call "{\"tool\":\"$tool\",\"params\":$params}")
+  mcp_unwrap "$raw"
+}
+
+# mcp_unwrap — extract inner payload from MCP content envelope
+# {"content":[{"text":"...","type":"text"}]} → inner text; passthrough otherwise
+mcp_unwrap() {
+  local raw="$1"
+  echo "$raw" | python3 -c "
+import json, sys
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)
+    if isinstance(d, dict) and 'content' in d:
+        items = d['content']
+        if isinstance(items, list) and items and 'text' in items[0]:
+            print(items[0]['text'])
+            sys.exit(0)
+    print(raw)
+except Exception:
+    print(raw)
+" 2>/dev/null || echo "$raw"
+}
+
 # semver_lt a b — returns 0 if a < b
 semver_lt() {
   local a="$1" b="$2"

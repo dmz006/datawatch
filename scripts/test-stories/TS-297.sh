@@ -10,6 +10,7 @@ _story_ts_297() {
 
   # routing_rules_list
   resp=$(api POST /api/mcp/call '{"tool":"routing_rules_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-297 "list.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "routing_rules_list not available in this build"
@@ -22,6 +23,7 @@ _story_ts_297() {
 
   # routing_rules_test
   resp=$(api POST /api/mcp/call '{"tool":"routing_rules_test","params":{"backend":"shell","task":"test task"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-297 "test.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "routing_rules_list + routing_rules_test both return valid shapes"

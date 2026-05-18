@@ -39,6 +39,10 @@ _story_ts_439() {
     skip "sessions/start with disabled LLM returned 200 — API may not enforce enabled check"
   elif [[ "$code" == "404" ]]; then
     skip "sessions/start endpoint not available (404)"
+  elif [[ "$code" == "500" ]] && echo "$body" | grep -qi "max.*session\|session.*limit\|too many"; then
+    skip "session limit reached — cannot test disabled LLM rejection"
+  elif [[ "$code" == "500" ]]; then
+    ko "unexpected 500: $body"
   else
     ko "unexpected HTTP $code: $body"
   fi

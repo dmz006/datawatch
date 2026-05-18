@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:mcp" || return 0
 _story_ts_540() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"get_version","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-540 "resp.json" "$resp"
   if assert_json "$resp" '"version" in d or isinstance(d.get("version",""), str)'; then
     ok "get_version tool returned version: $(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("version","?"))' 2>/dev/null)"

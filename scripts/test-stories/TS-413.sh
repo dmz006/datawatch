@@ -12,6 +12,8 @@ _story_ts_413() {
   save_evidence TS-413 "resp.json" "$resp"
   if assert_json "$resp" 'isinstance(d, list)'; then
     ok "GET /api/observer/peers/free returns array"
+  elif assert_json "$resp" 'isinstance(d, dict) and "peers" in d'; then
+    ok "GET /api/observer/peers/free returns dict with peers key"
   elif echo "$resp" | grep -qi "not found\|404\|not available"; then
     skip "observer/peers/free endpoint not available"
   else

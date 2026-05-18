@@ -10,6 +10,7 @@ _story_ts_292() {
 
   # Catalog
   resp=$(api POST /api/mcp/call '{"tool":"marketplace_ollama_catalog","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-292 "catalog.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "marketplace_ollama_catalog not available in this build"
@@ -22,6 +23,7 @@ _story_ts_292() {
 
   # Pull task (use a known model name; skip if no compute node)
   resp=$(api POST /api/mcp/call '{"tool":"marketplace_pull_task","params":{"model":"tinyllama","node":""}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-292 "pull_task.json" "$resp"
   if echo "$resp" | grep -qi "no node\|no compute\|not found\|error"; then
     skip "marketplace_pull_task: no compute node available (expected in test env)"

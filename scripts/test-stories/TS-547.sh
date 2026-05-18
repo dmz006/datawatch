@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:memory feature:howto" || return 0
 _story_ts_547() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"query":"memory scope hierarchy borrow"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-547 "search.json" "$resp"
   local hits
   hits=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);hits=d.get("hits",d.get("results",[]));print(len(hits) if isinstance(hits,list) else 0)' 2>/dev/null || echo "0")

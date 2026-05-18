@@ -14,6 +14,7 @@ _story_ts_485() {
   fi
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"llm_refresh_models\",\"params\":{\"name\":\"$llm_name\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-485 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not found\|not enabled"; then
     skip "llm_refresh_models tool not available"

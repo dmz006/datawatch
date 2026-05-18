@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:mcp feature:howto" || return 0
 _story_ts_286() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"docs_read","params":{"howto":"daemon-operations"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-286 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "docs_read not available in this build"

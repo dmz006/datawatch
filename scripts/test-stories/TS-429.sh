@@ -9,6 +9,7 @@ story_preflight "surface:api feature:mcp-tools" || return 0
 _story_ts_429() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"get_version","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-429 "resp.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "POST /api/mcp/call get_version returns dict"

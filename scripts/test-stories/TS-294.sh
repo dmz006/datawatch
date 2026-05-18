@@ -10,6 +10,7 @@ _story_ts_294() {
 
   # observer_config_get
   resp=$(api POST /api/mcp/call '{"tool":"observer_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-294 "config.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "observer_config_get not available in this build"
@@ -22,10 +23,12 @@ _story_ts_294() {
 
   # observer_peers_list
   resp=$(api POST /api/mcp/call '{"tool":"observer_peers_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-294 "peers.json" "$resp"
 
   # observer_stats
   resp=$(api POST /api/mcp/call '{"tool":"observer_stats","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-294 "stats.json" "$resp"
 
   ok "observer_config_get + observer_peers_list + observer_stats all returned"

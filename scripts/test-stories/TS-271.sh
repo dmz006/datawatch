@@ -10,6 +10,7 @@ _story_ts_271() {
 
   # List first
   resp=$(api POST /api/mcp/call '{"tool":"algorithm_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-271 "list.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "algorithm_list not available in this build"
@@ -36,6 +37,7 @@ if isinstance(items,list) and len(items)>0:
 
   # Get by id
   resp=$(api POST /api/mcp/call "{\"tool\":\"algorithm_get\",\"params\":{\"id\":\"$algo_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-271 "get.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "algorithm_get returned dict for id $algo_id"

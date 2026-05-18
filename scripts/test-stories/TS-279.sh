@@ -10,6 +10,7 @@ _story_ts_279() {
 
   # cost_rates
   resp=$(api POST /api/mcp/call '{"tool":"cost_rates","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-279 "rates.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "cost_rates not available in this build"
@@ -22,6 +23,7 @@ _story_ts_279() {
 
   # cost_summary
   resp=$(api POST /api/mcp/call '{"tool":"cost_summary","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-279 "summary.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "cost_rates + cost_summary both return valid shapes"

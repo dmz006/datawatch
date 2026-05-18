@@ -10,6 +10,7 @@ _story_ts_353() {
 
   # First read the howto to check if it has exec_steps
   resp=$(api POST /api/mcp/call '{"tool":"docs_read","params":{"howto":"cross-agent-memory"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-353 "read.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "docs_read not available in this build"
@@ -26,6 +27,7 @@ _story_ts_353() {
 
   # Apply the howto
   resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto":"cross-agent-memory"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-353 "apply.json" "$resp"
   if echo "$resp" | grep -qi "no exec_steps\|no steps\|nothing to apply\|not applicable"; then
     skip "docs_apply: no exec_steps applicable"

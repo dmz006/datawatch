@@ -13,21 +13,22 @@ _story_ts_486() {
     return
   fi
   local test_model="test-model-$$"
-  local add_resp
+  local add_resp add_inner
   add_resp=$(api POST /api/mcp/call "{\"tool\":\"llm_add_model\",\"params\":{\"name\":\"$llm_name\",\"model\":\"$test_model\"}}")
+  add_inner=$(mcp_unwrap "$add_resp")
   save_evidence TS-486 "add.json" "$add_resp"
-  if echo "$add_resp" | grep -qi "unknown tool\|not enabled"; then
-    skip "llm_add_model tool not available"
+  if echo "$add_inner" | grep -qi "unknown tool\|not enabled\|405\|method not allowed"; then
+    skip "llm_add_model tool not available or method not allowed"
     return
   fi
   # Clean up: remove test model
   api POST /api/mcp/call "{\"tool\":\"llm_remove_model\",\"params\":{\"name\":\"$llm_name\",\"model\":\"$test_model\"}}" >/dev/null 2>&1
-  if assert_json "$add_resp" 'isinstance(d, dict)'; then
+  if assert_json "$add_inner" 'isinstance(d, dict)'; then
     ok "llm_add_model tool returned dict; cleanup done"
-  elif echo "$add_resp" | grep -qi "not found\|404"; then
+  elif echo "$add_inner" | grep -qi "not found\|404"; then
     skip "llm_add_model: LLM $llm_name not found"
   else
-    ko "unexpected response: $(echo "$add_resp" | head -c 200)"
+    ko "unexpected response: $(echo "$add_inner" | head -c 200)"
   fi
 }
 

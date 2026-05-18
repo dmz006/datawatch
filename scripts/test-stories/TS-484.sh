@@ -14,6 +14,7 @@ _story_ts_484() {
   fi
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"llm_in_use\",\"params\":{\"name\":\"$llm_name\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-484 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not found\|not enabled"; then
     skip "llm_in_use tool not available"

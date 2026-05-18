@@ -15,7 +15,9 @@ _story_ts_362() {
   if [[ "$code" == "204" ]]; then
     skip "no smoke run active (204) — shape check requires active run"
   elif [[ "$code" == "200" ]]; then
-    if assert_json "$body" '"active" in d and "version" in d'; then
+    if echo "$body" | python3 -c 'import json,sys; v=json.load(sys.stdin); assert v is None' 2>/dev/null; then
+      skip "no smoke run active (null response) — shape check requires active run"
+    elif assert_json "$body" '"active" in d and "version" in d'; then
       ok "progress JSON has correct shape (active, version fields present)"
     elif assert_json "$body" '"active" in d'; then
       ok "progress JSON has active field"

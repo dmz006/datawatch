@@ -11,6 +11,7 @@ _story_ts_499() {
   [[ "$a_enabled" != "yes" ]] && { skip "autonomous disabled"; return; }
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"autonomous_type_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-499 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "autonomous_type_list tool not available"

@@ -14,6 +14,7 @@ _story_ts_511() {
   fi
   local resp
   resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_health\",\"params\":{\"name\":\"$node_name\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-511 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "compute_node_health tool not available"

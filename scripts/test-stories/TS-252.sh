@@ -7,7 +7,8 @@ story_preflight "surface:api feature:bootstrap" || return 0
 
 _story_ts_252() {
   local resp
-  resp=$(api GET /api/docs)
+  # -L to follow 301/302 redirects (/api/docs may redirect to /api/docs/)
+  resp=$(curl "${curl_args[@]}" -L -X GET "$TEST_BASE/api/docs")
   save_evidence TS-252 "resp.html" "$resp"
   if echo "$resp" | grep -qi "swagger\|openapi\|<!doctype html\|<html"; then
     ok "docs returns HTML/Swagger page"

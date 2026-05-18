@@ -10,6 +10,7 @@ _story_ts_282() {
 
   # GET
   resp=$(api POST /api/mcp/call '{"tool":"detection_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-282 "get.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "detection_config_get not available in this build"
@@ -24,6 +25,7 @@ _story_ts_282() {
   local enabled
   enabled=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("enabled",True)).lower())' 2>/dev/null || echo "true")
   resp=$(api POST /api/mcp/call "{\"tool\":\"detection_config_set\",\"params\":{\"enabled\":$enabled}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-282 "set.json" "$resp"
   ok "detection_config_get + set round-trip succeeded"
 }

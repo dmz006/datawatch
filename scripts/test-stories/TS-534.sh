@@ -14,6 +14,7 @@ _story_ts_534() {
   fi
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"council_persona_oneshot","params":{"question":"What is 1+1?","persona":{}}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-534 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "council_persona_oneshot tool not available"

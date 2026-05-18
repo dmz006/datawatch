@@ -10,6 +10,7 @@ _story_ts_289() {
 
   # federation_meta_peers
   resp=$(api POST /api/mcp/call '{"tool":"federation_meta_peers","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-289 "meta_peers.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "federation_meta_peers not available in this build"
@@ -22,6 +23,7 @@ _story_ts_289() {
 
   # federation_sessions
   resp=$(api POST /api/mcp/call '{"tool":"federation_sessions","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-289 "sessions.json" "$resp"
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "federation_meta_peers + federation_sessions both return valid shapes"

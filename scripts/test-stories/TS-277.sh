@@ -11,6 +11,7 @@ _story_ts_277() {
 
   # Add node (probe:false to skip connectivity check)
   resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_add\",\"params\":{\"name\":\"$node_name\",\"kind\":\"ollama\",\"address\":\"http://localhost:11434\",\"probe\":false}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-277 "add.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "compute_node_add not available in this build"
@@ -24,14 +25,17 @@ _story_ts_277() {
 
   # Get node
   resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_get\",\"params\":{\"id\":\"$node_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-277 "get.json" "$resp"
   if ! assert_json "$resp" 'isinstance(d, dict)'; then
     # try by name
     resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_get\",\"params\":{\"name\":\"$node_name\"}}")
+    resp=$(mcp_unwrap "$resp")
   fi
 
   # Delete node
   resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_delete\",\"params\":{\"id\":\"$node_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-277 "delete.json" "$resp"
 
   ok "compute_node CRUD round-trip: add/get/delete"

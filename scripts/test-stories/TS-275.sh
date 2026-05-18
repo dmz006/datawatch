@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:mcp feature:config" || return 0
 _story_ts_275() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"backends_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-275 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "backends_list not available in this build"

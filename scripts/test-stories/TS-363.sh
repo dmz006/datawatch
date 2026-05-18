@@ -14,6 +14,10 @@ _story_ts_363() {
   if [[ "$code" == "204" ]]; then
     skip "no smoke run active or no completed run (204) — requires completed smoke run"
   elif [[ "$code" == "200" ]]; then
+    if echo "$body" | python3 -c 'import json,sys; v=json.load(sys.stdin); assert v is None' 2>/dev/null; then
+      skip "no smoke run data (null response) — requires completed smoke run"
+      return
+    fi
     local active
     active=$(echo "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("active",""))' 2>/dev/null || echo "")
     if [[ "$active" == "False" || "$active" == "false" ]]; then

@@ -10,6 +10,7 @@ _story_ts_299() {
 
   # telemetry_list
   resp=$(api POST /api/mcp/call '{"tool":"telemetry_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-299 "list.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "telemetry_list not available in this build"
@@ -38,6 +39,7 @@ elif isinstance(d,dict):
 
   # telemetry_get
   resp=$(api POST /api/mcp/call "{\"tool\":\"telemetry_get\",\"params\":{\"id\":\"$telemetry_id\"}}")
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-299 "get.json" "$resp"
   ok "telemetry_list + telemetry_get valid for $telemetry_id"
 }

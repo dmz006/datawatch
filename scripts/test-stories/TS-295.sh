@@ -10,6 +10,7 @@ _story_ts_295() {
 
   # orchestrator_config_get
   resp=$(api POST /api/mcp/call '{"tool":"orchestrator_config_get","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-295 "config.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "orchestrator_config_get not available in this build"
@@ -22,10 +23,12 @@ _story_ts_295() {
 
   # orchestrator_graph_list
   resp=$(api POST /api/mcp/call '{"tool":"orchestrator_graph_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-295 "graphs.json" "$resp"
 
   # orchestrator_verdicts
   resp=$(api POST /api/mcp/call '{"tool":"orchestrator_verdicts","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-295 "verdicts.json" "$resp"
 
   ok "orchestrator_config_get + graph_list + verdicts all returned"

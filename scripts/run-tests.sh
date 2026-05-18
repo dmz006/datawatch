@@ -367,6 +367,16 @@ fi
 if [[ $NO_DAEMON -eq 0 ]]; then
   if curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
     echo "Using existing daemon at $TEST_BASE"
+    # Create TEST_DATA/config.yaml so cli_test (--config) uses the right port.
+    if [[ -n "${TEST_DATA:-}" && -f "$REPO_DIR/testdata/datawatch.yaml" ]]; then
+      mkdir -p "$TEST_DATA"
+      sed \
+        -e "s|data_dir: /data|data_dir: $TEST_DATA|g" \
+        -e "s|port: 8080|port: $TEST_PORT|g" \
+        -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
+        -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+        "$REPO_DIR/testdata/datawatch.yaml" > "$TEST_DATA/config.yaml"
+    fi
     # Discover actual MCP SSE port from the daemon's config so TS-624 and
     # other MCP stories hit the right port instead of the default TEST_PORT+1.
     _mcp_port=$(curl -s "http://127.0.0.1:$TEST_PORT/api/config" \

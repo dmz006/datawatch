@@ -10,6 +10,7 @@ _story_ts_300() {
 
   # tooling_status
   resp=$(api POST /api/mcp/call '{"tool":"tooling_status","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-300 "status.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "tooling_status not available in this build"
@@ -22,10 +23,12 @@ _story_ts_300() {
 
   # tooling_gitignore
   resp=$(api POST /api/mcp/call '{"tool":"tooling_gitignore","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-300 "gitignore.json" "$resp"
 
   # tooling_cleanup
   resp=$(api POST /api/mcp/call '{"tool":"tooling_cleanup","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-300 "cleanup.json" "$resp"
 
   ok "tooling_status + tooling_gitignore + tooling_cleanup all returned"

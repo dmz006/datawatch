@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:council" || return 0
 _story_ts_535() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"council_persona_draft_start","params":{"name":"test-draft-'"$$"'","description":"test"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-535 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "council_persona_draft_start tool not available"

@@ -9,6 +9,7 @@ story_preflight "surface:mcp feature:mcp feature:memory" || return 0
 _story_ts_071() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"memory_recall","params":{"query":"test"}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-071 "recall.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "POST /api/mcp/call memory_recall returned dict"

@@ -8,6 +8,7 @@ story_preflight "surface:mcp feature:compute" || return 0
 _story_ts_510() {
   local resp
   resp=$(api POST /api/mcp/call '{"tool":"compute_node_list","params":{}}')
+  resp=$(mcp_unwrap "$resp")
   save_evidence TS-510 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "compute_node_list tool not available"

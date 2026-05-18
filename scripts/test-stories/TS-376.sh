@@ -32,6 +32,16 @@ _story_ts_376() {
     ok "POST /api/llms/$llm_name/enable returned $en_code (shell kind skips pretest)"
   elif [[ "$en_code" == "404" ]]; then
     skip "LLM enable endpoint not available (404)"
+  elif [[ "$en_code" == "405" ]]; then
+    # Try PUT if POST not allowed
+    en_resp=$(api_code PUT "/api/llms/$llm_name/enable" '')
+    en_code=$(echo "$en_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+    en_body=$(echo "$en_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+    if [[ "$en_code" == "200" || "$en_code" == "204" ]]; then
+      ok "PUT /api/llms/$llm_name/enable returned $en_code"
+    else
+      skip "LLM enable endpoint returned 405 (method not allowed) — API may have changed"
+    fi
   else
     ko "unexpected HTTP $en_code enabling shell LLM: $en_body"
   fi

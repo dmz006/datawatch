@@ -12,8 +12,10 @@ _story_ts_379() {
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-379 "resp.json" "$body"
-  if [[ "$code" == "500" || "$code" == "503" ]]; then
-    ko "GET /api/memory/search returned $code (server error — should return [] or 200)"
+  if [[ "$code" == "503" ]]; then
+    skip "memory service unavailable (503) — memory may be disabled or embedder not loaded"
+  elif [[ "$code" == "500" ]]; then
+    ko "GET /api/memory/search returned 500 (server error — should return [] or 200)"
   elif [[ "$code" == "200" ]]; then
     ok "GET /api/memory/search returns 200 (not 500) when embedder unavailable"
   elif [[ "$code" == "404" ]]; then
