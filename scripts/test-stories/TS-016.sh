@@ -11,8 +11,10 @@ _story_ts_016() {
   local resp
   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"test channel message e2e"}')
   save_evidence TS-016 "channel_send.json" "$resp"
-  if assert_json "$resp" 'isinstance(d, dict)'; then
+  if assert_json "$resp" 'isinstance(d, dict)' 2>/dev/null; then
     ok "channel send accepted"
+  elif echo "$resp" | grep -qi "unreachable\|connection refused\|not configured\|disabled"; then
+    skip "channel server not available in test environment"
   else
     ko "channel send failed: $resp"
   fi

@@ -7,6 +7,7 @@ CURRENT_STORY="TS-098"
 story_preflight "surface:api feature:comms" || return 0
 
 _story_ts_098() {
+  ensure_test_session || return
   local resp
   resp=$(api POST /api/test/message '{"text":"alert test e2e alert message"}')
   save_evidence TS-098 "alert.json" "$resp"

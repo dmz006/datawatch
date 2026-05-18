@@ -17,7 +17,7 @@ _story_ts_240() {
     recall=$(api GET "/api/memory/search?q=e2e-research-journey-$ts")
     save_evidence "TS-240" "2_recall.json" "$recall"
     # If recall returns an embedder error, skip rather than fail (test daemon has no ollama)
-    if echo "$recall" | grep -q "not found\|embedder\|no embed\|ollama\|disabled"; then
+    if echo "$recall" | grep -qi "not found\|embedder\|no embed\|ollama\|disabled\|not enabled"; then
       [[ -n "$mem_id" ]] && add_cleanup "mem" "$mem_id"
       skip "Research journey: memory embedder not configured in test daemon (needs ollama/nomic-embed-text)"
     else

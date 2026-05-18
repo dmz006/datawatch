@@ -11,7 +11,7 @@ _story_ts_181() {
     resp=$(api GET "/api/memory/search?q=test")
     if echo "$resp" | python3 -c "import json,sys; d=json.load(sys.stdin); assert isinstance(d, list)" 2>/dev/null; then
       ok "GET /api/memory/search returns JSON list"
-    elif echo "$resp" | grep -q "not found\|embedder\|no embed\|ollama\|disabled"; then
+    elif echo "$resp" | grep -qi "not found\|embedder\|no embed\|ollama\|disabled\|not enabled"; then
       skip "Memory search: embedder not configured in test daemon (needs ollama/nomic-embed-text)"
     else
       ko "GET /api/memory/search did not return JSON list: $(echo "$resp" | head -c 100)"

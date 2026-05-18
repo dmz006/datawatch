@@ -8,7 +8,7 @@ story_preflight "surface:mcp feature:mcp" || return 0
 
 _story_ts_079() {
   local resp code
-  resp=$(api_code POST /api/mcp/elicit '{"requestedSchema":{"type":"object","properties":{"answer":{"type":"string"}}}}')
+  resp=$(api_code POST /api/mcp/elicit '{"schema":"text_input"}')
   code=$(echo "$resp" | grep -oE "__HTTP_CODE_[0-9]+__" | grep -oE "[0-9]+")
   save_evidence TS-079 "elicit.json" "$(echo "$resp" | sed 's/__HTTP_CODE.*//')"
   if [[ "$code" == "200" || "$code" == "501" ]]; then

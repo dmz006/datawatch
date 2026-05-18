@@ -10,7 +10,7 @@ _story_ts_139() {
   local resp
   resp=$(api GET /api/council/personas)
   save_evidence TS-139 "personas.json" "$resp"
-  if assert_json "$resp" 'isinstance(d.get("personas",[]), list) or isinstance(d, dict)'; then
+  if assert_json "$resp" 'isinstance(d, list) or (isinstance(d, dict) and isinstance(d.get("personas",[]), list))'; then
     ok "council personas endpoint works"
   else
     ko "council personas endpoint failed: $(echo "$resp" | head -c 100)"
