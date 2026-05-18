@@ -5749,6 +5749,13 @@ const _expandedChannels = new Set(); // track expanded channel rows across re-re
 // settings first because that is the purpose of the settings, followed
 // by templates (pre-lifecycle), then lifecycle".
 const _cardOrder = {
+  comms: {
+    'comms_auth':     10,
+    'servers':        20,  // connection status
+    'remote_servers': 30,  // BL312 — managed remotes + federation access
+    'backends':       40,
+    // cc_* (Web Server, MCP, etc.) fall through to default 100
+  },
   compute: {
     'compute_nodes': 10,
     'llms': 20,
@@ -6400,6 +6407,16 @@ function renderSettingsView() {
                   <input type="checkbox" id="serverFormEnabled" checked />
                   ${t('server_enabled_label')||'Enabled'}
                 </label>
+                <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+                  <input type="checkbox" id="serverFormFederated" />
+                  Federated peer (MCP SSE auth + CBAC)
+                </label>
+                <div id="serverFormCapsWrap" style="display:none;">
+                  <label style="font-size:12px;color:var(--text2);">Capabilities (comma-separated groups or surface:action)<br>
+                    <input type="text" id="serverFormCaps" placeholder="e.g. read-only, session-operator" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                  </label>
+                  <div id="serverFormCapsHints" style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.5;"></div>
+                </div>
               </div>
               <div style="display:flex;gap:8px;margin-top:10px;">
                 <button onclick="saveServer()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Save</button>
@@ -12153,7 +12170,8 @@ function loadServersList() {
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.label||s.name)}</div>
-          <div style="font-size:11px;color:var(--text-dim,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.url||'')}${s.builtin?' · built-in':''}</div>
+          <div style="font-size:11px;color:var(--text-dim,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.url||'')}${s.builtin?' · built-in':''}${s.federated?' · fed':''}</div>
+          ${(s.federated && s.capabilities && s.capabilities.length)?`<div style="font-size:10px;color:var(--accent2);margin-top:1px;">${escHtml(s.capabilities.join(', '))}</div>`:''}
         </div>
         <span style="font-size:11px;padding:2px 6px;border-radius:10px;background:${s.enabled!==false?'var(--accent2,#4f8)':'var(--bg3,#2d3148)'};color:${s.enabled!==false?'#fff':'var(--text-dim,#888)'};">${s.enabled!==false?'on':'off'}</span>
         <button onclick="testServerEntry(${JSON.stringify(s.name)},this)" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('server_test_btn')||'Test'}</button>
@@ -12173,6 +12191,9 @@ function showServerForm(entry) {
   const enabledEl = document.getElementById('serverFormEnabled');
   const editNameEl = document.getElementById('serverFormEditName');
   const errEl = document.getElementById('serverFormError');
+  const fedEl = document.getElementById('serverFormFederated');
+  const capsWrap = document.getElementById('serverFormCapsWrap');
+  const capsEl = document.getElementById('serverFormCaps');
   if (!wrap || !nameEl || !urlEl) return;
   nameEl.value = entry ? (entry.name||'') : '';
   nameEl.disabled = !!(entry);
@@ -12180,7 +12201,21 @@ function showServerForm(entry) {
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
+  if (fedEl) {
+    fedEl.checked = !!(entry && entry.federated);
+    if (capsWrap) capsWrap.style.display = fedEl.checked ? '' : 'none';
+    fedEl.onchange = () => { if (capsWrap) capsWrap.style.display = fedEl.checked ? '' : 'none'; };
+  }
+  if (capsEl) capsEl.value = (entry && entry.capabilities) ? entry.capabilities.join(', ') : '';
   if (errEl) errEl.textContent = '';
+  // Load available group names as hints.
+  const hintsEl = document.getElementById('serverFormCapsHints');
+  if (hintsEl) {
+    apiFetch('/api/federation/groups/builtins').then(d => {
+      const groups = Array.isArray(d) ? d : [];
+      if (groups.length) hintsEl.innerHTML = 'Builtin groups: ' + groups.map(g => `<code style="background:var(--bg);padding:0 3px;border-radius:2px;" title="${escHtml(g.description||'')}">${escHtml(g.name)}</code>`).join(' ');
+    }).catch(() => {});
+  }
   wrap.style.display = '';
 }
 
@@ -12196,6 +12231,8 @@ function saveServer() {
   const enabledEl = document.getElementById('serverFormEnabled');
   const editNameEl = document.getElementById('serverFormEditName');
   const errEl = document.getElementById('serverFormError');
+  const fedEl = document.getElementById('serverFormFederated');
+  const capsEl = document.getElementById('serverFormCaps');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -12206,6 +12243,11 @@ function saveServer() {
   const editName = editNameEl ? editNameEl.value : '';
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true };
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
+  if (fedEl) body.federated = fedEl.checked;
+  if (fedEl && fedEl.checked && capsEl) {
+    const caps = capsEl.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (caps.length) body.capabilities = caps;
+  }
   const isEdit = !!(editName);
   const method = isEdit ? 'PUT' : 'POST';
   const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';

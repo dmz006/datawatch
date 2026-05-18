@@ -327,6 +327,20 @@ Manage the list of remote datawatch instances this PWA can connect to. Adding a 
 
 **Add / Edit form** — fields: **Name** (short slug used in picker chips, e.g. `nas`), **URL** (base URL including port), **Bearer token** (stored server-side, masked in UI), **Enabled** toggle.
 
+**Federated peer + CBAC** — enable the **Federated peer** toggle to let this server authenticate to the MCP SSE endpoint (`/api/mcp/sse`) using its bearer token. Once federated, the **Capabilities** field controls what that peer may do — enter a comma-separated list of builtin group names or individual `surface:action` strings:
+
+| Builtin group | What it grants |
+|---|---|
+| `read-only` | List/read across all surfaces |
+| `session-viewer` | sessions:list + sessions:read |
+| `session-operator` | Full session + agent lifecycle |
+| `config-reader` | config:read + docs:read |
+| `config-admin` | config:read + config:write |
+| `federation-peer` | Health + sessions + alerts + federation list |
+| `full-control` | All capabilities |
+
+Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:write`, `sessions:kill`, `config:write`, `federation:list`. Custom groups (Settings → Comms → Federated Peer Groups) can also be referenced by name.
+
 **Per-tab picker** — once servers are registered, every main view (Sessions, Alerts, Automata, Observer, Dashboard) shows a chip bar at the top:
 - **All** — aggregated fetch from every server; returns items tagged with their `server` origin.
 - **Local** — only this daemon's data (default).
