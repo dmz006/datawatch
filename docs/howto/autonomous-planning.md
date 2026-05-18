@@ -21,10 +21,10 @@ exec_steps:
 ---
 # How-to: Autonomous planning
 
-Describe a feature in plain English; datawatch decomposes it into a
+Describe a feature in plain English; datawatch **plans** it into a
 structured hierarchy of stories + tasks, queues it for review, then
 runs the approved tasks under verification.
-This howto walks the spawn → decompose → review → run loop.
+This howto walks the spawn → plan → review → run loop.
 
 ## What it is
 
@@ -57,12 +57,27 @@ datawatch config get autonomous.enabled
 #  → true
 ```
 
+Optional YAML to pin a planning backend (v7 config key):
+
+```yaml
+# ~/.datawatch/datawatch.yaml
+autonomous:
+  enabled: true
+  planning_backend: claude-code   # was "decomposition_backend" before v7.0
+  planning_effort: high           # was "decomposition_effort"
+  planning_model: ""              # was "decomposition_model" — empty = LLM default
+```
+
+The old keys (`decomposition_backend` / `decomposition_effort` /
+`decomposition_model`) are still accepted on read for backward
+compatibility.
+
 ## Two happy paths
 
 ### 4a. Happy path — CLI
 
 ```sh
-# 1. Submit a free-form spec — daemon decomposes it.
+# 1. Submit a free-form spec.
 PRD_ID=$(datawatch autonomous create \
   --name "auth-refactor" \
   --title "Refactor auth to use JWT-only sessions" \
@@ -71,6 +86,7 @@ PRD_ID=$(datawatch autonomous create \
   --profile prod-audit 2>&1 | grep -oP 'id=\K[0-9a-f]+')
 
 # 2. Trigger planning (LLM-driven; async).
+#    "prd-plan" is the canonical command; "prd-decompose" is a back-compat alias.
 datawatch autonomous prd-plan $PRD_ID
 sleep 60
 datawatch autonomous get $PRD_ID
@@ -154,9 +170,9 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"auth-refactor","title":"...","goal":"...","backend":"claude-code"}' \
   $BASE/api/autonomous/prds
 
-# Decompose.
+# Plan (canonical endpoint; /decompose is a back-compat alias).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/autonomous/prds/$PRD_ID/decompose
+  $BASE/api/autonomous/prds/$PRD_ID/plan
 
 # Get.
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID
@@ -174,18 +190,21 @@ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ### 5c. MCP
 
-Tools: `prd_create`, `prd_get`, `prd_list`, `prd_decompose`,
-`prd_approve`, `prd_run`, `prd_cancel`, `prd_archive`, `prd_delete`.
+Tools: `autonomous_prd_create`, `autonomous_prd_get`,
+`autonomous_prd_list`, `autonomous_prd_decompose` (also accepts
+`planning_backend` / `planning_effort` / `planning_model` params),
+`autonomous_prd_approve`, `autonomous_prd_run`, `autonomous_prd_cancel`,
+`autonomous_prd_children`.
 
 Useful when an autonomous LLM coordinator spawns work for itself —
-calls `prd_create` + `prd_decompose` to plan, then iterates the
-result.
+calls `autonomous_prd_create` + `autonomous_prd_decompose` to plan,
+then iterates the result.
 
 ### 5d. Comm channel
 
 ```
 You: automaton: Refactor auth to use JWT-only sessions
-Bot: started automaton abc123; decomposing...
+Bot: started automaton abc123; planning...
 Bot (~60s later): automaton abc123 needs_review
        4 stories / 15 tasks
        Reply "approve abc123" to run as-is
@@ -224,8 +243,8 @@ guardrails:
   - release-readiness
 ```
 
-Edit the YAML directly between `decompose` and `approve` to refine
-the spec without re-decomposing.
+Edit the YAML directly between `plan` and `approve` to refine the
+spec without re-planning. (Use `decompose` alias if scripts require it.)
 
 ## Diagram
 
@@ -248,9 +267,9 @@ the spec without re-decomposing.
 
 ## Common pitfalls
 
-- **Decompose hangs.** Backend slow or unreachable. `datawatch
+- **Planning hangs.** Backend slow or unreachable. `datawatch
   autonomous get $PRD_ID` shows `status: planning` for >5 min →
-  check backend health.
+  check backend health (`datawatch llm test <name>`).
 - **Approve without review.** Easy to fall into; for non-trivial
   Automata always at least read the Stories tab. Per-story approve gives
   finer control.

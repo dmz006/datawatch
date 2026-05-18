@@ -50,10 +50,21 @@ The daemon auto-emits to both channels when a monitored event fires.
 
 **Events that trigger a push:**
 
-| Event | Topic(s) published |
-|---|---|
-| Session waiting for input | `session-<id>` and `alerts` |
-| (additional events — council decisions, errors, algorithm phase completion — land in a follow-up alpha once topic taxonomy is finalized with the app team) | |
+All session backends emit hook events automatically (v7.0+). Push fires
+for any backend that uses the session state engine (claude-code,
+opencode-acp, openwebui, ollama, council, autonomous workers).
+
+| Event | Hook type | Topic(s) published |
+|---|---|---|
+| Session started | `Start` | `session-<id>` and `alerts` |
+| Session waiting for input | `Stop` (→ waiting_input) | `session-<id>` and `alerts` |
+| Session resumed (input sent) | `UserPromptSubmit` | `session-<id>` |
+| Session completed / failed / killed | `Stop` (terminal) | `session-<id>` and `alerts` |
+| Tool use inside session | `Activity` | `session-<id>` |
+
+**Topic taxonomy:** Clients subscribe to `session-<short-id>` for
+single-session streams, or `alerts` to receive every event across all
+sessions.
 
 ## Base requirements
 

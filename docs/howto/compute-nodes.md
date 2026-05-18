@@ -763,6 +763,68 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/marketplace/ollama/tasks/<t
 
 ---
 
+## datawatch-stats multi-parent registration
+
+`datawatch-stats` can push metrics to multiple daemon instances
+simultaneously — useful when a single GPU server is shared by more than
+one datawatch deployment (independent labs, primary + secondary, or
+proxy/container stacks):
+
+```bash
+# Push to two daemons; each gets independent registration + token file.
+datawatch-stats \
+  --datawatch https://primary:8443,https://secondary:8443 \
+  --insecure-tls
+
+# Or via environment variable (merged with --datawatch, de-duplicated):
+DATAWATCH_PARENTS=https://primary:8443 \
+  datawatch-stats --datawatch https://secondary:8443
+```
+
+Per-parent token files are auto-named:
+```
+~/.datawatch-stats/peer-primary_8443.token
+~/.datawatch-stats/peer-secondary_8443.token
+```
+(Single-parent installs keep the legacy `peer.token` path for
+backward compatibility.)
+
+Each parent receives pushes on independent goroutines — a slow or
+offline parent does not delay pushes to others.
+
+---
+
+## Diagnosing empty envelopes with `--diag`
+
+When a Compute Node shows "no envelope data" or missing process details,
+run `datawatch-stats --diag` on the target host. It probes 6 collection
+paths and prints ✓/⚠/✗ per probe with the exact fix command:
+
+```bash
+datawatch-stats --diag
+```
+
+Probes run:
+1. `/proc/self/status` — process-visibility baseline
+2. `/proc/<other>/cmdline` — cross-process visibility
+3. `docker ps` — Docker socket access + group membership
+4. DCGM exporter at `http://localhost:9400/metrics`
+5. `CAP_BPF` capability check
+6. Ollama `/api/ps` (honors `OLLAMA_HOST` env)
+
+The output maps each probe result to specific fix commands (e.g.
+`sudo usermod -aG docker datawatch` for Docker permission failures)
+and cross-references which envelope-empty symptom each probe covers.
+
+For quick per-request connection tracing:
+
+```bash
+# Full register+push round-trip with debug trace:
+datawatch-stats --print-once --debug-connections
+```
+
+---
+
 ## See also
 
 - [`v7-compute-migration.md`](v7-compute-migration.md) — migrating v6 backend config blocks to the v7 LLM registry

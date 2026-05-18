@@ -486,6 +486,120 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T31 | TS-447 | 5 locale bundles contain session_llm_ref_title and session_compute_ref_title keys | surface:locale feature:sessions | 📋 planned | — | — |
 | T31 | TS-448 | 5 locale bundles contain new_session_v7_llm_label and new_session_v7_compute_label keys | surface:locale feature:sessions | 📋 planned | — | — |
 | T31 | TS-449 | docs_search "compute_node_ref session llm_ref" returns sessions-deep-dive.md in hits | surface:mcp feature:sessions feature:howto | 📋 planned | — | — |
+| T32 | TS-450 | GET /api/observer/peers response includes entry with is_self:true | surface:api feature:observer | 📋 planned | — | — |
+| T32 | TS-451 | GET /api/observer/peers entries carry compute_node field (present, may be empty string) | surface:api feature:observer feature:compute | 📋 planned | — | — |
+| T32 | TS-452 | GET /api/observer/peers/free returns array (may be empty) | surface:api feature:observer | 📋 planned | — | — |
+| T32 | TS-453 | GET /api/observer/peers/by-node returns {by_node:{},unbound:[]} shape | surface:api feature:observer feature:compute | 📋 planned | — | — |
+| T32 | TS-454 | GET /api/federation/meta-peers returns valid JSON shape | surface:api feature:observer | 📋 planned | — | — |
+| T32 | TS-455 | PUT /api/compute/nodes/{name}/observer-peer sets observer_peer on node | surface:api feature:observer feature:compute | 📋 planned | — | — |
+| T32 | TS-456 | DELETE /api/compute/nodes/{name}/observer-peer clears observer_peer binding | surface:api feature:observer feature:compute | 📋 planned | — | — |
+| T32 | TS-457 | observer_peers_free MCP tool returns array | surface:mcp feature:observer | 📋 planned | — | — |
+| T32 | TS-458 | observer_peers_by_node MCP tool returns by_node+unbound shape | surface:mcp feature:observer | 📋 planned | — | — |
+| T32 | TS-459 | federation_meta_peers MCP tool returns valid shape | surface:mcp feature:observer | 📋 planned | — | — |
+| T32 | TS-460 | compute_node_attach_observer MCP tool sets observer_peer field | surface:mcp feature:observer feature:compute | 📋 planned | — | — |
+| T32 | TS-461 | datawatch compute node observer-free exits 0 | surface:cli feature:observer feature:cli | 📋 planned | — | — |
+| T32 | TS-462 | datawatch compute node observer-by-node exits 0 | surface:cli feature:observer feature:cli | 📋 planned | — | — |
+| T32 | TS-463 | 5 locale bundles have observer_peers_by_node (or equivalent grouping) keys | surface:locale feature:observer | 📋 planned | — | — |
+| T33 | TS-464 | POST /api/autonomous/prds/{id}/plan returns 200 (alias for /decompose) | surface:api feature:automata | 📋 planned | — | — |
+| T33 | TS-465 | POST /api/autonomous/prds/{id}/decompose still returns 200 (back-compat alias) | surface:api feature:automata | 📋 planned | — | — |
+| T33 | TS-466 | autonomous_prd_decompose MCP tool accepts planning_backend parameter | surface:mcp feature:automata | 📋 planned | — | — |
+| T33 | TS-467 | datawatch autonomous prd-plan --help shows prd-plan as canonical command | surface:cli feature:automata feature:cli | 📋 planned | — | — |
+| T33 | TS-468 | datawatch autonomous prd-decompose exits 0 (back-compat alias) | surface:cli feature:automata feature:cli | 📋 planned | — | — |
+| T33 | TS-469 | GET /api/autonomous/config returns planning_backend key (not decomposition_backend) | surface:api feature:automata | 📋 planned | — | — |
+| T33 | TS-470 | YAML autonomous.planning_backend is accepted by config reload | surface:locale feature:automata | 📋 planned | — | — |
+| T33 | TS-471 | docs_search "autonomous planning prd-plan" returns autonomous-planning.md | surface:mcp feature:automata feature:howto | 📋 planned | — | — |
+| T33 | TS-472 | GET /api/autonomous/prds returns array with status field (not decomposing) | surface:api feature:automata | 📋 planned | — | — |
+| T33 | TS-473 | autonomous_prd_list MCP tool returns array | surface:mcp feature:automata | 📋 planned | — | — |
+| T33 | TS-474 | datawatch autonomous list exits 0 | surface:cli feature:automata feature:cli | 📋 planned | — | — |
+| T33 | TS-475 | 5 locale bundles contain lifecycle_hint_plan key (v7 planning label) | surface:locale feature:automata | 📋 planned | — | — |
+| T33 | TS-476 | POST /api/autonomous/prds/{id}/approve returns 200 or 400-approval-required shape | surface:api feature:automata | 📋 planned | — | — |
+| T33 | TS-477 | autonomous_prd_approve MCP tool returns error or success shape | surface:mcp feature:automata | 📋 planned | — | — |
+| T34 | TS-478 | GET /api/llms/{name}/in_use returns {bindings:[]} shape | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-479 | POST /api/llms/{name}/reassign returns 200 with count field | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-480 | POST /api/llms/{name}/force_delete deletes LLM even with active bindings | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-481 | DELETE /api/llms/{name} returns 409 when active bindings exist | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-482 | POST /api/llms/{name}/refresh_models returns 200 | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-483 | GET /api/llms/{name} response has models array (not single model field) | surface:api feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-484 | llm_in_use MCP tool returns bindings shape | surface:mcp feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-485 | llm_refresh_models MCP tool returns 200 | surface:mcp feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-486 | llm_add_model MCP tool adds model to LLM's models list | surface:mcp feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-487 | llm_list_models MCP tool returns models array | surface:mcp feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-488 | datawatch llm in-use <name> exits 0 | surface:cli feature:llm-registry feature:cli | 📋 planned | — | — |
+| T34 | TS-489 | datawatch llm models list <name> exits 0 | surface:cli feature:llm-registry feature:cli | 📋 planned | — | — |
+| T34 | TS-490 | datawatch llm refresh-models <name> exits 0 | surface:cli feature:llm-registry feature:cli | 📋 planned | — | — |
+| T34 | TS-491 | 5 locale bundles contain llm_field_enabled_models key | surface:locale feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-492 | 5 locale bundles contain llm_in_use_empty key | surface:locale feature:llm-registry | 📋 planned | — | — |
+| T34 | TS-493 | docs_search "llm in-use enabled models" returns llm-registry.md in hits | surface:mcp feature:llm-registry feature:howto | 📋 planned | — | — |
+| T34 | TS-494 | GET /api/autonomous/prds with type=operational returns filterable results | surface:api feature:automata | 📋 planned | — | — |
+| T34 | TS-495 | autonomous_prd_set_type MCP tool sets type field on PRD (fixed proxyJSON bug) | surface:mcp feature:automata | 📋 planned | — | — |
+| T34 | TS-496 | autonomous_prd_set_guided_mode MCP tool toggles guided_mode | surface:mcp feature:automata | 📋 planned | — | — |
+| T34 | TS-497 | autonomous_prd_set_skills MCP tool sets skills list on PRD | surface:mcp feature:automata | 📋 planned | — | — |
+| T34 | TS-498 | autonomous_prd_set_llm MCP tool sets backend+effort on PRD (fixed proxyJSON bug) | surface:mcp feature:automata | 📋 planned | — | — |
+| T34 | TS-499 | autonomous_type_list MCP tool returns 4 built-in types (software/research/operational/personal) | surface:mcp feature:automata | 📋 planned | — | — |
+| T35 | TS-500 | GET /api/observer/peers/by-node returns by_node+unbound shape | surface:api feature:observer feature:compute | 📋 planned | — | — |
+| T35 | TS-501 | datawatch-stats --diag runs 6 probes and exits 0 | surface:cli feature:compute | 📋 planned | — | — |
+| T35 | TS-502 | datawatch-stats --datawatch url1,url2 accepts comma-separated parent URLs | surface:cli feature:compute | 📋 planned | — | — |
+| T35 | TS-503 | DATAWATCH_PARENTS env var accepted by datawatch-stats | surface:cli feature:compute | 📋 planned | — | — |
+| T35 | TS-504 | GET /api/compute/nodes/{name}/detail returns 200 or 503 (never 500) | surface:api feature:compute | 📋 planned | — | — |
+| T35 | TS-505 | PUT /api/compute/nodes/{name}/observer-peer sets observer_peer field | surface:api feature:compute feature:observer | 📋 planned | — | — |
+| T35 | TS-506 | DELETE /api/compute/nodes/{name}/observer-peer clears observer_peer field | surface:api feature:compute feature:observer | 📋 planned | — | — |
+| T35 | TS-507 | PATCH /api/compute/nodes/{name}/enabled toggles node enabled state | surface:api feature:compute | 📋 planned | — | — |
+| T35 | TS-508 | datawatch compute node list exits 0 | surface:cli feature:compute feature:cli | 📋 planned | — | — |
+| T35 | TS-509 | datawatch compute node observer-free exits 0 and returns JSON | surface:cli feature:compute feature:cli | 📋 planned | — | — |
+| T35 | TS-510 | compute_node_list MCP tool returns nodes array | surface:mcp feature:compute | 📋 planned | — | — |
+| T35 | TS-511 | compute_node_health MCP tool returns health shape for known node | surface:mcp feature:compute | 📋 planned | — | — |
+| T35 | TS-512 | GET /api/push/health returns 200 (push subsystem up) | surface:api feature:push | 📋 planned | — | — |
+| T35 | TS-513 | GET /.well-known/unifiedpush returns discovery document shape | surface:api feature:push | 📋 planned | — | — |
+| T35 | TS-514 | POST /api/push/register accepts device registration payload | surface:api feature:push | 📋 planned | — | — |
+| T35 | TS-515 | 5 locale bundles contain push_topic_alerts key | surface:locale feature:push | 📋 planned | — | — |
+| T35 | TS-516 | docs_search "datawatch-stats diag multi-parent" returns compute-nodes.md | surface:mcp feature:compute feature:howto | 📋 planned | — | — |
+| T35 | TS-517 | docs_search "push notification session waiting input" returns push-notifications.md | surface:mcp feature:push feature:howto | 📋 planned | — | — |
+| T35 | TS-518 | GET /api/migration/compute-kinds returns {nodes:[],supported:[]} shape | surface:api feature:compute | 📋 planned | — | — |
+| T35 | TS-519 | GET /api/compute/nodes/{name} response has auto_tags field separate from tags | surface:api feature:compute | 📋 planned | — | — |
+| T36 | TS-520 | POST /api/memory/scopes/borrow borrows memory from another scope | surface:api feature:memory | 📋 planned | — | — |
+| T36 | TS-521 | POST /api/memory/scopes/seed seeds a scope with initial memories | surface:api feature:memory | 📋 planned | — | — |
+| T36 | TS-522 | POST /api/memory/scopes/promote promotes session-local memory to project scope | surface:api feature:memory | 📋 planned | — | — |
+| T36 | TS-523 | GET /api/memory/scopes/recall returns memories for requested scope | surface:api feature:memory | 📋 planned | — | — |
+| T36 | TS-524 | memory_scope_borrow MCP tool accepts scope+query params | surface:mcp feature:memory | 📋 planned | — | — |
+| T36 | TS-525 | memory_scope_promote MCP tool promotes entry to wider scope | surface:mcp feature:memory | 📋 planned | — | — |
+| T36 | TS-526 | datawatch memory scope recall --scope project exits 0 | surface:cli feature:memory feature:cli | 📋 planned | — | — |
+| T36 | TS-527 | GET /api/secrets/vault/status returns {backend,connected} shape | surface:api feature:secrets | 📋 planned | — | — |
+| T36 | TS-528 | GET /api/secrets returns list with scopes field per entry | surface:api feature:secrets | 📋 planned | — | — |
+| T36 | TS-529 | POST /api/council/run returns {id,status:running,events_path} shape | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-530 | GET /api/council/runs/{id}/events returns SSE stream or 404 | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-531 | POST /api/council/runs/{id}/cancel returns 200 | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-532 | council_run MCP tool returns id+status shape | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-533 | council_run_cancel MCP tool returns 200 | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-534 | council_persona_oneshot MCP tool returns response text | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-535 | council_persona_draft_start MCP tool creates draft with draft_id | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-536 | council_persona_draft_list MCP tool returns drafts array | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-537 | datawatch council personas exits 0 | surface:cli feature:council feature:cli | 📋 planned | — | — |
+| T36 | TS-538 | datawatch council run --async exits 0 and returns run ID | surface:cli feature:council feature:cli | 📋 planned | — | — |
+| T36 | TS-539 | GET /api/mcp/tools returns channel bridge tools (dynamic proxy) | surface:api feature:mcp-tools | 📋 planned | — | — |
+| T36 | TS-540 | POST /api/mcp/call with tool=get_version returns version string | surface:api feature:mcp-tools | 📋 planned | — | — |
+| T36 | TS-541 | POST /api/sessions/{id}/hook-event with PostToolUse payload returns 200 | surface:api feature:sessions feature:hooks | 📋 planned | — | — |
+| T36 | TS-542 | GET /api/sessions/{id}/status returns hook_health + state + panels shape | surface:api feature:sessions feature:hooks | 📋 planned | — | — |
+| T36 | TS-543 | POST /api/sessions/{id}/hook-event with SessionStart returns 200 | surface:api feature:sessions feature:hooks | 📋 planned | — | — |
+| T36 | TS-544 | POST /api/council/personas creates persona with name+llm fields | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-545 | GET /api/council/personas returns personas array | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-546 | docs_search "council async run SSE" returns council-mode.md | surface:mcp feature:council feature:howto | 📋 planned | — | — |
+| T36 | TS-547 | docs_search "memory scope hierarchy borrow" returns cross-agent-memory.md | surface:mcp feature:memory feature:howto | 📋 planned | — | — |
+| T36 | TS-548 | docs_search "vault secrets backend" returns secrets-manager.md | surface:mcp feature:secrets feature:howto | 📋 planned | — | — |
+| T36 | TS-549 | docs_search "channel bridge dynamic proxy" returns mcp-tools.md | surface:mcp feature:mcp-tools feature:howto | 📋 planned | — | — |
+| T36 | TS-550 | docs_search "hook event session status" returns sessions-deep-dive.md | surface:mcp feature:sessions feature:howto | 📋 planned | — | — |
+| T36 | TS-551 | GET /api/council/config returns config shape with llm_ref field | surface:api feature:council | 📋 planned | — | — |
+| T36 | TS-552 | council_config_get MCP tool returns llm_ref+max_parallel fields | surface:mcp feature:council | 📋 planned | — | — |
+| T36 | TS-553 | datawatch memory recall "test query" exits 0 | surface:cli feature:memory feature:cli | 📋 planned | — | — |
+| T36 | TS-554 | memory_recall MCP tool returns hits array | surface:mcp feature:memory | 📋 planned | — | — |
+| T36 | TS-555 | docs_list_howtos returns at least 30 howto paths | surface:mcp feature:howto | 📋 planned | — | — |
+| T37 | TS-556 | All TS-001 to TS-555 pass or skip with no blocking failures (full suite) | surface:all feature:all | 📋 planned | ⛔ blocking | — |
+| T37 | TS-557 | release-smoke.sh exits 0 with 0 failures | surface:smoke feature:all | 📋 planned | ⛔ blocking | — |
+| T37 | TS-558 | docs/testing/master-cookbook.md has no planned stories with status 📋 planned | surface:docs | 📋 planned | — | — |
+| T37 | TS-559 | rtk go test ./... passes (all unit tests green) | surface:build | 📋 planned | ⛔ blocking | — |
+| T37 | TS-560 | node --check internal/server/web/app.js exits 0 (no JS syntax errors) | surface:build | 📋 planned | ⛔ blocking | — |
+| T37 | TS-561 | 5 locale bundles are valid JSON and have equal key counts | surface:locale | 📋 planned | ⛔ blocking | — |
+| T37 | TS-562 | docs-index-gen runs without errors (2600+ chunks indexed) | surface:docs | 📋 planned | — | — |
+| T37 | TS-563 | scripts/release-smoke.sh §42 howto-existence guard passes for mcp-sampling.md and mcp-elicitation.md | surface:smoke | 📋 planned | — | — |
 
 ---
 

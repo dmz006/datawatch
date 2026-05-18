@@ -195,14 +195,14 @@ stories:
 ```
 
 Don't hand-edit `status` (race-prone); use the API. Operators CAN
-hand-edit story / task content between decompose + approve to refine
-the spec — the daemon picks up the changes on next run.
+hand-edit story / task content between plan + approve to refine the
+spec — the daemon picks up the changes on next run.
 
 ## Diagram
 
 ```
-                        decompose
-   draft ────────────────────────► planning
+                        plan (/decompose alias)
+   draft ────────────────────────────────► planning
                                        │
                                        ▼ LLM done
                               ┌──► needs_review

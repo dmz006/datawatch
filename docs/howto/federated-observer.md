@@ -45,6 +45,43 @@ Peers register with each other via `datawatch observer peer-register`
 periodic snapshots (process envelopes, system stats, optional memory
 summaries) over the same Tailscale mesh used for agent workloads.
 
+### Self-as-peer (v7)
+
+`GET /api/observer/peers` now includes a synthetic entry for the local
+daemon itself (when observer is enabled). The entry has `is_self: true`
+and `shape: "A"`, so the Federated Peers panel shows the complete host
+picture — local + remote — without a second lookup.
+
+### Observer-to-ComputeNode binding (v7)
+
+Each observer peer can be explicitly bound to a Compute Node so that
+LLM workloads on that node are attributed to the correct observer:
+
+- `Node.observer_peer` — explicit binding field on a Compute Node.
+  Auto-set on first datawatch-stats push via name-match; can be
+  overridden manually.
+- **Free peers** — peers with no bound Compute Node. Use
+  `GET /api/observer/peers/free` to list them.
+- **By-node view** — `GET /api/observer/peers/by-node` groups peers by
+  their bound CN: `{by_node: {<cn-name>: [...peers]}, unbound: [...]}`.
+  The PWA "Group by ComputeNode" toggle uses this endpoint.
+- **Federation meta-peers** — `GET /api/federation/meta-peers` shows
+  cross-instance observer attribution per node.
+
+### datawatch-stats multi-parent (v7)
+
+`datawatch-stats` can push to multiple daemon instances simultaneously:
+
+```bash
+datawatch-stats \
+  --datawatch https://primary:8443,https://secondary:8443 \
+  --insecure-tls
+```
+
+Each parent gets its own peer registration + per-parent token file
+(`peer-primary_8443.token`, `peer-secondary_8443.token`). A slow parent
+does not delay pushes to others.
+
 ## Base requirements
 
 - `datawatch start` — daemon up on each host.
@@ -102,23 +139,40 @@ datawatch observer peer-register \
   --shape B
 #  → registered; pushing every 5s
 
+# On the PEER — start datawatch-stats pushing to multiple primaries:
+datawatch-stats \
+  --datawatch https://100.64.0.1:8443,https://100.64.0.2:8443 \
+  --insecure-tls
+
 # Back on the PRIMARY:
 
-# 3. Confirm peer is pushing.
+# 3. Confirm peers are pushing (includes is_self:true entry for local daemon).
 datawatch observer peers
-#  → lab-east-peer    shape:B   last_push:3s ago   ip:100.64.0.42
+#  → (self)           shape:A   is_self:true  ip:local
+#    lab-east-peer    shape:B   last_push:3s ago   ip:100.64.0.42
+#                                compute_node:datawatch-ollama
 
-# 4. View envelopes from a specific peer.
+# 4. View free peers (not yet bound to a Compute Node).
+datawatch compute node observer-free
+
+# 5. Bind an observer peer to a Compute Node.
+datawatch compute node attach-observer datawatch-ollama lab-east-peer
+
+# 6. View peers grouped by Compute Node.
+datawatch compute node observer-by-node
+#  → datawatch-ollama: [lab-east-peer]
+#    (unbound):        []
+
+# 7. View envelopes from a specific peer.
 datawatch observer envelopes --peer lab-east-peer
 #  → backend:claude-docker  cpu_pct=4.2  rss_mb=512  ...
 
-# 5. Cross-host envelope view (every peer).
+# 8. Cross-host envelope view (every peer).
 datawatch observer envelopes --all-peers
 #  → primary-kona      backend:claude-docker  cpu=2.1  ...
 #    lab-east-peer     backend:claude-docker  cpu=4.2  ...
 
-# 6. Remove a peer (rotates the token; the peer auto-re-registers
-#    if it's still alive).
+# 9. Remove a peer.
 datawatch observer peer-remove lab-east-peer
 ```
 
@@ -126,19 +180,29 @@ datawatch observer peer-remove lab-east-peer
 
 1. On the PRIMARY: bottom nav → **Observer** → scroll to **Federated
    Peers** card.
-2. Empty state shows the registration command. Click **Mint peer
-   token** → modal with name + shape inputs → **Generate** → token
-   copied to clipboard.
-3. Hand the token to the peer's operator (private channel).
-4. On the peer's PWA: Observer → Federated Peers → **+ Push to
+2. The list now always includes a **local self-peer** row (marked
+   "(this daemon)") so you see the complete host picture in one table.
+3. Empty remote-peers state shows the registration command. Click
+   **Mint peer token** → modal with name + shape inputs → **Generate**
+   → token copied to clipboard.
+4. Hand the token to the peer's operator (private channel).
+5. On the peer's PWA: Observer → Federated Peers → **+ Push to
    primary** → paste the primary's URL + token → **Save**.
-5. Within ~5s the primary's Federated Peers card shows the new peer
-   with a green health dot.
-6. Click into a peer row → drill-down modal: last snapshot, push
+6. Within ~5s the primary's Federated Peers card shows the new peer
+   with a green health dot and the bound Compute Node name (or a
+   "free" pill if not yet bound).
+7. **Group by ComputeNode toggle** — a toggle in the card header
+   switches between flat list and per-CN buckets. Persists in
+   localStorage. Each bucket shows the peers observing that node;
+   unbound peers appear below.
+8. To bind a free peer: Compute Nodes panel → edit a node → select
+   from the **Observer Peer** dropdown (pre-populated with free peers
+   only).
+9. Click into a peer row → drill-down modal: last snapshot, push
    history, per-envelope detail.
-7. Cog-nav badge: when any peer goes stale (no push in >60s), the
-   gear icon shows a numeric badge. Click → navigates to Federated
-   Peers + flashes the offending row.
+10. Cog-nav badge: when any peer goes stale (no push in >60s), the
+    gear icon shows a numeric badge. Click → navigates to Federated
+    Peers + flashes the offending row.
 
 ## Other channels
 
@@ -150,16 +214,19 @@ drill-down. Useful for monitoring the fleet from your phone.
 ### 5b. REST
 
 ```sh
-# List.
+# List (includes is_self:true entry for local daemon).
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/peers
+# Each entry now carries compute_node (bound CN name, or "" if free).
 
 # Mint a registration token (primary).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{"name":"lab-east-peer","shape":"B"}' \
   $BASE/api/observer/peer-token-mint
 
 # Register (called by the peer).
 curl -sk -X POST -H "Authorization: Bearer $PRIMARY_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{"name":"lab-east-peer","shape":"B","url":"https://100.64.0.42:8443"}' \
   $PRIMARY_BASE/api/observer/peers
 
@@ -168,29 +235,55 @@ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
   $BASE/api/observer/peers/lab-east-peer
 
 # Envelopes.
-curl -sk -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/observer/envelopes
-curl -sk -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/observer/envelopes/all-peers
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/envelopes
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/envelopes/all-peers
+
+# Free peers (no bound Compute Node).
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/peers/free
+
+# By-node grouping.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/peers/by-node
+# → {"by_node":{"datawatch-ollama":[...]}, "unbound":[...]}
+
+# Federation meta-peers (cross-instance attribution).
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/federation/meta-peers
+
+# Bind an observer peer to a Compute Node.
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"peer":"lab-east-peer"}' \
+  $BASE/api/compute/nodes/datawatch-ollama/observer-peer
+
+# Detach the binding.
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/compute/nodes/datawatch-ollama/observer-peer
 ```
 
 ### 5c. MCP
 
-Tools: `observer_peers`, `observer_envelopes`,
+Tools: `observer_peers_list`, `observer_envelopes`,
 `observer_envelopes_all_peers`, `observer_peer_register`,
-`observer_peer_remove`.
+`observer_peer_delete`, `observer_peers_free`, `observer_peers_by_node`,
+`federation_meta_peers`, `compute_node_attach_observer`,
+`compute_node_detach_observer`.
 
 A coordinator LLM running on the primary can use
 `observer_envelopes_all_peers` to see global resource availability
-before deciding where to spawn the next agent.
+before deciding where to spawn the next agent. Use `observer_peers_free`
+to find unbound peers that can be attached to a new Compute Node.
 
 ### 5d. Comm channel
 
 | Verb | Example |
 |---|---|
-| `observer peers` | Returns the peer list with health dots. |
+| `observer peers` | Returns the peer list with health dots (includes local self-peer). |
 | `observer envelopes` | Top-level envelopes summary. |
 | `observer status` | One-liner across the federation. |
+| `compute node attach-observer <node> <peer>` | Bind a peer to a Compute Node. |
+| `compute node detach-observer <node>` | Remove the binding. |
+| `compute node observer-free` | List free (unbound) observer peers. |
+| `compute node observer-by-node` | List peers grouped by Compute Node. |
+| `compute node federation-meta-peers` | Cross-instance meta-peers view. |
 
 ### 5e. YAML
 
