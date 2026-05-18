@@ -375,6 +375,7 @@ if [[ $NO_DAEMON -eq 0 ]]; then
         -e "s|port: 8080|port: $TEST_PORT|g" \
         -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
         -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+        -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
         "$REPO_DIR/testdata/datawatch.yaml" > "$TEST_DATA/config.yaml"
     fi
     # Discover actual MCP SSE port from the daemon's config so TS-624 and
