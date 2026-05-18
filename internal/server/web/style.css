@@ -5148,3 +5148,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   text-align: center;
   pointer-events: none;
 }
+
+/* BL315 — hide the PWA expand button on narrow (phone) displays where
+   window.resizeTo() has no effect and the screen is already full-width. */
+@media (max-width: 600px) {
+  #headerFullscreenBtn { display: none !important; }
+}
