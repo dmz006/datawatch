@@ -22,8 +22,8 @@
 name: containers
 
 on:
-  push:
-    tags: ['v*']
+  # Tag trigger removed — release.yaml owns the tag-push container build path.
+  # Use workflow_dispatch to manually rebuild containers against an existing tag.
   workflow_dispatch:
 
 # v5.26.25 — guard against re-tag races. If two tag pushes land back-

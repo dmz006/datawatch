@@ -1,55 +1,140 @@
 name: Release
 
+# Unified release pipeline. Every stage must pass before the next fires.
+# Chain: test → govulncheck → gosec → goreleaser → build-base → build-agents → attach-tarball
+#
 # Triggered by a clean semver tag: v7.2.2, v8.0.0, v7.3.1, etc.
 # Tags with pre-release suffixes (v7.2.2-build0, v7.2.2-rc1) do NOT trigger.
-# Workflow: full test suite → goreleaser → GitHub release with binaries.
 #
 # To cut a release:
 #   1. Bump version in cmd/datawatch/main.go + internal/server/api.go to "7.2.2"
 #   2. git commit -m "release(v7.2.2): ..."
 #   3. git tag v7.2.2 && git push origin v7.2.2
-#   CI does the rest.
+#   CI does the rest — tests, security, binaries, containers, tarball.
 
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'   # major, minor, patch — no pre-release suffix
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write   # goreleaser needs write to create GitHub releases
+  contents: write    # goreleaser + release asset upload
+  packages: write    # ghcr.io push
+
+# ── Stage 1: tests ───────────────────────────────────────────────────────────
 
 jobs:
-  release:
-    name: goreleaser
+  test:
+    name: go test + lint
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
-          fetch-depth: 0   # goreleaser needs full history for changelog
-
-      - uses: actions/setup-go@v5
+          fetch-depth: 0   # goreleaser (later) needs full history; checkout once here
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version-file: go.mod
           cache: true
-
-      # Satisfy the //go:embed before goreleaser builds
       - name: sync-docs + docs-index
         run: |
           mkdir -p internal/docsindex/assets
           echo '{}' > internal/docsindex/assets/docs-bm25-index.json
           make sync-docs docs-index
-
-      - name: go test (release gate)
+      - name: go test
         run: go test ./... -count=1 -timeout 5m
-
-      - name: golangci-lint (release gate)
+      - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: v2.12.2
           args: --timeout=5m
+      - name: build (compile check)
+        run: make build
 
+# ── Stage 2: security (parallel, both must pass) ─────────────────────────────
+
+  govulncheck:
+    name: govulncheck
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (blocking)
+        run: $(go env GOPATH)/bin/govulncheck ./...
+
+  gosec:
+    name: gosec baseline-diff
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Run gosec + baseline-diff
+        run: |
+          set +e
+          EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          from collections import Counter
+          live = json.load(open("/tmp/gosec.json"))
+          base = json.load(open(".gosec-baseline.json"))
+          live_issues = live.get("Issues", [])
+          live_n = len(live_issues)
+          base_n = base["total"]
+          live_by = Counter(i["rule_id"] for i in live_issues)
+          base_by = base.get("by_rule", {})
+          print(f"gosec: live={live_n}  baseline={base_n}")
+          for rule in sorted(set(live_by) | set(base_by)):
+              l = live_by.get(rule, 0)
+              b = base_by.get(rule, 0)
+              flag = "" if l == b else (f"  (+{l-b})" if l > b else f"  (-{b-l})")
+              print(f"  {rule:6s}  live={l:3d}  baseline={b:3d}{flag}")
+          if live_n > base_n:
+              print(f"::error::gosec: {live_n - base_n} net-new findings exceed baseline {base_n}. Review and either fix or bump .gosec-baseline.json with rationale in docs/security-review.md.")
+              sys.exit(1)
+          if live_n < base_n:
+              print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Lower the baseline so regressions get caught at the new bar.")
+          PY
+
+# ── Stage 3: goreleaser — binaries + GitHub release ──────────────────────────
+
+  goreleaser:
+    name: goreleaser
+    needs: [govulncheck, gosec]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: sync-docs + docs-index
+        run: |
+          mkdir -p internal/docsindex/assets
+          echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+          make sync-docs docs-index
       - name: goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -58,3 +143,134 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# ── Stage 4: containers — base images (agent-base, validator, stats-cluster) ──
+
+  build-base:
+    name: containers / ${{ matrix.name }}
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent-base
+            file: docker/dockerfiles/Dockerfile.agent-base
+            platforms: linux/amd64,linux/arm64
+          - name: validator
+            file: docker/dockerfiles/Dockerfile.validator
+            platforms: linux/amd64,linux/arm64
+          - name: stats-cluster
+            file: docker/dockerfiles/Dockerfile.stats-cluster
+            platforms: linux/amd64,linux/arm64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Build + push ${{ matrix.name }}
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: ${{ matrix.platforms }}
+          build-args: VERSION=${{ steps.ver.outputs.version }}
+          tags: |
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
+            ${{ matrix.name == 'agent-base' && format('ghcr.io/dmz006/datawatch/agent-base:{0}', steps.ver.outputs.version) || '' }}
+            ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
+          push: true
+
+# ── Stage 5: containers — agent images (FROM agent-base) ─────────────────────
+
+  build-agents:
+    name: containers / ${{ matrix.name }}
+    needs: build-base
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent-claude
+            file: docker/dockerfiles/Dockerfile.agent-claude
+            platforms: linux/amd64,linux/arm64
+          - name: agent-opencode
+            file: docker/dockerfiles/Dockerfile.agent-opencode
+            platforms: linux/amd64,linux/arm64
+          - name: agent-aider
+            file: docker/dockerfiles/Dockerfile.agent-aider
+            platforms: linux/amd64,linux/arm64
+          - name: agent-gemini
+            file: docker/dockerfiles/Dockerfile.agent-gemini
+            platforms: linux/amd64,linux/arm64
+          - name: agent-goose
+            file: docker/dockerfiles/Dockerfile.agent-goose
+            platforms: linux/amd64,linux/arm64
+          - name: parent-full
+            file: docker/dockerfiles/Dockerfile.parent-full
+            platforms: linux/amd64,linux/arm64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Build + push ${{ matrix.name }}
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: ${{ matrix.platforms }}
+          build-args: |
+            VERSION=${{ steps.ver.outputs.version }}
+            REGISTRY=ghcr.io/dmz006/datawatch
+            BASE_TAG=${{ steps.ver.outputs.version }}
+          tags: |
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
+          push: true
+
+# ── Stage 6: attach stats-cluster tarball to GitHub release ──────────────────
+
+  attach-tarball:
+    name: attach stats-cluster tarball
+    needs: [build-base, build-agents]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Pull stats-cluster (linux/amd64) and save as tarball
+        run: |
+          docker pull ghcr.io/dmz006/datawatch-stats-cluster:${{ steps.ver.outputs.version }}
+          docker save ghcr.io/dmz006/datawatch-stats-cluster:${{ steps.ver.outputs.version }} \
+            | gzip > datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
+      - name: Upload tarball as release asset
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
+        with:
+          files: datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
+          fail_on_unmatched_files: true

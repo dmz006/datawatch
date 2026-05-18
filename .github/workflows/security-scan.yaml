@@ -22,8 +22,7 @@
 name: security-scan
 
 on:
-  push:
-    tags: ['v*']
+  # Tag trigger removed — release.yaml runs govulncheck + gosec before goreleaser.
   pull_request:
     branches: [main]
   workflow_dispatch:
