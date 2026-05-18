@@ -15,7 +15,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.0
 	github.com/miekg/dns v1.1.72
 	github.com/prometheus/client_golang v1.23.2
-	github.com/slack-go/slack v0.15.0
+	github.com/slack-go/slack v0.23.1
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/crypto v0.50.0
 	golang.org/x/sys v0.43.0

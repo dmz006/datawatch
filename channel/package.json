@@ -10,10 +10,16 @@
     "dev": "node --experimental-strip-types index.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.10.0"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
+  },
+  "overrides": {
+    "hono": ">=4.12.18",
+    "@hono/node-server": ">=1.19.13",
+    "fast-uri": ">=3.1.2",
+    "ip-address": ">=10.1.1"
   }
 }
