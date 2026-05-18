@@ -87,6 +87,9 @@ Earlier kind values (`local`, `ssh`, `docker`, `k8s`, `remote`, `remote-proxy`) 
 - `datawatch` daemon running (`datawatch start`).
 - The LLM endpoint reachable from the daemon host (test with `curl`).
 - For live monitoring: `datawatch-stats` sidecar installed on the target host (optional but recommended).
+  - To attach an observer peer to a Compute Node (via `compute_node_attach_observer` / `attach-observer`), the daemon config must have `observer.peers.allow_register: true`. Without this flag, peer registration is rejected and attachment silently has no effect.
+
+> **Pre-conditions for observer peer attachment**: The `observer.peers.allow_register: true` flag must be set in `~/.datawatch/datawatch.yaml` before observer peers can register or be attached to Compute Nodes. See [federated-observer.md](federated-observer.md) for the full observer config and setup steps.
 
 ---
 

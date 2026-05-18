@@ -31,9 +31,11 @@ Four MCP tools, each mirrored across REST + CLI + comm + PWA:
 | Tool | Purpose |
 |---|---|
 | `docs_search` | Hybrid search (vector primary + BM25 fallback) over core + trusted skill + trusted plugin sources. Trust filtering applied. |
-| `docs_read` | Read a specific chunk by `path` + `anchor`. |
+| `docs_read` | Read a specific chunk by `path` + `anchor`. The `path` parameter must use the full relative path including subdirectory prefix, e.g. `"path": "howto/daemon-operations.md"` — **not** just the filename or a bare howto name. |
 | `docs_list_howtos` | List every howto in the index. `has_exec_steps:true` means the howto carries an authored MCP-call sequence; `false` means LLM-translation is required at apply time. |
 | `docs_apply` | Plan-then-execute. `mode=plan` returns the resolved exec_steps + an `approval_token`. `mode=execute` consumes the token and runs each step via the in-process MCP dispatcher. `risk_gate=true` pauses before each mutating step and issues a continuation token. |
+
+> **MCP `docs_read` path format**: Always pass the `path` parameter as a relative path with directory prefix. Example MCP call: `{"tool": "docs_read", "params": {"path": "howto/daemon-operations.md"}}`. Using `{"howto": "daemon-operations.md"}` or omitting the `howto/` prefix will not resolve correctly.
 
 ## Two happy paths
 

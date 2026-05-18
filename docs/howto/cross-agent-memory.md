@@ -53,8 +53,14 @@ flat indexes.
     federation). Needs Postgres 14+ + pgvector extension.
 - Embedding backend:
   - **Ollama** with `nomic-embed-text` or `mxbai-embed-large` (free,
-    local).
+    local). The embedding model must be pulled before use — run
+    `ollama pull nomic-embed-text`. See [ollama-marketplace.md](ollama-marketplace.md)
+    for browsing and pulling models via the Compute Node marketplace.
   - **OpenAI** `text-embedding-3-small` (paid, low cost).
+  - For registering Ollama as an LLM backend (required before
+    `embedder.backend ollama` is usable), see [llm-registry.md](llm-registry.md).
+
+> **Pre-conditions**: An embedding backend (Ollama with a pulled embedding model, or OpenAI) must be configured before memory recall/save works. See [ollama-marketplace.md](ollama-marketplace.md) to pull an embedding model onto a Compute Node, and [llm-registry.md](llm-registry.md) to register Ollama as an LLM backend.
 
 ## Setup
 

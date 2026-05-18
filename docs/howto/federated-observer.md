@@ -88,6 +88,9 @@ does not delay pushes to others.
 - Tailscale or Headscale mesh established between hosts (see
   [`tailscale-mesh.md`](tailscale-mesh.md)).
 - Operator role on each host (peer-register is gated).
+- **`observer.peers.allow_register: true`** must be set in `~/.datawatch/datawatch.yaml` on the **primary** host before any peer (including `datawatch-stats` sidecars and agent workers) can register. Without this flag, all inbound peer-register calls are rejected — no error is surfaced on the registering peer; it simply cannot push.
+
+> **Pre-conditions for peer registration**: The primary daemon's config must include `observer.peers.allow_register: true` (see the Setup block below). This flag gates all inbound observer peer registrations. When automating or testing observer peer operations, confirm this flag is present before calling `observer_peer_register` or `compute_node_attach_observer`.
 
 ## Setup
 

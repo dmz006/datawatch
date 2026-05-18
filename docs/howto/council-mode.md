@@ -75,7 +75,12 @@ blocks. The `dissent` is usually the high-signal part.
   `council.llm_ref` in `~/.datawatch/datawatch.yaml`; defaults to
   `ollama-default`. Set `council.max_parallel` (default 2) for
   concurrent per-persona inference.
+  - If no LLM is registered yet, see [llm-registry.md](llm-registry.md) to add one and [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md) for the quickest path from zero to a working LLM backend.
 - Disk space for persona YAMLs + run history (negligible).
+
+> **Pre-conditions**: Council Mode requires a registered, enabled LLM referenced by `council.llm_ref`. See [llm-registry.md](llm-registry.md) for how to add and enable an LLM, and [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md) for end-to-end setup.
+
+> **API field name**: The run payload uses `"proposal"` (not `"question"`). REST: `{"proposal": "...", "personas": [...], "mode": "quick"}`. MCP: `council_run` arg `proposal="..."`. See the REST and MCP sections below.
 
 ## Setup
 

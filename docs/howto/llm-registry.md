@@ -48,6 +48,8 @@ Before v7, every backend had its own config block (`cfg.ollama`,
 `cfg.aider`, …) and separate mental model. In v7 they collapse here:
 Settings → Compute → LLM Configuration.
 
+> **Auto-registered LLMs**: The daemon automatically registers a `claude-code` entry (kind `claude-code`) at startup if the `claude` binary is on PATH. No manual `llm add` step is needed for Claude Code sessions. Other kinds (`ollama`, `claude`, `aider`, etc.) must be registered explicitly. Use `GET /api/llms` (plural) or `datawatch llm list` to see what is currently registered, including any auto-registered entries.
+
 ### LLM kinds
 
 | Kind | Protocol | Compute nodes needed | Typical use |

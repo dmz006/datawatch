@@ -166,4 +166,46 @@ The following are explicitly excluded from automated runs. They are documented h
 
 ---
 
+## 5. Docs Review Stage
+
+Before writing or debugging test stories for a feature, **review the feature's howto for pre-conditions and cross-references**. Many test failures trace back to undocumented configuration requirements: the test exercises a feature that depends on another feature being configured, but the howto only describes the feature itself — not what must be set up first.
+
+### Why this matters
+
+During the v8.0.0 e2e cycle we repeatedly hit test failures caused by missing pre-conditions:
+
+| Feature under test | Missing pre-condition | Howto to consult |
+|---|---|---|
+| Observer peer attachment to compute nodes | `observer.peers.allow_register: true` in daemon config | `federated-observer.md` |
+| Council mode runs | LLM registered under `council.llm_ref` | `llm-registry.md`, `chat-and-llm-quickstart.md` |
+| Cross-agent memory (embedding recall) | Embedding model pulled in Ollama | `ollama-marketplace.md` |
+| LLM registry tests | `claude-code` is auto-registered; other kinds need explicit setup | `llm-registry.md` |
+| `docs_read` MCP calls | Uses `path` param (`"path": "howto/..."`), not `howto` | `docs-as-mcp.md` |
+| Federation peer tests | Peers must be registered; connection-refused is a structured error | `federated-observer.md` |
+| Secrets GET / DELETE | Secret must exist first (create fixture before testing read/delete) | `secrets-manager.md` |
+
+### Docs review checklist (per feature being tested)
+
+1. **Find the howto** — `docs/howto/<feature>.md` or use `docs_list_howtos` via MCP.
+2. **Read the "Base requirements" / "Pre-conditions" section** at the top. Note every dependency listed.
+3. **Check for cross-references** — does the howto link to the other howtos that explain the dependencies? If not, add them (see the howtos already updated as models: `compute-nodes.md`, `council-mode.md`, `cross-agent-memory.md`, `llm-registry.md`, `docs-as-mcp.md`, `federated-observer.md`).
+4. **Trace the config** — verify the test daemon config (`testdata/datawatch.yaml`) includes every config key the howto's pre-conditions require.
+5. **Check the API field names** — if the howto shows REST examples, confirm the test script uses the same field names (e.g. `proposal` not `question` for council; `path` not `howto` for docs_read).
+6. **Check the endpoint paths** — verify the test uses the correct REST paths (e.g. `/api/llms` not `/api/llm`).
+
+### Adding pre-conditions to a howto
+
+When you discover a missing cross-reference, add it near the **start** of the howto — in "Base requirements" or as a blockquote immediately after — not only in a trailing "See also" section. Use this pattern:
+
+```markdown
+> **Pre-conditions**: Requires X to be configured.
+> See [howto/X.md](X.md) for setup steps.
+```
+
+Or as an indented sub-bullet under the relevant "Base requirements" entry.
+
+Putting pre-conditions at the start means anyone reading the howto to test or automate a feature sees the dependencies before attempting the steps.
+
+---
+
 > For future releases: copy `docs/testing/vX.Y.Z/` to a new version folder, reset cookbook to 📋, add stories for new features. The prior version plan is preserved as a regression baseline.
