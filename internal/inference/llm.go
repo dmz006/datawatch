@@ -61,6 +61,10 @@ const (
 	KindGoose          Kind = "goose"
 	KindGemini         Kind = "gemini"
 	KindShell          Kind = "shell"
+
+	// v8.0 BL321 — new inference adapter kinds.
+	KindGeminiAPI    Kind = "gemini-api"    // Google Generative Language v1beta
+	KindOpenCodeAPI  Kind = "opencode-api"  // opencode HTTP inference API (OpenAI-compat)
 )
 
 // AllKinds is the set the operator can pick from + UI dropdowns.
@@ -72,6 +76,7 @@ var AllKinds = []Kind{
 	KindOllama, KindOpenWebUI, KindOpenCode, KindClaude,
 	KindClaudeCode, KindOpenCodeACP, KindOpenCodePrompt,
 	KindAider, KindGoose, KindGemini, KindShell,
+	KindGeminiAPI, KindOpenCodeAPI,
 }
 
 // EnabledModel pairs one ComputeNode with one model name.

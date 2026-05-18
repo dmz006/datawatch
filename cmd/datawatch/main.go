@@ -2772,6 +2772,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				disp.RegisterAdapter(&adapters.OpenWebUI{})
 				disp.RegisterAdapter(&adapters.OpenCode{})
 				disp.RegisterAdapter(&adapters.Claude{})
+				disp.RegisterAdapter(&adapters.Gemini{})
+				disp.RegisterAdapter(&adapters.OpenCodeAPI{})
+				// BL320 — wire multi-server store for datawatch-proxy routing.
+				if st := httpServer.ServerStore(); st != nil {
+					disp.SetServerStore(st)
+				}
 				httpServer.SetInference(llmReg, disp)
 				// BL309 — pipeline executor resolves named LLMs (e.g. "ollama-datawatch")
 				// to their adapter kind via the inference registry.

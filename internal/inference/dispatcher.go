@@ -79,12 +79,21 @@ func IsTransient(err error) bool {
 	return errors.As(err, &te)
 }
 
+// ServerStoreIface resolves a registered server by name.
+// The multiserver.Store implements this interface.
+type ServerStoreIface interface {
+	// GetByName returns the URL and bearer token for the named server entry.
+	// Returns ("", "", false) when the name is not found.
+	GetByName(name string) (url, token string, ok bool)
+}
+
 // Dispatcher routes Request → Adapter via the registry + ComputeNode
 // resolver.
 type Dispatcher struct {
-	registry  *Registry
-	computeFn func(name string) (*compute.Node, error)
-	adapters  map[Kind]Adapter
+	registry    *Registry
+	computeFn   func(name string) (*compute.Node, error)
+	adapters    map[Kind]Adapter
+	serverStore ServerStoreIface
 }
 
 // NewDispatcher wires the LLM registry + a ComputeNode lookup
@@ -101,6 +110,10 @@ func NewDispatcher(reg *Registry, computeFn func(name string) (*compute.Node, er
 // Adapters are the unit of pluggability — new kinds (gemini, vllm,
 // etc.) land as new adapter packages without touching dispatcher.
 func (d *Dispatcher) RegisterAdapter(a Adapter) { d.adapters[a.Kind()] = a }
+
+// SetServerStore wires the multiserver store so the dispatcher can resolve
+// peer URLs for datawatch-proxy routing (BL320).
+func (d *Dispatcher) SetServerStore(s ServerStoreIface) { d.serverStore = s }
 
 // Call resolves the LLM, walks ordered ComputeNodes, and dispatches
 // to the kind adapter. ErrNoBackend when all Nodes refuse / fail.
@@ -152,6 +165,42 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 			lastErr = fmt.Errorf("compute node %q: consumer %q denied", nodeName, req.Consumer)
 			continue
 		}
+		// v8.0 BL319 — docker-network routing: ensure container is running
+		// and rewrite Address to the container's IP before dispatch.
+		if node.Routing == compute.RoutingDockerNetwork {
+			lifecycle := &compute.DockerLifecycle{}
+			ip, port, lcErr := lifecycle.EnsureRunning(ctx, node)
+			if lcErr != nil {
+				lastErr = fmt.Errorf("compute node %q (docker-network): %w", nodeName, &ErrTransient{Err: lcErr})
+				continue
+			}
+			node = node.WithAddress(fmt.Sprintf("http://%s:%d", ip, port))
+		}
+
+		// v8.0 BL320 — datawatch-proxy routing: delegate inference to peer.
+		if node.Routing == compute.RoutingDatawatchProxy {
+			if d.serverStore == nil {
+				return Response{}, fmt.Errorf("datawatch-proxy: server store not wired")
+			}
+			cfg := node.RoutingDatawatchProxy
+			peerURL, peerToken, ok := d.serverStore.GetByName(cfg.Peer)
+			if !ok {
+				return Response{}, fmt.Errorf("datawatch-proxy: peer %q not registered", cfg.Peer)
+			}
+			router := &ProxyRouter{PeerURL: peerURL, PeerToken: peerToken}
+			proxyResp, proxyErr := router.Infer(ctx, cfg.RemoteLLMName, req)
+			if proxyErr != nil {
+				if IsTransient(proxyErr) {
+					lastErr = fmt.Errorf("compute node %q (datawatch-proxy, transient): %w", nodeName, proxyErr)
+					continue
+				}
+				return Response{}, fmt.Errorf("compute node %q (datawatch-proxy): %w", nodeName, proxyErr)
+			}
+			proxyResp.UsedNode = nodeName
+			proxyResp.DurationMs = time.Since(time.Now()).Milliseconds() // best-effort
+			return proxyResp, nil
+		}
+
 		resp, err := d.callOnce(ctx, adapter, node, llm, req)
 		if err == nil {
 			return resp, nil

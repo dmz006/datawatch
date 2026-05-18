@@ -42,6 +42,17 @@ func Probe(ctx context.Context, n *Node, clusters ClusterLookup) error {
 	if n == nil {
 		return fmt.Errorf("probe: nil node")
 	}
+	// v8.0 BL318 — routing-mode probes (run before kind switch).
+	switch n.Routing {
+	case RoutingDockerNetwork:
+		return probeDockerNetwork(ctx, n)
+	case RoutingDatawatchProxy:
+		return probeDatawatchProxy(ctx, n)
+	case RoutingK8sSidecar:
+		return fmt.Errorf("k8s-sidecar routing: not yet supported")
+	case RoutingDirect, "":
+		// Fall through to the kind-based probe below.
+	}
 	switch n.Kind {
 	// alpha.23 supported kinds — both reach the LLM endpoint over HTTP.
 	// Probe is identical: HEAD on n.Address verifies the host is up.
@@ -140,6 +151,41 @@ func probeK8s(ctx context.Context, n *Node, clusters ClusterLookup) error {
 	out, err := exec.CommandContext(ctx, "kubectl", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("k8s probe failed: %v — %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// probeDockerNetwork verifies the Docker daemon is reachable for docker-network
+// routing. Uses `docker info --format {{.ServerVersion}}`.
+func probeDockerNetwork(ctx context.Context, n *Node) error {
+	args := []string{}
+	if n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.DockerEndpoint != "" {
+		args = append(args, "--host", n.RoutingDockerNetwork.DockerEndpoint)
+	}
+	args = append(args, "info", "--format", "{{.ServerVersion}}")
+	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker-network probe: docker daemon unreachable: %v — %s", err, strings.TrimSpace(string(out)))
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return fmt.Errorf("docker-network probe: empty server version response")
+	}
+	return nil
+}
+
+// probeDatawatchProxy validates that the required datawatch-proxy fields are set.
+// Actual peer connectivity is verified at dispatch time when the multiserver store
+// is available. Returns nil when the config is structurally valid.
+func probeDatawatchProxy(ctx context.Context, n *Node) error {
+	_ = ctx
+	if n.RoutingDatawatchProxy == nil {
+		return fmt.Errorf("datawatch-proxy probe: routing_datawatch_proxy config is required")
+	}
+	if strings.TrimSpace(n.RoutingDatawatchProxy.Peer) == "" {
+		return fmt.Errorf("datawatch-proxy probe: peer is required")
+	}
+	if strings.TrimSpace(n.RoutingDatawatchProxy.RemoteLLMName) == "" {
+		return fmt.Errorf("datawatch-proxy probe: remote_llm_name is required")
 	}
 	return nil
 }

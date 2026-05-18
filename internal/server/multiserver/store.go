@@ -237,6 +237,19 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 	return latencyMs, info.Version, nil
 }
 
+// GetByName returns the URL and bearer token for the named server entry.
+// Returns ("", "", false) when the name is not found or the entry is disabled.
+// Implements inference.ServerStoreIface for datawatch-proxy routing (BL320).
+func (s *Store) GetByName(name string) (url, token string, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e := s.getByName(name)
+	if e == nil || !e.Enabled {
+		return "", "", false
+	}
+	return e.URL, e.Token, true
+}
+
 // GetByToken returns a copy of the first entry whose Token matches tok,
 // or (nil, false) if not found. Used by the federation auth middleware to
 // identify which peer is making a request.

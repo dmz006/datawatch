@@ -234,6 +234,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/servers", api.handleBL312Servers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/servers/", api.handleBL312Servers)
+	apiMux.HandleFunc("/api/proxy/llm/", api.handleProxyLLM)             // BL320 — inference proxy endpoint
 	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)       // BL102
 	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister) // issue #1
 	apiMux.HandleFunc("/api/devices", api.handleDevicesList)              // issue #1 (list)

@@ -33,6 +33,79 @@ import (
 	"time"
 )
 
+// RoutingMode determines how the daemon reaches the LLM endpoint for a Node.
+// Direct (default, empty string) means the daemon calls Node.Address directly.
+// Other modes intercept dispatch to manage containers, proxy through peers, etc.
+type RoutingMode string
+
+const (
+	// RoutingDirect — call Node.Address directly (default / zero value).
+	RoutingDirect RoutingMode = "direct"
+	// RoutingDockerNetwork — daemon spins up / reuses a Docker container on a
+	// named bridge network, then calls the container's IP:Port.
+	RoutingDockerNetwork RoutingMode = "docker-network"
+	// RoutingDatawatchProxy — route inference through a registered peer
+	// datawatch instance (fan-out / remote-LLM delegation).
+	RoutingDatawatchProxy RoutingMode = "datawatch-proxy"
+	// RoutingK8sSidecar — future: sidecar injected via k8s mutating webhook.
+	// Parse back-compat only; dispatch returns an error.
+	RoutingK8sSidecar RoutingMode = "k8s-sidecar"
+)
+
+// UIRoutingModes returns the routing modes the PWA should expose in its dropdown.
+// k8s-sidecar is intentionally excluded (not yet supported; parse-only).
+func UIRoutingModes() []RoutingMode {
+	return []RoutingMode{RoutingDirect, RoutingDockerNetwork, RoutingDatawatchProxy}
+}
+
+// ValidRoutingModes is the full set accepted by Validate() (includes k8s-sidecar
+// for parse back-compat even though it can't be dispatched).
+var ValidRoutingModes = []RoutingMode{
+	RoutingDirect, RoutingDockerNetwork, RoutingDatawatchProxy, RoutingK8sSidecar,
+}
+
+// RoutingDockerNetworkConfig holds docker-network routing parameters.
+type RoutingDockerNetworkConfig struct {
+	// DockerEndpoint is the Docker daemon socket/URL (default: system default).
+	DockerEndpoint string `yaml:"docker_endpoint,omitempty" json:"docker_endpoint,omitempty"`
+	// NetworkName is the Docker bridge network to join / create (default: "datawatch-llm").
+	NetworkName string `yaml:"network_name,omitempty" json:"network_name,omitempty"`
+	// Image is the container image to run (required).
+	Image string `yaml:"image" json:"image"`
+	// ContainerName overrides the auto-derived container name (default: "dw-<node-name>").
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name,omitempty"`
+	// Port is the port the container exposes the LLM API on (default: 11434).
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+	// Env is a list of KEY=VALUE environment variables passed to the container.
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+	// AutoStart — if true, start the container if it is not running at dispatch time.
+	AutoStart bool `yaml:"auto_start,omitempty" json:"auto_start,omitempty"`
+	// AutoPull — if true, pull the image before first start if absent locally.
+	AutoPull bool `yaml:"auto_pull,omitempty" json:"auto_pull,omitempty"`
+}
+
+// effective returns a copy of cfg with defaults applied. Does not mutate cfg.
+func (cfg *RoutingDockerNetworkConfig) effective() RoutingDockerNetworkConfig {
+	out := *cfg
+	if out.NetworkName == "" {
+		out.NetworkName = "datawatch-llm"
+	}
+	if out.Port == 0 {
+		out.Port = 11434
+	}
+	return out
+}
+
+// RoutingDatawatchProxyConfig holds datawatch-proxy routing parameters.
+type RoutingDatawatchProxyConfig struct {
+	// Peer is the name of the registered multiserver entry (required).
+	Peer string `yaml:"peer" json:"peer"`
+	// RemoteLLMName is the LLM name to invoke on the peer (required).
+	RemoteLLMName string `yaml:"remote_llm_name" json:"remote_llm_name"`
+	// TimeoutSeconds overrides the default 120s proxy call timeout.
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+}
+
 // NodeKind enumerates the LLM-API protocol the ComputeNode speaks.
 //
 // v7.0.0-alpha.23 (#245 follow-up): Operator-corrected 2026-05-09 —
@@ -185,6 +258,12 @@ type Node struct {
 	// switch (Q6). Populated by the dispatcher on per-Node failure.
 	LastDispatchError string `yaml:"last_dispatch_error,omitempty" json:"last_dispatch_error,omitempty"`
 
+	// v8.0 BL318 — routing mode + per-mode config.
+	// When empty / "direct", dispatch goes to Address directly (legacy behaviour).
+	Routing              RoutingMode                  `yaml:"routing,omitempty" json:"routing,omitempty"`
+	RoutingDockerNetwork *RoutingDockerNetworkConfig  `yaml:"routing_docker_network,omitempty" json:"routing_docker_network,omitempty"`
+	RoutingDatawatchProxy *RoutingDatawatchProxyConfig `yaml:"routing_datawatch_proxy,omitempty" json:"routing_datawatch_proxy,omitempty"`
+
 	// v7.0.0-alpha.23b — explicit binding to a registered observer peer
 	// (datawatch-stats). Empty = "no observer attached" (Node still
 	// works from declared config; just no live probe). Operator-set via
@@ -235,6 +314,15 @@ type K8sConfig struct {
 	ServiceAccount string `yaml:"service_account,omitempty" json:"service_account,omitempty"`
 }
 
+// WithAddress returns a shallow copy of n with Address overridden by addr.
+// Used by the dispatcher to substitute a docker-network container's runtime IP
+// without mutating the original registry entry.
+func (n *Node) WithAddress(addr string) *Node {
+	cp := *n
+	cp.Address = addr
+	return &cp
+}
+
 // Validate returns the first reason this Node is malformed, or nil.
 // Called by registry CRUD before persisting.
 func (n *Node) Validate() error {
@@ -268,6 +356,31 @@ func (n *Node) Validate() error {
 		}
 		if !w.To.IsZero() && w.To.Before(w.From) {
 			return fmt.Errorf("compute node: maintenance_windows[%d].to is before .from", i)
+		}
+	}
+	// v8.0 BL318 — routing mode validation.
+	if n.Routing != "" && n.Routing != RoutingDirect {
+		if !validRoutingMode(n.Routing) {
+			return fmt.Errorf("compute node: unknown routing mode %q (allowed: %v)", n.Routing, ValidRoutingModes)
+		}
+		switch n.Routing {
+		case RoutingDockerNetwork:
+			if n.RoutingDockerNetwork == nil {
+				return errors.New("compute node: routing=docker-network requires routing_docker_network config")
+			}
+			if strings.TrimSpace(n.RoutingDockerNetwork.Image) == "" {
+				return errors.New("compute node: routing_docker_network.image is required")
+			}
+		case RoutingDatawatchProxy:
+			if n.RoutingDatawatchProxy == nil {
+				return errors.New("compute node: routing=datawatch-proxy requires routing_datawatch_proxy config")
+			}
+			if strings.TrimSpace(n.RoutingDatawatchProxy.Peer) == "" {
+				return errors.New("compute node: routing_datawatch_proxy.peer is required")
+			}
+			if strings.TrimSpace(n.RoutingDatawatchProxy.RemoteLLMName) == "" {
+				return errors.New("compute node: routing_datawatch_proxy.remote_llm_name is required")
+			}
 		}
 	}
 	return nil
@@ -334,6 +447,15 @@ func validNodeName(s string) bool {
 func validKind(k NodeKind) bool {
 	for _, x := range AllKinds {
 		if x == k {
+			return true
+		}
+	}
+	return false
+}
+
+func validRoutingMode(m RoutingMode) bool {
+	for _, x := range ValidRoutingModes {
+		if x == m {
 			return true
 		}
 	}
