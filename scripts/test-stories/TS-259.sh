@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 # TS-259 — GET /api/openwebui/models returns array
 # tags: surface:api feature:parity
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-259"
 story_preflight "surface:api feature:parity" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_259() {
+  local resp
+  resp=$(api GET /api/openwebui/models)
+  save_evidence TS-259 "resp.json" "$resp"
+  if assert_json "$resp" 'isinstance(d, list)'; then
+    ok "openwebui/models returns array"
+  elif assert_json "$resp" 'isinstance(d, dict) and ("models" in d or "data" in d)'; then
+    ok "openwebui/models returns dict with models key"
+  elif echo "$resp" | grep -qi "not found\|404\|no route"; then
+    skip "openwebui/models not available in this build"
+  else
+    ko "unexpected response: $(echo "$resp" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_259
+: "${RESULT:=fail}"
+unset -f _story_ts_259

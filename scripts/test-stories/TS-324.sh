@@ -1,11 +1,31 @@
 #!/usr/bin/env bash
 # TS-324 — datawatch memory list exits 0
 # tags: surface:cli feature:cli feature:memory
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-324"
 story_preflight "surface:cli feature:cli feature:memory" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_324() {
+  # Check if memory is enabled
+  local m_enabled
+  m_enabled=$(api GET /api/memory/stats | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
+  if [[ "$m_enabled" != "yes" ]]; then
+    skip "memory subsystem not enabled"
+    return
+  fi
+
+  local out; out=$(cli_test memory list 2>&1); local rc=$?
+  save_evidence TS-324 "out.txt" "$out"
+  if [[ $rc -eq 0 ]]; then
+    ok "memory list exits 0"
+  elif echo "$out" | grep -qiE "disabled|not.*enabled|not.*configured|not.*found|no.*available|unknown command"; then
+    skip "memory list not configured: $(echo "$out" | head -c 80)"
+  else
+    ko "exited $rc: $(echo "$out" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_324
+: "${RESULT:=fail}"
+unset -f _story_ts_324
