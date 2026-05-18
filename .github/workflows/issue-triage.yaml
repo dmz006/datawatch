@@ -1,0 +1,30 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  gate-external:
+    runs-on: ubuntu-latest
+    if: github.event.issue.user.login != 'dmz006'
+    steps:
+      - name: Label for owner review
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-owner-review']
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: 'Thanks for filing this issue. It is pending owner review before it enters the backlog — no action will be taken until @dmz006 approves it.'
+            });
