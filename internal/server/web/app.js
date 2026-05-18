@@ -602,11 +602,14 @@ function handleMessage(msg) {
         // it showing the inactive screen instead of stays at loading
         // session message".
         const capLines = msg.data.lines || [];
-        // Skip frames that contain the completion marker — this is the
-        // transitional frame where the echo fires before the backend updates
-        // session state. Displaying it would briefly flash the shell prompt.
-        if (capLines.some(l => l.includes('DATAWATCH_COMPLETE:'))) break;
-        if (capLines.length > 0) {
+        // Strip completion-marker lines rather than dropping the whole frame.
+        // Prior behavior (break on any match) caused the loading splash to
+        // never dismiss when the fallback log-content frame contained the
+        // marker from a prior run (e.g. resumed session with completed history).
+        const filteredLines = capLines.filter(l => !l.includes('DATAWATCH_COMPLETE:'));
+        if (filteredLines.length === 0) break;
+        const capLines2 = filteredLines;
+        if (capLines2.length > 0) {
           try {
             if (!state.terminal) break; // guard: terminal may have been destroyed
             if (!state._termHasContent || state._pendingPaneCaptureRefresh) {
@@ -619,7 +622,7 @@ function handleMessage(msg) {
               if (splash) splash.remove();
               if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
               state.terminal.reset();
-              state.terminal.write(capLines.join('\r\n'));
+              state.terminal.write(capLines2.join('\r\n'));
               state._termHasContent = true;
               state._pendingPaneCaptureRefresh = false;
             } else {
@@ -664,13 +667,13 @@ function handleMessage(msg) {
               if (state._scrollMode && !inWindow) break;
               // Don't reset the window — let it expire naturally so
               // multiple frames in flight all draw.
-              const frameKey = capLines.join('\n');
+              const frameKey = capLines2.join('\n');
               if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
               state._lastPaneFrame = frameKey;
               // Subsequent frames — clear screen + clear scrollback + home + redraw
               // \x1b[3J clears the scrollback buffer so repeated captures don't
               // accumulate duplicate content and cause scroll/display issues.
-              state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines.join('\r\n'));
+              state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines2.join('\r\n'));
             }
           } catch (e) {
             console.error('[xterm] write failed, recovering:', e);
