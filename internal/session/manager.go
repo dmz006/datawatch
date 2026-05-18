@@ -1198,6 +1198,11 @@ type StartOptions struct {
 	InputMode   string
 	ConsoleCols int
 	ConsoleRows int
+
+	// OneShot — see Session.OneShot. When true, DATAWATCH_COMPLETE: in
+	// pane output terminates the session (StateComplete). Default false
+	// (interactive — DATAWATCH_COMPLETE: → StateWaitingInput).
+	OneShot bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1341,6 +1346,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.ComputeNodeRef != "" {
 		sess.ComputeNodeRef = opt.ComputeNodeRef
+	}
+	if opt != nil && opt.OneShot {
+		sess.OneShot = true
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -4485,6 +4493,18 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			current, ok := m.store.Get(sess.FullID)
 			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 				oldState := current.State
+				if !current.OneShot {
+					// Interactive session: DATAWATCH_COMPLETE is not terminal — treat
+					// it as idle so the operator can keep sending input.
+					m.debugf("processOutputLine: %s OneShot=false — DATAWATCH_COMPLETE → WaitingInput", current.FullID)
+					current.State = StateWaitingInput
+					current.UpdatedAt = time.Now()
+					_ = m.store.Save(current)
+					if m.onStateChange != nil {
+						m.onStateChange(current, oldState)
+					}
+					return
+				}
 				current.State = StateComplete
 				current.UpdatedAt = time.Now()
 				_ = m.store.Save(current)

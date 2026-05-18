@@ -43,7 +43,7 @@ func (a *ManagerAdapter) StartSession(task, projectDir, backend string) (string,
 			backend = kind
 		}
 	}
-	opts := &session.StartOptions{Backend: backend}
+	opts := &session.StartOptions{Backend: backend, OneShot: true}
 	sess, err := a.mgr.Start(context.Background(), task, "", projectDir, opts)
 	if err != nil {
 		return "", err

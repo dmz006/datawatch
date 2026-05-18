@@ -1277,6 +1277,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Backend: profile.Backend,
 				Name:    sess.Name,
 				Env:     profile.Env,
+				OneShot: sess.OneShot, // inherit one-shot mode from the original session
 			}
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
@@ -3410,6 +3411,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// through. Empty values fall through to global config.
 				"permission_mode": req.PermissionMode,
 				"model":           req.Model,
+				"one_shot":        true,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",

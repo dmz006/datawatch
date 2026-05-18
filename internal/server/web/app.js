@@ -22150,23 +22150,21 @@ window.councilAddPersonaFromForm = function() {
 };
 
 // ── BL315 — PWA window expand (CSS layout, not native fullscreen) ────────────
-// Resizes the standalone PWA window to fill available screen. In a regular
-// browser tab window.resizeTo is blocked silently; the icon still toggles.
+// Toggles .pwa-expanded on <html> to override the @media (min-width:600px)
+// card-width constraint (480px) and make the UI fill the full browser window.
+// Works in both standalone PWA and regular browser tabs.
 
 let _pwaExpanded = false;
-let _pwaOrigSize = null;
 
 function toggleFullscreen() {
   _pwaExpanded = !_pwaExpanded;
+  document.documentElement.classList.toggle('pwa-expanded', _pwaExpanded);
   const btn = document.getElementById('headerFullscreenBtn');
   if (_pwaExpanded) {
-    _pwaOrigSize = { w: window.outerWidth, h: window.outerHeight };
-    try { window.resizeTo(screen.availWidth, screen.availHeight); } catch (_) {}
     if (btn) { btn.innerHTML = '&#9645;'; btn.title = 'Restore window size'; btn.style.opacity = '1'; }
   } else {
-    if (_pwaOrigSize) {
-      try { window.resizeTo(_pwaOrigSize.w, _pwaOrigSize.h); } catch (_) {}
-    }
     if (btn) { btn.innerHTML = '&#9974;'; btn.title = 'Expand window'; btn.style.opacity = '0.7'; }
   }
+  // Notify xterm.js about the layout change so it re-fits to the new width.
+  if (state && state.termFitAddon) { try { state.termFitAddon.fit(); } catch(_) {} }
 }

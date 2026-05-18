@@ -4000,6 +4000,43 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
      the tablet card itself caps at 480px, so toasts auto-fit inside. */
 }
 
+/* BL315 — PWA expanded mode: override the 480px card constraint so the UI
+   fills the full browser window width. Toggled by toggleFullscreen() via
+   the .pwa-expanded class on <html>. */
+@media (min-width: 600px) {
+  html.pwa-expanded .app {
+    max-width: 100%;
+    margin: 0;
+  }
+
+  html.pwa-expanded .header {
+    max-width: 100%;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: auto;
+  }
+
+  html.pwa-expanded .nav {
+    max-width: 100%;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: auto;
+  }
+
+  html.pwa-expanded .view {
+    left: 0;
+    right: 0;
+    transform: none;
+    width: auto;
+  }
+
+  html.pwa-expanded .new-session-fab {
+    right: 16px;
+  }
+}
+
 /* Quick-input buttons (shown when session is waiting for input) */
 .quick-input-row {
   display: flex;

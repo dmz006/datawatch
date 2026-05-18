@@ -141,6 +141,14 @@ type Session struct {
 	// session is spawned by an automaton; settable directly via
 	// /api/sessions/start for operator-launched sessions.
 	Skills []string `json:"skills,omitempty"`
+
+	// OneShot — when true, a DATAWATCH_COMPLETE: marker in the pane output
+	// transitions the session to StateComplete (terminal). When false
+	// (default for interactive sessions), the same marker transitions to
+	// StateWaitingInput so the operator can continue sending input. Autonomous
+	// task runs (PRD executors, agent spawns) set this to true so the session
+	// self-terminates after the task is done.
+	OneShot bool `json:"one_shot,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
