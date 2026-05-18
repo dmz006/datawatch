@@ -10,7 +10,7 @@ _story_ts_031() {
   local resp
   resp=$(api POST /api/council/personas '{"name":"test-persona-e2e-'"$$"'","role":"analyst","system_prompt":"You are a test analyst for e2e tests.","model":"claude-sonnet-4-5"}')
   save_evidence TS-031 "create.json" "$resp"
-  PERSONA_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",d.get("persona",{}).get("id","")))' 2>/dev/null || echo "")
+  PERSONA_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",d.get("persona",{}).get("id",d.get("name",""))))' 2>/dev/null || echo "")
   if [[ -n "$PERSONA_ID" ]]; then
     add_cleanup persona "$PERSONA_ID"
     ok "persona created: $PERSONA_ID"

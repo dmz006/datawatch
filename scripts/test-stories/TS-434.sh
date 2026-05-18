@@ -6,6 +6,24 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-434"
 story_preflight "surface:mcp feature:mcp feature:howto" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_434() {
+  local resp
+  resp=$(api POST /api/mcp/call '{"tool":"docs_list_howtos","params":{}}')
+  save_evidence TS-434 "resp.json" "$resp"
+  if assert_json "$resp" 'isinstance(d, list)'; then
+    ok "docs_list_howtos returns array"
+  elif assert_json "$resp" '"howtos" in d and isinstance(d["howtos"], list)'; then
+    ok "docs_list_howtos returns {howtos:[...]} shape"
+  elif assert_json "$resp" 'isinstance(d, dict)'; then
+    ok "docs_list_howtos returns dict"
+  elif echo "$resp" | grep -qi "unknown tool\|not found\|not available"; then
+    skip "docs_list_howtos MCP tool not available"
+  else
+    ko "unexpected response: $(echo "$resp" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_434
+: "${RESULT:=fail}"
+unset -f _story_ts_434

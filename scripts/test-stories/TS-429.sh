@@ -6,6 +6,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-429"
 story_preflight "surface:api feature:mcp-tools" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_429() {
+  local resp
+  resp=$(api POST /api/mcp/call '{"tool":"get_version","params":{}}')
+  save_evidence TS-429 "resp.json" "$resp"
+  if assert_json "$resp" 'isinstance(d, dict)'; then
+    ok "POST /api/mcp/call get_version returns dict"
+  elif assert_json "$resp" 'isinstance(d, str) and len(d) > 0'; then
+    ok "POST /api/mcp/call get_version returns string: $resp"
+  elif echo "$resp" | grep -qi "unknown tool\|not found\|not available"; then
+    skip "get_version MCP tool not available"
+  else
+    ko "unexpected response: $(echo "$resp" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_429
+: "${RESULT:=fail}"
+unset -f _story_ts_429

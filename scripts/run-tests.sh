@@ -125,6 +125,32 @@ cleanup() {
 }
 trap 'FAILED=$?; cleanup' EXIT
 
+# flush_story_cleanup — delete resources registered via add_cleanup() after
+# each serial story runs, so sessions don't accumulate and hit max_sessions.
+flush_story_cleanup() {
+  local log="${CLEANUP_LOG:-$TEST_DIR/cleanup.log}"
+  [[ -f "$log" ]] || return 0
+  local base="http://127.0.0.1:${TEST_PORT:-18080}"
+  local tok="${TEST_TOKEN:-dw-test-token-12345}"
+  local curl_del=(-sk --max-time 10 -X DELETE -H "Authorization: Bearer $tok")
+  while IFS=' ' read -r kind id; do
+    [[ -z "$kind" || -z "$id" ]] && continue
+    case "$kind" in
+      sess|session)    curl "${curl_del[@]}" "$base/api/sessions/$id" >/dev/null 2>&1 ;;
+      automaton)       curl "${curl_del[@]}" "$base/api/autonomous/prds/$id" >/dev/null 2>&1 ;;
+      persona)         curl "${curl_del[@]}" "$base/api/council/personas/$id" >/dev/null 2>&1 ;;
+      compute_node)    curl "${curl_del[@]}" "$base/api/compute/nodes/$id" >/dev/null 2>&1 ;;
+      filter)          curl "${curl_del[@]}" "$base/api/filters/$id" >/dev/null 2>&1 ;;
+      mem)             curl "${curl_del[@]}" "$base/api/memory/entries/$id" >/dev/null 2>&1 ;;
+      sched)           curl "${curl_del[@]}" "$base/api/schedules/$id" >/dev/null 2>&1 ;;
+      secret)          curl "${curl_del[@]}" "$base/api/secrets/$id" >/dev/null 2>&1 ;;
+      server)          curl "${curl_del[@]}" "$base/api/mcp/servers/$id" >/dev/null 2>&1 ;;
+      profile-proj)    curl "${curl_del[@]}" "$base/api/profiles/$id" >/dev/null 2>&1 ;;
+    esac
+  done < "$log"
+  : > "$log"
+}
+
 # --- port allocation --------------------------------------------------------
 # Ask the OS for a free port on 127.0.0.1. Each call returns a different port
 # so parallel runs never collide. Override via env vars if you need fixed ports.
@@ -432,6 +458,7 @@ for story_script in "$STORIES_DIR"/TS-*.sh; do
     mkdir -p "$EVIDENCE_DIR/$story_id"
     # shellcheck source=/dev/null
     source "$story_script"
+    flush_story_cleanup
 
     case "${RESULT:-fail}" in
       pass) ((PASS++)); echo "✓ $story_id" ;;
