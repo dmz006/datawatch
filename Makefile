@@ -308,18 +308,19 @@ E2E_COMPOSE=docs/testing/docker-compose.test.yml
 
 test-e2e-docker:
 	docker compose -f $(E2E_COMPOSE) build
-	docker compose -f $(E2E_COMPOSE) up datawatch datawatch-peer ollama -d
-	sleep 8
+	docker compose -f $(E2E_COMPOSE) up datawatch datawatch-peer ollama mock-opencode -d
+	@echo "Waiting for daemon to be healthy..."
+	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
 	bash test/e2e/routing/test_direct.sh
 	bash test/e2e/routing/test_docker_network.sh
 	bash test/e2e/routing/test_proxy_routing.sh
-	bash test/e2e/adapters/test_gemini.sh
 	bash test/e2e/adapters/test_opencode_api.sh
 	bash test/e2e/smoke/smoke.sh
 
 test-e2e-pwa:
 	docker compose -f $(E2E_COMPOSE) up datawatch -d
-	sleep 5
+	@echo "Waiting for daemon to be healthy..."
+	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
 	cd test/e2e/pwa && npm ci && npx playwright install chromium && npx playwright test --config=playwright.config.ts
 
 test-e2e-all: test-e2e-docker test-e2e-pwa

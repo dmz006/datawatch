@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+# Dev/test image for E2E testing — NOT for production use.
+# Builds the datawatch binary from source and runs as root for test convenience.
+
+ARG GO_VERSION=1.25
+
+FROM golang:${GO_VERSION}-bookworm AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w -X main.Version=8.0.0-e2e" \
+    -o /out/datawatch ./cmd/datawatch
+
+FROM debian:bookworm-slim
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates wget curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/datawatch /usr/local/bin/datawatch
+COPY docker/entrypoint.sh /usr/local/bin/datawatch-entrypoint
+RUN chmod +x /usr/local/bin/datawatch-entrypoint && \
+    mkdir -p /etc/datawatch /data
+
+ENV DATAWATCH_DATA_DIR=/data
+
+EXPOSE 8080 8443 9090
+
+ENTRYPOINT ["/usr/local/bin/datawatch-entrypoint"]
+CMD ["start", "--foreground", "--config", "/etc/datawatch/config.yaml"]
+
+HEALTHCHECK --interval=5s --timeout=5s --start-period=30s --retries=12 \
+    CMD wget -qO- http://localhost:8080/api/health || exit 1

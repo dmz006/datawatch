@@ -1,0 +1,21 @@
+{
+  "id": "mock-opencode-001",
+  "object": "chat.completion",
+  "created": 1716000000,
+  "model": "claude-sonnet-4-6",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "mock opencode response"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 5,
+    "completion_tokens": 4,
+    "total_tokens": 9
+  }
+}
