@@ -3,6 +3,21 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.4.0 — BL317: MCP SSE federated auth/authz + PWA expand fix (2026-05-18)
+
+### Added
+- **BL317 — MCP SSE federated authentication and CBAC** — the MCP SSE transport (separate port) previously accepted only a static admin token and had no federation peer support. Now:
+  - `mcpFedAuthMiddleware`: accepts admin token (full access) or registered federation peer token (CBAC-gated). Replaces static `bearerAuthMiddleware` in `ServeSSE`.
+  - `mcpFedCap()`: per-tool capability guard; returns an MCP error result (not HTTP 403) when a federation peer lacks the required capability. Consistent with `fedCap()` on the REST surface.
+  - Per-tool CBAC gates added to all write/mutating MCP tools: `start_session` (CapSessionsWrite), `send_input` (CapSessionsInput), `kill_session` / `stop_all_sessions` (CapSessionsKill), `rename_session` (CapSessionsWrite), `restart_daemon` (CapConfigWrite), `detection/dns/proxy config_set` (CapConfigWrite), `server_add/update/delete` (CapFederationWrite), all federation peer/group write tools (CapFederationWrite). Read tools get CapFederationList.
+  - `FedPeerStore` interface in the `mcp` package so the MCP server can look up peers without depending on the full server package internals.
+  - `HTTPServer.ServerStore()` getter for daemon wiring.
+  - 13 new tests covering middleware auth, peer context tagging, capability enforcement, and handler-level gates.
+
+### Fixed
+- **PWA fullscreen button** — replaced native browser `document.requestFullscreen()` (which hijacks the entire browser chrome) with `window.resizeTo(screen.availWidth, screen.availHeight)` so clicking the expand icon enlarges the standalone PWA window to fill the available screen without entering native fullscreen mode. In a regular browser tab the resize is silently blocked; the icon still toggles state.
+- **Removed "Install App" button** — `headerInstallBtn`, `installPWA()`, and `beforeinstallprompt` plumbing removed from `index.html` and `app.js`. The install flow is no longer needed.
+
 ## v7.3.0-build2 — BL316 S3: Systematic fedCap sweep across all REST handlers (2026-05-18)
 
 ### Changed
