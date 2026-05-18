@@ -238,6 +238,8 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T11 | TS-144 | PWA: Dashboard panel renders smoke cards | surface:pwa feature:pwa feature:bootstrap conflict:pwa | 📋 planned | — | — |
 | T11 | TS-145 | PWA: LLM edit panel shows session field toggles | surface:pwa feature:pwa feature:config conflict:pwa | 📋 planned | — | — |
 | T11 | TS-146 | PWA: Guardrail library list renders | surface:pwa feature:pwa feature:automata conflict:pwa | 📋 planned | — | — |
+| T11 | TS-147 | PWA: Voice button hidden when whisper not configured (BL314) | surface:pwa feature:pwa feature:voice conflict:pwa | 📋 planned | — | — |
+| T11 | TS-148 | PWA: Dashboard nav hidden when autonomous disabled (BL313) | surface:pwa feature:pwa feature:automata conflict:pwa | 📋 planned | — | — |
 | T12 | TS-150 | Filters CRUD round-trip | surface:api feature:parity | 📋 planned | — | — |
 | T12 | TS-151 | Schedules CRUD round-trip | surface:api feature:parity | 📋 planned | — | — |
 | T12 | TS-152 | GET /api/observer/peers shape | surface:api feature:parity | 📋 planned | — | — |

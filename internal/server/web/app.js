@@ -2713,7 +2713,7 @@ function renderSessionDetail(sessionId) {
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
-    + (isActive ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
+    + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
     : '';
 
   view.innerHTML = `
@@ -18608,7 +18608,6 @@ function renderDashboardView() {
     _dash._costFetching = true;
     apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
   }
-  _dashCheckEnabled();
   _dashInitNodes();
   // Load layout from server; falls back to default and calls _dashBuildGrid
   _dashLoadLayout();

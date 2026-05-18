@@ -40,16 +40,16 @@ single source of truth.
 
 ## Current state — 2026-05-11
 
-Latest release: **v7.0.0-alpha.39** (2026-05-11). All open v7.0 backlog items closed this cut: BL294 (session registry flock), BL295 (Council InferenceFn wired), BL296 (4 new personas + 7-surface CRUD), BL292 (mic auto-attach confirmed), BL293 (card button matrix documented), BL299 (narrow-screen header CSS), BL300 (alert dock auto-open closed — gate on dock.expanded). BL241 (Matrix) remains open pending design interview.
+Latest release: **v7.2.2** (2026-05-18). BL314 (PWA voice button gate — whisper config), GH#62 closed (dashboard nav already gated by BL313). BL315 (fullscreen PWA — 7.2.3), BL316 (#52 federation — 7.3.0), BL317 (#63 multi-server PWA — 7.4.0) queued.
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | BL294 ✅ closed alpha.39 |
+| Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 0 | BL292/293/295/296/299/300 all ✅ closed alpha.39 |
+| Active backlog | 3 | BL315 (7.2.3 fullscreen PWA) · BL316 (7.3.0 federation) · BL317 (7.4.0 multi-server PWA) |
 | Deferred | 0 | — |
-| Awaiting operator action | 0 | BL295 ✅ closed (option a — wired) |
-| Recently closed | BL292–BL296 ✅ alpha.39 · BL299–BL300 ✅ alpha.39 | Full v7.0 backlog sweep |
+| Awaiting operator action | 0 | — |
+| Recently closed | BL314 ✅ v7.2.2 | PWA voice button gate |
 | Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -187,6 +187,12 @@ _(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog tabl
 
 ### Active work (no decision needed — keep iterating)
 
+> **BL315** — Full-screen PWA mode (v7.2.3). Two surfaces: (1) fullscreen toggle button in header that calls `document.documentElement.requestFullscreen()` / exits on re-click or Esc; (2) install prompt via `beforeinstallprompt` event shown once per session when browser supports PWA install. Button persists inside installed PWA. Manifest already has `display: standalone`. Stories: TS-149 (fullscreen toggle), TS-149b (install prompt shown + dismiss). 7-surface parity not applicable (PWA-only feature). Mobile client already handles this natively.
+
+> **BL316** — Cross-host session federation GH#52 (v7.3.0). Auto-federation between named datawatch instances on same network. See T26 stories TS-387–TS-396 in master-cookbook.md. Design: `--peer=<url>` flag on daemon start auto-registers into primary's observer mesh; `federation_sessions` aggregates cross-host; `send_input` routes via `<host>-<id>` session IDs. Ephemeral daemons deregister on exit. Requires design plan — see backlog.
+
+> **BL317** — Multi-server PWA GH#63 (v7.4.0). Server picker in all nav views, fan-out to multiple profiles, all-servers mode sentinel, per-row server attribution. Mirrors Android client v0.121.0+ multi-server implementation. See T26 stories TS-387–TS-396. Depends on BL316.
+
 _Historical refactor notes archived — see Recently Closed and Completed Backlog for v5.27–v6.2 items._
 
 ---
@@ -291,6 +297,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v7.2.2 (2026-05-18):** BL314 — PWA voice button gate. Session detail mic button now hidden when `whisper.enabled` is false (consistent with generic mic factory which already gated on `state._whisperEnabled`). Redundant `_dashCheckEnabled()` call removed from `_dashUpdateStatBar()` (boot-time check already handles both nav buttons). GH#62 closed — dashboard nav was already gated by BL313; GH#61 closed. TS-147/TS-148 added to T11 PWA sprint. Issue triage workflow added (external issues auto-labeled `needs-owner-review`). Makefile docs-index target seeds `{}` placeholder on fresh clone (closes GH#65).
 
 **v7.0.0-alpha.39 (2026-05-11):** Full v7.0 backlog sweep — BL292 (mic auto-attach confirmed comprehensive), BL293 (card button matrix documented per-state), BL294 (session registry flock sidecar — race fix), BL295 (Council InferenceFn wired to LLM dispatcher), BL296 (4 new personas + 7-surface CRUD: REST/MCP/CLI/comm/PWA/YAML), BL299 (narrow-screen 2-row header + card wrapping), BL300 (alert dock auto-open closed — gate on dock.expanded). All open pre-7.0 items closed; BL241 remains open pending design interview.
 
