@@ -9,7 +9,7 @@ _story_ts_626() {
   local payload resp code
   payload='{"name":"r626-k8s","kind":"ollama","address":"http://localhost:11434","routing":"k8s-sidecar"}'
   resp=$(api_code POST /api/compute/nodes "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-626 "create_k8s_sidecar.json" "$resp"
 
   # k8s-sidecar is not yet supported — expect non-2xx

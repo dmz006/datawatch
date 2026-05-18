@@ -6,10 +6,11 @@ CURRENT_STORY="TS-625"
 story_preflight "surface:api feature:routing group:routing-v8 parallel:ok" || return 0
 
 _story_ts_625() {
+  api DELETE /api/compute/nodes/r625-noprobe >/dev/null 2>&1 || true
   local payload resp code
   payload='{"name":"r625-noprobe","kind":"ollama","address":"http://127.0.0.1:19999","routing":"direct"}'
   resp=$(api_code POST /api/compute/nodes?probe=skip "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-625 "create_probe_skip.json" "$resp"
 
   if [[ "$code" == "200" || "$code" == "201" ]]; then

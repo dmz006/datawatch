@@ -7,10 +7,11 @@ story_preflight "surface:api feature:routing group:routing-v8 parallel:ok" || re
 
 _story_ts_621() {
   # POST
+  api DELETE /api/compute/nodes/r621-smoke >/dev/null 2>&1 || true
   local payload resp code
   payload='{"name":"r621-smoke","kind":"ollama","address":"http://localhost:11434","routing":"direct"}'
-  resp=$(api_code POST /api/compute/nodes "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  resp=$(api_code POST "/api/compute/nodes?probe=skip" "$payload")
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-621 "create.json" "$resp"
 
   if [[ "$code" != "200" && "$code" != "201" ]]; then
@@ -33,7 +34,7 @@ _story_ts_621() {
   # PUT — update declared_capacity
   local put_resp put_code
   put_resp=$(api_code PUT /api/compute/nodes/r621-smoke '{"declared_capacity":{"max_concurrent_models":2}}')
-  put_code=$(echo "$put_resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  put_code=$(echo "$put_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-621 "put.json" "$put_resp"
 
   if [[ "$put_code" != "200" && "$put_code" != "204" ]]; then

@@ -7,10 +7,12 @@ story_preflight "surface:api feature:routing group:routing-v8 parallel:ok" || re
 
 _story_ts_618() {
   # Register a peer server (use self as peer for test)
+  api DELETE /api/servers/r618-peer >/dev/null 2>&1 || true
+  api DELETE /api/compute/nodes/r618-proxy-node >/dev/null 2>&1 || true
   local peer_payload peer_resp peer_code
   peer_payload='{"name":"r618-peer","url":"'"$TEST_BASE"'","token":"'"$TEST_TOKEN"'"}'
   peer_resp=$(api_code POST /api/servers "$peer_payload")
-  peer_code=$(echo "$peer_resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  peer_code=$(echo "$peer_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-618 "peer_create.json" "$peer_resp"
 
   if [[ "$peer_code" != "200" && "$peer_code" != "201" ]]; then
@@ -23,7 +25,7 @@ _story_ts_618() {
   local node_payload node_resp node_code
   node_payload='{"name":"r618-proxy-node","kind":"ollama","address":"http://localhost:11434","routing":"datawatch-proxy","routing_datawatch_proxy":{"peer":"r618-peer","remote_llm_name":"test-llm"}}'
   node_resp=$(api_code POST /api/compute/nodes "$node_payload")
-  node_code=$(echo "$node_resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  node_code=$(echo "$node_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-618 "node_create.json" "$node_resp"
 
   if [[ "$node_code" == "200" || "$node_code" == "201" ]]; then

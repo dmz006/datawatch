@@ -13,7 +13,7 @@ _story_ts_611() {
   local payload resp code
   payload='{"name":"r611-dn-noimgae","kind":"ollama","address":"http://localhost:11434","routing":"docker-network","routing_docker_network":{"network":"r611-net","container_name":"r611-ctr","port":11434}}'
   resp=$(api_code POST /api/compute/nodes "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-611 "create_no_image.json" "$resp"
 
   if [[ "$code" == "400" ]]; then

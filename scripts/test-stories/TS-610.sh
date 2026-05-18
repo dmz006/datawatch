@@ -9,7 +9,7 @@ _story_ts_610() {
   local payload resp code
   payload='{"name":"r610-invalid","kind":"ollama","address":"http://localhost:11434","routing":"teleportation"}'
   resp=$(api_code POST /api/compute/nodes "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-610 "create_invalid.json" "$resp"
 
   if [[ "$code" == "400" ]]; then

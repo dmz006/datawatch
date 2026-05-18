@@ -8,8 +8,9 @@ story_preflight "surface:api feature:routing group:routing-v8 parallel:ok" || re
 _story_ts_609() {
   local payload resp code node_id
   payload='{"name":"r609-node","kind":"ollama","address":"http://localhost:11434","routing":"direct"}'
-  resp=$(api_code POST /api/compute/nodes "$payload")
-  code=$(echo "$resp" | grep -o '__HTTP_CODE_[0-9]*__' | tr -d '_' | sed 's/HTTP_CODE_//')
+  api DELETE /api/compute/nodes/r609-node >/dev/null 2>&1 || true
+  resp=$(api_code POST "/api/compute/nodes?probe=skip" "$payload")
+  code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-609 "create.json" "$resp"
 
   if [[ "$code" != "200" && "$code" != "201" ]]; then
