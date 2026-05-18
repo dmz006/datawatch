@@ -1,14 +1,21 @@
 # datawatch Master Test Cookbook
 
-**How to update**: Run `bash scripts/run-tests.sh` from the repo root. The script automatically creates a working directory outside the repo (`../datawatch-<id>/`), runs tests, and deletes the dir on success (kept on failure). After each run it syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
+**How to update**: Run `bash scripts/run-tests.sh` from the repo root. The runner is now self-contained — it creates a working directory outside the repo (`../datawatch-<id>/`), sources every `scripts/test-stories/TS-NNN.sh` in order, writes evidence under `../datawatch-<id>/evidence/`, deletes the dir on success (kept on failure), and prints a results summary. Commit changes by editing this file directly — there is no longer an automatic sync-back step.
 
 **No setup required.** The test runner manages its own working dir.
-- Runner: `scripts/run-tests.sh` (in this repo)
-- Story implementations: `scripts/test-stories/TS-NNN.sh` (in this repo)
+- Runner: `scripts/run-tests.sh` (in this repo, self-contained)
+- Story implementations: `scripts/test-stories/TS-NNN.sh` (in this repo, one file per story)
+- Shared helpers: `scripts/test-stories/lib.sh` (env, `api`, `save_evidence`, `assert_json`, `ok`/`ko`/`skip`, fixtures)
 - Working dir: `../datawatch-<id>/` — auto-created per run, auto-deleted on success
 - Data dir: `../datawatch-<id>/.datawatch-test-<pid>/` — unique per invocation (hash = shell PID)
 - Evidence: `../datawatch-<id>/evidence/TS-NNN/` — kept when a story fails
-- Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced after each run)
+- Canonical docs (this file + `v7.0.0/plan.md` + `v7.0.0/cookbook.md`): `docs/testing/` (commit directly)
+
+**Adding / editing a story**
+1. Edit or create `scripts/test-stories/TS-NNN.sh` (see `lib.sh` for available helpers).
+2. The script must set `RESULT=pass|fail|skip` before returning.
+3. Add or update the row in this cookbook so the catalog stays in sync.
+4. Run `bash scripts/run-tests.sh --story=TS-NNN` to validate locally.
 
 **Parallel run isolation**: Each invocation automatically gets a unique `TEST_RUN_HASH` (from `$$`) so data dirs don't collide. For full port isolation between parallel runs, set `TEST_PORT_OFFSET=<N>` (shifts all daemon ports by N) or override `TEST_BASE`/`TEST_TLS` directly:
 ```bash

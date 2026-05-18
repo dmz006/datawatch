@@ -8,6 +8,20 @@
 
 ---
 
+## Test Infrastructure (post-migration)
+
+| Item | Location |
+|------|----------|
+| Runner | `scripts/run-tests.sh` (self-contained; creates `../datawatch-<id>/` per run) |
+| Story implementations | `scripts/test-stories/TS-NNN.sh` (one file per story; 176 ported + 318 stubs) |
+| Shared helpers | `scripts/test-stories/lib.sh` (env, `api`, `save_evidence`, `assert_json`, `ok`/`ko`/`skip`, fixtures) |
+| Evidence | `../datawatch-<id>/evidence/TS-NNN/` (kept on failure, deleted on success) |
+| Master cookbook | `docs/testing/master-cookbook.md` (canonical list of all 494 stories) |
+
+Stories migrated from the legacy 4325-line monolithic runner now live one-per-file so they can be edited, filtered, and resumed independently. Stories the legacy runner did not implement are present as stubs that `skip` until ported.
+
+---
+
 ## Test Results Summary
 
 | Sprint | Feature | Tests | Pass | Fail | Skip | Status |

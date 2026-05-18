@@ -2,9 +2,12 @@
 
 **Version**: v7.0.0-alpha  
 **Date**: 2026-05-13  
-**Test runner**: `../datawatch-testing/run-tests.sh` (lives outside the repo)  
-**Evidence root**: `../datawatch-testing/runs/YYYY-MM-DD-NNN/` (outside repo, never committed)  
-**Sync-back**: after each run, summary + cookbook are automatically copied to `datawatch/docs/testing/`
+**Test runner**: `scripts/run-tests.sh` (self-contained, in this repo)  
+**Story implementations**: `scripts/test-stories/TS-NNN.sh` (one file per story; sourced in order)  
+**Shared helpers**: `scripts/test-stories/lib.sh` (env vars, `api`, `save_evidence`, `assert_json`, `ok`/`ko`/`skip`, fixtures)  
+**Working dir**: `../datawatch-<id>/` — auto-created per run (`<id>` is a 6-char hex), auto-deleted on success, retained on failure for inspection  
+**Evidence root**: `../datawatch-<id>/evidence/TS-NNN/` (outside repo, never committed)  
+**Resume**: `DATAWATCH_TEST_ID=<id> bash scripts/run-tests.sh --resume-from=TS-NNN` reuses the prior working dir
 
 ---
 
@@ -58,7 +61,8 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 |---|---|---|---|
 | **Plan** (`plan.md`) | `docs/testing/v7.0.0/plan.md` | ✅ Yes (force-added) | Defines every story: steps, expected, evidence filenames. Reference for all future runs. |
 | **Cookbook** (`cookbook.md`) | `docs/testing/v7.0.0/cookbook.md` | ✅ Yes (force-added) | Live status table updated after every story. After a run it is the only persistent record of what passed/failed. |
-| **Evidence** (`evidence/TS-NNN/`) | `docs/testing/v7.0.0/evidence/` | ❌ Gitignored + deleted | JSON responses, screenshots, CLI output. Exists only during a run. On FAIL, preserved for diagnosis. |
+| **Evidence** (`evidence/TS-NNN/`) | `../datawatch-<id>/evidence/` | ❌ Outside repo, auto-deleted | JSON responses, screenshots, CLI output. Exists only during a run. On FAIL, working dir + evidence are retained for diagnosis. |
+| **Story scripts** (`TS-NNN.sh`) | `scripts/test-stories/` | ✅ Yes (force-added) | One bash file per story; sourced by `scripts/run-tests.sh`. `lib.sh` provides shared env + helpers. |
 
 **For future releases**: copy `docs/testing/v7.0.0/` → `docs/testing/v7.1.0/`, reset cookbook to 📋, add stories for new features. The v7.0.0 plan is preserved as a baseline for regression.
 
@@ -67,7 +71,7 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | Decision | Choice |
 |---|---|
 | Isolation | Same host; unique data dir `.datawatch-test-<hash>/` (hash = shell PID) prevents parallel-run conflicts; ports 18080/18443/18081/18433 |
-| Evidence | Structured JSON + screenshots saved to `docs/testing/v7.0.0/evidence/TS-NNN/` (gitignored) |
+| Evidence | Structured JSON + screenshots saved to `../datawatch-<id>/evidence/TS-NNN/` (outside the repo, kept on failure) |
 | Organisation | T1–T10 native features, T11 PWA, T12 Advanced, T13 Docker simulation, T14 Kubernetes |
 | Comms scope | DNS (T9/full), Generic Webhook (T9/full), ntfy (T9/conditional — skip if `TEST_NTFY_TOPIC` unset), Signal (T9/full — production group at `+18435409771`, auto-runs) |
 | Comms future | Slack, Discord, Telegram, Matrix, Twilio, Email, GitHub Webhook — not configured on this machine; T9 future stubs, always skip |
@@ -99,7 +103,10 @@ This plan provides 155+ test stories organised into 15 T-Sprints covering every 
 | `TEST_SURFACE` | *(unset)* | Filter: `api\|cli\|pwa\|mcp\|comms\|docker\|k8s` |
 | `TEST_FEATURE` | *(unset)* | Filter: `sessions\|automata\|memory\|...` |
 | `TEST_SKIP_CONFLICT` | *(unset)* | Skip stories with matching conflict tag |
-| `EVIDENCE_DIR` | `docs/testing/v7.0.0/evidence` | Evidence output root |
+| `EVIDENCE_DIR` | `../datawatch-<id>/evidence` | Evidence output root (set by `scripts/run-tests.sh`) |
+| `DATAWATCH_TEST_DIR` | `../datawatch-<id>` | Working dir created per run; set automatically |
+| `DATAWATCH_TEST_ID` | random 6-char hex | Run identifier; set to a previous value to resume |
+| `DATAWATCH_REPO_DIR` | repo root | Set by the runner so story scripts can find sources |
 
 ---
 
@@ -4054,7 +4061,7 @@ After every run (via `trap EXIT`):
 ## 9. Running Tests
 
 ```bash
-# Full run (all sprints):
+# Full run (all sprints) — auto-creates ../datawatch-<id>/ outside the repo:
 bash scripts/run-tests.sh
 
 # Surface-filtered:
@@ -4066,17 +4073,48 @@ bash scripts/run-tests.sh --surface=cli
 bash scripts/run-tests.sh --feature=sessions
 bash scripts/run-tests.sh --feature=memory
 
-# Skip conflicts:
-bash scripts/run-tests.sh --skip-conflict=signal --skip-conflict=pwa
+# Single story:
+bash scripts/run-tests.sh --story=TS-042
 
-# Specific sprint:
-bash scripts/run-tests.sh --sprint=T1
-bash scripts/run-tests.sh --sprint=T15
+# Resume after a blocker (reuses the prior working dir + evidence):
+DATAWATCH_TEST_ID=<id> bash scripts/run-tests.sh --resume-from=TS-042
 
-# View latest run:
-ls -la internal/server/web/docs/testing/runs/
-cat internal/server/web/docs/testing/master-cookbook.md
+# Keep the working dir even on success (for debugging):
+KEEP_TEST_DIR=1 bash scripts/run-tests.sh
+
+# Story implementations are under scripts/test-stories/:
+ls scripts/test-stories/ | head        # one .sh file per TS-NNN
+cat scripts/test-stories/lib.sh        # shared env + helpers
 ```
+
+### How a story script is structured
+
+Each `scripts/test-stories/TS-NNN.sh` follows the same minimal shape:
+
+```bash
+#!/usr/bin/env bash
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"   # env + helpers
+CURRENT_STORY="TS-042"
+story_preflight "surface:api feature:memory" || return 0
+
+_story_ts_042() {
+  local resp
+  resp=$(api GET /api/memory/list)
+  save_evidence TS-042 "list.json" "$resp"
+  if assert_json "$resp" 'isinstance(d, list)'; then
+    ok "memory list returned an array"
+  else
+    ko "unexpected shape: $resp"
+  fi
+}
+
+RESULT=fail
+_story_ts_042
+: "${RESULT:=fail}"
+```
+
+The runner sources each file in `TS-NNN` order, reads `RESULT` (`pass`/`fail`/`skip`),
+writes evidence under `$DATAWATCH_TEST_DIR/evidence/TS-NNN/`, and tallies results.
 
 ## 10. Future Comm Backends
 

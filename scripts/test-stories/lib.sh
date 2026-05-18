@@ -13,6 +13,12 @@
 [[ -n "${_DW_LIB_LOADED:-}" ]] && return 0
 _DW_LIB_LOADED=1
 
+# The legacy runner used `set -uo pipefail` (no -e) so individual command
+# failures inside a story did not abort the whole run. The new runner uses
+# `set -euo pipefail`; relax it here so story bodies keep matching the old
+# behaviour (they rely on `|| true`, conditionals, etc. for error handling).
+set +e
+
 # ---------------------------------------------------------------------------
 # Repo + paths derived from the new runner
 # ---------------------------------------------------------------------------
