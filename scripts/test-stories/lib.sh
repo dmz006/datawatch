@@ -332,6 +332,7 @@ write_test_config() {
     sed \
       -e "s|data_dir: /data|data_dir: $data_dir|g" \
       -e "s|port: 8080|port: $http_port|g" \
+      -e "s|tls_port: 8443|tls_port: $_tls_port|g" \
       -e "s|sse_port: 9090|sse_port: $mcp_port|g" \
       -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
       "$tmpl" > "$data_dir/config.yaml"

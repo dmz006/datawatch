@@ -7,12 +7,12 @@ story_preflight "surface:cli feature:council" || return 0
 
 _story_ts_538() {
   local out rc
-  out=$(cli_test council run --async --question "1+1=?" 2>&1); rc=$?
+  out=$(cli_test council run --proposal "1+1=?" --mode quick 2>&1); rc=$?
   save_evidence TS-538 "out.txt" "$out"
   if [[ $rc -eq 0 ]]; then
-    ok "datawatch council run --async exits 0"
-  elif echo "$out" | grep -qiE "disabled|not.*configured|not.*available|unknown.*command|no such|--async"; then
-    skip "council run --async not available: $(echo "$out" | head -c 80)"
+    ok "datawatch council run exits 0"
+  elif echo "$out" | grep -qiE "disabled|not.*configured|not.*available|unknown.*command|no such|llm.*not|timeout"; then
+    skip "council run not available (LLM may be slow/unavailable): $(echo "$out" | head -c 80)"
   else
     ko "rc=$rc: $(echo "$out" | head -c 200)"
   fi

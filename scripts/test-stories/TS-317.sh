@@ -10,7 +10,7 @@ _story_ts_317() {
   llm_name="test-llm-ts317-$$"
 
   # Add
-  out=$(cli_test llm add --name "$llm_name" --kind openai --api-key "sk-test" --model "gpt-4o-mini" 2>&1); local rc=$?
+  out=$(cli_test llm add "$llm_name" --kind openai --api-key "sk-test" --model "gpt-4o-mini" 2>&1); local rc=$?
   save_evidence TS-317 "add.txt" "$out"
   if [[ $rc -ne 0 ]]; then
     if echo "$out" | grep -qiE "disabled|not.*enabled|not.*configured|not.*found|no.*available|unknown command|unknown flag"; then
@@ -23,7 +23,7 @@ _story_ts_317() {
   add_cleanup llm "$llm_name"
 
   # Show
-  out=$(cli_test llm show "$llm_name" 2>&1) || out=$(cli_test llm get "$llm_name" 2>&1)
+  out=$(cli_test llm get "$llm_name" 2>&1) || true
   save_evidence TS-317 "show.txt" "$out"
 
   # Delete

@@ -9,7 +9,7 @@ story_preflight "surface:mcp feature:sessions" || return 0
 _story_ts_442() {
   local resp
   resp=$(api POST /api/mcp/call \
-    '{"tool":"start_session","params":{"task":"test-mcp-start-ts442","llm":"shell","project_dir":"/tmp"}}')
+    '{"tool":"start_session","params":{"task":"test-mcp-start-ts442","llm":"ollama","project_dir":"/tmp"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-442 "resp.json" "$resp"
   local sid

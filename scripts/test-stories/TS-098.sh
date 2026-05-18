@@ -9,7 +9,7 @@ story_preflight "surface:api feature:comms" || return 0
 _story_ts_098() {
   ensure_test_session || return
   local resp
-  resp=$(api POST /api/test/message '{"text":"alert test e2e alert message"}')
+  resp=$(api POST /api/test/message '{"text":"alerts"}')
   save_evidence TS-098 "alert.json" "$resp"
   if assert_json "$resp" 'd.get("count", 0) >= 1'; then
     ok "!alert command returned response"

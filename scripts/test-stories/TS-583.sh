@@ -8,7 +8,7 @@ story_preflight "surface:cli feature:federation feature:cli" || return 0
 _story_ts_583() {
   local out rc
   # First add a peer to delete
-  out=$(cli_test federation peer add e2e-cli-peer-ts583 http://127.0.0.1:19999 --token test 2>&1) || rc=$?
+  out=$(cli_test federation peer add --name e2e-cli-peer-ts583 --url http://127.0.0.1:19999 --token test 2>&1) || rc=$?
   rc="${rc:-0}"
   if echo "$out" | grep -qi "unknown command\|disabled\|no route\|help"; then
     skip "federation peer add/delete CLI not available in this build"

@@ -6,7 +6,7 @@ CURRENT_STORY="TS-319"
 story_preflight "surface:cli feature:cli feature:parity" || return 0
 
 _story_ts_319() {
-  local out; out=$(cli_test routing-rules test --backend shell --task "test task" 2>&1); local rc=$?
+  local out; out=$(cli_test routing-rules test "test task" --backend shell 2>&1); local rc=$?
   save_evidence TS-319 "out.txt" "$out"
   if [[ $rc -eq 0 ]]; then
     ok "routing-rules test exits 0"

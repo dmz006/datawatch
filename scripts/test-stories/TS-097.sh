@@ -9,7 +9,7 @@ story_preflight "surface:api feature:comms" || return 0
 _story_ts_097() {
   ensure_test_session || return
   local resp
-  resp=$(api POST /api/test/message '{"text":"status"}')
+  resp=$(api POST /api/test/message "{\"text\":\"status $SESSION_ID\"}")
   save_evidence TS-097 "status.json" "$resp"
   if assert_json "$resp" 'd.get("count", 0) >= 1'; then
     ok "!status command returned response"

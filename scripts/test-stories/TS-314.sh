@@ -10,7 +10,7 @@ _story_ts_314() {
   node_name="cli-node-ts314-$$"
 
   # Add
-  out=$(cli_test compute add --name "$node_name" --kind ollama --address "http://localhost:11434" --no-probe 2>&1); local rc=$?
+  out=$(cli_test compute node add "$node_name" --kind ollama --address "http://localhost:11434" 2>&1); local rc=$?
   save_evidence TS-314 "add.txt" "$out"
   if [[ $rc -ne 0 ]]; then
     if echo "$out" | grep -qiE "disabled|not.*enabled|not.*configured|not.*found|no.*available|unknown command|unknown flag"; then
@@ -23,11 +23,11 @@ _story_ts_314() {
   add_cleanup compute_node "$node_name"
 
   # Show
-  out=$(cli_test compute show "$node_name" 2>&1) || out=$(cli_test compute get "$node_name" 2>&1)
+  out=$(cli_test compute node get "$node_name" 2>&1) || true
   save_evidence TS-314 "show.txt" "$out"
 
   # Delete
-  out=$(cli_test compute delete "$node_name" 2>&1) || true
+  out=$(cli_test compute node delete "$node_name" 2>&1) || true
   save_evidence TS-314 "delete.txt" "$out"
 
   ok "compute add/show/delete CRUD round-trip for $node_name"

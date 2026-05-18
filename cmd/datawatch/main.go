@@ -6947,17 +6947,23 @@ func newSessionCmd() *cobra.Command {
 	}
 
 	// session list
-	sessionCmd.AddCommand(&cobra.Command{
+	sessionListCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			allServers, _ := cmd.Flags().GetBool("all-servers")
+			if allServers {
+				return daemonGet("/api/sessions/aggregated")
+			}
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
 			return runSessionList(cfg)
 		},
-	})
+	}
+	sessionListCmd.Flags().Bool("all-servers", false, "include sessions from all federation peers via /api/sessions/aggregated")
+	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
 	newCmd := &cobra.Command{

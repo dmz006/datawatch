@@ -1,5 +1,9 @@
 # v8.0 E2E test configuration.
 # Loaded by docs/testing/docker-compose.test.yml for the primary datawatch service.
+# Template vars replaced by run-tests.sh / write_test_config:
+#   port: 8080      → TEST_PORT
+#   tls_port: 8443  → TEST_TLS_PORT
+#   sse_port: 9090  → TEST_MCP_PORT
 
 hostname: dw-e2e-test
 data_dir: /data
@@ -11,7 +15,7 @@ session:
   tail_lines: 20
   alert_context_lines: 5
   skip_permissions: false
-  channel_enabled: false
+  channel_enabled: true
   auto_git_init: false
   auto_git_commit: false
   kill_sessions_on_exit: true
@@ -21,7 +25,9 @@ server:
   host: 0.0.0.0
   port: 8080
   token: ""
-  tls_enabled: false
+  tls_enabled: true
+  tls_auto_generate: true
+  tls_port: 8443
 
 mcp:
   enabled: true
@@ -39,11 +45,31 @@ memory:
 
 autonomous:
   enabled: true
+  planning_backend: ollama
+
+council:
+  enabled: true
+  llm_ref: ollama
 
 ollama:
   enabled: true
   model: qwen3:1.7b
   host: http://localhost:11434
+
+openwebui:
+  enabled: true
+  url: http://datawatch:3000
+  api_key: sk-11ef286387204367945339a85728622f
+  model: qwen3:1.7b
+
+shell_backend:
+  enabled: true
+
+whisper:
+  enabled: true
+  model: medium
+  language: en
+  venv_path: /home/dmz/.datawatch/.venv
 
 # Lightweight webhook backend: provides a comm responder so pipeline,
 # channel-responder tests, and routing-rules tests run without Signal/Slack.
