@@ -45,20 +45,27 @@ cleanup() {
 }
 trap 'FAILED=$?; cleanup' EXIT
 
+# --- port allocation --------------------------------------------------------
+# Ask the OS for a free port on 127.0.0.1. Each call returns a different port
+# so parallel runs never collide. Override via env vars if you need fixed ports.
+free_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p)'
+}
+
 # --- exports for story implementations --------------------------------------
 export DATAWATCH_TEST_ID="$RUN_ID"
 export DATAWATCH_TEST_DIR="$TEST_DIR"
 export DATAWATCH_REPO_DIR="$REPO_DIR"
 export DATAWATCH_COOKBOOK="$REPO_DIR/docs/testing/master-cookbook.md"
 
-# Per-invocation daemon isolation: unique data dir + port offset from PID.
 export TEST_RUN_HASH="$$"
 export DATAWATCH_TEST_DATA="$TEST_DIR/.datawatch-test-${TEST_RUN_HASH}"
-export TEST_BASE="${TEST_BASE:-18080}"
-export TEST_TLS="${TEST_TLS:-18443}"
+export TEST_PORT="${TEST_PORT:-$(free_port)}"
+export TEST_TLS_PORT="${TEST_TLS_PORT:-$(free_port)}"
 
 echo "Run ID  : $RUN_ID"
 echo "Work dir: $TEST_DIR"
+echo "Ports   : http=$TEST_PORT tls=$TEST_TLS_PORT"
 echo ""
 
 # --- argument parsing -------------------------------------------------------

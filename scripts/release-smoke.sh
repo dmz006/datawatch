@@ -14,9 +14,9 @@
 # (explicit API cleanup + daemon shutdown + data dir deletion).
 #
 # Usage:
-#   bash scripts/release-smoke.sh               # start + test + teardown
-#   SMOKE_PORT=19080 bash scripts/release-smoke.sh   # override test port
-#   KEEP_TEST_DIR=1 bash scripts/release-smoke.sh    # keep data dir on exit
+#   bash scripts/release-smoke.sh                        # start + test + teardown
+#   SMOKE_PORT=19080 SMOKE_TLS_PORT=19443 bash ...        # override ports (normally auto-assigned)
+#   KEEP_TEST_DIR=1 bash scripts/release-smoke.sh         # keep data dir on exit
 #
 # Returns 0 on success, non-zero on first failure.
 
@@ -46,6 +46,13 @@ if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   done
 fi
 
+# --- port allocation --------------------------------------------------------
+# Ask the OS for a free port. Each call returns a different port so parallel
+# runs never collide. Override via env vars if you need fixed ports.
+free_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p)'
+}
+
 # --- isolated test daemon ----------------------------------------------------
 # Each run gets a unique 6-char hex ID so parallel runs don't collide.
 RUN_ID="$(openssl rand -hex 3)"
@@ -53,8 +60,8 @@ TEST_WORK_DIR="$REPO_PARENT/datawatch-smoke-${RUN_ID}"
 TEST_DATA_DIR="$TEST_WORK_DIR/.datawatch-test-$$"
 mkdir -p "$TEST_DATA_DIR"
 
-SMOKE_PORT="${SMOKE_PORT:-19080}"
-SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-19443}"
+SMOKE_PORT="${SMOKE_PORT:-$(free_port)}"
+SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-$(free_port)}"
 
 # Write a minimal config for the test daemon.
 TEST_CONFIG="$TEST_WORK_DIR/test-config.yaml"

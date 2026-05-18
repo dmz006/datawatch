@@ -67,7 +67,7 @@ After each run the script automatically:
 ```bash
 bash scripts/release-smoke.sh
 
-# Override test ports if 19080/19443 are busy:
+# Ports are auto-assigned by the OS each run; override only if needed:
 SMOKE_PORT=29080 SMOKE_TLS_PORT=29443 bash scripts/release-smoke.sh
 
 # Keep the test data dir after the run (for debugging):
