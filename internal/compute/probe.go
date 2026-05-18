@@ -155,8 +155,8 @@ func probeK8s(ctx context.Context, n *Node, clusters ClusterLookup) error {
 	return nil
 }
 
-// probeDockerNetwork verifies the Docker daemon is reachable for docker-network
-// routing. Uses `docker info --format {{.ServerVersion}}`.
+// probeDockerNetwork verifies the Docker daemon is reachable and, when
+// auto_start is true, ensures the network and container exist.
 func probeDockerNetwork(ctx context.Context, n *Node) error {
 	args := []string{}
 	if n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.DockerEndpoint != "" {
@@ -169,6 +169,15 @@ func probeDockerNetwork(ctx context.Context, n *Node) error {
 	}
 	if strings.TrimSpace(string(out)) == "" {
 		return fmt.Errorf("docker-network probe: empty server version response")
+	}
+	// When auto_start is set, eagerly create the network and start the container
+	// so operators get immediate feedback on node add rather than waiting for
+	// the first inference request.
+	if n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
+		lc := &DockerLifecycle{}
+		if _, _, lerr := lc.EnsureRunning(ctx, n); lerr != nil {
+			return fmt.Errorf("docker-network probe: auto-start failed: %w", lerr)
+		}
 	}
 	return nil
 }

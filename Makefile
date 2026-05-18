@@ -302,26 +302,37 @@ cross-channel:
 	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-darwin-arm64      ./cmd/datawatch-channel/
 	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-windows-amd64.exe ./cmd/datawatch-channel/
 
-# v8.0 — E2E test targets using docker compose + Playwright.
+# v8.0 — E2E test targets.
+# Local:   make test-e2e          (auto-starts isolated daemon, adaptive parallel)
+# Docker:  make test-e2e-docker   (docker compose stack, routing tests)
+# PWA:     make test-e2e-pwa      (Playwright via docker compose)
 # Requires: docker, docker compose v2, bash
 E2E_COMPOSE=docs/testing/docker-compose.test.yml
 
+# Local E2E: run-tests.sh starts its own isolated daemon, cleans up after.
+test-e2e:
+	bash scripts/run-tests.sh --feature=routing
+
+test-e2e-routing:
+	bash scripts/run-tests.sh --feature=routing
+
+test-e2e-serial:
+	bash scripts/run-tests.sh --feature=routing --serial
+
+# Docker compose E2E: brings up the full stack, runs routing tests via run-tests.sh.
 test-e2e-docker:
 	docker compose -f $(E2E_COMPOSE) build
 	docker compose -f $(E2E_COMPOSE) up datawatch datawatch-peer ollama mock-opencode -d
-	@echo "Waiting for daemon to be healthy..."
+	@echo "Waiting for daemon healthy..."
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
-	bash test/e2e/routing/test_direct.sh
-	bash test/e2e/routing/test_docker_network.sh
-	bash test/e2e/routing/test_proxy_routing.sh
-	bash test/e2e/adapters/test_opencode_api.sh
-	bash test/e2e/smoke/smoke.sh
+	TEST_PORT=18080 TEST_MCP_PORT=19090 DW_PEER_URL=http://localhost:28081 DW_PEER_TOKEN=peer-test-token \
+	  bash scripts/run-tests.sh --feature=routing --no-daemon
 
 test-e2e-pwa:
 	docker compose -f $(E2E_COMPOSE) up datawatch -d
-	@echo "Waiting for daemon to be healthy..."
+	@echo "Waiting for daemon healthy..."
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
-	cd test/e2e/pwa && npm ci && npx playwright install chromium && npx playwright test --config=playwright.config.ts
+	docker compose -f $(E2E_COMPOSE) run --rm playwright
 
 test-e2e-all: test-e2e-docker test-e2e-pwa
 

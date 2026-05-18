@@ -5,13 +5,14 @@
 version: "3.9"
 services:
   # Primary datawatch daemon (system under test)
+  # Uses port 18080 to avoid conflicts with a production daemon on 8080.
   datawatch:
     image: local/datawatch:dev
     build: { context: ../../, dockerfile: Dockerfile.dev }
     ports:
-      - "8080:8080"
-      - "8443:8443"
-      - "9090:9090"
+      - "18080:8080"
+      - "18443:8443"
+      - "19090:9090"
     volumes:
       - ../../testdata/datawatch.yaml:/etc/datawatch/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock   # docker-network routing
@@ -27,7 +28,7 @@ services:
   datawatch-peer:
     image: local/datawatch:dev
     ports:
-      - "8081:8080"
+      - "28081:8080"
     environment:
       - DATAWATCH_DATA_DIR=/tmp/dw-peer-data
       - DATAWATCH_TOKEN=peer-test-token
@@ -38,10 +39,11 @@ services:
       retries: 12
 
   # Ollama (direct routing baseline + docker-network container target)
+  # Uses port 21434 to avoid conflicts with a production Ollama on 11434.
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "21434:11434"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/version"]
       interval: 5s
@@ -69,3 +71,5 @@ services:
     command: bash -c "npm install --quiet && npx playwright test --reporter=line"
     environment:
       - DW_BASE_URL=http://datawatch:8080
+      - OLLAMA_URL=http://ollama:11434
+      - DW_PEER_URL=http://datawatch-peer:8080

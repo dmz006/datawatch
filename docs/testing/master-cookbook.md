@@ -657,6 +657,24 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T39 | TS-606 | "sessions all" comm command returns aggregated list with server field | surface:comm feature:multiserver | 📋 planned | — | — |
 | T39 | TS-607 | 5 locale bundles contain server_picker_federation_peer key | surface:locale feature:multiserver | 📋 planned | — | — |
 | T39 | TS-608 | 5 locale bundles contain session_server_badge key | surface:locale feature:multiserver | 📋 planned | — | — |
+| T40 | TS-609 | POST compute node routing:direct succeeds; GET shows routing field | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-610 | POST routing:teleportation (invalid) returns 400 | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-611 | POST routing:docker-network missing image field returns 400 | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-612 | POST routing:docker-network creates Docker network after probe | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-613 | POST routing:docker-network launches container on probe with auto_start | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-614 | Health re-probe on docker-network node does not spawn extra container | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-615 | GET /detail on docker-network node returns container_running field | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-616 | DELETE docker-network node tears down container | surface:api feature:routing group:routing-v8 parallel:ok conflict:docker | 📋 planned | — | — |
+| T40 | TS-617 | POST routing:datawatch-proxy missing peer field returns 400 | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-618 | POST routing:datawatch-proxy node succeeds against registered peer | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-619 | Peer daemon /api/proxy/llm/{name} route is reachable | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-620 | v8.0 smoke: daemon health returns 200 with status:ok | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | ⛔ blocking | — |
+| T40 | TS-621 | v8.0 smoke: compute node REST CRUD includes routing field | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-622 | v8.0 smoke: MCP SSE connects without 401 | surface:mcp feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-623 | v8.0 smoke: PWA root returns HTML with Datawatch title | surface:pwa feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-624 | v8.0 smoke: unknown token on MCP SSE returns 401 | surface:mcp feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-625 | POST compute node with probe=skip query param skips connectivity check | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
+| T40 | TS-626 | POST routing:k8s-sidecar returns 400 (not yet supported) | surface:api feature:routing group:routing-v8 parallel:ok | 📋 planned | — | — |
 
 ---
 
@@ -744,7 +762,7 @@ bash scripts/run-tests.sh
 ## Runner Quick Reference
 
 ```bash
-# Full run (all 22 sprints)
+# Full run (all 40 sprints)
 bash scripts/run-tests.sh
 
 # Single story

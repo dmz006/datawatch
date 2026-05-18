@@ -82,20 +82,26 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		// v7.0.0-alpha.19 #245 Q3 — operator-spec'd save-time probe for
-		// all kinds. Bypass with ?probe=skip for emergency saves (e.g.
-		// when the operator KNOWS the node is currently unreachable but
-		// wants to persist the entry).
-		if r.URL.Query().Get("probe") != "skip" {
-			pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-			defer cancel()
-			if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
-				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
+			// Validate before probing so field errors return 400, not 502.
+			// Validate before probing so field errors return 400, not 502.
+			if verr := n.Validate(); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
-		}
-		if err := s.computeReg.Add(&n); err != nil {
+			// v7.0.0-alpha.19 #245 Q3 — operator-spec’d save-time probe for
+			// all kinds. Bypass with ?probe=skip for emergency saves (e.g.
+			// when the operator KNOWS the node is currently unreachable but
+			// wants to persist the entry).
+			if r.URL.Query().Get("probe") != "skip" {
+				pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+				defer cancel()
+				if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
+					http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
+					return
+				}
+			}
 			code := http.StatusBadRequest
+			if err := s.computeReg.Add(&n); err != nil {
 			if err == compute.ErrConflict {
 				code = http.StatusConflict
 			}
@@ -283,6 +289,14 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapComputeWrite) {
 			return
 		}
+		// Tear down docker-network lifecycle before registry removal so
+		// the container and network are cleaned up while we still have
+		// the node config.
+		if delNode, getErr := s.computeReg.Get(rest); getErr == nil &&
+			delNode.Routing == compute.RoutingDockerNetwork {
+			lc := &compute.DockerLifecycle{}
+			_ = lc.Teardown(r.Context(), delNode)
+		}
 		if err := s.computeReg.Delete(rest); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -349,6 +363,21 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		// never pushes snapshots — it's always live).
 		if s.observerAPI != nil && peerName == s.hostname {
 			s.handleObserverStats(w, r)
+			return
+		}
+		// For docker-network nodes, return container status as the detail
+		// payload so operators and tests can see container_running without
+		// needing a full monitoring sidecar.
+		if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil {
+			lc := &compute.DockerLifecycle{}
+			running, containerID, _ := lc.Status(r.Context(), n)
+			writeJSONOK(w, map[string]any{
+				"container_running":  running,
+				"container_id":       containerID,
+				"image":              n.RoutingDockerNetwork.Image,
+				"network_name":       n.RoutingDockerNetwork.NetworkName,
+				"container_name":     n.RoutingDockerNetwork.ContainerName,
+			})
 			return
 		}
 		http.Error(w, "compute node has no monitoring_endpoint configured and no cached observer snapshot (set monitoring_endpoint or wait for the observer peer to push stats)", http.StatusServiceUnavailable)
