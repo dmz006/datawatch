@@ -82,7 +82,8 @@ start_test_daemon() {
   fi
 
   echo "Starting test daemon ($binary)..."
-  "$binary" start --foreground --config "$test_cfg" >> "$TEST_DIR/daemon.log" 2>&1 &
+  mkdir -p "$TEST_DATA"
+  "$binary" start --foreground --config "$test_cfg" >> "$TEST_DATA/daemon.log" 2>&1 &
   DAEMON_PID=$!
 
   # Poll /api/health up to 30s
@@ -101,7 +102,7 @@ start_test_daemon() {
   if [[ $healthy -eq 0 ]]; then
     echo "Error: daemon did not become healthy within 30s" >&2
     echo "--- last 20 lines of daemon.log ---" >&2
-    tail -20 "$TEST_DIR/daemon.log" >&2 || true
+    tail -20 "$TEST_DATA/daemon.log" >&2 || true
     return 1
   fi
 
@@ -144,12 +145,14 @@ flush_story_cleanup() {
       automaton)       curl "${curl_del[@]}" "$base/api/autonomous/prds/$id" >/dev/null 2>&1 ;;
       persona)         curl "${curl_del[@]}" "$base/api/council/personas/$id" >/dev/null 2>&1 ;;
       compute_node)    curl "${curl_del[@]}" "$base/api/compute/nodes/$id" >/dev/null 2>&1 ;;
+      observer_peer)   curl "${curl_del[@]}" "$base/api/observer/peers/$id" >/dev/null 2>&1 ;;
       filter)          curl "${curl_del[@]}" "$base/api/filters/$id" >/dev/null 2>&1 ;;
       mem)             curl "${curl_del[@]}" "$base/api/memory/entries/$id" >/dev/null 2>&1 ;;
       sched)           curl "${curl_del[@]}" "$base/api/schedules/$id" >/dev/null 2>&1 ;;
       secret)          curl "${curl_del[@]}" "$base/api/secrets/$id" >/dev/null 2>&1 ;;
       server)          curl "${curl_del[@]}" "$base/api/mcp/servers/$id" >/dev/null 2>&1 ;;
       profile-proj)    curl "${curl_del[@]}" "$base/api/profiles/$id" >/dev/null 2>&1 ;;
+      llm)             curl "${curl_del[@]}" "$base/api/llms/$id" >/dev/null 2>&1 ;;
     esac
   done < "$log"
   : > "$log"

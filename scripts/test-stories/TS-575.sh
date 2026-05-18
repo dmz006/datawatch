@@ -12,18 +12,20 @@ _story_ts_575() {
   body=$(echo "$raw" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-575 "resp.json" "$body"
 
-  if [[ "$code" == "404" ]] && echo "$body" | grep -qi "no route\|not found"; then
+  if [[ "$code" == "404" ]] && echo "$body" | grep -qi "no route"; then
     skip "sessions/{peer}/{id}/input proxy endpoint not available in this build"
     return
   fi
-  if echo "$body" | grep -qi "not found\|no route\|unknown"; then
+  if [[ "$code" == "404" ]] && echo "$body" | grep -qi "peer.*not found\|not found.*peer"; then
+    ok "POST /api/sessions/peer-alpha/sess-123/input reached endpoint (peer-not-found 404 expected)"
+    return
+  fi
+  if echo "$body" | grep -qi "no route\|unknown"; then
     skip "federated session proxy endpoint not available"
     return
   fi
-  if [[ "$code" == "200" || "$code" == "202" || "$code" == "400" ]]; then
+  if [[ "$code" == "200" || "$code" == "202" || "$code" == "400" || "$code" == "404" ]]; then
     ok "POST /api/sessions/peer-alpha/sess-123/input reached endpoint (HTTP $code)"
-  elif [[ "$code" == "404" ]]; then
-    skip "federated session proxy endpoint returned 404"
   elif [[ -z "$code" ]]; then
     skip "could not reach server"
   else

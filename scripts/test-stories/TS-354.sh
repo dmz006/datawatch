@@ -11,7 +11,7 @@ _story_ts_354() {
     -H "Authorization: Bearer $TEST_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST \
-    -d '{"message":"how do I configure sqlite memory","stream":false}' \
+    -d '{"question":"how do I configure sqlite memory"}' \
     -w "\n__HTTP_CODE_%{http_code}__" \
     "$TEST_BASE/api/assist")
   code=$(echo "$raw" | grep -o '__HTTP_CODE_[0-9]*__' | grep -o '[0-9]*')

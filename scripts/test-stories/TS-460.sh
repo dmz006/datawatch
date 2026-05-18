@@ -7,6 +7,7 @@ story_preflight "surface:mcp feature:observer feature:compute" || return 0
 
 _story_ts_460() {
   local cname="ts-460-node-$$"
+  local pname="ts-460-peer-$$"
   local resp
   resp=$(api POST "/api/compute/nodes?probe=skip" "{\"name\":\"$cname\",\"kind\":\"ollama\",\"address\":\"http://localhost:11434\"}")
   if ! assert_json "$resp" '"name" in d or "id" in d'; then
@@ -14,15 +15,16 @@ _story_ts_460() {
     return
   fi
   add_cleanup compute_node "$cname"
-  # Get first observer peer ID
-  local peer_id
-  peer_id=$(api GET /api/observer/peers | python3 -c 'import json,sys;d=json.load(sys.stdin);peers=d.get("peers",d) if isinstance(d,dict) else d;print(peers[0]["id"] if isinstance(peers,list) and peers else "")' 2>/dev/null || echo "")
-  if [[ -z "$peer_id" ]]; then
-    skip "no observer peers available to attach"
+  # Register a temporary observer peer for the test
+  local peer_resp
+  peer_resp=$(api POST /api/observer/peers "{\"name\":\"$pname\",\"shape\":\"B\"}")
+  if ! assert_json "$peer_resp" '"name" in d'; then
+    skip "observer peer register not available: $(echo "$peer_resp" | head -c 100)"
     return
   fi
+  add_cleanup observer_peer "$pname"
   local attach_resp
-  attach_resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_attach_observer\",\"params\":{\"name\":\"$cname\",\"peer_id\":\"$peer_id\"}}")
+  attach_resp=$(api POST /api/mcp/call "{\"tool\":\"compute_node_attach_observer\",\"params\":{\"name\":\"$cname\",\"peer\":\"$pname\"}}")
   attach_resp=$(mcp_unwrap "$attach_resp")
   save_evidence TS-460 "attach.json" "$attach_resp"
   if echo "$attach_resp" | grep -qi "unknown tool\|not found\|not enabled"; then

@@ -17,7 +17,7 @@ _story_ts_005() {
     sleep 1; attempts=$((attempts+1))
   done
   save_evidence TS-005 "health.json" "$health"
-  cert_info=$(openssl s_client -connect 127.0.0.1:18443 -showcerts </dev/null 2>&1 | head -30 || echo "openssl unavailable")
+  cert_info=$(openssl s_client -connect "127.0.0.1:${TEST_TLS_PORT:-18443}" -showcerts </dev/null 2>&1 | head -30 || echo "openssl unavailable")
   save_evidence TS-005 "cert_info.txt" "$cert_info"
   if assert_json "$health" 'd.get("status")=="ok"'; then
     ok "TLS auto-cert: HTTPS health on :18443 ok"

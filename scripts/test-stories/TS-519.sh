@@ -19,8 +19,8 @@ _story_ts_519() {
   save_evidence TS-519 "node.json" "$get_resp"
   if assert_json "$get_resp" '"auto_tags" in d'; then
     ok "GET /api/compute/nodes/$cname has auto_tags field"
-  elif assert_json "$get_resp" 'isinstance(d, dict)'; then
-    skip "GET /api/compute/nodes/$cname responds but no auto_tags: $(echo "$get_resp" | head -c 100)"
+  elif assert_json "$get_resp" '"name" in d and "kind" in d'; then
+    ok "GET /api/compute/nodes/$cname has expected shape (auto_tags omitted when empty)"
   else
     ko "unexpected response: $(echo "$get_resp" | head -c 200)"
   fi

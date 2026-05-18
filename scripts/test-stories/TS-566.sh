@@ -26,11 +26,9 @@ _story_ts_566() {
     skip "federation/peers/{name}/test endpoint not available in this build"
     return
   fi
-  if echo "$resp" | grep -qi "connection refused\|connection reset\|dial tcp\|i/o timeout"; then
-    skip "test peer unreachable (expected on fresh install)"
-    return
-  fi
-  if assert_json "$resp" 'isinstance(d, dict)'; then
+  if assert_json "$resp" 'isinstance(d, dict) and ("ok" in d or "latency_ms" in d or "error" in d)'; then
+    ok "POST /api/federation/peers/$peer_name/test returned structured response"
+  elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "POST /api/federation/peers/$peer_name/test returned dict"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"

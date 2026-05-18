@@ -78,5 +78,9 @@ webhook:
   addr: 127.0.0.1:0
   token: ""
 
+observer:
+  peers:
+    allow_register: true
+
 update:
   enabled: false

@@ -8,7 +8,7 @@ story_preflight "surface:mcp feature:council" || return 0
 _story_ts_533() {
   # Create a run first
   local run_resp
-  run_resp=$(api POST /api/council/run '{"question":"1+1=?","personas":[]}')
+  run_resp=$(api POST /api/council/run '{"proposal":"1+1=?","personas":[],"mode":"quick"}')
   local run_id
   run_id=$(echo "$run_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("run_id",d.get("id","")))' 2>/dev/null || echo "")
   if [[ -z "$run_id" ]]; then

@@ -9,8 +9,8 @@ story_preflight "surface:cli surface:api feature:sessions feature:cli" || return
 _story_ts_445() {
   local task="test-cli-session-ts445-$$"
   local out rc sid
-  # Create a session via CLI with --llm shell
-  out=$(cli_test session new --llm shell "$task" 2>&1); rc=$?
+  # Create a session via CLI with --llm claude-code (always auto-registered)
+  out=$(cli_test session new --llm claude-code "$task" 2>&1); rc=$?
   save_evidence TS-445 "cli_out.txt" "$out"
   if [[ $rc -ne 0 ]]; then
     if echo "$out" | grep -qiE "unknown.*flag|unknown command|not found|disabled|not.*available|no such"; then

@@ -220,6 +220,7 @@ func (s *Server) synthesizeSelfPeer() map[string]any {
 		"version":       "local",
 		"registered_at": now,
 		"last_push_at":  now, // local — always live
+		"compute_node":  s.peerToNodeName(hostname),
 		"host_info": map[string]any{
 			"hostname": hostname,
 			"role":     "self",

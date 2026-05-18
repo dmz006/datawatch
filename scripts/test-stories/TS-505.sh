@@ -7,6 +7,7 @@ story_preflight "surface:api feature:observer feature:compute" || return 0
 
 _story_ts_505() {
   local cname="ts-505-node-$$"
+  local pname="ts-505-peer-$$"
   local resp
   resp=$(api POST "/api/compute/nodes?probe=skip" "{\"name\":\"$cname\",\"kind\":\"ollama\",\"address\":\"http://localhost:11434\"}")
   if ! assert_json "$resp" '"name" in d or "id" in d'; then
@@ -14,14 +15,16 @@ _story_ts_505() {
     return
   fi
   add_cleanup compute_node "$cname"
-  local peer_id
-  peer_id=$(api GET /api/observer/peers | python3 -c 'import json,sys;d=json.load(sys.stdin);peers=d.get("peers",d) if isinstance(d,dict) else d;print(peers[0]["id"] if isinstance(peers,list) and peers else "")' 2>/dev/null || echo "")
-  if [[ -z "$peer_id" ]]; then
-    skip "no observer peers available"
+  # Register a temporary observer peer for the test
+  local peer_resp
+  peer_resp=$(api POST /api/observer/peers "{\"name\":\"$pname\",\"shape\":\"B\"}")
+  if ! assert_json "$peer_resp" '"name" in d'; then
+    skip "observer peer register not available: $(echo "$peer_resp" | head -c 100)"
     return
   fi
+  add_cleanup observer_peer "$pname"
   local put_resp
-  put_resp=$(api PUT "/api/compute/nodes/$cname/observer-peer" "{\"peer_id\":\"$peer_id\"}")
+  put_resp=$(api PUT "/api/compute/nodes/$cname/observer-peer" "{\"peer\":\"$pname\"}")
   save_evidence TS-505 "put.json" "$put_resp"
   if echo "$put_resp" | grep -qi "not found\|404\|not.*support"; then
     skip "observer-peer endpoint not available"

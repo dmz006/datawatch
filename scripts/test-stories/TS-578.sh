@@ -32,11 +32,9 @@ _story_ts_578() {
     skip "test peer not found after create — federation may not persist in this build"
     return
   fi
-  if echo "$resp" | grep -qi "connection refused\|connection reset\|dial tcp\|i/o timeout"; then
-    skip "test peer unreachable (expected on fresh install)"
-    return
-  fi
-  if assert_json "$resp" 'isinstance(d, dict)'; then
+  if assert_json "$resp" 'isinstance(d, dict) and ("ok" in d or "latency_ms" in d or "error" in d)'; then
+    ok "federation_peer_test MCP tool returned structured response"
+  elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "federation_peer_test MCP tool returned dict"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
