@@ -13,12 +13,16 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
 func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
 		return
 	}
 	if s.manager == nil {
@@ -59,6 +63,9 @@ func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+			return
+		}
 		// Resolve the effective table (defaults if operator hasn't overridden).
 		out := map[string]session.CostRate{}
 		// Show what the manager would use for known backends.
@@ -70,6 +77,9 @@ func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"rates": out})
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		var req struct {
 			Rates map[string]session.CostRate `json:"rates"`
 		}
@@ -112,6 +122,9 @@ func (s *Server) exposedRate(backend string) (session.CostRate, bool) {
 func (s *Server) handleCostUsage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
 		return
 	}
 	if s.manager == nil {
