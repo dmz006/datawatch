@@ -339,7 +339,7 @@ Manage the list of remote datawatch instances this PWA can connect to. Adding a 
 | `federation-peer` | Health + sessions + alerts + federation list |
 | `full-control` | All capabilities |
 
-Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:write`, `sessions:kill`, `config:write`, `federation:list`. Custom groups (Settings → Comms → Federated Peer Groups) can also be referenced by name.
+Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:write`, `sessions:kill`, `config:write`, `federation:list`. Custom groups can also be referenced by name. See [Federated Access Controls](#federated-access-controls) for the full surface-action reference and how to create custom groups.
 
 **Per-tab picker** — once servers are registered, every main view (Sessions, Alerts, Automata, Observer, Dashboard) shows a chip bar at the top:
 - **All** — aggregated fetch from every server; returns items tagged with their `server` origin.
@@ -353,7 +353,39 @@ Individual caps follow `surface:action` — e.g. `sessions:list`, `sessions:writ
 
 **Relationship to Federated Observer:** multi-server (active query, per-tab switching) and Federated Observer (passive push stats) are complementary. You can register a server here for UI switching AND configure it as a federated peer for process/GPU/network telemetry — they use different auth tokens and different push/pull directions.
 
-**See also:** [`howto/multi-servers.md`](howto/multi-servers.md)
+**See also:** [`howto/multi-servers.md`](howto/multi-servers.md) · [Federated Access Controls](#federated-access-controls)
+
+#### Federated Access Controls
+
+Capability-based access control (CBAC) for federation peers — remote datawatch instances that authenticate to the MCP SSE endpoint (`/api/mcp/sse`) using a bearer token. Every action taken by a peer is gated against the capabilities you grant it.
+
+**Where to configure** — three surfaces, all parity-complete (REST + MCP + CLI + comm + PWA):
+- Settings → Comms → Remote Servers form (Federated peer toggle + Capabilities field)
+- Observer → Federation Peers card (Add Peer form, capability group field)
+- CLI: `datawatch federation peer add/update --capabilities <group-or-cap>`
+
+**Builtin capability groups** (safe defaults for common roles):
+
+| Group | What it grants |
+|---|---|
+| `federation-peer` | Health + sessions/agents list-read-input + alerts + federation:list/read — safe default for new peers |
+| `session-viewer` | sessions:list, sessions:read, agents:list, agents:read |
+| `session-operator` | Full session + agent lifecycle (write, kill, input, pipelines) |
+| `read-only` | All :read/:list across every surface |
+| `config-reader` | config:read, docs:read |
+| `config-admin` | config:read + config:write |
+| `inference-admin` | llms:* + compute:* |
+| `analytics-viewer` | analytics:read, dashboard:read, audit:read |
+| `autonomous-operator` | autonomous:list/read/write/run |
+| `council-operator` | council:list/read/run |
+| `comm-bridge` | sessions:list/read/input + comm:read/write + alerts |
+| `full-control` | All 50 capabilities |
+
+**Individual `surface:action` caps** — 50 across 18 surfaces: `sessions:list/read/write/kill/input`, `agents:list/read/spawn/terminate`, `observers:list/read/write`, `llms:list/read/write`, `compute:list/read/write`, `analytics:read`, `health:read`, `config:read/write`, `secrets:list/read/write`, `pipelines:list/read/start/cancel`, `autonomous:list/read/write/run`, `council:list/read/run`, `federation:list/read/write`, `docs:read`, `audit:read`, `comm:read/write`, `alerts:list/read`, `dashboard:read/write`.
+
+**Custom groups** — create reusable named groups (Settings → Comms → Communication Configuration, or `datawatch federation group add <name> --caps "..."`) and reference them by name in the Capabilities field.
+
+**Enforcement points** — see [`howto/federation-cbac.md`](howto/federation-cbac.md) for the full capability-gate table and verification examples.
 
 #### Communication Configuration
 
