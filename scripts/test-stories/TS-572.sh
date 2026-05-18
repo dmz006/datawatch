@@ -25,8 +25,6 @@ _story_ts_572() {
     skip "could not register test peer: $(echo "$add_resp" | head -c 100)"
     return
   fi
-  add_cleanup server "$peer_name"
-
   # POST /api/mcp/call with read-only peer token — should return 403
   local mcp_resp mcp_code
   mcp_resp=$(curl -sk --max-time 10 -w "\n__HTTP_CODE_%{http_code}__" \

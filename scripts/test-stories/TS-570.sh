@@ -25,8 +25,6 @@ _story_ts_570() {
     skip "could not register test peer: $(echo "$add_resp" | head -c 100)"
     return
   fi
-  add_cleanup server "$peer_name"
-
   # Use the peer token to GET /api/sessions — should return 200 (has sessions:list)
   local sess_resp sess_code
   sess_resp=$(curl -sk --max-time 10 -w "\n__HTTP_CODE_%{http_code}__" \
