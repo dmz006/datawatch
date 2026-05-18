@@ -203,6 +203,7 @@ registry-down:
 # binary can serve docs_search on Day 0 with no embedder dependency.
 docs-index: sync-docs
 	@mkdir -p internal/docsindex/assets
+	@[ -f internal/docsindex/assets/docs-bm25-index.json ] || echo '{}' > internal/docsindex/assets/docs-bm25-index.json
 	go run ./cmd/docs-index-gen -src internal/server/web/docs -out internal/docsindex/assets/docs-bm25-index.json
 
 build: sync-docs docs-index
