@@ -586,6 +586,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// RegisterServerTools adds the 6 server_* tools after s.srv is set.
 	s.RegisterServerTools()
 
+	// BL316 S2 — federation peer and group tools.
+	s.RegisterFederationTools()
+
 	return s
 }
 

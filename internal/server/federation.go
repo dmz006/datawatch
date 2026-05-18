@@ -55,7 +55,29 @@ func (s *Server) handleFederationSessions(w http.ResponseWriter, r *http.Request
 		Errors:  map[string]string{},
 	}
 
-	if !includeProxied || s.cfg == nil || len(s.cfg.Servers) == 0 {
+	// Build combined list: YAML-seeded cfg.Servers + runtime-registered federated peers.
+	type remoteTarget struct {
+		name  string
+		url   string
+		token string
+	}
+	var targets []remoteTarget
+	if s.cfg != nil {
+		for _, srv := range s.cfg.Servers {
+			if srv.Enabled && srv.URL != "" {
+				targets = append(targets, remoteTarget{srv.Name, srv.URL, srv.Token})
+			}
+		}
+	}
+	if s.serverStore != nil {
+		for _, peer := range s.serverStore.ListFederated() {
+			if peer.Enabled && peer.URL != "" {
+				targets = append(targets, remoteTarget{peer.Name, peer.URL, peer.Token})
+			}
+		}
+	}
+
+	if !includeProxied || len(targets) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 		return
@@ -64,22 +86,19 @@ func (s *Server) handleFederationSessions(w http.ResponseWriter, r *http.Request
 	// Parallel fan-out with per-server timeout.
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for i := range s.cfg.Servers {
-		srv := s.cfg.Servers[i]
-		if !srv.Enabled || srv.URL == "" {
-			continue
-		}
+	for _, t := range targets {
+		t := t
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sessions, err := fetchRemoteSessions(srv.URL, srv.Token)
+			sessions, err := fetchRemoteSessions(t.url, t.token)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				out.Errors[srv.Name] = err.Error()
+				out.Errors[t.name] = err.Error()
 				return
 			}
-			out.Proxied[srv.Name] = filterSessions(sessions, since, stateFilter)
+			out.Proxied[t.name] = filterSessions(sessions, since, stateFilter)
 		}()
 	}
 	wg.Wait()

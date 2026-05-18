@@ -77,13 +77,16 @@ func NewStore(dataDir string, seeds []config.RemoteServerConfig) (*Store, error)
 			continue // runtime entry wins
 		}
 		builtins = append(builtins, &Entry{
-			Name:      sc.Name,
-			URL:       sc.URL,
-			Token:     sc.Token,
-			Enabled:   sc.Enabled,
-			Builtin:   true,
-			CreatedAt: time.Time{},
-			UpdatedAt: time.Time{},
+			Name:         sc.Name,
+			URL:          sc.URL,
+			Token:        sc.Token,
+			Enabled:      sc.Enabled,
+			Builtin:      true,
+			Federated:    sc.Federated,
+			AuthType:     sc.AuthType,
+			Capabilities: sc.Capabilities,
+			CreatedAt:    time.Time{},
+			UpdatedAt:    time.Time{},
 		})
 	}
 	// Builtins first so they appear at the top of the list.

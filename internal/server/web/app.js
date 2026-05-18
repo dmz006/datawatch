@@ -19002,6 +19002,31 @@ function renderObserverView() {
       </div>
 
       <div class="settings-section">
+        ${settingsSectionHeader('fedpeers', t('federation_peers_title') || 'Federation Peers', 'howto/federation-cbac.md')}
+        <div id="settings-sec-fedpeers" style="${secContent('fedpeers')}">
+          <div id="fedPeersPanelHeader" style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px 8px;">
+            <span style="font-size:11px;color:var(--text2);">Registered federation peers with capability-based access control (CBAC)</span>
+            <button class="btn-secondary" style="font-size:11px;" onclick="showFedPeerForm()">${t('federation_peer_add_btn') || 'Add Peer'}</button>
+          </div>
+          <div id="fedPeersList" style="padding:0 12px;"></div>
+          <div id="fedPeerFormWrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-top:8px;">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Federation Peer</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+              <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
+              <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
+              <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
+              <div><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capability Group'}</label><input id="fedPeerFormCaps" class="form-input" style="width:100%;font-size:11px;" placeholder="federation-peer" /></div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="hideFedPeerForm()">Cancel</button>
+            </div>
+            <div id="fedPeerFormError" style="font-size:11px;color:#ef4444;margin-top:4px;display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         ${settingsSectionHeader('membrowser', 'Memory Browser')}
         <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
           <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
@@ -19134,9 +19159,111 @@ function renderObserverView() {
   loadAuditPanel();
   loadKgPanel();
   renderObserverPeersCard();
+  loadFederationPeersPanel(); // BL316 S2
   _injectServerPickerBar(view, renderObserverView); // BL312 S6
 }
 window.renderObserverView = renderObserverView;
+
+// BL316 S2 — Federation Peers panel in the Observer view.
+function loadFederationPeersPanel() {
+  const el = document.getElementById('fedPeersList');
+  if (!el) return;
+  el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">Loading…</div>`;
+  apiFetch('/api/federation/peers').then(peers => {
+    if (!Array.isArray(peers) || peers.length === 0) {
+      el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">No federation peers registered.</div>`;
+      return;
+    }
+    el.innerHTML = peers.map(p => {
+      const caps = (p.capabilities || []).join(', ') || 'none';
+      const enabledDot = p.enabled
+        ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:4px;" title="enabled"></span>`
+        : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#6b7280;margin-right:4px;" title="disabled"></span>`;
+      const safeName = escHtml(p.name);
+      const safeURL = escHtml(p.url || '');
+      const safeCaps = escHtml(caps);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;">
+        <span>${enabledDot}<strong>${safeName}</strong></span>
+        <span style="color:var(--text2);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;" title="${safeURL}">${safeURL}</span>
+        <span style="font-size:10px;background:var(--bg3,#2d3148);padding:1px 6px;border-radius:10px;" title="${t('federation_cap_group_label')||'Capability Group'}">${safeCaps}</span>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;" onclick="testFedPeer(${JSON.stringify(p.name)})">${t('federation_peer_test_btn')||'Test'}</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;color:#ef4444;" onclick="deleteFedPeer(${JSON.stringify(p.name)})">${t('federation_peer_delete_btn')||'Delete'}</button>
+      </div>`;
+    }).join('');
+  }).catch(err => {
+    el.innerHTML = `<div style="color:#ef4444;font-size:12px;padding:4px 0;">Error: ${escHtml(String(err))}</div>`;
+  });
+}
+window.loadFederationPeersPanel = loadFederationPeersPanel;
+
+function showFedPeerForm() {
+  const wrap = document.getElementById('fedPeerFormWrap');
+  if (wrap) wrap.style.display = '';
+}
+window.showFedPeerForm = showFedPeerForm;
+
+function hideFedPeerForm() {
+  const wrap = document.getElementById('fedPeerFormWrap');
+  if (wrap) wrap.style.display = 'none';
+  const errEl = document.getElementById('fedPeerFormError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+}
+window.hideFedPeerForm = hideFedPeerForm;
+
+function submitFedPeerForm() {
+  const name = (document.getElementById('fedPeerFormName') || {}).value || '';
+  const url = (document.getElementById('fedPeerFormURL') || {}).value || '';
+  const token = (document.getElementById('fedPeerFormToken') || {}).value || '';
+  const capsRaw = (document.getElementById('fedPeerFormCaps') || {}).value || '';
+  const errEl = document.getElementById('fedPeerFormError');
+
+  if (!name) { if (errEl) { errEl.textContent = 'Name is required'; errEl.style.display = ''; } return; }
+  if (!url) { if (errEl) { errEl.textContent = 'URL is required'; errEl.style.display = ''; } return; }
+
+  const body = { name, url, enabled: true };
+  if (token) body.token = token;
+  if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  fetch('/api/federation/peers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(window._authHeaders || {}) },
+    body: JSON.stringify(body),
+  }).then(resp => {
+    if (resp.status === 403) {
+      if (errEl) { errEl.textContent = t('federation_peer_readonly_hint') || 'Read-only (peer token)'; errEl.style.display = ''; }
+      return;
+    }
+    if (!resp.ok) { resp.text().then(t => { if (errEl) { errEl.textContent = t; errEl.style.display = ''; } }); return; }
+    hideFedPeerForm();
+    loadFederationPeersPanel();
+  }).catch(err => {
+    if (errEl) { errEl.textContent = String(err); errEl.style.display = ''; }
+  });
+}
+window.submitFedPeerForm = submitFedPeerForm;
+
+function testFedPeer(name) {
+  fetch('/api/federation/peers/' + encodeURIComponent(name) + '/test', {
+    method: 'POST',
+    headers: { ...(window._authHeaders || {}) },
+  }).then(r => r.json()).then(d => {
+    const msg = d.ok ? `OK — ${d.latency_ms}ms (${d.version || 'unknown version'})` : `FAIL: ${d.error || 'no error'}`;
+    showToast('federation peer test: ' + name + ' → ' + msg);
+  }).catch(err => showToast('test error: ' + String(err)));
+}
+window.testFedPeer = testFedPeer;
+
+function deleteFedPeer(name) {
+  if (!confirm('Delete federation peer "' + name + '"?')) return;
+  fetch('/api/federation/peers/' + encodeURIComponent(name), {
+    method: 'DELETE',
+    headers: { ...(window._authHeaders || {}) },
+  }).then(resp => {
+    if (resp.status === 403) { showToast(t('federation_peer_readonly_hint') || 'Read-only (peer token)'); return; }
+    loadFederationPeersPanel();
+  }).catch(err => showToast('delete error: ' + String(err)));
+}
+window.deleteFedPeer = deleteFedPeer;
 
 // renderObserverPeersCard paints the per-Monitor card content into a
 // target element by id. Replaces the body of the old standalone view.

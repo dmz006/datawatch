@@ -311,6 +311,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 		newServerCmd(),     // BL312 S1 — multi-server registry
+		newFederationCmd(), // BL316 S2 — federation peer and group registry
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles

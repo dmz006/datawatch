@@ -19,6 +19,13 @@ type RemoteServerConfig struct {
 	Token string `yaml:"token"`
 	// Enabled controls whether this server is active.
 	Enabled bool `yaml:"enabled"`
+	// BL316 S2 — federation peer extensions for YAML-seeded peers.
+	// Federated marks this entry as a federation peer (enables CBAC enforcement).
+	Federated bool `yaml:"federated,omitempty"`
+	// AuthType is the authentication mechanism: "token" (default) or "spiffe" (future).
+	AuthType string `yaml:"auth_type,omitempty"`
+	// Capabilities is the CBAC grant list; mix of group names and surface:action strings.
+	Capabilities []string `yaml:"capabilities,omitempty"`
 }
 
 // MemoryConfig controls the episodic memory system — vector-indexed project

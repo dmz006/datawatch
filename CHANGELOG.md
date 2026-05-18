@@ -3,6 +3,24 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.3.0-build1 — BL316 S2: Fan-out, cross-host input, MCP/CLI/Comm/PWA (2026-05-18)
+
+### Added
+- **Fan-out extended to runtime federated peers** — `GET /api/federation/sessions` now fans out to both YAML-seeded `cfg.Servers` and runtime-registered federation peers (`serverStore.ListFederated()`), eliminating the gap where runtime peers were invisible to the aggregator (TS-574).
+- **Cross-host session input proxy** — `POST /api/sessions/<peer_name>/<session_id>/input` detects the slash-delimited format, looks up the peer in the server registry, and proxies the request to `<peer_url>/api/sessions/<session_id>/input` with the peer's bearer token (TS-575).
+- **12 MCP federation tools** — `federation_peer_list/add/get/update/delete/test` and `federation_group_list/list_builtins/add/get/update/delete`; all proxy to REST following the BL312 `bl312_server_tools.go` pattern (`internal/mcp/bl316_federation_tools.go`) (TS-576–TS-580).
+- **CLI federation subcommands** — `datawatch federation peer list/add/get/update/delete/test` and `datawatch federation group list/builtins/add/get/update/delete` (`cmd/datawatch/cli_federation.go`) (TS-581–TS-585).
+- **Comm channel federation commands** — `federation peers`, `federation peer add/delete/test`, `federation groups` via `router/bl316_federation.go` and new `CmdFederation` command type (TS-586–TS-588).
+- **PWA Federation Peers panel** — new card in Observer tab with peer list (name, URL, enabled dot, capabilities pills), Add modal, Test and Delete buttons; read-only if peer token returns 403 (TS-589–TS-591).
+- **YAML seeding** — `RemoteServerConfig` extended with `federated`, `auth_type`, and `capabilities` fields; propagated to `multiserver.Store` so YAML-declared federation peers get full CBAC enforcement at startup.
+- **Locale × 5** — `federation_peers_title`, `federation_cap_group_label`, `federation_peer_add_btn`, `federation_peer_test_btn`, `federation_peer_delete_btn`, `federation_peer_name_label`, `federation_peer_url_label`, `federation_peer_caps_label`, `federation_peer_readonly_hint`, `federation_group_add_btn` added to en/de/es/fr/ja bundles (TS-592–TS-593).
+- **Howto doc** — `docs/howto/federation-cbac.md`: peer registration, capability reference table, custom groups, YAML seeding, cross-host input, enforcement verification, PWA panel, MCP tools reference (TS-594).
+
+### Rule audit
+- 7-surface parity: REST ✓ MCP ✓ CLI ✓ Comm ✓ PWA ✓ locale ✓ mobile-issue (BL317)
+- Build: clean · pre-existing kubectl skip excluded
+- BL316 S3 queued: systematic `fedCap()` sweep across all remaining REST handlers
+
 ## v7.3.0-build0 — BL316 S1: Federation CBAC + peer registry (2026-05-18)
 
 ### Added

@@ -612,6 +612,51 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T37 | TS-561 | 5 locale bundles are valid JSON and have equal key counts | surface:locale | 📋 planned | ⛔ blocking | — |
 | T37 | TS-562 | docs-index-gen runs without errors (2600+ chunks indexed) | surface:docs | 📋 planned | — | — |
 | T37 | TS-563 | scripts/release-smoke.sh §42 howto-existence guard passes for mcp-sampling.md and mcp-elicitation.md | surface:smoke | 📋 planned | — | — |
+| T38 | TS-564 | GET /api/federation/peers returns [] on fresh install | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-565 | POST /api/federation/peers creates peer with federation-peer default caps | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-566 | POST /api/federation/peers/{name}/test returns {ok,latency_ms,version} | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-567 | GET /api/federation/groups returns {builtins:[13 items],custom:[]} | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-568 | POST /api/federation/groups creates custom group, persists across reload | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-569 | DELETE /api/federation/groups/monitor returns 403 (builtin protected) | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-570 | Peer token with sessions:list cap → GET /api/sessions returns 200 | surface:api feature:federation feature:cbac | 📋 planned | — | — |
+| T38 | TS-571 | Peer token without sessions:write → POST /api/sessions/start returns 403 | surface:api feature:federation feature:cbac | 📋 planned | — | — |
+| T38 | TS-572 | Peer token without comm:write → POST /api/mcp/call returns 403 | surface:api feature:federation feature:cbac | 📋 planned | — | — |
+| T38 | TS-573 | Unknown token → GET /api/sessions returns 401 | surface:api feature:federation feature:cbac | 📋 planned | — | — |
+| T38 | TS-574 | GET /api/federation/sessions fans out to runtime-registered federated peers | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-575 | POST /api/sessions/peer-alpha/sess-123/input proxies to peer /api/sessions/sess-123/input | surface:api feature:federation | 📋 planned | — | — |
+| T38 | TS-576 | federation_peer_list MCP tool returns [] on fresh install | surface:mcp feature:federation | 📋 planned | — | — |
+| T38 | TS-577 | federation_peer_add MCP tool creates peer | surface:mcp feature:federation | 📋 planned | — | — |
+| T38 | TS-578 | federation_peer_test MCP tool returns ok/latency shape | surface:mcp feature:federation | 📋 planned | — | — |
+| T38 | TS-579 | federation_group_list MCP tool returns builtin groups | surface:mcp feature:federation | 📋 planned | — | — |
+| T38 | TS-580 | federation_group_add MCP tool creates custom group | surface:mcp feature:federation | 📋 planned | — | — |
+| T38 | TS-581 | datawatch federation peer list exits 0 | surface:cli feature:federation feature:cli | 📋 planned | — | — |
+| T38 | TS-582 | datawatch federation peer add exits 0 | surface:cli feature:federation feature:cli | 📋 planned | — | — |
+| T38 | TS-583 | datawatch federation peer delete exits 0 | surface:cli feature:federation feature:cli | 📋 planned | — | — |
+| T38 | TS-584 | datawatch federation group list exits 0 | surface:cli feature:federation feature:cli | 📋 planned | — | — |
+| T38 | TS-585 | datawatch federation group add exits 0 | surface:cli feature:federation feature:cli | 📋 planned | — | — |
+| T38 | TS-586 | "federation peers" comm command returns peer list | surface:comm feature:federation | 📋 planned | — | — |
+| T38 | TS-587 | "federation peer add name url" comm command registers peer | surface:comm feature:federation | 📋 planned | — | — |
+| T38 | TS-588 | "federation groups" comm command returns group list | surface:comm feature:federation | 📋 planned | — | — |
+| T38 | TS-589 | Observer tab shows Federation Peers card with registered peers list | surface:pwa feature:federation | 📋 planned | — | — |
+| T38 | TS-590 | Add peer modal in PWA creates peer and refreshes list | surface:pwa feature:federation | 📋 planned | — | — |
+| T38 | TS-591 | Peer token viewer → Federation Peers card is read-only (no add/delete buttons) | surface:pwa feature:federation feature:cbac | 📋 planned | — | — |
+| T38 | TS-592 | 5 locale bundles contain federation_peers_title key | surface:locale feature:federation | 📋 planned | — | — |
+| T38 | TS-593 | 5 locale bundles contain federation_cap_group_label key | surface:locale feature:federation | 📋 planned | — | — |
+| T38 | TS-594 | docs_search "federation peer capabilities" returns federation-cbac.md | surface:mcp feature:federation feature:howto | 📋 planned | — | — |
+| T39 | TS-595 | GET /api/sessions/aggregated includes entries from federation peers | surface:api feature:multiserver | 📋 planned | — | — |
+| T39 | TS-596 | GET /api/autonomous/prds/aggregated includes entries from federation peers | surface:api feature:multiserver | 📋 planned | — | — |
+| T39 | TS-597 | GET /api/alerts/aggregated includes entries from federation peers | surface:api feature:multiserver | 📋 planned | — | — |
+| T39 | TS-598 | Each aggregated item has server field populated | surface:api feature:multiserver | 📋 planned | — | — |
+| T39 | TS-599 | PWA server picker shows federation peers with distinct icon | surface:pwa feature:multiserver | 📋 planned | — | — |
+| T39 | TS-600 | PWA Sessions All mode shows cards from federation peers with server badge | surface:pwa feature:multiserver | 📋 planned | — | — |
+| T39 | TS-601 | PWA input on remote session proxies through /api/sessions/{peer}/{id}/input | surface:pwa feature:multiserver | 📋 planned | — | — |
+| T39 | TS-602 | PWA Automata All mode shows PRDs from federation peers | surface:pwa feature:multiserver | 📋 planned | — | — |
+| T39 | TS-603 | PWA Alerts All mode shows alerts from federation peers | surface:pwa feature:multiserver | 📋 planned | — | — |
+| T39 | TS-604 | list_sessions MCP tool result includes server field on each item | surface:mcp feature:multiserver | 📋 planned | — | — |
+| T39 | TS-605 | datawatch session list --all-servers includes remote sessions | surface:cli feature:multiserver feature:cli | 📋 planned | — | — |
+| T39 | TS-606 | "sessions all" comm command returns aggregated list with server field | surface:comm feature:multiserver | 📋 planned | — | — |
+| T39 | TS-607 | 5 locale bundles contain server_picker_federation_peer key | surface:locale feature:multiserver | 📋 planned | — | — |
+| T39 | TS-608 | 5 locale bundles contain session_server_badge key | surface:locale feature:multiserver | 📋 planned | — | — |
 
 ---
 

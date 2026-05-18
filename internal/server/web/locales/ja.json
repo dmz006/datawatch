@@ -1179,5 +1179,15 @@
   "server_picker_label": "Server:",
   "server_local_label": "Local",
   "server_all_label": "All",
-  "toast_all_servers": "Viewing all servers"
+  "toast_all_servers": "Viewing all servers",
+  "federation_peers_title": "フェデレーションピア",
+  "federation_cap_group_label": "機能グループ",
+  "federation_peer_add_btn": "ピアを追加",
+  "federation_peer_test_btn": "テスト",
+  "federation_peer_delete_btn": "削除",
+  "federation_peer_name_label": "名前",
+  "federation_peer_url_label": "URL",
+  "federation_peer_caps_label": "権限",
+  "federation_peer_readonly_hint": "読み取り専用（ピアトークン）",
+  "federation_group_add_btn": "グループを追加"
 }

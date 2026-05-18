@@ -1179,5 +1179,15 @@
   "server_picker_label": "Server:",
   "server_local_label": "Local",
   "server_all_label": "All",
-  "toast_all_servers": "Viewing all servers"
+  "toast_all_servers": "Viewing all servers",
+  "federation_peers_title": "Pares Federados",
+  "federation_cap_group_label": "Grupo de Capacidades",
+  "federation_peer_add_btn": "Agregar Par",
+  "federation_peer_test_btn": "Probar",
+  "federation_peer_delete_btn": "Eliminar",
+  "federation_peer_name_label": "Nombre",
+  "federation_peer_url_label": "URL",
+  "federation_peer_caps_label": "Capacidades",
+  "federation_peer_readonly_hint": "Solo lectura (token de par)",
+  "federation_group_add_btn": "Agregar Grupo"
 }

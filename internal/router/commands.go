@@ -278,6 +278,14 @@ const (
 	//   "server test <name>"                  → ping
 	CmdServer CommandType = "server"
 
+	// BL316 S2 — federation peer and group management over chat.
+	//   "federation peers"                              → list peers
+	//   "federation peer add <name> <url> [token=<t>]" → add peer
+	//   "federation peer delete <name>"                 → remove peer
+	//   "federation peer test <name>"                   → ping peer
+	//   "federation groups"                             → list groups
+	CmdFederation CommandType = "federation"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -1009,6 +1017,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("server "):])
 		}
 		return Command{Type: CmdServer, Text: rest}
+
+	case lower == "federation" || strings.HasPrefix(lower, "federation "):
+		rest := ""
+		if lower != "federation" {
+			rest = strings.TrimSpace(text[len("federation "):])
+		}
+		return Command{Type: CmdFederation, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

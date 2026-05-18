@@ -1066,6 +1066,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleMCPResCmd(cmd)
 	case CmdServer: // BL312 S1
 		r.handleServerCmd(cmd)
+	case CmdFederation: // BL316 S2
+		r.handleFederationCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
