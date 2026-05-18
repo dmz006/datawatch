@@ -38,6 +38,13 @@ type Entry struct {
 	Label     string    `json:"label,omitempty"`
 	Enabled   bool      `json:"enabled"`
 	Builtin   bool      `json:"builtin,omitempty"` // seeded from YAML — read-only
+	// BL316 — federation peer extensions.
+	// Federated marks entries added via /api/federation/peers (vs plain multi-server entries).
+	// AuthType is wire-ready for SPIFFE/SPIRE: "token" (default) | "spiffe".
+	// Capabilities is the CBAC grant list; mix of group names and surface:action strings.
+	Federated    bool     `json:"federated,omitempty"`
+	AuthType     string   `json:"auth_type,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -93,6 +100,20 @@ func (s *Store) List() []*Entry {
 	for i, e := range s.entries {
 		cp := *e
 		out[i] = &cp
+	}
+	return out
+}
+
+// ListFederated returns only entries that were added as federation peers.
+func (s *Store) ListFederated() []*Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Entry
+	for _, e := range s.entries {
+		if e.Federated {
+			cp := *e
+			out = append(out, &cp)
+		}
 	}
 	return out
 }
@@ -211,6 +232,24 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 	}
 	_ = json.Unmarshal(body, &info)
 	return latencyMs, info.Version, nil
+}
+
+// GetByToken returns a copy of the first entry whose Token matches tok,
+// or (nil, false) if not found. Used by the federation auth middleware to
+// identify which peer is making a request.
+func (s *Store) GetByToken(tok string) (*Entry, bool) {
+	if tok == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, e := range s.entries {
+		if e.Token == tok {
+			cp := *e
+			return &cp, true
+		}
+	}
+	return nil, false
 }
 
 // ---------------------------------------------------------------------------

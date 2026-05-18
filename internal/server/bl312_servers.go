@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
@@ -25,6 +26,11 @@ import (
 // Called from cmd/datawatch/main.go after the store is initialised.
 func (s *Server) SetServerStore(st *multiserver.Store) {
 	s.serverStore = st
+}
+
+// SetFedGroupStore (BL316) wires the custom capability group store.
+func (s *Server) SetFedGroupStore(gs *federation.GroupStore) {
+	s.fedGroupStore = gs
 }
 
 // serverStore is a field on Server — added at the bottom of api.go via

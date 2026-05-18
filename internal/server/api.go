@@ -36,6 +36,7 @@ import (
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -164,7 +165,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "7.2.3"
+var Version = "7.3.0-build0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -375,6 +376,10 @@ type Server struct {
 	// Nil when not wired; handleBL312Servers falls back to the legacy
 	// static-list handler in that case.
 	serverStore *multiserver.Store
+
+	// BL316 — custom federation capability groups store.
+	// Nil when not wired; group endpoints return builtin-only lists.
+	fedGroupStore *federation.GroupStore
 }
 
 // SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).
@@ -686,6 +691,11 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// BL316 — federated peers must have comm:write to invoke MCP tools.
+	// Per-tool capability mapping is tracked in BL316-followup.
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -985,6 +995,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // (wraps the embedded *session.Session) so older clients keep
 // parsing without changes.
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1074,6 +1087,9 @@ func (s *Server) handleSessionTimeline(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapSessionsInput) {
 		return
 	}
 	var req struct {
@@ -1236,6 +1252,23 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 
 // handleWS upgrades a connection to WebSocket and registers it with the hub
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	// BL316 — capture federated peer at upgrade time for per-message cap checks.
+	wsPeer := peerFromContext(r.Context())
+	var wsGranted []string
+	if wsPeer != nil {
+		var custom map[string]*federation.CapabilityGroup
+		if s.fedGroupStore != nil {
+			custom = s.fedGroupStore.AsMap()
+		}
+		wsGranted = federation.Resolve(wsPeer.Capabilities, custom)
+	}
+	wsHasCap := func(required string) bool {
+		if wsPeer == nil {
+			return true
+		}
+		return federation.Check(wsGranted, required)
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -1294,6 +1327,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		switch inMsg.Type {
 		case MsgCommand:
+			if !wsHasCap(federation.CapSessionsInput) {
+				respRaw, _ := json.Marshal(NotificationData{Message: "federation peer lacks capability: " + federation.CapSessionsInput})
+				c.safeSend(mustMarshal(WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}))
+				continue
+			}
 			var d CommandData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			cmd := router.Parse(d.Text)
@@ -1305,6 +1343,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			c.safeSend(respPayload)
 
 		case MsgNewSession:
+			if !wsHasCap(federation.CapSessionsWrite) {
+				respRaw, _ := json.Marshal(NotificationData{Message: "federation peer lacks capability: " + federation.CapSessionsWrite})
+				c.safeSend(mustMarshal(WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}))
+				continue
+			}
 			var d NewSessionData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			opts := &session.StartOptions{
@@ -2641,6 +2684,9 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapSessionsKill) {
+		return
+	}
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -2684,6 +2730,9 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
 	}
 	var req struct {

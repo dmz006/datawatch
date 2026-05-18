@@ -38,18 +38,19 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-11
+## Current state — 2026-05-18
 
-Latest release: **v7.2.3** (2026-05-18). BL315 (fullscreen toggle + PWA install prompt). BL316 (#52 federation — 7.3.0), BL317 (#63 multi-server PWA — 7.4.0) queued.
+Latest release: **v7.3.0-build0** (in progress). BL316 S1 (CBAC + federation peers REST API) shipped to main. BL316 S2+ and BL317 queued.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 2 | BL316 (7.3.0 federation) · BL317 (7.4.0 multi-server PWA) |
+| Active backlog | 2 | BL316 (7.3.0 federation — S2+ remaining) · BL317 (7.4.0 multi-server PWA) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Recently closed | BL314 ✅ v7.2.2 · BL315 ✅ v7.2.3 | Voice gate + fullscreen PWA |
+| In-progress | BL316 S1 ✅ | CBAC package + federation peers REST API |
 | Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -189,7 +190,7 @@ _(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog tabl
 
 > **BL315** — Full-screen PWA mode (v7.2.3). Two surfaces: (1) fullscreen toggle button in header that calls `document.documentElement.requestFullscreen()` / exits on re-click or Esc; (2) install prompt via `beforeinstallprompt` event shown once per session when browser supports PWA install. Button persists inside installed PWA. Manifest already has `display: standalone`. Stories: TS-149 (fullscreen toggle), TS-149b (install prompt shown + dismiss). 7-surface parity not applicable (PWA-only feature). Mobile client already handles this natively.
 
-> **BL316** — Cross-host session federation GH#52 (v7.3.0). Auto-federation between named datawatch instances on same network. See T26 stories TS-387–TS-396 in master-cookbook.md. Design: `--peer=<url>` flag on daemon start auto-registers into primary's observer mesh; `federation_sessions` aggregates cross-host; `send_input` routes via `<host>-<id>` session IDs. Ephemeral daemons deregister on exit. Requires design plan — see backlog.
+> **BL316** — Cross-host session federation + CBAC GH#52 (v7.3.0). **S1 shipped 2026-05-18**: capability-based access control (CBAC) package (`internal/federation/`) — 50 individual cap strings, 13 builtin groups, `Resolve()`/`Check()` functions, `GroupStore` with full CRUD + persistence. REST API: `GET/POST/PUT/DELETE /api/federation/peers{/name}`, `POST /api/federation/peers/{name}/test`, `GET/POST/PUT/DELETE /api/federation/groups{/name}`, `GET /api/federation/groups/builtins`. `fedAuthMiddleware` accepts peer tokens alongside admin token. Capability enforcement wired at: REST (sessions list/write/kill/input, MCP call, start session), WebSocket (command/new-session), and via `fedCap()` helper callable from all handlers. Multiserver Entry extended with `Capabilities []string` + `GetByToken()`. New peer defaults to `federation-peer` group. 12 new integration tests pass. S2 (cross-host send_input routing, comm commands, CLI, PWA panel) — next.
 
 > **BL317** — Multi-server PWA GH#63 (v7.4.0). Server picker in all nav views, fan-out to multiple profiles, all-servers mode sentinel, per-row server attribution. Mirrors Android client v0.121.0+ multi-server implementation. See T26 stories TS-387–TS-396. Depends on BL316.
 

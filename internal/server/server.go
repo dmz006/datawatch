@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -239,7 +240,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)             // issue #1 (delete by id)
 	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe) // issue #2
 	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)             // BL289 — Settings test button
-	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions) // issue #3
+	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)  // issue #3
+	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)        // BL316 S1
+	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)       // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)      // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)     // BL316 S1
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics)              // BL12
 	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout)         // BL303 card layout
 	apiMux.HandleFunc("/api/dashboard/cards", api.handleDashboardCards)           // #57 card CRUD (list + add)
@@ -496,11 +501,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	})
 
 	// Apply auth middleware to API routes
-	mux.Handle("/api/", api.authMiddleware(apiMux))
-	mux.Handle("/ws", api.authMiddleware(http.HandlerFunc(api.handleWS)))
+	mux.Handle("/api/", api.fedAuthMiddleware(apiMux))
+	mux.Handle("/ws", api.fedAuthMiddleware(http.HandlerFunc(api.handleWS)))
 
 	// Remote PWA proxy: /remote/{server}/... serves the full PWA from a remote instance
-	mux.Handle("/remote/", api.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/remote/", api.fedAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Redirect /remote/name to /remote/name/ for correct relative paths
 		trimmed := strings.TrimPrefix(r.URL.Path, "/remote/")
 		if !strings.Contains(trimmed, "/") {
@@ -647,6 +652,13 @@ func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispa
 func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {
 		s.api.SetServerStore(st)
+	}
+}
+
+// SetFedGroupStore (BL316) — wires the custom capability group store.
+func (s *HTTPServer) SetFedGroupStore(gs *federation.GroupStore) {
+	if s.api != nil {
+		s.api.SetFedGroupStore(gs)
 	}
 }
 

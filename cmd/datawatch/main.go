@@ -84,6 +84,7 @@ import (
 	dnschannel "github.com/dmz006/datawatch/internal/messaging/backends/dns"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/router"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
@@ -100,7 +101,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.2.3"
+var Version = "7.3.0-build0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2627,6 +2628,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				httpServer.SetServerStore(multiSrvStore)
 			} else {
 				fmt.Printf("[servers] store init failed: %v\n", merr)
+			}
+
+			// BL316 — federation capability group store.
+			// JSON store at <data-dir>/federation/groups.json.
+			if fedGS, fgsErr := federation.NewGroupStore(expandHome(cfg.DataDir)); fgsErr == nil {
+				httpServer.SetFedGroupStore(fedGS)
+			} else {
+				fmt.Printf("[federation] group store init failed: %v\n", fgsErr)
 			}
 
 			// v7.0.0 S2 — LLM-inference registry + dispatcher.

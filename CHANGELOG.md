@@ -3,6 +3,22 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.3.0-build0 — BL316 S1: Federation CBAC + peer registry (2026-05-18)
+
+### Added
+- **BL316 S1 — Capability-based access control (CBAC) for federation peers** — new `internal/federation/` package with 50 individual capability constants (`surface:action` pattern), 13 built-in groups, `Resolve()` (group expansion, dedup, cycle guard), `Check()`, and `GroupStore` for custom operator-defined groups persisted to `<dataDir>/federation/groups.json`.
+- **Federated peer registry** — `multiserver.Entry` extended with `Capabilities []string` and `AuthType` ("token"|"spiffe" wire-ready). New `GetByToken()` store method. New `ListFederated()` for federation-only view.
+- **`/api/federation/peers` CRUD** — `GET/POST/PUT/DELETE /api/federation/peers`, `GET/DELETE /api/federation/peers/{name}`, `POST /api/federation/peers/{name}/test`. New peers default to `federation-peer` capability group.
+- **`/api/federation/groups` CRUD** — `GET /api/federation/groups` (builtin + custom), `GET /api/federation/groups/builtins`, `POST/PUT/DELETE /api/federation/groups/{name}`. Builtin groups are read-only (403 on mutate).
+- **`fedAuthMiddleware`** — replaces `authMiddleware`; accepts admin token OR a registered federated peer token. Peer requests tagged in request context; `fedCap()` helper enforces capability at handler entry.
+- **Capability enforcement** wired across all entry points: REST (`handleSessions`, `handleStartSession`, `handleKillSession`, `handleCommand`, `handleSessionInput`, `handleMCPCall`), WebSocket (`MsgCommand`, `MsgNewSession`), with `fedCap()` pattern for all future handlers.
+- **13 built-in groups**: `monitor`, `session-viewer`, `session-operator`, `inference-admin`, `config-reader`, `config-admin`, `analytics-viewer`, `autonomous-operator`, `council-operator`, `federation-peer` (safe default), `comm-bridge`, `read-only`, `full-control`.
+
+### Rule audit
+- Enforcement confirmed at: REST ✓ WebSocket ✓ MCP call ✓ — CLI/Comm enforcement tracked in BL316 S2
+- 10 capability unit tests · 12 federation API integration tests — all pass
+- BL316 S2 queued: cross-host send_input routing, CLI, comm commands, PWA federation peers panel
+
 ## v7.2.0 — Multi-server PWA + BL302 prompts + BL313 (2026-05-17)
 
 ### Added

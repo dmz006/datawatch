@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -94,6 +95,9 @@ func (s *Server) handleSessionRollback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionInput(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapSessionsInput) {
 		return
 	}
 	if s.manager == nil {
