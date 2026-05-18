@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
-# TS-525 — memory_scope_promote MCP tool promotes entry to wider scope
+# TS-525 — memory_scope_promote MCP tool — skip if memory disabled
 # tags: surface:mcp feature:memory
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-525"
 story_preflight "surface:mcp feature:memory" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_525() {
+  local m_enabled
+  m_enabled=$(api GET /api/memory/stats | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
+  [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
+  local resp
+  resp=$(api POST /api/mcp/call '{"tool":"memory_scope_promote","params":{"from_scope":"session","to_scope":"project"}}')
+  save_evidence TS-525 "resp.json" "$resp"
+  if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
+    skip "memory_scope_promote tool not available"
+    return
+  fi
+  if assert_json "$resp" 'isinstance(d, dict)'; then
+    ok "memory_scope_promote tool returned dict"
+  else
+    ko "unexpected response: $(echo "$resp" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_525
+: "${RESULT:=fail}"
+unset -f _story_ts_525

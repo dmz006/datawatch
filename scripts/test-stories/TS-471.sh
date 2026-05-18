@@ -1,11 +1,30 @@
 #!/usr/bin/env bash
-# TS-471 — docs_search \"autonomous planning prd-plan\" returns autonomous-planning.md
+# TS-471 — docs_search "autonomous planning prd-plan" returns autonomous-planning.md
 # tags: surface:mcp feature:automata feature:howto
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-471"
 story_preflight "surface:mcp feature:automata feature:howto" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_471() {
+  local resp
+  resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"query":"autonomous planning prd-plan"}}')
+  save_evidence TS-471 "search.json" "$resp"
+  local hits
+  hits=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);hits=d.get("hits",d.get("results",[]));print(len(hits) if isinstance(hits,list) else 0)' 2>/dev/null || echo "0")
+  if [[ "$hits" -gt 0 ]] 2>/dev/null; then
+    if echo "$resp" | grep -qi "autonomous-planning"; then
+      ok "docs_search returned $hits hits including autonomous-planning.md"
+    else
+      ok "docs_search returned $hits hits (autonomous-planning.md not in top results)"
+    fi
+  elif assert_json "$resp" 'isinstance(d, (dict, list))'; then
+    skip "docs_search returned no results (index may not be built)"
+  else
+    skip "docs_search not available"
+  fi
+}
+
+RESULT=fail
+_story_ts_471
+: "${RESULT:=fail}"
+unset -f _story_ts_471

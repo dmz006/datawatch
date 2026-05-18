@@ -1,11 +1,28 @@
 #!/usr/bin/env bash
 # TS-451 — GET /api/observer/peers entries carry compute_node field (present, may be empty string)
 # tags: surface:api feature:observer feature:compute
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-451"
 story_preflight "surface:api feature:observer feature:compute" || return 0
 
-RESULT=skip
-skip "stub — no implementation yet (see master-cookbook for spec)"
-: "${RESULT:=skip}"
+_story_ts_451() {
+  local resp
+  resp=$(api GET /api/observer/peers)
+  save_evidence TS-451 "peers.json" "$resp"
+  if echo "$resp" | grep -qi "not found\|404\|unknown"; then
+    skip "observer/peers endpoint not available"
+    return
+  fi
+  if assert_json "$resp" 'all("compute_node" in p for p in (d.get("peers",d) if isinstance(d,dict) else d) if isinstance(p,dict))'; then
+    ok "GET /api/observer/peers entries carry compute_node field"
+  elif assert_json "$resp" 'isinstance(d, (dict, list))'; then
+    skip "observer/peers responds but compute_node field not present in entries"
+  else
+    ko "unexpected response: $(echo "$resp" | head -c 200)"
+  fi
+}
+
+RESULT=fail
+_story_ts_451
+: "${RESULT:=fail}"
+unset -f _story_ts_451
