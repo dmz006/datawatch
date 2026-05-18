@@ -1,0 +1,10 @@
+{
+  "name": "datawatch-pwa-tests",
+  "version": "1.0.0",
+  "description": "Playwright PWA visual tests for datawatch",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "playwright": "^1.50.0"
+  }
+}

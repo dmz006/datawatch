@@ -243,4 +243,44 @@ story_preflight() {
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# PWA visual test helper (Playwright via Node.js)
+# ---------------------------------------------------------------------------
+# run_pwa_story <story_id>
+#   Runs scripts/test-stories/pwa/<story_id>.mjs with system Chrome via
+#   Playwright. Sets RESULT=pass|fail|skip (skip when Node is unavailable).
+#   Evidence (screenshots, logs) written to $EVIDENCE_DIR/<story_id>/.
+run_pwa_story() {
+  local story_id="${1:-${CURRENT_STORY:-TS-000}}"
+  local pwa_dir
+  pwa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/pwa" && pwd)"
+  local pwa_script="$pwa_dir/${story_id}.mjs"
+
+  # Find node — respect nvm if present
+  local node_bin=""
+  if [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]]; then
+    node_bin="$(. "${NVM_DIR}/nvm.sh" --no-use 2>/dev/null && command -v node 2>/dev/null || true)"
+  fi
+  [[ -z "$node_bin" ]] && node_bin="$(command -v node 2>/dev/null || true)"
+
+  if [[ -z "$node_bin" ]]; then
+    skip "Node.js not available — skip PWA visual test $story_id"
+    return
+  fi
+
+  if [[ ! -f "$pwa_script" ]]; then
+    skip "No PWA script yet for $story_id — stub"
+    return
+  fi
+
+  mkdir -p "${EVIDENCE_DIR:-/tmp}/${story_id}"
+  export TEST_HTTP TEST_TLS TEST_TOKEN EVIDENCE_DIR CURRENT_STORY="$story_id"
+
+  if "$node_bin" "$pwa_script" 2>"${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log"; then
+    ok "PWA visual test passed"
+  else
+    ko "PWA visual test failed (see ${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log)"
+  fi
+}
+
 true
