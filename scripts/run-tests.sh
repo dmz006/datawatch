@@ -341,6 +341,16 @@ fi
 if [[ $NO_DAEMON -eq 0 ]]; then
   if curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
     echo "Using existing daemon at $TEST_BASE"
+    # Discover actual MCP SSE port from the daemon's config so TS-624 and
+    # other MCP stories hit the right port instead of the default TEST_PORT+1.
+    _mcp_port=$(curl -s "http://127.0.0.1:$TEST_PORT/api/config" \
+      -H "Authorization: Bearer ${TEST_TOKEN}" 2>/dev/null \
+      | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("mcp",{}).get("sse_port",""))' \
+      2>/dev/null || true)
+    if [[ -n "$_mcp_port" && "$_mcp_port" =~ ^[0-9]+$ ]]; then
+      export TEST_MCP_PORT="$_mcp_port"
+      echo "  MCP SSE port: $TEST_MCP_PORT (from daemon config)"
+    fi
   else
     start_test_daemon
   fi
