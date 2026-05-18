@@ -50,8 +50,16 @@ func (s *Server) mcpFedAuthMiddleware(next http.Handler) http.Handler {
 			tok = strings.TrimPrefix(auth, "Bearer ")
 		}
 
-		// No auth configured — open access.
-		if s.cfg.Token == "" && s.fedPeerStore == nil {
+		// No admin token configured — open access (federation peers still tagged
+		// in context downstream, but not required for basic connectivity).
+		if s.cfg.Token == "" {
+			if s.fedPeerStore != nil && tok != "" {
+				if peer, ok := s.fedPeerStore.GetByToken(tok); ok && peer.Federated {
+					ctx := context.WithValue(r.Context(), mcpFedPeerKey, peer)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+			}
 			next.ServeHTTP(w, r)
 			return
 		}

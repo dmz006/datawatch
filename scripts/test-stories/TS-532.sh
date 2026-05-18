@@ -7,7 +7,7 @@ story_preflight "surface:mcp feature:council" || return 0
 
 _story_ts_532() {
   local resp
-  resp=$(api POST /api/mcp/call '{"tool":"council_run","params":{"question":"1+1=?","personas":[]}}')
+  resp=$(api POST /api/mcp/call '{"tool":"council_run","params":{"proposal":"1+1=?","personas":[]}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-532 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then

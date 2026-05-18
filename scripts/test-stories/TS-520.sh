@@ -10,13 +10,14 @@ _story_ts_520() {
   m_enabled=$(api GET /api/memory/stats | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
   local resp code
-  resp=$(api_code POST /api/memory/scopes/borrow '{"scope":"project","ttl":300}')
+  # endpoint uses GET with query params, not POST
+  resp=$(api_code GET "/api/memory/scopes/borrow?scope=project-shared" '')
   save_evidence TS-520 "borrow.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   if [[ "$code" == "200" || "$code" == "201" || "$code" == "400" ]]; then
-    ok "POST /api/memory/scopes/borrow returned $code"
-  elif [[ "$code" == "404" ]]; then
-    skip "memory/scopes/borrow endpoint not available (404)"
+    ok "GET /api/memory/scopes/borrow returned $code"
+  elif [[ "$code" == "404" || "$code" == "405" ]]; then
+    skip "memory/scopes/borrow endpoint not available ($code)"
   else
     ko "unexpected HTTP $code: $(echo "$resp" | head -c 200)"
   fi

@@ -707,8 +707,9 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Tool string         `json:"tool"`
-		Args map[string]any `json:"args"`
+		Tool   string         `json:"tool"`
+		Args   map[string]any `json:"args"`
+		Params map[string]any `json:"params"` // alias accepted for backwards compat
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -717,6 +718,9 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 	if req.Tool == "" {
 		http.Error(w, "tool is required", http.StatusBadRequest)
 		return
+	}
+	if req.Args == nil && req.Params != nil {
+		req.Args = req.Params
 	}
 	data, err := s.mcpBridge.MCPCallJSON(r.Context(), req.Tool, req.Args)
 	if err != nil {
@@ -2936,6 +2940,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// path runs unchanged.
 		LLM         string `json:"llm,omitempty"`
 		ComputeNode string `json:"compute_node,omitempty"`
+		// OneShot — when true, DATAWATCH_COMPLETE: in pane output terminates
+		// the session (StateComplete). Default false keeps sessions alive for
+		// interactive use. Autonomous task runners set this to true.
+		OneShot bool `json:"one_shot,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -3189,6 +3197,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Skills:             profileSkills,
 		LLMRef:             resolvedLLMRef,
 		ComputeNodeRef:     resolvedComputeNodeRef,
+		OneShot:            req.OneShot,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

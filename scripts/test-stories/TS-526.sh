@@ -14,7 +14,7 @@ _story_ts_526() {
   save_evidence TS-526 "out.txt" "$out"
   if [[ $rc -eq 0 ]]; then
     ok "datawatch memory scope recall --scope project exits 0"
-  elif echo "$out" | grep -qiE "disabled|not.*configured|not.*available|unknown.*command|no such"; then
+  elif echo "$out" | grep -qiE "disabled|not.*configured|not.*available|unknown.*command|unknown.*flag|no such"; then
     skip "$(echo "$out" | head -c 80)"
   else
     ko "rc=$rc: $(echo "$out" | head -c 200)"

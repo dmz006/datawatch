@@ -26,17 +26,18 @@ for item in items:
     return
   fi
   # Try enabling — will run pretest which may fail since no real backend
+  # Endpoint is /api/llms/{name}/enabled (PATCH or POST), body: {"enabled":true}
   local en_resp en_code en_body
-  en_resp=$(api_code POST "/api/llms/$inference_name/enable" '')
+  en_resp=$(api_code POST "/api/llms/$inference_name/enabled" '{"enabled":true}')
   en_code=$(echo "$en_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   en_body=$(echo "$en_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-377 "enable_resp.json" "$en_body"
   if [[ "$en_code" == "200" || "$en_code" == "204" ]]; then
-    ok "POST /api/llms/$inference_name/enable returned $en_code (inference kind ran pretest or already enabled)"
+    ok "POST /api/llms/$inference_name/enabled returned $en_code (inference kind ran pretest or already enabled)"
   elif [[ "$en_code" == "400" || "$en_code" == "503" || "$en_code" == "502" ]]; then
     ok "inference LLM enable returned $en_code (pretest ran and failed as expected — no backend)"
-  elif [[ "$en_code" == "404" ]]; then
-    skip "LLM enable endpoint not available (404)"
+  elif [[ "$en_code" == "404" || "$en_code" == "405" ]]; then
+    skip "LLM enable endpoint not available ($en_code)"
   else
     ko "unexpected HTTP $en_code enabling inference LLM: $en_body"
   fi

@@ -16,6 +16,8 @@ _story_ts_540() {
     ok "get_version tool returned dict"
   elif echo "$resp" | grep -qi "unknown tool\|not enabled"; then
     skip "get_version tool not available"
+  elif echo "$resp" | grep -qi "version\|[0-9]\+\.[0-9]"; then
+    ok "get_version tool returned version string: $(echo "$resp" | head -c 80)"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
   fi

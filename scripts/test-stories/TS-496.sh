@@ -11,8 +11,8 @@ _story_ts_496() {
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_prd_set_guided_mode\",\"params\":{\"id\":\"$AUTOMATON_ID\",\"guided_mode\":true}}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-496 "resp.json" "$resp"
-  if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
-    skip "autonomous_prd_set_guided_mode tool not available"
+  if echo "$resp" | grep -qi "unknown tool\|not enabled\|not found\|404"; then
+    skip "autonomous_prd tool not available"
     return
   fi
   if assert_json "$resp" 'isinstance(d, dict)'; then

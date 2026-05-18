@@ -13,7 +13,7 @@ _story_ts_534() {
     return
   fi
   local resp
-  resp=$(api POST /api/mcp/call '{"tool":"council_persona_oneshot","params":{"question":"What is 1+1?","persona":{}}}')
+  resp=$(api POST /api/mcp/call '{"tool":"council_persona_oneshot","params":{"name":"e2e-test-persona","role":"tester","focus":"integration testing","stance":"advocate"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-534 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then

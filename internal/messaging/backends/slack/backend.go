@@ -88,13 +88,11 @@ func (b *Backend) SendWithButtons(recipient, message string, buttons []messaging
 
 // SendFile uploads a file to a Slack channel.
 func (b *Backend) SendFile(recipient, filename, content, threadID string) error {
-	params := slack.FileUploadParameters{
-		Filename: filename,
-		Content:  content,
-		Channels: []string{recipient},
-	}
-	if threadID != "" {
-		params.ThreadTimestamp = threadID
+	params := slack.UploadFileParameters{
+		Filename:        filename,
+		Content:         content,
+		Channel:         recipient,
+		ThreadTimestamp: threadID,
 	}
 	_, err := b.client.UploadFile(params)
 	return err

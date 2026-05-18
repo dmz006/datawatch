@@ -7,7 +7,7 @@ story_preflight "surface:api feature:council" || return 0
 
 _story_ts_529() {
   local resp
-  resp=$(api POST /api/council/run '{"question":"1+1=?","personas":[]}')
+  resp=$(api POST /api/council/run '{"proposal":"1+1=?","personas":[]}')
   save_evidence TS-529 "run.json" "$resp"
   if echo "$resp" | grep -qi "not found\|404\|unknown"; then
     skip "council/run endpoint not available"

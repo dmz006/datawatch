@@ -107,7 +107,7 @@ api_code() {
 
 # cli_test — invoke datawatch CLI against the isolated test daemon
 cli_test() {
-  "$TEST_BINARY" --config "$TEST_DATA/config.yaml" "$@"
+  "$TEST_BINARY" --config "$TEST_DATA/config.yaml" --url "http://127.0.0.1:${TEST_PORT:-8080}" "$@"
 }
 
 # Evidence helpers — write to per-story directory under $EVIDENCE_DIR

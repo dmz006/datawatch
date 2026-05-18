@@ -10,7 +10,7 @@ _story_ts_524() {
   m_enabled=$(api GET /api/memory/stats | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
   local resp
-  resp=$(api POST /api/mcp/call '{"tool":"memory_scope_borrow","params":{"scope":"project","ttl":300}}')
+  resp=$(api POST /api/mcp/call '{"tool":"memory_scope_borrow","params":{"scope":"project-shared"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-524 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then
