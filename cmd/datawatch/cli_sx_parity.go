@@ -98,10 +98,30 @@ func daemonClient() *http.Client {
 	return c
 }
 
+// daemonToken returns the Bearer token to use for daemon API calls.
+// Prefers DATAWATCH_TOKEN env var; falls back to server.token from config.
+func daemonToken() string {
+	if tok := os.Getenv("DATAWATCH_TOKEN"); tok != "" {
+		return tok
+	}
+	cfg, err := loadConfigSecure()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	return cfg.Server.Token
+}
+
 // daemonGet calls GET <daemonURL><path> and prints the response body.
 // Returns an error if the daemon isn't reachable or returns non-2xx.
 func daemonGet(path string) error {
-	resp, err := daemonClient().Get(daemonURL() + path)
+	req, err := http.NewRequest(http.MethodGet, daemonURL()+path, nil)
+	if err != nil {
+		return err
+	}
+	if tok := daemonToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := daemonClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("daemon not reachable (%s): %w", daemonURL(), err)
 	}
@@ -127,6 +147,9 @@ func daemonJSON(method, path string, body any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if tok := daemonToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("daemon not reachable: %w", err)
