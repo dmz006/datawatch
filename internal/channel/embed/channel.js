@@ -65,16 +65,87 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ['text'],
             },
         },
+        {
+            name: 'memory_remember',
+            description: 'Save a fact or decision to datawatch memory',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    content: { type: 'string', description: 'The content to remember' },
+                    tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
+                },
+                required: ['content'],
+            },
+        },
+        {
+            name: 'memory_recall',
+            description: 'Search datawatch memory for relevant facts',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Search query' },
+                    n: { type: 'integer', description: 'Max results', default: 5 },
+                },
+                required: ['query'],
+            },
+        },
+        {
+            name: 'memory_list',
+            description: 'List recent datawatch memory entries',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    n: { type: 'integer', description: 'Max entries to return', default: 10 },
+                },
+            },
+        },
+        {
+            name: 'memory_forget',
+            description: 'Delete a datawatch memory entry by ID',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', description: 'Memory entry ID to delete' },
+                },
+                required: ['id'],
+            },
+        },
+        {
+            name: 'memory_stats',
+            description: 'Get datawatch memory statistics',
+            inputSchema: { type: 'object', properties: {} },
+        },
     ],
 }));
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-    if (req.params.name === 'reply') {
-        const { text, session_id } = req.params.arguments;
+    const { name, arguments: args } = req.params;
+    if (name === 'reply') {
+        const { text, session_id } = args;
         await postToDatawatch('/api/channel/reply', {
             text,
             session_id: session_id ?? SESSION_ID,
         });
         return { content: [{ type: 'text', text: 'Reply sent.' }] };
+    }
+    if (name === 'memory_remember') {
+        const result = await callParent('/api/memory/save', { content: args.content, tags: args.tags ?? [] });
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (name === 'memory_recall') {
+        const result = await callParent('/api/memory/search?q=' + encodeURIComponent(args.query ?? '') + '&n=' + (args.n ?? 5));
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (name === 'memory_list') {
+        const result = await callParent('/api/memory/list?n=' + (args.n ?? 10));
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (name === 'memory_forget') {
+        const result = await callParent('/api/memory/delete', { id: args.id });
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (name === 'memory_stats') {
+        const result = await callParent('/api/memory/stats');
+        return { content: [{ type: 'text', text: result }] };
     }
     return { content: [{ type: 'text', text: 'Unknown tool.' }] };
 });
@@ -149,6 +220,33 @@ catch (_) {
     // Best-effort; datawatch may not be running or may not support this endpoint yet.
 }
 // --- Helpers ----------------------------------------------------------------
+// callParent — like postToDatawatch but returns the response body as a string.
+// Used by memory_* tools so the model can read the result.
+async function callParent(path, body) {
+    return new Promise((resolve, reject) => {
+        const isGet = body === undefined;
+        const data = isGet ? null : JSON.stringify(body);
+        const url = new URL(DW_API_URL + path);
+        const opts = {
+            hostname: url.hostname,
+            port: url.port || '80',
+            path: url.pathname + url.search,
+            method: isGet ? 'GET' : 'POST',
+            headers: {
+                ...(isGet ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }),
+                ...(DW_TOKEN ? { Authorization: `Bearer ${DW_TOKEN}` } : {}),
+            },
+        };
+        const req = http.request(opts, (res) => {
+            let out = '';
+            res.on('data', (c) => { out += c; });
+            res.on('end', () => resolve(out));
+        });
+        req.on('error', reject);
+        if (data) req.write(data);
+        req.end();
+    });
+}
 async function postToDatawatch(path, body) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify(body);

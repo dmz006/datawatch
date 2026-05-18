@@ -3197,7 +3197,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Skills:             profileSkills,
 		LLMRef:             resolvedLLMRef,
 		ComputeNodeRef:     resolvedComputeNodeRef,
-		OneShot:            req.OneShot || s.cfg.Session.OneShotSessions,
+		OneShot:            req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

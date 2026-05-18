@@ -3,6 +3,8 @@ import { runStory, connectToPWA, screenshot, saveLog } from './lib.mjs';
 
 await runStory(async (page) => {
   await connectToPWA(page);
+  // Wait for any post-splash navigation to settle before evaluating state
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   await screenshot(page, '01-after-connect');
 
   // state._whisperEnabled is populated on boot from /api/config
