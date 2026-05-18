@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -65,6 +66,9 @@ type ProjectStats struct {
 func (s *Server) handleProjectSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
 	dir := strings.TrimSpace(r.URL.Query().Get("dir"))

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/agents"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetPeerBroker wires the broker so the parent's REST endpoints can
@@ -22,6 +23,9 @@ func (s *Server) SetPeerBroker(b *agents.PeerBroker) { s.peerBroker = b }
 // (per-profile AllowPeerMessaging) is enforced inside broker.Send;
 // validation errors come back as 4xx.
 func (s *Server) handlePeerSend(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -57,6 +61,9 @@ func (s *Server) handlePeerSend(w http.ResponseWriter, r *http.Request) {
 // Returns the recipient's queued messages and CLEARS the inbox
 // (Drain semantics). Pass &peek=1 for non-destructive read.
 func (s *Server) handlePeerInbox(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

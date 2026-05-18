@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleSessionReconcile (BL93) — POST /api/sessions/reconcile
@@ -14,6 +16,9 @@ import (
 // Dry-run by default (auto_import=false) so an operator can inspect
 // what the daemon would import before mutating the registry.
 func (s *Server) handleSessionReconcile(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -46,6 +51,9 @@ func (s *Server) handleSessionReconcile(w http.ResponseWriter, r *http.Request) 
 // If dir is a bare session ID it is resolved under
 // <dataDir>/sessions/<id>. Returns the imported session record.
 func (s *Server) handleSessionImport(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

@@ -31,6 +31,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -49,6 +50,9 @@ type metaNodeBucket struct {
 }
 
 func (s *Server) handleFederationMetaPeers(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

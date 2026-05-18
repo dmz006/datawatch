@@ -3,6 +3,35 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v7.3.0-build2 — BL316 S3: Systematic fedCap sweep across all REST handlers (2026-05-18)
+
+### Changed
+- **Comprehensive `fedCap()` enforcement across all REST handlers** — federated peers now receive 403 (not 503) on any capability mismatch for every API surface. Covers 45+ handler files and 110+ individual handler call sites, organized by capability group:
+  - **Sessions**: `handleSessionOutput`, `handleSessionTimeline`, `handleSessionResponse`, `handleSessionPrompt`, `handleRenameSession`, `handleBindSessionAgent`, `handleSetSessionState`, `handleSetSessionLLMRef`, `handleDeleteSession`, `handleRestartSession`, `handleStale`, `handleSessionReconcile`, `handleAsk`, `handleAssist`, `handleSSE`
+  - **Agents**: `handleAgentProxy` (read/spawn split), complete `handleAgents` coverage
+  - **LLMs/Models**: `handleOpenWebUIModels`, `handleOllamaModels`, `handleBackends`, `handleBackendsActive`, `handleVoice`, `handleClaudeModels/Efforts/PermissionModes`, `handleLinkStart/Stream/Status/Unlink`
+  - **Compute/Orchestrator**: `handleAlgorithm` (list/read/write/run split), `handleOrchestrator` (list/read/run split), `handleMarketplace` (list/write split)
+  - **Config/Admin**: `handleCooldown`, `handleDevices`, `handleDeviceAliases`, `handlePlugins`, `handleProfileAPI`, `handleProxy`, `handleReload`, `handleRouting`, `handleRTK`, `handleSkills`, `handleTailscale`, `handleMigration`, `handleIdentity`, `handleHookEvents`, `handleUpdateCheck/Update`, `handleToolingStatus/Gitignore/Cleanup`, `handleCert`, `handleLogs`
+  - **Autonomous/Council/Templates**: `handleTemplates`, `handleProjects`, `handleProjectSummary`, `handleEvals`, `handleAutonomous` (all branches)
+  - **Memory/KG**: `handleMemoryStats/List/Search/Save/Delete/SweepStale/SpellCheck/ExtractFacts/Wakeup/Pin/Reindex/Learnings/Research/Export/Import/WAL/Test`, `handleMemoryScopes`, `handleKGQuery/Add/Invalidate/Timeline/Stats`
+  - **Analytics**: `handleAnalytics`, `handleOllamaStats`, `handleSmokeProgress`, `handleStats`, `handleRTKDiscover`, `handleKillOrphans`
+  - **Federation**: `handleFederationSessions` (CapFederationList), `handleFederationMetaPeers`, `handleFederationPeers/Groups`, `handleBL312Servers`, `handleAggregatedAlerts/PRDs`, `handlePeerBroker`, `handleListServers`, `handleServerHealth`
+  - **Dashboard**: `dashCardsListHandler`, `dashCardsAddHandler`, `dashCardGetHandler`, `dashCardUpdateHandler`, `dashCardDeleteHandler`, `handleDashboardLayout` (read/write split)
+  - **Audit**: `handleAudit` (CapAuditRead), `handleAgentAudit` (CapAuditRead), `handleLogs` (CapAuditRead)
+  - **Docs**: `handleDocs` (CapDocsRead), `handleMCPDocs` (CapDocsRead)
+  - **Comm/Channel**: `handleChannels`, `handleChannelInfo`, `handleCommProxy`, `handlePeerBroker`, `handleChannelHistory/Reply/Notify/Ready/Send` (read/write split)
+  - **Observer peers**: `handleObserverPeers` — preliminary CapObserversRead gate + CapObserversWrite for register/delete/push mutations
+  - **Health**: `handleHealth`, `handleInterfaces`, `handleInfo`, `handleDiagnose`, `handleSplash`, `handleServerHealth`
+  - **MCP**: `handleMCPTools/Resources/Sample/Elicit/PromptsList/PromptsGet` (CapSessionsList), `handleMCPCall` (CapCommWrite already)
+  - **Files/Schedules/Commands/Filters**: `handleFiles`, `handleFilesMkdir`, `handleSchedule*`, `handleCommands`, `handleQuickCommands`, `handleFilters`
+- **Ordering rule enforced universally** — `fedCap()` always precedes nil-guard checks so unauthorized federation peers consistently receive 403 not 503.
+
+### Rule audit (BL316 S3)
+- All API surfaces: REST ✓ (110+ call sites, 45+ files) · WebSocket ✓ (S1) · MCP ✓ (S1+S2) · CLI ✓ (S2) · Comm ✓ (S2) · PWA ✓ (S2)
+- Build: clean (zero errors)
+- Pre-existing test skip: `TestClusterProfiles_Roundtrip` (kubectl not on PATH — unrelated)
+- BL317 queued: next sprint tasks
+
 ## v7.3.0-build1 — BL316 S2: Fan-out, cross-host input, MCP/CLI/Comm/PWA (2026-05-18)
 
 ### Added

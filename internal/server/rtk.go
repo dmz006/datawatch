@@ -14,12 +14,16 @@ package server
 import (
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/rtk"
 )
 
 func (s *Server) handleRTKVersion(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
 		return
 	}
 	writeJSONOK(w, rtk.GetVersionStatus())
@@ -30,12 +34,18 @@ func (s *Server) handleRTKCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	writeJSONOK(w, rtk.CheckLatestVersion())
 }
 
 func (s *Server) handleRTKUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	newVer, err := rtk.UpdateBinary()

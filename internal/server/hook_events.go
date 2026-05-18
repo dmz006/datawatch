@@ -33,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SessionHookEvent — one event from a session's hook script.
@@ -333,6 +335,9 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	sid := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 	sid = strings.TrimSuffix(sid, "/hook-event")
 	if sid == "" {
@@ -439,6 +444,9 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	sid := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 	sid = strings.TrimSuffix(sid, "/status")
 	if sid == "" {
@@ -456,6 +464,9 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionTelemetry(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
 	}
 	sid := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
@@ -478,6 +489,9 @@ func (s *Server) handleSessionTelemetry(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSessionGuardrail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	sid := strings.TrimPrefix(r.URL.Path, "/api/sessions/")

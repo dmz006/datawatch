@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetAuditLog wires the operator audit log used by /api/audit.
@@ -26,6 +27,9 @@ func (s *Server) AuditLog() *audit.Log { return s.auditLog }
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAuditRead) {
 		return
 	}
 	if s.auditLog == nil {

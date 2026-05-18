@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // projectListItem flattens map → response array entry.
@@ -32,21 +33,45 @@ type projectListItem struct {
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	if s.cfg == nil || s.cfgPath == "" {
-		http.Error(w, "config not available", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/projects")
 	rest = strings.TrimPrefix(rest, "/")
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.listProjects(w)
 	case rest == "" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.upsertProject(w, r)
 	case rest != "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.getProject(w, rest)
 	case rest != "" && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.deleteProject(w, rest)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

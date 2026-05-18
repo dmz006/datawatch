@@ -639,6 +639,9 @@ func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
 // Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
 func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	url, apiKey := "", ""
 	if s.cfg != nil {
 		url = s.cfg.OpenWebUI.URL
@@ -672,6 +675,9 @@ func (s *Server) SetMCPElicitationDispatcher(d MCPElicitationAPI) { s.mcpElicita
 
 // handleMCPTools returns all daemon MCP tools as JSON for the channel bridge.
 func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -723,6 +729,9 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 
 // handleMCPResourcesList returns all registered MCP resources as JSON (BL302 S1).
 func (s *Server) handleMCPResourcesList(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -738,6 +747,9 @@ func (s *Server) handleMCPResourcesList(w http.ResponseWriter, r *http.Request) 
 
 // handleMCPResourcesRead reads a resource by URI and returns the result as JSON (BL302 S1).
 func (s *Server) handleMCPResourcesRead(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -758,6 +770,9 @@ func (s *Server) handleMCPResourcesRead(w http.ResponseWriter, r *http.Request) 
 
 // handleMCPResourcesTemplates returns all registered MCP resource templates as JSON (BL302 S1).
 func (s *Server) handleMCPResourcesTemplates(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -775,6 +790,9 @@ func (s *Server) handleMCPResourcesTemplates(w http.ResponseWriter, r *http.Requ
 // POST /api/mcp/sample — body: {trigger, messages, system_prompt, max_tokens}
 // Returns {"result":{...}} on success or {"error":"..."} when no MCP client connected.
 func (s *Server) handleMCPSample(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -809,6 +827,9 @@ func (s *Server) handleMCPSample(w http.ResponseWriter, r *http.Request) {
 // POST /api/mcp/elicit — body: {schema, message, options}
 // Returns {"result":{...}} on success or {"error":"..."} when no MCP client connected.
 func (s *Server) handleMCPElicit(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -841,6 +862,9 @@ func (s *Server) handleMCPElicit(w http.ResponseWriter, r *http.Request) {
 // handleMCPPromptsList returns all registered MCP prompts as JSON (BL302 S4).
 // GET /api/mcp/prompts → {"prompts":[...]}
 func (s *Server) handleMCPPromptsList(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.mcpBridge == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -853,6 +877,9 @@ func (s *Server) handleMCPPromptsList(w http.ResponseWriter, r *http.Request) {
 // POST /api/mcp/prompts/get — body: {"name":"<prompt-name>","arguments":{...}}
 // Returns {"name","description","messages":[{"role","content"},...]} on success.
 func (s *Server) handleMCPPromptsGet(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -888,6 +915,9 @@ func (s *Server) handleMCPPromptsGet(w http.ResponseWriter, r *http.Request) {
 
 // handleMCPDocs returns MCP tool documentation as JSON or HTML.
 func (s *Server) handleMCPDocs(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapDocsRead) {
+		return
+	}
 	if s.mcpDocsFunc == nil {
 		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
 		return
@@ -938,6 +968,9 @@ code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
 // handleOllamaModels returns available ollama models from the configured host.
 // Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
 func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	host := ""
 	if s.cfg != nil {
 		host = s.cfg.Ollama.Host
@@ -1023,6 +1056,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // For agent-bound sessions (F10 sprint 3.6) the request is forwarded
 // to the worker through the agent reverse proxy.
 func (s *Server) handleSessionOutput(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
 	id := r.URL.Query().Get("id")
 	if s.forwardSessionToAgent(w, r, id) {
 		return
@@ -1060,6 +1096,9 @@ func (s *Server) forwardSessionToAgent(w http.ResponseWriter, r *http.Request, s
 
 // handleSessionTimeline returns the structured timeline events for a session as JSON.
 func (s *Server) handleSessionTimeline(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "missing id", http.StatusBadRequest)
@@ -1522,6 +1561,9 @@ func truncate(s string, n int) string {
 
 // handleHealth returns daemon health status. No authentication required.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	uptime := int(time.Since(startTime).Seconds())
 	encrypted := s.manager.IsEncrypted()
 	hasEnvPassword := os.Getenv("DATAWATCH_SECURE_PASSWORD") != ""
@@ -1635,6 +1677,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 // handleInterfaces returns available network interfaces for bind configuration.
 // GET /api/interfaces → [{addr, name, label}] ordered: 0.0.0.0, 127.0.0.1, then other IPv4.
 func (s *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	type ifaceEntry struct {
 		Addr  string `json:"addr"`
 		Name  string `json:"name"`
@@ -1687,6 +1732,9 @@ func (s *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 
 // handleInfo returns system information.
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
@@ -1702,6 +1750,9 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 // Version checks are cached and refreshed in the background every 60 seconds
 // to avoid slow serial exec calls on every request.
 func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	type backendInfo struct {
 		Name           string `json:"name"`
 		Available      bool   `json:"available"`
@@ -1789,6 +1840,13 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 // creates a new directory when POSTed a {path, action:"mkdir"} body.
 // Mkdir respects the same root-path restriction as GET listing.
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+	} else if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	// v4.0.1 — POST for directory creation. Backs the web UI +
 	// mobile "create folder" affordance in the directory picker.
 	if r.Method == http.MethodPost {
@@ -1941,6 +1999,9 @@ func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
 // ── Memory API endpoints ─────────────────────────────────────────────────────
 
 func (s *Server) handleMemoryStats(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"enabled": false}) //nolint:errcheck
 		return
@@ -1950,6 +2011,9 @@ func (s *Server) handleMemoryStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -1971,6 +2035,9 @@ func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -2028,6 +2095,9 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 // handleMemorySave saves a new memory via POST /api/memory/save.
 // Body: {"content": "text to remember", "project_dir": "/optional/path"}
 func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2055,6 +2125,9 @@ func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2084,6 +2157,9 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 // {older_than_days, dry_run}. Manual + pinned rows are exempt.
 // (v6.0.0 — sweeper.py port)
 func (s *Server) handleMemorySweepStale(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2114,6 +2190,9 @@ func (s *Server) handleMemorySweepStale(w http.ResponseWriter, r *http.Request) 
 // Returns a list of {original, proposed, distance}. Never rewrites.
 // (v6.0.0 — spellcheck.py port)
 func (s *Server) handleMemorySpellCheck(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2138,6 +2217,9 @@ func (s *Server) handleMemorySpellCheck(w http.ResponseWriter, r *http.Request) 
 // extractor on the supplied text. POST {text}. Returns SVO triples.
 // (v6.0.0 — general_extractor.py port)
 func (s *Server) handleMemoryExtractFacts(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2162,6 +2244,9 @@ func (s *Server) handleMemoryExtractFacts(w http.ResponseWriter, r *http.Request
 // Smoke + operator tooling use this to verify what an agent would
 // see at start without having to spawn one. (v5.26.71)
 func (s *Server) handleMemoryWakeup(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2189,6 +2274,9 @@ func (s *Server) handleMemoryWakeup(w http.ResponseWriter, r *http.Request) {
 // v5.26.70). POST {id, pinned}. Pinned rows always surface in L1
 // critical-facts regardless of vector-similarity rank.
 func (s *Server) handleMemoryPin(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2220,6 +2308,9 @@ func (s *Server) handleMemoryPin(w http.ResponseWriter, r *http.Request) {
 
 // handleMemoryReindex triggers re-embedding of all memories.
 func (s *Server) handleMemoryReindex(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2239,6 +2330,9 @@ func (s *Server) handleMemoryReindex(w http.ResponseWriter, r *http.Request) {
 
 // handleMemoryLearnings lists or searches task learnings.
 func (s *Server) handleMemoryLearnings(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -2260,6 +2354,9 @@ func (s *Server) handleMemoryLearnings(w http.ResponseWriter, r *http.Request) {
 
 // handleMemoryResearch performs deep cross-session/cross-project search.
 func (s *Server) handleMemoryResearch(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -2284,15 +2381,25 @@ func (s *Server) handleMemoryResearch(w http.ResponseWriter, r *http.Request) {
 
 // handlePipelines handles GET /api/pipelines (list) and POST /api/pipelines (start).
 func (s *Server) handlePipelines(w http.ResponseWriter, r *http.Request) {
-	if s.pipelineExec == nil {
-		http.Error(w, "pipelines not available", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapPipelinesList) {
+			return
+		}
+		if s.pipelineExec == nil {
+			http.Error(w, "pipelines not available", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s.pipelineExec.ListJSON()) //nolint:errcheck
 	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapPipelinesStart) {
+			return
+		}
+		if s.pipelineExec == nil {
+			http.Error(w, "pipelines not available", http.StatusServiceUnavailable)
+			return
+		}
 		var req struct {
 			Spec        string `json:"spec"`        // "task1 -> task2 -> task3"
 			ProjectDir  string `json:"project_dir"`
@@ -2329,6 +2436,9 @@ func (s *Server) handlePipelineAction(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case "cancel":
+		if !s.fedCap(w, r, federation.CapPipelinesCancel) {
+			return
+		}
 		if err := s.pipelineExec.Cancel(id); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -2336,12 +2446,18 @@ func (s *Server) handlePipelineAction(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 	default:
+		if !s.fedCap(w, r, federation.CapPipelinesRead) {
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Fprint(w, s.pipelineExec.GetStatus(id))
 	}
 }
 
 func (s *Server) handleMemoryExport(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -2352,6 +2468,9 @@ func (s *Server) handleMemoryExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2370,6 +2489,9 @@ func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemoryWAL(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.memoryAPI == nil {
 		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
 		return
@@ -2386,6 +2508,9 @@ func (s *Server) handleMemoryWAL(w http.ResponseWriter, r *http.Request) {
 // ── Knowledge Graph API endpoints ────────────────────────────────────────────
 
 func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
 	entity := r.URL.Query().Get("entity")
 	asOf := r.URL.Query().Get("as_of")
@@ -2397,6 +2522,9 @@ func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKGAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
 	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
 	var req struct {
@@ -2417,6 +2545,9 @@ func (s *Server) handleKGAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKGInvalidate(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
 	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
 	var req struct {
@@ -2434,6 +2565,9 @@ func (s *Server) handleKGInvalidate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKGTimeline(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
 	entity := r.URL.Query().Get("entity")
 	if entity == "" { http.Error(w, "missing entity param", http.StatusBadRequest); return }
@@ -2444,6 +2578,9 @@ func (s *Server) handleKGTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKGStats(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.kgAPI == nil { json.NewEncoder(w).Encode(map[string]bool{"enabled": false}); return } //nolint:errcheck
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.kgAPI.Stats()) //nolint:errcheck
@@ -2451,6 +2588,9 @@ func (s *Server) handleKGStats(w http.ResponseWriter, r *http.Request) {
 
 // handleMemoryTest tests Ollama connectivity and embedding capability before enabling memory.
 func (s *Server) handleMemoryTest(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	// Determine host and model from config
@@ -2503,6 +2643,9 @@ func (s *Server) handleMemoryTest(w http.ResponseWriter, r *http.Request) {
 
 // handleOllamaStats returns current Ollama server statistics.
 func (s *Server) handleOllamaStats(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	host := s.cfg.Ollama.Host
 	if host == "" {
 		json.NewEncoder(w).Encode(map[string]bool{"available": false}) //nolint:errcheck
@@ -2516,6 +2659,9 @@ func (s *Server) handleOllamaStats(w http.ResponseWriter, r *http.Request) {
 // handleSessionResponse returns the last captured LLM response for a session.
 // GET /api/sessions/response?id=<session_id>
 func (s *Server) handleSessionResponse(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2532,6 +2678,9 @@ func (s *Server) handleSessionResponse(w http.ResponseWriter, r *http.Request) {
 
 // handleSessionPrompt returns the last user prompt for a session.
 func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2551,6 +2700,9 @@ func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2579,6 +2731,9 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/sessions/bind {"id":"<session>","agent_id":"<agent>"}
 func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2624,6 +2779,9 @@ func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) 
 // handleSetSessionState allows manual override of a session's state.
 // POST /api/sessions/state {"id":"...","state":"running|waiting_input|complete|killed"}
 func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2653,6 +2811,9 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 // POST /api/sessions/set_llm_ref {"id":"...","llm_ref":"..."}
 // Updates a session's LLM registry binding in-place (safe while running).
 func (s *Server) handleSetSessionLLMRef(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -2705,6 +2866,9 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteSession removes a session and optionally its tracking data.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsKill) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -3088,6 +3252,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 // handleRestartSession restarts a completed/failed/killed session in-place,
 // reusing the same session ID and resuming the LLM conversation.
 func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -3120,6 +3287,9 @@ func generateStreamID() (string, error) {
 
 // handleLinkStart initiates signal-cli device linking and returns a stream ID for SSE.
 func (s *Server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -3203,6 +3373,9 @@ func (s *Server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
 
 // handleLinkStream sends Server-Sent Events for the linking process.
 func (s *Server) handleLinkStream(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	streamID := r.URL.Query().Get("id")
 	if streamID == "" {
 		http.Error(w, "id parameter required", http.StatusBadRequest)
@@ -3262,6 +3435,9 @@ func (s *Server) handleLinkStream(w http.ResponseWriter, r *http.Request) {
 // or no signal.account_number) so existing PWA flows that only need
 // linked=true keep working.
 func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{
 		"linked":         false,
@@ -3350,6 +3526,9 @@ func parseListDevicesOutput(text string) []map[string]interface{} {
 // itself). Returns 400 when the operator tries to remove device 1
 // (primary) and 503 when signal-cli isn't available.
 func (s *Server) handleLinkUnlink(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -3391,8 +3570,14 @@ func (s *Server) handleLinkUnlink(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
 		s.handleGetConfig(w, r)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		s.handlePutConfig(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -4553,6 +4738,9 @@ func (s *Server) SetTestMessageHandler(fn func(text string) []string) {
 // POST /api/test/message { "text": "help" }
 // Returns the responses the router would send back.
 func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
@@ -4612,6 +4800,9 @@ func toInt(v interface{}) (int, bool) {
 // GET /api/stats?history=60 — last N minutes of history (v1 collector only)
 // GET /api/stats?v=2      — BL171: structured StatsResponse v2 from the observer
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	// BL171 v2 path — explicit query param or header. Falls back to
 	// v1 collector when the observer isn't wired.
 	wantV2 := r.URL.Query().Get("v") == "2" || r.Header.Get("Accept-Version") == "2"
@@ -4642,6 +4833,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 // POST /api/profiles — create/update a profile {"name":"...","backend":"...","env":{...}}
 // DELETE /api/profiles?name=xxx — delete a profile
 func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+	} else if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		profiles := s.cfg.Profiles
@@ -4707,6 +4905,9 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 // handleRTKDiscover returns RTK optimization suggestions.
 // GET /api/rtk/discover?since=7
 func (s *Server) handleRTKDiscover(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -4728,6 +4929,9 @@ func (s *Server) handleRTKDiscover(w http.ResponseWriter, r *http.Request) {
 
 // handleKillOrphans kills tmux sessions that have no matching datawatch session.
 func (s *Server) handleKillOrphans(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsKill) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -4824,6 +5028,9 @@ func splitCSV(s string) []string {
 //   /api/proxy/{serverName}/{...path}    → F16 remote-server proxy
 //   /api/proxy/agent/{worker_id}/{...}   → S3.5 agent-worker proxy
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	// Extract first segment from path: /api/proxy/<name>/...
 	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
 	idx := strings.Index(path, "/")
@@ -4913,6 +5120,9 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 // handleListServers returns the configured remote servers (with tokens masked).
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
 	type serverInfo struct {
 		Name    string `json:"name"`
 		URL     string `json:"url"`
@@ -4942,6 +5152,9 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 // handleServerHealth returns health status for all remote servers including
 // circuit breaker state and queued command counts.
 func (s *Server) handleServerHealth(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -4991,6 +5204,13 @@ func (s *Server) handleServerHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleSchedule dispatches GET/POST/DELETE for /api/schedule
 func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+	} else if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.handleGetSchedule(w, r)
@@ -5073,6 +5293,13 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 // handleSchedules provides the enhanced /api/schedules endpoint with deferred session
 // support, editing, natural language time parsing, and session filtering.
 func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+	} else if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if s.schedStore == nil {
 		http.Error(w, "scheduling not available", http.StatusServiceUnavailable)
 		return
@@ -5219,6 +5446,9 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 // ---- /api/commands --------------------------------------------------------
 
 func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if s.cmdLib == nil {
 		http.Error(w, "command library not available", http.StatusServiceUnavailable)
 		return
@@ -5289,6 +5519,13 @@ func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 // ---- /api/filters --------------------------------------------------------
 
 func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+	} else if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if s.filterStore == nil {
 		http.Error(w, "filter store not available", http.StatusServiceUnavailable)
 		return
@@ -5381,6 +5618,9 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAlertsList) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		type alertsResponse struct {
 			Alerts      []*alerts.Alert `json:"alerts"`
@@ -5397,6 +5637,9 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			UnreadCount: s.alertStore.UnreadCount(),
 		})
 	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapAlertsRead) {
+			return
+		}
 		// Mark read: body {"id":"<id>"} or {"all":true}
 		var body struct {
 			ID  string `json:"id"`
@@ -5456,6 +5699,9 @@ func (s *Server) recordChannelHistory(sessionID, text, direction string) {
 // handleChannelHistory returns the per-session channel ring buffer.
 // GET /api/channel/history?session_id=...
 func (s *Server) handleChannelHistory(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5506,6 +5752,9 @@ func (s *Server) BroadcastChannelReply(sessionID, text string) {
 // handleChannelReply receives replies from claude (via the datawatch MCP channel server)
 // and broadcasts them to all connected WebSocket clients and messaging backends.
 func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5542,6 +5791,9 @@ func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
 // handleChannelNotify receives notifications from the MCP channel server
 // (e.g. permission relay requests) and broadcasts to WS clients.
 func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5574,6 +5826,9 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 // send the session's initial task (if any) as the first channel message.
 // POST /api/channel/ready {"session_id":"...", "port":7433}
 func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommRead) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5665,6 +5920,9 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 // handleChannelSend sends a message to the MCP channel server (forwards to claude).
 // POST /api/channel/send {"text":"...", "session_id":"..."}
 func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5722,6 +5980,9 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 // handleRestart restarts the daemon in-place via syscall.Exec.
 // POST /api/restart
 func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5765,6 +6026,9 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 //	  "source": "config" | "default"
 //	}
 func (s *Server) handleQuickCommands(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5816,6 +6080,9 @@ func defaultQuickCommands() []config.QuickCommand {
 // against Anthropic's current alias set per the AGENT.md "Major
 // release alias refresh" rule.
 func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5842,6 +6109,9 @@ func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
 // accepts. Hardcoded list mirroring `claude --help`'s `--effort
 // <level>` enum (low | medium | high | xhigh | max).
 func (s *Server) handleClaudeEfforts(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5863,6 +6133,9 @@ func (s *Server) handleClaudeEfforts(w http.ResponseWriter, r *http.Request) {
 // claude-code accepts. Mirrors `claude --help`'s --permission-mode
 // enum: default | plan | acceptEdits | auto | bypassPermissions | dontAsk.
 func (s *Server) handleClaudePermissionModes(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5897,6 +6170,9 @@ func (s *Server) handleClaudePermissionModes(w http.ResponseWriter, r *http.Requ
 // firing the install on the first call. POST /api/update keeps its
 // existing check-and-install-atomically behaviour.
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -5926,6 +6202,9 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 // POST /api/update
 // Response: {"status":"checking"} immediately; the process restarts on success.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -6032,6 +6311,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 //	project_dir  — absolute path to scan (defaults to session.default_project_dir)
 //	backend      — specific backend name; omit for all backends
 func (s *Server) handleToolingStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -6062,6 +6344,9 @@ func (s *Server) handleToolingStatus(w http.ResponseWriter, r *http.Request) {
 // Body (JSON): {"project_dir": "...", "backend": "aider"}
 // Appends backend artifact patterns to .gitignore (+ .cfignore/.dockerignore if present).
 func (s *Server) handleToolingGitignore(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -6103,6 +6388,9 @@ func (s *Server) handleToolingGitignore(w http.ResponseWriter, r *http.Request) 
 // Body (JSON): {"project_dir": "...", "backend": "aider"}
 // Removes ephemeral backend artifacts from project_dir.
 func (s *Server) handleToolingCleanup(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

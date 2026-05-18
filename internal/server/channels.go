@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // channelInfo is one element of GET /api/channels. Provider-specific
@@ -31,6 +32,16 @@ type channelInfo struct {
 }
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	// Capability check before nil guards so peers get 403 not 503.
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapCommRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapCommWrite) {
+			return
+		}
+	}
 	if s.cfg == nil {
 		http.Error(w, "config not available", http.StatusServiceUnavailable)
 		return

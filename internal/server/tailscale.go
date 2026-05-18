@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/tailscale"
 )
 
@@ -38,6 +39,9 @@ func (s *Server) handleTailscaleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.tailscaleClient == nil {
 		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
 		return
@@ -56,6 +60,9 @@ func (s *Server) handleTailscaleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	if s.tailscaleClient == nil {
 		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
 		return
@@ -72,6 +79,9 @@ func (s *Server) handleTailscaleNodes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	if s.tailscaleClient == nil {
@@ -120,6 +130,9 @@ func (s *Server) handleTailscaleACLGenerate(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
 	if s.tailscaleClient == nil {
 		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
 		return
@@ -139,6 +152,9 @@ func (s *Server) handleTailscaleACLGenerate(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleTailscaleAuthKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	if s.tailscaleClient == nil {

@@ -39,6 +39,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetCouncilDrafts wires the drafts store + LLM caller for the wizard.
@@ -91,6 +92,9 @@ func (s *Server) handleCouncilDrafts(w http.ResponseWriter, r *http.Request, res
 }
 
 func (s *Server) councilDraftStart(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	var body struct {
 		OperatorRef string `json:"operator_ref"`
 		ChannelRef  string `json:"channel_ref"`
@@ -119,6 +123,9 @@ func (s *Server) councilDraftStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) councilDraftIDOp(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		d, err := s.councilDrafts.Get(id)
@@ -150,6 +157,9 @@ func (s *Server) councilDraftIDOp(w http.ResponseWriter, r *http.Request, id str
 }
 
 func (s *Server) councilDraftAction(w http.ResponseWriter, r *http.Request, id, action string) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	d, err := s.councilDrafts.Get(id)
 	if err != nil {
 		http.Error(w, "draft "+err.Error(), http.StatusNotFound)
@@ -213,6 +223,9 @@ func (s *Server) councilDraftAction(w http.ResponseWriter, r *http.Request, id, 
 }
 
 func (s *Server) councilDraftsList(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	drafts, err := s.councilDrafts.List()
 	if err != nil {
 		http.Error(w, "drafts list: "+err.Error(), http.StatusInternalServerError)
@@ -222,6 +235,9 @@ func (s *Server) councilDraftsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) councilDraftDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	if err := s.councilDrafts.Delete(id); err != nil {
 		http.Error(w, "drafts delete: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -230,6 +246,9 @@ func (s *Server) councilDraftDelete(w http.ResponseWriter, r *http.Request, id s
 }
 
 func (s *Server) councilDraftsPurge(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	n, err := s.councilDrafts.Purge()
 	if err != nil {
 		http.Error(w, "drafts purge: "+err.Error(), http.StatusInternalServerError)
@@ -242,6 +261,9 @@ func (s *Server) councilDraftsPurge(w http.ResponseWriter, r *http.Request) {
 // returns the drafted persona YAML inline. No persistence; for CLI +
 // one-way channels per BL297 Q9 design.
 func (s *Server) councilDraftOneShot(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
+		return
+	}
 	var body struct {
 		Name         string `json:"name"`
 		Role         string `json:"role"`

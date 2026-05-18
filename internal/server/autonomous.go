@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleAutonomousConfig — GET / PUT.
@@ -31,8 +33,14 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
 		writeJSONOK(w, s.autonomousMgr.Config())
 	case http.MethodPut, http.MethodPost:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var body json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -58,6 +66,9 @@ func (s *Server) handleAutonomousStatus(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
 	writeJSONOK(w, s.autonomousMgr.Status())
 }
 
@@ -75,8 +86,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Collection — list or create.
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAutonomousList) {
+				return
+			}
 			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+				return
+			}
 			var req struct {
 				Spec           string   `json:"spec"`
 				ProjectDir     string   `json:"project_dir"`
@@ -181,6 +198,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "":
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAutonomousRead) {
+				return
+			}
 			prd, ok := s.autonomousMgr.GetPRD(id)
 			if !ok {
 				http.Error(w, "not found", http.StatusNotFound)
@@ -188,6 +208,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSONOK(w, prd)
 		case http.MethodDelete:
+			if !s.fedCap(w, r, federation.CapAutonomousRun) {
+				return
+			}
 			// v5.19.0 — `?hard=true` permanently removes the PRD + its
 			// SpawnPRD descendants. Bare DELETE keeps the v4.0-era
 			// behavior of flipping Status to cancelled.
@@ -224,6 +247,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			killSessions()
 			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)})
 		case http.MethodPatch:
+			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+				return
+			}
 			// v5.19.0 — edit PRD-level title + spec on a non-running PRD.
 			var req struct {
 				Title string `json:"title"`
@@ -248,6 +274,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		updated, err := s.autonomousMgr.Decompose(id)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -257,6 +286,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "run":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRun) {
 			return
 		}
 		if err := s.autonomousMgr.Run(id); err != nil {
@@ -274,6 +306,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousRun) {
+			return
+		}
 		if err := s.autonomousMgr.Cancel(id); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -283,6 +318,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "approve":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct{ Actor, Note string }
@@ -299,6 +337,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "reject":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct{ Actor, Reason string }
@@ -329,6 +370,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			Description string `json:"description"`
 			Actor       string `json:"actor"`
@@ -351,6 +395,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct{ Actor, Note string }
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Actor == "" {
@@ -365,6 +412,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "edit_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {
@@ -570,6 +620,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
 		if _, ok := s.autonomousMgr.GetPRD(id); !ok {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -603,6 +656,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			Backend string `json:"backend"`
 			Effort  string `json:"effort"`
@@ -633,6 +689,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "set_task_llm":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {
@@ -697,6 +756,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			Type string `json:"type"`
 		}
@@ -715,6 +777,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			GuidedMode bool `json:"guided_mode"`
 		}
@@ -731,6 +796,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "set_skills":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {
@@ -773,6 +841,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "scan":
 		switch r.Method {
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAutonomousRun) {
+				return
+			}
 			result, err := s.autonomousMgr.RunScan(id)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -780,6 +851,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSONOK(w, result)
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAutonomousRead) {
+				return
+			}
 			result, ok := s.autonomousMgr.GetScanResult(id)
 			if !ok {
 				http.Error(w, "no scan result; POST /scan to run", http.StatusNotFound)
@@ -794,6 +868,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousRun) {
+			return
+		}
 		child, err := s.autonomousMgr.CreateFixPRD(id)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -803,6 +880,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "scan/rules":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
 			return
 		}
 		proposal, err := s.autonomousMgr.ProposeRuleEdits(id)
@@ -841,8 +921,14 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAutonomousRead) {
+				return
+			}
 			writeJSONOK(w, map[string]any{"templates": s.autonomousMgr.ListTemplates()})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+				return
+			}
 			var req struct {
 				Title       string   `json:"title"`
 				Description string   `json:"description"`
@@ -883,6 +969,9 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			Vars       map[string]string `json:"vars"`
 			ProjectDir string            `json:"project_dir"`
@@ -904,6 +993,9 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
 		tmpl, ok := s.autonomousMgr.GetTemplate(id)
 		if !ok {
 			http.Error(w, "template not found", http.StatusNotFound)
@@ -911,6 +1003,9 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 		}
 		writeJSONOK(w, tmpl)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			Title       string   `json:"title"`
 			Description string   `json:"description"`
@@ -929,6 +1024,9 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 		}
 		writeJSONOK(w, tmpl)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		if err := s.autonomousMgr.DeleteTemplate(id); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -949,6 +1047,9 @@ func (s *Server) handleAutonomousLearnings(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
 	writeJSONOK(w, map[string]any{"learnings": s.autonomousMgr.ListLearnings()})
 }
 
@@ -963,8 +1064,14 @@ func (s *Server) handleAutonomousTypes(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
 		writeJSONOK(w, map[string]any{"types": s.autonomousMgr.ListAutomatonTypes()})
 	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			ID          string `json:"id"`
 			Label       string `json:"label"`
@@ -997,8 +1104,14 @@ func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Reque
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
 		writeJSONOK(w, s.autonomousMgr.GetScanConfig())
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)

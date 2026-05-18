@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // AssistRequest is the wire form of POST /api/assist.
@@ -29,6 +31,9 @@ type AssistResponse struct {
 }
 
 func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

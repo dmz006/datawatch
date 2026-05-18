@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // PluginsAPI is the narrow interface the REST layer needs from
@@ -39,6 +41,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	// disabled. Only the GET-list path is permitted in that case;
 	// per-plugin actions still require the subprocess registry.
 	if rest == "" && r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
 		var subprocess []any
 		if s.pluginsAPI != nil {
 			subprocess = s.pluginsAPI.List()
@@ -62,6 +67,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		if err := s.pluginsAPI.Reload(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -81,6 +89,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
 		p, ok := s.pluginsAPI.Get(name)
 		if !ok {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -92,6 +103,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		if !s.pluginsAPI.SetEnabled(name, action == "enable") {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -100,6 +114,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	case "test":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
 		var req struct {

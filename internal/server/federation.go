@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -40,6 +41,9 @@ type FederationResponse struct {
 // request — the caller still gets primary + whatever proxied data
 // did return.
 func (s *Server) handleFederationSessions(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

@@ -17,9 +17,13 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func (s *Server) handleBackendsActive(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

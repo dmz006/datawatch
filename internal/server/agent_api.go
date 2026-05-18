@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/agents"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetAgentManager wires the agent manager for the /api/agents routes.
@@ -42,10 +43,16 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if tail == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAgentsList) {
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"agents": s.agentMgr.List(),
 			})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAgentsSpawn) {
+				return
+			}
 			s.spawnAgent(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -60,6 +67,9 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "logs" {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAgentsRead) {
 			return
 		}
 		s.agentLogs(w, r, id)
@@ -81,8 +91,14 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAgentsRead) {
+			return
+		}
 		s.getAgent(w, r, id)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapAgentsTerminate) {
+			return
+		}
 		s.terminateAgent(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

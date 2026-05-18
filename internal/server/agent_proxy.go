@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/gorilla/websocket"
 )
 
@@ -37,6 +38,15 @@ import (
 // Caller (handleProxy dispatcher) has already stripped the
 // "/api/proxy/agent/<id>" prefix.
 func (s *Server) handleAgentProxy(w http.ResponseWriter, r *http.Request, agentID, remainingPath string) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapAgentsRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapAgentsSpawn) {
+			return
+		}
+	}
 	if s.agentMgr == nil {
 		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
 		return

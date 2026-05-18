@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // dashCard is a single card in the layout.
@@ -85,7 +87,10 @@ func (s *Server) handleDashboardCards(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) dashCardsListHandler(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) dashCardsListHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapDashboardRead) {
+		return
+	}
 	layout, err := s.readDashLayout()
 	if err != nil {
 		http.Error(w, "read layout: "+err.Error(), http.StatusInternalServerError)
@@ -99,6 +104,9 @@ func (s *Server) dashCardsListHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) dashCardsAddHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapDashboardWrite) {
+		return
+	}
 	var card dashCard
 	if err := json.NewDecoder(r.Body).Decode(&card); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -124,7 +132,10 @@ func (s *Server) dashCardsAddHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, card)
 }
 
-func (s *Server) dashCardGetHandler(w http.ResponseWriter, _ *http.Request, id string) {
+func (s *Server) dashCardGetHandler(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.fedCap(w, r, federation.CapDashboardRead) {
+		return
+	}
 	layout, err := s.readDashLayout()
 	if err != nil {
 		http.Error(w, "read layout: "+err.Error(), http.StatusInternalServerError)
@@ -140,6 +151,9 @@ func (s *Server) dashCardGetHandler(w http.ResponseWriter, _ *http.Request, id s
 }
 
 func (s *Server) dashCardUpdateHandler(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.fedCap(w, r, federation.CapDashboardWrite) {
+		return
+	}
 	var req dashCard
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -183,7 +197,10 @@ func (s *Server) dashCardUpdateHandler(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
-func (s *Server) dashCardDeleteHandler(w http.ResponseWriter, _ *http.Request, id string) {
+func (s *Server) dashCardDeleteHandler(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.fedCap(w, r, federation.CapDashboardWrite) {
+		return
+	}
 	layout, err := s.readDashLayout()
 	if err != nil {
 		http.Error(w, "read layout: "+err.Error(), http.StatusInternalServerError)

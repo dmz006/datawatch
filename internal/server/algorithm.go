@@ -25,6 +25,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/algorithm"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 type algorithmTracker interface {
@@ -41,14 +42,46 @@ type algorithmTracker interface {
 func (s *Server) SetAlgorithmTracker(t algorithmTracker) { s.algorithmTracker = t }
 
 func (s *Server) handleAlgorithm(w http.ResponseWriter, r *http.Request) {
-	if s.algorithmTracker == nil {
-		http.Error(w, "algorithm disabled", http.StatusServiceUnavailable)
-		return
-	}
 	// Path: /api/algorithm[/{id}[/action]]
 	rest := strings.TrimPrefix(r.URL.Path, "/api/algorithm")
 	rest = strings.TrimPrefix(rest, "/")
 	parts := strings.Split(rest, "/")
+
+	// Determine the required capability before nil-guard checks so
+	// federated peers receive 403 (not 503) when they lack access.
+	if rest == "" {
+		if !s.fedCap(w, r, federation.CapAutonomousList) {
+			return
+		}
+	} else {
+		action := ""
+		if len(parts) > 1 {
+			action = parts[1]
+		}
+		switch {
+		case action == "" && r.Method == http.MethodGet:
+			if !s.fedCap(w, r, federation.CapAutonomousRead) {
+				return
+			}
+		case action == "" && r.Method == http.MethodDelete,
+			action == "start" && r.Method == http.MethodPost,
+			action == "edit" && r.Method == http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+				return
+			}
+		case action == "advance" && r.Method == http.MethodPost,
+			action == "abort" && r.Method == http.MethodPost,
+			action == "measure" && r.Method == http.MethodPost:
+			if !s.fedCap(w, r, federation.CapAutonomousRun) {
+				return
+			}
+		}
+	}
+
+	if s.algorithmTracker == nil {
+		http.Error(w, "algorithm disabled", http.StatusServiceUnavailable)
+		return
+	}
 
 	if rest == "" {
 		// list

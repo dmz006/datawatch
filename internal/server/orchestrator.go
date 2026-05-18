@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // OrchestratorAPI is the narrow interface the REST layer needs from
@@ -38,6 +40,16 @@ type OrchestratorAPI interface {
 func (s *Server) SetOrchestratorAPI(a OrchestratorAPI) { s.orchestratorAPI = a }
 
 func (s *Server) handleOrchestratorConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapCouncilRead) {
+			return
+		}
+	default:
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
+	}
 	if s.orchestratorAPI == nil {
 		http.Error(w, "orchestrator disabled (set orchestrator.enabled in config)", http.StatusServiceUnavailable)
 		return
@@ -62,12 +74,26 @@ func (s *Server) handleOrchestratorConfig(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request) {
+	// Determine cap before nil-guard so peers get 403 not 503.
+	rest := strings.TrimPrefix(r.URL.Path, "/api/orchestrator/graphs")
+	rest = strings.TrimPrefix(rest, "/")
+	if rest == "" && r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapCouncilList) {
+			return
+		}
+	} else if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapCouncilRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
+	}
 	if s.orchestratorAPI == nil {
 		http.Error(w, "orchestrator disabled", http.StatusServiceUnavailable)
 		return
 	}
-	rest := strings.TrimPrefix(r.URL.Path, "/api/orchestrator/graphs")
-	rest = strings.TrimPrefix(rest, "/")
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -173,6 +199,9 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleOrchestratorVerdicts(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCouncilList) {
+		return
+	}
 	if s.orchestratorAPI == nil {
 		http.Error(w, "orchestrator disabled", http.StatusServiceUnavailable)
 		return

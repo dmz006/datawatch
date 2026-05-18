@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/profile"
 )
 
@@ -36,10 +37,6 @@ func (s *Server) SetClusterStore(c *profile.ClusterStore) { s.clusterStore = c }
 // handleProjectProfiles dispatches /api/profiles/projects and
 // /api/profiles/projects/{name}[/smoke] to the appropriate method.
 func (s *Server) handleProjectProfiles(w http.ResponseWriter, r *http.Request) {
-	if s.projectStore == nil {
-		http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
-		return
-	}
 	tail := strings.TrimPrefix(r.URL.Path, "/api/profiles/projects")
 	tail = strings.Trim(tail, "/")
 
@@ -47,10 +44,24 @@ func (s *Server) handleProjectProfiles(w http.ResponseWriter, r *http.Request) {
 	if tail == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapConfigRead) {
+				return
+			}
+			if s.projectStore == nil {
+				http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"profiles": s.projectStore.List(),
 			})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			if s.projectStore == nil {
+				http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+				return
+			}
 			s.createProjectProfile(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -68,12 +79,26 @@ func (s *Server) handleProjectProfiles(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			if s.projectStore == nil {
+				http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+				return
+			}
 			s.smokeProjectProfile(w, r, name)
 		case "agent-settings":
 			// BL251 — PATCH /api/profiles/projects/{name}/agent-settings
 			// Updates only the AgentSettings block without touching other fields.
 			if r.Method != http.MethodPatch {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			if s.projectStore == nil {
+				http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
 				return
 			}
 			s.patchProjectAgentSettings(w, r, name)
@@ -85,10 +110,31 @@ func (s *Server) handleProjectProfiles(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.projectStore == nil {
+			http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.readProjectProfile(w, r, name)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.projectStore == nil {
+			http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.updateProjectProfile(w, r, name)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.projectStore == nil {
+			http.Error(w, "project profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.deleteProjectProfile(w, r, name)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -161,20 +207,30 @@ func (s *Server) smokeProjectProfile(w http.ResponseWriter, _ *http.Request, nam
 // ── Cluster profile handlers ────────────────────────────────────────────
 
 func (s *Server) handleClusterProfiles(w http.ResponseWriter, r *http.Request) {
-	if s.clusterStore == nil {
-		http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
-		return
-	}
 	tail := strings.TrimPrefix(r.URL.Path, "/api/profiles/clusters")
 	tail = strings.Trim(tail, "/")
 
 	if tail == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapConfigRead) {
+				return
+			}
+			if s.clusterStore == nil {
+				http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"profiles": s.clusterStore.List(),
 			})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			if s.clusterStore == nil {
+				http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+				return
+			}
 			s.createClusterProfile(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -189,6 +245,13 @@ func (s *Server) handleClusterProfiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.clusterStore == nil {
+			http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.smokeClusterProfile(w, r, name)
 		return
 	}
@@ -199,10 +262,31 @@ func (s *Server) handleClusterProfiles(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.clusterStore == nil {
+			http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.readClusterProfile(w, r, name)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.clusterStore == nil {
+			http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.updateClusterProfile(w, r, name)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.clusterStore == nil {
+			http.Error(w, "cluster profile store not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.deleteClusterProfile(w, r, name)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

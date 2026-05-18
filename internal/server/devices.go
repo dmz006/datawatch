@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/devices"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetDeviceStore wires the device store. Empty/nil disables the
@@ -27,6 +28,9 @@ func (s *Server) SetDeviceStore(store *devices.Store) { s.deviceStore = store }
 func (s *Server) handleDevicesRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	if s.deviceStore == nil {
@@ -62,10 +66,6 @@ func (s *Server) handleDevicesRegister(w http.ResponseWriter, r *http.Request) {
 // handleDevicesList implements GET /api/devices (list) and
 // DELETE /api/devices/{id} per issue #1.
 func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
-	if s.deviceStore == nil {
-		http.Error(w, "device registration not enabled", http.StatusServiceUnavailable)
-		return
-	}
 	// Path handling:
 	//   /api/devices        → list
 	//   /api/devices/{id}   → delete (DELETE only)
@@ -73,9 +73,23 @@ func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
 	rest = strings.TrimPrefix(rest, "/")
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.deviceStore == nil {
+			http.Error(w, "device registration not enabled", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.deviceStore.List())
 	case rest != "" && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.deviceStore == nil {
+			http.Error(w, "device registration not enabled", http.StatusServiceUnavailable)
+			return
+		}
 		if err := s.deviceStore.Delete(rest); err != nil {
 			if errors.Is(err, devices.ErrNotFound) {
 				http.Error(w, err.Error(), http.StatusNotFound)

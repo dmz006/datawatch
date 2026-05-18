@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // transcribeSurface is the narrow interface the handler needs; the
@@ -52,6 +54,9 @@ func (s *Server) SetTranscriber(t transcribeSurface) { s.transcriber = t }
 // 1.0 placeholder; a future Whisper upgrade can populate it from
 // the model's own word-confidence output.
 func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -164,6 +169,9 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 // configured backend (whisper venv / openai / openwebui / ollama)
 // isn't reachable.
 func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

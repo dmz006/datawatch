@@ -20,6 +20,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 type councilOrchestrator interface {
@@ -99,6 +100,9 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapCouncilRead) {
+			return
+		}
 		writeJSONOK(w, map[string]any{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
 			"llm_ref":              s.cfg.Council.LLMRef,
@@ -106,6 +110,9 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		})
 	case http.MethodPatch, http.MethodPut:
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		if s.cfgPath == "" {
 			http.Error(w, "config not persistable", http.StatusServiceUnavailable)
 			return
@@ -177,6 +184,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapCouncilList) {
+			return
+		}
 		// Return bare array for mobile client compat (#60); wrapped envelope removed.
 		personas := s.councilOrch.Personas()
 		if personas == nil {
@@ -185,6 +195,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, personas)
 
 	case rest == "" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		// Add a new persona — operator-defined name + role + system_prompt.
 		var body council.Persona
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -204,6 +217,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 
 	// BL296 — GET /api/council/personas/{name} — fetch one persona.
 	case rest != "" && !strings.Contains(rest, "/") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapCouncilRead) {
+			return
+		}
 		p, err := s.councilOrch.GetPersona(rest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -214,6 +230,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 	// BL296 — PUT /api/council/personas/{name} — update system_prompt (and
 	// optionally role) without delete+re-add. PWA edit modal uses this path.
 	case rest != "" && !strings.Contains(rest, "/") && (r.Method == http.MethodPut || r.Method == http.MethodPatch):
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		name := rest
 		var body council.Persona
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -233,6 +252,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": name, "ok": true, "persona": p})
 
 	case strings.HasSuffix(rest, "/restore") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/restore")
 		if err := s.councilOrch.RestoreDefaultPersona(name); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -242,6 +264,9 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		name := rest
 		if err := s.councilOrch.RemovePersona(name); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -279,6 +304,9 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapCouncilRun) {
 		return
 	}
 	var body struct {
@@ -367,6 +395,9 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 
 	// v7.0.0 S3 — POST /api/council/runs/{id}/cancel
 	if strings.HasSuffix(rest, "/cancel") && r.Method == http.MethodPost {
+		if !s.fedCap(w, r, federation.CapCouncilRun) {
+			return
+		}
 		id := strings.TrimSuffix(rest, "/cancel")
 		ok := s.councilOrch.Cancel(id)
 		if !ok {
@@ -397,6 +428,9 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapCouncilList) {
+			return
+		}
 		limit := 0
 		if v := r.URL.Query().Get("limit"); v != "" {
 			limit, _ = strconv.Atoi(v)
@@ -415,6 +449,9 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapCouncilList) {
 		return
 	}
 	run, err := s.councilOrch.LoadRun(rest)

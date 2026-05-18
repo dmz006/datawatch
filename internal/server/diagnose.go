@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"runtime"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // DiagnoseCheck is one per-subsystem result.
@@ -33,6 +35,9 @@ type DiagnoseResult struct {
 }
 
 func (s *Server) handleDiagnose(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

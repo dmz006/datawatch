@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/gorilla/websocket"
 )
@@ -20,6 +21,9 @@ import (
 // handleProxyWS relays a WebSocket connection between the client and a remote
 // datawatch server. Route: /api/proxy/{serverName}/ws
 func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	// Extract server name: /api/proxy/<name>/ws
 	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
 	idx := strings.Index(path, "/")
@@ -143,6 +147,9 @@ func (s *Server) runtimeServers() []config.RemoteServerConfig {
 // handleAggregatedSessions returns sessions from all remote servers + local,
 // tagged with their source server name.
 func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	type taggedSession struct {
 		*session.Session
 		Server string `json:"server"`
@@ -212,6 +219,9 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 // All HTML, JS, and CSS content is rewritten so API calls, WS connections,
 // and asset URLs route back through the proxy.
 func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	// Extract server name and sub-path: /remote/<name>/...
 	path := strings.TrimPrefix(r.URL.Path, "/remote/")
 	idx := strings.Index(path, "/")

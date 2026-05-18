@@ -441,6 +441,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.
 	apiMux.HandleFunc("/api/cert", func(w http.ResponseWriter, r *http.Request) {
+		if !api.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
 		certPath := cfg.TLSCert
 		if certPath == "" {
 			certPath = filepath.Join(dataDir, "tls", "server", "cert.pem")
@@ -469,6 +472,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 
 	logDataDir := dataDir // capture for closure
 	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+		if !api.fedCap(w, r, federation.CapAuditRead) {
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

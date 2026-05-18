@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // PushEvent — one event broadcast on a topic. Exported so in-process
@@ -120,6 +122,15 @@ func publishToEndpoint(r pushRegistration, ev PushEvent) {
 
 // handlePushTopic — GET (SSE subscribe) or POST (publish) to /api/push/<topic>
 func (s *Server) handlePushTopic(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapObserversRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapObserversWrite) {
+			return
+		}
+	}
 	topic := strings.TrimPrefix(r.URL.Path, "/api/push/")
 	if topic == "" || strings.Contains(topic, "/") {
 		http.Error(w, "topic required (no slashes)", http.StatusBadRequest)
@@ -225,6 +236,9 @@ func (s *Server) handlePushPublish(w http.ResponseWriter, r *http.Request, topic
 // handlePushRegister — POST /api/push/register
 // Body: {"endpoint":"...", "client_id":"...", "token":"..."}
 func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapObserversWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

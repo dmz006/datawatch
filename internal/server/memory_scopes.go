@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
 )
 
@@ -26,20 +27,44 @@ import (
 func (s *Server) SetMemoryBackend(b memory.Backend) { s.memoryBackend = b }
 
 func (s *Server) handleMemoryScopes(w http.ResponseWriter, r *http.Request) {
-	if s.memoryBackend == nil {
-		http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/memory/scopes/")
 
 	switch {
 	case rest == "recall" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
 		s.memoryRecall(w, r)
 	case rest == "borrow" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
 		s.memoryBorrow(w, r)
 	case rest == "seed" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
 		s.memorySeed(w, r)
 	case rest == "promote" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
 		s.memoryPromote(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -37,6 +38,10 @@ func (s *Server) Dispatcher() *inference.Dispatcher { return s.inferenceDisp }
 func (s *Server) LLMRegistry() *inference.Registry { return s.inferenceReg }
 
 func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
+	// BL316 S3: cap check before nil guard so unauthorized peers get 403, not 503.
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	if s.inferenceReg == nil {
 		http.Error(w, "llm registry disabled", http.StatusServiceUnavailable)
 		return
@@ -46,9 +51,15 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapLLMsList) {
+			return
+		}
 		writeJSONOK(w, map[string]any{"llms": s.inferenceReg.List()})
 
 	case rest == "" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		var l inference.LLM
 		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -67,6 +78,9 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case strings.HasSuffix(rest, "/test") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapLLMsRead) {
+			return
+		}
 		s.handleLLMTest(w, r, strings.TrimSuffix(rest, "/test"))
 
 	// v7.0.0-alpha.16 #247 — operator-spec'd on/off toggle. Body:
@@ -74,22 +88,40 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 	// true, runs the test endpoint first; only flips Disabled=false
 	// if test succeeds.
 	case strings.HasSuffix(rest, "/enabled") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		s.handleLLMEnabledToggle(w, r, strings.TrimSuffix(rest, "/enabled"))
 
 	// v7.0.0-alpha.37 — new per-LLM sub-resources.
 	case strings.HasSuffix(rest, "/in_use") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapLLMsList) {
+			return
+		}
 		s.handleLLMInUse(w, r, strings.TrimSuffix(rest, "/in_use"))
 
 	case strings.HasSuffix(rest, "/refresh_models") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		s.handleLLMRefreshModels(w, r, strings.TrimSuffix(rest, "/refresh_models"))
 
 	case strings.HasSuffix(rest, "/reassign") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		s.handleLLMReassign(w, r, strings.TrimSuffix(rest, "/reassign"))
 
 	case strings.HasSuffix(rest, "/force_delete") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		s.handleLLMForceDelete(w, r, strings.TrimSuffix(rest, "/force_delete"))
 
 	case rest != "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapLLMsRead) {
+			return
+		}
 		l, err := s.inferenceReg.Get(rest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -98,6 +130,9 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, l)
 
 	case rest != "" && r.Method == http.MethodPut:
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		var l inference.LLM
 		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -123,7 +158,9 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
-		// Check for active bindings before deleting.
+		if !s.fedCap(w, r, federation.CapLLMsWrite) {
+			return
+		}
 		blockedBy := s.llmInUseActive(rest)
 		if len(blockedBy) > 0 {
 			w.Header().Set("Content-Type", "application/json")

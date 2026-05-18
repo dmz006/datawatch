@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/identity"
 )
 
@@ -52,14 +53,24 @@ func (a IdentityManagerAdapter) Update(id identity.Identity) (identity.Identity,
 }
 
 func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
-	if s.identityMgr == nil {
-		http.Error(w, "identity disabled", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.identityMgr == nil {
+			http.Error(w, "identity disabled", http.StatusServiceUnavailable)
+			return
+		}
 		writeJSONOK(w, s.identityMgr.Get())
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.identityMgr == nil {
+			http.Error(w, "identity disabled", http.StatusServiceUnavailable)
+			return
+		}
 		var body identity.Identity
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -73,6 +84,13 @@ func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
 		s.auditIdentity("identity_set")
 		writeJSONOK(w, got)
 	case http.MethodPatch:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.identityMgr == nil {
+			http.Error(w, "identity disabled", http.StatusServiceUnavailable)
+			return
+		}
 		var body identity.Identity
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)

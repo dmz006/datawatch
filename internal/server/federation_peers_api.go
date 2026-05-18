@@ -35,6 +35,16 @@ import (
 // Peers
 
 func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
+	// Capability check before nil guards so peers get 403 not 503.
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapFederationList) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapFederationWrite) {
+			return
+		}
+	}
 	if s.serverStore == nil {
 		http.Error(w, "server registry not configured", http.StatusServiceUnavailable)
 		return
@@ -182,6 +192,16 @@ func (s *Server) fedPeerTest(w http.ResponseWriter, r *http.Request, name string
 // Groups
 
 func (s *Server) handleFederationGroups(w http.ResponseWriter, r *http.Request) {
+	// Capability check before nil guards so peers get 403 not 503.
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapFederationList) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapFederationWrite) {
+			return
+		}
+	}
 	// /api/federation/groups/builtins
 	if strings.HasSuffix(r.URL.Path, "/builtins") {
 		if r.Method != http.MethodGet {

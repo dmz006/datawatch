@@ -20,6 +20,7 @@ import (
 	"regexp"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // MatchRoutingRule returns the first rule whose pattern matches text,
@@ -38,15 +39,25 @@ func MatchRoutingRule(rules []config.RoutingRule, text string) *config.RoutingRu
 }
 
 func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
-	if s.cfg == nil || s.cfgPath == "" {
-		http.Error(w, "config not available", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"rules": s.cfg.Session.RoutingRules})
 	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		var req struct {
 			Rules []config.RoutingRule `json:"rules"`
 		}
@@ -80,6 +91,9 @@ func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRoutingRulesTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	if s.cfg == nil {

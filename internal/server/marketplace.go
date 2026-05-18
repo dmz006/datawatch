@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // MarketplaceCatalogEntry — one model in the embedded curated catalog.
@@ -153,6 +155,9 @@ func (s *Server) handleMarketplaceCatalog(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapComputeList) {
+		return
+	}
 	// ?refresh=true is reserved for the future scrape; for v7.0 the
 	// embedded catalog is the only source. Operator-confirmed in
 	// alpha.33 design Q2: hybrid with manual-only refresh.
@@ -167,6 +172,9 @@ func (s *Server) handleMarketplaceCatalog(w http.ResponseWriter, r *http.Request
 func (s *Server) handleMarketplaceTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapComputeList) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/marketplace/ollama/tasks/")
@@ -188,6 +196,9 @@ func (s *Server) handleMarketplaceTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Request, name string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapComputeWrite) {
 		return
 	}
 	var body struct {
@@ -233,6 +244,9 @@ func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Request, name, model string) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapComputeWrite) {
 		return
 	}
 	n, err := s.computeReg.Get(name)

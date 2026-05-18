@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -40,6 +41,9 @@ type PeerRegistryAPI interface {
 func (s *Server) SetPeerRegistry(r PeerRegistryAPI) { s.peerRegistry = r }
 
 func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
 	if s.peerRegistry == nil {
 		http.Error(w, "observer peer registry disabled (set observer.peers.allow_register)", http.StatusServiceUnavailable)
 		return
@@ -108,6 +112,9 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSONOK(w, map[string]any{"peers": out})
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapObserversWrite) {
+				return
+			}
 			s.handlePeerRegister(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -133,6 +140,9 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSONOK(w, entry)
 		case http.MethodDelete:
+			if !s.fedCap(w, r, federation.CapObserversWrite) {
+				return
+			}
 			if err := s.peerRegistry.Delete(name); err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
@@ -156,6 +166,9 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	case "stats":
 		switch r.Method {
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapObserversWrite) {
+				return
+			}
 			s.handlePeerPush(w, r, name)
 		case http.MethodGet:
 			snap := s.peerRegistry.LastPayload(name)

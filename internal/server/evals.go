@@ -19,6 +19,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/evals"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 type evalsRunner interface {
@@ -39,6 +40,9 @@ func (s *Server) handleEvalsSuites(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
 	names, err := s.evalsRunner.ListSuites()
@@ -74,6 +78,9 @@ func (s *Server) handleEvalsRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapAutonomousRun) {
+		return
+	}
 	name := strings.TrimSpace(r.URL.Query().Get("suite"))
 	if name == "" {
 		http.Error(w, "suite query param required", http.StatusBadRequest)
@@ -107,6 +114,9 @@ func (s *Server) handleEvalsRuns(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousList) {
+			return
+		}
 		suite := r.URL.Query().Get("suite")
 		limit := 0
 		if v := r.URL.Query().Get("limit"); v != "" {
@@ -123,6 +133,9 @@ func (s *Server) handleEvalsRuns(w http.ResponseWriter, r *http.Request) {
 	// runs/{id}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
 	run, err := s.evalsRunner.LoadRun(rest)

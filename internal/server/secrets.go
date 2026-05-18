@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/secrets"
 )
 
@@ -109,6 +110,9 @@ func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.fedCap(w, r, federation.CapSecretsRead) {
+		return
+	}
 	v, ok := s.secretsStore.(vaultBacked)
 	if !ok {
 		// Active backend isn't Vault — return a sentinel so the PWA
@@ -159,8 +163,14 @@ func (s *Server) handleSecrets(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapSecretsList) {
+				return
+			}
 			s.handleSecretsList(w, r)
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapSecretsWrite) {
+				return
+			}
 			s.handleSecretsCreate(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -168,19 +178,30 @@ func (s *Server) handleSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// /api/secrets/{name}/exists — check without revealing value
 	if strings.HasSuffix(name, "/exists") {
 		name = strings.TrimSuffix(name, "/exists")
+		if !s.fedCap(w, r, federation.CapSecretsRead) {
+			return
+		}
 		s.handleSecretsExists(w, r, name)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapSecretsRead) {
+			return
+		}
 		s.handleSecretsGet(w, r, name)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapSecretsWrite) {
+			return
+		}
 		s.handleSecretsUpdate(w, r, name)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapSecretsWrite) {
+			return
+		}
 		s.handleSecretsDelete(w, r, name)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

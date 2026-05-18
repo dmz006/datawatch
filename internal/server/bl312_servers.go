@@ -40,6 +40,16 @@ func (s *Server) SetFedGroupStore(gs *federation.GroupStore) {
 // handleBL312Servers handles /api/servers (collection) and
 // /api/servers/{name} and /api/servers/{name}/test.
 func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
+	// Capability check before nil guards so peers get 403 not 503.
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapFederationList) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapFederationWrite) {
+			return
+		}
+	}
 	if s.serverStore == nil {
 		// Fall through to the legacy static-list handler.
 		s.handleListServers(w, r)

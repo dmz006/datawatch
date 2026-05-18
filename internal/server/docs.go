@@ -25,10 +25,14 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/docsindex"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleDocs is the top-level dispatcher for /api/docs/*.
 func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapDocsRead) {
+		return
+	}
 	rt := docsindex.Default()
 	if rt == nil {
 		http.Error(w, "docsindex not initialized", http.StatusServiceUnavailable)

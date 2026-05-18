@@ -24,6 +24,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetComputeRegistry wires the runtime *compute.Registry into the
@@ -67,9 +68,15 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeList) {
+			return
+		}
 		writeJSONOK(w, map[string]any{"nodes": s.computeReg.List()})
 
 	case rest == "" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		var n compute.Node
 		if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -102,6 +109,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	// matching the LLM enable/disable contract. Body: {"enabled": bool}.
 	// Disabling is unconditional; enabling clears any LastDispatchError.
 	case strings.HasSuffix(rest, "/enabled") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/enabled")
 		var body struct{ Enabled bool `json:"enabled"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -132,6 +142,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	// PUT body: {"peer": "<peer-name>"}. DELETE clears the binding.
 	// Observer-down does NOT touch this binding (Q4) — operator-driven only.
 	case strings.HasSuffix(rest, "/observer-peer") && (r.Method == http.MethodPut || r.Method == http.MethodPost):
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/observer-peer")
 		var body struct{ Peer string `json:"peer"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -163,6 +176,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": name, "observer_peer": body.Peer, "ok": true})
 
 	case strings.HasSuffix(rest, "/observer-peer") && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/observer-peer")
 		n, err := s.computeReg.Get(name)
 		if err != nil {
@@ -178,10 +194,16 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": name, "observer_peer": "", "ok": true})
 
 	case strings.HasSuffix(rest, "/health") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/health")
 		s.handleComputeNodeHealth(w, r, name)
 
 	case strings.HasSuffix(rest, "/detail") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/detail")
 		s.handleComputeNodeDetail(w, r, name)
 
@@ -189,23 +211,32 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	// requested LLM kind. Used by PWA's kind-aware model dropdown so
 	// operators don't have to know exact model names.
 	case strings.HasSuffix(rest, "/models") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/models")
 		s.handleComputeNodeModels(w, r, name)
 
-	// alpha.33 #244 — start a background pull on this node.
 	case strings.HasSuffix(rest, "/models/pull") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		name := strings.TrimSuffix(rest, "/models/pull")
 		s.handleComputeNodeModelPull(w, r, name)
 
-	// alpha.33 #244 — DELETE a model variant from this node.
-	// Path: /api/compute/nodes/<n>/models/<model-name-or-tag>
 	case strings.Contains(rest, "/models/") && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		idx := strings.Index(rest, "/models/")
 		name := rest[:idx]
 		model := rest[idx+len("/models/"):]
 		s.handleComputeNodeModelDelete(w, r, name, model)
 
 	case rest != "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
 		n, err := s.computeReg.Get(rest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -214,6 +245,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, n)
 
 	case rest != "" && r.Method == http.MethodPut:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		var n compute.Node
 		if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -246,6 +280,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
 		if err := s.computeReg.Delete(rest); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

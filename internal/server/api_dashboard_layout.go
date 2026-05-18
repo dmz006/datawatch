@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func (s *Server) dashLayoutPath() string {
@@ -15,6 +17,9 @@ func (s *Server) dashLayoutPath() string {
 func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapDashboardRead) {
+			return
+		}
 		data, err := os.ReadFile(s.dashLayoutPath())
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -24,6 +29,9 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapDashboardWrite) {
+			return
+		}
 		var body json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)

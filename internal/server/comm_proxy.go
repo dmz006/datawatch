@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/messaging"
 )
 
@@ -38,6 +39,9 @@ func (s *Server) SetCommDefaults(d map[string]string) {
 
 // handleCommProxySend serves POST /api/proxy/comm/{channel}/send.
 func (s *Server) handleCommProxySend(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

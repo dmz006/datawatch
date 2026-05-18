@@ -14,10 +14,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleSplashLogo serves the operator-provided custom logo.
 func (s *Server) handleSplashLogo(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -50,6 +55,9 @@ func (s *Server) handleSplashLogo(w http.ResponseWriter, r *http.Request) {
 
 // handleSplashInfo returns the splash render context.
 func (s *Server) handleSplashInfo(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapHealthRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

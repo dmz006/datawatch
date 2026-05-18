@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/skills"
 )
 
@@ -94,16 +95,19 @@ func (a SkillsManagerAdapter) LoadSkillContent(name string) (string, error) {
 // ── handlers ────────────────────────────────────────────────────────────
 
 func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) {
-	if s.skillsMgr == nil {
-		http.Error(w, "skills disabled", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/skills/registries")
 	rest = strings.TrimPrefix(rest, "/")
 
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapConfigRead) {
+				return
+			}
+			if s.skillsMgr == nil {
+				http.Error(w, "skills disabled", http.StatusServiceUnavailable)
+				return
+			}
 			// Return bare array for mobile client compat (#60).
 			regs := s.skillsMgr.Store().ListRegistries()
 			if regs == nil {
@@ -111,6 +115,13 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			}
 			writeJSONOK(w, regs)
 		case http.MethodPost:
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			if s.skillsMgr == nil {
+				http.Error(w, "skills disabled", http.StatusServiceUnavailable)
+				return
+			}
 			var req skills.Registry
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -133,6 +144,13 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.skillsMgr == nil {
+			http.Error(w, "skills disabled", http.StatusServiceUnavailable)
+			return
+		}
 		if err := s.skillsMgr.AddDefault(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -149,10 +167,19 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 		action = parts[1]
 	}
 
+	// All per-registry routes require skillsMgr.
+	if s.skillsMgr == nil {
+		http.Error(w, "skills disabled", http.StatusServiceUnavailable)
+		return
+	}
+
 	switch action {
 	case "":
 		switch r.Method {
 		case http.MethodGet:
+			if !s.fedCap(w, r, federation.CapConfigRead) {
+				return
+			}
 			reg, ok := s.skillsMgr.Store().GetRegistry(name)
 			if !ok {
 				http.Error(w, "not found", http.StatusNotFound)
@@ -160,6 +187,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			}
 			writeJSONOK(w, reg)
 		case http.MethodPut:
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
 			var req skills.Registry
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -173,6 +203,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			s.audit("skills_registry_update", "registry", name, nil)
 			writeJSONOK(w, req)
 		case http.MethodDelete:
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
 			n, err := s.skillsMgr.Store().DeleteRegistry(name)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -190,6 +223,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		avail, err := s.skillsMgr.Connect(name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -203,6 +239,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
 		avail, err := s.skillsMgr.Browse(name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -213,6 +252,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 	case "sync":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
 		var req struct {
@@ -238,6 +280,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 	case "unsync":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
 		var req struct {
@@ -272,10 +317,6 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 //   GET /api/skills/{name}           — get manifest + path
 //   GET /api/skills/{name}/content   — load markdown
 func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
-	if s.skillsMgr == nil {
-		http.Error(w, "skills disabled", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/skills")
 	rest = strings.TrimPrefix(rest, "/")
 
@@ -283,6 +324,13 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 		// "synced" is a mobile compat alias for GET /api/skills (#60).
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.skillsMgr == nil {
+			http.Error(w, "skills disabled", http.StatusServiceUnavailable)
 			return
 		}
 		// Return bare array for mobile client compat (#60).
@@ -301,10 +349,19 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 		action = parts[1]
 	}
 
+	// All per-skill routes require skillsMgr.
+	if s.skillsMgr == nil {
+		http.Error(w, "skills disabled", http.StatusServiceUnavailable)
+		return
+	}
+
 	switch action {
 	case "":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigRead) {
 			return
 		}
 		sk, ok := s.skillsMgr.Store().GetSynced("", name)
@@ -317,6 +374,9 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	case "content":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapConfigRead) {
 			return
 		}
 		body, err := s.skillsMgr.LoadSkillContent(name)

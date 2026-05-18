@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/dmz006/datawatch/internal/agents"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleAgentAudit serves GET /api/agents/audit with optional
@@ -18,6 +19,9 @@ import (
 func (s *Server) handleAgentAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAuditRead) {
 		return
 	}
 	if s.agentAuditPath == "" {

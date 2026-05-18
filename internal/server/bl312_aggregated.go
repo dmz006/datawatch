@@ -19,10 +19,14 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleAggregatedAlerts implements GET /api/alerts/aggregated.
 func (s *Server) handleAggregatedAlerts(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -97,6 +101,9 @@ func (s *Server) handleAggregatedAlerts(w http.ResponseWriter, r *http.Request) 
 
 // handleAggregatedPRDs implements GET /api/autonomous/prds/aggregated.
 func (s *Server) handleAggregatedPRDs(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

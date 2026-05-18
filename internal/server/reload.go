@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // ReloadResult describes what reload did.
@@ -56,6 +57,9 @@ func (s *Server) RegisterReloader(name string, fn func() error) {
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	subsystem := r.URL.Query().Get("subsystem")

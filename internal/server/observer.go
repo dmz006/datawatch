@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -42,24 +43,30 @@ type ObserverAPI interface {
 func (s *Server) SetObserverAPI(a ObserverAPI) { s.observerAPI = a }
 
 func (s *Server) handleObserverStats(w http.ResponseWriter, r *http.Request) {
-	if s.observerAPI == nil {
-		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
-		return
-	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
+	if s.observerAPI == nil {
+		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
 		return
 	}
 	writeJSONOK(w, s.observerAPI.Stats())
 }
 
 func (s *Server) handleObserverEnvelopes(w http.ResponseWriter, r *http.Request) {
-	if s.observerAPI == nil {
-		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
-		return
-	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
+	if s.observerAPI == nil {
+		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
 		return
 	}
 	writeJSONOK(w, map[string]any{
@@ -87,12 +94,15 @@ func (s *Server) handleObserverEnvelopes(w http.ResponseWriter, r *http.Request)
 // session on peer-A talking to ollama on peer-B will appear on
 // peer-B's ollama envelope as Callers[i].Caller = "peer-A:session:opencode-x1y2".
 func (s *Server) handleObserverEnvelopesAllPeers(w http.ResponseWriter, r *http.Request) {
-	if s.observerAPI == nil {
-		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
-		return
-	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
+	if s.observerAPI == nil {
+		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
 		return
 	}
 	byPeer := map[string][]observer.Envelope{}
@@ -113,12 +123,15 @@ func (s *Server) handleObserverEnvelopesAllPeers(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleObserverEnvelope(w http.ResponseWriter, r *http.Request) {
-	if s.observerAPI == nil {
-		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
-		return
-	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
+	if s.observerAPI == nil {
+		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
 		return
 	}
 	id := r.URL.Query().Get("id")

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 type deviceAlias struct {
@@ -24,15 +25,18 @@ type deviceAlias struct {
 }
 
 func (s *Server) handleDeviceAliases(w http.ResponseWriter, r *http.Request) {
-	if s.cfg == nil || s.cfgPath == "" {
-		http.Error(w, "config not available", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/device-aliases")
 	rest = strings.TrimPrefix(rest, "/")
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		out := make([]deviceAlias, 0, len(s.cfg.Session.DeviceAliases))
 		for k, v := range s.cfg.Session.DeviceAliases {
 			out = append(out, deviceAlias{Alias: k, Server: v})
@@ -41,6 +45,13 @@ func (s *Server) handleDeviceAliases(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 	case rest == "" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		var req deviceAlias
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -63,6 +74,13 @@ func (s *Server) handleDeviceAliases(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "alias": req.Alias})
 	case rest != "" && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.cfg == nil || s.cfgPath == "" {
+			http.Error(w, "config not available", http.StatusServiceUnavailable)
+			return
+		}
 		if _, ok := s.cfg.Session.DeviceAliases[rest]; !ok {
 			http.Error(w, "alias not found", http.StatusNotFound)
 			return

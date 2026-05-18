@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // handleMigrationComputeKinds — v7.0.0-alpha.23 (Q1, Q2):
@@ -35,12 +36,15 @@ import (
 //                                             validates new kind is in
 //                                             supported set + persists.
 func (s *Server) handleMigrationComputeKinds(w http.ResponseWriter, r *http.Request) {
-	if s.computeReg == nil {
-		http.Error(w, "compute registry not wired", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.computeReg == nil {
+			http.Error(w, "compute registry not wired", http.StatusServiceUnavailable)
+			return
+		}
 		out := []map[string]any{}
 		for _, n := range s.computeReg.List() {
 			if n.Kind.IsDeprecated() {
@@ -71,6 +75,9 @@ func (s *Server) handleMigrationComputeKinds(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleMigrationComputeKindsUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
 	if s.computeReg == nil {
@@ -140,6 +147,9 @@ func (s *Server) handleMigrationStatus(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(dataDir, "v7-migration-status.json")
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -157,6 +167,9 @@ func (s *Server) handleMigrationStatus(w http.ResponseWriter, r *http.Request) {
 		doc["show"] = true
 		writeJSONOK(w, doc)
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
 		_ = os.Remove(path) // suppress further notice
 		writeJSONOK(w, map[string]any{"dismissed": true})
 	default:

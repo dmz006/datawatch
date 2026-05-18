@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // smokeRunsDir returns ~/.datawatch/smoke-runs, creating it on demand.
@@ -58,6 +60,9 @@ func (s *Server) smokeForward(body []byte) {
 // handleSmokeForwardURL — GET/PUT /api/smoke/forward-url
 // Allows reading and updating the cross-instance forward URL at runtime (#54).
 func (s *Server) handleSmokeForwardURL(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		writeJSONOK(w, map[string]any{
@@ -93,6 +98,9 @@ func (s *Server) handleSmokeForwardURL(w http.ResponseWriter, r *http.Request) {
 //	DELETE /api/smoke/progress       → delete ALL runs
 //	DELETE /api/smoke/progress/{id}  → delete ONE run
 func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
 	// Extract optional run ID from path: /api/smoke/progress/{id}
 	// First try Go 1.22+ path value
 	runID := r.PathValue("id")

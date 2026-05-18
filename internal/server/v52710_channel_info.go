@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // ChannelInfo is the on-the-wire shape of GET /api/channel/info.
@@ -68,6 +69,9 @@ type StaleMCPJSONEntry struct {
 
 // handleChannelInfo serves GET /api/channel/info.
 func (s *Server) handleChannelInfo(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

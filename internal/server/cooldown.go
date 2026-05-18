@@ -10,18 +10,30 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func (s *Server) handleCooldown(w http.ResponseWriter, r *http.Request) {
-	if s.manager == nil {
-		http.Error(w, "manager not available", http.StatusServiceUnavailable)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.manager == nil {
+			http.Error(w, "manager not available", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.manager.CooldownStatus())
 	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.manager == nil {
+			http.Error(w, "manager not available", http.StatusServiceUnavailable)
+			return
+		}
 		var req struct {
 			UntilUnixMs int64  `json:"until_unix_ms"`
 			Reason      string `json:"reason,omitempty"`
@@ -43,6 +55,13 @@ func (s *Server) handleCooldown(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.manager.CooldownStatus())
 	case http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.manager == nil {
+			http.Error(w, "manager not available", http.StatusServiceUnavailable)
+			return
+		}
 		s.manager.ClearGlobalCooldown()
 		w.WriteHeader(http.StatusNoContent)
 	default:

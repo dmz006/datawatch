@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -47,6 +48,9 @@ type AskResponse struct {
 }
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
