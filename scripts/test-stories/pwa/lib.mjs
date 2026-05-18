@@ -49,7 +49,7 @@ export async function launchBrowser({ headless = true } = {}) {
 
 // Navigate to the PWA, inject auth token into localStorage, reload so the app
 // picks it up, then wait for the splash to resolve (WS connected).
-export async function connectToPWA(page, { base = env.tls, token = env.token, timeout = 20000 } = {}) {
+export async function connectToPWA(page, { base = env.http, token = env.token, timeout = 20000 } = {}) {
   // First load — may show splash, 401, or unstyled page. Just need the origin.
   await page.goto(base, { waitUntil: 'domcontentloaded', timeout });
 

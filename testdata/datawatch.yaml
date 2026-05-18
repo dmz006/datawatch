@@ -6,7 +6,7 @@ data_dir: /data
 
 session:
   llm_backend: shell
-  max_sessions: 10
+  max_sessions: 50
   input_idle_timeout: 10
   tail_lines: 20
   alert_context_lines: 5
