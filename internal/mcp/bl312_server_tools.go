@@ -14,6 +14,8 @@ import (
 	"fmt"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // RegisterServerTools adds all BL312 server-registry MCP tools to the
@@ -105,7 +107,10 @@ func (s *Server) toolServerTest() mcpsdk.Tool {
 // ---------------------------------------------------------------------------
 // Handlers (proxy to REST)
 
-func (s *Server) handleServerListMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerListMCP(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/servers", nil)
 	if err != nil {
 		return nil, err
@@ -113,7 +118,10 @@ func (s *Server) handleServerListMCP(_ context.Context, _ mcpsdk.CallToolRequest
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleServerGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerGetMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/servers/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err
@@ -121,7 +129,10 @@ func (s *Server) handleServerGetMCP(_ context.Context, req mcpsdk.CallToolReques
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleServerAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerAddMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	enabled := req.GetBool("enabled", true)
 	body := map[string]any{
 		"name":    mustString(req, "name"),
@@ -141,7 +152,10 @@ func (s *Server) handleServerAddMCP(_ context.Context, req mcpsdk.CallToolReques
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleServerUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerUpdateMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	name := mustString(req, "name")
 	body := map[string]any{"name": name}
 	if url := mustString(req, "url"); url != "" {
@@ -166,7 +180,10 @@ func (s *Server) handleServerUpdateMCP(_ context.Context, req mcpsdk.CallToolReq
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleServerDeleteMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerDeleteMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyJSON("DELETE", "/api/servers/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err
@@ -174,7 +191,10 @@ func (s *Server) handleServerDeleteMCP(_ context.Context, req mcpsdk.CallToolReq
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleServerTestMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleServerTestMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyJSON("POST", "/api/servers/"+mustString(req, "name")+"/test", nil)
 	if err != nil {
 		return nil, err

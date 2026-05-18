@@ -4586,6 +4586,12 @@ Return STRICT JSON:
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
 	mcpSrv.SetToken(cfg.Server.Token)
+	// BL317 — wire federation peer store so MCP SSE auth can validate peer tokens.
+	if httpServer != nil {
+		if ss := httpServer.ServerStore(); ss != nil {
+			mcpSrv.SetFedPeerStore(ss)
+		}
+	}
 	mcpSrv.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
 	// BL274 Sprint 3 — wire the MCP invoker into the docsindex runtime so
 	// docs_apply mode=execute can dispatch curated exec_steps in-process.

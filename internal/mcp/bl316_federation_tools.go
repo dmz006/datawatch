@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func (s *Server) RegisterFederationTools() {
@@ -145,7 +147,10 @@ func (s *Server) toolFederationGroupDelete() mcpsdk.Tool {
 // ---------------------------------------------------------------------------
 // Handlers (proxy to REST)
 
-func (s *Server) handleFederationPeerListMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerListMCP(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/federation/peers", nil)
 	if err != nil {
 		return nil, err
@@ -153,7 +158,10 @@ func (s *Server) handleFederationPeerListMCP(_ context.Context, _ mcpsdk.CallToo
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationPeerAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerAddMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	body := map[string]any{
 		"name": mustString(req, "name"),
 		"url":  mustString(req, "url"),
@@ -171,7 +179,10 @@ func (s *Server) handleFederationPeerAddMCP(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationPeerGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerGetMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/federation/peers/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err
@@ -179,7 +190,10 @@ func (s *Server) handleFederationPeerGetMCP(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationPeerUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerUpdateMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	name := mustString(req, "name")
 	body := map[string]any{"name": name}
 	if url := mustString(req, "url"); url != "" {
@@ -198,7 +212,10 @@ func (s *Server) handleFederationPeerUpdateMCP(_ context.Context, req mcpsdk.Cal
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationPeerDeleteMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerDeleteMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyJSON("DELETE", "/api/federation/peers/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err
@@ -206,7 +223,10 @@ func (s *Server) handleFederationPeerDeleteMCP(_ context.Context, req mcpsdk.Cal
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationPeerTestMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationPeerTestMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyJSON("POST", "/api/federation/peers/"+mustString(req, "name")+"/test", nil)
 	if err != nil {
 		return nil, err
@@ -214,7 +234,10 @@ func (s *Server) handleFederationPeerTestMCP(_ context.Context, req mcpsdk.CallT
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupListMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupListMCP(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/federation/groups", nil)
 	if err != nil {
 		return nil, err
@@ -222,7 +245,10 @@ func (s *Server) handleFederationGroupListMCP(_ context.Context, _ mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupListBuiltinsMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupListBuiltinsMCP(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/federation/groups/builtins", nil)
 	if err != nil {
 		return nil, err
@@ -230,7 +256,10 @@ func (s *Server) handleFederationGroupListBuiltinsMCP(_ context.Context, _ mcpsd
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupAddMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	body := map[string]any{
 		"name": mustString(req, "name"),
 		"caps": strings.Split(mustString(req, "caps"), ","),
@@ -245,7 +274,10 @@ func (s *Server) handleFederationGroupAddMCP(_ context.Context, req mcpsdk.CallT
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupGetMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationList); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyGet("/api/federation/groups/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err
@@ -253,7 +285,10 @@ func (s *Server) handleFederationGroupGetMCP(_ context.Context, req mcpsdk.CallT
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupUpdateMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	name := mustString(req, "name")
 	body := map[string]any{
 		"name": name,
@@ -269,7 +304,10 @@ func (s *Server) handleFederationGroupUpdateMCP(_ context.Context, req mcpsdk.Ca
 	return textOK(string(out)), nil
 }
 
-func (s *Server) handleFederationGroupDeleteMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleFederationGroupDeleteMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapFederationWrite); deny != nil {
+		return deny, nil
+	}
 	out, err := s.proxyJSON("DELETE", "/api/federation/groups/"+mustString(req, "name"), nil)
 	if err != nil {
 		return nil, err

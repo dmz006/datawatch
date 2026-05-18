@@ -20,6 +20,8 @@ import (
 	"net/http"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // allowSelfConfigCheck returns a denied result if mcp.allow_self_config is not
@@ -92,7 +94,10 @@ func (s *Server) toolDetectionConfigSet() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleDetectionConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleDetectionConfigSet(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+		return deny, nil
+	}
 	if denied := s.allowSelfConfigCheck(); denied != nil {
 		return denied, nil
 	}
@@ -147,7 +152,10 @@ func (s *Server) toolDNSChannelConfigSet() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleDNSChannelConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleDNSChannelConfigSet(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+		return deny, nil
+	}
 	if denied := s.allowSelfConfigCheck(); denied != nil {
 		return denied, nil
 	}
@@ -226,7 +234,10 @@ func (s *Server) toolProxyConfigSet() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleProxyConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleProxyConfigSet(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+		return deny, nil
+	}
 	if denied := s.allowSelfConfigCheck(); denied != nil {
 		return denied, nil
 	}

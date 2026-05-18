@@ -46,6 +46,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -89,6 +90,8 @@ type Server struct {
 	agentAuditPath string
 	agentAuditCEF  bool
 	token          string // bearer token for internal API calls
+	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
+	fedPeerStore FedPeerStore
 }
 
 // SetAgentAuditPath wires the audit file path for the agent_audit
@@ -598,6 +601,9 @@ func (s *Server) SetWebPort(port int) { s.webPort = port }
 // SetToken sets the bearer token for internal API calls.
 func (s *Server) SetToken(token string) { s.token = token }
 
+// SetFedPeerStore wires the federation peer registry for MCP SSE auth (BL317).
+func (s *Server) SetFedPeerStore(store FedPeerStore) { s.fedPeerStore = store }
+
 // Invoke calls a registered MCP tool by name with the given arguments
 // and returns the concatenated text content (the most common payload
 // shape) plus any error. Used by docs_apply execute mode (BL274 Sprint 3)
@@ -996,10 +1002,10 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 
 	sseSrv := server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))
 
-	var handler http.Handler = sseSrv
-	if s.cfg.Token != "" {
-		handler = bearerAuthMiddleware(s.cfg.Token, sseSrv)
-	}
+	// BL317 — replace static bearerAuthMiddleware with combined admin+federation auth.
+	// Admin token passes through unrestricted; federation peer tokens are accepted
+	// and tagged in context so per-tool fedCap checks can enforce CBAC.
+	handler := s.mcpFedAuthMiddleware(sseSrv)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
@@ -1282,6 +1288,9 @@ func (s *Server) handleListSessions(_ context.Context, _ mcpsdk.CallToolRequest)
 }
 
 func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsWrite); deny != nil {
+		return deny, nil
+	}
 	task := req.GetString("task", "")
 	if strings.TrimSpace(task) == "" {
 		return mcpsdk.NewToolResultText("Error: task is required"), nil
@@ -1478,7 +1487,10 @@ func (s *Server) handleTelemetryList(_ context.Context, _ mcpsdk.CallToolRequest
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }
 
-func (s *Server) handleSendInput(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsInput); deny != nil {
+		return deny, nil
+	}
 	id := req.GetString("session_id", "")
 	if id == "" {
 		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
@@ -1499,7 +1511,10 @@ func (s *Server) handleSendInput(_ context.Context, req mcpsdk.CallToolRequest) 
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Input sent to session %s.", sess.ID)), nil
 }
 
-func (s *Server) handleKillSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsKill); deny != nil {
+		return deny, nil
+	}
 	id := req.GetString("session_id", "")
 	if id == "" {
 		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
@@ -1516,7 +1531,10 @@ func (s *Server) handleKillSession(_ context.Context, req mcpsdk.CallToolRequest
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s killed.", sess.ID)), nil
 }
 
-func (s *Server) handleRenameSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsWrite); deny != nil {
+		return deny, nil
+	}
 	id := req.GetString("session_id", "")
 	name := req.GetString("name", "")
 	if id == "" || name == "" {
@@ -1534,7 +1552,10 @@ func (s *Server) handleRenameSession(_ context.Context, req mcpsdk.CallToolReque
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s renamed to %q.", sess.ID, name)), nil
 }
 
-func (s *Server) handleStopAllSessions(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsKill); deny != nil {
+		return deny, nil
+	}
 	sessions := s.manager.ListSessions()
 	var killed, skipped int
 	for _, sess := range sessions {
@@ -1624,7 +1645,10 @@ func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolReque
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s marked as read.", id)), nil
 }
 
-func (s *Server) handleRestartDaemon(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+		return deny, nil
+	}
 	if s.restartFn == nil {
 		return mcpsdk.NewToolResultText("Restart not available (not running as daemon)."), nil
 	}

@@ -661,6 +661,14 @@ func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	}
 }
 
+// ServerStore returns the multi-server registry (BL317 — for MCP fed-auth wiring).
+func (s *HTTPServer) ServerStore() *multiserver.Store {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.serverStore
+}
+
 // SetFedGroupStore (BL316) — wires the custom capability group store.
 func (s *HTTPServer) SetFedGroupStore(gs *federation.GroupStore) {
 	if s.api != nil {
