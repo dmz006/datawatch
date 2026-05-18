@@ -244,8 +244,8 @@ destroy_pool() {
 }
 
 # --- parallel job tracking --------------------------------------------------
-declare -A PAR_STORY   # pid -> story_id
-declare -a PAR_PIDS    # active pids
+declare -A PAR_STORY=()  # pid -> story_id (bash 5.3: must init with =() for set -u compat)
+declare -a PAR_PIDS=()   # active pids
 RESULT_DIR="$TEST_DIR/par-results"
 mkdir -p "$RESULT_DIR"
 CURRENT_WORKERS=2
@@ -309,8 +309,7 @@ drain_parallel() {
     esac
   done
   PAR_PIDS=()
-  # Reset associative array
-  unset PAR_STORY; declare -gA PAR_STORY
+  unset PAR_STORY; declare -gA PAR_STORY=()
 }
 
 # --- tag helpers ------------------------------------------------------------
