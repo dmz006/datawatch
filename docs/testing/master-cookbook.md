@@ -472,6 +472,20 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T30 | TS-433 | docs_search "mcp sampling" returns result referencing mcp-sampling howto | surface:mcp feature:mcp feature:howto feature:mcp-sampling | 📋 planned | — | — |
 | T30 | TS-434 | docs_list_howtos contains dashboard and compute-nodes and mcp-sampling | surface:mcp feature:mcp feature:howto | 📋 planned | — | — |
 | T30 | TS-435 | GET /api/secrets/{name}/exists returns {exists:true|false} without leaking value | surface:api feature:secrets | 📋 planned | — | — |
+| T31 | TS-436 | POST /api/sessions/start with llm=claude-code sets llm_ref on returned session | surface:api feature:sessions | 📋 planned | — | conflict:llm |
+| T31 | TS-437 | POST /api/sessions/start with llm+compute_node sets both llm_ref and compute_node_ref | surface:api feature:sessions feature:compute | 📋 planned | — | conflict:llm |
+| T31 | TS-438 | POST /api/sessions/start with compute_node only returns 400 with operator-readable error | surface:api feature:sessions | 📋 planned | — | conflict:llm |
+| T31 | TS-439 | POST /api/sessions/start with disabled LLM returns 400 | surface:api feature:sessions feature:llm-registry | 📋 planned | — | conflict:llm |
+| T31 | TS-440 | GET /api/sessions response has backend_family field (not llm_backend) | surface:api feature:sessions | 📋 planned | — | — |
+| T31 | TS-441 | POST /api/sessions/set_llm_ref updates llm_ref in-place; GET reflects new value immediately | surface:api feature:sessions feature:llm-registry | 📋 planned | — | conflict:llm |
+| T31 | TS-442 | start_session MCP tool with llm param returns session with llm_ref set | surface:mcp feature:sessions | 📋 planned | — | conflict:llm |
+| T31 | TS-443 | datawatch session new --llm shell "test" exits 0 and prints "Session started." | surface:cli feature:sessions feature:cli | 📋 planned | — | — |
+| T31 | TS-444 | datawatch session new --llm ollama --compute datawatch-ollama exits 0 and prints ComputeNode line | surface:cli feature:sessions feature:compute feature:cli | 📋 planned | — | conflict:llm |
+| T31 | TS-445 | GET /api/sessions response for CLI-created session has backend_family field matching LLM kind | surface:cli surface:api feature:sessions feature:cli | 📋 planned | — | — |
+| T31 | TS-446 | comm new:llm=claude-code:<task> creates session with llm_ref set (checked via REST) | surface:comm feature:sessions | 📋 planned | — | conflict:llm conflict:signal |
+| T31 | TS-447 | 5 locale bundles contain session_llm_ref_title and session_compute_ref_title keys | surface:locale feature:sessions | 📋 planned | — | — |
+| T31 | TS-448 | 5 locale bundles contain new_session_v7_llm_label and new_session_v7_compute_label keys | surface:locale feature:sessions | 📋 planned | — | — |
+| T31 | TS-449 | docs_search "compute_node_ref session llm_ref" returns sessions-deep-dive.md in hits | surface:mcp feature:sessions feature:howto | 📋 planned | — | — |
 
 ---
 

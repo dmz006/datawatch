@@ -3,18 +3,19 @@ docs:
   index: true
   topics: [sessions, tmux, lifecycle]
 exec_params:
-  - {name: backend, required: true, description: "claude-code, opencode-acp, ollama, etc."}
+  - {name: llm, required: true, description: "LLM registry name (e.g. claude-code, my-ollama). Use 'datawatch llm list' to see options."}
   - {name: task, required: true, description: "Initial task / prompt for the session"}
   - {name: project_dir, required: false, default: ".", description: "Working directory"}
+  - {name: compute_node, required: false, description: "Compute node name override (must be in the LLM's node list if set)"}
 exec_steps:
   - tool: list_sessions
     description: Inventory current sessions before adding a new one
     args: {}
     read_only: true
   - tool: start_session
-    description: Spawn the new session with the chosen backend
+    description: Spawn the new session with the chosen LLM
     args:
-      backend: "{{params.backend}}"
+      llm: "{{params.llm}}"
       task: "{{params.task}}"
       project_dir: "{{params.project_dir}}"
     read_only: false
@@ -58,6 +59,18 @@ state-decision logic.
 - At least one LLM configured in the registry (`datawatch llm list`).
   See [`llm-registry.md`](llm-registry.md) to set one up.
 
+## v7 Session fields
+
+v7.0 added two new orthogonal identifiers carried on every session object:
+
+| Field | JSON key | Meaning |
+|-------|----------|---------|
+| `LLMRef` | `llm_ref` | LLM registry entry name used to start this session (e.g. `claude-code`). Present only when session was started via the v7 `llm` path. |
+| `ComputeNodeRef` | `compute_node_ref` | Compute Node the session is bound to. Set when `compute_node` was specified or auto-resolved from the LLM's node list. |
+| `BackendFamily` | `backend_family` | Adapter family string (`claude-code`, `ollama`, `opencode`, etc.). Renamed from `llm_backend` in v7.0-alpha.27. External tooling must read `backend_family`; the legacy `llm_backend` key is no longer emitted. |
+
+**Migration note:** If you have scripts or apps reading `sess.llm_backend`, switch them to `sess.backend_family`. Stored `state.json` files from before alpha.27 load cleanly (the daemon accepts both on read), but all new writes use the new key.
+
 ## Setup
 
 No setup beyond having a backend. Sessions spawn on demand.
@@ -67,13 +80,20 @@ No setup beyond having a backend. Sessions spawn on demand.
 ### 4a. Happy path — CLI
 
 ```sh
-# 1. Start a session.
+# 1. Start a session using the v7 LLM registry.
+#    --llm   → LLM registry name (replaces legacy --backend)
+#    --compute → optional; must be in the LLM's compute_nodes list if set
 SID=$(datawatch sessions start \
   --llm claude-code \
   --project-dir ~/work/foo \
   --task "Audit the auth module for input-validation gaps" 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
 echo "session: $SID"
+
+# With an explicit compute node (failover override):
+SID=$(datawatch sessions start \
+  --llm my-ollama --compute gpu-box-1 \
+  --task "Refactor the auth module" 2>&1 | grep -oP 'session \K[a-z0-9-]+')
 
 # 2. Watch its state in real time.
 watch -n 1 "datawatch sessions get $SID | jq '.state, .last_channel_event_at'"
@@ -85,15 +105,19 @@ datawatch sessions tail $SID -f
 # 4. Send input.
 datawatch sessions input $SID "Start with the password reset flow"
 
-# 5. Inspect via API.
+# 5. Inspect via API — note v7 field names.
 datawatch sessions get $SID | jq
 #  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
-#     "task":"...","llm_ref":"claude-code","last_channel_event_at":"..."}
+#     "task":"...","llm_ref":"claude-code","compute_node_ref":"gpu-box-1",
+#     "backend_family":"claude-code","last_channel_event_at":"..."}
 
-# 6. Stop when done.
+# 6. Rebind LLM in-flight (surgical patch, safe while session is running):
+datawatch sessions set-llm-ref $SID my-other-llm
+
+# 7. Stop when done.
 datawatch sessions kill $SID
 
-# 7. After-the-fact inspection (terminal state):
+# 8. After-the-fact inspection (terminal state):
 ls ~/.datawatch/sessions/$SID/
 cat ~/.datawatch/sessions/$SID/state.json | jq
 tail -50 ~/.datawatch/sessions/$SID/output.log
@@ -103,16 +127,26 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 
 1. PWA → bottom nav **Sessions**. The list shows every session this
    daemon knows about; new sessions go to the top by default.
-2. **Filter bar** — above the session list, two collapsible buttons:
-   - **LLM (N) ▸** — expands to show one badge per configured LLM;
-     click any badge to filter to sessions using that LLM; button
-     highlights when a filter is active.
-   - **State (N) ▸** — expands to show every real session state with
-     a colored dot rail (Running / Waiting / Rate-limited / Complete /
-     Failed / Killed). Click to filter; multiple states can be active.
-   - Filter text input (to the right) narrows by session name/task.
+2. **Filter bar** — above the session list, three controls left to right:
+   - **LLM (N) ▸** — collapses/expands a badge row showing each
+     backend-family (`claude-code`, `opencode`, `opencode-acp`,
+     `opencode-prompt`, `openwebui`, `ollama`, `shell`,
+     `council-virtual`). Click a badge to filter; button highlights
+     when a filter is active.
+   - **State (N) ▸** — collapses/expands a colored dot rail for every
+     real state (Running 🟢 / Waiting 🟠 / Rate-limited 🔴 / Complete ⚪
+     / Failed 🔴 / Killed ⚪). Click any dot to filter; multiple states
+     can be selected simultaneously.
+   - **Text input** — narrows by session name, task, ID,
+     `llm_ref`, or `compute_node_ref` substrings. Combines with the
+     badge filters.
 3. Click the **+** FAB → wizard:
-   - **LLM** dropdown (shows entries from your LLM Registry).
+   - **LLM** dropdown (populated from `/api/llms`; disabled entries
+     filtered out; adapter kind shown in label).
+   - **Compute Node** — cascading dropdown seeded from the chosen LLM's
+     `compute_nodes` list. First entry labeled "(primary)"; subsequent
+     "(failover N)". Shows "(any node OK)" when the LLM has no pinned
+     list.
    - **Model** (populated from that LLM's enabled model list).
    - Task (free-text; one-paragraph task spec).
    - Project Profile (optional — picks workspace + git policy + skills).
@@ -120,7 +154,11 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Start**.
 4. The wizard closes; the new session appears at the top of the list
    with state `running` + a green dot.
-5. Click into the session card. Detail view opens with three tabs:
+5. Click into the session card. The **meta-bar** shows:
+   - ⚡ `<llm-name>` green badge (v7 LLM registry name, when set).
+   - ⚙ `<compute-node>` purple badge (v7 Compute Node, when set).
+   - Hover each for a tooltip explaining the v7 field.
+   Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands.
    - **Channel** — structured event bubble feed (MCP / ACP /
@@ -151,18 +189,32 @@ optional.
 ### 5b. REST
 
 ```sh
-# Start.
+# Start — v7 LLM registry path.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"llm":"claude-code","task":"...","project_dir":"/tmp"}' \
+  $BASE/api/sessions/start
+
+# Start — with explicit compute node.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"llm":"my-ollama","compute_node":"gpu-box-1","task":"..."}' \
   $BASE/api/sessions/start
 
 # List + filter.
 curl -sk -H "Authorization: Bearer $TOKEN" \
   "$BASE/api/sessions?state=running&llm=claude-code"
 
-# Get by ID.
+# Get by ID — note v7 field names in response.
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/sessions/<full-id>
+# → {"id":"...","backend_family":"claude-code","llm_ref":"claude-code",
+#    "compute_node_ref":"gpu-box-1","state":"running",...}
+
+# Rebind LLM in-place (safe while session is running).
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<full-id>","llm_ref":"my-other-llm"}' \
+  $BASE/api/sessions/set_llm_ref
 
 # Send input.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
@@ -176,11 +228,12 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 
 ### 5c. MCP
 
-Tools: `session_start`, `session_get`, `session_list`, `session_input`,
-`session_kill`.
+Tools: `start_session`, `list_sessions`, `session_output`, `send_input`,
+`kill_session`, `restart_session`.
 
-`session_start` args: `{"llm": "...", "task": "...", "project_dir":
-"...", "profile": "?"}`. Returns the session metadata.
+`start_session` args: `{"llm": "<registry-name>", "task": "...",
+"project_dir": "...", "compute_node": "?", "profile": "?"}`. Returns
+the full session metadata including `llm_ref` and `compute_node_ref`.
 
 When invoked from inside an existing session (e.g. claude-code
 spawning a sub-session), the parent session ID is recorded so the
@@ -190,14 +243,17 @@ two are linked in the cross-session memory subsystem.
 
 | Verb | Example |
 |---|---|
-| `start: <task>` | Spawns a session using the channel's default backend. The reply is the LLM's first response. |
+| `start: <task>` | Spawns a session using the channel's default LLM. |
+| `new: llm=<name> [compute=<node>]: <task>` | v7 — picks a specific LLM (and optionally a Compute Node) for this session. |
 | `<reply text>` | Continues the most recent session in this chat. |
 | `state <id>` | Returns current state. |
 | `stop:<id>` | Kills. |
 | `restart:<id>` | Restarts a terminal-state session (spawns fresh, seeded from prior). |
 
 Each channel adapter inherits a `session.default_llm` from config
-unless overridden per-channel.
+unless overridden per-channel. The `new:` verb routes through the REST
+loopback so the same validation (LLM enabled, compute node in list) runs
+in one place.
 
 ### 5e. YAML
 
