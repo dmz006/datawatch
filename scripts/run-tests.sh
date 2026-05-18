@@ -289,8 +289,9 @@ launch_parallel() {
 
 # Wait for all parallel jobs and collect results
 drain_parallel() {
+  [[ ${#PAR_PIDS[@]} -eq 0 ]] && return
   local pid sid rf r
-  for pid in "${PAR_PIDS[@]:-}"; do
+  for pid in "${PAR_PIDS[@]}"; do
     wait "$pid" 2>/dev/null || true
     sid="${PAR_STORY[$pid]:-}"
     [[ -z "$sid" ]] && continue
