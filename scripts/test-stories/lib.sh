@@ -68,6 +68,8 @@ K8S_PF_PORT="${K8S_PF_PORT:-19443}"
 : "${AGT_ID:=}"
 : "${CURRENT_STORY:=}"
 : "${DAEMON_VERSION:=}"
+# Docker-sim state (T13 stories) — must be initialised so bash 5.3 set -u is happy
+: "${DOCKER_SIM_PID:=}"; : "${DOCKER_SIM_CONTAINER:=}"; : "${DOCKER_SIM_IMAGE:=}"
 
 # Cleanup log (in-memory list of "kind id" lines) — written through the run.
 CLEANUP_LOG="${CLEANUP_LOG:-$TEST_DIR/cleanup.log}"
@@ -281,6 +283,43 @@ run_pwa_story() {
   else
     ko "PWA visual test failed (see ${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log)"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Legacy helper: write isolated config for docker-sim / standalone instances.
+# write_test_config <data_dir> <http_port> <tls_port> <mcp_port> <chan_port> [token]
+# ---------------------------------------------------------------------------
+write_test_config() {
+  local data_dir="$1" http_port="$2" _tls_port="$3" mcp_port="$4" _chan_port="$5"
+  local token="${6:-${TEST_TOKEN:-dw-test-token-12345}}"
+  mkdir -p "$data_dir"
+  local tmpl="${REPO_ROOT}/testdata/datawatch.yaml"
+  if [[ -f "$tmpl" ]]; then
+    sed \
+      -e "s|data_dir: /data|data_dir: $data_dir|g" \
+      -e "s|port: 8080|port: $http_port|g" \
+      -e "s|sse_port: 9090|sse_port: $mcp_port|g" \
+      -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+      "$tmpl" > "$data_dir/config.yaml"
+  else
+    cat > "$data_dir/config.yaml" <<YAML
+server:
+  host: 127.0.0.1
+  port: ${http_port}
+  data_dir: ${data_dir}
+  token: ${token}
+YAML
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Legacy helper: check if autonomous mode is enabled in the test daemon.
+# Echoes "yes" or "no".
+# ---------------------------------------------------------------------------
+t3_check_autonomous() {
+  api GET /api/autonomous/config \
+    | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' \
+    2>/dev/null || echo "no"
 }
 
 true
