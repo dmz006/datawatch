@@ -93,11 +93,9 @@
       <!-- alpha.29 #271 — global alert pill. Visible on every page when
            the alert dock has pending alerts. Click → toggles dock. -->
       <span id="headerAlertPill" class="header-alert-pill" style="display:none;align-items:center;gap:4px;padding:2px 8px;margin:0 4px;background:rgba(96,165,250,0.18);border:1px solid var(--accent2);border-radius:10px;font-size:13px;cursor:pointer;font-weight:600;" onclick="toggleAlertDock()" title="Alert dock — click to expand"></span>
-      <!-- BL315 — PWA install button: shown once when browser fires beforeinstallprompt.
-           Hidden after install or dismiss. Not shown inside installed standalone PWA. -->
-      <button id="headerInstallBtn" onclick="installPWA()" title="Install datawatch as a standalone app" aria-label="Install app" style="display:none;background:transparent;border:1px solid var(--border);border-radius:4px;color:inherit;font-size:12px;cursor:pointer;padding:2px 7px;margin:0 2px;white-space:nowrap;">&#11015; Install</button>
-      <!-- BL315 — fullscreen toggle: always visible; works in browser + installed PWA. -->
-      <button id="headerFullscreenBtn" onclick="toggleFullscreen()" title="Toggle fullscreen" aria-label="Toggle fullscreen" style="background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.7;">&#9974;</button>
+      <!-- BL315 — expand toggle: expands standalone PWA window to fill available screen.
+           In a regular browser tab the resize is a no-op; icon still reflects toggle state. -->
+      <button id="headerFullscreenBtn" onclick="toggleFullscreen()" title="Expand window" aria-label="Expand window" style="background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.7;">&#9974;</button>
       <span class="status-dot" id="statusDot" title="Long-press to reconnect + check for app update"></span>
     </header>
 

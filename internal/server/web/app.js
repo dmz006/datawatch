@@ -21973,51 +21973,24 @@ window.councilAddPersonaFromForm = function() {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
-// ── BL315 — Fullscreen + PWA install ─────────────────────────────────────────
+// ── BL315 — PWA window expand (CSS layout, not native fullscreen) ────────────
+// Resizes the standalone PWA window to fill available screen. In a regular
+// browser tab window.resizeTo is blocked silently; the icon still toggles.
+
+let _pwaExpanded = false;
+let _pwaOrigSize = null;
 
 function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen().catch(() => {});
-  }
-}
-
-document.addEventListener('fullscreenchange', () => {
+  _pwaExpanded = !_pwaExpanded;
   const btn = document.getElementById('headerFullscreenBtn');
-  if (!btn) return;
-  if (document.fullscreenElement) {
-    btn.innerHTML = '&#9645;';
-    btn.title = 'Exit fullscreen';
-    btn.style.opacity = '1';
+  if (_pwaExpanded) {
+    _pwaOrigSize = { w: window.outerWidth, h: window.outerHeight };
+    try { window.resizeTo(screen.availWidth, screen.availHeight); } catch (_) {}
+    if (btn) { btn.innerHTML = '&#9645;'; btn.title = 'Restore window size'; btn.style.opacity = '1'; }
   } else {
-    btn.innerHTML = '&#9974;';
-    btn.title = 'Toggle fullscreen';
-    btn.style.opacity = '0.7';
+    if (_pwaOrigSize) {
+      try { window.resizeTo(_pwaOrigSize.w, _pwaOrigSize.h); } catch (_) {}
+    }
+    if (btn) { btn.innerHTML = '&#9974;'; btn.title = 'Expand window'; btn.style.opacity = '0.7'; }
   }
-});
-
-let _pwaInstallPrompt = null;
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  _pwaInstallPrompt = e;
-  const btn = document.getElementById('headerInstallBtn');
-  if (btn) btn.style.display = '';
-});
-
-window.addEventListener('appinstalled', () => {
-  _pwaInstallPrompt = null;
-  const btn = document.getElementById('headerInstallBtn');
-  if (btn) btn.style.display = 'none';
-});
-
-function installPWA() {
-  if (!_pwaInstallPrompt) return;
-  _pwaInstallPrompt.prompt();
-  _pwaInstallPrompt.userChoice.then(() => {
-    _pwaInstallPrompt = null;
-    const btn = document.getElementById('headerInstallBtn');
-    if (btn) btn.style.display = 'none';
-  });
 }
