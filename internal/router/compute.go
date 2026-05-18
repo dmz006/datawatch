@@ -23,7 +23,7 @@ const computeUsage = `Usage:
   compute node                                     list nodes
   compute node list                                list nodes
   compute node get <name>                          fetch one
-  compute node add <name> kind=<k> [k=v ...]       add (kind = local|ssh|docker|k8s|remote|remote-proxy)
+  compute node add <name> kind=<k> [k=v ...]       add (kind = ollama|openai-compat|gemini-api|opencode-api)
   compute node update <name> [k=v ...]             update
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
@@ -33,6 +33,15 @@ const computeUsage = `Usage:
   compute node observer-free                       list peers with no bound ComputeNode
   compute node observer-by-node                    local peers grouped by ComputeNode (alpha.24)
   compute node federation-meta-peers               federation meta view (alpha.24)
+
+Routing (v8.0):
+  routing=direct|docker-network|datawatch-proxy
+  docker-network: image=<img> network=<net> port=<N> container=<name> auto_start=true auto_pull=true
+  datawatch-proxy: peer=<server-name> remote_llm=<llm-name> timeout=<seconds>
+
+Example:
+  compute node add gpu-1 kind=ollama routing=docker-network image=ollama/ollama:latest network=datawatch-llm port=11434
+  compute node add remote-gpu kind=ollama routing=datawatch-proxy peer=dc2 remote_llm=llama3
 
 Common kv pairs:
   address=<host:port-or-url>  monitoring_endpoint=<url>
@@ -228,14 +237,19 @@ func (r *Router) handleComputeCmd(cmd Command) {
 	}
 }
 
-// parseKVPairs converts "kind=remote address=https://gpu-1:11434" into a
+// parseKVPairs converts "kind=ollama routing=docker-network image=ollama/ollama" into a
 // map suitable for the REST POST/PUT body. Nested capacity fields are
 // recognized (max_concurrent_models, gpu_mem_gb, gpus, ram_gb,
-// gpu_vendor, gpu_model) and emitted under declared_capacity. tags
-// are split on comma. Numeric fields are coerced to int when possible.
+// gpu_vendor, gpu_model) and emitted under declared_capacity. BL322-S6
+// routing sub-fields (image, network, container, port, auto_start,
+// auto_pull, peer, remote_llm, timeout) are collected and emitted under
+// routing_docker_network / routing_datawatch_proxy. tags split on comma.
+// Numeric fields coerced to int when possible.
 func parseKVPairs(s string) map[string]any {
 	out := map[string]any{}
 	cap := map[string]any{}
+	dn := map[string]any{}  // docker-network sub-config
+	dp := map[string]any{}  // datawatch-proxy sub-config
 	for _, kv := range strings.Fields(s) {
 		eq := strings.IndexRune(kv, '=')
 		if eq < 0 {
@@ -254,12 +268,40 @@ func parseKVPairs(s string) map[string]any {
 			out[k] = atoiOrZero(v)
 		case "cost_per_hour":
 			out[k] = parseFloatOrZero(v)
+		// BL322-S6: docker-network routing sub-fields.
+		case "image":
+			dn["image"] = v
+		case "network":
+			dn["network_name"] = v
+		case "container":
+			dn["container_name"] = v
+		case "port":
+			dn["port"] = atoiOrZero(v)
+		case "docker_endpoint":
+			dn["docker_endpoint"] = v
+		case "auto_start":
+			dn["auto_start"] = v == "true" || v == "1" || v == "yes"
+		case "auto_pull":
+			dn["auto_pull"] = v == "true" || v == "1" || v == "yes"
+		// BL322-S6: datawatch-proxy routing sub-fields.
+		case "peer":
+			dp["peer"] = v
+		case "remote_llm":
+			dp["remote_llm_name"] = v
+		case "timeout":
+			dp["timeout_seconds"] = atoiOrZero(v)
 		default:
 			out[k] = v
 		}
 	}
 	if len(cap) > 0 {
 		out["declared_capacity"] = cap
+	}
+	if len(dn) > 0 {
+		out["routing_docker_network"] = dn
+	}
+	if len(dp) > 0 {
+		out["routing_datawatch_proxy"] = dp
 	}
 	return out
 }

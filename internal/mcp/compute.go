@@ -26,10 +26,13 @@ func (s *Server) toolComputeNodeGet() mcpsdk.Tool {
 
 func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_add",
-		mcpsdk.WithDescription("v7.0.0 S1 — register a new ComputeNode. kind = local|ssh|docker|k8s|remote|remote-proxy. address required for ssh/remote/remote-proxy."),
+		mcpsdk.WithDescription("v8.0 BL322 — register a new ComputeNode. kind = ollama|openai-compat|gemini-api|opencode-api. routing = direct|docker-network|datawatch-proxy. Pass routing_docker_network_json or routing_datawatch_proxy_json as JSON strings for sub-config."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("kebab-case name")),
-		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("local|ssh|docker|k8s|remote|remote-proxy")),
-		mcpsdk.WithString("address", mcpsdk.Description("host:port or URL")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("ollama|openai-compat|gemini-api|opencode-api")),
+		mcpsdk.WithString("address", mcpsdk.Description("host:port or URL (not used for docker-network / datawatch-proxy routing)")),
+		mcpsdk.WithString("routing", mcpsdk.Description("direct|docker-network|datawatch-proxy (default: direct)")),
+		mcpsdk.WithString("routing_docker_network_json", mcpsdk.Description(`JSON for docker-network config, e.g. {"image":"ollama/ollama","network_name":"datawatch-llm","port":11434,"auto_start":true}`)),
+		mcpsdk.WithString("routing_datawatch_proxy_json", mcpsdk.Description(`JSON for datawatch-proxy config, e.g. {"peer":"remote-1","remote_llm_name":"llama3","timeout_seconds":30}`)),
 		mcpsdk.WithString("monitoring_endpoint", mcpsdk.Description("stub --listen URL for on-demand detail")),
 		mcpsdk.WithString("max_concurrent_models", mcpsdk.Description("declared capacity")),
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
@@ -40,10 +43,13 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 
 func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_update",
-		mcpsdk.WithDescription("v7.0.0 S1 — replace an existing ComputeNode. Same fields as compute_node_add."),
+		mcpsdk.WithDescription("v8.0 BL322 — replace an existing ComputeNode. Same fields as compute_node_add including routing, routing_docker_network_json, routing_datawatch_proxy_json."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
-		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("local|ssh|docker|k8s|remote|remote-proxy")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("ollama|openai-compat|gemini-api|opencode-api")),
 		mcpsdk.WithString("address", mcpsdk.Description("host:port or URL")),
+		mcpsdk.WithString("routing", mcpsdk.Description("direct|docker-network|datawatch-proxy")),
+		mcpsdk.WithString("routing_docker_network_json", mcpsdk.Description(`JSON for docker-network config`)),
+		mcpsdk.WithString("routing_datawatch_proxy_json", mcpsdk.Description(`JSON for datawatch-proxy config`)),
 		mcpsdk.WithString("monitoring_endpoint", mcpsdk.Description("stub --listen URL")),
 		mcpsdk.WithString("max_concurrent_models", mcpsdk.Description("declared capacity")),
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
@@ -283,6 +289,22 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		"kind":                optString(req, "kind"),
 		"address":             optString(req, "address"),
 		"monitoring_endpoint": optString(req, "monitoring_endpoint"),
+	}
+	if v := optString(req, "routing"); v != "" {
+		body["routing"] = v
+	}
+	// BL322-S5: decode optional JSON sub-config strings.
+	if v := optString(req, "routing_docker_network_json"); v != "" {
+		var sub map[string]any
+		if err := json.Unmarshal([]byte(v), &sub); err == nil {
+			body["routing_docker_network"] = sub
+		}
+	}
+	if v := optString(req, "routing_datawatch_proxy_json"); v != "" {
+		var sub map[string]any
+		if err := json.Unmarshal([]byte(v), &sub); err == nil {
+			body["routing_datawatch_proxy"] = sub
+		}
 	}
 	if v := optString(req, "scheduling_priority"); v != "" {
 		var n int

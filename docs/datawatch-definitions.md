@@ -438,16 +438,48 @@ Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt
 
 #### Compute Nodes
 
-The v7 Compute Node registry — the hardware or remote endpoints that run LLM inference. Each node is one entry; LLMs reference nodes by name for failover routing.
+The Compute Node registry — hardware or remote endpoints that run LLM inference. Each node is one entry; LLMs reference nodes by name for failover routing.
 
-**Supported kinds:**
-- `ollama` — any host running the Ollama API (local or remote)
-- `openai-compat` — any OpenAI-compatible endpoint (OpenWebUI, vLLM, LMStudio, etc.)
+**Supported kinds (LLM API protocol):**
+- `ollama` — native Ollama HTTP API (local or remote)
+- `openai-compat` — OpenAI-compatible `/v1` endpoint (OpenWebUI, vLLM, LMStudio, OpenAI itself, etc.)
+- `gemini-api` — Google Generative Language v1beta API (`POST /v1beta/models/<model>:generateContent?key=<api_key>`)
+- `opencode-api` — opencode `/v1/chat/completions` endpoint
 
-**Card columns:** name, kind, address, GPU/RAM summary, enabled sliding switch, Edit / Test / Delete buttons.
+**Routing mode (v8.0 — HOW to reach the node, orthogonal to kind):**
+
+| `routing` | Description | Required sub-config |
+|---|---|---|
+| `direct` | Use `address` field directly (default) | — |
+| `docker-network` | Daemon manages container lifecycle via Docker CLI | `routing_docker_network` |
+| `datawatch-proxy` | Forward inference through a federated peer's `/api/proxy/llm/<name>` | `routing_datawatch_proxy` |
+
+**`routing_docker_network` sub-config fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `image` | string | *required* | Docker image, e.g. `ollama/ollama:latest` |
+| `network_name` | string | `datawatch-llm` | Docker network name |
+| `port` | int | `11434` | Container port exposed to the network |
+| `container_name` | string | *auto* | Optional explicit container name |
+| `docker_endpoint` | string | system default | Docker socket/endpoint URL |
+| `auto_start` | bool | `false` | Start container on first probe if not running |
+| `auto_pull` | bool | `false` | Pull image if missing before start |
+| `env` | `[]string` | — | Env vars in `KEY=VALUE` form |
+
+**`routing_datawatch_proxy` sub-config fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `peer` | string | Registered server name (from Remote Servers card) |
+| `remote_llm_name` | string | LLM name on the peer to invoke |
+| `timeout_seconds` | int | Per-request timeout (default 30) |
+
+**Card columns:** name, kind, routing badge, address, GPU/RAM summary, enabled sliding switch, Edit / Test / Delete buttons.
 
 **Edit form sections:**
-- **Connection** — kind, address URL
+- **Connection** — kind, address URL (hidden for docker-network/datawatch-proxy routing)
+- **Routing** — direct / docker-network / datawatch-proxy with conditional sub-fields
 - **Hardware** — OS, arch, GPU vendor/model/count, VRAM, RAM, CPU cores. The daemon auto-suggests "Computed max" concurrent requests based on VRAM × GPU count.
 - **Capacity** — declared max concurrent requests (operator override)
 - **Observer peer** — bind this node to a registered federated observer peer for live process/GPU stats correlation
@@ -458,9 +490,28 @@ The v7 Compute Node registry — the hardware or remote endpoints that run LLM i
 
 **Migration banner:** shown when any node still uses a deprecated kind (`local`, `remote`, `ssh`, `docker`, `k8s`). Click to re-pick a supported kind per node.
 
-**CLI:** `datawatch compute node list | get | add | update | delete | detail | health | pull-model | remove-model | attach-observer | detach-observer | observer-free | observer-by-node | federation-meta-peers`
+**CLI (v8.0):**
+```
+datawatch compute node add <name> kind=ollama routing=docker-network image=ollama/ollama:latest network=datawatch-llm port=11434
+datawatch compute node add <name> kind=ollama routing=datawatch-proxy peer=dc2 remote_llm=llama3 timeout=30
+```
+Full verb list: `list | get | add | update | delete | detail | health | pull-model | remove-model | attach-observer | detach-observer | observer-free | observer-by-node | federation-meta-peers`
 
-**See also:** [`howto/compute-nodes.md`](howto/compute-nodes.md) · [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) · [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md)
+**MCP tools (v8.0):** `compute_node_add` and `compute_node_update` accept `routing`, `routing_docker_network_json`, and `routing_datawatch_proxy_json` string parameters.
+
+**7-surface parity (v8.0):**
+
+| Surface | routing | docker-network | datawatch-proxy | gemini-api | opencode-api |
+|---|---|---|---|---|---|
+| YAML | ✓ | ✓ | ✓ | ✓ | ✓ |
+| REST | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MCP | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CLI | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Comm | ✓ (via `rest PUT`) | ✓ | ✓ | ✓ | ✓ |
+| PWA | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mobile | file issue | file issue | file issue | file issue | file issue |
+
+**See also:** [`howto/compute-routing.md`](howto/compute-routing.md) · [`howto/compute-nodes.md`](howto/compute-nodes.md) · [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) · [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md)
 
 #### Project Profiles
 

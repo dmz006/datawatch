@@ -6,7 +6,8 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 .PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
-        registry-up registry-down sync-docs
+        registry-up registry-down sync-docs \
+        test-e2e-docker test-e2e-pwa test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
 # carries the markdown files the in-PWA viewer renders. Run before
@@ -300,6 +301,33 @@ cross-channel:
 	GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-darwin-amd64      ./cmd/datawatch-channel/
 	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-darwin-arm64      ./cmd/datawatch-channel/
 	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-windows-amd64.exe ./cmd/datawatch-channel/
+
+# v8.0 — E2E test targets using docker compose + Playwright.
+# Requires: docker, docker compose v2, bash
+E2E_COMPOSE=docs/testing/docker-compose.test.yml
+
+test-e2e-docker:
+	docker compose -f $(E2E_COMPOSE) build
+	docker compose -f $(E2E_COMPOSE) up datawatch datawatch-peer ollama -d
+	sleep 8
+	bash test/e2e/routing/test_direct.sh
+	bash test/e2e/routing/test_docker_network.sh
+	bash test/e2e/routing/test_proxy_routing.sh
+	bash test/e2e/adapters/test_gemini.sh
+	bash test/e2e/adapters/test_opencode_api.sh
+	bash test/e2e/smoke/smoke.sh
+
+test-e2e-pwa:
+	docker compose -f $(E2E_COMPOSE) up datawatch -d
+	sleep 5
+	cd test/e2e/pwa && npm ci && npx playwright install chromium && npx playwright test --config=playwright.config.ts
+
+test-e2e-all: test-e2e-docker test-e2e-pwa
+
+test-e2e-clean:
+	docker compose -f $(E2E_COMPOSE) down -v --remove-orphans
+	docker rm -f dw-e2e-ollama 2>/dev/null || true
+	docker network rm datawatch-llm 2>/dev/null || true
 
 # Create a tagged release with pre-built binaries via GoReleaser.
 # Tag the commit first: git tag vX.Y.Z && git push origin vX.Y.Z

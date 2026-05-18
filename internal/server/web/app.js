@@ -7880,6 +7880,33 @@ window.computeRecomputeMax = function() {
   }
 };
 
+// BL322-S1: show/hide routing sub-sections based on selected routing mode.
+window.updateComputeRoutingForm = function() {
+  const sel = document.getElementById('computeNodeRouting');
+  const mode = sel ? sel.value : 'direct';
+  const dnSec = document.getElementById('computeRoutingDockerSection');
+  const dpSec = document.getElementById('computeRoutingProxySection');
+  if (dnSec) dnSec.style.display = mode === 'docker-network' ? '' : 'none';
+  if (dpSec) dpSec.style.display = mode === 'datawatch-proxy' ? '' : 'none';
+  // BL322-S3: load peer list when switching to proxy mode.
+  if (mode === 'datawatch-proxy') _loadComputeProxyPeerSelect();
+};
+
+// BL322-S3: populate #computeProxyPeer from /api/servers.
+function _loadComputeProxyPeerSelect() {
+  const sel = document.getElementById('computeProxyPeer');
+  if (!sel || sel.dataset.loaded) return;
+  apiFetch('/api/servers').then(d => {
+    const servers = (d && d.servers) || [];
+    const savedVal = sel.dataset.initVal || '';
+    sel.innerHTML = `<option value="">${escHtml(t('compute_proxy_peer_none')||'(select peer)')}</option>` +
+      servers.map(s => `<option value="${escHtml(s.name)}" ${s.name === savedVal ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('');
+    sel.dataset.loaded = '1';
+  }).catch(() => {
+    sel.innerHTML = `<option value="">${escHtml(t('compute_proxy_peer_error')||'(error loading servers)')}</option>`;
+  });
+}
+
 // v7.0.0-alpha.23 (Q6) — sliding switch handler for Compute Nodes.
 // Toggle persists via PATCH /api/compute/nodes/<name>/enabled (alpha.23
 // adds the endpoint reusing the LLM enable/disable contract).
@@ -7917,6 +7944,9 @@ window.openComputeAddPanel = function(existingNode) {
   const cap = (existingNode && existingNode.declared_capacity) || {};
   const hw  = (existingNode && existingNode.hardware) || {};
   const initObs = (existingNode && existingNode.observer_peer) || '';
+  const initRouting = (existingNode && existingNode.routing) || 'direct';
+  const initDN = (existingNode && existingNode.routing_docker_network) || {};
+  const initDP = (existingNode && existingNode.routing_datawatch_proxy) || {};
   const modal = document.createElement('div');
   modal.id = 'computeAddPanel';
   modal.dataset.editName = isEdit ? existingNode.name : '';
@@ -7940,13 +7970,88 @@ window.openComputeAddPanel = function(existingNode) {
         <select id="computeNewKind" class="form-select" onchange="computeNewKindChanged()">
           <option value="ollama" ${isEdit && existingNode.kind === 'ollama' ? 'selected' : (!isEdit ? 'selected' : '')}>ollama</option>
           <option value="openai-compat" ${isEdit && existingNode.kind === 'openai-compat' ? 'selected' : ''}>openai-compat</option>
+          <option value="gemini-api" ${isEdit && existingNode.kind === 'gemini-api' ? 'selected' : ''}>gemini-api</option>
+          <option value="opencode-api" ${isEdit && existingNode.kind === 'opencode-api' ? 'selected' : ''}>opencode-api</option>
         </select>
-        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_kind_hint')||'ollama = native Ollama API · openai-compat = OpenAI /v1 (covers OpenWebUI, vLLM, LMStudio, OpenAI itself)')}</div>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_kind_hint')||'ollama = native Ollama API · openai-compat = OpenAI /v1 (covers OpenWebUI, vLLM, LMStudio, OpenAI itself) · gemini-api = Google Generative Language · opencode-api = opencode /v1')}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
         <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" value="${isEdit ? escHtml(existingNode.address || '') : ''}" />
-        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_address_scheme_hint')||'http:// or https:// auto-added if missing.')}</div>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_address_scheme_hint')||'http:// or https:// auto-added if missing. Not used for docker-network or datawatch-proxy routing.')}</div>
+      </div>
+      <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
+        <label class="wizard-label">${escHtml(t('compute_field_routing')||'Routing mode')}</label>
+        <select id="computeNodeRouting" class="form-select" onchange="updateComputeRoutingForm()">
+          <option value="direct" ${initRouting === 'direct' || !initRouting ? 'selected' : ''}>direct — use Address field directly</option>
+          <option value="docker-network" ${initRouting === 'docker-network' ? 'selected' : ''}>docker-network — manage container via Docker CLI</option>
+          <option value="datawatch-proxy" ${initRouting === 'datawatch-proxy' ? 'selected' : ''}>datawatch-proxy — forward through a federated peer</option>
+        </select>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_routing_hint')||'direct = stable host; docker-network = daemon manages container lifecycle; datawatch-proxy = peer routes the request.')}</div>
+      </div>
+      <div id="computeRoutingDockerSection" style="display:${initRouting === 'docker-network' ? '' : 'none'};">
+        <div class="wizard-field" style="border-left:3px solid var(--accent,#6366f1);padding-left:10px;margin-left:4px;">
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_docker_section')||'Docker network settings')}</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div>
+              <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_image')||'Image (required)')}</label>
+              <input id="computeDockerImage" class="form-input" placeholder="ollama/ollama:latest" value="${escHtml(initDN.image||'')}" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_network_name')||'Network name')}</label>
+                <input id="computeDockerNetwork" class="form-input" placeholder="datawatch-llm" value="${escHtml(initDN.network_name||'')}" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_port')||'Port')}</label>
+                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${initDN.port||''}" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_container_name')||'Container name (optional)')}</label>
+                <input id="computeDockerContainerName" class="form-input" placeholder="datawatch-ollama" value="${escHtml(initDN.container_name||'')}" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_endpoint')||'Docker endpoint (optional)')}</label>
+                <input id="computeDockerEndpoint" class="form-input" placeholder="unix:///var/run/docker.sock" value="${escHtml(initDN.docker_endpoint||'')}" />
+              </div>
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_env')||'Env vars (one KEY=VALUE per line, optional)')}</label>
+              <textarea id="computeDockerEnv" class="form-input" rows="2" style="font-family:monospace;font-size:11px;" placeholder="OLLAMA_NUM_GPU=1">${escHtml((initDN.env||[]).join('\n'))}</textarea>
+            </div>
+            <div style="display:flex;gap:16px;align-items:center;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+                <input id="computeDockerAutoStart" type="checkbox" ${initDN.auto_start ? 'checked' : ''} />
+                ${escHtml(t('compute_docker_auto_start')||'Auto-start container on probe')}
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+                <input id="computeDockerAutoPull" type="checkbox" ${initDN.auto_pull ? 'checked' : ''} />
+                ${escHtml(t('compute_docker_auto_pull')||'Auto-pull image if missing')}
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="computeRoutingProxySection" style="display:${initRouting === 'datawatch-proxy' ? '' : 'none'};">
+        <div class="wizard-field" style="border-left:3px solid var(--accent,#6366f1);padding-left:10px;margin-left:4px;">
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_proxy_section')||'Datawatch proxy settings')}</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div>
+              <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_peer')||'Peer (registered server)')}</label>
+              <select id="computeProxyPeer" class="form-select"><option value="">${escHtml(t('compute_proxy_peer_loading')||'Loading servers…')}</option></select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_remote_llm')||'Remote LLM name (on peer)')}</label>
+                <input id="computeProxyRemoteLLM" class="form-input" placeholder="llama3" value="${escHtml(initDP.remote_llm_name||'')}" />
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_timeout')||'Timeout (seconds)')}</label>
+                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${initDP.timeout_seconds||''}" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
@@ -7995,6 +8100,13 @@ window.openComputeAddPanel = function(existingNode) {
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   host.appendChild(modal);
+  // BL322-S3: seed proxy peer select's initial value so _loadComputeProxyPeerSelect can re-select it.
+  if (initDP.peer) {
+    const peerSel = document.getElementById('computeProxyPeer');
+    if (peerSel) peerSel.dataset.initVal = initDP.peer;
+  }
+  // If starting in proxy mode, load peers immediately.
+  if (initRouting === 'datawatch-proxy') _loadComputeProxyPeerSelect();
   // Wire the Ollama models list for edit mode (issue #45).
   if (isEdit && existingNode && existingNode.kind === 'ollama' && typeof refreshOllamaModelsList === 'function') {
     refreshOllamaModelsList(existingNode.name);
@@ -8165,12 +8277,42 @@ window.computeAddNode = function() {
     ? '/api/compute/nodes/' + encodeURIComponent(editName)
     : '/api/compute/nodes';
   const method = isEdit ? 'PUT' : 'POST';
+  // BL322-S1–S3: collect routing fields.
+  const routingMode = (document.getElementById('computeNodeRouting')||{}).value || 'direct';
+  let routingDockerNetwork = null;
+  if (routingMode === 'docker-network') {
+    const envRaw = ((document.getElementById('computeDockerEnv')||{}).value || '').trim();
+    routingDockerNetwork = {
+      docker_endpoint:  ((document.getElementById('computeDockerEndpoint')||{}).value || '').trim(),
+      network_name:     ((document.getElementById('computeDockerNetwork')||{}).value || '').trim(),
+      image:            ((document.getElementById('computeDockerImage')||{}).value || '').trim(),
+      container_name:   ((document.getElementById('computeDockerContainerName')||{}).value || '').trim(),
+      port:             parseInt((document.getElementById('computeDockerPort')||{}).value || '0', 10) || 0,
+      env:              envRaw ? envRaw.split('\n').map(s => s.trim()).filter(Boolean) : [],
+      auto_start:       !!((document.getElementById('computeDockerAutoStart')||{}).checked),
+      auto_pull:        !!((document.getElementById('computeDockerAutoPull')||{}).checked),
+    };
+    if (!routingDockerNetwork.image) { showError('Docker image is required for docker-network routing'); return; }
+  }
+  let routingDatawatchProxy = null;
+  if (routingMode === 'datawatch-proxy') {
+    routingDatawatchProxy = {
+      peer:             ((document.getElementById('computeProxyPeer')||{}).value || '').trim(),
+      remote_llm_name:  ((document.getElementById('computeProxyRemoteLLM')||{}).value || '').trim(),
+      timeout_seconds:  parseInt((document.getElementById('computeProxyTimeout')||{}).value || '0', 10) || 0,
+    };
+    if (!routingDatawatchProxy.peer) { showError('Peer is required for datawatch-proxy routing'); return; }
+    if (!routingDatawatchProxy.remote_llm_name) { showError('Remote LLM name is required for datawatch-proxy routing'); return; }
+  }
   apiFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: (isEdit ? editName : name.trim()), kind, address: address.trim(),
       monitoring_endpoint: monitoring,
+      routing: routingMode,
+      routing_docker_network: routingDockerNetwork,
+      routing_datawatch_proxy: routingDatawatchProxy,
       declared_capacity: {
         max_concurrent_models: maxModels,
         gpus: gpuCnt,

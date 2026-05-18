@@ -3,6 +3,42 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.0.0 — BL318–BL323: Compute Node Routing, New Adapters, E2E Tests (2026-05-18)
+
+### Added
+
+- **BL318–BL322 — Compute Node routing modes** — `routing` field separates HOW the daemon reaches a node (transport) from WHAT protocol it speaks (kind). Three modes: `direct` (default, existing behavior), `docker-network` (daemon manages container lifecycle via Docker CLI), `datawatch-proxy` (forward through a federated peer's `/api/proxy/llm/<name>` endpoint). k8s-sidecar stub reserved for future use.
+  - `RoutingMode` type + `ValidRoutingModes` + `UIRoutingModes()` in `internal/compute/node.go`.
+  - `RoutingDockerNetworkConfig` sub-struct: `image` (required), `network_name`, `port`, `container_name`, `docker_endpoint`, `auto_start`, `auto_pull`, `env`.
+  - `RoutingDatawatchProxyConfig` sub-struct: `peer`, `remote_llm_name`, `timeout_seconds`.
+  - `Node.Validate()` extended to reject invalid/incomplete routing configs.
+  - `Node.WithAddress(addr string) *Node` shallow copy for address override by the dispatcher.
+
+- **BL319 — DockerLifecycle** — `internal/compute/docker_lifecycle.go`: `EnsureRunning`, `EnsureNetwork`, `Teardown`, `Status` methods wrapping the `docker` CLI (no SDK dependency). Used by the dispatcher's docker-network branch.
+
+- **BL320 — ProxyRouter + /api/proxy/llm/<name>** — `internal/inference/proxy_router.go` POSTs to `<PeerURL>/api/proxy/llm/<remoteLLM>`, with transient (5xx/429) vs final (4xx) error classification. `internal/server/bl320_proxy_llm.go` registers the inbound handler (requires `sessions:input` capability).
+
+- **BL321 — New adapters** — `gemini-api`: Google Generative Language v1beta `POST /v1beta/models/<model>:generateContent?key=<api_key>`. `opencode-api`: OpenAI-compatible `/v1/chat/completions` (distinct `Kind` from `openwebui`).
+
+- **BL322 — 7-surface parity** — All new features exposed on all surfaces:
+  - **PWA**: Compute Node add/edit form gains Routing dropdown (direct / docker-network / datawatch-proxy) with conditional sub-fields for each mode. Kind dropdown gains `gemini-api` and `opencode-api`. Settings → Comms tab already contained Remote Servers card (migrated from orphan Servers tab in v7.4). Fullscreen button hidden on mobile viewports (max-width 600px).
+  - **MCP**: `compute_node_add` / `compute_node_update` accept `routing`, `routing_docker_network_json`, `routing_datawatch_proxy_json` string params.
+  - **CLI**: `datawatch compute node add` parses `routing=`, `image=`, `network=`, `container=`, `port=`, `auto_start=`, `auto_pull=`, `peer=`, `remote_llm=`, `timeout=` key-value args.
+  - **REST**: all routing fields pass through the existing `POST /api/compute/nodes` / `PUT /api/compute/nodes/<name>` handlers.
+  - **Comm**: via existing `rest PUT` verb passthrough.
+  - **YAML**: all fields serialize/deserialize via existing config system.
+  - **Docs**: `datawatch-definitions.md` Compute Nodes section fully updated with field tables and 7-surface parity matrix. New cookbook: `docs/howto/compute-routing.md`.
+
+- **BL323 — E2E test infrastructure** — `docs/testing/docker-compose.test.yml` with primary daemon, peer daemon, Ollama, mock Gemini/opencode nginx containers, Playwright runner. Shell scripts under `test/e2e/routing/`, `test/e2e/adapters/`, `test/e2e/smoke/`. Playwright specs under `test/e2e/pwa/specs/`. Makefile targets: `test-e2e-docker`, `test-e2e-pwa`, `test-e2e-all`, `test-e2e-clean`.
+
+### Changed
+
+- `internal/inference/dispatcher.go` — extended dispatch loop with docker-network (EnsureRunning + WithAddress) and datawatch-proxy (ProxyRouter) branches. `ServerStoreIface` interface added for server lookup.
+- `internal/server/multiserver/store.go` — `GetByName()` method added.
+- `cmd/datawatch/main.go` — registers Gemini and OpenCodeAPI adapters, wires `SetServerStore` on dispatcher.
+
+---
+
 ## v7.4.0 — BL317: MCP SSE federated auth/authz + PWA expand fix (2026-05-18)
 
 ### Added

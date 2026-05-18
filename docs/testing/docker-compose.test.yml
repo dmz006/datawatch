@@ -1,0 +1,81 @@
+# v8.0 — E2E test stack for routing, adapters, and PWA tests.
+# Run with: docker compose -f docs/testing/docker-compose.test.yml up --abort-on-container-exit
+# Or via:   make test-e2e-docker
+
+version: "3.9"
+services:
+  # Primary datawatch daemon (system under test)
+  datawatch:
+    image: local/datawatch:dev
+    build: { context: ../../, dockerfile: Dockerfile.dev }
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+      - "9090:9090"
+    volumes:
+      - ../../testdata/datawatch.yaml:/etc/datawatch/datawatch.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock   # docker-network routing
+    environment:
+      - DATAWATCH_DATA_DIR=/tmp/dw-test-data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Peer datawatch daemon (for datawatch-proxy routing tests)
+  datawatch-peer:
+    image: local/datawatch:dev
+    ports:
+      - "8081:8080"
+    environment:
+      - DATAWATCH_DATA_DIR=/tmp/dw-peer-data
+      - DATAWATCH_TOKEN=peer-test-token
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Ollama (direct routing baseline + docker-network container target)
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/version"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Mock Gemini API (nginx rewriting /v1beta → fixed response JSON)
+  mock-gemini:
+    image: nginx:alpine
+    ports:
+      - "18080:80"
+    volumes:
+      - ../../testdata/mock-gemini/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../testdata/mock-gemini/response.json:/usr/share/nginx/html/response.json:ro
+
+  # Mock opencode API (nginx returning OpenAI-compat JSON)
+  mock-opencode:
+    image: nginx:alpine
+    ports:
+      - "18081:80"
+    volumes:
+      - ../../testdata/mock-opencode/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../testdata/mock-opencode/response.json:/usr/share/nginx/html/response.json:ro
+
+  # Playwright runner (PWA tests)
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.44.0-focal
+    depends_on:
+      datawatch:
+        condition: service_healthy
+    volumes:
+      - ../../test/e2e:/tests
+      - ../../test/e2e/pwa/playwright.config.ts:/tests/playwright.config.ts:ro
+    working_dir: /tests
+    command: npx playwright test --reporter=line
+    environment:
+      - DW_BASE_URL=http://datawatch:8080
