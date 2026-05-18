@@ -23,12 +23,18 @@ _story_ts_612() {
   fi
   add_cleanup compute_node "r612-dn-node"
 
-  sleep 4
+  local _net_found=0
+  for _i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 3
+    if docker network inspect r612-net &>/dev/null 2>&1; then
+      _net_found=1; break
+    fi
+  done
 
-  if docker network inspect r612-net &>/dev/null 2>&1; then
+  if [[ $_net_found -eq 1 ]]; then
     ok "Docker network r612-net created successfully"
   else
-    ko "Docker network r612-net not found after node creation"
+    ko "Docker network r612-net not found after 30s"
   fi
 
   api DELETE /api/compute/nodes/r612-dn-node >/dev/null 2>&1

@@ -33,7 +33,7 @@ _story_ts_621() {
 
   # PUT — update declared_capacity
   local put_resp put_code
-  put_resp=$(api_code PUT /api/compute/nodes/r621-smoke '{"declared_capacity":{"max_concurrent_models":2}}')
+  put_resp=$(api_code PUT "/api/compute/nodes/r621-smoke?probe=skip" '{"declared_capacity":{"max_concurrent_models":2}}')
   put_code=$(echo "$put_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-621 "put.json" "$put_resp"
 

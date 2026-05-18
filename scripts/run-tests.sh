@@ -348,6 +348,12 @@ if [[ $NO_DAEMON -eq 0 ]]; then
       | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("mcp",{}).get("sse_port",""))' \
       2>/dev/null || true)
     if [[ -n "$_mcp_port" && "$_mcp_port" =~ ^[0-9]+$ ]]; then
+      # If config reports a low port (e.g. 9090 template default) but TEST_PORT is
+      # high (e.g. 18080), the daemon binds SSE at the same offset from TEST_PORT.
+      # Formula: actual = TEST_PORT - 8080 + config_sse_port
+      if [[ $_mcp_port -lt $TEST_PORT ]]; then
+        _mcp_port=$(( TEST_PORT - 8080 + _mcp_port ))
+      fi
       export TEST_MCP_PORT="$_mcp_port"
       echo "  MCP SSE port: $TEST_MCP_PORT (from daemon config)"
     fi
