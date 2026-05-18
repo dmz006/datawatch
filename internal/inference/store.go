@@ -124,8 +124,9 @@ func MigrateAllLegacyBackends(reg *Registry, backends []LegacyBackend) []string 
 		if b.Address == "" || b.Name == "" || b.Kind == "" {
 			continue
 		}
-		if _, err := reg.Get(b.Name); err != ErrNotFound {
-			// Already exists; skip.
+		// Skip if present (enabled/disabled) OR tombstoned (operator deleted).
+		// Using Exists rather than Get so tombstoned entries block re-creation.
+		if reg.Exists(b.Name) {
 			continue
 		}
 		llm := &LLM{
@@ -165,7 +166,7 @@ func EnsureClaudeCode(reg *Registry, binary string) {
 	if binary == "" {
 		binary = "claude"
 	}
-	if _, err := reg.Get("claude-code"); err != ErrNotFound {
+	if reg.Exists("claude-code") {
 		return // already present
 	}
 	_ = reg.Add(&LLM{

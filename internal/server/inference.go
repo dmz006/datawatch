@@ -274,17 +274,6 @@ func (s *Server) handleLLMEnabledToggle(w http.ResponseWriter, r *http.Request, 
 	if pretest && inference.IsSessionBackendKind(llm.Kind) {
 		pretest = false
 	}
-	// Auto-created session-backend entries are managed by session lifecycle.
-	// Enable/disable is a no-op: return a warning instead of persisting state (#59).
-	if llm.AutoCreated && inference.IsSessionBackendKind(llm.Kind) {
-		writeJSONOK(w, map[string]any{
-			"name":    name,
-			"enabled": !llm.Disabled,
-			"ok":      true,
-			"warning": "auto-managed entry; enabled state is controlled by session lifecycle",
-		})
-		return
-	}
 	if body.Enabled && pretest && s.inferenceDisp != nil {
 		// Pretest before flipping enabled.
 		timeout := inference.ResolveTimeout(llm)

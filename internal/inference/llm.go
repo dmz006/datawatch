@@ -136,6 +136,14 @@ type LLM struct {
 	// enabled, preserving v7-alpha behavior).
 	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 
+	// Tombstoned marks an auto-created entry that the operator explicitly
+	// deleted. Tombstoned entries are invisible to List/Get (treated as
+	// ErrNotFound for all user-facing operations) but remain in the JSON
+	// file so MigrateAllLegacyBackends skips re-creating them on restart.
+	// Without this, deleting an auto-migrated LLM (aider, goose, gemini)
+	// causes migration to recreate it from v6 cfg on every daemon start.
+	Tombstoned bool `yaml:"tombstoned,omitempty" json:"tombstoned,omitempty"`
+
 	// Session-backend fields. Only applicable when Kind is a session-backend
 	// (claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, shell).
 	Binary      string `yaml:"binary,omitempty" json:"binary,omitempty"`
@@ -262,12 +270,15 @@ func containsTag(ss []string, s string) bool {
 	return false
 }
 
-// List returns every LLM, sorted by name.
+// List returns every non-tombstoned LLM, sorted by name.
 func (r *Registry) List() []*LLM {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]*LLM, 0, len(r.llms))
 	for _, l := range r.llms {
+		if l.Tombstoned {
+			continue
+		}
 		cp := *l
 		out = append(out, &cp)
 	}
@@ -288,15 +299,27 @@ func (r *Registry) ResolveKind(name string) (string, bool) {
 }
 
 // Get returns a copy of the named LLM, or ErrNotFound.
+// Tombstoned entries (operator-deleted auto-created entries) are treated
+// as absent for all user-facing operations.
 func (r *Registry) Get(name string) (*LLM, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	l, ok := r.llms[name]
-	if !ok {
+	if !ok || l.Tombstoned {
 		return nil, ErrNotFound
 	}
 	cp := *l
 	return &cp, nil
+}
+
+// Exists reports whether name is tracked in the registry, including
+// tombstoned (operator-deleted) entries. Used by migration to avoid
+// re-creating entries the operator explicitly removed.
+func (r *Registry) Exists(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.llms[name]
+	return ok
 }
 
 // Add registers a new LLM. Returns ErrConflict if name exists.
@@ -341,11 +364,21 @@ func (r *Registry) Update(l *LLM) error {
 }
 
 // Delete removes the named LLM. Returns ErrNotFound if absent.
+// Auto-created entries are tombstoned (soft-deleted) instead of
+// hard-deleted so that MigrateAllLegacyBackends skips re-creating
+// them on the next daemon restart.
 func (r *Registry) Delete(name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.llms[name]; !ok {
+	l, ok := r.llms[name]
+	if !ok || l.Tombstoned {
 		return ErrNotFound
+	}
+	if l.AutoCreated {
+		l.Tombstoned = true
+		l.Disabled = true
+		l.UpdatedAt = time.Now().UTC()
+		return r.persistLocked()
 	}
 	delete(r.llms, name)
 	return r.persistLocked()

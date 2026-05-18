@@ -24,7 +24,7 @@
 // changes → browser detects an update → install handler fires →
 // activate handler purges old caches AND force-navigates every
 // controlled window. Reload-to-update should Just Work after this.
-const CACHE_NAME = 'datawatch-v7-0-0-alpha-50';
+const CACHE_NAME = 'datawatch-v7-0-0-alpha-51';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {
