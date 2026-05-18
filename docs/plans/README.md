@@ -40,16 +40,16 @@ single source of truth.
 
 ## Current state — 2026-05-11
 
-Latest release: **v7.2.2** (2026-05-18). BL314 (PWA voice button gate — whisper config), GH#62 closed (dashboard nav already gated by BL313). BL315 (fullscreen PWA — 7.2.3), BL316 (#52 federation — 7.3.0), BL317 (#63 multi-server PWA — 7.4.0) queued.
+Latest release: **v7.2.3** (2026-05-18). BL315 (fullscreen toggle + PWA install prompt). BL316 (#52 federation — 7.3.0), BL317 (#63 multi-server PWA — 7.4.0) queued.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 3 | BL315 (7.2.3 fullscreen PWA) · BL316 (7.3.0 federation) · BL317 (7.4.0 multi-server PWA) |
+| Active backlog | 2 | BL316 (7.3.0 federation) · BL317 (7.4.0 multi-server PWA) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
-| Recently closed | BL314 ✅ v7.2.2 | PWA voice button gate |
+| Recently closed | BL314 ✅ v7.2.2 · BL315 ✅ v7.2.3 | Voice gate + fullscreen PWA |
 | Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -297,6 +297,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v7.2.3 (2026-05-18):** BL315 — Fullscreen PWA mode. Header gains a ⛶ toggle button (Fullscreen API, works in any browser) and a ⬇ Install button that appears when the browser fires `beforeinstallprompt` and disappears after install. pwa-setup.md updated. TS-149 added to T11.
 
 **v7.2.2 (2026-05-18):** BL314 — PWA voice button gate. Session detail mic button now hidden when `whisper.enabled` is false (consistent with generic mic factory which already gated on `state._whisperEnabled`). Redundant `_dashCheckEnabled()` call removed from `_dashUpdateStatBar()` (boot-time check already handles both nav buttons). GH#62 closed — dashboard nav was already gated by BL313; GH#61 closed. TS-147/TS-148 added to T11 PWA sprint. Issue triage workflow added (external issues auto-labeled `needs-owner-review`). Makefile docs-index target seeds `{}` placeholder on fresh clone (closes GH#65).
 

@@ -63,23 +63,35 @@ http://hostname.your-tailnet.ts.net:8080
 
 ---
 
-## Installing to Android Home Screen
+## Fullscreen Mode (any browser)
 
-1. Open the PWA URL in **Chrome** on Android.
-2. Tap the three-dot menu (top right).
-3. Tap **Add to Home Screen**.
-4. Confirm the name ("Datawatch") and tap **Add**.
-
-The app now appears on your home screen and opens in standalone mode (no browser chrome).
+The header bar has a **⛶** (fullscreen) button that hides the browser chrome and puts the PWA into true fullscreen. Click it again or press **Esc** to exit. Works in desktop and mobile browsers without installing anything.
 
 ---
 
-## Installing to iOS Home Screen
+## Installing as a Standalone App
 
-1. Open the PWA URL in **Safari** on iOS (Chrome does not support PWA install on iOS).
-2. Tap the **Share** button (box with arrow pointing up).
-3. Scroll down and tap **Add to Home Screen**.
-4. Confirm and tap **Add**.
+When opened in a browser that supports PWA install (Chrome on Android/desktop, Edge on desktop), the header shows a **⬇ Install** button automatically. Clicking it triggers the browser's native install flow, after which the app opens fullscreen without any browser UI.
+
+### Android (Chrome)
+
+1. Open the PWA URL in **Chrome**.
+2. Either tap **⬇ Install** in the header — or tap the three-dot menu → **Add to Home Screen**.
+3. Confirm and tap **Add**.
+
+### Desktop (Chrome / Edge)
+
+1. Open the PWA URL.
+2. Click **⬇ Install** in the header — or look for the install icon in the address bar.
+3. Confirm.
+
+### iOS (Safari)
+
+1. Open the PWA URL in **Safari** (Chrome does not support PWA install on iOS).
+2. Tap the **Share** button → **Add to Home Screen**.
+3. Confirm and tap **Add**.
+
+The installed app opens in standalone mode with no browser chrome. The **⛶** fullscreen button remains available inside the installed PWA.
 
 ---
 

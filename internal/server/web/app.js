@@ -21842,3 +21842,52 @@ window.councilAddPersonaFromForm = function() {
   }).then(() => { showToast(`Added persona "${name}"`, 'success', 2000); councilOpenPersonasView(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
+
+// ── BL315 — Fullscreen + PWA install ─────────────────────────────────────────
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  const btn = document.getElementById('headerFullscreenBtn');
+  if (!btn) return;
+  if (document.fullscreenElement) {
+    btn.innerHTML = '&#9645;';
+    btn.title = 'Exit fullscreen';
+    btn.style.opacity = '1';
+  } else {
+    btn.innerHTML = '&#9974;';
+    btn.title = 'Toggle fullscreen';
+    btn.style.opacity = '0.7';
+  }
+});
+
+let _pwaInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _pwaInstallPrompt = e;
+  const btn = document.getElementById('headerInstallBtn');
+  if (btn) btn.style.display = '';
+});
+
+window.addEventListener('appinstalled', () => {
+  _pwaInstallPrompt = null;
+  const btn = document.getElementById('headerInstallBtn');
+  if (btn) btn.style.display = 'none';
+});
+
+function installPWA() {
+  if (!_pwaInstallPrompt) return;
+  _pwaInstallPrompt.prompt();
+  _pwaInstallPrompt.userChoice.then(() => {
+    _pwaInstallPrompt = null;
+    const btn = document.getElementById('headerInstallBtn');
+    if (btn) btn.style.display = 'none';
+  });
+}
