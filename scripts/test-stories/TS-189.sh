@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# TS-189 — 
-# tags: 
-# legacy fn: inline
+# TS-189 — PWA Settings view renders key sections
+# tags: surface:pwa feature:pwa conflict:pwa
+# pwa-script: pwa/TS-189.mjs
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-189"
+story_preflight "surface:pwa feature:pwa conflict:pwa" || return 0
 
-_story_ts_189() {
-  skip "PWA Settings visibility — conflict:pwa — run manually in browser"
-}
-
-RESULT=fail
-_story_ts_189
-: "${RESULT:=fail}"
-unset -f _story_ts_189
+run_pwa_story "TS-189"

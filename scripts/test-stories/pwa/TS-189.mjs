@@ -1,0 +1,12 @@
+// TS-189 — PWA: Settings view renders key sections
+import { runStory, connectToPWA, navigateTo, assertVisible, screenshot } from './lib.mjs';
+
+await runStory(async (page) => {
+  await connectToPWA(page);
+  await navigateTo(page, 'settings');
+  await screenshot(page, '01-settings-view');
+
+  // Settings view container must be present and visible
+  await assertVisible(page, '#settings-view, [data-view-content="settings"]', 'settings view container');
+  await screenshot(page, '02-settings-content');
+});

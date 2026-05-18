@@ -31,7 +31,18 @@ mcp:
   token: "dw-test-token-12345"
 
 memory:
-  enabled: false
+  enabled: true
+  embedder: ollama
+  embedder_model: nomic-embed-text
+  embedder_host: http://localhost:11434
+
+autonomous:
+  enabled: true
+
+ollama:
+  enabled: true
+  model: qwen3:1.7b
+  host: http://localhost:11434
 
 update:
   enabled: false
