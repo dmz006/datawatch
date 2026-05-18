@@ -6,7 +6,7 @@ CURRENT_STORY="TS-503"
 story_preflight "surface:cli feature:compute" || return 0
 
 _story_ts_503() {
-  local dw_stats
+  local dw_stats=""
   for loc in "$REPO_ROOT/scripts/datawatch-stats.sh" "$REPO_ROOT/bin/datawatch-stats" "$(command -v datawatch-stats 2>/dev/null)"; do
     [[ -x "$loc" ]] && { dw_stats="$loc"; break; }
   done

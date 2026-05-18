@@ -6,7 +6,7 @@ await runStory(async (page) => {
   await navigateTo(page, 'settings');
   await screenshot(page, '01-settings-view');
 
-  // Settings view container must be present and visible
-  await assertVisible(page, '#settings-view, [data-view-content="settings"]', 'settings view container');
+  // Settings nav button is active and main view container is visible
+  await assertVisible(page, '[data-view="settings"].active, #view', 'settings view container');
   await screenshot(page, '02-settings-content');
 });

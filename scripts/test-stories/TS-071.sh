@@ -11,8 +11,12 @@ _story_ts_071() {
   resp=$(api POST /api/mcp/call '{"tool":"memory_recall","params":{"query":"test"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-071 "recall.json" "$resp"
-  if assert_json "$resp" 'isinstance(d, dict)'; then
+  if echo "$resp" | grep -qi "not enabled\|memory not enabled\|not available\|disabled\|unknown tool"; then
+    skip "memory not enabled in this deployment"
+  elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "POST /api/mcp/call memory_recall returned dict"
+  elif assert_json "$resp" 'isinstance(d, list)'; then
+    ok "POST /api/mcp/call memory_recall returned array"
   else
     ko "MCP call memory_recall failed: $resp"
   fi

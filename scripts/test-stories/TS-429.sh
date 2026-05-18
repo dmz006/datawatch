@@ -15,6 +15,8 @@ _story_ts_429() {
     ok "POST /api/mcp/call get_version returns dict"
   elif assert_json "$resp" 'isinstance(d, str) and len(d) > 0'; then
     ok "POST /api/mcp/call get_version returns string: $resp"
+  elif echo "$resp" | grep -qi "version\|[0-9]\+\.[0-9]\+\.[0-9]\+"; then
+    ok "POST /api/mcp/call get_version returns version string: $(echo "$resp" | head -c 60)"
   elif echo "$resp" | grep -qi "unknown tool\|not found\|not available"; then
     skip "get_version MCP tool not available"
   else

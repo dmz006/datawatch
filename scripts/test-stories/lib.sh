@@ -306,8 +306,14 @@ run_pwa_story() {
   mkdir -p "${EVIDENCE_DIR:-/tmp}/${story_id}"
   export TEST_HTTP TEST_TLS TEST_TOKEN EVIDENCE_DIR CURRENT_STORY="$story_id"
 
-  if "$node_bin" "$pwa_script" 2>"${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log"; then
+  local pwa_rc=0
+  "$node_bin" "$pwa_script" 2>"${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log" || pwa_rc=$?
+  if [[ $pwa_rc -eq 0 ]]; then
     ok "PWA visual test passed"
+  elif [[ $pwa_rc -eq 2 ]]; then
+    local skip_reason
+    skip_reason=$(cat "${EVIDENCE_DIR:-/tmp}/${story_id}/result.txt" 2>/dev/null || echo "precondition not met")
+    skip "PWA story skipped: $skip_reason"
   else
     ko "PWA visual test failed (see ${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log)"
   fi

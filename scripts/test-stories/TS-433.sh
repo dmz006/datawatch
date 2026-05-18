@@ -8,8 +8,13 @@ story_preflight "surface:mcp feature:mcp feature:howto feature:mcp-sampling" || 
 
 _story_ts_433() {
   local resp inner
-  resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"q":"mcp sampling"}}')
+  # try both q and query param names (tool schema varies by version)
+  resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"query":"mcp sampling"}}')
   inner=$(mcp_unwrap "$resp")
+  if echo "$inner" | grep -qi "required\|missing\|invalid"; then
+    resp=$(api POST /api/mcp/call '{"tool":"docs_search","params":{"q":"mcp sampling"}}')
+    inner=$(mcp_unwrap "$resp")
+  fi
   save_evidence TS-433 "resp.json" "$resp"
   if assert_json "$inner" 'isinstance(d, list) and len(d) > 0'; then
     ok "docs_search 'mcp sampling' returns non-empty array"

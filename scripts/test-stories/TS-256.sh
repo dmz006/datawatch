@@ -7,7 +7,7 @@ story_preflight "surface:api feature:config" || return 0
 
 _story_ts_256() {
   local resp
-  resp=$(api POST /api/devices/register '{"device_id":"e2e-test-device-ts256","device_token":"e2e-tok-ts256","platform":"test","name":"TS-256 Test Device"}')
+  resp=$(api POST /api/devices/register '{"device_id":"e2e-test-device-ts256","device_token":"e2e-tok-ts256","kind":"ntfy","platform":"test","name":"TS-256 Test Device"}')
   save_evidence TS-256 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|404\|no route"; then
     skip "devices/register endpoint not available in this build"

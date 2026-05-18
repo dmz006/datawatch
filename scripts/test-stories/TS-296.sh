@@ -12,7 +12,7 @@ _story_ts_296() {
   resp=$(api POST /api/mcp/call '{"tool":"pipeline_list","params":{}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-296 "list.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
+  if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool\|not available\|pipeline system"; then
     skip "pipeline_list not available in this build"
     return
   fi

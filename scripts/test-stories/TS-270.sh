@@ -12,8 +12,8 @@ _story_ts_270() {
   save_evidence TS-270 "resp.json" "$resp"
   if assert_json "$inner" 'isinstance(d, list)'; then
     ok "algorithm_list returned array (${#inner} bytes)"
-  elif assert_json "$inner" 'isinstance(d, dict) and ("algorithms" in d or "items" in d or "result" in d)'; then
-    ok "algorithm_list returned dict with algorithms key"
+  elif assert_json "$inner" 'isinstance(d, dict) and any(k in d for k in ("algorithms","items","result","sessions","phases"))'; then
+    ok "algorithm_list returned dict with valid key"
   elif echo "$inner" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
     skip "algorithm_list not available in this build"
   else

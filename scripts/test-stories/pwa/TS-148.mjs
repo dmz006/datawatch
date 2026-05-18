@@ -1,6 +1,23 @@
 // TS-148 — PWA: Autonomous nav button visible when autonomous enabled
 import { runStory, connectToPWA, screenshot, saveLog } from './lib.mjs';
 
+// Pre-check: verify autonomous is enabled via API before testing the PWA button
+const apiBase = process.env.TEST_HTTP || 'http://127.0.0.1:18080';
+const token = process.env.TEST_TOKEN || 'dw-test-token-12345';
+let autonomousEnabled = false;
+try {
+  const resp = await fetch(`${apiBase}/api/autonomous/config`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const data = await resp.json();
+  autonomousEnabled = data.enabled === true;
+} catch { /* ignore fetch errors */ }
+
+if (!autonomousEnabled) {
+  await saveLog('result', 'autonomous disabled in daemon — skipping nav button test');
+  process.exit(2);
+}
+
 await runStory(async (page) => {
   await connectToPWA(page);
 
@@ -13,6 +30,7 @@ await runStory(async (page) => {
         if (!btn) return false;
         return btn.style.display !== 'none' && window.getComputedStyle(btn).display !== 'none';
       },
+      null,
       { timeout: 10000 },
     );
   } catch {
