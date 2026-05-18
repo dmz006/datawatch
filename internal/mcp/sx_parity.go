@@ -70,7 +70,12 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	u := fmt.Sprintf("http://127.0.0.1:%d%s", s.webPort, path)
 	var rdr io.Reader
 	if body != nil {
-		buf, _ := json.Marshal(body)
+		var buf []byte
+		if raw, ok := body.([]byte); ok {
+			buf = raw // already marshaled — don't double-encode
+		} else {
+			buf, _ = json.Marshal(body)
+		}
 		rdr = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequest(method, u, rdr)

@@ -1134,6 +1134,71 @@ covers how to proceed:
 This rule itself was added because the agent auto-accepted claude consent prompts without
 asking — the user wanted manual acceptance via tmux.
 
+## Decision Interview Protocol (DIP)
+
+**Operator-confirmed rule — 2026-05-17.**
+
+When any implementation step requires an unresolved design decision (no existing rule covers it),
+the agent MUST stop and run the DIP before writing any code or files:
+
+1. **Context** — one paragraph: what decision is needed and why it matters now.
+2. **Options** — a numbered list. Each option includes:
+   - What it does
+   - Trade-offs (cost, complexity, reversibility, parity impact)
+3. **Recommendation** — the agent's pick + one-sentence rationale.
+4. **Interview question** — one clear, specific question phrased as: *"Which option do you prefer?"*
+   with a final option always being *"Let's chat about this instead."*
+5. **Wait** for the operator's answer before proceeding.
+
+DIP applies to:
+- Architectural choices (new subsystem design, API shape, data model)
+- UX choices affecting operator workflow (modal vs inline, blocking vs async)
+- Scope ambiguity (which surfaces to cover, what to defer)
+- Any tradeoff where reasonable engineers would pick differently
+
+DIP does NOT apply to:
+- Bug fixes with a clear correct answer
+- Changes fully specified by an existing backlog entry with complete acceptance criteria
+- Cosmetic / formatting changes
+
+After the operator decides, the agent records the decision as a rule in the relevant AGENT.md
+section so the same question never needs to be asked again.
+
+## Error-Filing Rule
+
+**Operator-confirmed rule — 2026-05-17.**
+
+When an error, bug, or defect is found during any work (testing, auditing, reviewing):
+
+1. **Always file a GitHub issue** (`gh issue create`) with:
+   - Title: brief description
+   - Body: steps to reproduce, expected vs actual behavior, version found
+   - Labels: `bug` + relevant feature label
+2. **If the fix is straightforward** (≤ 30 min, localized change, no DIP needed):
+   - Fix it immediately
+   - Retest to confirm resolved
+   - Add a memory entry describing the root cause
+   - Add a rule to AGENT.md (or relevant section) describing how to avoid the bug class
+3. **If the fix is complex** (requires design, spans multiple files, uncertain scope):
+   - File the issue only; do NOT fix now
+   - Add `[complex-fix]` label to the issue
+   - Note the issue number in the current plan doc
+4. Close the filed issue with the fix commit hash when resolved.
+
+## Android App Sync Rule
+
+**Operator-confirmed rule — 2026-05-17.**
+
+When any PWA feature, UI element, setting, or user-facing behavior is added or changed
+and it has NOT been filed as a datawatch-app issue for Android/Wear/Auto parity:
+
+- File a `gh issue create` against `dmz006/datawatch-app` immediately.
+- Title format: `[sync] <feature name> — <brief description>`
+- Body: reference the daemon version, describe the PWA behavior, note any Wear/Auto implications.
+- This rule is in addition to the Mobile-Parity Rule (which triggers per new feature);
+  the Android Sync Rule triggers whenever *existing* features are updated in the PWA
+  without a corresponding app issue being filed.
+
 ## Configuration Rules
 
 - **Every config option must appear in the web UI Settings** under the General Configuration
