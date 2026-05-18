@@ -313,6 +313,16 @@ YAML
 }
 
 # ---------------------------------------------------------------------------
+# Legacy helper: check if a k8s cluster is reachable (T14 stories).
+# Echoes "yes" or "no".
+# ---------------------------------------------------------------------------
+t14_check_cluster() {
+  local ctx="${K8S_CONTEXT:-testing}"
+  if ! command -v kubectl >/dev/null 2>&1; then echo "no"; return; fi
+  kubectl --context="$ctx" cluster-info >/dev/null 2>&1 && echo "yes" || echo "no"
+}
+
+# ---------------------------------------------------------------------------
 # Legacy helper: check if autonomous mode is enabled in the test daemon.
 # Echoes "yes" or "no".
 # ---------------------------------------------------------------------------
