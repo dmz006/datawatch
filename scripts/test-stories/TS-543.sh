@@ -9,7 +9,7 @@ _story_ts_543() {
   ensure_test_session || return
   local resp code
   resp=$(api_code POST "/api/sessions/$SESSION_ID/hook-event" \
-    "{\"type\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"cwd\":\"/tmp\",\"task\":\"test\"}")
+    "{\"event\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"payload\":{\"cwd\":\"/tmp\",\"task\":\"test\"}}")
   save_evidence TS-543 "hook.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   if [[ "$code" == "200" || "$code" == "201" || "$code" == "202" || "$code" == "204" ]]; then

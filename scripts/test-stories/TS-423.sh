@@ -10,7 +10,7 @@ _story_ts_423() {
   ensure_test_session || return
   local resp code body
   resp=$(api_code POST /api/sessions/set_llm_ref \
-    "{\"session_id\":\"$SESSION_ID\",\"llm\":\"shell\"}")
+    "{\"id\":\"$SESSION_ID\",\"llm_ref\":\"shell\"}")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-423 "resp.json" "$body"
