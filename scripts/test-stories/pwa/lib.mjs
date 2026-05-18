@@ -120,7 +120,7 @@ export async function assertCount(page, selector, min = 1, timeout = 5000) {
 export async function screenshot(page, name) {
   const dir = storyEvidenceDir();
   await mkdir(dir, { recursive: true });
-  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: false });
+  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: false, animations: 'disabled', timeout: 15000 });
 }
 
 export async function saveLog(name, content) {
