@@ -11,7 +11,7 @@ _story_ts_612() {
   fi
 
   local payload resp code
-  payload='{"name":"r612-dn-node","kind":"ollama","address":"http://localhost:11434","routing":"docker-network","routing_docker_network":{"network":"r612-net","image":"ollama/ollama:latest","container_name":"r612-ctr","port":11434,"auto_start":true}}'
+  payload='{"name":"r612-dn-node","kind":"ollama","address":"http://localhost:11434","routing":"docker-network","routing_docker_network":{"network_name":"r612-net","image":"ollama/ollama:latest","container_name":"r612-ctr","port":11434,"auto_start":true}}'
   api DELETE /api/compute/nodes/r612-dn-node >/dev/null 2>&1 || true
   resp=$(api_code POST /api/compute/nodes "$payload")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')

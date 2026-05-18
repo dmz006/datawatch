@@ -28,7 +28,7 @@ mcp:
   sse_enabled: true
   sse_host: 0.0.0.0
   sse_port: 9090
-  token: ""
+  token: "dw-test-token-12345"
 
 memory:
   enabled: false
