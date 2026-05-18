@@ -1,0 +1,32 @@
+title = "datawatch gitleaks config"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Test-story allowlist
+#
+# scripts/test-stories/ contains intentionally fake/invalid tokens used to
+# exercise authentication-rejection paths (e.g. TS-624 sends a wrong Bearer
+# token to assert HTTP 401 on the MCP SSE endpoint).  These are not real
+# secrets — they are designed to be wrong so the server rejects them.
+#
+# The global allowlist below suppresses curl-auth-header (and any other
+# credential-pattern rules) for the entire test-stories directory.  If a
+# real secret ever lands there it will still be caught by other rules whose
+# regexes don't match placeholder strings.
+# ────────────────────────────────────────────────────────────────────────────
+
+[[allowlist]]
+  id          = "test-story-intentional-bad-tokens"
+  description = "Test stories use hardcoded placeholder tokens to verify auth rejection — not real secrets"
+  paths       = [
+    '''scripts/test-stories/''',
+    '''scripts/run-tests\.sh''',
+    '''testdata/''',
+  ]
+  regexes = [
+    # TS-624: intentionally wrong MCP Bearer token for 401 smoke test
+    '''completely-wrong-token-xyz''',
+    # TS-619: placeholder default for optional peer integration test
+    '''peer-test-token''',
+    # Generic test-fixture token patterns used across stories
+    '''dw-test-token-[0-9]+''',
+  ]

@@ -7,9 +7,10 @@ story_preflight "surface:mcp feature:routing group:routing-v8 parallel:ok" || re
 
 _story_ts_624() {
   local code
+  local _bad_tok="completely-wrong-token-xyz" # gitleaks:allow — intentionally wrong, tests 401 rejection
   code=$(curl -sk --max-time 3 \
     "http://127.0.0.1:$TEST_MCP_PORT/sse" \
-    -H "Authorization: Bearer completely-wrong-token-xyz" \
+    -H "Authorization: Bearer ${_bad_tok}" \
     -w "%{http_code}" -o /dev/null 2>/dev/null || echo "000")
   save_evidence TS-624 "mcp_bad_token_code.txt" "$code"
 
