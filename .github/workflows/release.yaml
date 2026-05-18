@@ -1,0 +1,60 @@
+name: Release
+
+# Triggered by a clean semver tag: v7.2.2, v8.0.0, v7.3.1, etc.
+# Tags with pre-release suffixes (v7.2.2-build0, v7.2.2-rc1) do NOT trigger.
+# Workflow: full test suite → goreleaser → GitHub release with binaries.
+#
+# To cut a release:
+#   1. Bump version in cmd/datawatch/main.go + internal/server/api.go to "7.2.2"
+#   2. git commit -m "release(v7.2.2): ..."
+#   3. git tag v7.2.2 && git push origin v7.2.2
+#   CI does the rest.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # major, minor, patch — no pre-release suffix
+
+permissions:
+  contents: write   # goreleaser needs write to create GitHub releases
+
+jobs:
+  release:
+    name: goreleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # goreleaser needs full history for changelog
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Satisfy the //go:embed before goreleaser builds
+      - name: sync-docs + docs-index
+        run: |
+          mkdir -p internal/docsindex/assets
+          echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+          make sync-docs docs-index
+
+      - name: go test (release gate)
+        run: go test ./... -count=1 -timeout 5m
+
+      - name: golangci-lint (release gate)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
+          args: --timeout=5m
+
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.15.4
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
