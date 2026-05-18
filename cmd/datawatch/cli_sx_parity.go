@@ -575,15 +575,22 @@ func newRoutingRulesCmd() *cobra.Command {
 			Short: "List routing rules",
 			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/routing-rules") },
 		},
-		&cobra.Command{
-			Use:   "test <task>",
-			Short: "Test which backend a task would route to",
-			Args:  cobra.MinimumNArgs(1),
-			RunE: func(_ *cobra.Command, args []string) error {
-				return daemonJSON(http.MethodPost, "/api/routing-rules/test",
-					map[string]any{"task": joinArgs(args)})
-			},
-		},
+		func() *cobra.Command {
+			c := &cobra.Command{
+				Use:   "test <task>",
+				Short: "Test which backend a task would route to",
+				Args:  cobra.MinimumNArgs(1),
+				RunE: func(cmd *cobra.Command, args []string) error {
+					body := map[string]any{"task": joinArgs(args)}
+					if b, _ := cmd.Flags().GetString("backend"); b != "" {
+						body["backend"] = b
+					}
+					return daemonJSON(http.MethodPost, "/api/routing-rules/test", body)
+				},
+			}
+			c.Flags().String("backend", "", "Override backend to test routing for")
+			return c
+		}(),
 	)
 	return cmd
 }

@@ -367,6 +367,16 @@ t3_check_autonomous() {
 }
 
 # ---------------------------------------------------------------------------
+# Legacy helper: check if the memory subsystem is enabled and responsive.
+# Echoes "yes" or "no".
+# ---------------------------------------------------------------------------
+t5_check_memory() {
+  api GET /api/memory/stats \
+    | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' \
+    2>/dev/null || echo "no"
+}
+
+# ---------------------------------------------------------------------------
 # wait_for_llm_backend [max_tries] [sleep_sec]
 #   Returns the comma-joined list of available+enabled LLM backend names, or
 #   empty string if none available after all retries. Retries to allow Ollama

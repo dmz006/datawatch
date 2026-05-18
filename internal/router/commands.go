@@ -428,10 +428,15 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdNew, Text: rest}
 
-	case lower == "list" || strings.HasPrefix(lower, "list "):
+	case lower == "list" || strings.HasPrefix(lower, "list ") ||
+		lower == "sessions" || strings.HasPrefix(lower, "sessions "):
 		cmd := Command{Type: CmdList}
-		if lower != "list" {
-			cmd.Text = strings.TrimSpace(text[5:])
+		prefix := 5
+		if strings.HasPrefix(lower, "sessions") {
+			prefix = 9
+		}
+		if lower != "list" && lower != "sessions" {
+			cmd.Text = strings.TrimSpace(text[prefix:])
 		}
 		return cmd
 

@@ -30,7 +30,8 @@ func (s *Server) toolDocsSearch() mcpsdk.Tool {
 }
 func (s *Server) handleDocsSearch(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	q := url.Values{}
-	q.Set("q", req.GetString("q", ""))
+	qVal := req.GetString("q", req.GetString("query", ""))
+	q.Set("q", qVal)
 	if l := req.GetFloat("limit", 0); l > 0 {
 		q.Set("limit", fmt.Sprintf("%d", int(l)))
 	}

@@ -788,6 +788,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	if cfg.Session.MaxSessions > 0 {
+		mgr.SetMaxSessions(cfg.Session.MaxSessions)
+	}
 
 	// F10 S5.4 — post-session PR hook holder. Assigned later when the
 	// agent token broker comes online (broker block builds the closure).
@@ -2501,6 +2504,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[%s] DNS channel error: %v\n", cfg.Hostname, rErr)
 			}
 		}()
+	}
+
+	// Pipeline executor (F15) — ensure it's always initialized even when
+	// no comm backends are configured (pipeline is independent of channels).
+	if pipeAdapter == nil {
+		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
+		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
+		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
+			Enabled:           cfg.Pipeline.QualityGates.Enabled,
+			TestCommand:       cfg.Pipeline.QualityGates.TestCommand,
+			Timeout:           cfg.Pipeline.QualityGates.Timeout,
+			BlockOnRegression: cfg.Pipeline.QualityGates.BlockOnRegression,
+		})
+		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
 	}
 
 	// Start the PWA/WebSocket server if enabled

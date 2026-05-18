@@ -419,6 +419,9 @@ func (m *Manager) ReapOrphanWorkspaces() (removed []string, err error) {
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
 
+// SetMaxSessions overrides the maximum concurrent active sessions (0 = unlimited).
+func (m *Manager) SetMaxSessions(n int) { m.maxSessions = n }
+
 // SetRateLimitGlobalPause (BL30) toggles whether new session starts
 // are blocked while a global cooldown is active.
 func (m *Manager) SetRateLimitGlobalPause(on bool) {

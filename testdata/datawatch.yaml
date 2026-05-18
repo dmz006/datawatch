@@ -32,6 +32,7 @@ mcp:
 
 memory:
   enabled: true
+  backend: sqlite
   embedder: ollama
   embedder_model: nomic-embed-text
   embedder_host: http://localhost:11434
@@ -43,6 +44,13 @@ ollama:
   enabled: true
   model: qwen3:1.7b
   host: http://localhost:11434
+
+# Lightweight webhook backend: provides a comm responder so pipeline,
+# channel-responder tests, and routing-rules tests run without Signal/Slack.
+webhook:
+  enabled: true
+  addr: 127.0.0.1:0
+  token: ""
 
 update:
   enabled: false
