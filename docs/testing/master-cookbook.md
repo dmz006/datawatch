@@ -1,11 +1,11 @@
 # datawatch Master Test Cookbook
 
-**How to update**: Run `bash ../datawatch-testing/run-tests.sh` from anywhere — the script lives outside the repo in the sibling `datawatch-testing/` folder. After each run it automatically syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
+**How to update**: Run `bash scripts/run-tests.sh` from the repo root — the script auto-discovers your test folder (`../datawatch-<id>/`) via `DATAWATCH_TEST_ID` env var or glob. After each run it automatically syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
 
-**Testing folder**: `../datawatch-testing/` (sibling of the `datawatch` repo, not inside it)
-- Script: `../datawatch-testing/run-tests.sh`
-- Data dir: `../datawatch-testing/.datawatch-test-<hash>/` — unique per invocation (hash = shell PID); prevents parallel-run conflicts
-- Evidence: `../datawatch-testing/runs/YYYY-MM-DD-NNN/`
+**Testing folder**: `../datawatch-<id>/` (sibling of the `datawatch` repo, not inside it; `<id>` is a 6-char hex unique to your environment — see `docs/testing/README.md` for setup)
+- Script: `../datawatch-<id>/run-tests.sh`
+- Data dir: `../datawatch-<id>/.datawatch-test-<pid>/` — unique per invocation (hash = shell PID); prevents parallel-run conflicts
+- Evidence: `../datawatch-<id>/runs/YYYY-MM-DD-NNN/`
 - Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced from testing folder after each run)
 
 **Parallel run isolation**: Each invocation automatically gets a unique `TEST_RUN_HASH` (from `$$`) so data dirs don't collide. For full port isolation between parallel runs, set `TEST_PORT_OFFSET=<N>` (shifts all daemon ports by N) or override `TEST_BASE`/`TEST_TLS` directly:
