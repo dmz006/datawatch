@@ -332,4 +332,29 @@ t3_check_autonomous() {
     2>/dev/null || echo "no"
 }
 
+# ---------------------------------------------------------------------------
+# wait_for_llm_backend [max_tries] [sleep_sec]
+#   Returns the comma-joined list of available+enabled LLM backend names, or
+#   empty string if none available after all retries. Retries to allow Ollama
+#   (and other backends) time to load the model on first use.
+# ---------------------------------------------------------------------------
+wait_for_llm_backend() {
+  local max_tries="${1:-3}" sleep_sec="${2:-15}"
+  local avail=""
+  for ((i=1; i<=max_tries; i++)); do
+    avail=$(api GET /api/backends | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+have=[b["name"] for b in d.get("llm",[]) if b.get("enabled") and b.get("available")]
+print(",".join(have))
+' 2>/dev/null || echo "")
+    [[ -n "$avail" ]] && break
+    if (( i < max_tries )); then
+      echo "  [llm] no backend available yet (attempt $i/$max_tries) — waiting ${sleep_sec}s for model load..."
+      sleep "$sleep_sec"
+    fi
+  done
+  echo "$avail"
+}
+
 true

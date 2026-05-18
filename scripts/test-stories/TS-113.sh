@@ -7,16 +7,11 @@ CURRENT_STORY="TS-113"
 story_preflight "surface:cli feature:sessions conflict:llm" || return 0
 
 _story_ts_113() {
-  # Starting a session via CLI requires an LLM backend — skip if not available
+  # Starting a session via CLI requires an LLM backend — retry to allow model load time
   local avail
-  avail=$(api GET /api/backends 2>/dev/null | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-have=[b["name"] for b in d.get("llm",[]) if b.get("enabled") and b.get("available")]
-print(",".join(have))
-' 2>/dev/null || echo "")
+  avail=$(wait_for_llm_backend 3 15)
   if [[ -z "$avail" ]]; then
-    skip "sessions start via CLI requires LLM backend (none available)"
+    skip "sessions start via CLI requires LLM backend (none available after retries)"
     return
   fi
   local out
