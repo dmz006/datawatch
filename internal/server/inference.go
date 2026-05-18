@@ -100,6 +100,22 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleLLMInUse(w, r, strings.TrimSuffix(rest, "/in_use"))
 
+	case strings.HasSuffix(rest, "/models") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapLLMsRead) {
+			return
+		}
+		name := strings.TrimSuffix(rest, "/models")
+		l, err := s.inferenceReg.Get(name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		models := l.Models
+		if models == nil {
+			models = []inference.EnabledModel{}
+		}
+		writeJSONOK(w, map[string]any{"models": models})
+
 	case strings.HasSuffix(rest, "/refresh_models") && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
 			return
