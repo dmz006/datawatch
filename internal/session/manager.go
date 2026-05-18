@@ -217,6 +217,11 @@ type Manager struct {
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
 
+	// restartedAt records when each session was last restarted (in-memory only).
+	// Used to suppress DATAWATCH_COMPLETE: detection during the post-restart
+	// grace window while the resumed TUI re-renders prior conversation history.
+	restartedAt map[string]time.Time
+
 	// encFIFOs tracks encrypting FIFOs per session for cleanup.
 	encFIFOs map[string]*secfile.EncryptingFIFO
 
@@ -347,6 +352,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		idleTimeout:    idleTimeout,
 		mcpMaxRetries:  5,
 		mcpRetryCounts:   make(map[string]int),
+		restartedAt:      make(map[string]time.Time),
 		encKey:           key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
@@ -2430,6 +2436,9 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	monCtx, cancel := context.WithCancel(ctx)
 	m.mu.Lock()
 	m.monitors[sess.FullID] = cancel
+	// Record restart time so processOutputLine can ignore DATAWATCH_COMPLETE:
+	// replayed from prior conversation history during the TUI re-render window.
+	m.restartedAt[sess.FullID] = time.Now()
 	m.mu.Unlock()
 	go m.monitorOutput(monCtx, sess, projGit)
 
@@ -4268,6 +4277,19 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		completionLine := strings.TrimSpace(line)
 		for _, pat := range m.effectiveCompletionPatterns() {
 			if strings.HasPrefix(completionLine, pat) {
+				// Post-restart grace window: when a session is restarted with
+				// --resume, the TUI re-renders prior conversation history to the
+				// terminal. If that history contained DATAWATCH_COMPLETE: (from
+				// the prior run), monitorOutput would see it as new content and
+				// immediately mark the session complete again, creating a restart
+				// loop. Suppress completion detection for 30 s after restart.
+				m.mu.Lock()
+				restartTime, wasRestarted := m.restartedAt[sess.FullID]
+				m.mu.Unlock()
+				if wasRestarted && time.Since(restartTime) < 30*time.Second {
+					m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
+					return
+				}
 				current, ok := m.store.Get(sess.FullID)
 				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 					oldState := current.State
@@ -4452,6 +4474,14 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
 		if strings.HasPrefix(completionLine, pat) {
+			// Same post-restart grace window as the structured-channel path above.
+			m.mu.Lock()
+			restartTime, wasRestarted := m.restartedAt[sess.FullID]
+			m.mu.Unlock()
+			if wasRestarted && time.Since(restartTime) < 30*time.Second {
+				m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
+				return
+			}
 			current, ok := m.store.Get(sess.FullID)
 			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 				oldState := current.State
