@@ -3106,6 +3106,10 @@ function destroyXterm() {
     state._termResizeObserver.disconnect();
     state._termResizeObserver = null;
   }
+  if (state._viewportResizeHandler && window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', state._viewportResizeHandler);
+    state._viewportResizeHandler = null;
+  }
   if (state.terminal) {
     try { state.terminal.dispose(); } catch(e) { /* already disposed */ }
     state.terminal = null;
@@ -3172,34 +3176,21 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
 
   term.open(container);
 
-  // v6.11.11 — operator: "If I tap on the screen to type directly on
-  // the terminal, the keyboard comes up but the screen doesn't [scroll]
-  // like when typing in tmux command window it does." Mobile keyboards
-  // auto-scroll-into-view for native <input>/<textarea> elements but
-  // xterm.js's helper textarea is positioned absolutely + tiny so the
-  // browser's auto-scroll heuristic doesn't fire. Hook the helper
-  // textarea's focus event and explicitly scroll the terminal area to
-  // the bottom + into the visible area above the keyboard.
-  setTimeout(() => {
-    const helper = container.querySelector('.xterm-helper-textarea');
-    if (helper) {
-      helper.addEventListener('focus', () => {
-        // Scroll terminal area to bottom AND into visible viewport.
-        // Use scrollIntoView with block:'end' so it sits just above
-        // the keyboard rather than at the top of the viewport.
-        // The 200ms delay covers the keyboard-show animation on iOS
-        // — without it the scroll happens before the keyboard takes
-        // its space and ends up scrolled too far.
-        setTimeout(() => {
-          try {
-            const inputBar = document.getElementById('inputBar');
-            const target = inputBar || container;
-            target.scrollIntoView({ block: 'end', behavior: 'smooth' });
-          } catch(_) {}
-        }, 250);
-      });
-    }
-  }, 100);
+  // Mobile keyboard: when the virtual keyboard appears the visual viewport
+  // shrinks. Use visualViewport resize to refit the terminal to the new
+  // height so the content stays visible rather than scrolling the top
+  // off-screen. The 150ms delay lets the keyboard animation settle before
+  // measuring the new size.
+  if (window.visualViewport) {
+    const _vvResize = () => {
+      setTimeout(() => {
+        if (fitAddon) { try { fitAddon.fit(); } catch(e) {} }
+        syncTmuxSize();
+      }, 150);
+    };
+    window.visualViewport.addEventListener('resize', _vvResize);
+    state._viewportResizeHandler = _vvResize;
+  }
 
   // Sync tmux pane size with xterm.js terminal size.
   // After resize, the server sends a 'pane_capture' with fresh content at the correct width.
