@@ -8,55 +8,108 @@
 # release boundary — unit tests covered the manager + REST handler
 # in isolation but never exercised the loopback together.
 #
-# This script runs against a LIVE daemon on https://localhost:8443
-# (auto-detected port via API). Each step prints PASS / FAIL; one
-# failure exits non-zero and aborts the release.
+# Spins up its own isolated test daemon with a fresh data directory.
+# Never touches the production daemon or its data. All sessions, PRDs,
+# and other resources created during the run are cleaned up on exit
+# (explicit API cleanup + daemon shutdown + data dir deletion).
 #
 # Usage:
-#   ./scripts/release-smoke.sh                      # default localhost
-#   DW_BASE=http://127.0.0.1:8080 ./scripts/release-smoke.sh
-#   DW_TOKEN=<bearer> ./scripts/release-smoke.sh    # if auth enabled
+#   bash scripts/release-smoke.sh               # start + test + teardown
+#   SMOKE_PORT=19080 bash scripts/release-smoke.sh   # override test port
+#   KEEP_TEST_DIR=1 bash scripts/release-smoke.sh    # keep data dir on exit
 #
 # Returns 0 on success, non-zero on first failure.
 
 set -uo pipefail
 
-# v6.11.25 — operator-directed 2026-05-05: keep docs/plans/ clean before
-# every release. Fails fast if dated plans >1 week old or off-minor
-# release notes are still in the top-level folder. Run
-# `scripts/tidy-plans.sh` (no flags) to perform the moves, then re-run
-# smoke. Skipped when DW_SKIP_TIDY_CHECK=1.
 SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
+REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
+REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
+
+# --- static source lints (no daemon required) --------------------------------
+# v6.11.25 — keep docs/plans/ clean before every release.
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
   "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
 fi
-# v6.12.1 (BL273) — keep the embedded /docs/ mirror current. Same fail-fast
-# pattern as tidy-plans: --check exits non-zero if dst is stale.
+# v6.12.1 — keep the embedded /docs/ mirror current.
 if [ "${DW_SKIP_DOCS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/sync-docs-to-webfs.sh" ]; then
   "$SMOKE_DIR/sync-docs-to-webfs.sh" --check >&2 || exit 1
 fi
-# v6.18.0 — operator-flagged 2026-05-07: internal-ref leak audit.
-# Enforces the "User-facing docs strip internal refs" rule
-# (memory: feedback_user_facing_docs_no_internals). Two minor releases
-# (v6.16.0, v6.17.0) shipped with "(BL274)" and "(BL251)" visible in
-# the PWA before the operator caught it; this lint blocks a third repeat.
+# v6.18.0 — internal-ref leak audit.
 if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
   "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
 fi
-# v6.21.0 (BL274 closure) — three Docs-as-MCP currency lints. Each
-# enforces an AGENT.md rule that closes a class of silent failure
-# (curated howtos drifted from registered tool names; new howtos with
-# no exec_steps; plugin manifests with broken docs:files lists).
+# v6.21.0 — Docs-as-MCP currency lints.
 if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do
-    if [ -x "$SMOKE_DIR/$s" ]; then
-      "$SMOKE_DIR/$s" >&2 || exit 1
-    fi
+    [ -x "$SMOKE_DIR/$s" ] && "$SMOKE_DIR/$s" >&2 || exit 1
   done
 fi
 
-BASE="${DW_BASE:-https://localhost:8443}"
-TOK="${DW_TOKEN:-}"
+# --- isolated test daemon ----------------------------------------------------
+# Each run gets a unique 6-char hex ID so parallel runs don't collide.
+RUN_ID="$(openssl rand -hex 3)"
+TEST_WORK_DIR="$REPO_PARENT/datawatch-smoke-${RUN_ID}"
+TEST_DATA_DIR="$TEST_WORK_DIR/.datawatch-test-$$"
+mkdir -p "$TEST_DATA_DIR"
+
+SMOKE_PORT="${SMOKE_PORT:-19080}"
+SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-19443}"
+
+# Write a minimal config for the test daemon.
+TEST_CONFIG="$TEST_WORK_DIR/test-config.yaml"
+cat > "$TEST_CONFIG" <<YAML
+data_dir: ${TEST_DATA_DIR}
+server:
+  enabled: true
+  host: 127.0.0.1
+  port: ${SMOKE_PORT}
+  tls_enabled: true
+  tls_port: ${SMOKE_TLS_PORT}
+  tls_auto_generate: true
+  token: ""
+YAML
+
+# Find the datawatch binary (prefer freshly built binary in repo root).
+_DW_BIN="${DATAWATCH_BIN:-}"
+if [[ -z "$_DW_BIN" ]]; then
+  [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
+fi
+[[ -z "$_DW_BIN" ]] && { echo "ERROR: datawatch binary not found. Build first or set DATAWATCH_BIN=<path>" >&2; exit 1; }
+
+echo "Smoke run ID : $RUN_ID"
+echo "Test data dir: $TEST_DATA_DIR"
+echo "Test daemon  : https://127.0.0.1:${SMOKE_TLS_PORT}"
+echo "Binary       : $_DW_BIN"
+echo ""
+
+# Start the test daemon in the background.
+"$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
+  >"$TEST_WORK_DIR/daemon.log" 2>&1 &
+TEST_DAEMON_PID=$!
+
+# Wait up to 30 s for the daemon to answer health.
+echo "Waiting for test daemon..."
+_ready=0
+for _i in $(seq 1 30); do
+  curl -sk --max-time 2 "https://127.0.0.1:${SMOKE_TLS_PORT}/api/health" >/dev/null 2>&1 && { _ready=1; break; }
+  sleep 1
+done
+if [[ $_ready -eq 0 ]]; then
+  echo "ERROR: test daemon did not start within 30 s. Log:" >&2
+  tail -30 "$TEST_WORK_DIR/daemon.log" >&2
+  kill "$TEST_DAEMON_PID" 2>/dev/null || true
+  rm -rf "$TEST_WORK_DIR"
+  exit 1
+fi
+echo "Test daemon ready."
+echo ""
+
+BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
+TOK=""   # test daemon starts with no auth token
+# CLI commands use -u to point at the test daemon (not the production one).
+DW_CLI="$_DW_BIN -u $BASE"
+
 TMPD=$(mktemp -d)
 
 # v5.26.9 — operator-reported: smoke must clean up. Accumulate the
@@ -177,6 +230,18 @@ except Exception:
   fi
 
   rm -rf "$TMPD" 2>/dev/null
+
+  # Shut down the test daemon and delete its data dir.
+  # Resources were already cleaned via API above; this is the final sweep.
+  if [[ -n "${TEST_DAEMON_PID:-}" ]]; then
+    kill "$TEST_DAEMON_PID" 2>/dev/null || true
+    wait "$TEST_DAEMON_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
+    echo "Test data kept: $TEST_WORK_DIR"
+  else
+    rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
+  fi
 }
 trap cleanup_all EXIT
 
@@ -2662,30 +2727,31 @@ DP=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/a
 _smoke_write_progress "true"
 
 H "50. CLI surface"
-DW_BIN=$(which datawatch 2>/dev/null || echo "")
-if [[ -z "$DW_BIN" ]]; then
-  skip "datawatch CLI not on PATH — skipping CLI surface checks"
+# DW_CLI is set at startup to "$_DW_BIN -u $BASE" so all CLI commands
+# target the isolated test daemon, not the production instance.
+if [[ -z "${DW_CLI:-}" ]]; then
+  skip "datawatch CLI not available — skipping CLI surface checks"
 else
-  $DW_BIN version >/dev/null 2>&1 && ok "datawatch version exits 0" || ko "datawatch version failed"
-  $DW_BIN status >/dev/null 2>&1 && ok "datawatch status exits 0" || ko "datawatch status failed"
-  $DW_BIN session list >/dev/null 2>&1 && ok "datawatch session list exits 0" || ko "datawatch session list failed"
-  $DW_BIN llm list >/dev/null 2>&1 && ok "datawatch llm list exits 0" || ko "datawatch llm list failed"
-  $DW_BIN memory list >/dev/null 2>&1 && ok "datawatch memory list exits 0" || ko "datawatch memory list failed"
-  $DW_BIN secrets list >/dev/null 2>&1 && ok "datawatch secrets list exits 0" || ko "datawatch secrets list failed"
-  $DW_BIN skills list >/dev/null 2>&1 && ok "datawatch skills list exits 0" || ko "datawatch skills list failed"
-  $DW_BIN plugins list >/dev/null 2>&1 && ok "datawatch plugins list exits 0" || ko "datawatch plugins list failed"
-  $DW_BIN compute list >/dev/null 2>&1 && ok "datawatch compute list exits 0" || ko "datawatch compute list failed"
-  $DW_BIN observer peers list >/dev/null 2>&1 && ok "datawatch observer peers list exits 0" || ko "datawatch observer peers list failed"
-  $DW_BIN routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list exits 0" || ko "datawatch routing-rules list failed"
-  $DW_BIN routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list (x2 check) exits 0" || ko "datawatch routing-rules list (x2) failed"
-  $DW_BIN schedule list >/dev/null 2>&1 && ok "datawatch schedule list exits 0" || skip "datawatch schedule CLI not yet exposed (REST /api/schedules works)"
-  $DW_BIN autonomous list >/dev/null 2>&1 && ok "datawatch autonomous list exits 0" || ko "datawatch autonomous list failed"
-  $DW_BIN algorithm list >/dev/null 2>&1 && ok "datawatch algorithm list exits 0" || ko "datawatch algorithm list failed"
-  $DW_BIN evals runs >/dev/null 2>&1 && ok "datawatch evals runs exits 0" || ko "datawatch evals runs failed"
-  $DW_BIN pipeline list >/dev/null 2>&1 && ok "datawatch pipeline list exits 0" || ko "datawatch pipeline list failed"
-  $DW_BIN identity show >/dev/null 2>&1 && ok "datawatch identity show exits 0" || ko "datawatch identity show failed"
-  $DW_BIN cost summary >/dev/null 2>&1 && ok "datawatch cost summary exits 0" || ko "datawatch cost summary failed"
-  $DW_BIN tooling status >/dev/null 2>&1 && ok "datawatch tooling status exits 0" || ko "datawatch tooling status failed"
+  $DW_CLI version >/dev/null 2>&1 && ok "datawatch version exits 0" || ko "datawatch version failed"
+  $DW_CLI status >/dev/null 2>&1 && ok "datawatch status exits 0" || ko "datawatch status failed"
+  $DW_CLI session list >/dev/null 2>&1 && ok "datawatch session list exits 0" || ko "datawatch session list failed"
+  $DW_CLI llm list >/dev/null 2>&1 && ok "datawatch llm list exits 0" || ko "datawatch llm list failed"
+  $DW_CLI memory list >/dev/null 2>&1 && ok "datawatch memory list exits 0" || ko "datawatch memory list failed"
+  $DW_CLI secrets list >/dev/null 2>&1 && ok "datawatch secrets list exits 0" || ko "datawatch secrets list failed"
+  $DW_CLI skills list >/dev/null 2>&1 && ok "datawatch skills list exits 0" || ko "datawatch skills list failed"
+  $DW_CLI plugins list >/dev/null 2>&1 && ok "datawatch plugins list exits 0" || ko "datawatch plugins list failed"
+  $DW_CLI compute list >/dev/null 2>&1 && ok "datawatch compute list exits 0" || ko "datawatch compute list failed"
+  $DW_CLI observer peers list >/dev/null 2>&1 && ok "datawatch observer peers list exits 0" || ko "datawatch observer peers list failed"
+  $DW_CLI routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list exits 0" || ko "datawatch routing-rules list failed"
+  $DW_CLI routing-rules list >/dev/null 2>&1 && ok "datawatch routing-rules list (x2 check) exits 0" || ko "datawatch routing-rules list (x2) failed"
+  $DW_CLI schedule list >/dev/null 2>&1 && ok "datawatch schedule list exits 0" || skip "datawatch schedule CLI not yet exposed (REST /api/schedules works)"
+  $DW_CLI autonomous list >/dev/null 2>&1 && ok "datawatch autonomous list exits 0" || ko "datawatch autonomous list failed"
+  $DW_CLI algorithm list >/dev/null 2>&1 && ok "datawatch algorithm list exits 0" || ko "datawatch algorithm list failed"
+  $DW_CLI evals runs >/dev/null 2>&1 && ok "datawatch evals runs exits 0" || ko "datawatch evals runs failed"
+  $DW_CLI pipeline list >/dev/null 2>&1 && ok "datawatch pipeline list exits 0" || ko "datawatch pipeline list failed"
+  $DW_CLI identity show >/dev/null 2>&1 && ok "datawatch identity show exits 0" || ko "datawatch identity show failed"
+  $DW_CLI cost summary >/dev/null 2>&1 && ok "datawatch cost summary exits 0" || ko "datawatch cost summary failed"
+  $DW_CLI tooling status >/dev/null 2>&1 && ok "datawatch tooling status exits 0" || ko "datawatch tooling status failed"
 fi
 
 # ---------------------------------------------------------------------------

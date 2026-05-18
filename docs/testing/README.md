@@ -62,8 +62,14 @@ After each run the script automatically:
 
 ## Release smoke test
 
-`scripts/release-smoke.sh` tests the **production** daemon at `https://localhost:8443` as a pre-release health check. It is separate from the isolated E2E suite above. Run it before tagging a release:
+`scripts/release-smoke.sh` spins up its own isolated test daemon (same pattern as the E2E runner — fresh data dir, test ports, auto-cleaned on exit). It never touches the production daemon. Run it before tagging a release:
 
 ```bash
 bash scripts/release-smoke.sh
+
+# Override test ports if 19080/19443 are busy:
+SMOKE_PORT=29080 SMOKE_TLS_PORT=29443 bash scripts/release-smoke.sh
+
+# Keep the test data dir after the run (for debugging):
+KEEP_TEST_DIR=1 bash scripts/release-smoke.sh
 ```
