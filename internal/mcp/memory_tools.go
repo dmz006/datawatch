@@ -437,8 +437,9 @@ func (s *Server) toolGetConfig() mcpsdk.Tool {
 func (s *Server) handleGetConfig(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	section := req.GetString("section", "")
 	// Fetch config via HTTP to avoid circular imports
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:" + fmt.Sprintf("%d", s.webPort) + "/api/config")
+	cfgReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"http://127.0.0.1:"+fmt.Sprintf("%d", s.webPort)+"/api/config", nil)
+	resp, err := s.webDo(cfgReq)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
 	}
@@ -500,8 +501,9 @@ func (s *Server) toolGetStats() mcpsdk.Tool {
 }
 
 func (s *Server) handleGetStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:" + fmt.Sprintf("%d", s.webPort) + "/api/stats")
+	statsReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"http://127.0.0.1:"+fmt.Sprintf("%d", s.webPort)+"/api/stats", nil)
+	resp, err := s.webDo(statsReq)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("stats error: %v", err)), nil
 	}
@@ -772,13 +774,17 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	// Route through the HTTP API for proper validation and persistence
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	// Try as raw value first, then as string
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/api/config", s.webPort),
-		"application/json", strings.NewReader(body))
+	cfgReq1, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
+	cfgReq1.Header.Set("Content-Type", "application/json")
+	resp, err := s.webDo(cfgReq1)
 	if err != nil {
 		// Try with quoted value
 		body = fmt.Sprintf(`{"%s": "%s"}`, key, value)
-		resp, err = http.Post(fmt.Sprintf("http://localhost:%d/api/config", s.webPort),
-			"application/json", strings.NewReader(body))
+		cfgReq2, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+			fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
+		cfgReq2.Header.Set("Content-Type", "application/json")
+		resp, err = s.webDo(cfgReq2)
 		if err != nil {
 			return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
 		}

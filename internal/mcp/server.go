@@ -601,6 +601,15 @@ func (s *Server) SetWebPort(port int) { s.webPort = port }
 // SetToken sets the bearer token for internal API calls.
 func (s *Server) SetToken(token string) { s.token = token }
 
+// webDo executes an HTTP request against the local daemon API, automatically
+// adding the Bearer token when one is configured.
+func (s *Server) webDo(req *http.Request) (*http.Response, error) {
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // SetFedPeerStore wires the federation peer registry for MCP SSE auth (BL317).
 func (s *Server) SetFedPeerStore(store FedPeerStore) { s.fedPeerStore = store }
 
@@ -1311,7 +1320,11 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 			body["project_dir"] = projectDir
 		}
 		bodyJSON, _ := json.Marshal(body)
-		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", s.webPort), "application/json", bytes.NewReader(bodyJSON))
+		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+			fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", s.webPort),
+			bytes.NewReader(bodyJSON))
+		sreq.Header.Set("Content-Type", "application/json")
+		resp, err := s.webDo(sreq)
 		if err != nil {
 			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
 		}
