@@ -1182,12 +1182,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			// Clean up backend state file (no longer needed for reconnect)
 			session.RemoveBackendState(sess.TrackingDir)
-			// Kill tmux session on completion/failure (prevents dropping to shell prompt)
-			go func() {
-				defer func() { if p := recover(); p != nil { fmt.Printf("[session] tmux kill panic (recovered): %v\n", p) } }()
-				time.Sleep(2 * time.Second) // brief delay to let final output flush
-				mgr.KillTmuxSession(sess.FullID)
-			}()
+			// Kill tmux session on completion/failure only when kill_sessions_on_exit is enabled.
+			// When disabled the tmux window stays alive so the operator can inspect output.
+			if cfg.Session.KillSessionsOnExit {
+				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[session] tmux kill panic (recovered): %v\n", p) } }()
+					time.Sleep(2 * time.Second) // brief delay to let final output flush
+					mgr.KillTmuxSession(sess.FullID)
+				}()
+			}
 			if sess.BackendFamily == "claude-code" {
 				go func() {
 					defer func() { if p := recover(); p != nil { fmt.Printf("[mcp] unregister panic (recovered): %v\n", p) } }()
