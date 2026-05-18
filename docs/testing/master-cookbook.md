@@ -1,12 +1,14 @@
 # datawatch Master Test Cookbook
 
-**How to update**: Run `bash scripts/run-tests.sh` from the repo root — the script auto-discovers your test folder (`../datawatch-<id>/`) via `DATAWATCH_TEST_ID` env var or glob. After each run it automatically syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
+**How to update**: Run `bash scripts/run-tests.sh` from the repo root. The script automatically creates a working directory outside the repo (`../datawatch-<id>/`), runs tests, and deletes the dir on success (kept on failure). After each run it syncs results back to `datawatch/docs/testing/`. Commit with the suggested git command printed at the end.
 
-**Testing folder**: `../datawatch-<id>/` (sibling of the `datawatch` repo, not inside it; `<id>` is a 6-char hex unique to your environment — see `docs/testing/README.md` for setup)
-- Script: `../datawatch-<id>/run-tests.sh`
-- Data dir: `../datawatch-<id>/.datawatch-test-<pid>/` — unique per invocation (hash = shell PID); prevents parallel-run conflicts
-- Evidence: `../datawatch-<id>/runs/YYYY-MM-DD-NNN/`
-- Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced from testing folder after each run)
+**No setup required.** The test runner manages its own working dir.
+- Runner: `scripts/run-tests.sh` (in this repo)
+- Story implementations: `scripts/test-stories/TS-NNN.sh` (in this repo)
+- Working dir: `../datawatch-<id>/` — auto-created per run, auto-deleted on success
+- Data dir: `../datawatch-<id>/.datawatch-test-<pid>/` — unique per invocation (hash = shell PID)
+- Evidence: `../datawatch-<id>/evidence/TS-NNN/` — kept when a story fails
+- Canonical docs (this file + plan): `datawatch/docs/testing/` (auto-synced after each run)
 
 **Parallel run isolation**: Each invocation automatically gets a unique `TEST_RUN_HASH` (from `$$`) so data dirs don't collide. For full port isolation between parallel runs, set `TEST_PORT_OFFSET=<N>` (shifts all daemon ports by N) or override `TEST_BASE`/`TEST_TLS` directly:
 ```bash

@@ -1,55 +1,141 @@
 #!/usr/bin/env bash
-# run-tests.sh — forwarding wrapper.
+# run-tests.sh — E2E test runner.
 #
-# The test runner lives outside this repo in a sibling folder named
-# ../datawatch-<id>/ where <id> is a short 6-char hex identifier unique to
-# each test environment. Using a unique ID lets multiple test environments
-# (different machines, parallel CI runs, or local experiments) coexist on the
-# same shared filesystem without conflicting.
+# Automatically creates a working directory outside the repo for each run so
+# test artifacts (isolated daemon data, evidence, run logs) never touch the
+# source tree. The directory is deleted on success; kept on failure so you can
+# inspect evidence and resume.
 #
-# Resolution order:
-#   1. DATAWATCH_TEST_ID env var  →  ../datawatch-${DATAWATCH_TEST_ID}/
-#   2. Auto-discover: glob ../datawatch-*/run-tests.sh; use if exactly one match
-#   3. Error with setup instructions
+# Usage:
+#   bash scripts/run-tests.sh                       # full run
+#   bash scripts/run-tests.sh --surface=api         # filter by surface
+#   bash scripts/run-tests.sh --feature=sessions    # filter by feature
+#   bash scripts/run-tests.sh --story=TS-042        # single story
+#   bash scripts/run-tests.sh --resume-from=TS-042  # resume after a blocker
 #
-# Usage: all flags are forwarded verbatim to the external runner.
-#   bash scripts/run-tests.sh [--surface=api] [--feature=sessions] ...
-#   DATAWATCH_TEST_ID=abc123 bash scripts/run-tests.sh --story=TS-042
+# Resuming a failed run (reuses its working dir so evidence is preserved):
+#   DATAWATCH_TEST_ID=abc123 bash scripts/run-tests.sh --resume-from=TS-042
 #
-# Setup:
-#   id=$(openssl rand -hex 3)            # generates e.g. "a3f9c1"
-#   mkdir -p "../datawatch-${id}"
-#   # copy or clone run-tests.sh there
-#   export DATAWATCH_TEST_ID="$id"       # or add to your shell profile
+# Keep working dir even on success (for debugging):
+#   KEEP_TEST_DIR=1 bash scripts/run-tests.sh
+
+set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-REPO_PARENT="$SCRIPT_DIR/../.."
+REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
-if [[ -n "$DATAWATCH_TEST_ID" ]]; then
-  EXTERNAL_RUNNER="$REPO_PARENT/datawatch-${DATAWATCH_TEST_ID}/run-tests.sh"
-  if [[ ! -f "$EXTERNAL_RUNNER" ]]; then
-    echo "ERROR: DATAWATCH_TEST_ID=$DATAWATCH_TEST_ID but runner not found at $EXTERNAL_RUNNER" >&2
-    exit 1
+# --- working directory -------------------------------------------------------
+# Each run gets a unique 6-char hex ID so parallel runs on the same filesystem
+# don't collide. Set DATAWATCH_TEST_ID to reuse a specific prior run's dir
+# (e.g. to resume after a failure).
+RUN_ID="${DATAWATCH_TEST_ID:-$(openssl rand -hex 3)}"
+TEST_DIR="$REPO_PARENT/datawatch-${RUN_ID}"
+mkdir -p "$TEST_DIR"
+
+FAILED=0
+cleanup() {
+  if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then
+    echo ""
+    echo "Working dir kept: $TEST_DIR"
+    echo "  Resume: DATAWATCH_TEST_ID=$RUN_ID bash scripts/run-tests.sh --resume-from=<story>"
+  else
+    rm -rf "$TEST_DIR"
   fi
-else
-  # Auto-discover: find all sibling datawatch-<id>/run-tests.sh
-  mapfile -t CANDIDATES < <(ls "$REPO_PARENT"/datawatch-*/run-tests.sh 2>/dev/null)
-  if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
-    echo "ERROR: no test runner found. Set up a test folder:" >&2
-    echo "  id=\$(openssl rand -hex 3)" >&2
-    echo "  mkdir -p \"../datawatch-\${id}\"" >&2
-    echo "  # copy or symlink run-tests.sh there" >&2
-    echo "  export DATAWATCH_TEST_ID=\"\$id\"" >&2
-    exit 1
-  elif [[ ${#CANDIDATES[@]} -gt 1 ]]; then
-    echo "ERROR: multiple test runners found; set DATAWATCH_TEST_ID to choose:" >&2
-    for c in "${CANDIDATES[@]}"; do
-      id=$(basename "$(dirname "$c")" | sed 's/^datawatch-//')
-      echo "  DATAWATCH_TEST_ID=$id" >&2
-    done
-    exit 1
-  fi
-  EXTERNAL_RUNNER="${CANDIDATES[0]}"
+}
+trap 'FAILED=$?; cleanup' EXIT
+
+# --- exports for story implementations --------------------------------------
+export DATAWATCH_TEST_ID="$RUN_ID"
+export DATAWATCH_TEST_DIR="$TEST_DIR"
+export DATAWATCH_REPO_DIR="$REPO_DIR"
+export DATAWATCH_COOKBOOK="$REPO_DIR/docs/testing/master-cookbook.md"
+
+# Per-invocation daemon isolation: unique data dir + port offset from PID.
+export TEST_RUN_HASH="$$"
+export DATAWATCH_TEST_DATA="$TEST_DIR/.datawatch-test-${TEST_RUN_HASH}"
+export TEST_BASE="${TEST_BASE:-18080}"
+export TEST_TLS="${TEST_TLS:-18443}"
+
+echo "Run ID  : $RUN_ID"
+echo "Work dir: $TEST_DIR"
+echo ""
+
+# --- argument parsing -------------------------------------------------------
+FILTER_SURFACE=""
+FILTER_FEATURE=""
+FILTER_STORY=""
+RESUME_FROM=""
+FAIL_FAST=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --surface=*)   FILTER_SURFACE="${arg#*=}" ;;
+    --feature=*)   FILTER_FEATURE="${arg#*=}" ;;
+    --story=*)     FILTER_STORY="${arg#*=}" ;;
+    --resume-from=*) RESUME_FROM="${arg#*=}" ;;
+    --fail-fast*)  FAIL_FAST=1 ;;
+    *) echo "Unknown flag: $arg" >&2; exit 1 ;;
+  esac
+done
+
+export FILTER_SURFACE FILTER_FEATURE FILTER_STORY RESUME_FROM FAIL_FAST
+
+# --- story runner -----------------------------------------------------------
+# Story implementations live in scripts/test-stories/ as individual scripts
+# named TS-NNN.sh, sourced in order. Each script sets RESULT=pass|fail|skip
+# and writes evidence to $DATAWATCH_TEST_DIR/evidence/TS-NNN/.
+
+STORIES_DIR="$SCRIPT_DIR/test-stories"
+PASS=0; FAIL=0; SKIP=0
+EVIDENCE_DIR="$TEST_DIR/evidence"
+mkdir -p "$EVIDENCE_DIR"
+
+if [[ ! -d "$STORIES_DIR" ]]; then
+  echo "No story implementations yet. Add scripts to scripts/test-stories/TS-NNN.sh"
+  echo "Stories are defined in: $DATAWATCH_COOKBOOK"
+  exit 0
 fi
 
-exec bash "$EXTERNAL_RUNNER" "$@"
+PAST_RESUME=0
+[[ -z "$RESUME_FROM" ]] && PAST_RESUME=1
+
+for story_script in "$STORIES_DIR"/TS-*.sh; do
+  [[ -f "$story_script" ]] || continue
+  story_id=$(basename "$story_script" .sh)
+
+  # resume-from: skip stories before the resume point
+  if [[ $PAST_RESUME -eq 0 ]]; then
+    [[ "$story_id" == "$RESUME_FROM" ]] && PAST_RESUME=1 || continue
+  fi
+
+  # filters
+  [[ -n "$FILTER_STORY" && "$story_id" != "$FILTER_STORY" ]] && continue
+
+  RESULT=""
+  mkdir -p "$EVIDENCE_DIR/$story_id"
+  # shellcheck source=/dev/null
+  source "$story_script"
+
+  case "$RESULT" in
+    pass) ((PASS++)); echo "✓ $story_id" ;;
+    skip) ((SKIP++)); echo "- $story_id (skip)" ;;
+    fail|*)
+      ((FAIL++))
+      echo "✗ $story_id"
+      if [[ $FAIL_FAST -eq 1 ]]; then
+        echo "Stopping at first failure (--fail-fast)."
+        FAILED=1
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+echo ""
+echo "Results: $PASS passed  $FAIL failed  $SKIP skipped"
+
+if [[ $FAIL -gt 0 ]]; then
+  FAILED=1
+  exit 1
+fi
