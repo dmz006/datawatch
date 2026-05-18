@@ -5732,7 +5732,7 @@ const _settingsTabRaw = localStorage.getItem('cs_settings_tab') || 'monitor';
 // the old 'llm' and 'agents' tabs collapse into 'compute', tailscale
 // also moves from general → compute. Operators landing on a stale
 // localStorage key get auto-redirected to the new home.
-const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', secrets: 'general', tailscale: 'compute', llm: 'compute', agents: 'compute' };
+const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', secrets: 'general', tailscale: 'compute', llm: 'compute', agents: 'compute', servers: 'comms' };
 let _settingsTab = _settingsTabMigrations[_settingsTabRaw] || _settingsTabRaw;
 const _expandedSessions = new Set(); // track expanded session rows across re-renders
 const _expandedChannels = new Set(); // track expanded channel rows across re-renders
@@ -5809,7 +5809,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'servers') loadServersList();
+  if (tab === 'comms' || tab === 'servers') loadServersList();
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -5849,7 +5849,6 @@ function renderSettingsView() {
     ['comms',        t('settings_tab_comms')],
     ['compute',      t('settings_tab_compute') || 'Compute'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
-    ['servers',      t('server_settings_title') || 'Servers'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -6376,36 +6375,38 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL312 S2 — Remote Servers management card -->
-        <div class="settings-section" data-group="servers" style="${stab!=='servers'?'display:none':''}">
-          <div class="settings-section-title">${t('server_settings_title')||'Remote Servers'}</div>
-          <div style="margin-bottom:8px;">
-            <button onclick="showServerForm(null)" style="background:var(--accent2);color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${t('server_add_btn')||'Add Server'}</button>
-          </div>
-          <div id="serversList" style="margin-bottom:12px;"></div>
-          <div id="serverFormWrap" style="display:none;background:var(--bg2);border-radius:6px;padding:12px;margin-top:8px;">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px;" id="serverFormTitle">Add Server</div>
-            <input type="hidden" id="serverFormEditName" value="" />
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <label style="font-size:12px;color:var(--text2);">${t('server_name_label')||'Name'}<br>
-                <input type="text" id="serverFormName" placeholder="e.g. prod, pi" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
-              </label>
-              <label style="font-size:12px;color:var(--text2);">${t('server_url_label')||'URL'}<br>
-                <input type="text" id="serverFormUrl" placeholder="https://host:8443" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
-              </label>
-              <label style="font-size:12px;color:var(--text2);">${t('server_token_label')||'Token'} (optional)<br>
-                <input type="password" id="serverFormToken" placeholder="Bearer token" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
-              </label>
-              <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
-                <input type="checkbox" id="serverFormEnabled" checked />
-                ${t('server_enabled_label')||'Enabled'}
-              </label>
+        <!-- BL312 S2 — Remote Servers management card (merged into Comms tab) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('remote_servers', t('server_settings_title')||'Remote Servers')}
+          <div id="settings-sec-remote_servers" style="${secContent('remote_servers')}">
+            <div style="padding:8px 0 4px;">
+              <button onclick="showServerForm(null)" style="background:var(--accent2);color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${t('server_add_btn')||'Add Server'}</button>
             </div>
-            <div style="display:flex;gap:8px;margin-top:10px;">
-              <button onclick="saveServer()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Save</button>
-              <button onclick="closeServerForm()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Cancel</button>
+            <div id="serversList" style="margin-bottom:4px;"></div>
+            <div id="serverFormWrap" style="display:none;background:var(--bg3,#2d3148);border-radius:6px;padding:12px;margin-top:8px;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:8px;" id="serverFormTitle">Add Server</div>
+              <input type="hidden" id="serverFormEditName" value="" />
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <label style="font-size:12px;color:var(--text2);">${t('server_name_label')||'Name'}<br>
+                  <input type="text" id="serverFormName" placeholder="e.g. prod, pi" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <label style="font-size:12px;color:var(--text2);">${t('server_url_label')||'URL'}<br>
+                  <input type="text" id="serverFormURL" placeholder="https://host:8443" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <label style="font-size:12px;color:var(--text2);">${t('server_token_label')||'Token'} (optional)<br>
+                  <input type="password" id="serverFormToken" placeholder="Bearer token" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+                  <input type="checkbox" id="serverFormEnabled" checked />
+                  ${t('server_enabled_label')||'Enabled'}
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;">
+                <button onclick="saveServer()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Save</button>
+                <button onclick="closeServerForm()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Cancel</button>
+              </div>
+              <div id="serverFormError" style="color:var(--error,#ef4444);font-size:11px;margin-top:6px;display:none;"></div>
             </div>
-            <div id="serverFormError" style="color:var(--error,#ef4444);font-size:11px;margin-top:6px;display:none;"></div>
           </div>
         </div>
 
@@ -6603,7 +6604,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'servers') loadServersList(); // BL312 S2
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') loadServersList(); // BL312 S2
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
