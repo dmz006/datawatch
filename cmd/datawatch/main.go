@@ -6855,6 +6855,7 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
 			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)
 			fmt.Printf("  kill_sessions_on_exit: %v\n", cfg.Session.KillSessionsOnExit)
+			fmt.Printf("  one_shot_sessions:     %v\n", cfg.Session.OneShotSessions)
 			fmt.Printf("  (claude-code settings: see datawatch llm get claude-code)\n")
 
 			fmt.Println()

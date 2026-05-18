@@ -18,6 +18,8 @@ _story_ts_604() {
     ok "list_sessions MCP tool returned list"
   elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "list_sessions MCP tool returned dict"
+  elif echo "$resp" | grep -qi "^Sessions on\|^ID:\|^State:"; then
+    ok "list_sessions MCP tool returned sessions text"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
   fi

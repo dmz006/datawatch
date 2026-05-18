@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,7 +26,11 @@ import (
 // TLS settings (https://127.0.0.1:<tls_port> when tls_enabled, else
 // http://127.0.0.1:<port>). Falls back to http://127.0.0.1:8080 when no
 // config is loadable.
+// When --url/-u is given, that value takes priority over config.
 func daemonURL() string {
+	if serverURL != "" {
+		return strings.TrimRight(serverURL, "/")
+	}
 	cfg, err := loadConfigSecure()
 	if err != nil || cfg == nil {
 		return "http://127.0.0.1:8080"

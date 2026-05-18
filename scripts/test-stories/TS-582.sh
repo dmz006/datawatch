@@ -7,7 +7,7 @@ story_preflight "surface:cli feature:federation feature:cli" || return 0
 
 _story_ts_582() {
   local out rc
-  out=$(cli_test federation peer add e2e-cli-peer-ts582 http://127.0.0.1:19999 --token test 2>&1) || rc=$?
+  out=$(cli_test federation peer add --name e2e-cli-peer-ts582 --url http://127.0.0.1:19999 --token test 2>&1) || rc=$?
   rc="${rc:-0}"
   save_evidence TS-582 "out.txt" "$out"
   if echo "$out" | grep -qi "unknown command\|unknown flag\|disabled\|no route\|help"; then

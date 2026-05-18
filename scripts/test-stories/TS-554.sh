@@ -17,7 +17,7 @@ _story_ts_554() {
     skip "memory_recall tool not available"
     return
   fi
-  if assert_json "$resp" 'isinstance(d.get("hits",[]), list) or isinstance(d, list)'; then
+  if assert_json "$resp" 'isinstance(d, list) or (isinstance(d, dict) and isinstance(d.get("hits",[]), list))'; then
     ok "memory_recall tool returned hits array"
   elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "memory_recall tool returned dict"

@@ -12,7 +12,7 @@ _story_ts_558() {
     return
   fi
   local count
-  count=$(grep -c "📋 planned" "$cookbook" 2>/dev/null || echo "0")
+  count=$(grep -c "📋 planned" "$cookbook" 2>/dev/null || true)
   if [[ "$count" -eq 0 ]]; then
     ok "master-cookbook.md has no planned stories"
   else

@@ -3197,7 +3197,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Skills:             profileSkills,
 		LLMRef:             resolvedLLMRef,
 		ComputeNodeRef:     resolvedComputeNodeRef,
-		OneShot:            req.OneShot,
+		OneShot:            req.OneShot || s.cfg.Session.OneShotSessions,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
@@ -3702,6 +3702,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"auto_git_commit":    s.cfg.Session.AutoGitCommit,
 				"auto_git_init":      s.cfg.Session.AutoGitInit,
 				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
+				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
 				"root_path":         s.cfg.Session.RootPath,
 				"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
 				"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
@@ -4201,6 +4202,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Session.AutoGitInit = toBool(v)
 		case "session.kill_sessions_on_exit":
 			cfg.Session.KillSessionsOnExit = toBool(v)
+		case "session.one_shot_sessions":
+			cfg.Session.OneShotSessions = toBool(v)
 		case "session.root_path":
 			cfg.Session.RootPath = toString(v)
 		case "session.mcp_max_retries":

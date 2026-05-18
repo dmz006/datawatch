@@ -7,7 +7,7 @@ story_preflight "surface:cli feature:federation feature:cli" || return 0
 
 _story_ts_585() {
   local out rc
-  out=$(cli_test federation group add e2e-cli-grp-ts585 --caps sessions:list 2>&1) || rc=$?
+  out=$(cli_test federation group add --name e2e-cli-grp-ts585 --caps sessions:list 2>&1) || rc=$?
   rc="${rc:-0}"
   save_evidence TS-585 "out.txt" "$out"
   if echo "$out" | grep -qi "unknown command\|unknown flag\|disabled\|no route\|help"; then

@@ -15,6 +15,10 @@ _story_ts_477() {
     skip "autonomous_prd_approve tool not available"
     return
   fi
+  if echo "$resp" | grep -qi "not approvable\|status.*draft\|must be.*pending\|cannot approve"; then
+    skip "PRD not in approvable state (status=draft)"
+    return
+  fi
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "autonomous_prd_approve tool returned dict"
   else

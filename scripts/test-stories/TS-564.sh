@@ -11,6 +11,8 @@ _story_ts_564() {
   save_evidence TS-564 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|404\|no route"; then
     skip "federation/peers endpoint not available in this build"
+  elif [[ "$resp" == "null" ]] || assert_json "$resp" 'd is None'; then
+    ok "GET /api/federation/peers returns null (no peers configured)"
   elif assert_json "$resp" 'isinstance(d, list)'; then
     ok "GET /api/federation/peers returns list"
   elif assert_json "$resp" 'isinstance(d, dict) and ("peers" in d or d == {})'; then

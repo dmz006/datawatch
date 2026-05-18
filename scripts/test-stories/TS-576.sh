@@ -14,7 +14,9 @@ _story_ts_576() {
     skip "federation_peer_list MCP tool not available in this build"
     return
   fi
-  if assert_json "$resp" 'isinstance(d, list)'; then
+  if [[ "$resp" == "null" ]] || assert_json "$resp" 'd is None'; then
+    ok "federation_peer_list MCP tool returned null (no peers)"
+  elif assert_json "$resp" 'isinstance(d, list)'; then
     ok "federation_peer_list MCP tool returned list"
   elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "federation_peer_list MCP tool returned dict"

@@ -60,7 +60,10 @@ start_test_daemon() {
     -e "s|port: 8080|port: $TEST_PORT|g" \
     -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+    -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
     "$tmpl" > "$test_cfg"
+  # Also write to TEST_DATA/config.yaml so cli_test (--config $TEST_DATA/config.yaml) works
+  cp "$test_cfg" "$TEST_DATA/config.yaml"
 
   # Find the binary
   local binary=""
@@ -166,11 +169,22 @@ export DATAWATCH_COOKBOOK="$REPO_DIR/docs/testing/master-cookbook.md"
 
 export TEST_RUN_HASH="$$"
 export DATAWATCH_TEST_DATA="$TEST_DIR/.datawatch-test-${TEST_RUN_HASH}"
-export TEST_PORT="${TEST_PORT:-$(free_port)}"
-export TEST_TLS_PORT="${TEST_TLS_PORT:-$(free_port)}"
-export TEST_MCP_PORT="${TEST_MCP_PORT:-$(free_port)}"
+
+# Pick free ports — if an env var is set but the port is already occupied by
+# another process (e.g. leftover from a previous run), pick a fresh one.
+_port_free() {
+  ! ss -tlnH "sport = :$1" 2>/dev/null | grep -q . 2>/dev/null
+}
+_fresh_port() {
+  local p="${1:-}"
+  if [[ -n "$p" ]] && _port_free "$p"; then echo "$p"; else free_port; fi
+}
+export TEST_PORT="$(_fresh_port "${TEST_PORT:-}")"
+export TEST_TLS_PORT="$(_fresh_port "${TEST_TLS_PORT:-}")"
+export TEST_MCP_PORT="$(_fresh_port "${TEST_MCP_PORT:-}")"
 export TEST_DATA="${TEST_DATA:-${DATAWATCH_TEST_DATA}}"
 export TEST_BASE="http://127.0.0.1:$TEST_PORT"
+export TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
 
 echo "Run ID  : $RUN_ID"
 echo "Work dir: $TEST_DIR"

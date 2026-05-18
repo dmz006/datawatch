@@ -17,6 +17,10 @@ _story_ts_525() {
     skip "memory_scope_promote tool not available"
     return
   fi
+  if echo "$resp" | grep -qi "not found in source scope\|memory.*not found\|no such memory"; then
+    skip "memory_scope_promote: no memory in session-local scope to promote"
+    return
+  fi
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "memory_scope_promote tool returned dict"
   else

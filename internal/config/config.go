@@ -1229,6 +1229,13 @@ type SessionConfig struct {
 	// episodic memory when a Stop event arrives. Requires memory.enabled=true.
 	// Default: false (telemetry is ephemeral; wiped on session delete).
 	PersistTelemetryOnStop bool `yaml:"persist_telemetry_on_stop,omitempty"`
+
+	// OneShotSessions — global default for whether DATAWATCH_COMPLETE: in
+	// pane output terminates a session (StateComplete) or leaves it alive for
+	// more input (StateWaitingInput). Default false (interactive). Autonomous
+	// task runners override this to true per-session via the start API
+	// "one_shot" field regardless of this setting.
+	OneShotSessions bool `yaml:"one_shot_sessions,omitempty"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.
