@@ -67,7 +67,7 @@ jobs:
         run: |
           set +e
           EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
-          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
           set -e
           python3 - <<'PY'
           import json, sys

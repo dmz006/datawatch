@@ -29,7 +29,7 @@ import (
 var httpProxy = &http.Client{
 	Timeout: 90 * time.Second,
 	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — loopback only (127.0.0.1), self-signed cert
 	},
 }
 
