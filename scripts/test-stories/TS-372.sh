@@ -22,21 +22,19 @@ _story_ts_372() {
     return
   fi
   add_cleanup llm "$llm_name"
-  # PATCH to update a field
-  local patch_resp patch_code patch_body
-  patch_resp=$(api_code PATCH "/api/llms/$llm_name" \
-    '{"enabled":false}')
-  patch_code=$(echo "$patch_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
-  patch_body=$(echo "$patch_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
-  save_evidence TS-372 "patch_resp.json" "$patch_body"
-  if [[ "$patch_code" == "200" || "$patch_code" == "204" ]]; then
-    ok "PATCH /api/llms/$llm_name returned $patch_code"
-  elif [[ "$patch_code" == "404" ]]; then
-    skip "PATCH /api/llms endpoint not available (404)"
-  elif [[ "$patch_code" == "405" ]]; then
-    skip "PATCH method not supported for /api/llms (405)"
+  # PUT to update a field (API uses PUT, not PATCH)
+  local put_resp put_code put_body
+  put_resp=$(api_code PUT "/api/llms/$llm_name" \
+    "{\"name\":\"$llm_name\",\"kind\":\"shell\",\"enabled\":false}")
+  put_code=$(echo "$put_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+  put_body=$(echo "$put_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+  save_evidence TS-372 "put_resp.json" "$put_body"
+  if [[ "$put_code" == "200" || "$put_code" == "204" ]]; then
+    ok "PUT /api/llms/$llm_name returned $put_code"
+  elif [[ "$put_code" == "404" ]]; then
+    skip "PUT /api/llms endpoint not available (404)"
   else
-    ko "unexpected PATCH $patch_code: $patch_body"
+    ko "unexpected PUT $put_code: $put_body"
   fi
 }
 

@@ -20,7 +20,7 @@ _story_ts_445() {
     fi
     return
   fi
-  # Extract session ID from output
+  # CLI may not print a UUID; look up the session via API by task name
   sid=$(echo "$out" | python3 -c '
 import sys, re
 for line in sys.stdin:
@@ -30,7 +30,22 @@ for line in sys.stdin:
         break
 ' 2>/dev/null || echo "")
   if [[ -z "$sid" ]]; then
-    skip "could not extract session ID from CLI output: $(echo "$out" | head -c 100)"
+    # Fall back: find by task name in session list
+    local sessions_resp
+    sessions_resp=$(api GET /api/sessions)
+    sid=$(echo "$sessions_resp" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d if isinstance(d,list) else d.get('sessions',[])
+task='$task'
+for s in items:
+    if s.get('task','') == task or s.get('name','') == task:
+        print(s.get('id',''))
+        break
+" 2>/dev/null || echo "")
+  fi
+  if [[ -z "$sid" ]]; then
+    skip "could not find CLI-created session by name '$task'"
     return
   fi
   add_cleanup sess "$sid"

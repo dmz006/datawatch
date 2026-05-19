@@ -8,8 +8,8 @@ story_preflight "surface:mcp feature:mcp feature:howto" || return 0
 _story_ts_287() {
   local resp
 
-  # Try docs_apply — use a benign howto name
-  resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto":"daemon-operations"}}')
+  # Try docs_apply — use a benign howto (howto_id is the correct param)
+  resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto_id":"howto/daemon-operations.md"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-287 "resp.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then

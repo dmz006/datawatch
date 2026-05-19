@@ -22,26 +22,16 @@ _story_ts_376() {
     return
   fi
   add_cleanup llm "$llm_name"
-  # Enable it — for session-backend kinds should not run pretest
+  # Enable it via /enabled endpoint (PATCH or POST) — shell kind skips pretest
   local en_resp en_code en_body
-  en_resp=$(api_code POST "/api/llms/$llm_name/enable" '')
+  en_resp=$(api_code PATCH "/api/llms/$llm_name/enabled" '{"enabled":true}')
   en_code=$(echo "$en_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   en_body=$(echo "$en_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-376 "enable_resp.json" "$en_body"
   if [[ "$en_code" == "200" || "$en_code" == "204" ]]; then
-    ok "POST /api/llms/$llm_name/enable returned $en_code (shell kind skips pretest)"
+    ok "PATCH /api/llms/$llm_name/enabled returned $en_code (shell kind skips pretest)"
   elif [[ "$en_code" == "404" ]]; then
-    skip "LLM enable endpoint not available (404)"
-  elif [[ "$en_code" == "405" ]]; then
-    # Try PUT if POST not allowed
-    en_resp=$(api_code PUT "/api/llms/$llm_name/enable" '')
-    en_code=$(echo "$en_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
-    en_body=$(echo "$en_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
-    if [[ "$en_code" == "200" || "$en_code" == "204" ]]; then
-      ok "PUT /api/llms/$llm_name/enable returned $en_code"
-    else
-      skip "LLM enable endpoint returned 405 (method not allowed) — API may have changed"
-    fi
+    skip "LLM enabled endpoint not available (404)"
   else
     ko "unexpected HTTP $en_code enabling shell LLM: $en_body"
   fi

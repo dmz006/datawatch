@@ -6,20 +6,19 @@ CURRENT_STORY="TS-562"
 story_preflight "surface:build" || return 0
 
 _story_ts_562() {
-  local gen_script="$REPO_ROOT/scripts/docs-index-gen.sh"
-  if [[ ! -f "$gen_script" ]]; then
-    skip "docs-index-gen.sh not found at $gen_script"
+  if [[ ! -d "$REPO_ROOT/cmd/docs-index-gen" ]]; then
+    skip "cmd/docs-index-gen not found at $REPO_ROOT/cmd/docs-index-gen"
     return
   fi
   local out rc
-  out=$(timeout 60 bash "$gen_script" 2>&1); rc=$?
+  out=$(cd "$REPO_ROOT" && timeout 60 go run ./cmd/docs-index-gen 2>&1); rc=$?
   save_evidence TS-562 "out.txt" "$out"
   if [[ $rc -eq 0 ]]; then
-    ok "docs-index-gen.sh exits 0"
+    ok "docs-index-gen runs without errors"
   elif [[ $rc -eq 124 ]]; then
-    skip "docs-index-gen.sh timed out"
+    skip "docs-index-gen timed out"
   else
-    ko "docs-index-gen.sh rc=$rc: $(echo "$out" | head -c 200)"
+    ko "docs-index-gen rc=$rc: $(echo "$out" | head -c 200)"
   fi
 }
 

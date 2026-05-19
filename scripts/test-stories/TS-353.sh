@@ -8,25 +8,38 @@ story_preflight "surface:mcp feature:mcp feature:howto feature:memory" || return
 _story_ts_353() {
   local resp
 
-  # First read the howto to check if it has exec_steps
-  resp=$(api POST /api/mcp/call '{"tool":"docs_read","params":{"path":"howto/cross-agent-memory.md"}}')
+  # Use docs_list_howtos to check if cross-agent-memory has exec_steps
+  # (docs_read strips frontmatter, so exec_steps won't appear in the body)
+  resp=$(api POST /api/mcp/call '{"tool":"docs_list_howtos","params":{}}')
   resp=$(mcp_unwrap "$resp")
-  save_evidence TS-353 "read.json" "$resp"
+  save_evidence TS-353 "list.json" "$resp"
   if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
-    skip "docs_read not available in this build"
+    skip "docs_list_howtos not available in this build"
     return
   fi
-  if echo "$resp" | grep -qi "not found\|no such"; then
-    skip "cross-agent-memory howto not found"
+  local has_exec
+  has_exec=$(echo "$resp" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d if isinstance(d,list) else d.get('howtos',d.get('items',[]))
+for item in items:
+    if 'cross-agent-memory' in str(item.get('path','')) or 'cross-agent-memory' in str(item.get('id','')):
+        print('yes' if item.get('has_exec_steps') else 'no')
+        break
+else:
+    print('notfound')
+" 2>/dev/null || echo "notfound")
+  if [[ "$has_exec" == "notfound" ]]; then
+    skip "cross-agent-memory howto not found in list"
     return
   fi
-  if ! echo "$resp" | grep -qi "exec_steps"; then
+  if [[ "$has_exec" != "yes" ]]; then
     skip "cross-agent-memory howto has no exec_steps"
     return
   fi
 
-  # Apply the howto
-  resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"path":"howto/cross-agent-memory.md"}}')
+  # Apply the howto using the correct howto_id param
+  resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto_id":"howto/cross-agent-memory.md"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-353 "apply.json" "$resp"
   if echo "$resp" | grep -qi "no exec_steps\|no steps\|nothing to apply\|not applicable"; then

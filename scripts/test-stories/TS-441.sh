@@ -27,7 +27,7 @@ _story_ts_441() {
   # Set llm_ref on the test session
   local resp code body
   resp=$(api_code POST /api/sessions/set_llm_ref \
-    "{\"session_id\":\"$SESSION_ID\",\"llm\":\"$llm_name\"}")
+    "{\"id\":\"$SESSION_ID\",\"llm_ref\":\"$llm_name\"}")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-441 "set_resp.json" "$body"
