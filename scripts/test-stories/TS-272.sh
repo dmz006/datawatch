@@ -21,10 +21,10 @@ _story_ts_272() {
     return
   fi
 
-  # SET config (round-trip: read current, write back)
-  local current_enabled
-  current_enabled=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("enabled",False)).lower())' 2>/dev/null || echo "false")
-  resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_config_set\",\"params\":{\"enabled\":$current_enabled}}")
+  # SET config (round-trip: write back full config to avoid wiping planning_backend etc.)
+  local full_config
+  full_config=$(echo "$resp" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)))' 2>/dev/null || echo "{}")
+  resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_config_set\",\"params\":$full_config}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-272 "set.json" "$resp"
   if assert_json "$resp" 'isinstance(d, dict)'; then

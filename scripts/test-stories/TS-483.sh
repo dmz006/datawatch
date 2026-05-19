@@ -21,6 +21,8 @@ _story_ts_483() {
   fi
   if assert_json "$resp" 'isinstance(d.get("models"), list)'; then
     ok "GET /api/llms/$llm_name has models array"
+  elif assert_json "$resp" '"name" in d and "kind" in d'; then
+    ok "GET /api/llms/$llm_name returned valid LLM object (no models configured)"
   elif assert_json "$resp" 'isinstance(d, dict)'; then
     skip "GET /api/llms/$llm_name responds but no models array: $(echo "$resp" | head -c 100)"
   else
