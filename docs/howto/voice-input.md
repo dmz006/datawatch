@@ -176,6 +176,22 @@ datawatch voice tail -f
 5. The transcribed text appears in the input bar; edit if needed and
    press Enter to send.
 
+### 4c. Recording overlay (v8.1.0)
+
+When you tap the microphone icon the PWA shows a modal overlay rather
+than an inline recording indicator:
+
+- **Animated waveform** — five bars bounce with staggered timing,
+  making it obvious the mic is live.
+- **Cancel** — discards the recording and closes the overlay without
+  sending anything.
+- **Send** — stops recording immediately and submits audio for
+  transcription exactly as before.
+
+The overlay also closes (and discards) if you click outside it. This
+is a PWA-only UX feature; the mobile app uses the OS native audio
+recorder (see § 5a).
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)

@@ -6195,6 +6195,44 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
+          ${settingsSectionHeader('alert_rules', 'Alert Rules', 'howto/alert-rules.md')}
+          <div id="settings-sec-alert_rules" style="${secContent('alert_rules')}">
+            <div id="alertRulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <details class="create-form-details" style="padding:0 16px;">
+              <summary class="create-form-summary">+ Add Rule</summary>
+              <div class="create-form">
+                <input id="newAlertRuleName" class="form-input" type="text" placeholder="Name (e.g. high-cpu)" autocomplete="off" />
+                <input id="newAlertRuleDesc" class="form-input" type="text" placeholder="Description (optional)" autocomplete="off" />
+                <select id="newAlertRuleMetric" class="form-select">
+                  <option value="cpu_pct">cpu_pct — CPU %</option>
+                  <option value="mem_pct">mem_pct — Memory %</option>
+                  <option value="gpu_pct">gpu_pct — GPU %</option>
+                  <option value="rss_bytes">rss_bytes — RSS bytes</option>
+                  <option value="net_rx_bps">net_rx_bps — Net RX bps</option>
+                  <option value="net_tx_bps">net_tx_bps — Net TX bps</option>
+                </select>
+                <select id="newAlertRuleOperator" class="form-select">
+                  <option value=">">&gt; — greater than</option>
+                  <option value="<">&lt; — less than</option>
+                  <option value=">=">&gt;= — greater than or equal</option>
+                  <option value="<=">&lt;= — less than or equal</option>
+                </select>
+                <input id="newAlertRuleThreshold" class="form-input" type="number" placeholder="Threshold (e.g. 90)" autocomplete="off" />
+                <input id="newAlertRuleSourceFilter" class="form-input" type="text" placeholder="Source filter (optional)" autocomplete="off" />
+                <input id="newAlertRuleWindow" class="form-input" type="number" placeholder="Window seconds (default 60)" value="60" autocomplete="off" />
+                <select id="newAlertRuleAction" class="form-select">
+                  <option value="alert">alert — create system alert</option>
+                  <option value="scale_up">scale_up — scale up</option>
+                  <option value="scale_down">scale_down — scale down</option>
+                </select>
+                <input id="newAlertRuleCooldown" class="form-input" type="number" placeholder="Cooldown seconds (default 300)" value="300" autocomplete="off" />
+                <button class="btn-primary" style="margin-top:6px;" onclick="createAlertRule()">Save Rule</button>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
             <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -6644,6 +6682,7 @@ function renderSettingsView() {
     if (mt) mt.value = cfg.mcp?.token || '';
   }).catch(() => {});
   loadSavedCommands();
+  loadAlertRules();
   // BL247-followup v6.7.3 — Monitor-card loaders (loadStatsPanel, listMemories,
   // loadSchedulesList, loadCooldownStatus, loadAnalyticsPanel, loadAuditPanel,
   // loadKgPanel, renderObserverPeersCard) moved to renderObserverView() since
@@ -17556,6 +17595,104 @@ function createFilter() {
     .catch(() => showToast('Save failed', 'error'));
 }
 
+// ── Alert Rules (in Settings) ─────────────────────────────────────────────────
+
+function loadAlertRules() {
+  const el = document.getElementById('alertRulesList');
+  if (!el) return;
+  fetch('/api/alert-rules', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : { rules: [] })
+    .then(data => {
+      const rules = (data && data.rules) ? data.rules : (Array.isArray(data) ? data : []);
+      if (!rules || rules.length === 0) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No alert rules configured.</div>';
+        return;
+      }
+      el.innerHTML = '<div>' + rules.map(rule => {
+        const rid = 'arule-' + rule.name.replace(/[^a-z0-9]/gi, '_');
+        const cond = rule.condition || {};
+        const act = rule.action || {};
+        return `<div class="settings-list-row">
+          <div class="settings-list-view" id="${rid}-view">
+            <div class="settings-list-info">
+              <span class="state state-${rule.enabled ? 'running' : 'failed'}" style="font-size:10px;margin-right:6px;">${rule.enabled ? 'on' : 'off'}</span>
+              <strong>${escHtml(rule.name)}</strong>
+              <span class="settings-list-detail">${escHtml(cond.metric||'')} ${escHtml(cond.operator||'')} ${escHtml(String(cond.threshold||''))} → ${escHtml(act.kind||'')}</span>
+              ${rule.description ? '<span class="settings-list-tag">' + escHtml(rule.description) + '</span>' : ''}
+            </div>
+            <div class="settings-list-actions">
+              <button class="btn-icon" title="${rule.enabled ? 'Disable' : 'Enable'}" onclick="toggleAlertRule('${escHtml(rule.name)}',${!rule.enabled})">${rule.enabled ? '⏸' : '▶'}</button>
+              <button class="btn-icon btn-icon-del" title="Delete" onclick="deleteAlertRule('${escHtml(rule.name)}')">✕</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+    })
+    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load alert rules.</div>'; });
+}
+
+function toggleAlertRule(name, enable) {
+  const action = enable ? 'enable' : 'disable';
+  fetch('/api/alert-rules/' + encodeURIComponent(name) + '/' + action, {
+    method: 'POST',
+    headers: tokenHeader(),
+  })
+    .then(r => r.ok ? loadAlertRules() : showToast('Toggle failed', 'error'))
+    .catch(() => showToast('Toggle failed', 'error'));
+}
+
+function deleteAlertRule(name) {
+  fetch('/api/alert-rules/' + encodeURIComponent(name), {
+    method: 'DELETE',
+    headers: tokenHeader(),
+  })
+    .then(r => r.ok ? loadAlertRules() : showToast('Delete failed', 'error'))
+    .catch(() => showToast('Delete failed', 'error'));
+}
+
+function createAlertRule() {
+  const name = (document.getElementById('newAlertRuleName') || {}).value || '';
+  const description = (document.getElementById('newAlertRuleDesc') || {}).value || '';
+  const metric = (document.getElementById('newAlertRuleMetric') || {}).value || 'cpu_pct';
+  const operator = (document.getElementById('newAlertRuleOperator') || {}).value || '>';
+  const threshold = parseFloat((document.getElementById('newAlertRuleThreshold') || {}).value || '0');
+  const source_filter = (document.getElementById('newAlertRuleSourceFilter') || {}).value || '';
+  const window_seconds = parseInt((document.getElementById('newAlertRuleWindow') || {}).value || '60', 10);
+  const action_kind = (document.getElementById('newAlertRuleAction') || {}).value || 'alert';
+  const cooldown_seconds = parseInt((document.getElementById('newAlertRuleCooldown') || {}).value || '300', 10);
+  if (!name) { showToast('Name required', 'error'); return; }
+  const body = {
+    name,
+    condition: { metric, operator, threshold },
+    action: { kind: action_kind },
+    window_seconds,
+    cooldown_seconds,
+    enabled: true,
+  };
+  if (description) body.description = description;
+  if (source_filter) body.source_filter = source_filter;
+  fetch('/api/alert-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(body),
+  })
+    .then(r => {
+      if (r.ok) {
+        document.getElementById('newAlertRuleName').value = '';
+        document.getElementById('newAlertRuleDesc').value = '';
+        document.getElementById('newAlertRuleThreshold').value = '';
+        document.getElementById('newAlertRuleSourceFilter').value = '';
+        document.getElementById('newAlertRuleWindow').value = '60';
+        document.getElementById('newAlertRuleCooldown').value = '300';
+        loadAlertRules();
+        showToast('Alert rule saved', 'success', 2000);
+      } else {
+        r.text().then(t => showToast(t || 'Save failed', 'error'));
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
 // ── Back button ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const backBtn = document.getElementById('backBtn');
@@ -20631,6 +20768,10 @@ window.toggleGlobalScheduleDropdown = toggleGlobalScheduleDropdown;
 window.setBackendFilter = setBackendFilter;
 window.createSavedCmd = createSavedCmd;
 window.createFilter = createFilter;
+window.createAlertRule = createAlertRule;
+window.loadAlertRules = loadAlertRules;
+window.toggleAlertRule = toggleAlertRule;
+window.deleteAlertRule = deleteAlertRule;
 window.toggleSettingsSection = toggleSettingsSection;
 window.updateHeaderSessName = updateHeaderSessName;
 window.startHeaderRename = startHeaderRename;

@@ -61,6 +61,8 @@ datawatch plugins test my-filter post_session_output '{"line":"sk-abcd1234567890
 | REST  | `/api/plugins/*` |
 | MCP   | `plugins_list`, `plugins_reload`, `plugin_get/enable/disable/test` |
 | CLI   | `datawatch plugins <subcmd>` |
+| CLI   | `datawatch plugins install <registry> <name>` + `browse-registry <name>` (v8.1.0) |
+| MCP   | `plugin_install`, `plugin_browse_registry` (v8.1.0) |
 | Comm  | via the comm `rest` passthrough |
 
 ---
@@ -90,6 +92,78 @@ POST   /api/plugins/{name}/test         body: {hook, payload}
 
 When `plugins.enabled` is false, every endpoint returns
 `503 plugins disabled`.
+
+### BL325 — Community registry install + browse (v8.1.0)
+
+Two additional endpoints for installing plugins from a registry and
+browsing registry contents.
+
+**POST /api/plugins/install**
+
+Install a plugin from a named registry.
+
+Request body:
+```json
+{"registry": "<registry-name>", "name": "<plugin-name>"}
+```
+
+Response:
+```json
+{"status": "ok", "installed": "<name>", "from_registry": "<registry>"}
+```
+
+The daemon downloads the plugin into `<data_dir>/plugins/<name>/`,
+validates the manifest, and makes it available immediately. A
+`plugins reload` is not required after install.
+
+**GET /api/plugins/browse?registry=\<name\>**
+
+List all plugins available in a named registry.
+
+Response:
+```json
+{
+  "registry": "<name>",
+  "plugins": [
+    {
+      "name": "...",
+      "path": "...",
+      "manifest": {
+        "name": "...",
+        "description": "...",
+        "version": "...",
+        "author": "...",
+        "license": "...",
+        "category": "...",
+        "hooks": ["..."],
+        "contributor_notes": "...",
+        "datawatch_min_version": "..."
+      }
+    }
+  ]
+}
+```
+
+The community registry is pre-seeded as the first registry by default
+at `https://github.com/dmz006/datawatch-community`. Use
+`datawatch plugins browse-registry community` to list it without any
+additional setup.
+
+```sh
+export BASE=https://localhost:8443
+export TOKEN=<your_bearer_token>
+
+# Browse the default community registry.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/plugins/browse?registry=community"
+
+# Install a plugin from the community registry.
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"registry": "community", "name": "redact-secrets"}' \
+  "$BASE/api/plugins/install"
+```
 
 ---
 
@@ -174,7 +248,8 @@ Deferred to later patches:
 - Per-plugin container sandboxing (BL117 territory).
 - Hot reload via filesystem watcher (SIGHUP + `POST
   /api/plugins/reload` is enough for v1).
-- Plugin marketplace / signature verification.
+- Plugin signature verification / code-signing (install from registry
+  shipped in v8.1.0 — BL325; signing/verification remains deferred).
 - Go `.so` loading — intentionally rejected; Go plugins lock to exact
   toolchain + CGO + glibc versions and rebreak on every daemon rebuild.
 

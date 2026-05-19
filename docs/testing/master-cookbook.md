@@ -675,6 +675,16 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T40 | TS-624 | v8.0 smoke: unknown token on MCP SSE returns 401 | surface:mcp feature:routing group:routing-v8 parallel:ok | ✅ ready | — | — |
 | T40 | TS-625 | POST compute node with probe=skip query param skips connectivity check | surface:api feature:routing group:routing-v8 parallel:ok | ✅ ready | — | — |
 | T40 | TS-626 | POST routing:k8s-sidecar returns 400 (not yet supported) | surface:api feature:routing group:routing-v8 parallel:ok | ✅ ready | — | — |
+| T41 | TS-627 | GET /api/alert-rules returns 200 and rules array | surface:api feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-628 | POST /api/alert-rules creates rule; GET confirms it; DELETE cleans up | surface:api feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-629 | datawatch alert-rules list exits 0 | surface:cli feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-630 | datawatch alert-rules add exits 0; delete cleans up | surface:cli feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-631 | POST /api/alert-rules/{name}/enable and /disable return ok | surface:api feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-632 | GET /api/alert-rules/firings returns 200 and firings array | surface:api feature:alert-rules group:alert-rules-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-633 | GET /api/plugins/browse?registry=community returns 200 | surface:api feature:plugin-install group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-634 | datawatch plugins browse-registry exits with usage if no registry arg | surface:cli feature:plugin-install group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-635 | datawatch skills registry list includes community registry | surface:cli feature:community-registry group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
+| T41 | TS-636 | GET /api/skills/registries returns community as first registry entry | surface:api feature:community-registry group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
 
 ---
 
