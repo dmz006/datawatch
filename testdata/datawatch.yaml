@@ -78,6 +78,15 @@ webhook:
   addr: 127.0.0.1:0
   token: ""
 
+compute_nodes:
+  - name: datawatch-ollama
+    kind: ollama
+    address: http://localhost:11434
+    scheduling_priority: 90
+    declared_capacity:
+      gpus: 1
+      max_concurrent_models: 3
+
 observer:
   peers:
     allow_register: true
