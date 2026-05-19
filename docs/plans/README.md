@@ -40,17 +40,18 @@ single source of truth.
 
 ## Current state — 2026-05-19
 
-Latest release: **v8.0.0** (released 2026-05-19). Major release closing BL316–BL323 (CBAC, federation CBAC sweep, MCP SSE auth, multi-server, compute routing, new adapters, OneShot sessions, E2E infrastructure). 626 E2E stories, 85 smoke sections, ~1,736 unit tests.
+Latest release: **v8.1.5** (released 2026-05-19). Patch series fixing session termination (OneShot CBAC), xterm keyboard layout (iOS visualViewport), tmux view-full keyboard offset, voice Send button i18n.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 0 | — |
+| Active backlog | 7 | BL327–BL333 — v8.2.0/8.3.0/8.4.0 sprint plan filed 2026-05-19 |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Recently closed | BL316–BL326 + S14b ✅ v7.3.0–v8.1.0 | CBAC, routing, adapters, E2E infra, community registry, mic popup, alert rules |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
+| GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328, GH#75→BL329, GH#76→BL330, GH#72→BL331, GH#68+69→BL332, GH#70→BL333+community | |
 
 v8.1.0 shipped 2026-05-19 — closes BL324 (community skills + plugins registry), BL325 (plugin install from registry: `POST /api/plugins/install`, `GET /api/plugins/browse`, CLI `datawatch plugins install/browse-registry`, MCP `plugin_install`/`plugin_browse_registry`, community registry seeded first by default), BL326 (mic recording overlay with animated waveform, Cancel/Send buttons), S14b (per-pod alert rules: `internal/alertrules/` package with YAML store + observer-driven evaluator, 8 REST endpoints, 8 MCP tools, CLI `datawatch alert-rules`, wired into daemon). Community registry (`dmz006/datawatch-community`) pre-seeded as first registry in all listing surfaces.
 
@@ -61,6 +62,62 @@ v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage ac
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
+
+---
+
+#### BL333 — Federated File Service (peer-to-peer file transfer + PWA upload) 🔵 v8.3.0
+
+**Operator-filed 2026-05-19. Target v8.3.0.**
+
+Per-peer and per-discussion isolated file storage. Global `file_service.root` with subdirectory isolation: `local/` (operator), `peers/<name>/` (each peer's private directory), `discussions/<id>/` (shared between discussion participants only). No enumeration leak — paths outside boundary return 404. REST CRUD + transfer + peer storage metadata; MCP tools; CLI; Comm; PWA file upload (long-missing); mobile file picker. Enables workspace sync without rsync config. Community plugin templates for NFS/git/rsync patterns filed separately. Sprint T43, TS-701–TS-724. Full plan: `docs/plans/2026-05-19-v820-sprint.md`.
+
+---
+
+#### BL332 — Discussion Scopes (federated shared memory) 🔵 v8.4.0
+
+**Operator-filed 2026-05-19. Merges GH#68 + GH#69. Target v8.4.0.**
+
+New `discussion/<id>` memory scope type — peer-equal (not hierarchical). Push-on-write sync to all participants; delivery queue for offline peers. Conflict surface + resolution API. Hard memory isolation: discussion scope boundary = access boundary, enforced at API layer, no enumeration of outside scopes, no leaks. Throttles (60 ops/min per peer default), 100ms write-batching, per-discussion write lock. Loop prevention: `origin_peer + origin_wal_seq` unique identity, `propagated_by[]` hop path. Participants: intra-instance (local sessions, containers, sub-nodes) + federation peers. WAL provides history. 3 sprints: T42a (foundation), T42b (sync protocol), T42c (conflict + 7-surface). Sprint T42, TS-719–TS-750. Full plan: `docs/plans/2026-05-19-v820-sprint.md`.
+
+---
+
+#### BL331 — Channel-Address Federation via Comms 🔵 v8.3.0
+
+**Operator-filed 2026-05-19. From GH#72. Target v8.3.0.**
+
+Federation through comms channels. Channel bridge becomes federation-peer-aware: `channel_identity[]` on federation peer config (type: matrix_dm/matrix_room/slack_dm/slack_room/signal/discord_dm/discord_server). 1:1 DMs need no address token; group rooms require prefix. New 14th built-in capability group `comms-channel-agent`. Global comms routing config + per-peer override: handler=automata|plugin|mailbox. `owner_peer` on Session + PRD; own-only scope default; `view_all` grantable. Structured commands with catch-all → Automata. Federation must be pre-established. Sprint T41, TS-683–TS-700. Full plan: `docs/plans/2026-05-19-v820-sprint.md`.
+
+---
+
+#### BL330 — UnifiedPush endpoints 🔵 v8.2.0
+
+**Operator-filed 2026-05-19. From GH#76. Target v8.2.0.**
+
+`GET /.well-known/unifiedpush`, `POST /api/push/register`, `DELETE /api/push/unregister`, `POST /api/push/notify`. Unblocks Android T10 push stories (TS-306+). Sprint T40d, TS-665–TS-673.
+
+---
+
+#### BL329 — /api/identity endpoints 🔵 v8.2.0
+
+**Operator-filed 2026-05-19. From GH#75. Target v8.2.0.**
+
+`GET/PUT/POST /api/identity` — role, current_focus, context_notes. Persisted to `identity.json`. Unblocks Android TS-286, New User Arc TS-410. Sprint T40c, TS-658–TS-664.
+
+---
+
+#### BL328 — PRD decompose async (SSE + polling) 🔵 v8.2.0
+
+**Operator-filed 2026-05-19. From GH#77. Target v8.2.0.**
+
+`POST /decompose` → 202 + background goroutine (stories persisted per-story to DB). `GET /decompose/stream` SSE primary (resumable via Last-Event-ID). `GET /decompose/status` polling utility API. Exponential backoff on disconnect; low-power pause; ConnectivityManager on Android; visibilitychange on PWA; best-effort Tailscale VPN reconnect. Unblocks Android T13 TS-232–241. Reference implementation for streaming-sse-pattern. Sprint T40b, TS-645–TS-657.
+
+---
+
+#### BL327 — Settings badge multi-select UI 🔵 v8.2.0
+
+**Operator-filed 2026-05-19. Target v8.2.0.**
+
+Replace all 14 comma-separated list text inputs throughout the PWA with badge/chip multi-select. Three component variants: freeform (type to add), known-set (dropdown from API), known-set ordered (draggable, for fallback chain). Replaces v5.26.8 `csvExpandButtonHTML` pattern in settings context. Sprint T40a, TS-637–TS-644.
 
 ---
 
