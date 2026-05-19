@@ -8322,6 +8322,7 @@ func newMemoryCliCmd() *cobra.Command {
 			},
 		})
 	}
+	cmd.AddCommand(newMemoryScopeCmd()) // v7.0.0 S5 scope-hierarchy
 	return cmd
 }
 

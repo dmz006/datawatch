@@ -6,13 +6,16 @@ CURRENT_STORY="TS-598"
 story_preflight "surface:api feature:multiserver" || return 0
 
 _story_ts_598() {
-  local resp
-  resp=$(api GET /api/sessions/aggregated)
-  save_evidence TS-598 "resp.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|404\|no route"; then
+  local resp code body
+  resp=$(api_code GET /api/sessions/aggregated)
+  code=$(echo "$resp" | grep -oE "__HTTP_CODE_[0-9]+__" | grep -oE "[0-9]+")
+  body=$(echo "$resp" | sed 's/__HTTP_CODE.*//')
+  save_evidence TS-598 "resp.json" "$body"
+  if [[ "$code" == "404" ]]; then
     skip "sessions/aggregated endpoint not available in this build"
     return
   fi
+  local resp="$body"
   # Check if we have any items
   local has_items
   has_items=$(echo "$resp" | python3 -c "

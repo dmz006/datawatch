@@ -7,15 +7,18 @@ CURRENT_STORY="TS-225"
 story_preflight "surface:api feature:peers" || return 0
 
 _story_ts_225() {
-    echo ""; echo "  >> TS-225: Observer peers surface"
-    resp=$(api GET /api/peers 2>/dev/null || echo '{"error":"not found"}')
-    save_evidence "TS-225" "peers.json" "$resp"
-    if echo "$resp" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'error' not in d" 2>/dev/null; then
-      ok "Peers endpoint reachable"
-    else
-      skip "Peers endpoint not found"
-    fi
-
+  local resp code body
+  resp=$(api_code GET /api/observer/peers)
+  code=$(echo "$resp" | grep -oE "__HTTP_CODE_[0-9]+__" | grep -oE "[0-9]+")
+  body=$(echo "$resp" | sed 's/__HTTP_CODE.*//')
+  save_evidence TS-225 "peers.json" "$body"
+  if [[ "$code" == "404" ]]; then
+    skip "Observer peers endpoint not found"
+  elif assert_json "$body" '"peers" in d or isinstance(d, list)'; then
+    ok "GET /api/observer/peers reachable (HTTP $code)"
+  else
+    ko "unexpected HTTP $code: $(echo "$body" | head -c 100)"
+  fi
 }
 
 RESULT=fail
