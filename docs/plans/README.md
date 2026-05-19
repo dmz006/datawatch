@@ -46,7 +46,7 @@ Latest release: **v8.0.0** (released 2026-05-19). Major release closing BL316–
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 1 | BL324 (v8.1 Community Skills + Plugins registry) |
+| Active backlog | 3 | BL324 (v8.1 Community Skills + Plugins registry), BL325 (external community registry plugin support), BL326 (mic recording popup) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Recently closed | BL316–BL323 ✅ v7.3.0–v8.0.0 | CBAC, routing, adapters, E2E infra |
@@ -64,46 +64,79 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### BL324 — Community Skills + Plugins registry (GitHub-hosted, categorized, user-contributed)
 
-**Operator-filed 2026-05-19. Target: v8.1.**
+**Operator-filed 2026-05-19. Target: v8.1. Status: In Progress — repo created 2026-05-19.**
 
-**Background:** External contributors (Zendzian polity, issues #66/#67/#71/#73) filed FRs that are all solvable via Skills + Plugins without core code changes. Rather than baking polity-specific patterns into the daemon, the extension surface is the right home. But currently every operator builds extensions privately with no way to share or discover community patterns.
+**Background:** External contributors (issues #66/#67/#71/#73) filed FRs that are all solvable via Skills + Plugins without core code changes. Rather than baking polity-specific patterns into the daemon, the extension surface is the right home. But currently every operator builds extensions privately with no way to share or discover community patterns.
 
-**Scope:**
+**Completed 2026-05-19:**
+- `dmz006/datawatch-community` repo created at https://github.com/dmz006/datawatch-community
+- Directory structure: `skills/{autonomous-patterns,identity,comms,coding,ops,security}` + `plugins/{comms,guardrails,output-routing}`
+- Seed skills: `sibling-runner` (autonomous session pattern), `polity-topology` (multi-instance identity), `sandbox-permissions` (sandbox network policy fix)
+- Seed plugin: `inbox-integrator` (post_session_complete — moves INBOX proposals into InFlight workspace)
+- `CONTRIBUTING.md` with full skill/plugin format spec including `contributor_notes` field
+- GitHub issue templates for skill and plugin submissions
+- Issues #66/#67/#71/#73 commented with links to community registry implementations
+- All templates anonymous with `author:` + `author_url:` + `contributor_notes:` placeholder fields
 
-A GitHub repository (`dmz006/datawatch-community`) organized by category where operators can submit Skills and Plugins via PR:
+**Remaining v8.1 scope:**
+- Preconfigure community registry in default `datawatch.yaml` (sync_on_start: false)
+- How-to doc: `docs/howto/community-skills-plugins.md`
+- Update Skills + Plugins howtos to reference community registry
+- `contributor_notes` field added to manifest extensions list below
 
-```
-datawatch-community/
-├── skills/
-│   ├── autonomous-patterns/   sibling-runner, inbox-integrator, ...
-│   ├── identity/              polity-topology, multi-instance, ...
-│   ├── comms/                 channel-watchdog, mailbox-relay, ...
-│   ├── coding/                rtk-cli-aware, go-style, ...
-│   ├── security/
-│   └── ops/
-└── plugins/
-    ├── output-routing/        sibling-output-router, structured-extractor, ...
-    ├── guardrails/
-    └── comms/
-```
-
-Ships preconfigured (opt-in, sync_on_start: false) alongside PAI in the default `datawatch.yaml`. Browse with `datawatch skills registry-available community`. Install with `datawatch skills registry-sync community --skills <name>`.
+**v8.2 follow-on (tracked as BL325):** Discovery UX + Plugin signing/verification + `plugin install` command.
 
 **Manifest extensions for community entries:**
 - `category` — directory-level category for browsing
 - `datawatch_min_version` — compatibility floor
 - `author` + `author_url` — attribution
+- `contributor_notes` — motivation and context for the submission
 - `license` — required for community submissions
 
 **Contribution process:** Fork → add Skill or Plugin directory → PR → maintainer reviews for schema validity, no credentials, correct category. Merge = listed.
 
-**v8.1 deliverable:** Create repo + structure + preconfigure in default `datawatch.yaml` + contribution CONTRIBUTING.md. Zendzian polity's sibling-runner + polity-topology patterns are likely first contributions.
-
-**v8.2 follow-on:** Discovery UX (`registry-available` with ratings/compatibility filter), Plugin signing/verification, `plugin install` command.
-
 **7-surface parity:** CLI (`skills registry-available community`) + REST (`GET /api/skills/registries/community/available`) + MCP (`skills_registry_available`). PWA card update: show community registry in Settings → Automate → Skill Registries.
 
 **Does NOT require new runtime primitives** — all existing Skills + Plugins infrastructure supports this. Pure repo + config work.
+
+---
+
+#### BL325 — External community registry: discovery UX, plugin signing, `plugin install` command
+
+**Operator-filed 2026-05-19. Target: v8.2. Blocked on: BL324 community repo must be live and populated.**
+
+Builds on BL324. Adds the discovery and trust layer for the community registry:
+
+- `datawatch skills registry-available community` — browse available skills/plugins with compatibility filter (`--min-version`, `--category`, `--tag`)
+- `datawatch plugin install <name>` — install a plugin from a connected registry with one command; handles manifest download + run.sh chmod + reload
+- Plugin signing: maintainer signs community entries; daemon verifies signature before loading; `REQUIRE_SIGNING` config option
+- PWA Settings → Automate → Skill Registries card: shows connected registries, available count, last-synced timestamp, sync-now button
+- REST: `GET /api/skills/registries/{name}/available` with query params
+- MCP: `skills_registry_available` (already exists), extend with `plugin_install` tool
+- CLI: `datawatch plugin install` command (currently only `plugins list/reload/enable/disable`)
+
+**7-surface parity:** CLI + REST + MCP + PWA. Mobile-parity: file dmz006/datawatch-app issue.
+
+---
+
+#### BL326 — Mic recording popup: animation + cancel/send controls
+
+**Operator-filed 2026-05-19. Target: v8.1.**
+
+When the mic button is pressed, instead of silent recording, show a popup/modal with:
+- "Recording…" status message
+- Animated recording indicator (waveform or pulsing dot)
+- **Cancel** button — stops recording and discards the audio
+- **Send** button — stops recording and submits the audio for transcription
+
+**Scope:**
+- PWA: new `<dialog>` or overlay element in `app.js` that opens on mic press; closes on cancel/send
+- Animation: CSS waveform animation (3–5 bars with staggered height transitions) or a pulsing red circle; no external dependency
+- Cancel: calls existing mic stop logic, discards accumulated audio, returns focus to input
+- Send: calls existing transcription pipeline, closes popup, inserts transcribed text into input
+- Mobile-parity: file dmz006/datawatch-app issue once PWA implementation is complete
+
+**7-surface parity:** PWA only (mic is a PWA/mobile feature). No daemon API changes needed.
 
 ---
 

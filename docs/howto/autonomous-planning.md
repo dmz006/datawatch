@@ -321,5 +321,6 @@ jump directly to that worker session's Status tab.
 - [howto/algorithm-mode](algorithm-mode.md)
 - [howto/evals](evals.md)
 - [howto/council-mode](council-mode.md)
-- [howto/skills-sync](skills-sync.md)
+- [howto/skills-sync](skills-sync.md) — sync PAI and community registries; use skills in sessions
+- [Community skills + plugins](https://github.com/dmz006/datawatch-community) — ready-made skills for autonomous session patterns, polity topology, and more
 - [api/autonomous](../api/autonomous.md)

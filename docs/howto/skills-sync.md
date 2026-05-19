@@ -24,10 +24,12 @@ exec_steps:
 # How-to: Sync skills from PAI (or any git registry)
 
 Skills are reusable markdown packages that influence how an AI session
-does its work. The default registry is PAI
-([danielmiessler/Personal_AI_Infrastructure](https://github.com/danielmiessler/Personal_AI_Infrastructure))
-— datawatch ships preconfigured to consume it. Add your own registries
-to share team / company skills across hosts.
+does its work. Two registries ship preconfigured:
+
+- **PAI** — [danielmiessler/Personal_AI_Infrastructure](https://github.com/danielmiessler/Personal_AI_Infrastructure) — upstream skills for coding, methodology, and general AI practice.
+- **Community** — [dmz006/datawatch-community](https://github.com/dmz006/datawatch-community) — community-contributed skills and plugins for autonomous session patterns, identity, comms, and more. `sync_on_start: false` by default; opt in with `datawatch skills registry-sync community`.
+
+Add your own registries to share team / company skills across hosts.
 
 ## What it is
 
@@ -52,9 +54,13 @@ time the daemon copies the synced files into
 ## Setup
 
 ```sh
-# PAI registry ships preconfigured + auto-added on first start.
+# PAI and community registries ship preconfigured on first start.
 datawatch skills registries
-#  → pai     https://github.com/danielmiessler/Personal_AI_Infrastructure   (last sync: never)
+#  → pai        https://github.com/danielmiessler/Personal_AI_Infrastructure   (last sync: never)
+#  → community  https://github.com/dmz006/datawatch-community                  (last sync: never, sync_on_start: false)
+
+# Sync the community registry (opt-in).
+datawatch skills registry-sync community
 
 # Add a custom registry.
 datawatch skills registry-add \
@@ -250,6 +256,7 @@ session_inject: true                     # auto-inject into session prompt
 - See also: [`profiles.md`](profiles.md) — Project Profiles attach skills.
 - See also: [`autonomous-planning.md`](autonomous-planning.md) — Automata reference skills per task.
 - See also: [`secrets-manager.md`](secrets-manager.md) — private registry auth.
+- Community skills + plugins: [dmz006/datawatch-community](https://github.com/dmz006/datawatch-community) — contribute your own via PR.
 - Plan attribution: PAI Skill Registries in `../plan-attribution.md`.
 
 ## Screenshots needed (operator weekend pass)
