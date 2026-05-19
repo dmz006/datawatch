@@ -322,6 +322,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newFilterCmd(),     // top-level filter command
 		newScheduleTopCmd(),// top-level schedule command (mirrors session schedule)
 		newPushCmd(),       // BL330 — UnifiedPush registration management
+		newFilesCmd(),      // BL333 — federated file service
 	)
 
 	if err := root.Execute(); err != nil {

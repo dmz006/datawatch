@@ -1881,18 +1881,29 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 
 // handleFiles returns directory contents for path browsing, or
 // creates a new directory when POSTed a {path, action:"mkdir"} body.
-// Mkdir respects the same root-path restriction as GET listing.
+// BL333: also handles multipart file upload (POST + multipart Content-Type)
+// and file deletion (DELETE method).
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
 	} else if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
 	}
+	// BL333 — DELETE method: remove a file.
+	if r.Method == http.MethodDelete {
+		s.handleFilesDelete(w, r)
+		return
+	}
 	// v4.0.1 — POST for directory creation. Backs the web UI +
 	// mobile "create folder" affordance in the directory picker.
+	// BL333 — POST with multipart Content-Type: upload a file.
 	if r.Method == http.MethodPost {
+		if ct := r.Header.Get("Content-Type"); strings.HasPrefix(ct, "multipart/") {
+			s.handleFilesUpload(w, r)
+			return
+		}
 		s.handleFilesMkdir(w, r)
 		return
 	}

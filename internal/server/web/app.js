@@ -6480,6 +6480,33 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL333 (v8.3.0) — Federated File Service card in Settings → General.
+             Root path config, storage overview, and file upload. -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('file_service', t('files_section_title') || 'File Service')}
+          <div id="settings-sec-file_service" style="${secContent('file_service')}">
+            <div class="settings-row">
+              <div class="settings-label">${escHtml(t('files_root_path') || 'File service root')}</div>
+              <input id="fileServiceRootInput" class="form-input" type="text" placeholder="/data/files" style="flex:1;"
+                onchange="fileServiceSaveRoot(this.value)" />
+            </div>
+            <div class="settings-row" style="font-size:11px;color:var(--text2);">
+              Leave blank to use session.root_path or home directory.
+            </div>
+            <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('files_storage_meta') || 'Storage overview')}</div>
+            <div id="fileServiceMetaPanel" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('files_upload_btn') || 'Upload file')}</div>
+            <div class="settings-row" style="flex-direction:column;gap:6px;align-items:flex-start;">
+              <input id="fileServiceUploadInput" type="file" style="font-size:12px;" />
+              <input id="fileServiceUploadPath" class="form-input" type="text" placeholder="/path/in/service" style="width:100%;" />
+              <button class="btn-primary" onclick="fileServiceUpload()" style="font-size:12px;">${escHtml(t('files_upload_btn') || 'Upload file')}</button>
+            </div>
+            <div class="settings-row" style="margin-top:6px;">
+              <button class="btn-secondary" onclick="loadFileServicePanel()" style="font-size:12px;">↻ Refresh</button>
+            </div>
+          </div>
+        </div>
+
         <!-- BL247 — Secrets moved from standalone tab to inline card in General tab.
              alpha.25 #230 — moved from General → Compute (operator-spec'd 2026-05-09:
              secrets are mostly credentials FOR compute resources). -->
@@ -6908,6 +6935,7 @@ function renderSettingsView() {
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
+  loadFileServicePanel(); // BL333
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
@@ -20065,6 +20093,62 @@ window.toolingCleanup = function(backend) {
   apiFetch('/api/tooling/cleanup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ backend }) })
     .then(d => { showToast(`cleanup: ${(d.removed||[]).length} file(s) removed`, 'success', 2500); loadToolingPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// BL333 — loadFileServicePanel: shows file service root + storage overview in Settings → General.
+function loadFileServicePanel() {
+  const el = document.getElementById('fileServiceMetaPanel');
+  if (!el) return;
+  apiFetch('/api/files/meta').then(data => {
+    const rootInput = document.getElementById('fileServiceRootInput');
+    if (rootInput && !rootInput.value) rootInput.value = data.root || '';
+    const peers = Array.isArray(data.peers) ? data.peers : [];
+    const discs = Array.isArray(data.discussions) ? data.discussions : [];
+    const peerHtml = peers.length
+      ? peers.map(p => `<div style="padding:2px 0;"><code style="color:var(--accent);">${escHtml(p.name)}</code> — ${p.file_count} file(s), ${p.bytes} bytes</div>`).join('')
+      : `<div style="opacity:0.7;">(no peer subdirectories)</div>`;
+    const discHtml = discs.length
+      ? discs.map(d => `<div style="padding:2px 0;"><code style="color:var(--accent);">${escHtml(d.name)}</code> — ${d.file_count} file(s), ${d.bytes} bytes</div>`).join('')
+      : `<div style="opacity:0.7;">(no discussion subdirectories)</div>`;
+    el.innerHTML = `
+      <div style="margin-bottom:4px;font-size:11px;color:var(--text2);">Root: <code>${escHtml(data.root||'')}</code></div>
+      <div style="font-weight:600;margin-top:4px;">${escHtml(t('files_peer_files')||'Peer files')}</div>
+      ${peerHtml}
+      <div style="font-weight:600;margin-top:6px;">${escHtml(t('files_discussion_files')||'Discussion files')}</div>
+      ${discHtml}
+    `;
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load file service metadata.</span>'; });
+}
+window.loadFileServicePanel = loadFileServicePanel;
+
+window.fileServiceSaveRoot = function(val) {
+  apiFetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ 'session.file_service_root': val }) })
+    .then(() => { showToast('File service root saved', 'success', 2000); loadFileServicePanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.fileServiceUpload = function() {
+  const fileInput = document.getElementById('fileServiceUploadInput');
+  const pathInput = document.getElementById('fileServiceUploadPath');
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    showToast('Select a file first', 'warn', 2000);
+    return;
+  }
+  const file = fileInput.files[0];
+  const dest = pathInput ? pathInput.value.trim() : '';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('path', dest || file.name);
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/files', { method: 'POST', headers, body: fd })
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))))
+    .then(d => {
+      showToast('Uploaded: ' + (d.path || 'ok'), 'success', 2500);
+      loadFileServicePanel();
+    }).catch(e => showToast(String(e.message||e), 'error'));
 };
 
 // BL274 (v6.16.0) — Docs-as-MCP-Interface PWA panel.

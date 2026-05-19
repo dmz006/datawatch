@@ -185,6 +185,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/info", api.handleInfo)
 	apiMux.HandleFunc("/api/backends", api.handleBackends)
 	apiMux.HandleFunc("/api/files", api.handleFiles)
+	// BL333 — federated file service sub-routes.
+	apiMux.HandleFunc("/api/files/peers/", api.handleFilesPeer)
+	apiMux.HandleFunc("/api/files/discussions/", api.handleFilesDiscussion)
+	apiMux.HandleFunc("/api/files/meta", api.handleFilesMeta)
+	apiMux.HandleFunc("/api/files/upload", api.handleFilesJSONUpload)
 	apiMux.HandleFunc("/api/sessions/timeline", api.handleSessionTimeline)
 	apiMux.HandleFunc("/api/sessions/rename", api.handleRenameSession)
 	apiMux.HandleFunc("/api/sessions/bind", api.handleBindSessionAgent)
