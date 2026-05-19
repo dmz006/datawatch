@@ -38,12 +38,16 @@ else:
     return
   fi
 
-  # Apply the howto; pass both required exec_params: project_dir and text
-  resp=$(api POST /api/mcp/call "{\"tool\":\"docs_apply\",\"params\":{\"howto_id\":\"howto/cross-agent-memory.md\",\"params\":{\"project_dir\":\"$REPO_ROOT\",\"text\":\"e2e test memory entry\"}}}")
+  # Apply the howto; pass all exec_params including optional query
+  resp=$(api POST /api/mcp/call "{\"tool\":\"docs_apply\",\"params\":{\"howto_id\":\"howto/cross-agent-memory.md\",\"params\":{\"project_dir\":\"$REPO_ROOT\",\"text\":\"e2e test memory entry\",\"query\":\"e2e test\"}}}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-353 "apply.json" "$resp"
   if echo "$resp" | grep -qi "no exec_steps\|no steps\|nothing to apply\|not applicable"; then
     skip "docs_apply: no exec_steps applicable"
+    return
+  fi
+  if echo "$resp" | grep -qi "recall failed\|embed query\|ollama embed\|model.*not found\|pulling it first\|embedder.*not\|not.*embedder"; then
+    skip "docs_apply: embedder not available for memory steps"
     return
   fi
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
