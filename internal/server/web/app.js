@@ -3176,16 +3176,16 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
 
   term.open(container);
 
-  // Mobile keyboard: when the virtual keyboard appears the visual viewport
-  // shrinks. Use visualViewport resize to refit the terminal to the new
-  // height so the content stays visible rather than scrolling the top
-  // off-screen. The 150ms delay lets the keyboard animation settle before
-  // measuring the new size.
+  // Per-terminal keyboard handler: --app-h is kept current by the global
+  // visualViewport listener (top of file). This handler fires after that one
+  // and reacts to the updated height by refitting xterm and scrolling to the
+  // bottom so the cursor row stays visible above the keyboard.
   if (window.visualViewport) {
     const _vvResize = () => {
       setTimeout(() => {
         if (fitAddon) { try { fitAddon.fit(); } catch(e) {} }
         syncTmuxSize();
+        try { term.scrollToBottom(); } catch(e) {}
       }, 150);
     };
     window.visualViewport.addEventListener('resize', _vvResize);
@@ -17691,6 +17691,18 @@ function createAlertRule() {
       }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── Visual viewport height tracking (mobile keyboard) ────────────────────────
+// Keep --app-h in sync with visualViewport.height so .app{height:var(--app-h)}
+// collapses correctly when the iOS software keyboard appears. 100dvh does not
+// shrink on iOS when the keyboard is up; this CSS variable is the reliable fix.
+if (window.visualViewport) {
+  const _setAppH = () => {
+    document.documentElement.style.setProperty('--app-h', window.visualViewport.height + 'px');
+  };
+  _setAppH(); // set immediately so the variable exists before first render
+  window.visualViewport.addEventListener('resize', _setAppH);
 }
 
 // ── Back button ──────────────────────────────────────────────────────────────

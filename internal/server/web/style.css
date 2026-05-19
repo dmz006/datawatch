@@ -151,10 +151,12 @@ body {
 }
 
 /* ── App layout ── */
+/* --app-h is set by JS from visualViewport.height so the layout shrinks
+   correctly when the iOS software keyboard appears (100dvh does not). */
 .app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: var(--app-h, 100dvh);
   max-width: 100%;
   position: relative;
 }
