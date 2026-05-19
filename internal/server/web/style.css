@@ -344,10 +344,12 @@ body {
 }
 
 /* ── Scrollable content area ── */
+/* --keyboard-h is set by JS from visualViewport so .view shrinks when
+   the iOS software keyboard appears (position:fixed ignores --app-h). */
 .view {
   position: fixed;
   top: var(--header-h);
-  bottom: var(--nav-h);
+  bottom: calc(var(--nav-h) + var(--keyboard-h, 0px));
   left: 0;
   right: 0;
   overflow-y: auto;

@@ -17731,14 +17731,22 @@ function createAlertRule() {
 }
 
 // ── Visual viewport height tracking (mobile keyboard) ────────────────────────
-// Keep --app-h in sync with visualViewport.height so .app{height:var(--app-h)}
-// collapses correctly when the iOS software keyboard appears. 100dvh does not
-// shrink on iOS when the keyboard is up; this CSS variable is the reliable fix.
+// Two CSS variables kept in sync with visualViewport:
+//   --app-h      → drives .app height (flex layout collapses with keyboard)
+//   --keyboard-h → drives .view bottom offset (.view is position:fixed and
+//                  ignores --app-h; this shifts it up above the keyboard)
+// 100dvh does NOT shrink on iOS when the software keyboard is up.
 if (window.visualViewport) {
   const _setAppH = () => {
-    document.documentElement.style.setProperty('--app-h', window.visualViewport.height + 'px');
+    const vvh = window.visualViewport.height;
+    const offsetTop = window.visualViewport.offsetTop || 0;
+    // keyboard height = layout viewport height minus visual viewport (minus any
+    // top offset from scroll/pinch — normally 0 on a standard session view).
+    const keyboardH = Math.max(0, window.innerHeight - vvh - offsetTop);
+    document.documentElement.style.setProperty('--app-h', vvh + 'px');
+    document.documentElement.style.setProperty('--keyboard-h', keyboardH + 'px');
   };
-  _setAppH(); // set immediately so the variable exists before first render
+  _setAppH(); // set immediately so variables exist before first render
   window.visualViewport.addEventListener('resize', _setAppH);
 }
 

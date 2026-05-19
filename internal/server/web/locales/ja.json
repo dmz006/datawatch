@@ -1189,6 +1189,7 @@
   "voice_click_stop": "クリックして停止",
   "voice_click_stop_recording": "クリックして録音を停止",
   "voice_recording_status": "録音中 — もう一度クリックして停止",
+  "voice_btn_send": "送信",
   "voice_transcribing": "文字起こし中…",
   "widget_description": "実行中 / 待機中 / 合計セッション数を一目で確認。",
   "widget_monitor_description": "アクティブなdatawatchサーバーのCPU負荷、メモリ、セッション数。",

@@ -1189,6 +1189,7 @@
   "voice_click_stop": "Cliquer pour arrêter",
   "voice_click_stop_recording": "Cliquer pour arrêter l'enregistrement",
   "voice_recording_status": "enregistrement — cliquer à nouveau pour arrêter",
+  "voice_btn_send": "Envoyer",
   "voice_transcribing": "Transcription…",
   "widget_description": "Nombre de sessions en cours / en attente / totales en un coup d'œil.",
   "widget_monitor_description": "Charge CPU, mémoire et nombre de sessions du serveur datawatch actif.",

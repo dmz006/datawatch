@@ -1189,6 +1189,7 @@
   "voice_click_stop": "Klicken zum Beenden",
   "voice_click_stop_recording": "Klicken zum Beenden der Aufnahme",
   "voice_recording_status": "Aufnahme — erneut klicken zum Beenden",
+  "voice_btn_send": "Senden",
   "voice_transcribing": "Transkribieren…",
   "widget_description": "Laufende / wartende / Gesamtsitzungsanzahl auf einen Blick.",
   "widget_monitor_description": "CPU-Last, Speicher und Sitzungsanzahl des aktiven Datawatch-Servers.",
