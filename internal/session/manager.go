@@ -1764,11 +1764,26 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if completionDetected {
 						if current.State == StateRunning || current.State == StateWaitingInput {
 							oldState := current.State
+							if !current.OneShot {
+								// Interactive session: DATAWATCH_COMPLETE is not terminal —
+								// treat as idle so the operator can keep sending input.
+								// Mirrors the processOutputLine path (line ~4499).
+								current.State = StateWaitingInput
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								return
+							}
 							current.State = StateComplete
 							current.UpdatedAt = time.Now()
 							_ = m.store.Save(current)
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
+							}
+							if m.onSessionEnd != nil {
+								m.onSessionEnd(current)
 							}
 							return
 						}
