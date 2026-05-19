@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Doc-alignment audit:** last refreshed for **v5.26.3** (2026-04-27). The Mermaid diagram below remains the canonical "one-screen" view; the **v5.x deltas** section at the bottom of this page enumerates every subsystem added since the original cut and points at the howto / API reference for each.
+> **Doc-alignment audit:** last refreshed for **v8.0.0** (2026-05-19). The Mermaid diagram below remains the canonical "one-screen" view; the **v5.x / v6.x / v7.x / v8.x deltas** sections at the bottom of this page enumerate every subsystem added since the original cut and point at the howto / API reference for each.
 
 Top-level map of every interface, subsystem, and data path in datawatch.
 
@@ -320,6 +320,10 @@ diagram with an arrow from a worker back to `Parent`.
 | Session telemetry + Status tab | `internal/server/hook_events.go` | [docs/howto/session-telemetry.md](howto/session-telemetry.md), [flow diagram](flow/telemetry-flow.md) — hook payloads → structured task tree + persist-on-stop |
 | Guardrail Library + scan unification | `internal/autonomous/guardrail_registry.go` | [docs/howto/guardrail-library.md](howto/guardrail-library.md), [flow diagram](flow/guardrail-flow.md) — named guardrails, profiles, per-Automaton overrides |
 | /dashboard Mission Control | `internal/server/web/app.js` | [docs/howto/dashboard.md](howto/dashboard.md), [flow diagram](flow/dashboard-flow.md) — WS-driven session constellation + EKG waveform + sprint pipeline + expand mode |
+| Federation CBAC (50 capabilities, 13 groups, `fedCap()`) | `internal/federation` | [docs/operations.md](operations.md) — shipped v7.3.0 |
+| Compute Node routing (direct / docker-network / datawatch-proxy) | `internal/compute`, `internal/inference` | CHANGELOG.md BL318–BL322 — shipped v8.0.0 |
+| LLM proxy router (`/api/proxy/llm/<name>`) | `internal/inference/proxy_router.go`, `internal/server/bl320_proxy_llm.go` | CHANGELOG.md BL320 — shipped v8.0.0 |
+| Multi-server proxy surface | `internal/server/multiserver` | [docs/operations.md](operations.md) — shipped v8.0.0 |
 
 ---
 
@@ -368,6 +372,51 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 | Long-press server-status indicator → force-refresh WS connection | v5.26.3 | internal/server/web/app.js |
 | Autonomous CRUD button revival (escHtml on inline-onclick `JSON.stringify` outputs) | v5.26.3 | internal/server/web/app.js |
 | Pre-v6.0 security review (gosec triage; 0 govulncheck vulns; `// #nosec` annotations w/ rationale) | v5.26.3 | [security-review.md](security-review.md) |
+
+---
+
+## v6.x deltas (v6.0 → v6.22)
+
+| Subsystem | Shipped | Reference |
+|-----------|---------|-----------|
+| Secrets Manager — AES-256-GCM store, `${secret:name}` resolver | v6.4.x | [docs/registry-and-secrets.md](registry-and-secrets.md) |
+| Tailscale k8s sidecar + headscale client + ACL generator | v6.5.x | [howto/](howto/) |
+| Skill Registries + PAI default (10 REST endpoints, 13 MCP tools) | v6.7.0 | [docs/skills.md](skills.md) |
+| HashiCorp Vault / OpenBao 4th secrets backend | v6.15.0 | [docs/registry-and-secrets.md](registry-and-secrets.md) |
+| Operator identity wake-up layer (L0 structured self-description) | v6.8.x | [docs/operations.md](operations.md) |
+| Algorithm Mode — 7-phase session harness | v6.9.0 | [api/autonomous.md](api/autonomous.md) |
+| Evals Framework — rubric-based grading (4 grader types) | v6.10.x | [api/autonomous.md](api/autonomous.md) |
+| Council Mode — multi-persona debate (6 default personas, debate/quick) | v6.11.0 | [docs/agents.md](agents.md) |
+| Docs-as-MCP-Interface — 22 howtos, hybrid vector+BM25 index, plan-then-execute | v6.22.0 | [howto/docs-as-mcp.md](howto/docs-as-mcp.md) |
+
+---
+
+## v7.x deltas (v7.0 → v7.4)
+
+| Subsystem | Shipped | Reference |
+|-----------|---------|-----------|
+| Compute Node registry — hardware abstraction (hosts, GPUs, k8s, remote peers) | v7.0.0 | [api/compute.md](api/compute.md) |
+| LLM Registry + dispatcher — named LLMs, ordered failover, 4 adapters | v7.0.0 | [docs/llm-backends.md](llm-backends.md) |
+| Ollama Marketplace — embedded curated catalog with hardware-fit indicator | v7.0 alpha.33 | [docs/llm-backends.md](llm-backends.md) |
+| Alert dock — always-on header badge, filterable in-app panel | v7.0 alpha.29–30 | internal/server/web/app.js |
+| Claude Code hooks + Status board (`GET /api/sessions/<id>/status`) | v7.0 alpha.34 | [howto/session-telemetry.md](howto/session-telemetry.md) |
+| Federation CBAC package — 50 capabilities, 13 built-in groups, `fedCap()` guards | v7.3.0 | [docs/operations.md](operations.md) |
+| MCP SSE federated auth — peer tokens with per-tool CBAC gates on SSE port | v7.4.0 | [docs/mcp.md](mcp.md) |
+
+---
+
+## v8.x deltas (v8.0)
+
+| Subsystem | Shipped | Reference |
+|-----------|---------|-----------|
+| Compute Node routing — `direct` / `docker-network` / `datawatch-proxy` modes | v8.0.0 | CHANGELOG.md BL318–BL322 |
+| DockerLifecycle — daemon-managed container spin-up/teardown for docker-network routing | v8.0.0 | `internal/compute/docker_lifecycle.go` |
+| ProxyRouter + `/api/proxy/llm/<name>` — inbound and outbound LLM proxy for datawatch-proxy routing | v8.0.0 | `internal/inference/proxy_router.go` |
+| gemini-api adapter — Google Generative Language v1beta | v8.0.0 | [docs/llm-backends.md](llm-backends.md) |
+| opencode-api adapter — OpenAI-compatible `/v1/chat/completions` (distinct Kind from openwebui) | v8.0.0 | [docs/llm-backends.md](llm-backends.md) |
+| OneShot session mode — fire-and-forget sessions that exit after task completion | v8.0.0 | [docs/api/sessions.md](api/sessions.md) |
+| Multi-server proxy surface — `GET /api/servers` + per-server test endpoint | v8.0.0 | [docs/operations.md](operations.md) |
+| 626 E2E test stories — 560 shell + 66 PWA covering all 7 surfaces | v8.0.0 | [docs/testing/](testing/) |
 
 ---
 

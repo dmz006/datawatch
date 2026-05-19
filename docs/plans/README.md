@@ -38,26 +38,72 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-18
+## Current state — 2026-05-19
 
-Latest release: **v7.3.0-build0** (in progress). BL316 S1 (CBAC + federation peers REST API) shipped to main. BL316 S2+ and BL317 queued.
+Latest release: **v8.0.0** (released 2026-05-19). Major release closing BL316–BL323 (CBAC, federation CBAC sweep, MCP SSE auth, multi-server, compute routing, new adapters, OneShot sessions, E2E infrastructure). 626 E2E stories, 85 smoke sections, ~1,736 unit tests.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 2 | BL316 (7.3.0 federation — S2+ remaining) · BL317 (7.4.0 multi-server PWA) |
+| Active backlog | 1 | BL324 (v8.1 Community Skills + Plugins registry) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
-| Recently closed | BL314 ✅ v7.2.2 · BL315 ✅ v7.2.3 | Voice gate + fullscreen PWA |
-| In-progress | BL316 S1 ✅ | CBAC package + federation peers REST API |
+| Recently closed | BL316–BL323 ✅ v7.3.0–v8.0.0 | CBAC, routing, adapters, E2E infra |
 | Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
+
+v8.0.0 shipped 2026-05-19 — major release closing BL316 (CBAC package + federation peers + 50-capability sweep across all REST/MCP handlers), BL317 (MCP SSE federated auth + per-tool CBAC gates), BL318–BL322 (compute node routing modes: direct/docker-network/datawatch-proxy + DockerLifecycle + ProxyRouter), BL321 (gemini-api + opencode-api adapters), BL322 (7-surface parity for routing/adapters), BL323 (E2E test infrastructure + 626 test stories). Plans post-v7-routing.md and post-v7-llm-kinds.md archived to historical-plans after delivery.
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
+
+---
+
+#### BL324 — Community Skills + Plugins registry (GitHub-hosted, categorized, user-contributed)
+
+**Operator-filed 2026-05-19. Target: v8.1.**
+
+**Background:** External contributors (Zendzian polity, issues #66/#67/#71/#73) filed FRs that are all solvable via Skills + Plugins without core code changes. Rather than baking polity-specific patterns into the daemon, the extension surface is the right home. But currently every operator builds extensions privately with no way to share or discover community patterns.
+
+**Scope:**
+
+A GitHub repository (`dmz006/datawatch-community`) organized by category where operators can submit Skills and Plugins via PR:
+
+```
+datawatch-community/
+├── skills/
+│   ├── autonomous-patterns/   sibling-runner, inbox-integrator, ...
+│   ├── identity/              polity-topology, multi-instance, ...
+│   ├── comms/                 channel-watchdog, mailbox-relay, ...
+│   ├── coding/                rtk-cli-aware, go-style, ...
+│   ├── security/
+│   └── ops/
+└── plugins/
+    ├── output-routing/        sibling-output-router, structured-extractor, ...
+    ├── guardrails/
+    └── comms/
+```
+
+Ships preconfigured (opt-in, sync_on_start: false) alongside PAI in the default `datawatch.yaml`. Browse with `datawatch skills registry-available community`. Install with `datawatch skills registry-sync community --skills <name>`.
+
+**Manifest extensions for community entries:**
+- `category` — directory-level category for browsing
+- `datawatch_min_version` — compatibility floor
+- `author` + `author_url` — attribution
+- `license` — required for community submissions
+
+**Contribution process:** Fork → add Skill or Plugin directory → PR → maintainer reviews for schema validity, no credentials, correct category. Merge = listed.
+
+**v8.1 deliverable:** Create repo + structure + preconfigure in default `datawatch.yaml` + contribution CONTRIBUTING.md. Zendzian polity's sibling-runner + polity-topology patterns are likely first contributions.
+
+**v8.2 follow-on:** Discovery UX (`registry-available` with ratings/compatibility filter), Plugin signing/verification, `plugin install` command.
+
+**7-surface parity:** CLI (`skills registry-available community`) + REST (`GET /api/skills/registries/community/available`) + MCP (`skills_registry_available`). PWA card update: show community registry in Settings → Automate → Skill Registries.
+
+**Does NOT require new runtime primitives** — all existing Skills + Plugins infrastructure supports this. Pure repo + config work.
 
 ---
 

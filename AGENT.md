@@ -1164,6 +1164,41 @@ DIP does NOT apply to:
 After the operator decides, the agent records the decision as a rule in the relevant AGENT.md
 section so the same question never needs to be asked again.
 
+## External Issue Triage Rule
+
+**Operator-confirmed rule — 2026-05-19.**
+
+When reviewing GitHub issues filed by contributors who are **not** `dmz006`:
+
+1. **Check Skills and Plugins first.** Before evaluating any feature request as a
+   datawatch core code change, determine whether the request can be satisfied by:
+   - A **Skill** (markdown package injected at session spawn — behavioral contracts,
+     output schemas, workflow guides, topology descriptions)
+   - A **Plugin** (shell executable hooking `pre_session_start`, `post_session_output`,
+     `post_session_complete`, or `on_alert`)
+   - A combination of Skills + Plugins + existing primitives (Automata, Pipeline,
+     Channel Bridge, Memory, Federation, Routing)
+
+2. **If Skills/Plugins can solve it:**
+   - Reply to the issue with the implementation path: what Skill to write, what Plugin
+     hook to use, how to wire them together with existing primitives.
+   - Provide a concrete example (manifest snippet, plugin script outline, Automata config).
+   - Close the issue with label `resolved-via-extension` once the operator confirms the
+     approach works.
+
+3. **If Skills/Plugins cannot solve it** (requires new daemon behavior, new API surface,
+   new trigger types, new protocol support):
+   - Evaluate whether the capability should be added to datawatch core.
+   - If yes: label `roadmap`, assign to a sprint milestone, add to the v8.x planning doc.
+   - If no: close with `wont-fix` + explanation of why it's out of scope.
+
+**Why:** Skills and Plugins are the intended customization layer. Features that can
+live there should live there — they ship faster, are polity-maintained, and don't add
+daemon complexity. Core code additions are reserved for things the extension surface
+genuinely cannot do.
+
+---
+
 ## Error-Filing Rule
 
 **Operator-confirmed rule — 2026-05-17.**

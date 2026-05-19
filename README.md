@@ -7,11 +7,11 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v7.0.0--alpha.38-success)](https://github.com/dmz006/datawatch/releases/tag/v7.0.0-alpha.38)
+[![Release](https://img.shields.io/badge/release-v8.0.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.0.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-It started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It now spans a full compute abstraction layer (v7.0): a registry of named hardware nodes + a named LLM registry that dispatches inference calls across nodes with ordered failover — on top of full PAI-parity personal AI infrastructure with structured identity, multi-phase reasoning, rubric-based grading, and multi-persona debate.
+It started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It now spans a full compute abstraction layer with capability-based federation access control, three compute-node routing modes (direct, docker-network, datawatch-proxy), a multi-server proxy surface, and a comprehensive E2E test suite — on top of full PAI-parity personal AI infrastructure with structured identity, multi-phase reasoning, rubric-based grading, and multi-persona debate.
 
 <p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
 
@@ -19,29 +19,29 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
-**v7.0.0-alpha.38 (2026-05-10)** — Observer fix + Automata PWA modals + LLM CLI parity. Compute node live monitoring no longer errors when `monitoring_endpoint` is unset (uses observer peer lookup instead). Automata cancel and batch-delete now use the PWA confirm modal instead of browser `confirm()`. Full LLM CLI surface complete: `llm models list/add/remove`, `llm in-use`, `llm refresh-models`, `llm reassign`, `llm force-delete`. 91/0/6 smoke.
+**v8.0.0 (2026-05-19)** — Major release: capability-based federation access control across all 7 surfaces, compute-node routing modes (direct / docker-network / datawatch-proxy), MCP SSE federated auth, multi-server proxy, new LLM adapters (Gemini API, OpenCode API), OneShot sessions, 626 E2E test stories, and 85-section release smoke. See [full release notes](docs/RELEASE_NOTES_v8.0.0.md).
 
-### v7.0 highlights (alpha.1 → alpha.38)
+### v8.0 highlights
 
-- **alpha.38 (2026-05-10)** — Observer fix + LLM CLI parity complete (`llm models`, `llm in-use`, `llm reassign`, `llm force-delete`). Automata PWA modals.
-- **alpha.37 (2026-05-10)** — LLM Enabled Models overhaul: per-node model lists, auto-enable toggle, model refresh from the edit form. Session list/detail shows `llm_ref` badge. New-session wizard LLM picker.
-- **alpha.36 (2026-05-10)** — Unified Add/Edit panel for Compute Nodes. Edit pencil calls the same form as Add — no separate edit drawer.
-- **alpha.35 (2026-05-10)** — Compute node **models** sub-section + **Browse marketplace** button wired into the node edit panel (Ollama nodes only).
-- **alpha.34d (2026-05-10)** — Claude Code hooks auto-install at session spawn: daemon writes `.claude/sprint/post-event.sh` + settings hooks + `.dw-env` token. Stop / PostToolUse / UserPromptSubmit events stream to the Status board. opencode-acp parity. Universal state-change emit for all session backends.
-- **alpha.34 (2026-05-10)** — Claude Code hooks + Status board: session detail **Status** tab renders a live board (current focus, sprint, tests, git) fed by hook events. `GET /api/sessions/<id>/status`.
-- **alpha.33 (2026-05-10)** — **Ollama Marketplace**: browseable catalog of curated models (llama3.1, qwen3, gemma3, deepseek-r1, codellama, and more) with per-tag disk size, min RAM, min VRAM, and hardware-fit column. Pull runs in background with alert-dock progress. Delete from the node panel.
-- **alpha.31 (2026-05-10)** — Automata browse redesign: operator-pin, inline action buttons, attention-first sort.
-- **alpha.30 (2026-05-10)** — Toast pipeline removed. `showToast()` routes everything to the alert dock. Always-on `#headerAlertPill` badge on every page. Alerts tab redesign with per-category chips, session cards, prompt/error/info rendering.
-- **alpha.29 (2026-05-10)** — Alert dock: overflow-safe in-app alert panel replacing scrolling toasts. Background pull tasks surface here with live percentage.
-- **alpha.24 (2026-05-10)** — datawatch-stats ↔ ComputeNode multi-instance: `/api/compute/nodes/<name>/detail` pulls live stats from the bound observer peer. Group-by-node toggle on Federated Peers card.
-- **alpha.4 (2026-05-09)** — SSE live updates + async-first Council: `POST /api/council/run` returns immediately; subscribers get real-time `persona_responding` / `round_completed` / `run_completed` events via `GET /api/council/runs/<id>/events`. Automata Council tab hosts live-watch cards.
-- **alpha.3 (2026-05-09)** — Council wired to real LLM dispatcher: multi-persona debates run real inference with ordered ComputeNode failover. STUB strings gone.
-- **alpha.2 (2026-05-08)** — **LLM Registry + dispatcher**: named LLM entries with ordered ComputeNode failover. 4 adapters: ollama, openwebui, opencode, claude. Auto-migrates v6.x `cfg.ollama` / `cfg.openwebui` to `ollama-default` / `openwebui-default` entries on first start. MCP tools `llm_*`. CLI `datawatch llm *`.
-- **alpha.1 (2026-05-08)** — **ComputeNode registry**: hardware abstraction layer — hosts, GPU boxes, k8s clusters, remote peers. Declared capacity (RAM / VRAM / max-models), RBAC, scheduling priority, maintenance windows, monitoring via datawatch-stats sidecar. MCP tools `compute_node_*`. CLI `datawatch compute node *`.
+- **Federation CBAC** — 50 capabilities, 13 built-in groups, `fedCap()` guards every REST handler and MCP tool. Federated peers get exactly the access their group grants — not admin-or-nothing.
+- **Compute Node routing** — `routing` field separates transport from protocol: `direct` (default), `docker-network` (daemon manages container lifecycle), `datawatch-proxy` (route through a peer's `/api/proxy/llm/<name>`). DockerLifecycle manages container spin-up/teardown.
+- **MCP SSE federation** — the MCP SSE transport accepts federation peer tokens with per-tool CBAC gates, matching the REST surface's behavior. The MCP port is now a first-class federation endpoint.
+- **Multi-server proxy** — `GET /api/servers` + per-server test endpoint. The existing Remote Servers card migrated to the Comms tab.
+- **New adapters** — `gemini-api` (Google Generative Language v1beta) and `opencode-api` (OpenAI-compatible `/v1/chat/completions` distinct from openwebui).
+- **OneShot sessions** — fire-and-forget session mode that exits immediately after the task completes; no persistent tmux window.
+- **626 E2E test stories** — 560 shell + 66 PWA stories covering every feature surface. Full plugin, skill, and inline peer daemon E2E coverage added this release.
+
+### v7.x highlights (v7.0.0 → v7.4.0)
+
+- **v7.4.0 (2026-05-18)** — MCP SSE federated auth + per-tool CBAC. PWA fullscreen fix.
+- **v7.3.0 (2026-05-18)** — Systematic `fedCap()` enforcement sweep: 110+ call sites across 45+ handler files.
+- **v7.2.3 (2026-05-15)** — Voice gate + fullscreen PWA.
+- **v7.2.2 (2026-05-15)** — Observer + misc fixes.
+- **v7.0.0 (2026-05-08–10)** — Compute Node registry, LLM Registry + dispatcher, Ollama Marketplace, Alert dock, Claude Code hooks + Status board, 4 LLM adapters.
 
 ### Earlier highlights (v6.0.0 → v6.22.x)
 
-- **v6.22.0 (2026-05-08)** — BL274 Docs-as-MCP-Interface: 22 curated howtos with `exec_steps`, hybrid index (vector + BM25), plan-then-execute with approval-token round-trip, fsnotify plugin/skill auto-indexer.
+- **v6.22.0 (2026-05-08)** — Docs-as-MCP-Interface: 22 curated howtos, hybrid vector+BM25 index, plan-then-execute with approval-token round-trip.
 - **v6.15.0 (2026-05-07)** — HashiCorp Vault / OpenBao secrets backend (4th store).
 - **v6.11.0 (2026-05-05)** — Council Mode (multi-persona debate, 6 default personas, debate/quick modes).
 - **v6.10.x (2026-05-05)** — Evals Framework with rubric-based grading (4 grader types).
@@ -51,7 +51,7 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 - **v6.4.x (2026-05-03)** — Secrets Manager: AES-256-GCM store + KeePass + 1Password + `${secret:name}` resolver.
 - **v6.3.x (2026-05-03)** — Plugin Manifest v2.1 (comm verbs / CLI subcommands / mobile / session injection).
 
-See [CHANGELOG.md](CHANGELOG.md) for full history.
+See [CHANGELOG.md](CHANGELOG.md) for full history and [RELEASE_NOTES_v8.0.0.md](docs/RELEASE_NOTES_v8.0.0.md) for detailed v8.0.0 notes.
 
 ---
 
@@ -64,6 +64,18 @@ That uniformity is the whole point. Read once, write once, audit once.
 ---
 
 ## What it does
+
+### 🔐 Federation CBAC — *new in v8.0*
+
+50 capabilities organized into 13 built-in groups (admin, observer, operator, readonly, …). Every REST endpoint and MCP tool is gated with `fedCap()` / `mcpFedCap()`. Federated peers declare a group (or a custom capability set), and the daemon enforces it on every request — not admin-or-nothing. Groups are manageable at runtime: `POST /api/federation/groups` + `PUT /api/federation/peers/<name>`. MCP tools `federation_group_*`, `federation_peer_*`. CLI `datawatch federation group {list,get,add,update,delete}`.
+
+### 🔀 Compute Node routing — *new in v8.0*
+
+The `routing` field on a Compute Node separates **how the daemon reaches it** (transport) from **what API it speaks** (kind). Three modes: `direct` (existing default — daemon hits `address` directly), `docker-network` (daemon manages the LLM container lifecycle via Docker CLI — spin-up, network attach, teardown), `datawatch-proxy` (forward inference through another datawatch peer's `/api/proxy/llm/<name>` endpoint). All routing modes exposed on all 7 surfaces. New `gemini-api` and `opencode-api` adapter kinds also added.
+
+### 🌐 Multi-server proxy + MCP SSE federation — *new in v8.0*
+
+`GET /api/servers` enumerates Remote Server entries (formerly only visible in the Comms tab). The MCP SSE transport now accepts federation peer tokens with per-tool CBAC enforcement — matching the REST surface. A new `/api/proxy/llm/<name>` inbound endpoint accepts proxied inference from peers configured with `datawatch-proxy` routing.
 
 ### 🖥 Compute Node registry — *new in v7.0*
 
@@ -195,7 +207,7 @@ datawatch start
 datawatch identity configure
 # or open the PWA and click the 🤖 robot icon in the header
 
-# 5. (v7.0) Review auto-migrated LLM entries and add your hardware
+# 5. Review auto-migrated LLM entries and add your hardware
 datawatch llm list
 # → ollama-default (auto-migrated from cfg.ollama.host)
 # → openwebui-default (auto-migrated from cfg.openwebui.url)
@@ -208,7 +220,7 @@ datawatch compute pull-model datawatch-ollama llama3.1:8b
 datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 
 # 7. Verify
-datawatch version            # → datawatch v7.0.0-alpha.38
+datawatch version            # → datawatch v8.0.0
 curl -ks https://localhost:8443/api/health
 ```
 
