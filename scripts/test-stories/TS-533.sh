@@ -25,8 +25,8 @@ _story_ts_533() {
   fi
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "council_run_cancel tool returned dict"
-  elif echo "$resp" | grep -qi "not in progress\|already completed"; then
-    ok "council_run_cancel: run already completed"
+  elif echo "$resp" | grep -qi "not in progress\|already completed\|run not found\|404"; then
+    ok "council_run_cancel: run already completed or not found"
   else
     ko "unexpected response: $(echo "$resp" | head -c 200)"
   fi

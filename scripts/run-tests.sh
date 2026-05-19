@@ -491,11 +491,11 @@ for story_script in "$STORIES_DIR"/TS-*.sh; do
     RESULT=""
     CURRENT_STORY="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
-    _story_start=$(date +%s%3N)
+    _story_start=$(date +%s%N)
     # shellcheck source=/dev/null
     source "$story_script"
     flush_story_cleanup
-    _story_ms=$(( $(date +%s%3N) - _story_start ))
+    _story_ms=$(( ($(date +%s%N) - _story_start) / 1000000 ))
 
     # accumulate per-feature timing
     _feat=$(grep -m1 '^# tags:' "$story_script" 2>/dev/null | grep -oP 'feature:\K[^ ]+' | head -1 || echo "other")

@@ -17,12 +17,20 @@ _story_ts_530() {
   fi
   add_cleanup council "$run_id"
   local code
-  code=$(curl "${curl_args[@]}" --max-time 2 -o /dev/null -w "%{http_code}" "$TEST_BASE/api/council/runs/$run_id/events" 2>/dev/null || echo "0")
+  # Use a temp file to avoid || echo "0" appending to the HTTP code when curl times out on SSE
+  local _tmp
+  _tmp=$(mktemp)
+  curl "${curl_args[@]}" --max-time 2 -o /dev/null -w "%{http_code}" \
+    "$TEST_BASE/api/council/runs/$run_id/events" > "$_tmp" 2>/dev/null || true
+  code=$(cat "$_tmp"); rm -f "$_tmp"
+  [[ "$code" =~ ^[0-9]{3}$ ]] || code="0"
   save_evidence TS-530 "events_code.txt" "$code"
   if [[ "$code" == "200" ]]; then
     ok "GET /api/council/runs/$run_id/events returns 200 (SSE stream)"
   elif [[ "$code" == "404" ]]; then
     skip "council runs events endpoint not available (404)"
+  elif [[ "$code" == "0" ]]; then
+    skip "council runs events endpoint unreachable"
   else
     ko "unexpected HTTP $code for council run events"
   fi

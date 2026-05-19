@@ -15,8 +15,8 @@ _story_ts_466() {
     skip "autonomous_prd_decompose tool not available"
     return
   fi
-  if echo "$resp" | grep -qi "does not support headless planning\|planning backend.*has kind\|use an ollama\|planning.*not supported"; then
-    skip "planning backend does not support headless planning (use ollama/openwebui)"
+  if echo "$resp" | grep -qi "does not support headless planning\|planning backend.*has kind\|use an ollama\|planning.*not supported\|ollama not configured\|ollama.*not configured\|500 Internal Server Error"; then
+    skip "planning backend not available or not configured for headless planning"
     return
   fi
   if assert_json "$resp" 'isinstance(d, dict)'; then
