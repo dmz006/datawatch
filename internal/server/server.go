@@ -358,7 +358,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/marketplace/ollama/catalog", api.handleMarketplaceCatalog)    // alpha.33 #244 — embedded curated model catalog
 	apiMux.HandleFunc("/api/marketplace/ollama/tasks/", api.handleMarketplaceTask)         // alpha.33 #244 — pull progress poll
 	apiMux.HandleFunc("/api/push/", api.handlePushTopic)                                   // alpha.35 #38 — UnifiedPush + ntfy-compat SSE
-	apiMux.HandleFunc("/api/push/register", api.handlePushRegister)                        // alpha.35 #38 — mobile-app endpoint registration
+	apiMux.HandleFunc("/api/push/register", api.handlePushRegister)                        // alpha.35 #38 — mobile-app endpoint registration (GET=list, POST=register)
+	apiMux.HandleFunc("/api/push/unregister", api.handlePushUnregister)                    // BL330 — DELETE to remove a registration
+	apiMux.HandleFunc("/api/push/notify", api.handlePushNotify)                            // BL330 — POST daemon-internal notify endpoint
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)

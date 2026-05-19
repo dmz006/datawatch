@@ -6,6 +6,7 @@
 //	GET   /api/identity            — read full identity
 //	PUT   /api/identity            — replace full identity
 //	PATCH /api/identity            — merge non-empty fields
+//	POST  /api/identity            — alias for PATCH (mobile Android compat, BL329)
 //
 // All write paths emit audit entries (action=identity_set / identity_update).
 //
@@ -84,6 +85,27 @@ func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
 		s.auditIdentity("identity_set")
 		writeJSONOK(w, got)
 	case http.MethodPatch:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.identityMgr == nil {
+			http.Error(w, "identity disabled", http.StatusServiceUnavailable)
+			return
+		}
+		var body identity.Identity
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		got, err := s.identityMgr.Update(body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.auditIdentity("identity_update")
+		writeJSONOK(w, got)
+	case http.MethodPost:
+		// POST is an alias for PATCH — partial update (mobile Android compat, BL329)
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}

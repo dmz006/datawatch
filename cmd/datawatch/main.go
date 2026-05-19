@@ -321,6 +321,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSmokeCmd(),      // #54 — smoke-run cross-instance forwarding
 		newFilterCmd(),     // top-level filter command
 		newScheduleTopCmd(),// top-level schedule command (mirrors session schedule)
+		newPushCmd(),       // BL330 — UnifiedPush registration management
 	)
 
 	if err := root.Execute(); err != nil {

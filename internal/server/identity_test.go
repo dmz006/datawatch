@@ -117,3 +117,56 @@ func TestHandleIdentityMethodNotAllowed(t *testing.T) {
 		t.Errorf("status: %d (want 405)", w.Code)
 	}
 }
+
+// BL329 — POST is an alias for PATCH (mobile Android compat).
+func TestHandleIdentityPostAliasForPatch(t *testing.T) {
+	s, _ := newIdentityTestServer(t)
+	// Seed via PUT
+	seed, _ := json.Marshal(identity.Identity{Role: "engineer", CurrentFocus: "v8"})
+	req := httptest.NewRequest(http.MethodPut, "/api/identity", bytes.NewReader(seed))
+	s.handleIdentity(httptest.NewRecorder(), req)
+
+	// POST partial body — only role changes; focus must be preserved
+	patch, _ := json.Marshal(map[string]any{"role": "senior engineer"})
+	req = httptest.NewRequest(http.MethodPost, "/api/identity", bytes.NewReader(patch))
+	w := httptest.NewRecorder()
+	s.handleIdentity(w, req)
+	if w.Code != 200 {
+		t.Fatalf("POST status: %d body=%s", w.Code, w.Body.String())
+	}
+	var got identity.Identity
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Role != "senior engineer" {
+		t.Errorf("role not updated: %q", got.Role)
+	}
+	if got.CurrentFocus != "v8" {
+		t.Errorf("focus lost after POST: %q", got.CurrentFocus)
+	}
+}
+
+func TestHandleIdentityGetReturns200(t *testing.T) {
+	s, _ := newIdentityTestServer(t)
+	// Seed some data
+	seed, _ := json.Marshal(identity.Identity{Role: "ops", ContextNotes: "testing BL329"})
+	req := httptest.NewRequest(http.MethodPut, "/api/identity", bytes.NewReader(seed))
+	s.handleIdentity(httptest.NewRecorder(), req)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/identity", nil)
+	w := httptest.NewRecorder()
+	s.handleIdentity(w, req)
+	if w.Code != 200 {
+		t.Fatalf("GET status: %d body=%s", w.Code, w.Body.String())
+	}
+	var got identity.Identity
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Role != "ops" {
+		t.Errorf("role: %q", got.Role)
+	}
+	if got.ContextNotes != "testing BL329" {
+		t.Errorf("context_notes: %q", got.ContextNotes)
+	}
+}

@@ -50,12 +50,20 @@ type pushClient struct {
 	ch    chan PushEvent
 }
 
+// pushKeys — VAPID / P256DH web push keys from the mobile client (BL330).
+type pushKeys struct {
+	P256DH string `json:"p256dh"`
+	Auth   string `json:"auth"`
+}
+
 // pushRegistration — UnifiedPush mobile-app endpoint registration.
 type pushRegistration struct {
-	Endpoint     string    `json:"endpoint"`
-	ClientID     string    `json:"client_id"`
-	Token        string    `json:"token,omitempty"` // bearer for the endpoint POST
-	RegisteredAt time.Time `json:"registered_at"`
+	ID           string     `json:"id"`
+	Endpoint     string     `json:"endpoint"`
+	ClientID     string     `json:"client_id,omitempty"`
+	Token        string     `json:"token,omitempty"` // bearer for the endpoint POST
+	Keys         *pushKeys  `json:"keys,omitempty"`  // BL330: P256DH/Auth for web-push encryption
+	RegisteredAt time.Time  `json:"registered_at"`
 }
 
 type pushHub struct {
@@ -233,9 +241,100 @@ func (s *Server) handlePushPublish(w http.ResponseWriter, r *http.Request, topic
 	writeJSONOK(w, map[string]any{"ok": true, "topic": topic})
 }
 
-// handlePushRegister — POST /api/push/register
-// Body: {"endpoint":"...", "client_id":"...", "token":"..."}
+// handlePushRegister — POST /api/push/register (BL330)
+// Body: {"endpoint":"...", "client_id":"...", "token":"...", "keys":{"p256dh":"...","auth":"..."}}
+// client_id is optional; endpoint alone is sufficient for registration.
+// Returns {"ok":true, "id":"<registration_id>"}
+//
+// GET /api/push/register — returns list of all registrations (admin).
 func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapObserversWrite) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		// List all registrations (admin endpoint).
+		globalPushHub.mu.RLock()
+		regs := append([]pushRegistration(nil), globalPushHub.registered...)
+		globalPushHub.mu.RUnlock()
+		writeJSONOK(w, map[string]any{"ok": true, "registrations": regs})
+	case http.MethodPost:
+		var body pushRegistration
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Endpoint == "" {
+			http.Error(w, "endpoint required", http.StatusBadRequest)
+			return
+		}
+		body.RegisteredAt = time.Now().UTC()
+		globalPushHub.mu.Lock()
+		// Idempotent: replace existing registration matching client_id (if provided) or endpoint.
+		updated := false
+		for i := range globalPushHub.registered {
+			existing := &globalPushHub.registered[i]
+			if (body.ClientID != "" && existing.ClientID == body.ClientID) ||
+				(body.ClientID == "" && existing.Endpoint == body.Endpoint) {
+				// Preserve the existing ID so the caller's reference stays valid.
+				if existing.ID != "" {
+					body.ID = existing.ID
+				}
+				globalPushHub.registered[i] = body
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			if body.ID == "" {
+				body.ID = fmt.Sprintf("reg-%d", time.Now().UnixNano())
+			}
+			globalPushHub.registered = append(globalPushHub.registered, body)
+		}
+		regID := body.ID
+		globalPushHub.mu.Unlock()
+		writeJSONOK(w, map[string]any{"ok": true, "id": regID})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handlePushUnregister — DELETE /api/push/unregister (BL330)
+// Body: {"endpoint":"..."} or {"id":"<registration_id>"}
+func (s *Server) handlePushUnregister(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapObserversWrite) {
+		return
+	}
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Endpoint string `json:"endpoint"`
+		ID       string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	globalPushHub.mu.Lock()
+	out := globalPushHub.registered[:0]
+	removed := 0
+	for _, reg := range globalPushHub.registered {
+		if (body.ID != "" && reg.ID == body.ID) || (body.Endpoint != "" && reg.Endpoint == body.Endpoint) {
+			removed++
+			continue
+		}
+		out = append(out, reg)
+	}
+	globalPushHub.registered = out
+	globalPushHub.mu.Unlock()
+	writeJSONOK(w, map[string]any{"ok": true, "removed": removed})
+}
+
+// handlePushNotify — POST /api/push/notify (BL330)
+// Daemon-internal endpoint: trigger push delivery to a specific registration or all registrations.
+func (s *Server) handlePushNotify(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapObserversWrite) {
 		return
 	}
@@ -243,32 +342,33 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var body pushRegistration
+	var body struct {
+		RegistrationID string         `json:"registration_id"`
+		Payload        map[string]any `json:"payload"`
+		Title          string         `json:"title,omitempty"`
+		Message        string         `json:"message"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if body.Endpoint == "" || body.ClientID == "" {
-		http.Error(w, "endpoint + client_id required", http.StatusBadRequest)
-		return
+	ev := PushEvent{
+		Title:   body.Title,
+		Message: body.Message,
+		Extras:  body.Payload,
 	}
-	body.RegisteredAt = time.Now().UTC()
-	globalPushHub.mu.Lock()
-	// Idempotent: replace any existing registration with the same client_id.
-	out := body
-	updated := false
-	for i := range globalPushHub.registered {
-		if globalPushHub.registered[i].ClientID == body.ClientID {
-			globalPushHub.registered[i] = out
-			updated = true
-			break
+	globalPushHub.mu.RLock()
+	regs := append([]pushRegistration(nil), globalPushHub.registered...)
+	globalPushHub.mu.RUnlock()
+	sent := 0
+	for _, reg := range regs {
+		if body.RegistrationID == "" || reg.ID == body.RegistrationID {
+			go publishToEndpoint(reg, ev)
+			sent++
 		}
 	}
-	if !updated {
-		globalPushHub.registered = append(globalPushHub.registered, out)
-	}
-	globalPushHub.mu.Unlock()
-	writeJSONOK(w, map[string]any{"ok": true, "client_id": body.ClientID})
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "sent": sent}) //nolint:errcheck
 }
 
 // handleUnifiedPushDiscovery — GET /.well-known/unifiedpush
@@ -277,22 +377,12 @@ func (s *Server) handleUnifiedPushDiscovery(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Minimal UnifiedPush discovery doc. Per the spec:
-	// https://unifiedpush.org/spec/discovery/
+	// UnifiedPush discovery doc (BL330 — mobile-expected format).
+	// Per the spec: https://unifiedpush.org/spec/discovery/
 	writeJSONOK(w, map[string]any{
+		"version": 1,
 		"unifiedpush": map[string]any{
-			"version":  1,
-			"register": "/api/push/register",
-			"endpoint": map[string]any{
-				"format":  "ntfy-compat",
-				"prefix":  "/api/push/",
-				"sse":     true,
-				"publish": true,
-			},
-			"limits": map[string]any{
-				"message_size_bytes": 64 * 1024,
-				"per_topic_qps":      0, // unlimited (best-effort fanout)
-			},
+			"gateway": "/api/push/notify",
 		},
 	})
 }
