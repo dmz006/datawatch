@@ -94,10 +94,17 @@ type KGAPI interface {
 	Stats() map[string]interface{}
 }
 
+// MCPSamplingLogEntry mirrors a single entry from the sampling ring buffer.
+type MCPSamplingLogEntry struct {
+	MCPSamplingResult
+	RequestPreview string `json:"request_preview"`
+}
+
 // mcpSamplingAPI is the interface for daemon-initiated sampling (BL302 S3).
 // The concrete implementation is *mcp.SamplingDispatcher wired from main.go.
 type MCPSamplingAPI interface {
 	Sample(ctx context.Context, req MCPSamplingRequest) (*MCPSamplingResult, error)
+	Log() []MCPSamplingLogEntry
 }
 
 // mcpSamplingRequest mirrors mcp.SamplingRequest without the import cycle.
@@ -825,6 +832,25 @@ func (s *Server) handleMCPSample(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"result": res}) //nolint:errcheck
+}
+
+// handleMCPSamplingLog returns the sampling ring buffer as a JSON array.
+// GET /api/mcp/sampling-log — returns [] when no sampling has occurred or MCP is disabled.
+func (s *Server) handleMCPSamplingLog(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if s.mcpSamplingDisp == nil {
+		json.NewEncoder(w).Encode([]MCPSamplingLogEntry{}) //nolint:errcheck
+		return
+	}
+	entries := s.mcpSamplingDisp.Log()
+	json.NewEncoder(w).Encode(entries) //nolint:errcheck
 }
 
 // handleMCPElicit dispatches a daemon-initiated elicitation request (BL302 S3).

@@ -199,7 +199,7 @@ The header strip carries Status badge + Settings (`openPRDSettingsModal` — typ
 
 ## Dashboard
 
-Mission control for your entire fleet — a live, full-screen view of every running session, active Automata, and system health indicators. Requires `autonomous.enabled: true` in `datawatch.yaml`; the nav button is hidden otherwise (BL313).
+Mission control for your entire fleet — a live, full-screen view of every running session, active Automata, and system health indicators. Requires `autonomous.enabled: true` in `datawatch.yaml`; the nav button is hidden otherwise.
 
 The layout is fully customisable: drag cards to reorder, resize with the width/height handle. Layout persists server-side at `GET/PUT /api/dashboard/layout` so it survives browser refreshes and re-logins.
 
@@ -693,13 +693,13 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
-| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | BL312 v7.2.0 | REST proxy + aggregated endpoints |
-| MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | BL302 v7.1.0 | MCP protocol spec |
-| MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | BL302 v7.1.0 | MCP protocol spec |
-| MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | BL302 v7.1.0 | MCP protocol spec |
-| MCP Elicitation | [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md) | BL302 v7.1.0 | MCP protocol spec |
-| Docs-as-MCP-Interface | [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md) | BL274 v6.21.0 | hybrid search index |
-| Dashboard (mission control) | [`howto/dashboard.md`](howto/dashboard.md) | BL303 v7.0.0 | WebSocket-driven layout |
+| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints |
+| MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | v7.1.0 | MCP protocol spec |
+| MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | v7.1.0 | MCP protocol spec |
+| MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | v7.1.0 | MCP protocol spec |
+| MCP Elicitation | [`howto/mcp-elicitation.md`](howto/mcp-elicitation.md) | v7.1.0 | MCP protocol spec |
+| Docs-as-MCP-Interface | [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md) | v6.21.0 | hybrid search index |
+| Dashboard (mission control) | [`howto/dashboard.md`](howto/dashboard.md) | v7.0.0 | WebSocket-driven layout |
 | LLM Registry | [`howto/llm-registry.md`](howto/llm-registry.md) | v7.0.0 | `/api/llms` CRUD + named routing |
 | Compute Nodes | [`howto/compute-nodes.md`](howto/compute-nodes.md) | v7.0.0 | `/api/compute/nodes` CRUD |
 | Push notifications | [`howto/push-notifications.md`](howto/push-notifications.md) | v7.0.0-alpha.35 | UnifiedPush + ntfy SSE |

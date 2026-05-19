@@ -819,11 +819,20 @@ func (s *Server) SetOllamaHost(host string) {
 	}
 }
 
+// ToolDocAnnotations mirrors the relevant fields of mcpsdk.ToolAnnotation for
+// JSON serialisation in GET /api/mcp/docs. Only the hint fields used by tests
+// and clients are included; Title / IdempotentHint / OpenWorldHint are omitted.
+type ToolDocAnnotations struct {
+	ReadOnlyHint    *bool `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+}
+
 // ToolDoc describes a single MCP tool for documentation.
 type ToolDoc struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Parameters  []ParamDoc `json:"parameters,omitempty"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Parameters  []ParamDoc         `json:"parameters,omitempty"`
+	Annotations ToolDocAnnotations `json:"annotations"`
 }
 
 // ParamDoc describes a tool parameter.
@@ -920,6 +929,16 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolScheduleCancel, "schedule_cancel"},
 		{s.toolMemoryImport, "memory_import"},
 		{s.toolMemoryLearnings, "memory_learnings"},
+		{s.toolMemoryRemember, "memory_remember"},
+		{s.toolMemoryRecall, "memory_recall"},
+		{s.toolMemoryList, "memory_list"},
+		{s.toolMemoryForget, "memory_forget"},
+		{s.toolMemoryStats, "memory_stats"},
+		{s.toolMemoryPin, "memory_pin"},
+		{s.toolMemorySweep, "memory_sweep_stale"},
+		{s.toolMemorySpellCheck, "memory_spellcheck"},
+		{s.toolMemoryExtractFacts, "memory_extract_facts"},
+		{s.toolMemorySchemaVersion, "memory_schema_version"},
 		{s.toolConfigSet, "config_set"},
 		{s.toolProfileList, "profile_list"},
 		{s.toolProfileGet, "profile_get"},
@@ -954,6 +973,10 @@ func (s *Server) ToolDocs() []ToolDoc {
 		doc := ToolDoc{
 			Name:        tool.Name,
 			Description: tool.Description,
+			Annotations: ToolDocAnnotations{
+				ReadOnlyHint:    tool.Annotations.ReadOnlyHint,
+				DestructiveHint: tool.Annotations.DestructiveHint,
+			},
 		}
 		if tool.InputSchema.Properties != nil {
 			required := make(map[string]bool)

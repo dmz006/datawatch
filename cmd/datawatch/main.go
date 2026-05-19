@@ -4693,6 +4693,10 @@ Return STRICT JSON:
 				}
 				result[i] = map[string]interface{}{
 					"name": d.Name, "description": d.Description, "parameters": params,
+					"annotations": map[string]interface{}{
+						"readOnlyHint":    d.Annotations.ReadOnlyHint,
+						"destructiveHint": d.Annotations.DestructiveHint,
+					},
 				}
 			}
 			return result
@@ -8506,7 +8510,9 @@ func mcpResourcesList(_ *cobra.Command) error {
 		return err
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
-	resp, err := http.Get(base + "/api/mcp/resources")
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/mcp/resources", nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources: %w", err)
 	}
@@ -8522,7 +8528,9 @@ func mcpResourcesTemplates(_ *cobra.Command) error {
 		return err
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
-	resp, err := http.Get(base + "/api/mcp/resources/templates")
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/mcp/resources/templates", nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources/templates: %w", err)
 	}
@@ -8538,7 +8546,9 @@ func mcpResourcesRead(_ *cobra.Command, uri string) error {
 		return err
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
-	resp, err := http.Get(base + "/api/mcp/resources/read?uri=" + uri)
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/mcp/resources/read?uri="+uri, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources/read: %w", err)
 	}
@@ -8577,6 +8587,26 @@ func (a *samplingAdapter) Sample(ctx context.Context, req server.MCPSamplingRequ
 		Timestamp:  res.Timestamp,
 		Error:      res.Error,
 	}, nil
+}
+
+func (a *samplingAdapter) Log() []server.MCPSamplingLogEntry {
+	raw := a.d.Log() // []*mcp.SamplingLogEntry
+	out := make([]server.MCPSamplingLogEntry, len(raw))
+	for i, e := range raw {
+		out[i] = server.MCPSamplingLogEntry{
+			MCPSamplingResult: server.MCPSamplingResult{
+				Trigger:    e.Trigger,
+				Content:    e.Content,
+				Model:      e.Model,
+				StopReason: e.StopReason,
+				LatencyMs:  e.LatencyMs,
+				Timestamp:  e.Timestamp,
+				Error:      e.Error,
+			},
+			RequestPreview: e.RequestPreview,
+		}
+	}
+	return out
 }
 
 // ---- BL302 S3 — elicitation adapter (bridges server.MCPElicitationAPI → mcp.ElicitationDispatcher) ----

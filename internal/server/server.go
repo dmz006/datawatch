@@ -387,6 +387,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/mcp/resources", api.handleMCPResourcesList)
 	// BL302 S3 — sampling + elicitation surface.
 	apiMux.HandleFunc("/api/mcp/sample", api.handleMCPSample)
+	apiMux.HandleFunc("/api/mcp/sampling-log", api.handleMCPSamplingLog)
 	apiMux.HandleFunc("/api/mcp/elicit", api.handleMCPElicit)
 	// BL302 S4 — MCP prompts surface.
 	apiMux.HandleFunc("/api/mcp/prompts/get", api.handleMCPPromptsGet)

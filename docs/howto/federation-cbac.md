@@ -1,6 +1,6 @@
 # Federation Peer CBAC — Operator Guide
 
-Datawatch BL316 (v7.3.0) introduces cross-host session federation with
+Datawatch v7.3.0 introduces cross-host session federation with
 capability-based access control (CBAC). A federated peer is an AI agent running
 on a remote datawatch instance that can connect to your instance using its own
 bearer token. Every action it takes is gated against the capabilities you grant.

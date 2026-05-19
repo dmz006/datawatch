@@ -67,11 +67,14 @@ type SamplingResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// samplingLogEntry is an entry in the ring buffer (includes request preview).
-type samplingLogEntry struct {
+// SamplingLogEntry is an entry in the ring buffer (includes request preview).
+type SamplingLogEntry struct {
 	SamplingResult
 	RequestPreview string `json:"request_preview"` // first 80 chars of first user message
 }
+
+// samplingLogEntry is an alias kept for internal use.
+type samplingLogEntry = SamplingLogEntry
 
 const samplingLogSize = 50
 
@@ -189,10 +192,10 @@ func (d *SamplingDispatcher) Sample(ctx context.Context, req SamplingRequest) (*
 }
 
 // Log returns a snapshot of the sampling ring buffer (newest last, max 50).
-func (d *SamplingDispatcher) Log() []*samplingLogEntry {
+func (d *SamplingDispatcher) Log() []*SamplingLogEntry {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	out := make([]*samplingLogEntry, len(d.log))
+	out := make([]*SamplingLogEntry, len(d.log))
 	copy(out, d.log)
 	return out
 }

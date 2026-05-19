@@ -75,6 +75,10 @@ server:
   tls_port: ${SMOKE_TLS_PORT}
   tls_auto_generate: true
   token: ""
+memory:
+  enabled: true
+  backend: sqlite
+  embedder: ""
 YAML
 
 # Find the datawatch binary (prefer freshly built binary in repo root).
@@ -114,8 +118,9 @@ echo ""
 
 BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
 TOK=""   # test daemon starts with no auth token
-# CLI commands use -u to point at the test daemon (not the production one).
-DW_CLI="$_DW_BIN -u $BASE"
+# CLI commands use -u + --config so the TLS cert path and token are read from
+# the smoke daemon's config (not from ~/.datawatch which points at production).
+DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
 
 TMPD=$(mktemp -d)
 
@@ -1839,8 +1844,8 @@ if [[ "$EV_GET" != "200" ]]; then
   skip "evals disabled or endpoint unreachable (HTTP $EV_GET)"
 else
   ok "evals suites endpoint reachable"
-  # Drop a tiny capability suite, run it, expect pass.
-  SUITE_DIR="$HOME/.datawatch/evals"
+  # Drop a tiny capability suite in the smoke daemon's data dir, run it, expect pass.
+  SUITE_DIR="$TEST_DATA_DIR/evals"
   mkdir -p "$SUITE_DIR" 2>/dev/null
   cat > "$SUITE_DIR/smoke.yaml" <<'EOF'
 name: smoke

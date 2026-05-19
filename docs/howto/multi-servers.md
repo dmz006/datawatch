@@ -15,7 +15,7 @@ exec_steps:
     args: {}
     read_only: true
 ---
-# How-to: Multi-Server Management (BL312)
+# How-to: Multi-Server Management
 
 Datawatch can manage and monitor multiple remote datawatch instances from a
 single PWA session. You register remote servers, then switch views between
@@ -45,7 +45,7 @@ Five surfaces added in v7.2.0:
 
 **Multi-server** and **Federated Observer** are complementary but distinct:
 
-| | Multi-server (BL312) | Federated Observer |
+| | Multi-server | Federated Observer |
 |-|----------------------|-------------------|
 | **Direction** | This PWA actively queries remotes | Remotes push stats to this daemon |
 | **Surface** | Sessions / Alerts / Automata / Observer / Dashboard | Observer view → Federated Peers card |

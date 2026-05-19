@@ -20,6 +20,8 @@ LLM_ONLY=(
     README          # not a howto, just an index
     v7-compute-migration  # narrative migration doc (alpha.15) — explains what auto-migration did, no operator action steps
     dashboard       # PWA-only view; navigation not callable from MCP — reference/conceptual doc
+    compute-routing     # reference doc explaining routing modes; configuration is via compute node CRUD (covered by compute-nodes howto)
+    federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
 )
 
 ERRORS=0

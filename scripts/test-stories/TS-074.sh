@@ -8,12 +8,14 @@ story_preflight "surface:mcp feature:mcp" || return 0
 
 _story_ts_074() {
   local resp
-  resp=$(api POST /api/mcp/resources/read '{"uri":"datawatch://version"}')
+  resp=$(api GET "/api/mcp/resources/read?uri=datawatch://version")
   save_evidence TS-074 "version_resource.json" "$resp"
-  if assert_json "$resp" 'isinstance(d, dict)'; then
-    ok "datawatch://version resource readable"
+  if assert_json "$resp" 'isinstance(d, dict) and "contents" in d and isinstance(d["contents"], list)'; then
+    ok "datawatch://version resource readable (contents array present)"
+  elif assert_json "$resp" 'isinstance(d, dict)'; then
+    ko "response is dict but missing 'contents' array: $(echo "$resp" | head -c 200)"
   else
-    skip "version resource not available: $(echo "$resp" | head -c 100)"
+    ko "unexpected response from GET /api/mcp/resources/read?uri=datawatch://version: $(echo "$resp" | head -c 200)"
   fi
 }
 

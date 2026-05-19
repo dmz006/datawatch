@@ -1,51 +1,60 @@
 #!/usr/bin/env bash
-# TS-288 — eval_list_suites + eval_run smoke suite shape via MCP
+# TS-288 — eval_list_suites + eval_run smoke suite shape via REST
 # tags: surface:mcp feature:mcp feature:evals
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-288"
 story_preflight "surface:mcp feature:mcp feature:evals" || return 0
 
 _story_ts_288() {
-  local resp suite_id
+  local suite_name="ts288-e2e-smoke-$$"
+  local suite_file="$TEST_DATA/evals/${suite_name}.yaml"
 
-  # List suites
-  resp=$(api POST /api/mcp/call '{"tool":"eval_list_suites","params":{}}')
-  resp=$(mcp_unwrap "$resp")
-  save_evidence TS-288 "suites.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|not enabled\|disabled\|unknown tool"; then
-    skip "eval_list_suites not available in this build"
+  # Create the evals directory and suite YAML
+  mkdir -p "$TEST_DATA/evals"
+  cat > "$suite_file" <<YAML
+name: ${suite_name}
+description: E2E smoke eval for TS-288
+mode: regression
+pass_threshold: 1.0
+cases:
+  - name: basic-string-match
+    input: "hello"
+    expected: "hello"
+    grader:
+      type: string_match
+YAML
+
+  # Verify the suite appears in the list
+  local suites_resp
+  suites_resp=$(api GET /api/evals/suites)
+  save_evidence TS-288 "suites.json" "$suites_resp"
+
+  if echo "$suites_resp" | grep -qi "disabled\|not available\|503"; then
+    rm -f "$suite_file"
+    skip "evals not available in this build"
     return
   fi
 
-  suite_id=$(echo "$resp" | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-if isinstance(d,list) and len(d)>0:
-    item=d[0]
-    if isinstance(item,dict): print(item.get("id",item.get("name","")))
-    else: print(str(item))
-elif isinstance(d,dict):
-    for k in ("suites","items","result"):
-        if k in d and isinstance(d[k],list) and len(d[k])>0:
-            item=d[k][0]
-            if isinstance(item,dict): print(item.get("id",item.get("name","")))
-            else: print(str(item))
-            exit()
-' 2>/dev/null || echo "")
-
-  if [[ -z "$suite_id" ]]; then
-    skip "no eval suites available to test eval_run"
+  if ! echo "$suites_resp" | grep -q "$suite_name"; then
+    rm -f "$suite_file"
+    ko "created suite YAML but GET /api/evals/suites did not include $suite_name: $(echo "$suites_resp" | head -c 200)"
     return
   fi
 
   # Run the suite
-  resp=$(api POST /api/mcp/call "{\"tool\":\"eval_run\",\"params\":{\"suite\":\"$suite_id\"}}")
-  resp=$(mcp_unwrap "$resp")
-  save_evidence TS-288 "run.json" "$resp"
-  if assert_json "$resp" 'isinstance(d, dict)'; then
-    ok "eval_list_suites + eval_run returned valid shapes"
+  local run_resp
+  run_resp=$(api POST "/api/evals/run?suite=${suite_name}")
+  save_evidence TS-288 "run.json" "$run_resp"
+
+  # Clean up the suite file
+  rm -f "$suite_file"
+
+  if assert_json "$run_resp" '"pass" in d'; then
+    ok "eval suite created, listed, and run returned 'pass' field"
+  elif assert_json "$run_resp" 'isinstance(d, dict)'; then
+    ok "eval suite created, listed, and run returned dict: $(echo "$run_resp" | head -c 100)"
   else
-    ok "eval_list_suites returned suites; eval_run response: $(echo "$resp" | head -c 80)"
+    ko "eval run response unexpected: $(echo "$run_resp" | head -c 200)"
   fi
 }
 

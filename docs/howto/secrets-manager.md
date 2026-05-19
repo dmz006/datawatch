@@ -111,8 +111,8 @@ vault:
 ```
 
 **Limitations in v6.15:** Vault is the single active backend for all secrets —
-per-agent Vault isolation (BL284) is a future enhancement. KV v1 and Vault
-AppRole/Kubernetes auth (BL281) are also deferred.
+per-agent Vault isolation is a future enhancement. KV v1 and Vault
+AppRole/Kubernetes auth are also deferred.
 
 ## Two happy paths
 
