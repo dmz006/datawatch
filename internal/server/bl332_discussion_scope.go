@@ -1,14 +1,20 @@
 // BL332 T42a — Discussion Scopes: per-discussion federated shared memory.
+// BL332 T42b — Federated sync, throttle (60 writes/min), and conflict API.
 //
 // REST surface:
 //
-//	GET    /api/memory/discussion           → list all discussion scope IDs known to this node
-//	GET    /api/memory/discussion/{id}      → recall entries in discussion/<id> (query: ?q=&top_k=10)
-//	POST   /api/memory/discussion/{id}      → write entry; body: {content, summary?, role?}
-//	DELETE /api/memory/discussion/{id}      → delete ALL entries in this discussion scope
-//	GET    /api/memory/discussion/{id}/wal  → last N WAL entries for this discussion
+//	GET    /api/memory/discussion                         → list all discussion scope IDs
+//	GET    /api/memory/discussion/{id}                   → recall entries (query: ?q=&top_k=10)
+//	POST   /api/memory/discussion/{id}                   → write entry; body: {content, summary?, role?}
+//	DELETE /api/memory/discussion/{id}                   → delete ALL entries in this discussion scope
+//	GET    /api/memory/discussion/{id}/wal               → last N WAL entries
+//	GET    /api/memory/discussion/{id}/participants      → list participant peers (T42b)
+//	PUT    /api/memory/discussion/{id}/participants      → replace participant list (T42b)
+//	GET    /api/memory/discussion/{id}/conflicts         → list conflicting WAL entries (T42b)
+//	POST   /api/memory/discussion/{id}/conflicts/resolve → mark conflict resolved (T42b)
 //
 // WAL path: ~/.datawatch/discussions/<id>/wal.jsonl
+// Participants: ~/.datawatch/discussions/<id>/participants.json
 // Discussion IDs are derived from the URL path segment after /api/memory/discussion/.
 
 package server
@@ -35,6 +41,8 @@ type discussionWALEntry struct {
 	Role       string    `json:"role"`
 	Timestamp  time.Time `json:"timestamp"`
 	OriginPeer string    `json:"origin_peer,omitempty"`
+	// Op is non-empty for administrative WAL records (e.g. "conflict-resolved").
+	Op string `json:"op,omitempty"`
 }
 
 // discussionMu provides per-discussion write serialization.
@@ -116,8 +124,11 @@ func (s *Server) handleDiscussionScopeList(w http.ResponseWriter, r *http.Reques
 	writeJSONOK(w, map[string]any{"discussions": ids, "count": len(ids)})
 }
 
-// handleDiscussionScope handles /api/memory/discussion/{id} and
-// /api/memory/discussion/{id}/wal.
+// handleDiscussionScope handles /api/memory/discussion/{id} and its sub-paths:
+//   - /api/memory/discussion/{id}/wal
+//   - /api/memory/discussion/{id}/participants       (T42b)
+//   - /api/memory/discussion/{id}/conflicts          (T42b)
+//   - /api/memory/discussion/{id}/conflicts/resolve  (T42b)
 func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Extract the path suffix after /api/memory/discussion/
 	rest := strings.TrimPrefix(r.URL.Path, "/api/memory/discussion/")
@@ -125,6 +136,54 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 
 	if rest == "" {
 		http.Error(w, "discussion id required", http.StatusBadRequest)
+		return
+	}
+
+	// Check for /conflicts/resolve sub-path first (most specific).
+	if idx := strings.Index(rest, "/conflicts/resolve"); idx >= 0 && rest[idx:] == "/conflicts/resolve" {
+		id := rest[:idx]
+		if id == "" {
+			http.Error(w, "discussion id required", http.StatusBadRequest)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapCommWrite) {
+			return
+		}
+		s.handleDiscussionConflictResolve(w, r, id)
+		return
+	}
+
+	// Check for /conflicts sub-path.
+	if idx := strings.Index(rest, "/conflicts"); idx >= 0 && rest[idx:] == "/conflicts" {
+		id := rest[:idx]
+		if id == "" {
+			http.Error(w, "discussion id required", http.StatusBadRequest)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapCommRead) {
+			return
+		}
+		s.handleDiscussionConflicts(w, r, id)
+		return
+	}
+
+	// Check for /participants sub-path (T42b).
+	if idx := strings.Index(rest, "/participants"); idx >= 0 && rest[idx:] == "/participants" {
+		id := rest[:idx]
+		if id == "" {
+			http.Error(w, "discussion id required", http.StatusBadRequest)
+			return
+		}
+		if r.Method == http.MethodGet {
+			if !s.fedCap(w, r, federation.CapCommRead) {
+				return
+			}
+		} else {
+			if !s.fedCap(w, r, federation.CapCommWrite) {
+				return
+			}
+		}
+		s.handleDiscussionParticipants(w, r, id)
 		return
 	}
 
@@ -196,10 +255,18 @@ func (s *Server) handleDiscussionRecall(w http.ResponseWriter, r *http.Request, 
 
 // handleDiscussionWrite handles POST /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, id string) {
+	// T42b: throttle — 60 writes/minute per Bearer token.
+	if !checkDiscussionThrottle(w, r) {
+		return
+	}
+
 	var body struct {
-		Content string `json:"content"`
-		Summary string `json:"summary"`
-		Role    string `json:"role"`
+		Content      string `json:"content"`
+		Summary      string `json:"summary"`
+		Role         string `json:"role"`
+		// T42b: loop-prevention fields set by peer syncs.
+		OriginPeer   string `json:"origin_peer,omitempty"`
+		OriginWALSeq int    `json:"origin_wal_seq,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -212,6 +279,9 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 	if body.Role == "" {
 		body.Role = "discussion"
 	}
+
+	// T42b: loop prevention — skip sync if we are the origin.
+	isSyncLoop := body.OriginPeer != "" && body.OriginPeer == s.hostname
 
 	mu := discussionLock(id)
 	mu.Lock()
@@ -227,10 +297,17 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 		}
 	}
 
-	// Append to WAL.
-	if err := discussionAppendWAL(id, body.Content, body.Role); err != nil {
-		// WAL failure is non-fatal — log but still return success.
+	// Append to WAL and capture the entry for sync.
+	walEntry, err := discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer)
+	if err != nil {
+		// WAL failure is non-fatal.
 		_ = err
+	}
+
+	// T42b: push-on-write sync to participant peers (skip if this write
+	// originated from a peer — loop prevention).
+	if !isSyncLoop && walEntry != nil {
+		s.discussionSyncToParticipants(id, *walEntry)
 	}
 
 	writeJSONOK(w, map[string]any{
@@ -298,10 +375,18 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 }
 
 // discussionAppendWAL appends one entry to the discussion WAL file.
+// Kept for backward compat; delegates to discussionAppendWALEntry.
 func discussionAppendWAL(id, content, role string) error {
+	_, err := discussionAppendWALEntry(id, content, role, "")
+	return err
+}
+
+// discussionAppendWALEntry appends one entry and returns it (for sync).
+// originPeer may be empty for local writes.
+func discussionAppendWALEntry(id, content, role, originPeer string) (*discussionWALEntry, error) {
 	walPath, err := discussionWALPath(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Compute next sequence number by counting existing lines.
@@ -315,23 +400,27 @@ func discussionAppendWAL(id, content, role string) error {
 	}
 
 	entry := discussionWALEntry{
-		Seq:       seq,
-		Content:   content,
-		Role:      role,
-		Timestamp: time.Now().UTC(),
+		Seq:        seq,
+		Content:    content,
+		Role:       role,
+		Timestamp:  time.Now().UTC(),
+		OriginPeer: originPeer,
 	}
 	line, err := json.Marshal(entry)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 	_, err = fmt.Fprintf(f, "%s\n", line)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return &entry, nil
 }
 
 // discussionReadWAL reads the last n entries from the discussion WAL.
