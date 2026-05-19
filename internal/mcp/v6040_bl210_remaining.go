@@ -256,3 +256,59 @@ func (s *Server) handleFilesList(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	return textOK(string(out)), nil
 }
+
+// BL333 — files_upload: write a file to the federated file service.
+
+func (s *Server) toolFilesUpload() mcpsdk.Tool {
+	return mcpsdk.NewTool("files_upload",
+		mcpsdk.WithDescription("Write a file to the federated file service (BL333). Provide the destination path and raw text content."),
+		mcpsdk.WithString("path", mcpsdk.Required(), mcpsdk.Description("Absolute destination path within the file service root")),
+		mcpsdk.WithString("content", mcpsdk.Required(), mcpsdk.Description("File content (UTF-8 text)")),
+	)
+}
+func (s *Server) handleFilesUpload(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]string{
+		"path":    req.GetString("path", ""),
+		"content": req.GetString("content", ""),
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/files/upload", body)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// BL333 — files_delete: delete a file from the federated file service.
+
+func (s *Server) toolFilesDelete() mcpsdk.Tool {
+	return mcpsdk.NewTool("files_delete",
+		mcpsdk.WithDescription("Delete a file from the federated file service (BL333)."),
+		mcpsdk.WithString("path", mcpsdk.Required(), mcpsdk.Description("Absolute path of the file to delete")),
+	)
+}
+func (s *Server) handleFilesDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	p := req.GetString("path", "")
+	if p == "" {
+		return textOK("Error: path is required"), nil
+	}
+	out, err := s.proxyJSON(http.MethodDelete, "/api/files", map[string]string{"path": p})
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// BL333 — files_meta: get storage overview for the federated file service.
+
+func (s *Server) toolFilesMeta() mcpsdk.Tool {
+	return mcpsdk.NewTool("files_meta",
+		mcpsdk.WithDescription("Get storage overview for the federated file service (BL333): root path, per-peer and per-discussion file counts and byte totals."),
+	)
+}
+func (s *Server) handleFilesMeta(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodGet, "/api/files/meta", nil)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}

@@ -581,6 +581,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeviceList(), tracked(s.handleDeviceList))
 	mcpSrv.AddTool(s.toolDeviceDelete(), tracked(s.handleDeviceDelete))
 	mcpSrv.AddTool(s.toolFilesList(), tracked(s.handleFilesList))
+	// BL333 — federated file service tools.
+	mcpSrv.AddTool(s.toolFilesUpload(), tracked(s.handleFilesUpload))
+	mcpSrv.AddTool(s.toolFilesDelete(), tracked(s.handleFilesDelete))
+	mcpSrv.AddTool(s.toolFilesMeta(), tracked(s.handleFilesMeta))
 	// v6.0.8 (BL219) — tooling artifact lifecycle.
 	mcpSrv.AddTool(s.toolToolingStatus(), tracked(s.handleToolingStatus))
 	mcpSrv.AddTool(s.toolToolingGitignore(), tracked(s.handleToolingGitignore))

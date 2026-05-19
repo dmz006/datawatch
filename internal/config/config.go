@@ -1122,6 +1122,12 @@ type SessionConfig struct {
 	// Defaults to the user's home directory.
 	RootPath string `yaml:"root_path"`
 
+	// FileServiceRoot is the root directory for the federated file service (BL333).
+	// Per-peer files land in <FileServiceRoot>/peers/<name>/.
+	// Per-discussion files land in <FileServiceRoot>/discussions/<id>/.
+	// If empty, falls back to session.root_path or the user home directory.
+	FileServiceRoot string `yaml:"file_service_root"`
+
 	// MCPMaxRetries is the max number of times to auto-retry /mcp when
 	// "MCP server failed" is detected in claude-code session output. Default: 5.
 	MCPMaxRetries int `yaml:"mcp_max_retries"`
