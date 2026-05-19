@@ -18,7 +18,8 @@ _story_ts_525() {
     return
   fi
   if echo "$resp" | grep -qi "not found in source scope\|memory.*not found\|no such memory"; then
-    skip "memory_scope_promote: no memory in session-local scope to promote"
+    # session-local scope requires a bound session ID — not available via plain MCP endpoint
+    skip "memory_scope_promote: session-local scope not accessible without session context"
     return
   fi
   if assert_json "$resp" 'isinstance(d, dict)'; then

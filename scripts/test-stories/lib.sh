@@ -192,10 +192,18 @@ skip() { local msg="$*"; [[ -n "$msg" ]] && echo "  SKIP  [${CURRENT_STORY:-?}] 
 # ---------------------------------------------------------------------------
 ensure_test_session() {
   if [[ -n "$SESSION_ID" ]]; then
-    local chk
-    # Use /status sub-endpoint — bare GET /api/sessions/{id} doesn't exist
-    chk=$(api GET "/api/sessions/$SESSION_ID/status" 2>/dev/null)
-    if echo "$chk" | python3 -c "import json,sys; d=json.load(sys.stdin); assert isinstance(d, dict)" 2>/dev/null; then
+    local chk sid_check
+    sid_check="$SESSION_ID"
+    # Verify session still exists in the sessions list (no single-item GET endpoint)
+    chk=$(api GET /api/sessions 2>/dev/null)
+    if echo "$chk" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d if isinstance(d,list) else d.get('sessions',[])
+sid='$sid_check'
+found=any(s.get('id','')==sid or s.get('full_id','').endswith('-'+sid) for s in items)
+assert found
+" 2>/dev/null; then
       return 0
     fi
     SESSION_ID=""
