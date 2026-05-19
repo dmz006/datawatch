@@ -108,6 +108,19 @@ start_test_daemon() {
   fi
 
   echo "Daemon started (PID $DAEMON_PID) at http://127.0.0.1:$TEST_PORT"
+
+  # Pre-warm the ollama model so LLM-dependent tests (TS-023 etc.) don't hit cold-start timeouts.
+  local ollama_host
+  ollama_host=$(python3 -c "import yaml,sys; c=yaml.safe_load(open('$test_cfg')); print(c.get('ollama',{}).get('host',''))" 2>/dev/null || echo "")
+  local ollama_model
+  ollama_model=$(python3 -c "import yaml,sys; c=yaml.safe_load(open('$test_cfg')); print(c.get('ollama',{}).get('model',''))" 2>/dev/null || echo "")
+  if [[ -n "$ollama_host" && -n "$ollama_model" ]]; then
+    echo "Pre-warming ollama model $ollama_model at $ollama_host ..."
+    curl -sf --max-time 60 -X POST "$ollama_host/api/generate" \
+      -H "Content-Type: application/json" \
+      -d "{\"model\":\"$ollama_model\",\"prompt\":\"hi\",\"stream\":false}" \
+      >/dev/null 2>&1 && echo "  ollama warmup done" || echo "  ollama warmup skipped (not reachable or timed out)"
+  fi
 }
 
 stop_test_daemon() {
