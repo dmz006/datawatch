@@ -68,6 +68,47 @@ start_test_daemon() {
   # Also write to TEST_DATA/config.yaml so cli_test (--config $TEST_DATA/config.yaml) works
   cp "$test_cfg" "$TEST_DATA/config.yaml"
 
+  # Pre-seed a test skill so TS-065 (skill_load) can run without a git registry.
+  # The skills store is loaded from disk at daemon startup; writing before first start
+  # ensures the in-memory index includes the skill.
+  local skill_dir="$TEST_DATA/skills/local/dw-test-skill"
+  mkdir -p "$skill_dir"
+  cat > "$skill_dir/SKILL.md" <<'SKILLMD'
+# dw-test-skill
+
+Minimal E2E test skill used to validate skill discovery and the `skill_load` MCP tool.
+Do not use in production.
+
+## Usage
+
+```
+skill_load name=dw-test-skill
+```
+SKILLMD
+  local now
+  now=$(python3 -c 'import datetime; print(datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))' 2>/dev/null || echo "2026-01-01T00:00:00Z")
+  python3 - "$TEST_DATA/skills.json" "$skill_dir" "$now" <<'PY'
+import json, sys, os
+path, skill_path, now = sys.argv[1], sys.argv[2], sys.argv[3]
+idx = {"registries": [], "synced": [], "available_cache": {}, "updated_at": now}
+if os.path.exists(path):
+    try: idx = json.load(open(path))
+    except Exception: pass
+registries = idx.get("registries", [])
+if not any(r.get("name") == "local" for r in registries):
+    registries.append({"name": "local", "kind": "git", "url": "file:///dev/null",
+                        "enabled": True, "description": "local test registry",
+                        "created_at": now, "updated_at": now})
+idx["registries"] = registries
+synced = [s for s in idx.get("synced", [])
+          if not (s.get("registry") == "local" and s.get("name") == "dw-test-skill")]
+synced.append({"registry": "local", "name": "dw-test-skill", "path": skill_path,
+                "synced_at": now, "version": "1.0.0"})
+idx["synced"] = synced
+idx["updated_at"] = now
+json.dump(idx, open(path, "w"), indent=2)
+PY
+
   # Find the binary
   local binary=""
   if [[ -n "${TEST_BINARY:-}" && -x "$TEST_BINARY" ]]; then

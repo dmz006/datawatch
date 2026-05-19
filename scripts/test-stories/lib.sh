@@ -413,4 +413,57 @@ print(",".join(have))
   echo "$avail"
 }
 
+# ---------------------------------------------------------------------------
+# ensure_test_plugin — idempotently creates a minimal test plugin in the
+# test daemon's plugins directory and triggers a reload so the daemon picks
+# it up. Returns 0 if the plugin is now listed; 1 on failure.
+#
+# The plugin is named "dw-test-plugin" and listens on the pre_session_start
+# and on_alert hooks; it always responds with {"ok":true,"action":"pass"}.
+# ---------------------------------------------------------------------------
+ensure_test_plugin() {
+  local plugin_dir="${TEST_DATA}/plugins/dw-test-plugin"
+  mkdir -p "$plugin_dir"
+
+  # Write the entry script (executable shell plugin)
+  cat > "$plugin_dir/run.sh" <<'PLUGIN_SCRIPT'
+#!/usr/bin/env bash
+# datawatch test plugin — reads one JSON line on stdin, writes pass response.
+read -r _line
+echo '{"ok":true,"action":"pass"}'
+PLUGIN_SCRIPT
+  chmod +x "$plugin_dir/run.sh"
+
+  # Write manifest.yaml
+  cat > "$plugin_dir/manifest.yaml" <<MANIFEST
+name: dw-test-plugin
+description: Minimal E2E test plugin — validates plugin discovery and invocation.
+version: "1.0.0"
+entry: run.sh
+hooks:
+  - pre_session_start
+  - on_alert
+timeout_ms: 5000
+mode: oneshot
+MANIFEST
+
+  # Trigger reload so the running daemon discovers the plugin
+  local reload_code
+  reload_code=$(curl -sk -o /dev/null -w "%{http_code}" \
+    -X POST -H "Authorization: Bearer ${TEST_TOKEN:-}" \
+    "${TEST_BASE}/api/plugins/reload" 2>/dev/null || echo "000")
+  if [[ "$reload_code" != "200" ]]; then
+    return 1
+  fi
+
+  # Verify the plugin is now listed
+  api GET /api/plugins | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+arr=d.get("plugins",[]) if isinstance(d,dict) else d
+found=any(p.get("name")=="dw-test-plugin" for p in (arr or []))
+sys.exit(0 if found else 1)
+' 2>/dev/null
+}
+
 true

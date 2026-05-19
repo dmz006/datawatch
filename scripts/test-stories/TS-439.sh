@@ -12,7 +12,7 @@ _story_ts_439() {
   local create_code
   create_code=$(curl -sk -o /dev/null -w "%{http_code}" \
     -X POST -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" \
-    -d "{\"name\":\"$llm_name\",\"kind\":\"shell\",\"enabled\":false}" \
+    -d "{\"name\":\"$llm_name\",\"kind\":\"shell\",\"disabled\":true}" \
     "$TEST_BASE/api/llms")
   if [[ "$create_code" == "404" ]]; then
     skip "POST /api/llms endpoint not available (404)"

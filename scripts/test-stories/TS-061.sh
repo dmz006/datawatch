@@ -7,16 +7,19 @@ CURRENT_STORY="TS-061"
 story_preflight "surface:api feature:plugins" || return 0
 
 _story_ts_061() {
+  # Install the test plugin so we always have at least one to inspect.
+  ensure_test_plugin || true
+
   local resp
   resp=$(api GET /api/plugins)
   save_evidence TS-061 "plugins.json" "$resp"
-  # Check that at least one plugin entry has a name field (manifest shape)
   local has_manifest
   has_manifest=$(echo "$resp" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-arr = d if isinstance(d,list) else d.get('plugins',[])
-print('yes' if len(arr)>0 and any('name' in p for p in arr) else 'empty')
+arr = d.get('plugins',[]) if isinstance(d,dict) else d
+arr = arr or []
+print('yes' if any('name' in p for p in arr) else 'empty')
 " 2>/dev/null || echo "unknown")
   if [[ "$has_manifest" == "yes" ]]; then
     ok "Plugin manifest: at least one plugin with name field found"

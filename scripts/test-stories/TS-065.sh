@@ -18,7 +18,7 @@ arr = d if isinstance(d,list) else d.get('skills',[])
 print(arr[0].get('name','') if arr else '')
 " 2>/dev/null || echo "")
   if [[ -z "$first_skill" ]]; then
-    skip "No skills installed — invoke test skipped"
+    skip "No skills synced — invoke test skipped (pre-seeded skill not found; daemon may have started before seeding)"
     return
   fi
   # Load the skill (non-destructive read)

@@ -98,5 +98,8 @@ dns_channel:
   listen: "127.0.0.1:19053"
   secret: "dw-e2e-test-dns-secret-0000000000"
 
+plugins:
+  enabled: true
+
 update:
   enabled: false
