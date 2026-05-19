@@ -3110,6 +3110,13 @@ function destroyXterm() {
     window.visualViewport.removeEventListener('resize', state._viewportResizeHandler);
     state._viewportResizeHandler = null;
   }
+  // Reset explicit height set by keyboard handler so the container
+  // returns to its natural flex size for the next session.
+  if (state._termContainerRef) {
+    state._termContainerRef.style.height = '';
+    state._termContainerRef.style.maxHeight = '';
+    state._termContainerRef = null;
+  }
   if (state.terminal) {
     try { state.terminal.dispose(); } catch(e) { /* already disposed */ }
     state.terminal = null;
@@ -3176,20 +3183,50 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
 
   term.open(container);
 
-  // Per-terminal keyboard handler: --app-h is kept current by the global
-  // visualViewport listener (top of file). This handler fires after that one
-  // and reacts to the updated height by refitting xterm and scrolling to the
-  // bottom so the cursor row stays visible above the keyboard.
+  // Per-terminal keyboard handler.
+  // Problem: on iOS, fitAddon.fit() measures container.clientHeight, but CSS
+  // variable propagation through the flex chain lags the visualViewport event
+  // by several frames. If fit() runs before the DOM has reflowed, it gets the
+  // stale (pre-keyboard) height and keeps the same row count — the bottom rows
+  // stay hidden under the keyboard.
+  //
+  // Fix: explicitly pin container height from visualViewport.height before
+  // calling fit(), bypassing the CSS cascade entirely. Use requestAnimationFrame
+  // to sequence after the browser applies the explicit style. A second pass at
+  // 350 ms catches slow keyboard animations (iOS ~300 ms).
+  // Reset explicit height when keyboard dismisses (height grows back ≥ container top).
   if (window.visualViewport) {
+    const _setContainerH = () => {
+      const vvh = window.visualViewport.height;
+      const offsetTop = window.visualViewport.offsetTop || 0;
+      const rect = container.getBoundingClientRect();
+      // Available height = (visual viewport bottom) - (container top in layout coords)
+      const avail = Math.max((vvh + offsetTop) - rect.top, 80);
+      container.style.height = avail + 'px';
+      container.style.maxHeight = avail + 'px';
+    };
+    const _fitAndScroll = () => {
+      if (!state.terminal) return;
+      if (fitAddon) { try { fitAddon.fit(); } catch(e) {} }
+      syncTmuxSize();
+      try { term.scrollToBottom(); } catch(e) {}
+    };
     const _vvResize = () => {
-      setTimeout(() => {
-        if (fitAddon) { try { fitAddon.fit(); } catch(e) {} }
-        syncTmuxSize();
-        try { term.scrollToBottom(); } catch(e) {}
-      }, 150);
+      _setContainerH();
+      // First pass: rAF so the explicit height is applied before measuring.
+      requestAnimationFrame(() => {
+        _fitAndScroll();
+        // Second pass: catch full iOS keyboard animation (~300 ms).
+        setTimeout(() => {
+          _setContainerH();
+          requestAnimationFrame(_fitAndScroll);
+        }, 350);
+      });
     };
     window.visualViewport.addEventListener('resize', _vvResize);
     state._viewportResizeHandler = _vvResize;
+    // Reset explicit height on terminal teardown (handled in destroyXterm).
+    state._termContainerRef = container;
   }
 
   // Sync tmux pane size with xterm.js terminal size.
