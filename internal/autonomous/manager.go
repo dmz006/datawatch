@@ -391,6 +391,93 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	return updated, nil
 }
 
+// StoryCallback is called by decomposeStreamingCore as each story
+// becomes available. index is 0-based; total is the total story count.
+// The callback must not block.
+type StoryCallback func(index int, total int, story Story)
+
+// DecomposeStreaming satisfies the server.AutonomousAPI interface.
+// cb receives each story as an any-typed Story value so the server
+// package doesn't need to import internal/autonomous.
+//
+// BL328 — used by the async POST /decompose handler.
+func (m *Manager) DecomposeStreaming(prdID string, cb func(index, total int, story any)) (any, error) {
+	var wrapped StoryCallback
+	if cb != nil {
+		wrapped = func(index, total int, s Story) { cb(index, total, s) }
+	}
+	return m.decomposeStreamingCore(prdID, wrapped)
+}
+
+// decomposeStreamingCore is the typed implementation used internally and
+// by tests. It runs the LLM planning phase and calls cb for each story.
+func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if m.decompose == nil {
+		return nil, fmt.Errorf("decompose fn not configured")
+	}
+	if prd.IsTemplate {
+		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
+	}
+	backend := prd.Backend
+	if backend == "" {
+		backend = m.cfg.PlanningBackend
+	}
+	effort := prd.Effort
+	if effort == "" {
+		effort = Effort(m.cfg.PlanningEffort)
+	}
+	// Mark in-flight.
+	prd.Status = PRDPlanning
+	prd.UpdatedAt = time.Now()
+	_ = m.store.SavePRD(prd)
+
+	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort})
+	if err != nil {
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
+		return nil, fmt.Errorf("LLM plan: %w", err)
+	}
+	title, stories, err := ParsePlanning(raw)
+	if err != nil {
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
+		return nil, err
+	}
+	if title != "" {
+		prd.Title = title
+	}
+	prd.Status = PRDNeedsReview
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:            time.Now(),
+		Kind:          "decompose",
+		Backend:       backend,
+		PromptChars:   len(prompt),
+		ResponseChars: len(raw),
+		Actor:         "autonomous",
+	})
+	if err := m.store.SetStories(prdID, stories); err != nil {
+		return nil, err
+	}
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	// Yield stories via callback after persisting.
+	if cb != nil {
+		for i, s := range stories {
+			cb(i, len(stories), s)
+		}
+	}
+	return updated, nil
+}
+
 // Approve transitions a PRD from needs_review → approved so the loop /
 // Manager.Run is allowed to start workers. BL191 Q1.
 func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {

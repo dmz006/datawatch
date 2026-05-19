@@ -270,19 +270,21 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	case "decompose", "plan": // BL304: "plan" is the canonical alias; "decompose" kept for back-compat
+		// BL328: POST returns 202 + task_id + stream_url (async SSE path).
+		// Old synchronous callers that don't check status get 202 with a
+		// JSON body that differs from the prior 200 PRD body — accepted
+		// per the BL328 backward-compat note.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
-			return
-		}
-		updated, err := s.autonomousMgr.Decompose(id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeJSONOK(w, updated)
+		s.handleDecomposeAsync(w, r, id)
+	// BL328 — SSE stream endpoint.
+	case "decompose/stream":
+		s.handleDecomposeStream(w, r, id)
+	// BL328 — polling status fallback.
+	case "decompose/status":
+		s.handleDecomposeStatus(w, r, id)
 	case "run":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

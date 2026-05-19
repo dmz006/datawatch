@@ -147,7 +147,7 @@ func (s *Server) handleAutonomousPRDGet(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDDecompose() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_decompose",
-		mcpsdk.WithDescription("BL24 — run the LLM planning phase for a PRD (creates stories+tasks)."),
+		mcpsdk.WithDescription("BL328 — start async LLM planning for a PRD. Returns 202 with task_id and stream_url for SSE progress. Poll /decompose/status or stream /decompose/stream to watch progress."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }
@@ -157,6 +157,8 @@ func (s *Server) handleAutonomousPRDDecompose(_ context.Context, req mcpsdk.Call
 	if err != nil {
 		return nil, err
 	}
+	// BL328: response is now 202 { task_id, stream_url }. Return it as-is
+	// so callers can see the stream_url for SSE progress.
 	return textOK(string(out)), nil
 }
 

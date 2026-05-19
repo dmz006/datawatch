@@ -327,6 +327,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// BL328 — in-flight async decompose jobs. key=prdID (string),
+	// value=*decomposeJob. Jobs are in-memory only; not persisted across
+	// daemon restarts (TS-649 is a future stretch goal).
+	decomposeJobs sync.Map
+
 	// BL33 — plugin framework registry (Sprint S7, v3.11.0).
 	// Wired from main.go; nil when plugins.enabled=false. Handlers
 	// return 503 in that case.
@@ -453,6 +458,10 @@ type AutonomousAPI interface {
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
+	// BL328 — async decompose with per-story callback. Used by the
+	// SSE-streaming handler. The callback is called for each story as
+	// it becomes available; index is 0-based, total is total story count.
+	DecomposeStreaming(id string, cb func(index, total int, story any)) (any, error)
 	Run(id string) error
 	Cancel(id string) error
 	ListLearnings() []any

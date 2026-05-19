@@ -157,6 +157,17 @@ func (a *API) Decompose(id string) (any, error) {
 	return out, err
 }
 
+// DecomposeStreaming (BL328) satisfies server.AutonomousAPI.
+// Calls Manager.DecomposeStreaming with an any-typed callback wrapper.
+// After completion, emits a PRD update broadcast.
+func (a *API) DecomposeStreaming(id string, cb func(index, total int, story any)) (any, error) {
+	out, err := a.M.DecomposeStreaming(id, cb)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
+}
+
 // Run walks the PRD task DAG through Manager.Run when executors are
 // wired. Falls back to status-only update when they're not, so the
 // REST surface continues to behave sanely in bare-daemon mode.
