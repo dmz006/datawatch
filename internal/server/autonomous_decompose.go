@@ -101,6 +101,10 @@ func (s *Server) handleDecomposeAsync(w http.ResponseWriter, r *http.Request, pr
 	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 		return
 	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
 	// If a job is already in flight for this PRD, return its status.
 	if existing, ok := s.decomposeJobs.Load(prdID); ok {
 		j := existing.(*decomposeJob)
@@ -283,6 +287,10 @@ func (s *Server) handleDecomposeStatus(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		return
 	}
 

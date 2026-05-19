@@ -112,7 +112,7 @@ curl -sk -X POST \
 curl -sk -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"id":"reg-...","title":"Alert","message":"Session waiting for input"}' \
+  -d '{"registration_id":"reg-...","title":"Alert","message":"Session waiting for input"}' \
   https://datawatch.local:8443/api/push/notify
 # 202 Accepted
 ```

@@ -131,11 +131,11 @@ func publishToEndpoint(r pushRegistration, ev PushEvent) {
 // handlePushTopic — GET (SSE subscribe) or POST (publish) to /api/push/<topic>
 func (s *Server) handlePushTopic(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		if !s.fedCap(w, r, federation.CapObserversRead) {
+		if !s.fedCap(w, r, federation.CapCommRead) {
 			return
 		}
 	} else {
-		if !s.fedCap(w, r, federation.CapObserversWrite) {
+		if !s.fedCap(w, r, federation.CapCommWrite) {
 			return
 		}
 	}
@@ -242,14 +242,20 @@ func (s *Server) handlePushPublish(w http.ResponseWriter, r *http.Request, topic
 }
 
 // handlePushRegister — POST /api/push/register (BL330)
-// Body: {"endpoint":"...", "client_id":"...", "token":"...", "keys":{"p256dh":"...","auth":"..."}}
-// client_id is optional; endpoint alone is sufficient for registration.
+// Body: {"endpoint":"...", "keys":{"p256dh":"...","auth":"..."}}
+// Endpoint alone is sufficient for registration; keys are optional for plain-HTTP callbacks.
 // Returns {"ok":true, "id":"<registration_id>"}
 //
-// GET /api/push/register — returns list of all registrations (admin).
+// GET /api/push/register — returns list of all registrations.
 func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapObserversWrite) {
-		return
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapCommRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapCommWrite) {
+			return
+		}
 	}
 	switch r.Method {
 	case http.MethodGet:
@@ -302,7 +308,7 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 // handlePushUnregister — DELETE /api/push/unregister (BL330)
 // Body: {"endpoint":"..."} or {"id":"<registration_id>"}
 func (s *Server) handlePushUnregister(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapObserversWrite) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
 		return
 	}
 	if r.Method != http.MethodDelete {
@@ -333,9 +339,9 @@ func (s *Server) handlePushUnregister(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePushNotify — POST /api/push/notify (BL330)
-// Daemon-internal endpoint: trigger push delivery to a specific registration or all registrations.
+// Trigger push delivery to a specific registration or all registrations.
 func (s *Server) handlePushNotify(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapObserversWrite) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
 		return
 	}
 	if r.Method != http.MethodPost {
