@@ -41,7 +41,7 @@ memory:
   backend: sqlite
   embedder: ollama
   embedder_model: nomic-embed-text
-  embedder_host: http://localhost:11434
+  embedder_host: http://johnnyjohnny:11434
 
 autonomous:
   enabled: true
@@ -54,7 +54,7 @@ council:
 ollama:
   enabled: true
   model: qwen3:1.7b
-  host: http://localhost:11434
+  host: http://johnnyjohnny:11434
 
 openwebui:
   enabled: true
@@ -81,7 +81,7 @@ webhook:
 compute_nodes:
   - name: datawatch-ollama
     kind: ollama
-    address: http://localhost:11434
+    address: http://johnnyjohnny:11434
     scheduling_priority: 90
     declared_capacity:
       gpus: 1
