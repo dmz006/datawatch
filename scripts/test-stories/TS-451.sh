@@ -9,8 +9,9 @@ _story_ts_451() {
   local resp
   resp=$(api GET /api/observer/peers)
   save_evidence TS-451 "peers.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|404\|unknown"; then
-    skip "observer/peers endpoint not available"
+  # Use HTTP code check, not body grep — "unknown" can legitimately appear in peer fields
+  if ! assert_json "$resp" 'isinstance(d, (dict, list))'; then
+    skip "observer/peers endpoint not available or returned non-JSON"
     return
   fi
   if assert_json "$resp" 'all("compute_node" in p for p in (d.get("peers",d) if isinstance(d,dict) else d) if isinstance(p,dict))'; then

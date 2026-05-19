@@ -45,7 +45,8 @@ DOCKEREOF
   # Run container
   local container_name="dw-test-$$"
   if ! docker run -d --name "$container_name" \
-    -p "$DOCKER_SIM_HTTP:18180" -p "$DOCKER_SIM_TLS:18543" -p "$DOCKER_SIM_MCP:18281" -p "$DOCKER_SIM_CHAN:18533" \
+    -p "$DOCKER_SIM_HTTP:$DOCKER_SIM_HTTP" -p "$DOCKER_SIM_TLS:$DOCKER_SIM_TLS" \
+    -p "$DOCKER_SIM_MCP:$DOCKER_SIM_MCP" -p "$DOCKER_SIM_CHAN:$DOCKER_SIM_CHAN" \
     -v "$DOCKER_SIM_DATA:/config" \
     "$image_tag" > "$DOCKER_SIM_DATA/container.id" 2>&1; then
     skip "docker run failed"
