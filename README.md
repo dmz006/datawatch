@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.0.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.0.0)
+[![Release](https://img.shields.io/badge/release-v8.1.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.1.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -23,7 +23,7 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 Operators have been building incredible things on top of datawatch's extension surface — autonomous session patterns, multi-agent polity topologies, inter-agent proposal pipelines — and until now those patterns lived privately on individual machines with no way to share or discover them. That changes today.
 
-The registry launches with seed contributions covering some of the most-requested autonomous workflow patterns:
+The registry launches with seed contributions covering autonomous workflow patterns, identity, and workspace sync:
 
 | Entry | Type | What it does |
 |---|---|---|
@@ -31,6 +31,9 @@ The registry launches with seed contributions covering some of the most-requeste
 | [`polity-topology`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/polity-topology) | Skill | Multi-instance identity layer — tells each instance which one it is, where siblings live, how to route references |
 | [`sandbox-permissions`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/sandbox-permissions) | Skill | Fixes sandbox network policy so autonomous claude-code sessions can reach the datawatch CLI and API |
 | [`inbox-integrator`](https://github.com/dmz006/datawatch-community/tree/main/plugins/comms/inbox-integrator) | Plugin | `post_session_complete` hook — moves sibling INBOX proposals into the shared InFlight workspace with attribution headers |
+| [`workspace-rsync-sync`](https://github.com/dmz006/datawatch-community/tree/main/plugins/sync/workspace-rsync-sync) | Plugin | Rsync workspace files to/from a remote datawatch host over SSH after session completes |
+| [`workspace-git-sync`](https://github.com/dmz006/datawatch-community/tree/main/plugins/sync/workspace-git-sync) | Plugin | Commits and pushes workspace changes to a git remote; pulls latest before session starts |
+| [`workspace-nfs-mount`](https://github.com/dmz006/datawatch-community/tree/main/skills/ops/workspace-nfs-mount) | Skill | Mounts an NFS share before session starts so multiple agents share a common workspace |
 
 **To connect and sync:**
 
@@ -45,39 +48,43 @@ datawatch skills sync community
 
 ## Current release
 
-**v8.0.0 (2026-05-19)** — Major release: capability-based federation access control across all 7 surfaces, compute-node routing modes (direct / docker-network / datawatch-proxy), MCP SSE federated auth, multi-server proxy, new LLM adapters (Gemini API, OpenCode API), OneShot sessions, 626 E2E test stories, and 85-section release smoke. See [full release notes](docs/RELEASE_NOTES_v8.0.0.md).
+**v8.1.0 (2026-05-19)** — E2E stories, community registry launch, alert rules (S14b), plugin install UI, mic popup. See [release notes](docs/RELEASE_NOTES_v8.1.0.md).
+
+**In progress: v8.2.0** — Android 1.0.0 blocker sprint + settings UX. Ships: async PRD decompose (SSE streaming, unblocks Android T13), `/api/identity` POST alias, UnifiedPush register/unregister endpoints, badge/chip multi-select for all comma-separated settings fields. Sprint plan: [docs/plans/2026-05-19-v820-sprint.md](docs/plans/2026-05-19-v820-sprint.md).
+
+### v8.1 highlights
+
+- **E2E test suite** — 680+ stories covering every feature surface including alert rules, plugin install, community registry, and mic popup.
+- **Community Skills + Plugins registry** — `dmz006/datawatch-community` is the official hub. Connect with `datawatch skills registry connect`.
+- **Alert rules (BL325 S14b)** — CRUD UI + firings log in PWA and Android.
+- **Community registry browser + plugin install (BL324/BL325)** — browse available skills/plugins in-app, install with one click, uninstall with confirmation.
+- **Mic popup (BL326)** — animated waveform recording overlay, Cancel/Send UI.
 
 ### v8.0 highlights
 
-- **Federation CBAC** — 50 capabilities, 13 built-in groups, `fedCap()` guards every REST handler and MCP tool. Federated peers get exactly the access their group grants — not admin-or-nothing.
-- **Compute Node routing** — `routing` field separates transport from protocol: `direct` (default), `docker-network` (daemon manages container lifecycle), `datawatch-proxy` (route through a peer's `/api/proxy/llm/<name>`). DockerLifecycle manages container spin-up/teardown.
-- **MCP SSE federation** — the MCP SSE transport accepts federation peer tokens with per-tool CBAC gates, matching the REST surface's behavior. The MCP port is now a first-class federation endpoint.
-- **Multi-server proxy** — `GET /api/servers` + per-server test endpoint. The existing Remote Servers card migrated to the Comms tab.
-- **New adapters** — `gemini-api` (Google Generative Language v1beta) and `opencode-api` (OpenAI-compatible `/v1/chat/completions` distinct from openwebui).
-- **OneShot sessions** — fire-and-forget session mode that exits immediately after the task completes; no persistent tmux window.
-- **626 E2E test stories** — 560 shell + 66 PWA stories covering every feature surface. Full plugin, skill, and inline peer daemon E2E coverage added this release.
+- **Federation CBAC** — 50 capabilities, 13 built-in groups, `fedCap()` guards every REST handler and MCP tool.
+- **Compute Node routing** — `direct`, `docker-network`, `datawatch-proxy` modes. DockerLifecycle manages container spin-up/teardown.
+- **MCP SSE federation** — MCP SSE transport accepts federation peer tokens with per-tool CBAC.
+- **Multi-server proxy** — `GET /api/servers` + per-server test endpoint.
+- **OneShot sessions** — fire-and-forget session mode.
+- **626 E2E test stories** — full plugin, skill, and inline peer daemon coverage.
 
 ### v7.x highlights (v7.0.0 → v7.4.0)
 
-- **v7.4.0 (2026-05-18)** — MCP SSE federated auth + per-tool CBAC. PWA fullscreen fix.
-- **v7.3.0 (2026-05-18)** — Systematic `fedCap()` enforcement sweep: 110+ call sites across 45+ handler files.
-- **v7.2.3 (2026-05-15)** — Voice gate + fullscreen PWA.
-- **v7.2.2 (2026-05-15)** — Observer + misc fixes.
-- **v7.0.0 (2026-05-08–10)** — Compute Node registry, LLM Registry + dispatcher, Ollama Marketplace, Alert dock, Claude Code hooks + Status board, 4 LLM adapters.
+- **v7.4.0** — MCP SSE federated auth + per-tool CBAC.
+- **v7.3.0** — Systematic `fedCap()` enforcement sweep: 110+ call sites.
+- **v7.0.0** — Compute Node registry, LLM Registry + dispatcher, Ollama Marketplace, Alert dock, Claude Code hooks.
 
 ### Earlier highlights (v6.0.0 → v6.22.x)
 
-- **v6.22.0 (2026-05-08)** — Docs-as-MCP-Interface: 22 curated howtos, hybrid vector+BM25 index, plan-then-execute with approval-token round-trip.
-- **v6.15.0 (2026-05-07)** — HashiCorp Vault / OpenBao secrets backend (4th store).
-- **v6.11.0 (2026-05-05)** — Council Mode (multi-persona debate, 6 default personas, debate/quick modes).
-- **v6.10.x (2026-05-05)** — Evals Framework with rubric-based grading (4 grader types).
-- **v6.9.0 (2026-05-05)** — Algorithm Mode: 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve).
-- **v6.8.x (2026-05-05)** — Operator identity wake-up layer: structured self-description auto-injected into every session.
-- **v6.7.x (2026-05-04)** — Skill Registries with PAI default; Settings reorganization.
-- **v6.4.x (2026-05-03)** — Secrets Manager: AES-256-GCM store + KeePass + 1Password + `${secret:name}` resolver.
-- **v6.3.x (2026-05-03)** — Plugin Manifest v2.1 (comm verbs / CLI subcommands / mobile / session injection).
+- **v6.22.0** — Docs-as-MCP-Interface: 22 curated howtos, hybrid vector+BM25 index.
+- **v6.15.0** — HashiCorp Vault / OpenBao secrets backend.
+- **v6.11.0** — Council Mode (multi-persona debate, 6 default personas).
+- **v6.10.x** — Evals Framework with rubric-based grading.
+- **v6.9.0** — Algorithm Mode: 7-phase structured-thinking harness.
+- **v6.8.x** — Operator identity wake-up layer.
 
-See [CHANGELOG.md](CHANGELOG.md) for full history and [RELEASE_NOTES_v8.0.0.md](docs/RELEASE_NOTES_v8.0.0.md) for detailed v8.0.0 notes.
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ---
 
