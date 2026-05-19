@@ -62,6 +62,8 @@ start_test_daemon() {
     -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
     -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
+    -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:${TEST_DNS_PORT}\"|g" \
+    -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:${TEST_WEBHOOK_PORT}|g" \
     "$tmpl" > "$test_cfg"
   # Also write to TEST_DATA/config.yaml so cli_test (--config $TEST_DATA/config.yaml) works
   cp "$test_cfg" "$TEST_DATA/config.yaml"
@@ -217,6 +219,12 @@ _fresh_port() {
 export TEST_PORT="$(_fresh_port "${TEST_PORT:-}")"
 export TEST_TLS_PORT="$(_fresh_port "${TEST_TLS_PORT:-}")"
 export TEST_MCP_PORT="$(_fresh_port "${TEST_MCP_PORT:-}")"
+export TEST_DNS_PORT="$(_fresh_port "${TEST_DNS_PORT:-}")"
+export DOCKER_SIM_HTTP="$(_fresh_port "${DOCKER_SIM_HTTP:-}")"
+export DOCKER_SIM_TLS="$(_fresh_port "${DOCKER_SIM_TLS:-}")"
+export DOCKER_SIM_MCP="$(_fresh_port "${DOCKER_SIM_MCP:-}")"
+export DOCKER_SIM_CHAN="$(_fresh_port "${DOCKER_SIM_CHAN:-}")"
+export TEST_WEBHOOK_PORT="$(_fresh_port "${TEST_WEBHOOK_PORT:-}")"
 export TEST_DATA="${TEST_DATA:-${DATAWATCH_TEST_DATA}}"
 export TEST_BASE="https://127.0.0.1:$TEST_TLS_PORT"
 export TEST_BASE_HTTP="http://127.0.0.1:$TEST_PORT"
@@ -224,7 +232,7 @@ export TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
 
 echo "Run ID  : $RUN_ID"
 echo "Work dir: $TEST_DIR"
-echo "Ports   : http=$TEST_PORT tls=$TEST_TLS_PORT mcp=$TEST_MCP_PORT"
+echo "Ports   : http=$TEST_PORT tls=$TEST_TLS_PORT mcp=$TEST_MCP_PORT dns=$TEST_DNS_PORT"
 echo ""
 
 # --- argument parsing -------------------------------------------------------

@@ -22,12 +22,12 @@ _story_ts_160() {
 
   # Build a simple Docker image with the binary (use debian-slim as base for glibc compatibility)
   local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
-  cat > "$dockerfile" <<'DOCKEREOF'
+  cat > "$dockerfile" <<DOCKEREOF
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates git tmux && rm -rf /var/lib/apt/lists/*
 COPY datawatch /usr/local/bin/
 RUN chmod +x /usr/local/bin/datawatch
-EXPOSE 19180 19543 19281 19533
+EXPOSE ${DOCKER_SIM_HTTP} ${DOCKER_SIM_TLS} ${DOCKER_SIM_MCP} ${DOCKER_SIM_CHAN}
 ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--config", "/config/config.yaml"]
 DOCKEREOF
 

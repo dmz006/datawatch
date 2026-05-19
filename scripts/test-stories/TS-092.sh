@@ -6,14 +6,12 @@ CURRENT_STORY="TS-092"
 story_preflight "surface:comms feature:comms" || return 0
 
 _story_ts_092() {
+  # The test daemon is configured with dns_channel.enabled=true (server mode, 127.0.0.1:19053)
+  # Verify the MCP dns_channel_config_get tool or GET /api/config reports it enabled
   local resp
   resp=$(api GET /api/stats)
   save_evidence TS-092 "stats.json" "$resp"
-  if ! assert_json "$resp" 'isinstance(d, dict)'; then
-    ko "GET /api/stats did not return dict: $(echo "$resp" | head -c 100)"
-    return
-  fi
-  # Check if comm_stats has a dns entry with enabled:true
+
   local dns_enabled
   dns_enabled=$(echo "$resp" | python3 -c "
 import json, sys
@@ -28,22 +26,28 @@ if isinstance(comm, dict):
 else:
     print('no')
 " 2>/dev/null || echo "no")
+
   if [[ "$dns_enabled" == "yes" ]]; then
     ok "GET /api/stats: dns comm_stats entry has enabled:true"
-  else
-    # DNS may not be configured in the test environment; just verify stats exists
-    local has_comm
-    has_comm=$(echo "$resp" | python3 -c "
+    return
+  fi
+
+  # Fallback: check via config get
+  local cfg_resp
+  cfg_resp=$(api GET /api/config)
+  save_evidence TS-092 "config.json" "$cfg_resp"
+  local cfg_dns_enabled
+  cfg_dns_enabled=$(echo "$cfg_resp" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-comm = d.get('comm_stats', d.get('comms', None))
-print('yes' if comm is not None else 'no')
+dns = d.get('dns_channel', {})
+print('yes' if dns.get('enabled') else 'no')
 " 2>/dev/null || echo "no")
-    if [[ "$has_comm" == "yes" ]]; then
-      skip "GET /api/stats: comm_stats present but dns.enabled is not true (DNS not configured in test)"
-    else
-      skip "GET /api/stats: no comm_stats section present"
-    fi
+
+  if [[ "$cfg_dns_enabled" == "yes" ]]; then
+    ok "dns_channel.enabled=true confirmed via /api/config"
+  else
+    ko "DNS channel not enabled in test daemon (check testdata/datawatch.yaml dns_channel block)"
   fi
 }
 

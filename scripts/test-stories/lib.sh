@@ -49,8 +49,9 @@ TEST_BINARY="${TEST_BINARY:-$REPO_ROOT/bin/datawatch}"
 TEST_SIGNAL_GROUP="${TEST_SIGNAL_GROUP:-YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=}"
 TEST_NTFY_TOPIC="${TEST_NTFY_TOPIC:-}"
 TEST_WEBHOOK_PORT="${TEST_WEBHOOK_PORT:-19080}"
+TEST_DNS_PORT="${TEST_DNS_PORT:-19053}"
 
-# Isolated Docker-sim ports (T13)
+# Isolated Docker-sim ports (T13) — dynamically allocated by run-tests.sh; fallbacks for direct invocation
 DOCKER_SIM_HTTP="${DOCKER_SIM_HTTP:-19180}"
 DOCKER_SIM_TLS="${DOCKER_SIM_TLS:-19543}"
 DOCKER_SIM_MCP="${DOCKER_SIM_MCP:-19281}"
@@ -344,6 +345,7 @@ write_test_config() {
       -e "s|tls_port: 8443|tls_port: $_tls_port|g" \
       -e "s|sse_port: 9090|sse_port: $mcp_port|g" \
       -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+      -e "s|listen: \"127\.0\.0\.1:19053\"|listen: \"127.0.0.1:${TEST_DNS_PORT:-19053}\"|g" \
       "$tmpl" > "$data_dir/config.yaml"
   else
     cat > "$data_dir/config.yaml" <<YAML

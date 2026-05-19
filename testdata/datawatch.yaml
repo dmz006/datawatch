@@ -91,5 +91,12 @@ observer:
   peers:
     allow_register: true
 
+dns_channel:
+  enabled: true
+  mode: server
+  domain: dw-test.local
+  listen: "127.0.0.1:19053"
+  secret: "dw-e2e-test-dns-secret-0000000000"
+
 update:
   enabled: false
