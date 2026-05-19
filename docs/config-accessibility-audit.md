@@ -4,6 +4,8 @@
 
 **Scope:** v5.28.x → v6.0 gap closure audit. Captures what surfaces each feature area is currently reachable from and what gaps remain.
 
+**Last updated:** v8.1.0 (2026-05-19) — added alert rules, plugin install/browse, mic overlay rows.
+
 **Surfaces:**
 
 | Abbreviation | Surface |
@@ -50,6 +52,9 @@ Legend: ✅ Implemented · 🟡 Partial / indirect only · 🔴 Missing
 | **Stale sessions** | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 | PWA: stale indicator only; no bulk-clean action |
 | **Update management** | ✅ | 🟡 | 🟡 | ✅ | ✅ | 🟡 | PWA: update notification shown; no configure-update-channel UI |
 | **Analytics** | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 | CLI: `datawatch analytics` added (G14 — v5.28.9). Comm: `analytics` command added. PWA: stats panel shown; no analytics config panel |
+| **Alert rules (S14b)** | ✅ | ✅ | ✅ | ✅ | 🟡 | 🔴 | Comm: inherits system alerts; no dedicated `alert-rules` comm command. PWA: management card pending v8.2. |
+| **Plugin install/browse (BL325)** | 🟡 | ✅ | ✅ | ✅ | 🔴 | 🔴 | YAML: community registry pre-seeded but no install YAML verb. Comm: no plugin install comm command. PWA: browse/install UI pending v8.2. |
+| **Mic recording overlay (BL326)** | 🔴 | 🔴 | 🔴 | 🔴 | 🔴 | ✅ | PWA-only UX feature. No config option, no REST endpoint, no CLI, no Comm, no MCP. Mobile: native OS audio recorder used instead (see voice-input.md). |
 
 ---
 

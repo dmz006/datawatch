@@ -204,9 +204,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tests: 1994 pass (+105 new across S1–S4)
 - Deviations: none
 
-## [Unreleased]
+## v8.1.0 — BL324–BL326 + S14b: Community Registry, Plugin Install, Mic Popup, Alert Rules (2026-05-19)
 
-_(BL312, BL313 filed — see backlog tracker.)_
+### Added
+
+- **BL324 — Community Skills + Plugins registry** — `dmz006/datawatch-community` seeded as the first registry on every new installation, before the PAI (Personal AI Infrastructure) registry. `AddBuiltinDefaults()` now inserts the community registry at position 0. Community registry entries carry mandatory `author`, `contributor_notes`, and `license` fields. CLI: `datawatch skills registry connect community` + `datawatch plugins browse-registry community`. REST: `GET /api/plugins/browse`. MCP: `plugin_browse_registry`. YAML: `skills_registries` / `plugins_registries` seeded on first run.
+
+- **BL325 — Plugin install from registry** — Operators can copy a plugin directory from any connected registry clone into the local plugins directory and hot-reload it in a single command. CLI: `datawatch plugins install <registry> <name>`. REST: `POST /api/plugins/install`. MCP: `plugin_install`. The install path resolves `<registry_clone_dir>/plugins/<name>/` → `<data_dir>/plugins/<name>/`, validates the manifest, copies atomically, and calls the existing `Reload()` pipeline. Community plugins can be installed from a connected registry with `datawatch plugins install <registry> <name>`.
+
+- **BL326 — Mic recording overlay** — PWA voice-input flow replaces the previous inline toast with a full animated recording overlay: 5-bar waveform animation driven by AudioContext analyser data, Cancel and Send buttons, and a recording-duration counter. The overlay is PWA-only; the mobile companion uses the native OS audio recorder.
+
+- **S14b — Per-pod alert rules** — Named observer-metric threshold checks evaluated every 30 s against observer envelopes. Persisted at `<data_dir>/alert-rules.yaml`.
+  - **Core types** — `internal/alertrules/types.go`: `AlertRule` (id, name, pod/session filter, condition: metric/operator/threshold, action: alert/scale_up/scale_down, cooldown, enabled), `AlertFiring` (rule_id, fired_at, value, resolved_at).
+  - **Store** — `internal/alertrules/store.go`: YAML-backed CRUD with atomic write; 100-entry per-rule firings ring buffer kept in memory.
+  - **Evaluator** — `internal/alertrules/evaluator.go`: 30 s ticker reads observer envelopes, evaluates each enabled rule, enforces per-rule cooldown, appends firings, emits system alerts via the existing alert bus, dispatches scale_up/scale_down stubs.
+  - **Supported metrics** — `cpu_pct`, `mem_pct`, `gpu_pct`, `rss_bytes`, `net_rx_bps`, `net_tx_bps`.
+  - **REST** — 8 endpoints at `/api/alert-rules`: `GET /api/alert-rules`, `POST /api/alert-rules`, `GET /api/alert-rules/{id}`, `PUT /api/alert-rules/{id}`, `DELETE /api/alert-rules/{id}`, `POST /api/alert-rules/{id}/enable`, `POST /api/alert-rules/{id}/disable`, `GET /api/alert-rules/firings`.
+  - **MCP** — 8 tools: `alert_rule_list`, `alert_rule_get`, `alert_rule_add`, `alert_rule_update`, `alert_rule_delete`, `alert_rule_enable`, `alert_rule_disable`, `alert_rule_firings`.
+  - **CLI** — `datawatch alert-rules {list,get,add,update,delete,enable,disable,firings}`.
+  - **Howto** — `docs/howto/alert-rules.md`.
+
+### Changed
+
+- **Version bump** — `internal/version/version.go`: `Version = "8.1.0"`.
+
+### Rule audit
+- 7-surface: YAML ✓ REST ✓ MCP ✓ CLI ✓ Comm (inherits system alerts; no dedicated alert-rules comm command) · PWA (management card pending v8.2) · locale (alert-rules keys × 5 bundles)
+- Smoke: §8a (community registry), §8b (plugin install), §8c (alert rules), §8d (mic overlay surface check)
+- Tests: alert-rules package tests + install integration tests added
 
 ## v7.1.0-alpha.3 — BL302 S3: MCP Sampling + Elicitation
 

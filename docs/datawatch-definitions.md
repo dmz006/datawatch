@@ -25,7 +25,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Secrets manager** — native AES-256-GCM store at `~/.datawatch/secrets.db` plus optional KeePass and 1Password backends; `${secret:name}` references resolve in YAML, plugin manifests, spawn-time env injection.
 - **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
 - **Autonomous Automata (PRD-DAG)** — high-level intent decomposed into a directed graph of stories and tasks, executed under verification + guardrails.
-- **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards.
+- **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards. Community plugins can be installed from a connected registry with `datawatch plugins install <registry> <name>`.
 
 ## How it's built
 
@@ -642,6 +642,14 @@ files; "Story" is the UI label in the Automata view.
 (`automata_id`). The full ancestry appears in the `sprint` field of
 the hook payload. Use `automata_id` with `autonomous_prd_get` to
 navigate from a telemetry task back to the Automata view.
+
+**Alert firing** — one historical record of an alert rule crossing its threshold. The last 100 firings are kept in memory (ring buffer) and accessible via `GET /api/alert-rules/firings` or `datawatch alert-rules firings`. Fields: `rule_id`, `fired_at`, `value`, `resolved_at`. Firings reset on daemon restart; they are not persisted to disk.
+
+**Alert rule** — a named observer-metric threshold check persisted in `<data_dir>/alert-rules.yaml`. Evaluated every 30 s; fires a system alert or a scale_up/scale_down action when `condition.metric operator threshold` is true and the per-rule cooldown has elapsed. Supported metrics: `cpu_pct`, `mem_pct`, `gpu_pct`, `rss_bytes`, `net_rx_bps`, `net_tx_bps`. See `docs/howto/alert-rules.md`.
+
+**Community registry** — the `dmz006/datawatch-community` GitHub repo. Pre-seeded as the first Skills + Plugins registry on every new installation. Contains categorized, community-contributed skills and plugins with mandatory `author`, `contributor_notes`, and `license` fields. Connect with `datawatch skills registry connect community`, then browse with `datawatch plugins browse-registry community`.
+
+**Plugin install** — the ability to copy a plugin directory from a connected registry clone into the local plugins directory and reload it, via `datawatch plugins install <registry> <name>` or `POST /api/plugins/install`. The install resolves `<registry_clone_dir>/plugins/<name>/` → `<data_dir>/plugins/<name>/`, validates `manifest.yaml`, copies atomically, and calls the existing reload pipeline. No daemon restart required.
 
 **failed_task_buf** — a per-session buffer of the last 5 hook events
 received before any task transitioned to `failed`. Written into
