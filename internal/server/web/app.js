@@ -6043,7 +6043,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); }
+  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -6820,6 +6820,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL330 — Push Notifications card (Settings → Comms) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('push_notifications', 'Push Notifications', 'howto/push-setup.md')}
+          <div id="settings-sec-push_notifications" style="${secContent('push_notifications')}">
+            <div id="pushNotificationsPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+          </div>
+        </div>
+
         <!-- BL247 — Orchestrator moved from standalone tab to card in Automata tab -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('orchestrator_graphs', 'Automata Orchestrator', 'architecture.md')}
@@ -6911,7 +6919,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); } // BL312 S2 / BL316 S2
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); } // BL312 S2 / BL316 S2 / BL330
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -20572,6 +20580,67 @@ window.routingTest = function() {
       ? `<span style="color:var(--success,#10b981);">✓ routes to <strong>${escHtml(d.backend)}</strong></span>`
       : '<span style="opacity:0.7;">no match — uses default backend</span>'; })
     .catch(e => { if (res) res.textContent = 'error: ' + String(e.message||e); });
+};
+
+// ── BL330 Push Notifications panel ───────────────────────────────────────────
+
+function loadPushPanel() {
+  const el = document.getElementById('pushNotificationsPanel');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  apiFetch('/api/push/register').then(data => {
+    const panel = document.getElementById('pushNotificationsPanel');
+    if (!panel) return;
+    const regs = (data && data.registrations) || [];
+    const statusText = regs.length > 0
+      ? `${t('push_registered') || 'Push notifications active'} (${regs.length})`
+      : (t('push_not_registered') || 'Push notifications not configured');
+    const statusColor = regs.length > 0 ? 'var(--success,#10b981)' : 'var(--text2)';
+    panel.innerHTML = `
+      <div style="margin-bottom:10px;font-size:13px;color:${statusColor};">${escHtml(statusText)}</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">Register endpoint</div>
+        <input id="pushEndpointInput" type="url" placeholder="https://up.example.com/UP?token=…"
+          style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="pushRegister()">Register</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="pushSendTest()">
+          ${t('push_test_btn') || 'Send test notification'}
+        </button>
+      </div>
+      ${regs.length > 0 ? `
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Registrations (${regs.length})</div>
+      ${regs.map(r => `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;font-size:12px;word-break:break-all;opacity:0.8;">${escHtml(r.endpoint||r.id||'')}</div>
+        <button class="btn-icon" style="font-size:13px;color:var(--error);flex-shrink:0;" onclick="pushUnregister(${JSON.stringify(r.id)})">&times;</button>
+      </div>`).join('')}` : ''}`;
+    panel._regs = regs;
+  }).catch(err => {
+    const panel = document.getElementById('pushNotificationsPanel');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadPushPanel = loadPushPanel;
+
+window.pushRegister = function() {
+  const endpoint = (document.getElementById('pushEndpointInput')||{}).value||'';
+  if (!endpoint) { showToast('Endpoint URL required', 'error'); return; }
+  apiFetch('/api/push/register', { method: 'POST', body: JSON.stringify({ endpoint }) })
+    .then(() => { showToast('Registered', 'success', 2000); loadPushPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.pushUnregister = function(id) {
+  apiFetch('/api/push/unregister', { method: 'DELETE', body: JSON.stringify({ id }) })
+    .then(() => { showToast('Unregistered', 'success', 2000); loadPushPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.pushSendTest = function() {
+  apiFetch('/api/push/notify', { method: 'POST', body: JSON.stringify({ title: 'Datawatch test', message: 'Push notification test from Settings' }) })
+    .then(() => showToast('Test notification sent', 'success', 2000))
+    .catch(e => showToast(String(e.message||e), 'error'));
 };
 
 // ── BL220-G15 Orchestrator panel ──────────────────────────────────────────────
