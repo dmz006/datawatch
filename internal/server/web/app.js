@@ -6507,6 +6507,24 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL332 T42c (v8.4.0) — Discussion Scopes card in Settings → General.
+             Lists discussion scope IDs with entry counts and a quick-create form. -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('discussion_scopes', t('discussion_scope_title') || 'Discussion Scopes')}
+          <div id="settings-sec-discussion_scopes" style="${secContent('discussion_scopes')}">
+            <div id="discussionScopePanel" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('discussion_new_btn') || 'New Discussion')}</div>
+            <div class="settings-row" style="gap:6px;">
+              <input id="discussionNewIdInput" class="form-input" type="text" placeholder="discussion-id (e.g. sprint-42)"
+                style="flex:1;" autocomplete="off" />
+              <button class="btn-primary" style="font-size:12px;" onclick="discussionCreate()">${escHtml(t('discussion_new_btn') || 'New Discussion')}</button>
+            </div>
+            <div class="settings-row" style="margin-top:6px;">
+              <button class="btn-secondary" onclick="loadDiscussionPanel()" style="font-size:12px;">↻ Refresh</button>
+            </div>
+          </div>
+        </div>
+
         <!-- BL247 — Secrets moved from standalone tab to inline card in General tab.
              alpha.25 #230 — moved from General → Compute (operator-spec'd 2026-05-09:
              secrets are mostly credentials FOR compute resources). -->
@@ -6945,6 +6963,7 @@ function renderSettingsView() {
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
   loadFileServicePanel(); // BL333
+  loadDiscussionPanel(); // BL332 T42c
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
@@ -20164,6 +20183,53 @@ window.fileServiceUpload = function() {
       showToast('Uploaded: ' + (d.path || 'ok'), 'success', 2500);
       loadFileServicePanel();
     }).catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// BL332 T42c — loadDiscussionPanel: shows discussion scope IDs with entry counts
+// and a quick-create form in Settings → General.
+function loadDiscussionPanel() {
+  const el = document.getElementById('discussionScopePanel');
+  if (!el) return;
+  apiFetch('/api/memory/discussion').then(data => {
+    const ids = Array.isArray(data.discussions) ? data.discussions : [];
+    if (!ids.length) {
+      el.innerHTML = '<div style="opacity:0.7;">(no discussion scopes yet)</div>';
+      return;
+    }
+    el.innerHTML = ids.map(id =>
+      `<div style="padding:2px 0;display:flex;align-items:center;gap:8px;">
+        <code style="color:var(--accent);flex:1;">${escHtml(id)}</code>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 6px;"
+          onclick="discussionViewEntries(${JSON.stringify(id)})">${escHtml(t('memory_recall') || 'Recall')}</button>
+      </div>`
+    ).join('');
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load discussion scopes.</span>'; });
+}
+window.loadDiscussionPanel = loadDiscussionPanel;
+
+window.discussionCreate = function() {
+  const input = document.getElementById('discussionNewIdInput');
+  const id = input ? input.value.trim() : '';
+  if (!id) { showToast('Enter a discussion ID', 'warn', 2000); return; }
+  apiFetch('/api/memory/discussion/' + encodeURIComponent(id), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: 'Discussion scope created', summary: 'initial entry' })
+  }).then(() => {
+    if (input) input.value = '';
+    showToast('Discussion scope created: ' + id, 'success', 2500);
+    loadDiscussionPanel();
+  }).catch(e => showToast(String(e.message || e), 'error'));
+};
+
+window.discussionViewEntries = function(id) {
+  apiFetch('/api/memory/discussion/' + encodeURIComponent(id)).then(data => {
+    const entries = Array.isArray(data.results) ? data.results : [];
+    const html = entries.length
+      ? entries.map(e => `<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;">${escHtml(e.content || JSON.stringify(e))}</div>`).join('')
+      : '<div style="opacity:0.7;">(no entries)</div>';
+    showModal(escHtml(id) + ' — ' + (entries.length) + ' entries', html);
+  }).catch(e => showToast(String(e.message || e), 'error'));
 };
 
 // BL274 (v6.16.0) — Docs-as-MCP-Interface PWA panel.

@@ -22,6 +22,7 @@ func newMemoryCmd() *cobra.Command {
 		Short: "Memory operations (v7.0.0 S5: scope-hierarchy)",
 	}
 	cmd.AddCommand(newMemoryScopeCmd())
+	cmd.AddCommand(newDiscussionCmd()) // BL332 T42c — discussion scopes
 	return cmd
 }
 
