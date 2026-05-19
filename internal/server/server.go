@@ -293,6 +293,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                           // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                          // v7.0.0 S2 — /name + /name/test
 	apiMux.HandleFunc("/api/memory/scopes/", api.handleMemoryScopes)         // v7.0.0 S5 — recall/borrow/seed/promote
+	apiMux.HandleFunc("/api/memory/discussion", api.handleDiscussionScopeList) // BL332 T42a — discussion scope list
+	apiMux.HandleFunc("/api/memory/discussion/", api.handleDiscussionScope)    // BL332 T42a — discussion scope CRUD + WAL
 	apiMux.HandleFunc("/api/migration/status", api.handleMigrationStatus)    // v7.0.0-alpha.15 #229 — surface auto-migration result for one-time PWA toast
 	apiMux.HandleFunc("/api/migration/compute-kinds", api.handleMigrationComputeKinds)        // v7.0.0-alpha.23 — list deprecated-Kind ComputeNodes
 	apiMux.HandleFunc("/api/migration/compute-kinds/", api.handleMigrationComputeKindsUpdate) // v7.0.0-alpha.23 — PUT one Node's new Kind
