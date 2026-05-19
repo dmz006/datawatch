@@ -21,6 +21,11 @@ live resource data (sessions, alerts, stats, memory, knowledge graph, etc.)
 so Claude has full context when invoked from Claude Code, Claude Desktop,
 or any MCP-aware client.
 
+> **Pre-conditions**: Some built-in MCP prompts require subsystems to be enabled:
+> - `council-brief` — requires council personas. See [council-mode.md](council-mode.md).
+> - `review-automaton` — requires an Automaton to exist. See [autonomous-planning.md](autonomous-planning.md).
+> - `explore-kg` — requires memory/KG to be indexed. See [cross-agent-memory.md](cross-agent-memory.md).
+
 ## What it is
 
 Ten focused prompts — each targeting a common operator workflow — accessible

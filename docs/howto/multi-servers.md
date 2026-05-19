@@ -33,6 +33,14 @@ Five surfaces added in v7.2.0:
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
 
+## Base requirements
+
+- `datawatch start` — daemon up.
+- Network reachability to each remote datawatch instance.
+- Token credentials for remote instances stored as secrets (use `${secret:NAME}` in server config). See [secrets-manager.md](secrets-manager.md).
+
+> **Note**: Multi-server is distinct from Federated Observer. For peer-to-peer metrics and memory sharing, see [federated-observer.md](federated-observer.md).
+
 ## Relationship to Federated Observer
 
 **Multi-server** and **Federated Observer** are complementary but distinct:

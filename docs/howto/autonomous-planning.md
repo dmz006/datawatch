@@ -42,10 +42,16 @@ States: `draft` → `planning` → `needs_review` → `approved` → `running`
 
 - `datawatch start` — daemon up.
 - A configured LLM backend (claude-code, opencode-acp, ollama, etc.).
+  See [`llm-registry.md`](llm-registry.md) for registering and managing
+  LLM backends.
 - For containerised execution: a Cluster Profile. For local execution
-  the daemon's host runs each task directly.
-- (Optional) An Evals suite per story for graded verification.
-- (Optional) A Project Profile pre-baked with workspace + skills.
+  the daemon's host runs each task directly. See
+  [`profiles.md`](profiles.md) for Cluster Profile setup.
+- (Optional) An Evals suite per story for graded verification. See
+  [`evals.md`](evals.md).
+- (Optional) A Project Profile pre-baked with workspace + skills. See
+  [`profiles.md`](profiles.md) and [`skills-sync.md`](skills-sync.md)
+  for Skills setup.
 
 ## Setup
 

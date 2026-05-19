@@ -7,6 +7,16 @@ bearer token. Every action it takes is gated against the capabilities you grant.
 
 ---
 
+## Base requirements
+
+- Two running datawatch instances (primary + secondary). See [federated-observer.md](federated-observer.md) for how to set up federation and configure `observer.peers.allow_register: true`.
+- Remote Server entry on the primary pointing at the secondary. See [multi-servers.md](multi-servers.md).
+- Token credentials for cross-instance calls stored as secrets. See [secrets-manager.md](secrets-manager.md).
+
+> **Pre-conditions**: CBAC requires a working federated observer setup. Complete [federated-observer.md](federated-observer.md) first.
+
+---
+
 ## Quick start
 
 ### 1. Register a peer with limited capabilities

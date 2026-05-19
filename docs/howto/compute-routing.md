@@ -12,6 +12,11 @@ Datawatch separates **what** protocol a Compute Node speaks (kind: `ollama`, `op
 - For `docker-network`: Docker Engine installed and `/var/run/docker.sock` accessible by the daemon
 - For `datawatch-proxy`: a second datawatch instance registered as a Remote Server (Settings → Comms → Remote Servers)
 
+> **Pre-conditions**: Compute routing builds on top of registered Compute Nodes and (for proxy mode) Remote Servers.
+> - Compute Nodes must be registered before routing can be configured. See [`compute-nodes.md`](compute-nodes.md).
+> - `datawatch-proxy` routing requires a Remote Server entry pointing at the peer instance. See [`multi-servers.md`](multi-servers.md).
+> - Token credentials used in routing config (e.g. `${secret:dc2-token}`) should be stored as secrets. See [`secrets-manager.md`](secrets-manager.md).
+
 ---
 
 ## 1. Direct routing (default)

@@ -20,6 +20,11 @@ Datawatch exposes structured read-only data through MCP resources — a
 standard protocol surface that MCP-aware AI clients (Claude Desktop,
 Claude Code, etc.) can browse and read without calling explicit tools.
 
+> **Pre-conditions**: Some MCP resources expose data from subsystems that must be configured first:
+> - Council persona resources — requires personas to be set up. See [council-mode.md](council-mode.md).
+> - Memory and KG resources — requires memory backend to be configured. See [cross-agent-memory.md](cross-agent-memory.md).
+> - Automata resources — requires Automata to exist. See [autonomous-planning.md](autonomous-planning.md).
+
 ## What it is
 
 Thirteen static resources, nine live resources, and eight URI-template

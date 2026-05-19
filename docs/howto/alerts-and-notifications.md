@@ -46,6 +46,7 @@ channel — not just in the PWA.
 - PWA open in a browser (for the visual dock and header badge).
 - Any REST client or comm channel connection for the non-visual
   surfaces.
+- For mobile push alerts (`waiting_input` and `error` events): a paired mobile device is required. See [push-notifications.md](push-notifications.md) for device pairing setup.
 
 No extra config is required. The alert store is initialized
 automatically on first `datawatch start`.

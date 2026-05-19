@@ -10,6 +10,11 @@ running on a datawatch instance: session constellation, EKG activity
 waveform, sprint pipeline for active Automata, and an expand panel for
 per-session deep-dives — all driven by WebSocket, zero polling.
 
+> **Pre-conditions**: The dashboard surfaces live data from multiple subsystems. For the full experience:
+> - Sessions and LLM cards require an LLM backend. See [llm-registry.md](llm-registry.md).
+> - Automata / Timeline / Network cards require Automata to be running. See [autonomous-planning.md](autonomous-planning.md).
+> - Guardrail verdict cards require guardrail profiles to be configured. See [guardrail-library.md](guardrail-library.md).
+
 ## What it is
 
 - **Session constellation** — every active session rendered as a node in an

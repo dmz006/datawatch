@@ -39,6 +39,8 @@ Operator-overrides on the spawn command take precedence.
 - `datawatch start` — daemon up.
 - For Cluster Profiles: a working kubeconfig with cluster access from
   the daemon's host.
+- For Project Profiles that reference skills: skills must be available in the local registry. See [skills-sync.md](skills-sync.md) for registry setup.
+- For Cluster Profiles used with agent mesh networking: see [tailscale-mesh.md](tailscale-mesh.md) for mesh setup.
 
 ## Setup
 

@@ -21,6 +21,8 @@ guardrails all live in the same registry.
 
 ## What is a guardrail?
 
+> **Pre-conditions**: Guardrail scans (the `autonomous_prd_scan` exec step) require at least one Automaton (PRD) to exist. Running a scan without existing Automata returns empty results. See [`autonomous-planning.md`](autonomous-planning.md) for creating Automata before using guardrail profiles or running scans.
+
 A guardrail is a named gate that runs at a specified point in an
 Automaton's execution (per-task or per-story) and returns a verdict:
 

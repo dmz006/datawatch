@@ -43,8 +43,16 @@ Every action is recorded in the Decisions tab + audit log.
 
 ## Base requirements
 
-- An Automaton in `needs_review` (i.e. you've already run `plan`).
+- An Automaton in `needs_review` (i.e. you've already run `plan`). See
+  [`autonomous-planning.md`](autonomous-planning.md) for the full spawn →
+  plan cycle that produces an Automaton in this state.
 - Operator role (review actions are gated).
+
+> **Pre-conditions**: The "Request revision" action bounces the Automaton
+> back to `planning`, which triggers an LLM re-planning call. Ensure the
+> LLM backend used to create the Automaton is still available before
+> requesting a revision. See [`llm-registry.md`](llm-registry.md) for
+> LLM backend setup and status checks.
 
 ## Setup
 

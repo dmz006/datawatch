@@ -54,10 +54,10 @@ Per-backend:
 
 - `whisper`: Python 3.10+, `pip install openai-whisper`, model files
   on disk.
-- `openai`: API key in secrets (`${secret:OPENAI_API_KEY}`).
+- `openai`: API key stored as a secret (`${secret:OPENAI_API_KEY}`). See [secrets-manager.md](secrets-manager.md) for secret storage.
 - `openai_compat`: HTTPS endpoint that speaks the OpenAI
   `/v1/audio/transcriptions` shape.
-- `openwebui` / `ollama`: the parent LLM backend already configured.
+- `openwebui` / `ollama`: the parent LLM backend already configured and registered. See [llm-registry.md](llm-registry.md) for LLM backend registration and [compute-nodes.md](compute-nodes.md) for compute node setup.
 
 ## Setup
 

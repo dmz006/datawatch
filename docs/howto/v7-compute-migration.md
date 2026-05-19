@@ -7,6 +7,8 @@ docs:
 
 When you first started a v7.0.0-alpha.15 (or later) daemon, it auto-migrated every populated `cfg.<Backend>` block from your v6 `config.yaml` into the new **LLM registry** entries. This page explains what changed, where things moved, and how to verify the migration succeeded.
 
+> **Pre-conditions**: Migration requires the new Compute Nodes registry. See [compute-nodes.md](compute-nodes.md) for the v7 compute model and [llm-registry.md](llm-registry.md) for the unified LLM registry.
+
 ## What it is
 
 In v6, each LLM backend had its own top-level config block: `cfg.ollama`, `cfg.openwebui`, `cfg.aider`, `cfg.opencode`, `cfg.opencode_acp`, `cfg.goose`, `cfg.gemini`, `cfg.shell_backend`. Each held a binary path or URL plus per-backend tunables (model, console size, output mode).

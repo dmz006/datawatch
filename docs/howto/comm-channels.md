@@ -38,6 +38,11 @@ Supported backends: **Signal**, **Telegram**, **Discord**, **Slack**,
 
 ## Base requirements
 
+> **Pre-conditions**: Credentials (bot tokens, API keys, auth tokens)
+> for each channel are stored as `${secret:NAME}` references rather
+> than plaintext in YAML. See [`secrets-manager.md`](secrets-manager.md)
+> for how to store and reference secrets in channel config.
+
 Per-backend; the cheapest paths are summarized:
 
 | Backend | Setup cost | Notes |

@@ -41,7 +41,7 @@ you). Both speak the same protocol.
 - Headscale running OR a commercial Tailscale account.
 - A pre-auth key from your control plane (Headscale: `headscale
   preauthkeys create --reusable --expiration 0`; Tailscale admin
-  console → **Keys**).
+  console → **Keys**). Store this key as a secret using `${secret:TS_PREAUTH_KEY}` — see [secrets-manager.md](secrets-manager.md) for secret storage.
 - Outbound UDP 41641 from agent pods (Tailscale's preferred direct
   port; falls back to DERP relay if blocked).
 

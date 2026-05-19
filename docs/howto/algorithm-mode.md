@@ -50,6 +50,10 @@ Each phase's captured output lives at
 
 - An existing session (any backend). `datawatch sessions list` shows
   available IDs.
+  - Algorithm Mode uses LLM inference during the **Decide** phase (and
+    optionally Measure). Ensure an LLM backend is configured and
+    reachable before starting. See [`llm-registry.md`](llm-registry.md)
+    and [`chat-and-llm-quickstart.md`](chat-and-llm-quickstart.md).
 - (Optional) An Evals suite at `~/.datawatch/evals/<name>.yaml` if you
   want the Measure phase to auto-grade. See `evals.md`.
 

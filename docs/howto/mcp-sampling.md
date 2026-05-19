@@ -41,6 +41,14 @@ to the MCP host (Claude Code / Claude Desktop) and gets a completion back.
 | `council_deliberation` | Draft a council question from a running Automaton's current decision |
 | `automaton_decision` | Recommend approve / reject / revise for an Automaton story |
 
+## Base requirements
+
+- `datawatch start` — daemon up.
+- An active claude-code or claude-desktop MCP session. Sampling is triggered by the MCP client (Claude), not called directly.
+- An LLM backend configured for the session that will receive the sampling request. See [llm-registry.md](llm-registry.md) and [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md).
+
+> **Pre-conditions**: MCP sampling requires an LLM backend configured and reachable. See [llm-registry.md](llm-registry.md).
+
 ## Configuration
 
 ```yaml

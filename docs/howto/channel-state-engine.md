@@ -70,6 +70,12 @@ sessions get a clean baseline.
 - `datawatch start` — daemon up.
 - A session in any state.
 
+> **Pre-conditions**: Channel state transitions (especially `Running` ↔
+> `WaitingInput`) are driven by LLM inference activity. For LLM backend
+> setup and status checks, see [`llm-registry.md`](llm-registry.md). For
+> a full overview of session lifecycle (spawn → run → complete), see
+> [`sessions-deep-dive.md`](sessions-deep-dive.md).
+
 ## Setup
 
 The state engine runs by default. Tunable via:

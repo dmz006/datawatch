@@ -44,8 +44,8 @@ edges (`after:` declares ordering). Optionally per-step:
 ## Base requirements
 
 - `datawatch start` — daemon up.
-- A configured LLM backend.
-- (Optional) Evals suites if you want gated grading per step.
+- A configured LLM backend. See [`llm-registry.md`](llm-registry.md).
+- (Optional) Evals suites if you want gated grading per step. See [`evals.md`](evals.md).
 
 ## Setup
 

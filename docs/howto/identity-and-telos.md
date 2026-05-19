@@ -66,7 +66,8 @@ values tell it how to choose when goals conflict.
 
 - `datawatch start` — daemon running and reachable.
 - An LLM backend with at least one model configured (claude-code,
-  ollama, openai, etc. — any will work).
+  ollama, openai, etc. — any will work). See
+  [`llm-registry.md`](llm-registry.md) for setup and verification.
 - No additional services. Identity lives entirely in
   `~/.datawatch/identity.yaml` on the daemon's host.
 

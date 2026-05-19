@@ -55,7 +55,8 @@ Score = `Σ(weight × pass) / Σ(weight) × 100`. Pass if score ≥ threshold.
 - `datawatch start` — daemon up.
 - For `binary_test` graders: the test command available on PATH.
 - For `llm_rubric` graders: a configured LLM backend (any will do; a
-  smaller/faster model is usually fine).
+  smaller/faster model is usually fine). See [`llm-registry.md`](llm-registry.md)
+  for registering and verifying LLM backends.
 
 ## Setup
 

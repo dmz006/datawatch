@@ -58,7 +58,10 @@ States: `draft` → `planning` → `needs_review` → `approved` → `running`
 - `datawatch start` — daemon up.
 - Autonomous subsystem enabled (`autonomous.enabled: true`).
 - One or more Automata to compose (or define them inline in the graph
-  spec).
+  spec). See [`autonomous-planning.md`](autonomous-planning.md) for
+  creating Automata.
+- An LLM backend configured for task execution (used when each child
+  Automaton runs its tasks). See [`llm-registry.md`](llm-registry.md).
 - (Optional) configured guardrail backends: `rules` (in-process),
   `security` (Trivy / Snyk), `release-readiness` (custom),
   `docs-integrity` (in-process).

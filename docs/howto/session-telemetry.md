@@ -42,7 +42,7 @@ Key properties:
 
 - `datawatch start` — daemon up.
 - A running session with hook scripts installed (auto-installed for
-  claude-code sessions; see [`howto/claude-hooks.md`](claude-hooks.md)).
+  claude-code sessions; see [`howto/claude-hooks.md`](claude-hooks.md)). Sessions require an LLM backend — see [llm-registry.md](llm-registry.md) for LLM setup.
 - `jq` on PATH for automatic TodoWrite → tasks[] parsing.
 
 ## How structured tasks[] are emitted

@@ -19,6 +19,8 @@ etc.) — returning a typed response without the operator leaving their AI tool.
 Use it when an Automaton needs a decision, a plugin needs a parameter, or the
 daemon needs operator confirmation before an irreversible action.
 
+> **Pre-conditions**: MCP elicitation requires an MCP client (Claude Code or Claude Desktop) connected to the daemon. See [mcp-tools.md](mcp-tools.md) for MCP client connection setup.
+
 ## What it is
 
 | Component | Description |

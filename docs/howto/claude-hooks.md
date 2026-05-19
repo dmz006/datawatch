@@ -46,7 +46,10 @@ Additionally:
 
 - `datawatch start` — daemon up.
 - A `claude-code` session (auto-install is claude-code specific;
-  other backends can use manual setup).
+  other backends can use manual setup). The `claude-code` LLM backend
+  must be registered before spawning the session — see
+  [`llm-registry.md`](llm-registry.md). For an end-to-end session setup
+  walkthrough, see [`chat-and-llm-quickstart.md`](chat-and-llm-quickstart.md).
 - `session.auto_install_hooks` not set to `false` in
   `~/.datawatch/datawatch.yaml` (default: enabled).
 
