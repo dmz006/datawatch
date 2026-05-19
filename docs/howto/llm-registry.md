@@ -175,6 +175,87 @@ datawatch llm models add claude-code --model claude-opus-4-5
 datawatch llm models add claude-code --model claude-sonnet-4-6
 ```
 
+## Dispatch by use case
+
+Instead of one flat registry entry per backend, you can define **use-case entries** — named LLMs whose compute node order and model choices are optimized for a specific workload type. Routing rules, session templates, and Automata PRDs can then reference the use-case name rather than a specific model or node.
+
+### Why it matters
+
+A single `ollama-gpu-box` entry routes all workloads to the same node with the same model. A use-case entry lets you say: "coding requests go to a node with a coding-optimized model first; heavy reasoning goes to the highest-VRAM node only; fast triage uses the smallest model on the lowest-latency node."
+
+### Pattern
+
+```json
+{
+  "name": "llm-coding",
+  "kind": "ollama",
+  "model": "codestral:22b-q5_k_m",
+  "compute_nodes": ["gpu-primary", "gpu-secondary"],
+  "models": [
+    {"node": "gpu-primary",   "model": "codestral:22b-q5_k_m"},
+    {"node": "gpu-primary",   "model": "devstral:latest"},
+    {"node": "gpu-primary",   "model": "qwen3-coder:30b"},
+    {"node": "gpu-secondary", "model": "codestral:22b-q5_k_m"},
+    {"node": "gpu-secondary", "model": "devstral:latest"}
+  ]
+}
+```
+
+The dispatcher tries `gpu-primary` first (in model-list order); falls to `gpu-secondary` only if `gpu-primary` is unreachable or busy. Models are chosen by the `{node, model}` pair — only pairs listed here are eligible.
+
+### Recommended use-case entries
+
+These names are conventions, not reserved identifiers. Adjust nodes and models to your hardware:
+
+| Entry | Use case | Default model | Node order |
+|---|---|---|---|
+| `llm-coding` | Code generation, review | coding-optimized model (e.g. `codestral:22b`) | High-VRAM node → secondary |
+| `llm-reasoning` | Deep analysis, architecture | largest available model | Highest-VRAM node only |
+| `llm-chat` | General conversation | mid-size quality model (e.g. `mistral-small3:24b`) | Low-latency node → high-VRAM fallback |
+| `llm-fast` | Quick responses, triage | smallest capable model (e.g. `qwen3:1.7b`) | Low-latency node → any fallback |
+| `llm-embed` | Embeddings | embedding-specific model (e.g. `nomic-embed-text`) | Any node with the model |
+
+### Hardware budget considerations
+
+When building the `models[]` list, exclude model+node combinations where the model exceeds the node's VRAM. A model that won't fit causes Ollama to CPU-offload layers silently, which is slower than using a different node that can run it fully on GPU. For example, a 65GB model should not appear in the `models[]` list for a 32GB node — put it only in the entry for your high-VRAM node.
+
+```json
+{
+  "name": "llm-reasoning",
+  "kind": "ollama",
+  "model": "gpt-oss:120b",
+  "compute_nodes": ["blackwell-128gb"],
+  "models": [
+    {"node": "blackwell-128gb", "model": "gpt-oss:120b"},
+    {"node": "blackwell-128gb", "model": "llama3.3:70b-q4_k_m"},
+    {"node": "blackwell-128gb", "model": "mixtral:8x22b-q4_k_m"}
+  ]
+}
+```
+
+The RTX 5090 (32GB) is intentionally absent from `llm-reasoning` — models that won't fit fully should fail over to a node that can run them, not partially offload to CPU.
+
+### Selecting a use-case entry in routing rules
+
+Routing rules can match on session context and select the target LLM by name:
+
+```yaml
+routing_rules:
+  - name: coding-sessions
+    match:
+      session_tags: [coding]
+    target_llm: llm-coding
+
+  - name: analysis-sessions
+    match:
+      session_tags: [analysis, architecture]
+    target_llm: llm-reasoning
+```
+
+Use-case entries are otherwise identical to any other LLM entry — they appear in `datawatch llm list`, can be referenced in Council personas, Automata PRDs, and session start requests (`llm: llm-coding`).
+
+---
+
 ## Two happy paths
 
 ### 4a. Happy path — CLI

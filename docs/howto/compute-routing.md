@@ -10,7 +10,34 @@ Datawatch separates **what** protocol a Compute Node speaks (kind: `ollama`, `op
 
 - Datawatch daemon running (v8.0+)
 - For `docker-network`: Docker Engine installed and `/var/run/docker.sock` accessible by the daemon
+- For `docker-network` **with GPU passthrough**: NVIDIA Container Toolkit installed and Docker configured to use it (see below)
 - For `datawatch-proxy`: a second datawatch instance registered as a Remote Server (Settings → Comms → Remote Servers)
+
+### NVIDIA Container Toolkit — required for GPU passthrough in docker-network mode
+
+Without the toolkit, the `deploy.resources.reservations.devices` block in your compose file (or the equivalent `--gpus` flag) is silently ignored — Ollama starts but runs on CPU with no warning. Install it before registering any docker-network node that needs GPU:
+
+```bash
+# Add the toolkit repo
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# Install and configure
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Once installed, verify Docker can see the GPU:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+
+Then add `OLLAMA_NUM_GPU=999` to the container env — Ollama needs this to actually use GPU even when the device is passed through:
 
 > **Pre-conditions**: Compute routing builds on top of registered Compute Nodes and (for proxy mode) Remote Servers.
 > - Compute Nodes must be registered before routing can be configured. See [`compute-nodes.md`](compute-nodes.md).

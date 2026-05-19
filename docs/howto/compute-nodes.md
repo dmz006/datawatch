@@ -93,6 +93,65 @@ Earlier kind values (`local`, `ssh`, `docker`, `k8s`, `remote`, `remote-proxy`) 
 
 ---
 
+## GPU acceleration — getting Ollama to actually use the GPU
+
+Registering a node with GPU capacity fields tells datawatch the hardware spec; it does not configure the Ollama process itself. Two common reasons Ollama silently falls back to CPU:
+
+### 1. Wrong Ollama binary (no CUDA libraries)
+
+Distro-packaged Ollama (`apt install ollama`) typically ships without CUDA libraries. The install-script version includes them:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+# Installs to /usr/local/bin/ollama with /usr/local/lib/ollama/cuda_v12/ and cuda_v13/
+```
+
+Verify your running binary:
+
+```bash
+which ollama          # should be /usr/local/bin/ollama, not /usr/bin/ollama
+ollama --version      # confirm it's the install-script version
+```
+
+### 2. GPU not enabled in the Ollama process
+
+Even with the right binary, Ollama defaults to CPU unless `OLLAMA_NUM_GPU` is set. For a systemd-managed Ollama:
+
+```bash
+# /etc/systemd/system/ollama.service (or a drop-in override)
+[Service]
+Environment="OLLAMA_NUM_GPU=999"   # 999 = use all available GPU layers
+Environment="OLLAMA_NUM_THREAD=48" # CPU thread count for hybrid or CPU-only models
+Environment="OLLAMA_HOST=0.0.0.0"
+ExecStart=/usr/local/bin/ollama serve
+```
+
+After editing:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+### 3. Verifying GPU is active
+
+```bash
+ollama ps
+# Look for PROCESSOR column — should show "GPU" (not "100% CPU")
+```
+
+On Jetson / unified-memory platforms, `PROCESSOR` may show `100% GPU` but `size_vram: 0` — the zero is meaningless on unified memory. Use power rail monitoring instead:
+
+```bash
+tegrastats | grep VDD_GPU
+# Idle: ~2W. During inference: spikes to 15–25W = GPU is active.
+```
+
+### 4. GPU passthrough into Docker containers
+
+For `docker-network` routing, the NVIDIA Container Toolkit must be installed and Docker configured to use it. Without it, the `deploy.resources.reservations.devices` block is silently ignored. See [`compute-routing.md`](compute-routing.md) for the full install steps.
+
+---
+
 ## nodes.json structure
 
 Compute Nodes are persisted to `~/.datawatch/compute/nodes.json`. You can inspect it directly, but always use the API, CLI, PWA, MCP, or comm channel to make changes so validation runs and the daemon stays in sync.

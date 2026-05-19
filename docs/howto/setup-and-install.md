@@ -39,6 +39,7 @@ Tailscale for agent mesh, etc.).
 - **Optional**: an LLM CLI (`claude`, `aider`, `goose`, `gemini`, `opencode`),
   `ollama` for local models, `docker` for container workers, `kubectl`
   for k8s clusters, `keepassxc-cli` for KeePass-backed secrets.
+- **GPU (NVIDIA)**: NVIDIA drivers + CUDA, and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) if you plan to run Ollama inside Docker (`docker-network` routing). Without the toolkit, Docker containers fall back to CPU silently. See [`compute-routing.md`](compute-routing.md) for the install steps.
 - **Disk**: ~500 MB for the binary + per-session log retention.
 - **Ports**: 8080 (HTTP / redirect) + 8443 (HTTPS) by default;
   customizable.

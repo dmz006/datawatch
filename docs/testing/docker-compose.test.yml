@@ -44,6 +44,16 @@ services:
     image: ollama/ollama:latest
     ports:
       - "21434:11434"
+    environment:
+      - OLLAMA_NUM_GPU=999
+      - OLLAMA_NUM_THREAD=48
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/version"]
       interval: 5s

@@ -5744,6 +5744,7 @@ const _cardOrder = {
     'comms_auth':     10,
     'servers':        20,  // connection status
     'remote_servers': 30,  // BL312 — managed remotes + federation access
+    'fedpeers':       35,  // BL316 — federation peers CBAC (moved from Observer)
     'backends':       40,
     // cc_* (Web Server, MCP, etc.) fall through to default 100
   },
@@ -5807,7 +5808,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'comms' || tab === 'servers') loadServersList();
+  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -6418,6 +6419,32 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL316 S2 — Federation Peers card (moved from Observer to Settings → Comms) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('fedpeers', t('federation_peers_title') || 'Federation Peers', 'howto/federation-cbac.md')}
+          <div id="settings-sec-fedpeers" style="${secContent('fedpeers')}">
+            <div id="fedPeersPanelHeader" style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px 8px;">
+              <span style="font-size:11px;color:var(--text2);">Registered federation peers with capability-based access control (CBAC)</span>
+              <button class="btn-secondary" style="font-size:11px;" onclick="showFedPeerForm()">${t('federation_peer_add_btn') || 'Add Peer'}</button>
+            </div>
+            <div id="fedPeersList" style="padding:0 12px;"></div>
+            <div id="fedPeerFormWrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-top:8px;">
+              <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Federation Peer</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+                <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
+                <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
+                <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
+                <div><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capability Group'}</label><input id="fedPeerFormCaps" class="form-input" style="width:100%;font-size:11px;" placeholder="federation-peer" /></div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>
+                <button class="btn-secondary" style="font-size:11px;" onclick="hideFedPeerForm()">Cancel</button>
+              </div>
+              <div id="fedPeerFormError" style="font-size:11px;color:#ef4444;margin-top:4px;display:none;"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
           <div style="text-align:center;padding:16px 0 8px;">
@@ -6612,7 +6639,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'comms' || _settingsTab === 'servers') loadServersList(); // BL312 S2
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); } // BL312 S2 / BL316 S2
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -19181,31 +19208,6 @@ function renderObserverView() {
       </div>
 
       <div class="settings-section">
-        ${settingsSectionHeader('fedpeers', t('federation_peers_title') || 'Federation Peers', 'howto/federation-cbac.md')}
-        <div id="settings-sec-fedpeers" style="${secContent('fedpeers')}">
-          <div id="fedPeersPanelHeader" style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px 8px;">
-            <span style="font-size:11px;color:var(--text2);">Registered federation peers with capability-based access control (CBAC)</span>
-            <button class="btn-secondary" style="font-size:11px;" onclick="showFedPeerForm()">${t('federation_peer_add_btn') || 'Add Peer'}</button>
-          </div>
-          <div id="fedPeersList" style="padding:0 12px;"></div>
-          <div id="fedPeerFormWrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-top:8px;">
-            <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Federation Peer</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
-              <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
-              <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
-              <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-              <div><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capability Group'}</label><input id="fedPeerFormCaps" class="form-input" style="width:100%;font-size:11px;" placeholder="federation-peer" /></div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>
-              <button class="btn-secondary" style="font-size:11px;" onclick="hideFedPeerForm()">Cancel</button>
-            </div>
-            <div id="fedPeerFormError" style="font-size:11px;color:#ef4444;margin-top:4px;display:none;"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
         ${settingsSectionHeader('membrowser', 'Memory Browser')}
         <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
           <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
@@ -19338,12 +19340,11 @@ function renderObserverView() {
   loadAuditPanel();
   loadKgPanel();
   renderObserverPeersCard();
-  loadFederationPeersPanel(); // BL316 S2
   _injectServerPickerBar(view, renderObserverView); // BL312 S6
 }
 window.renderObserverView = renderObserverView;
 
-// BL316 S2 — Federation Peers panel in the Observer view.
+// BL316 S2 — Federation Peers panel (Settings → Comms, order 35 — after Remote Servers).
 function loadFederationPeersPanel() {
   const el = document.getElementById('fedPeersList');
   if (!el) return;
