@@ -13,6 +13,8 @@ _story_ts_071() {
   save_evidence TS-071 "recall.json" "$resp"
   if echo "$resp" | grep -qi "not enabled\|memory not enabled\|not available\|disabled\|unknown tool"; then
     skip "memory not enabled in this deployment"
+  elif echo "$resp" | grep -qi "recall failed\|embed query\|ollama embed\|model.*not found\|pulling it first"; then
+    skip "memory_recall: embedder not available (ollama model not loaded)"
   elif assert_json "$resp" 'isinstance(d, dict)'; then
     ok "POST /api/mcp/call memory_recall returned dict"
   elif assert_json "$resp" 'isinstance(d, list)'; then

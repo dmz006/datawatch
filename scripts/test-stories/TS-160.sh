@@ -7,6 +7,13 @@ CURRENT_STORY="TS-160"
 story_preflight "surface:docker feature:bootstrap" || return 0
 
 _story_ts_160() {
+  # Clean up any stale datawatch-e2e-test containers that may be holding our ports
+  docker ps -a --filter "name=dw-test-" --format "{{.Names}} {{.Status}}" 2>/dev/null | while read -r cname cstatus; do
+    if [[ "$cname" != "dw-test-$$" ]]; then
+      docker rm -f "$cname" 2>/dev/null || true
+    fi
+  done
+
   # Create config for Docker container (use 19xxx port range to avoid conflicts with test daemon)
   write_test_config "$DOCKER_SIM_DATA" "$DOCKER_SIM_HTTP" "$DOCKER_SIM_TLS" "$DOCKER_SIM_MCP" "$DOCKER_SIM_CHAN" "$TEST_TOKEN"
 
@@ -50,14 +57,15 @@ DOCKEREOF
   DOCKER_SIM_IMAGE="$image_tag"
   echo "  Docker container: $DOCKER_SIM_CONTAINER (ports: $DOCKER_SIM_HTTP:HTTP $DOCKER_SIM_TLS:TLS)"
 
-  # Wait for health
+  # Wait for health — try HTTPS first (TLS enabled by default), fall back to HTTP
   local attempts=0
   while [[ $attempts -lt 30 ]]; do
-    if curl -s --max-time 3 "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
-      local h
-      h=$(curl -s --max-time 3 "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health")
+    local h
+    h=$(curl -sk --max-time 3 "https://127.0.0.1:$DOCKER_SIM_TLS/api/health" 2>/dev/null || \
+        curl -s --max-time 3 "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null || echo "")
+    if echo "$h" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then
       save_evidence TS-160 "health.json" "$h"
-      ok "daemon healthy in Docker container (:$DOCKER_SIM_HTTP)"
+      ok "daemon healthy in Docker container (:$DOCKER_SIM_TLS TLS)"
       return 0
     fi
     sleep 1

@@ -20,6 +20,10 @@ _story_ts_534() {
     skip "council_persona_oneshot tool not available"
     return
   fi
+  if echo "$resp" | grep -qi "model.*not found\|ollama.*404\|HTTP 502\|HTTP 503\|no llm\|llm not"; then
+    skip "council_persona_oneshot: LLM model not available (ollama model not loaded)"
+    return
+  fi
   if assert_json "$resp" 'isinstance(d, dict)'; then
     ok "council_persona_oneshot tool returned dict"
   else

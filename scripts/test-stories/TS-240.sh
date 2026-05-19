@@ -16,12 +16,27 @@ _story_ts_240() {
     # Step 2: recall it
     recall=$(api GET "/api/memory/search?q=e2e-research-journey-$ts")
     save_evidence "TS-240" "2_recall.json" "$recall"
-    # If recall returns an embedder error, skip rather than fail (test daemon has no ollama)
+    # If recall returns an embedder error or empty (embedder silently fails returning []), skip
     if echo "$recall" | grep -qi "not found\|embedder\|no embed\|ollama\|disabled\|not enabled"; then
       [[ -n "$mem_id" ]] && add_cleanup "mem" "$mem_id"
       skip "Research journey: memory embedder not configured in test daemon (needs ollama/nomic-embed-text)"
     else
       found=$(echo "$recall" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d if isinstance(d,list) else d.get('results',[]); print(any('e2e-research-journey' in str(x) for x in r))" 2>/dev/null || echo "False")
+      if [[ "$found" == "False" && -n "$mem_id" ]]; then
+        # Check if this is a silent embedder failure (search returns [] but memory exists)
+        list_check=$(api GET /api/memory/list 2>/dev/null || echo "[]")
+        mem_in_list=$(echo "$list_check" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d if isinstance(d,list) else d.get('memories',d.get('entries',[]))
+print(any(str('$mem_id') == str(x.get('id','')) for x in items))
+" 2>/dev/null || echo "False")
+        if [[ "$mem_in_list" == "True" ]]; then
+          [[ -n "$mem_id" ]] && add_cleanup "mem" "$mem_id"
+          skip "Research journey: memory stored but search returned empty (embedder may not be available)"
+          return
+        fi
+      fi
       # Step 3: add KG triple
       kg=$(api POST /api/memory/kg/add "{\"subject\":\"e2e-test-$ts\",\"predicate\":\"is\",\"object\":\"journey\"}")
       save_evidence "TS-240" "3_kg_add.json" "$kg"

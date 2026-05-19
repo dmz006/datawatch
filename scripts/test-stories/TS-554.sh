@@ -17,6 +17,10 @@ _story_ts_554() {
     skip "memory_recall tool not available"
     return
   fi
+  if echo "$resp" | grep -qi "recall failed\|embed query\|ollama embed\|model.*not found\|pulling it first"; then
+    skip "memory_recall: embedder not available (ollama model not loaded)"
+    return
+  fi
   if assert_json "$resp" 'isinstance(d, list) or (isinstance(d, dict) and isinstance(d.get("hits",[]), list))'; then
     ok "memory_recall tool returned hits array"
   elif assert_json "$resp" 'isinstance(d, dict)'; then

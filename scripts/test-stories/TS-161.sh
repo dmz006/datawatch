@@ -8,7 +8,8 @@ story_preflight "surface:docker feature:bootstrap" || return 0
 
 _story_ts_161() {
   local resp
-  resp=$(curl -s --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null || echo "{}")
+  resp=$(curl -sk --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "https://127.0.0.1:$DOCKER_SIM_TLS/api/health" 2>/dev/null || \
+        curl -s --max-time 10 -H "Authorization: Bearer $TEST_TOKEN" "http://127.0.0.1:$DOCKER_SIM_HTTP/api/health" 2>/dev/null || echo "{}")
   save_evidence TS-161 "health.json" "$resp"
   if assert_json "$resp" 'd.get("status")=="ok"'; then
     ok "docker-sim health ok"
