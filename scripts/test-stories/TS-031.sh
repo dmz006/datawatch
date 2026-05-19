@@ -12,7 +12,7 @@ _story_ts_031() {
   save_evidence TS-031 "create.json" "$resp"
   PERSONA_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",d.get("persona",{}).get("id",d.get("name",""))))' 2>/dev/null || echo "")
   if [[ -n "$PERSONA_ID" ]]; then
-    add_cleanup persona "$PERSONA_ID"
+    # Don't add to cleanup here — TS-032..036 use PERSONA_ID; cleanup in TS-036
     ok "persona created: $PERSONA_ID"
   else
     skip "persona create failed (council may not be enabled): $(echo "$resp" | head -c 200)"
