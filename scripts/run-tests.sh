@@ -334,13 +334,18 @@ launch_parallel() {
   acquire_worker  # blocks until slot available
 
   local result_file="$RESULT_DIR/${story_id}.result"
+  local par_cleanup="$TEST_DIR/cleanup-${story_id}.log"
   (
     set +e
+    # Each parallel worker gets its own cleanup log so concurrent sourcing
+    # of lib.sh (which truncates the shared log) doesn't lose cleanup entries.
+    export CLEANUP_LOG="$par_cleanup"
     RESULT=""
     CURRENT_STORY="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
     # shellcheck source=/dev/null
     source "$script"
+    flush_story_cleanup
     printf '%s' "${RESULT:-fail}" > "$result_file"
     release_worker
   ) &

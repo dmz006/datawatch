@@ -6,7 +6,7 @@ CURRENT_STORY="TS-335"
 story_preflight "surface:cli feature:cli feature:schedules" || return 0
 
 _story_ts_335() {
-  local out; out=$(cli_test schedule list 2>&1); local rc=$?
+  local out; out=$(cli_test session schedule list 2>&1); local rc=$?
   save_evidence TS-335 "out.txt" "$out"
   if [[ $rc -eq 0 ]]; then
     ok "schedule list exits 0"

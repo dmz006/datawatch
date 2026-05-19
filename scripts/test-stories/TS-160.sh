@@ -16,6 +16,9 @@ _story_ts_160() {
 
   # Create config for Docker container (use 19xxx port range to avoid conflicts with test daemon)
   write_test_config "$DOCKER_SIM_DATA" "$DOCKER_SIM_HTTP" "$DOCKER_SIM_TLS" "$DOCKER_SIM_MCP" "$DOCKER_SIM_CHAN" "$TEST_TOKEN"
+  # write_test_config replaces host: 0.0.0.0 → 127.0.0.1, but the container
+  # daemon must bind on 0.0.0.0 to be reachable via docker port mapping.
+  sed -i 's/host: 127\.0\.0\.1/host: 0.0.0.0/g' "$DOCKER_SIM_DATA/config.yaml"
 
   # Build a simple Docker image with the binary (use debian-slim as base for glibc compatibility)
   local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
@@ -24,8 +27,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates git tmux && rm -rf /var/lib/apt/lists/*
 COPY datawatch /usr/local/bin/
 RUN chmod +x /usr/local/bin/datawatch
-EXPOSE 18180 18543 18281 18533
-ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--host", "0.0.0.0", "--config", "/config/config.yaml", "--port", "18180"]
+EXPOSE 19180 19543 19281 19533
+ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--config", "/config/config.yaml"]
 DOCKEREOF
 
   # Copy binary into build context (ensure it exists first)

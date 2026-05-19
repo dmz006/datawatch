@@ -317,6 +317,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
 		newDashboardCmd(),  // #57/#58 — dashboard card layout CRUD
 		newSmokeCmd(),      // #54 — smoke-run cross-instance forwarding
+		newFilterCmd(),     // top-level filter command
+		newScheduleTopCmd(),// top-level schedule command (mirrors session schedule)
 	)
 
 	if err := root.Execute(); err != nil {
@@ -8167,6 +8169,53 @@ func runScheduleCancel(cfg *config.Config, id string) error {
 	}
 	fmt.Printf("Scheduled command %s cancelled.\n", id)
 	return nil
+}
+
+// newScheduleTopCmd builds a top-level schedule command (mirrors session schedule).
+func newScheduleTopCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "schedule",
+		Short: "Manage scheduled session commands",
+	}
+	addCmd := &cobra.Command{
+		Use:   "add <session-id> <command>",
+		Short: "Schedule a command for a session",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			at, _ := cmd.Flags().GetString("at")
+			return runScheduleAdd(cfg, args[0], strings.Join(args[1:], " "), at)
+		},
+	}
+	addCmd.Flags().String("at", "", "When to run: 'now', 'HH:MM', or RFC3339 timestamp")
+	cmd.AddCommand(addCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all scheduled commands",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runScheduleList(cfg)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "cancel <schedule-id>",
+		Short: "Cancel a pending scheduled command",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runScheduleCancel(cfg, args[0])
+		},
+	})
+	return cmd
 }
 
 // fireInputSchedules fires any on-input-prompt scheduled commands for a session.
