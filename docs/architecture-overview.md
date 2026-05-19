@@ -40,6 +40,7 @@ graph TD
     subgraph "Mobile / device push"
         FCM["FCM transport"]
         DevReg["Device registry\n/api/devices/*"]
+        PushHub["Push hub\n/api/push/*\nntfy SSE + UnifiedPush\n(comm:read/write)"]
     end
 
     subgraph "AI agent clients"
@@ -317,6 +318,8 @@ diagram with an arrow from a worker back to `Parent`.
 | Proxy / federation | `internal/proxy` + `/api/federation/sessions` | [docs/architecture.md](architecture.md) Proxy Mode — shipped in v3.0.0 (closes [#3](https://github.com/dmz006/datawatch/issues/3)) |
 | Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | [docs/api/voice.md](api/voice.md), [flow diagram](flow/voice-transcribe-flow.md) |
 | Device push registry | `internal/devices` | [docs/api/devices.md](api/devices.md) |
+| Push hub (ntfy SSE + UnifiedPush BL330) | `internal/server/push.go` | [howto/push-notifications.md](howto/push-notifications.md), [howto/push-setup.md](howto/push-setup.md) — caps: `comm:read` (subscribe/list), `comm:write` (register/unregister/notify/publish) |
+| Async PRD decompose (BL328) | `internal/server/autonomous_decompose.go` | [howto/decompose-async.md](howto/decompose-async.md) — POST→202 + SSE stream + polling; caps: `autonomous:write` (start), `autonomous:read` (status/stream) |
 | Episodic memory + KG | `internal/memory` | [docs/api/memory.md](api/memory.md), [docs/memory.md](memory.md) (architecture), [flow diagram](flow/memory-recall-flow.md), [how-to: cross-agent memory](howto/cross-agent-memory.md) |
 | Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
