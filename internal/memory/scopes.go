@@ -49,6 +49,7 @@ const (
 	ScopePersonaInProject Scope = "persona-in-project" // per persona, current project
 	ScopeProjectShared    Scope = "project-shared"     // current datawatch episodic memory (cross-persona)
 	ScopeSessionLocal     Scope = "session-local"      // per council run / session
+	ScopeDiscussion       Scope = "discussion"         // per-discussion federated shared memory (BL332)
 )
 
 // AllScopesTopDown is the recall walk order — most-general to most-
@@ -59,6 +60,7 @@ var AllScopesTopDown = []Scope{
 	ScopePersonaInProject,
 	ScopeProjectShared,
 	ScopeSessionLocal,
+	ScopeDiscussion,
 }
 
 // ScopeRef ties a Scope to its keying triple (projectDir, role,
@@ -83,6 +85,11 @@ func (sr ScopeRef) Resolve() (projectDir, role, sessionID string) {
 		return sr.Project, "", ""
 	case ScopeSessionLocal:
 		return sr.Project, "", sr.SessionID
+	case ScopeDiscussion:
+		// discussionID is passed in the SessionID field by convention.
+		// An empty SessionID means no discussion is scoped — callers must
+		// supply the discussion ID.
+		return "", "discussion/" + sr.SessionID, ""
 	}
 	return sr.Project, "", ""
 }
@@ -120,6 +127,10 @@ func ScopedRecall(b Backend, queryVec []float32, persona, project, sessionID str
 		}
 		// Only walk session-local when sessionID is set.
 		if sc == ScopeSessionLocal && sessionID == "" {
+			continue
+		}
+		// Only walk discussion when sessionID (discussion ID) is set.
+		if sc == ScopeDiscussion && sessionID == "" {
 			continue
 		}
 		dir, _, _ := ref.Resolve()
