@@ -71,6 +71,7 @@ graph TD
         CBAC["fedCap() CBAC guard\n(every REST handler + MCP tool)"]
         FedRemDisp["Remote dispatcher\n(proxy mode)"]
         ChanRouter["ChannelRouter\n/api/channel/routing\nchannel_identity + owner_peer\n(comm:read/write)"]
+        DiscussionSync["DiscussionSync\n/api/memory/discussion/*\nWAL + participant fan-out\n+ 60/min throttle\n(comm:read/write)"]
     end
 
     subgraph "Compute layer"
@@ -139,6 +140,9 @@ graph TD
     MsgReg --> ChanRouter
     ChanRouter --> FedPeers
     HTTP --> FileStore
+    HTTP --> DiscussionSync
+    DiscussionSync --> Memory
+    DiscussionSync -->|async fan-out| FedPeers
 
     Cursor -->|stdio| MCP
     RemoteAI -->|HTTPS/SSE| MCP
@@ -348,6 +352,7 @@ diagram with an arrow from a worker back to `Parent`.
 | Multi-server proxy surface | `internal/server/multiserver` | [docs/operations.md](operations.md) — shipped v8.0.0 |
 | Channel-address federation router (BL331) | `internal/server/bl331_channel_routing.go` | [howto/channel-routing.md](howto/channel-routing.md) — `ChannelIdentity` on peers, routing rules, `owner_peer` on sessions/PRDs; caps: `comm:read` (GET), `comm:write` (PUT) |
 | Federated file service (BL333) | `internal/server/bl333_file_service.go` | [howto/file-service.md](howto/file-service.md) — multipart upload, path-validated delete, peers/ + discussions/ subdirs; caps: `config:write` (write), `config:read` (read) |
+| Discussion scope + federated sync (BL332) | `internal/server/bl332_discussion_scope.go` + `internal/server/bl332_discussion_sync.go` | [howto/discussion-scopes.md](howto/discussion-scopes.md) — WAL-backed per-discussion memory, async participant fan-out, 60/min throttle, conflict detect + resolve; caps: `comm:write` (write), `comm:read` (read) |
 
 ---
 
@@ -450,6 +455,7 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 | Channel-address federation router (BL331) — `channel_identity` on peers, routing rules, `owner_peer` attribution | v8.3.0 | [howto/channel-routing.md](howto/channel-routing.md) |
 | `comms-channel-agent` builtin group — 14th federation capability group | v8.3.0 | [docs/datawatch-definitions.md](datawatch-definitions.md) |
 | Federated file service (BL333) — `POST/DELETE /api/files`, peers/discussions subdirs, `files_upload/delete/meta` MCP | v8.3.0 | [howto/file-service.md](howto/file-service.md) |
+| Discussion scopes + federated sync (BL332) — `ScopeDiscussion` constant, WAL-backed `/api/memory/discussion/*`, async participant fan-out, 60/min throttle, conflict detect + resolve | v8.4.0 | [howto/discussion-scopes.md](howto/discussion-scopes.md) |
 
 ---
 

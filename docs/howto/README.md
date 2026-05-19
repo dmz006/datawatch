@@ -59,6 +59,7 @@ you already have a daemon you can talk to.
 | [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
 | [Channel Routing](channel-routing.md) | Route inbound channel messages (Telegram, Signal, …) to federation peers via pattern rules; owner_peer attribution on sessions + PRDs |
 | [File Service](file-service.md) | Upload, list, and delete files across federation peers; peers/ and discussions/ subdirs; config:read/write caps |
+| [Discussion Scopes](discussion-scopes.md) | Per-discussion memory namespaces with WAL, federated sync, conflict detection, and 60 ops/min throttle |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
 > first-time install. [`docs/api/`](../api/) has REST/MCP/CLI

@@ -591,6 +591,41 @@ Path traversal (`..` in any path argument) is rejected with 400 on all write end
 
 See [`howto/file-service.md`](howto/file-service.md).
 
+#### Discussion Scopes (v8.4.0)
+
+Per-discussion memory namespaces that are durable, federated, and conflict-aware. Each discussion scope is keyed by an operator-chosen discussion ID and backed by a write-ahead log (WAL) at `~/.datawatch/discussions/<id>/wal.jsonl`.
+
+**Scope name:** `ScopeDiscussion`
+
+**Resolution tuple:** `(projectDir="", role="discussion/<id>", sessionID="")`
+
+**Card:** Settings → General → Discussion Scopes. Lists all known discussion IDs; provides a New Discussion form and per-discussion Recall + Participants controls.
+
+**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `/api/push/<discussion-id>`. Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
+
+**Throttle:** 60 write operations per minute per peer, enforced via a per-peer token bucket. Exceeding the limit returns HTTP 429. Local daemon writes are not throttled.
+
+**Conflict model:** Concurrent writes from two or more peers can produce conflicting WAL entries. Conflicts are detected on receipt of a sync push and exposed at `GET /api/memory/discussion/{id}/conflicts`. Resolve by calling `POST /api/memory/discussion/{id}/conflicts/resolve` with `winner_seq` and `loser_seq`; the loser entry is tombstoned.
+
+**REST endpoints:**
+- `GET /api/memory/discussion` — list all discussion IDs; requires `comm:read`
+- `GET /api/memory/discussion/{id}` — read entries; requires `comm:read`
+- `POST /api/memory/discussion/{id}` — write entry; requires `comm:write`; throttled at 60/min per peer
+- `DELETE /api/memory/discussion/{id}` — remove all entries and WAL; requires `comm:write`
+- `GET /api/memory/discussion/{id}/wal` — read raw WAL; requires `comm:read`
+- `GET /api/memory/discussion/{id}/participants` — list participant peers; requires `comm:read`
+- `PUT /api/memory/discussion/{id}/participants` — set participant peer list; requires `comm:write`
+- `GET /api/memory/discussion/{id}/conflicts` — list detected conflicts; requires `comm:read`
+- `POST /api/memory/discussion/{id}/conflicts/resolve` — mark winning entry; requires `comm:write`
+
+**MCP tools:** `memory_discussion_write`, `memory_discussion_recall`, `memory_discussion_wal`, `memory_discussion_participants`
+
+**CLI:** `datawatch memory discussion list | write | recall | wal | participants`
+
+Path traversal (`..` in a discussion ID) is rejected with 400.
+
+See [`howto/discussion-scopes.md`](howto/discussion-scopes.md).
+
 #### Notifications
 
 Per-channel preference for daemon-emitted events: state changes, needs-input, rate-limit hits, autonomous step approvals. Off by default for chatty events; on for needs-input.
@@ -777,6 +812,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Async PRD decompose | [`howto/decompose-async.md`](howto/decompose-async.md) | v8.2.0 | 202 + SSE stream + Last-Event-ID |
 | Channel-address federation | [`howto/channel-routing.md`](howto/channel-routing.md) | v8.3.0 | channel_identity + routing rules + owner_peer |
 | Federated file service | [`howto/file-service.md`](howto/file-service.md) | v8.3.0 | peers/ + discussions/ subdirs, config:read/write caps |
+| Discussion scopes | [`howto/discussion-scopes.md`](howto/discussion-scopes.md) | v8.4.0 | WAL-backed per-discussion memory, federated sync, conflict resolution, comm:read/write caps |
 | Claude hooks | [`howto/claude-hooks.md`](howto/claude-hooks.md) | v7.0.0-alpha.34 | hook scripts + status board |
 | Alerts & notifications | [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) | v7.0.0 | alert dock + per-channel delivery |
 | Guardrail library | [`howto/guardrail-library.md`](howto/guardrail-library.md) | v7.0.0 | SAST/secrets/deps/LLM scan profiles |
@@ -835,6 +871,7 @@ Infrastructure:
 - [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) — browse and pull models from the embedded Ollama catalog
 - [`howto/guardrail-library.md`](howto/guardrail-library.md) — SAST/secrets/deps/LLM grader scan profiles
 - [`howto/file-service.md`](howto/file-service.md) — BL333 federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
+- [`howto/discussion-scopes.md`](howto/discussion-scopes.md) — BL332 discussion scopes: WAL-backed per-discussion memory, participant sync, conflict resolution (v8.4.0)
 - [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 
