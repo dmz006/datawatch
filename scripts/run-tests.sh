@@ -139,20 +139,22 @@ flush_story_cleanup() {
   local base="http://127.0.0.1:${TEST_PORT:-18080}"
   local tok="${TEST_TOKEN:-dw-test-token-12345}"
   local curl_del=(-sk --max-time 10 -X DELETE -H "Authorization: Bearer $tok")
+  local curl_post=(-sk --max-time 10 -X POST -H "Authorization: Bearer $tok" -H "Content-Type: application/json")
   while IFS=' ' read -r kind id; do
     [[ -z "$kind" || -z "$id" ]] && continue
     case "$kind" in
-      sess|session)    curl "${curl_del[@]}" "$base/api/sessions/$id" >/dev/null 2>&1 ;;
+      # Sessions use POST /api/sessions/delete (no REST DELETE on /{id})
+      sess|session)    curl "${curl_post[@]}" -d "{\"id\":\"$id\"}" "$base/api/sessions/delete" >/dev/null 2>&1 ;;
       automaton)       curl "${curl_del[@]}" "$base/api/autonomous/prds/$id" >/dev/null 2>&1 ;;
       persona)         curl "${curl_del[@]}" "$base/api/council/personas/$id" >/dev/null 2>&1 ;;
       compute_node)    curl "${curl_del[@]}" "$base/api/compute/nodes/$id" >/dev/null 2>&1 ;;
       observer_peer)   curl "${curl_del[@]}" "$base/api/observer/peers/$id" >/dev/null 2>&1 ;;
-      filter)          curl "${curl_del[@]}" "$base/api/filters/$id" >/dev/null 2>&1 ;;
+      filter)          curl "${curl_del[@]}" "$base/api/filters?id=$id" >/dev/null 2>&1 ;;
       mem)             curl "${curl_del[@]}" "$base/api/memory/entries/$id" >/dev/null 2>&1 ;;
-      sched)           curl "${curl_del[@]}" "$base/api/schedules/$id" >/dev/null 2>&1 ;;
+      sched)           curl "${curl_del[@]}" "$base/api/schedules?id=$id" >/dev/null 2>&1 ;;
       secret)          curl "${curl_del[@]}" "$base/api/secrets/$id" >/dev/null 2>&1 ;;
       server)          curl "${curl_del[@]}" "$base/api/mcp/servers/$id" >/dev/null 2>&1 ;;
-      profile-proj)    curl "${curl_del[@]}" "$base/api/profiles/$id" >/dev/null 2>&1 ;;
+      profile-proj)    curl "${curl_del[@]}" "$base/api/profiles?name=$id" >/dev/null 2>&1 ;;
       llm)             curl "${curl_del[@]}" "$base/api/llms/$id" >/dev/null 2>&1 ;;
     esac
   done < "$log"

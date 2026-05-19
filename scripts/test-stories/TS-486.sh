@@ -14,7 +14,7 @@ _story_ts_486() {
   fi
   local test_model="test-model-$$"
   local add_resp add_inner
-  add_resp=$(api POST /api/mcp/call "{\"tool\":\"llm_add_model\",\"params\":{\"name\":\"$llm_name\",\"model\":\"$test_model\"}}")
+  add_resp=$(api POST /api/mcp/call "{\"tool\":\"llm_add_model\",\"params\":{\"llm\":\"$llm_name\",\"model\":\"$test_model\"}}")
   add_inner=$(mcp_unwrap "$add_resp")
   save_evidence TS-486 "add.json" "$add_resp"
   if echo "$add_inner" | grep -qi "unknown tool\|not enabled\|405\|method not allowed"; then
@@ -22,7 +22,7 @@ _story_ts_486() {
     return
   fi
   # Clean up: remove test model
-  api POST /api/mcp/call "{\"tool\":\"llm_remove_model\",\"params\":{\"name\":\"$llm_name\",\"model\":\"$test_model\"}}" >/dev/null 2>&1
+  api POST /api/mcp/call "{\"tool\":\"llm_remove_model\",\"params\":{\"llm\":\"$llm_name\",\"model\":\"$test_model\"}}" >/dev/null 2>&1
   if assert_json "$add_inner" 'isinstance(d, dict)'; then
     ok "llm_add_model tool returned dict; cleanup done"
   elif echo "$add_inner" | grep -qi "not found\|404"; then
