@@ -136,7 +136,8 @@ trap 'FAILED=$?; cleanup' EXIT
 flush_story_cleanup() {
   local log="${CLEANUP_LOG:-$TEST_DIR/cleanup.log}"
   [[ -f "$log" ]] || return 0
-  local base="http://127.0.0.1:${TEST_PORT:-18080}"
+  # Use HTTPS to avoid HTTP→HTTPS redirect stripping the DELETE method
+  local base="https://127.0.0.1:${TEST_TLS_PORT:-18443}"
   local tok="${TEST_TOKEN:-dw-test-token-12345}"
   local curl_del=(-sk --max-time 10 -X DELETE -H "Authorization: Bearer $tok")
   local curl_post=(-sk --max-time 10 -X POST -H "Authorization: Bearer $tok" -H "Content-Type: application/json")

@@ -32,14 +32,20 @@ _story_ts_441() {
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-441 "set_resp.json" "$body"
   if [[ "$code" == "200" || "$code" == "204" ]]; then
-    # Verify the change by GET
-    local get_resp
-    get_resp=$(api GET "/api/sessions/$SESSION_ID")
+    # Verify the change by checking sessions list (no single-item GET endpoint)
+    local get_resp llm_ref
+    get_resp=$(api GET /api/sessions)
     save_evidence TS-441 "get_resp.json" "$get_resp"
-    local llm_ref
-    llm_ref=$(echo "$get_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("llm_ref",""))' 2>/dev/null || echo "")
+    llm_ref=$(echo "$get_resp" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d if isinstance(d,list) else d.get('sessions',[])
+sid='$SESSION_ID'
+sess=next((s for s in items if s.get('id','')==sid or s.get('full_id','').endswith('-'+sid)),None)
+print(sess.get('llm_ref','') if sess else '')
+" 2>/dev/null || echo "")
     if [[ "$llm_ref" == "$llm_name" ]]; then
-      ok "set_llm_ref updated; GET reflects new llm_ref=$llm_ref"
+      ok "set_llm_ref updated; sessions list reflects new llm_ref=$llm_ref"
     else
       ok "POST /api/sessions/set_llm_ref returned $code (llm_ref=$llm_ref)"
     fi

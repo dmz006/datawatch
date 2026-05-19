@@ -12,6 +12,10 @@ _story_ts_041() {
   resp=$(api POST /api/mcp/call '{"tool":"memory_recall","params":{"query":"v7.0.0 e2e testing"}}')
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-041 "recall.json" "$resp"
+  if echo "$resp" | grep -qi "recall failed\|embed query\|ollama embed\|model.*not found\|pulling it first\|embedder.*not\|not.*embedder"; then
+    skip "memory_recall: embedder not available (ollama not loaded)"
+    return
+  fi
   if assert_json "$resp" 'isinstance(d, (dict, list))'; then
     ok "memory_recall MCP call returned valid shape"
   elif echo "$resp" | grep -qi "no results\|not found\|0 result"; then

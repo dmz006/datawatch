@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TS-370 — DELETE /api/autonomous/guardrail-profiles/{id} returns 200
+# TS-370 — DELETE /api/autonomous/guardrail_profiles/{id} returns 200
 # tags: surface:api feature:automata
 # STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -15,7 +15,7 @@ _story_ts_370() {
   fi
   # Create a profile to delete
   local create_resp pid
-  create_resp=$(api POST /api/autonomous/guardrail-profiles \
+  create_resp=$(api POST /api/autonomous/guardrail_profiles \
     '{"name":"test-gp-delete","rules":[]}')
   pid=$(echo "$create_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$pid" ]]; then
@@ -27,10 +27,10 @@ _story_ts_370() {
   del_code=$(curl -sk -o /dev/null -w "%{http_code}" \
     -X DELETE \
     -H "Authorization: Bearer $TEST_TOKEN" \
-    "$TEST_BASE/api/autonomous/guardrail-profiles/$pid")
+    "$TEST_BASE/api/autonomous/guardrail_profiles/$pid")
   save_evidence TS-370 "delete_code.txt" "$del_code"
   if [[ "$del_code" == "200" || "$del_code" == "204" ]]; then
-    ok "DELETE /api/autonomous/guardrail-profiles/$pid returned $del_code"
+    ok "DELETE /api/autonomous/guardrail_profiles/$pid returned $del_code"
   elif [[ "$del_code" == "404" ]]; then
     ko "profile $pid not found on DELETE"
   else

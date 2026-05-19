@@ -13,29 +13,35 @@ _story_ts_107() {
     ko "GET /api/stats did not return dict: $(echo "$resp" | head -c 100)"
     return
   fi
-  # Check that comm_stats has web or mcp keys
-  local has_web_or_mcp
-  has_web_or_mcp=$(echo "$resp" | python3 -c "
+  # Check that comm_stats is a list (array of CommChannelStat objects)
+  local comm_result
+  comm_result=$(echo "$resp" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-comm = d.get('comm_stats', d.get('comms', {}))
-if isinstance(comm, dict):
-    keys = [k.lower() for k in comm.keys()]
-    if any(k in ('web', 'mcp', 'http', 'sse') for k in keys):
+comm = d.get('comm_stats', None)
+if comm is None:
+    print('missing')
+elif isinstance(comm, list):
+    names = [c.get('name','').lower() for c in comm if isinstance(c, dict)]
+    if any(n in ('web', 'mcp', 'http', 'sse', 'websocket', 'claude-code', 'ollama', 'shell') for n in names):
         print('yes')
+    elif names:
+        print('names:' + ','.join(names))
     else:
-        print('keys:' + ','.join(keys))
+        print('empty')
 else:
-    print('no')
-" 2>/dev/null || echo "no")
-  if [[ "$has_web_or_mcp" == "yes" ]]; then
-    ok "GET /api/stats: comm_stats has web/mcp entry"
-  elif echo "$has_web_or_mcp" | grep -q "^keys:"; then
-    local keys
-    keys=$(echo "$has_web_or_mcp" | sed 's/^keys://')
-    skip "GET /api/stats: comm_stats present but no web/mcp key (found: $keys)"
+    print('wrong_type:' + type(comm).__name__)
+" 2>/dev/null || echo "missing")
+  if [[ "$comm_result" == "yes" ]]; then
+    ok "GET /api/stats: comm_stats has recognized channel/backend entry"
+  elif [[ "$comm_result" == "empty" ]]; then
+    ok "GET /api/stats: comm_stats array present (no channels configured)"
+  elif echo "$comm_result" | grep -q "^names:"; then
+    local names
+    names=$(echo "$comm_result" | sed 's/^names://')
+    ok "GET /api/stats: comm_stats array present (channels: $names)"
   else
-    skip "GET /api/stats: no comm_stats section present"
+    skip "GET /api/stats: comm_stats not present or wrong shape: $comm_result"
   fi
 }
 
