@@ -48,7 +48,7 @@ jobs:
       - name: go test
         run: go test ./... -count=1 -timeout 5m
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
           args: --timeout=5m

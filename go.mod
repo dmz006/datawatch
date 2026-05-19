@@ -1,6 +1,6 @@
 module github.com/dmz006/datawatch
 
-go 1.25.0
+go 1.25.10
 
 require (
 	github.com/bwmarrin/discordgo v0.28.1
