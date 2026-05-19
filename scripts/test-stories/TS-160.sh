@@ -21,7 +21,7 @@ _story_ts_160() {
   local dockerfile="$DOCKER_SIM_DATA/Dockerfile"
   cat > "$dockerfile" <<'DOCKEREOF'
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates git tmux && rm -rf /var/lib/apt/lists/*
 COPY datawatch /usr/local/bin/
 RUN chmod +x /usr/local/bin/datawatch
 EXPOSE 18180 18543 18281 18533

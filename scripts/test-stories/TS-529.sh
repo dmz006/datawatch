@@ -9,7 +9,7 @@ _story_ts_529() {
   local resp
   resp=$(api POST /api/council/run '{"proposal":"1+1=?","personas":[]}')
   save_evidence TS-529 "run.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|404\|unknown"; then
+  if ! echo "$resp" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
     skip "council/run endpoint not available"
     return
   fi

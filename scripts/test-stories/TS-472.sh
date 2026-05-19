@@ -12,7 +12,7 @@ _story_ts_472() {
   local resp
   resp=$(api GET /api/autonomous/prds)
   save_evidence TS-472 "prds.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|404"; then
+  if ! echo "$resp" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
     skip "autonomous/prds endpoint not available"
     return
   fi

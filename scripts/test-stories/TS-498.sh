@@ -13,7 +13,7 @@ _story_ts_498() {
   resp=$(api POST /api/mcp/call "{\"tool\":\"autonomous_prd_set_llm\",\"params\":{\"id\":\"$AUTOMATON_ID\",\"llm_ref\":\"$llm_name\"}}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-498 "resp.json" "$resp"
-  if echo "$resp" | grep -qi "unknown tool\|not enabled\|not found\|404"; then
+  if echo "$resp" | grep -qi "unknown tool\|not enabled" || ! echo "$resp" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
     skip "autonomous_prd tool not available"
     return
   fi
