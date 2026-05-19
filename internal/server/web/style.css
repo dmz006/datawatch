@@ -357,7 +357,7 @@ body {
   overscroll-behavior: contain;
 }
 .view.view-full {
-  bottom: 0;
+  bottom: var(--keyboard-h, 0px);
 }
 
 .view-content {
