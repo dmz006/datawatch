@@ -176,6 +176,9 @@ type PRD struct {
 	GuardrailProfile    string   `json:"guardrail_profile,omitempty"`
 	PerTaskGuardrails   []string `json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails  []string `json:"per_story_guardrails,omitempty"`
+
+	// BL331 — federation peer that originated this PRD via channel routing.
+	OwnerPeer string `json:"owner_peer,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a

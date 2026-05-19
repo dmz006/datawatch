@@ -112,6 +112,7 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// BL331 — channel_identity is decoded directly from the Entry struct.
 	body.Federated = true
 	if body.AuthType == "" {
 		body.AuthType = "token"
@@ -140,6 +141,8 @@ func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name stri
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// BL331 — channel_identity is decoded directly from the Entry struct;
+	// the store Update replaces the full entry so it is cleared when omitted.
 	body.Federated = true
 	if err := s.serverStore.Update(name, &body); err != nil {
 		switch err {

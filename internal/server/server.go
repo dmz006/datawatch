@@ -375,6 +375,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 	apiMux.HandleFunc("/api/channel/history", api.handleChannelHistory)
+	apiMux.HandleFunc("/api/channel/routing", api.handleChannelRouting) // BL331
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/update/check", api.handleUpdateCheck)
 	apiMux.HandleFunc("/api/llm/claude/models", api.handleClaudeModels)

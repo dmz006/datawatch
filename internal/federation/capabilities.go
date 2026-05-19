@@ -230,6 +230,17 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapAlertsList, CapAlertsRead,
 		},
 	},
+	"comms-channel-agent": {
+		Name:        "comms-channel-agent",
+		Description: "Peer that acts as a channel address agent — receives channel commands, starts sessions, and reports back",
+		Builtin:     true,
+		Caps: []string{
+			CapSessionsList, CapSessionsRead, CapSessionsInput, CapSessionsWrite,
+			CapCommRead, CapCommWrite,
+			CapAlertsList, CapAlertsRead,
+			CapAutonomousList, CapAutonomousRead, CapAutonomousWrite,
+		},
+	},
 	"read-only": {
 		Name:        "read-only",
 		Description: "All read/list capabilities across every surface",
@@ -321,7 +332,7 @@ func ListBuiltinGroups() []*CapabilityGroup {
 		"monitor", "session-viewer", "session-operator",
 		"inference-admin", "config-reader", "config-admin",
 		"analytics-viewer", "autonomous-operator", "council-operator",
-		"federation-peer", "comm-bridge", "read-only", "full-control",
+		"federation-peer", "comm-bridge", "comms-channel-agent", "read-only", "full-control",
 	}
 	out := make([]*CapabilityGroup, 0, len(order))
 	for _, name := range order {

@@ -45,6 +45,10 @@ type Entry struct {
 	Federated    bool     `json:"federated,omitempty"`
 	AuthType     string   `json:"auth_type,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
+	// BL331 — channel addresses this peer monitors.
+	// When set, structured commands arriving on these channels are
+	// forwarded to this peer's /api/sessions/start or automata endpoint.
+	ChannelIdentity []string `json:"channel_identity,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

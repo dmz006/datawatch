@@ -6706,6 +6706,7 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors (BL331)" /></div>
               </div>
               <div style="display:flex;gap:6px;">
                 <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>
@@ -19877,8 +19878,11 @@ function showFedPeerForm(entry) {
   if (entry) {
     const nameEl = document.getElementById('fedPeerFormName');
     const urlEl = document.getElementById('fedPeerFormURL');
+    const ciEl = document.getElementById('fedPeerFormChannelIdentity');
     if (nameEl) { nameEl.value = entry.name || ''; nameEl.disabled = true; }
     if (urlEl) urlEl.value = entry.url || '';
+    // BL331 — populate channel_identity (stored as []string, shown as CSV)
+    if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
   }
 }
 window.showFedPeerForm = showFedPeerForm;
@@ -19901,9 +19905,12 @@ function submitFedPeerForm() {
   if (!name) { if (errEl) { errEl.textContent = 'Name is required'; errEl.style.display = ''; } return; }
   if (!url) { if (errEl) { errEl.textContent = 'URL is required'; errEl.style.display = ''; } return; }
 
+  const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const body = { name, url, enabled: true };
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  // BL331 — serialize channel_identity as []string for the backend
+  if (channelIdentityRaw.trim()) body.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
 
   fetch('/api/federation/peers', {
     method: 'POST',

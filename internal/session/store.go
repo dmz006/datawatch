@@ -149,6 +149,9 @@ type Session struct {
 	// task runs (PRD executors, agent spawns) set this to true so the session
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
+
+	// BL331 — federation peer that owns or originated this session via channel routing.
+	OwnerPeer string `json:"owner_peer,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
