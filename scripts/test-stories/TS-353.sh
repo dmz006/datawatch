@@ -38,8 +38,8 @@ else:
     return
   fi
 
-  # Apply the howto using the correct howto_id param
-  resp=$(api POST /api/mcp/call '{"tool":"docs_apply","params":{"howto_id":"howto/cross-agent-memory.md"}}')
+  # Apply the howto using the correct howto_id param; pass project_dir (required exec_param)
+  resp=$(api POST /api/mcp/call "{\"tool\":\"docs_apply\",\"params\":{\"howto_id\":\"howto/cross-agent-memory.md\",\"params\":{\"project_dir\":\"$REPO_ROOT\"}}}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-353 "apply.json" "$resp"
   if echo "$resp" | grep -qi "no exec_steps\|no steps\|nothing to apply\|not applicable"; then

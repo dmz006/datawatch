@@ -31,11 +31,11 @@ _story_ts_271() {
 import json,sys
 d=json.load(sys.stdin)
 if isinstance(d,list): items=d
-elif isinstance(d,dict): items=d.get("algorithms",d.get("items",d.get("result",[])))
+elif isinstance(d,dict): items=d.get("sessions",d.get("algorithms",d.get("items",d.get("result",[]))))
 else: items=[]
 if isinstance(items,list) and len(items)>0:
     item=items[0]
-    if isinstance(item,dict): print(item.get("id",item.get("name","")))
+    if isinstance(item,dict): print(item.get("id",item.get("session_id",item.get("name",""))))
     else: print(str(item))
 ' 2>/dev/null || echo "")
 
