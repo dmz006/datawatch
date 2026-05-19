@@ -206,14 +206,24 @@ POST /api/push/<topic>
 # Response: {"ok":true,"topic":"<topic>"}
 # priority: 1=min 2=low 3=default 4=high 5=max (ntfy-compat)
 
-# Register a UnifiedPush mobile endpoint.
+# Register a UnifiedPush mobile endpoint (BL330).
 POST /api/push/register
-# Body: {"endpoint":"https://...","client_id":"<uuid>","token":"<optional>"}
-# Response: {"ok":true,"client_id":"<uuid>"}
+# Body: {"endpoint":"https://...","keys":{"p256dh":"<base64>","auth":"<base64>"}}
+# Response: {"ok":true,"id":"reg-<nanosecond>"}
+
+# Un-register a push endpoint.
+DELETE /api/push/unregister
+# Body: {"id":"reg-..."} OR {"endpoint":"https://..."}
+# Response: {"ok":true}
+
+# Send a push notification to all (or one) registered endpoint(s).
+POST /api/push/notify
+# Body: {"title":"...","message":"..."[,"id":"reg-..."]}
+# Response: 202 Accepted
 
 # UnifiedPush discovery document.
 GET /.well-known/unifiedpush
-# Response: UnifiedPush v1 discovery doc; register + endpoint format fields.
+# Response: {"version":1,"unifiedpush":{"gateway":"/api/push/notify"}}
 ```
 
 All endpoints require a `Authorization: Bearer <token>` header if the

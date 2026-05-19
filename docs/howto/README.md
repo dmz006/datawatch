@@ -53,6 +53,9 @@ you already have a daemon you can talk to.
 | [LLM Registry](llm-registry.md) | Named LLM definitions, per-node model pairs, enabled/disable toggle, block-on-delete + reassign, all surfaces |
 | [Tailscale Mesh](tailscale-mesh.md) | Headscale + commercial Tailscale; agent worker mesh sidecar; ACL generator |
 | [Push notifications](push-notifications.md) | ntfy-compatible SSE endpoint + UnifiedPush discovery; self-hosted; mobile alerts for session events |
+| [Push setup — registration API](push-setup.md) | BL330 register/unregister/notify endpoints; Android UnifiedPush integration; CLI `datawatch push` |
+| [Async PRD decompose](decompose-async.md) | BL328 async decompose: 202 Accepted + SSE story stream + polling fallback + Last-Event-ID resume |
+| [Alert Rules](alert-rules.md) | Create and manage threshold-based alert rules; firings log; PWA + Android + CLI/REST/MCP |
 | [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
