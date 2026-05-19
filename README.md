@@ -17,6 +17,32 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ---
 
+## 🎉 Community skills + plugins registry is live!
+
+**[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** — the official community hub for datawatch Skills and Plugins is now open.
+
+Operators have been building incredible things on top of datawatch's extension surface — autonomous session patterns, multi-agent polity topologies, inter-agent proposal pipelines — and until now those patterns lived privately on individual machines with no way to share or discover them. That changes today.
+
+The registry launches with seed contributions covering some of the most-requested autonomous workflow patterns:
+
+| Entry | Type | What it does |
+|---|---|---|
+| [`sibling-runner`](https://github.com/dmz006/datawatch-community/tree/main/skills/autonomous-patterns/sibling-runner) | Skill | Standard per-sibling autonomous session: mailbox-in, scratchpad continuity, Automata queue, structured output sections |
+| [`polity-topology`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/polity-topology) | Skill | Multi-instance identity layer — tells each instance which one it is, where siblings live, how to route references |
+| [`sandbox-permissions`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/sandbox-permissions) | Skill | Fixes sandbox network policy so autonomous claude-code sessions can reach the datawatch CLI and API |
+| [`inbox-integrator`](https://github.com/dmz006/datawatch-community/tree/main/plugins/comms/inbox-integrator) | Plugin | `post_session_complete` hook — moves sibling INBOX proposals into the shared InFlight workspace with attribution headers |
+
+**To connect and sync:**
+
+```bash
+datawatch skills registry connect https://github.com/dmz006/datawatch-community
+datawatch skills sync community
+```
+
+**To contribute:** fork the repo, add your Skill or Plugin directory, open a PR. The bar is intentionally low — if it works and is safe, it gets merged. See [`CONTRIBUTING.md`](https://github.com/dmz006/datawatch-community/blob/main/CONTRIBUTING.md).
+
+---
+
 ## Current release
 
 **v8.0.0 (2026-05-19)** — Major release: capability-based federation access control across all 7 surfaces, compute-node routing modes (direct / docker-network / datawatch-proxy), MCP SSE federated auth, multi-server proxy, new LLM adapters (Gemini API, OpenCode API), OneShot sessions, 626 E2E test stories, and 85-section release smoke. See [full release notes](docs/RELEASE_NOTES_v8.0.0.md).
@@ -305,6 +331,7 @@ All commands work in any configured channel and as `datawatch <command>` on the 
 | Command | Description |
 |---|---|
 | `skills list` | List synced skills |
+| `skills sync community` | Sync the community registry ([dmz006/datawatch-community](https://github.com/dmz006/datawatch-community)) |
 | `secrets list/get <name>/set <name>` | Manage centralized secrets |
 | `tailscale status/nodes` | Read mesh state |
 
@@ -371,6 +398,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | [docs/api/orchestrator.md](docs/api/orchestrator.md) | PRD-DAG orchestrator + guardrails |
 | [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md) | API ↔ MCP coverage analysis |
 | [docs/skills.md](docs/skills.md) | Skill Registries + manifest format |
+| [dmz006/datawatch-community](https://github.com/dmz006/datawatch-community) | Community Skills + Plugins registry — browse and contribute |
 | [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) | OpenAPI 3.0 REST API specification |
 
 ### Comm channels
