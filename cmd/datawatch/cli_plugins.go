@@ -28,7 +28,11 @@ Subcommands:
   test <name> <hook> [<json-payload>]
                        Synthetic hook invocation for debugging
   run <name> <sub>     Invoke a plugin's declared CLI subcommand (Manifest v2.1)
-  mobile-issue <name>  Print a datawatch-app issue body for plugin mobile declarations`,
+  mobile-issue <name>  Print a datawatch-app issue body for plugin mobile declarations
+  install <registry> <name>
+                       Install a plugin from a connected skill registry
+  browse-registry <name>
+                       List plugins available in a connected registry`,
 	}
 	cmd.AddCommand(
 		newPluginsListCmd(),
@@ -39,6 +43,8 @@ Subcommands:
 		newPluginTestCmd(),
 		newPluginRunCmd(),
 		newPluginMobileIssueCmd(),
+		newPluginInstallCmd(),
+		newPluginBrowseRegistryCmd(),
 	)
 	return cmd
 }
@@ -225,6 +231,34 @@ func newPluginMobileIssueCmd() *cobra.Command {
 				fmt.Println()
 			}
 			return nil
+		},
+	}
+}
+
+// newPluginInstallCmd — BL325. Install a plugin from a connected skill registry.
+func newPluginInstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "install <registry> <plugin-name>",
+		Short: "Install a plugin from a connected skill registry",
+		Long: `Find and install a plugin from the local clone of a connected skill registry.
+The registry must already be connected (datawatch skills registry connect <name>).
+Example: datawatch plugins install community inbox-integrator`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body := map[string]any{"registry": args[0], "name": args[1]}
+			return daemonJSON(http.MethodPost, "/api/plugins/install", body)
+		},
+	}
+}
+
+// newPluginBrowseRegistryCmd — BL325. List plugins available in a connected registry.
+func newPluginBrowseRegistryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "browse-registry <registry-name>",
+		Short: "List plugins available in a connected skill registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/plugins/browse?registry=" + args[0])
 		},
 	}
 }

@@ -39,6 +39,8 @@ func (a *API) SetEnabled(name string, on bool) bool {
 	return a.R.SetEnabled(name, on)
 }
 
+func (a *API) Install(sourceDir string) error { return a.R.Install(sourceDir) }
+
 func (a *API) Test(ctx context.Context, name, hook string, payload map[string]any) (any, error) {
 	req := Request{Hook: Hook(hook), Payload: payload}
 	// Convenience — promote common top-level fields from payload.

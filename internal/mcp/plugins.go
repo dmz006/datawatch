@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -153,4 +154,40 @@ func (s *Server) handlePluginRunSubcommand(_ context.Context, req mcpsdk.CallToo
 		}
 	}
 	return nil, fmt.Errorf("plugin %q has no CLI subcommand %q", name, sub)
+}
+
+// BL325 — plugin_install: install a plugin from a connected skill registry.
+func (s *Server) toolPluginInstall() mcpsdk.Tool {
+	return mcpsdk.NewTool("plugin_install",
+		mcpsdk.WithDescription("BL325 — install a plugin from a connected skill registry into the daemon's plugin directory. The registry must already be connected."),
+		mcpsdk.WithString("registry", mcpsdk.Required(), mcpsdk.Description("Name of the connected skill registry (e.g. 'community')")),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Plugin name to install (e.g. 'inbox-integrator')")),
+	)
+}
+func (s *Server) handlePluginInstall(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{
+		"registry": req.GetString("registry", ""),
+		"name":     req.GetString("name", ""),
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/plugins/install", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// BL325 — plugin_browse_registry: list plugins available in a registry.
+func (s *Server) toolPluginBrowseRegistry() mcpsdk.Tool {
+	return mcpsdk.NewTool("plugin_browse_registry",
+		mcpsdk.WithDescription("BL325 — list plugins available in a connected skill registry."),
+		mcpsdk.WithString("registry", mcpsdk.Required(), mcpsdk.Description("Registry name (e.g. 'community')")),
+	)
+}
+func (s *Server) handlePluginBrowseRegistry(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("registry", "")
+	out, err := s.proxyGet("/api/plugins/browse", url.Values{"registry": {name}})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
 }

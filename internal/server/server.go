@@ -334,6 +334,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
 	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)
+	// S14b — per-pod alert rules + observer-driven autoscaling.
+	apiMux.HandleFunc("/api/alert-rules", api.handleAlertRules)
+	apiMux.HandleFunc("/api/alert-rules/", api.handleAlertRules)
 	// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
 	apiMux.HandleFunc("/api/orchestrator/config", api.handleOrchestratorConfig)
 	apiMux.HandleFunc("/api/orchestrator/graphs", api.handleOrchestratorGraphs)
@@ -834,6 +837,12 @@ func (s *HTTPServer) BroadcastPRDUpdate(payload map[string]any) {
 		return
 	}
 	s.hub.Broadcast(MsgPRDUpdate, payload)
+}
+
+// SetAlertRulesAPI (S14b) wires the per-pod alert rules store for REST
+// endpoints. Nil disables /api/alert-rules/* (handlers return 503).
+func (s *HTTPServer) SetAlertRulesAPI(api AlertRulesAPI) {
+	s.api.SetAlertRulesAPI(api)
 }
 
 // SetPluginsAPI (BL33) wires the plugin registry for REST endpoints.

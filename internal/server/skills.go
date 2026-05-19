@@ -39,6 +39,7 @@ type skillsManager interface {
 	Sync(registry string, names []string) ([]*skills.Synced, error)
 	Unsync(registry string, names []string) ([]string, error)
 	LoadSkillContent(name string) (string, error)
+	RegistryCachePath(name string) (string, error)
 }
 
 // SetSkillsManager wires the runtime skills.Manager into the server.
@@ -90,6 +91,11 @@ func (a SkillsManagerAdapter) Unsync(registry string, names []string) ([]string,
 // LoadSkillContent forwards.
 func (a SkillsManagerAdapter) LoadSkillContent(name string) (string, error) {
 	return a.M.LoadSkillContent(name)
+}
+
+// RegistryCachePath forwards.
+func (a SkillsManagerAdapter) RegistryCachePath(name string) (string, error) {
+	return a.M.RegistryCachePath(name)
 }
 
 // ── handlers ────────────────────────────────────────────────────────────

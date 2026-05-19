@@ -386,6 +386,15 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousTemplateDelete(), tracked(s.handleAutonomousTemplateDelete))
 	mcpSrv.AddTool(s.toolAutonomousTemplateInstantiate(), tracked(s.handleAutonomousTemplateInstantiate))
 	mcpSrv.AddTool(s.toolAutonomousPRDCloneToTemplate(), tracked(s.handleAutonomousPRDCloneToTemplate))
+	// S14b — per-pod alert rules + observer-driven autoscaling.
+	mcpSrv.AddTool(s.toolAlertRuleList(), tracked(s.handleAlertRuleList))
+	mcpSrv.AddTool(s.toolAlertRuleGet(), tracked(s.handleAlertRuleGet))
+	mcpSrv.AddTool(s.toolAlertRuleCreate(), tracked(s.handleAlertRuleCreate))
+	mcpSrv.AddTool(s.toolAlertRuleUpdate(), tracked(s.handleAlertRuleUpdate))
+	mcpSrv.AddTool(s.toolAlertRuleDelete(), tracked(s.handleAlertRuleDelete))
+	mcpSrv.AddTool(s.toolAlertRuleEnable(), tracked(s.handleAlertRuleEnable))
+	mcpSrv.AddTool(s.toolAlertRuleDisable(), tracked(s.handleAlertRuleDisable))
+	mcpSrv.AddTool(s.toolAlertRuleFirings(), tracked(s.handleAlertRuleFirings))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))
 	mcpSrv.AddTool(s.toolPluginsReload(), tracked(s.handlePluginsReload))
@@ -395,6 +404,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginTest(), tracked(s.handlePluginTest))
 	// BL244 (v6.3.0) — Manifest v2.1 CLI subcommand runner.
 	mcpSrv.AddTool(s.toolPluginRunSubcommand(), tracked(s.handlePluginRunSubcommand))
+	// BL325 (v8.1.0) — community registry install + browse.
+	mcpSrv.AddTool(s.toolPluginInstall(), tracked(s.handlePluginInstall))
+	mcpSrv.AddTool(s.toolPluginBrowseRegistry(), tracked(s.handlePluginBrowseRegistry))
 	// BL242 (v6.4.0) — centralized secrets manager.
 	mcpSrv.AddTool(s.toolSecretList(), tracked(s.handleSecretList))
 	mcpSrv.AddTool(s.toolSecretGet(), tracked(s.handleSecretGet))

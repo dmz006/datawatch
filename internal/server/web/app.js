@@ -4186,6 +4186,30 @@ state.voice = { recorder: null, chunks: [], sessionId: null };
 // Mobile (datawatch-app) is being aligned to match — see issue
 // dmz006/datawatch-app#term-toolbar-toggle-removed.
 
+// BL326 — show the recording popup and return a promise that resolves
+// true (send) or false (cancel). Created once, removed on resolution.
+function _showVoiceRecordingModal() {
+  const existing = document.getElementById('voiceRecordingOverlay');
+  if (existing) existing.remove();
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.id = 'voiceRecordingOverlay';
+    overlay.className = 'voice-recording-overlay';
+    overlay.innerHTML = `<div class="voice-recording-modal">
+      <div class="voice-recording-label">&#127908; ${escHtml(t('voice_recording')||'Recording…')}</div>
+      <div class="voice-waveform"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="voice-recording-actions">
+        <button class="voice-btn-cancel" id="voiceRecordingCancel">${escHtml(t('action_cancel')||'Cancel')}</button>
+        <button class="voice-btn-send" id="voiceRecordingSend">${escHtml(t('voice_btn_send')||'Send')}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const close = (val) => { overlay.remove(); resolve(val); };
+    document.getElementById('voiceRecordingCancel').onclick = () => close(false);
+    document.getElementById('voiceRecordingSend').onclick  = () => close(true);
+  });
+}
+
 async function toggleVoiceInput(sessionId) {
   const btn = document.getElementById('voiceInputBtn');
   const inputEl = document.getElementById('sessionInput');
@@ -4212,17 +4236,19 @@ async function toggleVoiceInput(sessionId) {
     if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
   }
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  state.voice = { recorder: rec, chunks: [], sessionId };
+  state.voice = { recorder: rec, chunks: [], sessionId, _cancelled: false };
   rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
   rec.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
     if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
+    document.getElementById('voiceRecordingOverlay')?.remove();
     console.log('[voice] session-detail onstop, chunks:', state.voice && state.voice.chunks ? state.voice.chunks.length : 0);
+    if (state.voice && state.voice._cancelled) { state.voice = { recorder: null, chunks: [], sessionId: null }; return; }
     const chunks = (state.voice && state.voice.chunks) || [];
     const blob = new Blob(chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
-    // v7.0.0-alpha.14 (operator 2026-05-09: "tmux prompt isn't resetting after sending command") — capture original placeholder so the finally block restores it instead of wiping to empty (which left the input bar looking dead after voice send).
+    // v7.0.0-alpha.14 — capture original placeholder so the finally block restores it instead of wiping to empty.
     const originalPlaceholder = inputEl ? inputEl.placeholder : '';
     if (inputEl) { inputEl.disabled = true; inputEl.placeholder = t('voice_transcribing')||'Transcribing…'; }
     try {
@@ -4259,10 +4285,13 @@ async function toggleVoiceInput(sessionId) {
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop_recording')||'Click to stop recording'; }
-  // BL287 fix: visible recording toast — easy-to-miss button-icon-only
-  // change confused operators into thinking nothing was happening.
-  showToast('🎤 Recording — click mic again to stop', 'info', 8000);
   rec.start();
+  // BL326 — show recording popup; Cancel discards, Send submits.
+  const send = await _showVoiceRecordingModal();
+  if (!send && state.voice) state.voice._cancelled = true;
+  if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording') {
+    state.voice.recorder.stop();
+  }
 }
 
 // v5.26.8 — generic mic-button factory for any textarea / input the
@@ -4390,7 +4419,6 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   // Stop if already recording for this target.
   if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording' && state.voice._genericTarget === targetId) {
     console.log('[voice] stop requested for', targetId);
-    showToast('⏳ Transcribing…', 'info', 4000);
     state.voice.recorder.stop();
     return;
   }
@@ -4405,12 +4433,14 @@ window.startGenericVoiceInput = async function(targetId, btn) {
     if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
   }
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  state.voice = { recorder: rec, chunks: [], _genericTarget: targetId };
+  state.voice = { recorder: rec, chunks: [], _genericTarget: targetId, _cancelled: false };
   rec.ondataavailable = e => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
   rec.onstop = async () => {
     console.log('[voice] onstop fired for', targetId, 'chunks:', state.voice && state.voice.chunks ? state.voice.chunks.length : 0);
     stream.getTracks().forEach(t => t.stop());
     if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
+    document.getElementById('voiceRecordingOverlay')?.remove();
+    if (state.voice && state.voice._cancelled) { state.voice = { recorder: null, chunks: [], sessionId: null }; return; }
     const chunks = (state.voice && state.voice.chunks) || [];
     const blob = new Blob(chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
@@ -4439,8 +4469,6 @@ window.startGenericVoiceInput = async function(targetId, btn) {
       if (transcript) {
         target.value = target.value ? target.value + ' ' + transcript : transcript;
         target.focus();
-        // BL287 fix: surface a visible "transcribed" confirmation. The
-        // placeholder change is too subtle when the input has prior text.
         showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
       } else {
         showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
@@ -4453,10 +4481,13 @@ window.startGenericVoiceInput = async function(targetId, btn) {
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop')||'Click to stop'; }
-  // BL287 fix: visible recording indicator (toast) so operator knows the
-  // mic is hot. Previous behavior only changed the button icon, easy to miss.
-  showToast('🎤 Recording — click mic again to stop', 'info', 8000);
   rec.start();
+  // BL326 — show recording popup; Cancel discards, Send submits.
+  const send = await _showVoiceRecordingModal();
+  if (!send && state.voice) state.voice._cancelled = true;
+  if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording') {
+    state.voice.recorder.stop();
+  }
 };
 
 // v5.26.8 — CSV expand-to-modal affordance. Operator-reported: comma-

@@ -46,11 +46,13 @@ Latest release: **v8.0.0** (released 2026-05-19). Major release closing BL316–
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 3 | BL324 (v8.1 Community Skills + Plugins registry), BL325 (external community registry plugin support), BL326 (mic recording popup) |
+| Active backlog | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
-| Recently closed | BL316–BL323 ✅ v7.3.0–v8.0.0 | CBAC, routing, adapters, E2E infra |
-| Frozen / external | 8 items | BL281–BL285 (Vault follow-ups) · F7 · S14b/c · mobile parity GH#4 |
+| Recently closed | BL316–BL326 + S14b ✅ v7.3.0–v8.1.0 | CBAC, routing, adapters, E2E infra, community registry, mic popup, alert rules |
+| Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
+
+v8.1.0 shipped 2026-05-19 — closes BL324 (community skills + plugins registry), BL325 (plugin install from registry: `POST /api/plugins/install`, `GET /api/plugins/browse`, CLI `datawatch plugins install/browse-registry`, MCP `plugin_install`/`plugin_browse_registry`, community registry seeded first by default), BL326 (mic recording overlay with animated waveform, Cancel/Send buttons), S14b (per-pod alert rules: `internal/alertrules/` package with YAML store + observer-driven evaluator, 8 REST endpoints, 8 MCP tools, CLI `datawatch alert-rules`, wired into daemon). Community registry (`dmz006/datawatch-community`) pre-seeded as first registry in all listing surfaces.
 
 v8.0.0 shipped 2026-05-19 — major release closing BL316 (CBAC package + federation peers + 50-capability sweep across all REST/MCP handlers), BL317 (MCP SSE federated auth + per-tool CBAC gates), BL318–BL322 (compute node routing modes: direct/docker-network/datawatch-proxy + DockerLifecycle + ProxyRouter), BL321 (gemini-api + opencode-api adapters), BL322 (7-surface parity for routing/adapters), BL323 (E2E test infrastructure + 626 test stories). Plans post-v7-routing.md and post-v7-llm-kinds.md archived to historical-plans after delivery.
 
@@ -62,9 +64,9 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL324 — Community Skills + Plugins registry (GitHub-hosted, categorized, user-contributed)
+#### BL324 — Community Skills + Plugins registry (GitHub-hosted, categorized, user-contributed) ✅ v8.1.0
 
-**Operator-filed 2026-05-19. Target: v8.1. Status: In Progress — repo created 2026-05-19.**
+**Operator-filed 2026-05-19. Closed v8.1.0.**
 
 **Background:** External contributors (issues #66/#67/#71/#73) filed FRs that are all solvable via Skills + Plugins without core code changes. Rather than baking polity-specific patterns into the daemon, the extension surface is the right home. But currently every operator builds extensions privately with no way to share or discover community patterns.
 
@@ -78,13 +80,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 - Issues #66/#67/#71/#73 commented with links to community registry implementations
 - All templates anonymous with `author:` + `author_url:` + `contributor_notes:` placeholder fields
 
-**Remaining v8.1 scope:**
-- Preconfigure community registry in default `datawatch.yaml` (sync_on_start: false)
-- How-to doc: `docs/howto/community-skills-plugins.md`
-- Update Skills + Plugins howtos to reference community registry
-- `contributor_notes` field added to manifest extensions list below
-
-**v8.2 follow-on (tracked as BL325):** Discovery UX + Plugin signing/verification + `plugin install` command.
+**Shipped v8.1.0:** Community registry pre-seeded first in daemon startup (before PAI); `datawatch plugins install/browse-registry` CLI commands; `POST /api/plugins/install` + `GET /api/plugins/browse` REST; MCP `plugin_install`/`plugin_browse_registry`; `CommunityDefaultRegistry` constant; `AddBuiltinDefaults()` idempotent seeder.
 
 **Manifest extensions for community entries:**
 - `category` — directory-level category for browsing
@@ -101,27 +97,15 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL325 — External community registry: discovery UX, plugin signing, `plugin install` command
+#### BL325 — External community registry: discovery UX, plugin install ✅ v8.1.0
 
-**Operator-filed 2026-05-19. Target: v8.2. Blocked on: BL324 community repo must be live and populated.**
-
-Builds on BL324. Adds the discovery and trust layer for the community registry:
-
-- `datawatch skills registry-available community` — browse available skills/plugins with compatibility filter (`--min-version`, `--category`, `--tag`)
-- `datawatch plugin install <name>` — install a plugin from a connected registry with one command; handles manifest download + run.sh chmod + reload
-- Plugin signing: maintainer signs community entries; daemon verifies signature before loading; `REQUIRE_SIGNING` config option
-- PWA Settings → Automate → Skill Registries card: shows connected registries, available count, last-synced timestamp, sync-now button
-- REST: `GET /api/skills/registries/{name}/available` with query params
-- MCP: `skills_registry_available` (already exists), extend with `plugin_install` tool
-- CLI: `datawatch plugin install` command (currently only `plugins list/reload/enable/disable`)
-
-**7-surface parity:** CLI + REST + MCP + PWA. Mobile-parity: file dmz006/datawatch-app issue.
+**Operator-filed 2026-05-19. Closed v8.1.0.** Plugin install (`POST /api/plugins/install`), browse registry (`GET /api/plugins/browse`), CLI `datawatch plugins install <registry> <name>` + `browse-registry <name>`, MCP `plugin_install` + `plugin_browse_registry`. Community registry seeded first by default. Plugin signing/verification deferred to v8.2.
 
 ---
 
-#### BL326 — Mic recording popup: animation + cancel/send controls
+#### BL326 — Mic recording popup: animation + cancel/send controls ✅ v8.1.0
 
-**Operator-filed 2026-05-19. Target: v8.1.**
+**Operator-filed 2026-05-19. Closed v8.1.0.**
 
 When the mic button is pressed, instead of silent recording, show a popup/modal with:
 - "Recording…" status message

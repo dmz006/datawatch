@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -573,4 +574,64 @@ func (r *Registry) Watch(ctx context.Context) error {
 		}
 	}()
 	return nil
+}
+
+// Install copies a plugin directory from sourceDir into the registry's
+// plugin directory, then reloads. sourceDir must contain a manifest.yaml.
+// If a plugin with the same name already exists it is overwritten.
+// Returns an error if plugins are disabled or the directory is unset.
+func (r *Registry) Install(sourceDir string) error {
+	r.mu.Lock()
+	dir := r.cfg.Dir
+	enabled := r.cfg.Enabled
+	r.mu.Unlock()
+	if !enabled || strings.TrimSpace(dir) == "" {
+		return fmt.Errorf("plugins are disabled or no plugin directory configured — set plugins.enabled + plugins.dir in config")
+	}
+	// Validate source has a manifest.
+	manData, err := os.ReadFile(filepath.Join(sourceDir, "manifest.yaml"))
+	if err != nil {
+		return fmt.Errorf("read manifest from %s: %w", sourceDir, err)
+	}
+	var m Manifest
+	if err := yaml.Unmarshal(manData, &m); err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+	if m.Name == "" {
+		return fmt.Errorf("manifest in %s has no name field", sourceDir)
+	}
+	destDir := filepath.Join(dir, m.Name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create plugin dir: %w", err)
+	}
+	if err := os.RemoveAll(destDir); err != nil {
+		return fmt.Errorf("remove existing plugin: %w", err)
+	}
+	if err := pluginCopyDir(sourceDir, destDir); err != nil {
+		return fmt.Errorf("copy plugin: %w", err)
+	}
+	return r.Discover()
+}
+
+// pluginCopyDir recursively copies src into dst, preserving executable bits.
+func pluginCopyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }

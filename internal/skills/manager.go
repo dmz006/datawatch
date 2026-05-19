@@ -9,6 +9,20 @@ import (
 	"time"
 )
 
+// CommunityDefaultRegistry is the official datawatch community registry for
+// skills and plugins. It is seeded first on daemon start so it appears at
+// the top of every listing surface (PWA, MCP, CLI). sync_on_start is false
+// by default — operators opt in via `datawatch skills registry connect community`.
+var CommunityDefaultRegistry = &Registry{
+	Name:        "community",
+	Kind:        "git",
+	URL:         "https://github.com/dmz006/datawatch-community",
+	Branch:      "main",
+	Enabled:     true,
+	Description: "Official datawatch community skills + plugins registry. Connect to browse and install community-contributed extensions.",
+	IsBuiltin:   true,
+}
+
 // PAIDefaultRegistry is the canonical built-in default. The
 // `skills registry add-default` verb on every surface inserts this
 // entry idempotently per Q5 of the BL255 design.
@@ -48,6 +62,16 @@ func NewManager(dataDir string) (*Manager, error) {
 	return &Manager{Store: store, Git: git, SyncedRoot: syncedRoot}, nil
 }
 
+// AddCommunityDefault inserts the community registry idempotently.
+// It is called before AddDefault so "community" appears first in listings.
+func (m *Manager) AddCommunityDefault() error {
+	if _, ok := m.Store.GetRegistry(CommunityDefaultRegistry.Name); ok {
+		return nil
+	}
+	r := *CommunityDefaultRegistry
+	return m.Store.CreateRegistry(&r)
+}
+
 // AddDefault inserts the PAI default registry idempotently. If a
 // registry with name "pai" already exists, returns nil without changes.
 func (m *Manager) AddDefault() error {
@@ -56,6 +80,15 @@ func (m *Manager) AddDefault() error {
 	}
 	r := *PAIDefaultRegistry
 	return m.Store.CreateRegistry(&r)
+}
+
+// AddBuiltinDefaults seeds both the community registry (first) and the PAI
+// registry. Idempotent — skips any that already exist.
+func (m *Manager) AddBuiltinDefaults() error {
+	if err := m.AddCommunityDefault(); err != nil {
+		return err
+	}
+	return m.AddDefault()
 }
 
 // Connect runs the GitRegistry connect for a named registry and
@@ -223,4 +256,20 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	defer out.Close() //nolint:errcheck
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// RegistryCachePath returns the on-disk path of the shallow clone for a
+// named registry. Returns an error if the registry does not exist.
+// Callers (e.g. plugin install) use this to find plugins bundled in a
+// community registry repo alongside skills.
+func (m *Manager) RegistryCachePath(name string) (string, error) {
+	reg, ok := m.Store.GetRegistry(name)
+	if !ok {
+		return "", fmt.Errorf("registry %q not found", name)
+	}
+	path := m.Git.CacheDir + "/" + reg.Name
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("registry %q not connected (run `datawatch skills registry connect %s` first)", name, name)
+	}
+	return path, nil
 }

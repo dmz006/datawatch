@@ -2455,6 +2455,86 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   50% { transform: scale(1.18); }
 }
 
+/* BL326 — mic recording popup */
+.voice-recording-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.voice-recording-modal {
+  background: var(--bg-card, #1a2233);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 32px 22px;
+  min-width: 260px;
+  max-width: 340px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.voice-recording-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+/* Animated waveform — 5 bars with staggered bounce */
+.voice-waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 36px;
+}
+.voice-waveform span {
+  display: block;
+  width: 5px;
+  border-radius: 3px;
+  background: var(--error, #ef4444);
+  animation: vw-bounce 0.9s ease-in-out infinite;
+}
+.voice-waveform span:nth-child(1) { height: 14px; animation-delay: 0s;    }
+.voice-waveform span:nth-child(2) { height: 26px; animation-delay: 0.12s; }
+.voice-waveform span:nth-child(3) { height: 36px; animation-delay: 0.24s; }
+.voice-waveform span:nth-child(4) { height: 26px; animation-delay: 0.36s; }
+.voice-waveform span:nth-child(5) { height: 14px; animation-delay: 0.48s; }
+@keyframes vw-bounce {
+  0%, 100% { transform: scaleY(0.4); opacity: 0.7; }
+  50%       { transform: scaleY(1);   opacity: 1;   }
+}
+.voice-recording-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+.voice-recording-actions button {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  font-weight: 500;
+  transition: opacity 120ms;
+}
+.voice-recording-actions button:hover { opacity: 0.82; }
+.voice-btn-cancel {
+  background: var(--bg, #0f1419);
+  color: var(--text2);
+}
+.voice-btn-send {
+  background: var(--error, #ef4444);
+  color: #fff;
+  border-color: var(--error, #ef4444) !important;
+}
+
 .stat-card {
   background: var(--bg);
   border: 1px solid var(--border);

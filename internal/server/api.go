@@ -172,7 +172,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.0.0"
+var Version = "8.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -387,6 +387,10 @@ type Server struct {
 	// BL316 — custom federation capability groups store.
 	// Nil when not wired; group endpoints return builtin-only lists.
 	fedGroupStore *federation.GroupStore
+
+	// S14b — per-pod alert rules + observer-driven autoscaling store.
+	// Nil when not wired; handlers return 503.
+	alertRulesAPI AlertRulesAPI
 }
 
 // SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).

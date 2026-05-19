@@ -33,6 +33,7 @@ import (
 
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	alertrulespkg "github.com/dmz006/datawatch/internal/alertrules"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/hookinstaller"
@@ -101,7 +102,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.0.0"
+var Version = "8.1.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -312,6 +313,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 		newServerCmd(),     // BL312 S1 — multi-server registry
 		newFederationCmd(), // BL316 S2 — federation peer and group registry
+		newAlertRulesCmd(), // S14b — per-pod alert rules + observer-driven autoscaling
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
@@ -953,9 +955,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	skillsMgr, err := skills.NewManager(expandHome(cfg.DataDir))
 	if err != nil {
 		fmt.Printf("[warn] skills manager init: %v\n", err)
-	} else if cfg.Skills.AddDefaultOnStart {
-		if err := skillsMgr.AddDefault(); err != nil {
-			fmt.Printf("[warn] skills add-default: %v\n", err)
+	} else {
+		// Always seed the community registry first (it shows up first in all
+		// listing surfaces), then PAI. Both are idempotent — existing entries win.
+		if err := skillsMgr.AddBuiltinDefaults(); err != nil {
+			fmt.Printf("[warn] skills seed defaults: %v\n", err)
+		} else if cfg.Skills.AddDefaultOnStart {
+			// Legacy flag — still honoured but AddBuiltinDefaults already covers it.
+			_ = skillsMgr.AddDefault()
 		}
 	}
 	// Seed YAML-declared registries that aren't already in the store.
@@ -3750,6 +3757,33 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				autonomousMgrRef.SetContextFn(reg.ContextForPRDType)
 			}
 		}
+		// S14b — per-pod alert rules + observer-driven autoscaling.
+		// obsCollectorRef is populated later (in the observer block) so the
+		// evaluator closure can access the live collector without a hard
+		// start-order dependency.
+		var obsCollectorRef *observerpkg.Collector
+		if arStore, arErr := alertrulespkg.NewStore(expandHome(cfg.DataDir)); arErr != nil {
+			fmt.Fprintf(os.Stderr, "[warn] alert-rules store: %v\n", arErr)
+		} else {
+			httpServer.SetAlertRulesAPI(arStore)
+			getEnvelopes := func() []observerpkg.Envelope {
+				if obsCollectorRef == nil {
+					return nil
+				}
+				snap := obsCollectorRef.Latest()
+				if snap == nil {
+					return nil
+				}
+				return snap.Envelopes
+			}
+			fireAlert := func(name, msg string) {
+				alertStore.AddSystem(alertspkg.LevelWarn, "alert-rule: "+name, msg)
+			}
+			scaleNode := func(_ string, _ int) error { return nil }
+			arEval := alertrulespkg.NewEvaluator(arStore, getEnvelopes, fireAlert, scaleNode)
+			go arEval.Start(context.Background())
+			fmt.Println("[alert-rules] store loaded; evaluator started")
+		}
 		// BL117 (v4.0.0) — PRD-DAG orchestrator. Always wired so the
 		// REST surface is reachable; runner no-ops when
 		// orchestrator.enabled=false (handlers still return 503 when
@@ -3986,6 +4020,7 @@ Return STRICT JSON:
 			})
 			obsCollector.Start(context.Background())
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
+			obsCollectorRef = obsCollector // S14b: wire into alert-rules evaluator
 			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
 				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
 			// BL172 (S11) — Shape B / C peer registry. Disabled when
