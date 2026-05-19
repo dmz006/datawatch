@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# TS-556 — All TS-001 to TS-555 pass or skip (meta-test)
+# TS-556 — All test stories present (meta-test)
+# Counts every TS-NNN story across all surfaces and verifies the suite
+# has not lost stories below a historical minimum. Update MIN_STORIES when
+# adding a batch of new tests (keep ~20 below the expected total so minor
+# deliberate deletions don't fail the gate).
 # tags: surface:meta
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-556"
 story_preflight "surface:meta" || return 0
 
+MIN_STORIES=550
+
 _story_ts_556() {
   local story_dir
   story_dir="$(dirname "${BASH_SOURCE[0]}")"
-  # Count stories TS-001 through TS-555
-  local count
-  count=$(find "$story_dir" -maxdepth 1 -name "TS-[0-9][0-9][0-9].sh" | \
-    awk -F'TS-' '{n=int($2); if (n>=1 && n<=555) print}' | wc -l)
-  local pwa_count
-  pwa_count=$(find "$story_dir/pwa" -maxdepth 1 -name "TS-[0-9][0-9][0-9].mjs" 2>/dev/null | wc -l)
-  local total=$(( count + pwa_count ))
-  save_evidence TS-556 "story_count.txt" "stories TS-001..555 found: $count sh + $pwa_count pwa = $total"
-  # Not all numbers in TS-001..555 are used; gaps are intentional.
-  # Threshold of 450 ensures the suite body is substantially present.
-  if [[ $total -ge 450 ]]; then
-    ok "meta: $total test stories cover TS-001..TS-555 range ($count shell + $pwa_count pwa)"
+
+  local sh_count pwa_count total
+  sh_count=$(find "$story_dir" -maxdepth 1 -name "TS-[0-9]*.sh" | wc -l)
+  pwa_count=$(find "$story_dir/pwa" -maxdepth 1 -name "TS-[0-9]*.mjs" 2>/dev/null | wc -l)
+  total=$(( sh_count + pwa_count ))
+
+  save_evidence TS-556 "story_count.txt" "total=$total  shell=$sh_count  pwa=$pwa_count  min=$MIN_STORIES"
+
+  if [[ $total -ge $MIN_STORIES ]]; then
+    ok "meta: $total test stories present ($sh_count shell + $pwa_count pwa; min=$MIN_STORIES)"
   else
-    ko "meta: only $total test stories found — expected 450+ for a complete v8.0 suite"
+    ko "meta: only $total test stories found — expected >=$MIN_STORIES (stories may have been deleted)"
   fi
 }
 
