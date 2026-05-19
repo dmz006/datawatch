@@ -22,8 +22,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write    # goreleaser + release asset upload
-  packages: write    # ghcr.io push
+  contents: write        # goreleaser + release asset upload
+  packages: write        # ghcr.io push
+  security-events: write # SARIF upload to GitHub Code Scanning
 
 # ── Stage 1: tests ───────────────────────────────────────────────────────────
 
@@ -71,7 +72,17 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck (blocking)
-        run: $(go env GOPATH)/bin/govulncheck ./...
+        run: |
+          $(go env GOPATH)/bin/govulncheck ./... 2>&1 | tee /tmp/govulncheck.txt
+          # Preserve exit code from govulncheck (tee always exits 0)
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Upload govulncheck results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: govulncheck-results
+          path: /tmp/govulncheck.txt
+          retention-days: 90
 
   gosec:
     name: gosec baseline-diff
@@ -90,7 +101,10 @@ jobs:
         run: |
           set +e
           EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
+          # JSON for baseline diff
           $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          # SARIF for Code Scanning upload
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=sarif -quiet ./... > /tmp/gosec.sarif
           set -e
           python3 - <<'PY'
           import json, sys
@@ -114,6 +128,21 @@ jobs:
           if live_n < base_n:
               print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Lower the baseline so regressions get caught at the new bar.")
           PY
+      - name: Upload gosec SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: /tmp/gosec.sarif
+          category: gosec
+      - name: Upload gosec results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gosec-results
+          path: |
+            /tmp/gosec.json
+            /tmp/gosec.sarif
+          retention-days: 90
 
 # ── Stage 3: goreleaser — binaries + GitHub release ──────────────────────────
 
@@ -193,7 +222,16 @@ jobs:
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
             sh -s -- -b /usr/local/bin v0.70.0
-      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
+        # Print human-readable table to the job log (non-blocking pass).
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 0 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }} || true
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy SARIF, blocking)
         # Unfixable base-image CVE exceptions live in .trivyignore.
         # Net-new findings not listed there will fail the release.
         # See docs/security-review.md#container-image-scanning.
@@ -202,8 +240,22 @@ jobs:
             --severity HIGH,CRITICAL \
             --ignorefile .trivyignore \
             --exit-code 1 \
-            --format table \
+            --format sarif \
+            -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Upload ${{ matrix.name }} Trivy SARIF artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-${{ matrix.name }}-sarif
+          path: /tmp/trivy-${{ matrix.name }}.sarif
+          retention-days: 90
 
 # ── Stage 5: containers — agent images (FROM agent-base) ─────────────────────
 
@@ -264,14 +316,36 @@ jobs:
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
             sh -s -- -b /usr/local/bin v0.70.0
-      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 0 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }} || true
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy SARIF, blocking)
         run: |
           trivy image \
             --severity HIGH,CRITICAL \
             --ignorefile .trivyignore \
             --exit-code 1 \
-            --format table \
+            --format sarif \
+            -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Upload ${{ matrix.name }} Trivy SARIF artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-${{ matrix.name }}-sarif
+          path: /tmp/trivy-${{ matrix.name }}.sarif
+          retention-days: 90
 
 # ── Stage 6: attach stats-cluster tarball to GitHub release ──────────────────
 
@@ -301,3 +375,105 @@ jobs:
         with:
           files: datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
           fail_on_unmatched_files: true
+
+# ── Stage 7: security scan summary ───────────────────────────────────────────
+# Collects gosec + govulncheck + Trivy SARIF artifacts, builds a human-readable
+# security-summary.md, and attaches it (plus all raw scan files) to the release.
+# Runs even if some container scans failed (if: always()) so the summary
+# always captures the actual state of each scan.
+
+  attach-security-summary:
+    name: attach security scan summary
+    needs: [attach-tarball]
+    runs-on: ubuntu-latest
+    if: always()
+    timeout-minutes: 10
+    steps:
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-artifacts/
+      - name: Build security-summary.md
+        run: |
+          python3 - <<'PY'
+          import os, json, glob, datetime
+
+          version = os.environ.get("VERSION", "unknown")
+          now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+          lines = [
+              f"# Security Scan Summary — v{version}",
+              f"_Generated: {now}_",
+              "",
+              "## govulncheck (Go vulnerability database)",
+              "",
+          ]
+
+          gv_files = glob.glob("scan-artifacts/govulncheck-results/govulncheck.txt")
+          if gv_files:
+              with open(gv_files[0]) as f:
+                  txt = f.read().strip()
+              if "No vulnerabilities found" in txt or not txt:
+                  lines.append("✅ No reachable Go vulnerabilities found.")
+              else:
+                  lines.append("```")
+                  lines.append(txt[:4000])
+                  lines.append("```")
+          else:
+              lines.append("_(results not available)_")
+
+          lines += ["", "## gosec (Go static analysis)", ""]
+          gs_files = glob.glob("scan-artifacts/gosec-results/gosec.json")
+          if gs_files:
+              try:
+                  data = json.load(open(gs_files[0]))
+                  issues = data.get("Issues") or []
+                  n = len(issues)
+                  lines.append(f"✅ {n} finding(s) — within baseline." if n == 0 else f"⚠️ {n} finding(s) — see gosec.sarif in Code Scanning.")
+              except Exception as e:
+                  lines.append(f"_(parse error: {e})_")
+          else:
+              lines.append("_(results not available)_")
+
+          lines += ["", "## Trivy container image scans (HIGH/CRITICAL)", ""]
+          sarif_files = sorted(glob.glob("scan-artifacts/trivy-*-sarif/*.sarif"))
+          if sarif_files:
+              for sf in sarif_files:
+                  name = os.path.basename(sf).replace(".sarif", "").replace("trivy-", "").replace("-sarif", "")
+                  try:
+                      sarif = json.load(open(sf))
+                      results = sarif.get("runs", [{}])[0].get("results", [])
+                      n = len(results)
+                      icon = "✅" if n == 0 else "⚠️"
+                      lines.append(f"- {icon} **{name}**: {n} finding(s)")
+                  except Exception:
+                      lines.append(f"- ❓ **{name}**: (parse error)")
+          else:
+              lines.append("_(Trivy SARIF results not available — see Code Scanning tab)_")
+
+          lines += [
+              "",
+              "---",
+              "",
+              "Full SARIF reports are available in the [Security → Code Scanning](../../security/code-scanning) tab.",
+              "Raw artifact files (gosec.json, govulncheck.txt, trivy-*.sarif) are attached to this release.",
+          ]
+
+          with open("security-summary.md", "w") as f:
+              f.write("\n".join(lines) + "\n")
+
+          print("security-summary.md written.")
+          PY
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+      - name: Upload security-summary.md as release asset
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
+        with:
+          files: |
+            security-summary.md
+            scan-artifacts/gosec-results/gosec.json
+            scan-artifacts/gosec-results/gosec.sarif
+            scan-artifacts/govulncheck-results/govulncheck.txt
+          fail_on_unmatched_files: false

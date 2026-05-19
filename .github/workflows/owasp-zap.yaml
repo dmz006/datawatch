@@ -38,6 +38,13 @@ name: owasp-zap
 # port-forwarded daemon.
 
 on:
+  # Trigger automatically after the Release workflow completes on a tag.
+  # This way ZAP scans the freshly-released version and the HTML reports
+  # are attached to the release page for user visibility.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
   workflow_dispatch:
     inputs:
       target_host:
@@ -46,8 +53,8 @@ on:
         default: 'localhost:18080'
 
 permissions:
-  contents: read
-  issues: write   # ZAP creates issues for findings above thresholds
+  contents: write  # upload ZAP reports as release assets
+  issues: write    # ZAP creates issues for findings above thresholds
 
 jobs:
   zap-suite:
@@ -162,3 +169,54 @@ jobs:
         run: |
           kill "${PF_PID:-0}" 2>/dev/null || true
           kind delete cluster --name dw-zap
+
+      # ── Upload ZAP HTML reports as artifacts ─────────────────────
+      # ZAP actions write reports to the workspace root. Collect and
+      # upload so they're accessible from the Actions run and, for
+      # release-triggered runs, we can attach them to the release.
+      - name: Upload ZAP reports artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-zap-reports
+          path: |
+            report_pwa-baseline.html
+            report_api-scan.html
+            report_diagrams-scan.html
+            report_pwa-active.html
+            report_api-active.html
+            zap*.json
+          retention-days: 90
+
+      # ── Attach reports to GitHub release (release-triggered runs) ─
+      - name: Resolve release tag from triggering workflow
+        id: release_tag
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          TAG=$(gh api "repos/$REPO/git/refs/tags?per_page=30" --jq '.[].ref | ltrimstr("refs/tags/")' 2>/dev/null | \
+          while read t; do
+            OBJ=$(gh api "repos/$REPO/git/ref/tags/$t" --jq '[.object.type, .object.sha] | @tsv' 2>/dev/null || continue)
+            OBJ_TYPE=$(echo "$OBJ" | cut -f1)
+            OBJ_SHA=$(echo "$OBJ" | cut -f2)
+            if [[ "$OBJ_TYPE" == "tag" ]]; then
+              COMMIT_SHA=$(gh api "repos/$REPO/git/tags/$OBJ_SHA" --jq '.object.sha' 2>/dev/null || echo "")
+            else
+              COMMIT_SHA="$OBJ_SHA"
+            fi
+            if [[ "$COMMIT_SHA" == "$SHA" ]]; then echo "$t"; fi
+          done | head -1)
+          echo "tag=${TAG:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach ZAP reports to GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
+        if: github.event_name == 'workflow_run' && steps.release_tag.outputs.tag != ''
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          files: |
+            report_pwa-baseline.html
+            report_api-scan.html
+          fail_on_unmatched_files: false
