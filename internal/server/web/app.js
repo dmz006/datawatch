@@ -4527,19 +4527,186 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   }
 };
 
-// v5.26.8 — CSV expand-to-modal affordance. Operator-reported: comma-
-// separated list inputs (per_task_guardrails, per_story_guardrails,
-// fallback_chain, etc.) are awkward to edit inline, especially on
-// mobile. This helper emits an [edit list] button next to such an
-// input that opens a modal with a textarea (one item per line) plus
-// the mic button.
+// BL327 — Badge/chip multi-select input component.
+// Replaces all "comma-separated" text inputs with an interactive chip UI.
 //
-// Usage from a config-field renderer:
-//   <input id="myCsv" ...>${csvExpandButtonHTML('myCsv', 'Per-task guardrails')}
+// renderBadgeInput(containerId, initialCsv, opts) → HTML string
+//   containerId: wrapper div id; use getBadgeInputValue(id) to read current chips
+//   initialCsv:  comma-separated string of initial values (may be empty)
+//   opts: {
+//     freeform:  true  = type any value and press Enter/comma to add
+//     items:     [...] = known-set dropdown options
+//     ordered:   true  = draggable chips (for fallback chains)
+//     placeholder: '...'
+//   }
 //
+// Call initBadgeInput(containerId, opts) after inserting the HTML into the DOM.
+// Read value:  getBadgeInputValue(containerId)  → comma-joined string
+// Set value:   setBadgeInputValue(containerId, csv)
+
+window._badgeState = window._badgeState || {}; // id → { items, opts }
+
+window.renderBadgeInput = function(containerId, initialCsv, opts) {
+  opts = opts || { freeform: true };
+  const items = (initialCsv || '').split(',').map(s => s.trim()).filter(Boolean);
+  const ph = opts.placeholder || (opts.items ? 'Select…' : 'Add…');
+  return `<div class="badge-input-wrap-container" id="${containerId}_container">
+    <div class="badge-input-wrap" id="${containerId}" onclick="document.getElementById('${containerId}_input')&&document.getElementById('${containerId}_input').focus()">
+      ${items.map((v,i) => _badgeChipHTML(containerId, v, i, opts)).join('')}
+      <input class="badge-input-inner" id="${containerId}_input" placeholder="${escHtml(ph)}" autocomplete="off" />
+    </div>
+    <div class="badge-input-dropdown" id="${containerId}_dd" style="display:none;"></div>
+  </div>`;
+};
+
+window._badgeChipHTML = function(containerId, value, idx, opts) {
+  const drag = opts && opts.ordered ? `draggable="true" ondragstart="_badgeDragStart(event,'${containerId}',${idx})" ondragover="_badgeDragOver(event)" ondrop="_badgeDrop(event,'${containerId}',${idx})"` : '';
+  return `<span class="badge-chip" data-val="${escHtml(value)}" ${drag} title="${escHtml(value)}">${escHtml(value.length > 24 ? value.slice(0,22)+'…' : value)}<button type="button" class="badge-chip-del" onclick="_badgeRemove('${containerId}','${escHtml(value)}')" tabindex="-1">&#215;</button></span>`;
+};
+
+window.initBadgeInput = function(containerId, opts) {
+  opts = opts || { freeform: true };
+  const wrap = document.getElementById(containerId);
+  const inp = document.getElementById(containerId + '_input');
+  const dd = document.getElementById(containerId + '_dd');
+  if (!wrap || !inp) return;
+  // Capture existing chips from DOM
+  const chips = Array.from(wrap.querySelectorAll('.badge-chip')).map(c => c.dataset.val);
+  window._badgeState[containerId] = { items: chips, opts };
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const v = inp.value.trim().replace(/,+$/, '');
+      if (v) { _badgeAdd(containerId, v); inp.value = ''; _badgeHideDD(containerId); }
+    } else if (e.key === 'Backspace' && inp.value === '') {
+      const st = window._badgeState[containerId];
+      if (st && st.items.length) { _badgeRemove(containerId, st.items[st.items.length-1]); }
+    } else if (e.key === 'Escape') {
+      _badgeHideDD(containerId);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const first = dd.querySelector('.badge-input-dropdown-item');
+      if (first) { first.classList.add('focused'); first.focus(); }
+    }
+  });
+  inp.addEventListener('input', () => {
+    if (opts.items && opts.items.length) _badgeShowDD(containerId, inp.value);
+  });
+  inp.addEventListener('focus', () => {
+    if (opts.items && opts.items.length && !inp.value) _badgeShowDD(containerId, '');
+  });
+  inp.addEventListener('blur', () => {
+    // Delay to allow dropdown click to register
+    setTimeout(() => _badgeHideDD(containerId), 150);
+    const v = inp.value.trim().replace(/,+$/, '');
+    if (v && opts.freeform !== false) { _badgeAdd(containerId, v); inp.value = ''; }
+  });
+};
+
+window._badgeShowDD = function(containerId, filter) {
+  const st = window._badgeState[containerId];
+  if (!st || !st.opts.items) return;
+  const dd = document.getElementById(containerId + '_dd');
+  if (!dd) return;
+  const f = filter.toLowerCase();
+  const avail = st.opts.items.filter(it => !st.items.includes(it) && (!f || it.toLowerCase().includes(f)));
+  if (!avail.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = avail.slice(0, 30).map(it =>
+    `<div class="badge-input-dropdown-item" tabindex="0"
+      onmousedown="event.preventDefault();_badgeAdd('${containerId}','${escHtml(it)}');document.getElementById('${containerId}_input').value='';_badgeHideDD('${containerId}');"
+      onkeydown="if(event.key==='Enter'){_badgeAdd('${containerId}','${escHtml(it)}');document.getElementById('${containerId}_input').value='';_badgeHideDD('${containerId}');}if(event.key==='Escape'){_badgeHideDD('${containerId}');}"
+    >${escHtml(it)}</div>`
+  ).join('');
+  const wrap = document.getElementById(containerId + '_container');
+  if (wrap) {
+    dd.style.top = wrap.offsetHeight + 'px';
+    dd.style.left = '0';
+    dd.style.minWidth = wrap.offsetWidth + 'px';
+  }
+  dd.style.display = 'block';
+};
+
+window._badgeHideDD = function(containerId) {
+  const dd = document.getElementById(containerId + '_dd');
+  if (dd) dd.style.display = 'none';
+};
+
+window._badgeAdd = function(containerId, value) {
+  value = (value || '').trim();
+  if (!value) return;
+  const st = window._badgeState[containerId];
+  if (!st) return;
+  if (st.items.includes(value)) return;
+  if (st.opts.items && !st.opts.freeform && !st.opts.items.includes(value)) return;
+  st.items.push(value);
+  _badgeRender(containerId);
+};
+
+window._badgeRemove = function(containerId, value) {
+  const st = window._badgeState[containerId];
+  if (!st) return;
+  st.items = st.items.filter(v => v !== value);
+  _badgeRender(containerId);
+};
+
+window._badgeRender = function(containerId) {
+  const wrap = document.getElementById(containerId);
+  const inp = document.getElementById(containerId + '_input');
+  if (!wrap || !inp) return;
+  const st = window._badgeState[containerId];
+  // Remove existing chips, keep the input
+  Array.from(wrap.querySelectorAll('.badge-chip')).forEach(c => c.remove());
+  const chips = st.items.map((v, i) => _badgeChipHTML(containerId, v, i, st.opts));
+  inp.insertAdjacentHTML('beforebegin', chips.join(''));
+  wrap.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+window.getBadgeInputValue = function(containerId) {
+  const st = window._badgeState[containerId];
+  if (!st) {
+    // Fallback: read from DOM chips
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return '';
+    return Array.from(wrap.querySelectorAll('.badge-chip')).map(c => c.dataset.val).join(', ');
+  }
+  return st.items.join(', ');
+};
+
+window.setBadgeInputValue = function(containerId, csv) {
+  const items = (csv || '').split(',').map(s => s.trim()).filter(Boolean);
+  const st = window._badgeState[containerId];
+  if (st) { st.items = items; _badgeRender(containerId); return; }
+  // Not yet initialized — update DOM directly (will be read by getBadgeInputValue fallback)
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  Array.from(wrap.querySelectorAll('.badge-chip')).forEach(c => c.remove());
+  const inp = document.getElementById(containerId + '_input');
+  const html = items.map((v, i) => _badgeChipHTML(containerId, v, i, {})).join('');
+  if (inp) inp.insertAdjacentHTML('beforebegin', html);
+};
+
+// Drag-and-drop for ordered badge inputs
+window._badgeDragItem = null;
+window._badgeDragStart = function(e, containerId, idx) {
+  window._badgeDragItem = { containerId, idx };
+  e.dataTransfer.effectAllowed = 'move';
+};
+window._badgeDragOver = function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+window._badgeDrop = function(e, containerId, targetIdx) {
+  e.preventDefault();
+  const drag = window._badgeDragItem;
+  if (!drag || drag.containerId !== containerId) return;
+  const st = window._badgeState[containerId];
+  if (!st) return;
+  const moved = st.items.splice(drag.idx, 1)[0];
+  st.items.splice(targetIdx, 0, moved);
+  _badgeRender(containerId);
+  window._badgeDragItem = null;
+};
+
+// Legacy CSV modal kept for any remaining inline usages not yet migrated.
 window.csvExpandButtonHTML = function(targetId, label) {
-  const safeId = String(targetId).replace(/'/g, '&#39;');
-  const safeLabel = (label || 'list').replace(/'/g, '&#39;');
   return `<button type="button" class="btn-icon" onclick="openCsvEditModal(${JSON.stringify(targetId)},${JSON.stringify(label || 'list')})" title="Edit list in a larger dialog" style="margin-left:4px;">&#9998;</button>`;
 };
 
@@ -6329,7 +6496,7 @@ function renderSettingsView() {
               <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
                 <input id="newSecretName" class="form-input" type="text" placeholder="${t('secrets_name_placeholder') || 'Name'}" autocomplete="off" />
                 <input id="newSecretValue" class="form-input" type="password" placeholder="${t('secrets_value_placeholder') || 'Value'}" autocomplete="new-password" />
-                <input id="newSecretTags" class="form-input" type="text" placeholder="${t('secrets_tags_placeholder') || 'Tags (comma-separated, e.g. git,cloud)'}" autocomplete="off" />
+                ${renderBadgeInput('newSecretTags', '', { freeform: true, placeholder: t('secrets_tags_placeholder') || 'Tags (git, cloud…)' })}
                 <input id="newSecretDesc" class="form-input" type="text" placeholder="${t('secrets_desc_placeholder') || 'Description (optional)'}" autocomplete="off" />
                 <input id="newSecretScopes" class="form-input" type="text" placeholder="${t('secrets_scopes_placeholder') || 'Scopes (e.g. agent:ci-runner, plugin:gh-hooks) — leave blank for universal'}" autocomplete="off" />
                 <button class="btn-primary" style="margin-top:4px;" onclick="saveSecret()">${t('secrets_save_btn') || 'Save Secret'}</button>
@@ -6510,10 +6677,8 @@ function renderSettingsView() {
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
                 <div id="serverFormCapsWrap" style="display:none;">
-                  <label style="font-size:12px;color:var(--text2);">Capabilities (comma-separated groups or surface:action)<br>
-                    <input type="text" id="serverFormCaps" placeholder="e.g. read-only, session-operator" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
-                  </label>
-                  <div id="serverFormCapsHints" style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.5;"></div>
+                  <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
+                  ${renderBadgeInput('serverFormCaps', '', { freeform: true, placeholder: 'federation-peer, session-operator…' })}
                 </div>
               </div>
               <div style="display:flex;gap:8px;margin-top:10px;">
@@ -6540,7 +6705,7 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-                <div><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capability Group'}</label><input id="fedPeerFormCaps" class="form-input" style="width:100%;font-size:11px;" placeholder="federation-peer" /></div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
               </div>
               <div style="display:flex;gap:6px;">
                 <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>
@@ -7164,8 +7329,8 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
-    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags (comma-separated; operator-supplied)')}</label>
-    <input id="fe_compute_tags" class="form-input" value="${escHtml((n.tags||[]).join(', '))}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
+    ${renderBadgeInput('fe_compute_tags', (n.tags||[]).join(', '), { freeform: true, placeholder: 'gpu, high-memory…' })}
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
     <select id="fe_compute_observer_peer" class="form-select">${obsOpts}</select>
     <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_observer_hint')||'Free peers self-register via REST. Detach by selecting (none).')}</div>
@@ -7199,8 +7364,7 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity = out.declared_capacity || {};
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
-  const tagsRaw = (document.getElementById('fe_compute_tags')||{}).value || '';
-  out.tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  out.tags = getBadgeInputValue('fe_compute_tags').split(',').map(s => s.trim()).filter(Boolean);
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
   return out;
 }
@@ -7417,8 +7581,8 @@ function buildLLMForm(l) {
     <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="$\{secret:anthropic-key\}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
     <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
-    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags (comma-separated; operator-supplied)')}</label>
-    <input id="fe_llm_tags" class="form-input" value="${escHtml((l.tags||[]).join(', '))}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
+    ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
   `;
 }
 
@@ -7429,8 +7593,7 @@ function collectLLMForm(originalRecord) {
   out.compute_nodes = sel ? Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean) : [];
   out.api_key_ref = (document.getElementById('fe_llm_api_key_ref')||{}).value || '';
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
-  const tagsRaw = (document.getElementById('fe_llm_tags')||{}).value || '';
-  out.tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
 
@@ -7632,8 +7795,8 @@ window._renderLLMEditPanel = function(existing) {
         <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
       </div>
       <div class="wizard-field">
-        <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags (comma-separated)')}</label>
-        <input id="llmEditTags" class="form-input" value="${escHtml((existing.tags||[]).join(', '))}" />
+        <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
+        ${renderBadgeInput('llmEditTags', (existing.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
       </div>
       <div id="llmSessionSect" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="wizard-field">
@@ -7709,8 +7872,8 @@ window._renderLLMEditPanel = function(existing) {
           </select>
         </div>
         <div class="wizard-field">
-          <label class="wizard-label">${escHtml(t('llm_field_fallback_chain')||'Fallback chain (comma-separated profile names)')}</label>
-          <input id="llmEditFallback" class="form-input" value="${escHtml((existing.fallback_chain||[]).join(', '))}" placeholder="claude-personal,gemini-backup" />
+          <label class="wizard-label">${escHtml(t('llm_field_fallback_chain')||'Fallback chain')} <span style="font-size:10px;color:var(--text2);">(drag to reorder)</span></label>
+          ${renderBadgeInput('llmEditFallback', (existing.fallback_chain||[]).join(', '), { ordered: true, freeform: true, placeholder: 'claude-personal, gemini-backup…' })}
         </div>
       </div>
       <div id="llmEditStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
@@ -7908,8 +8071,7 @@ window._llmSaveDraft = function() {
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + bug-fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
-  const tagsRaw = (document.getElementById('llmEditTags')||{}).value||'';
-  const tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
   const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
   const consoleRows = parseInt((document.getElementById('llmEditRows')||{}).value||'0', 10) || 0;
@@ -7922,8 +8084,7 @@ window._llmSaveDraft = function() {
   const autoAccept = !!(document.getElementById('llmEditAutoAccept')||{}).checked;
   const permMode = (document.getElementById('llmEditPermMode')||{}).value||'';
   const effort = (document.getElementById('llmEditEffort')||{}).value||'';
-  const fallbackRaw = (document.getElementById('llmEditFallback')||{}).value||'';
-  const fallbackChain = fallbackRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const fallbackChain = getBadgeInputValue('llmEditFallback').split(',').map(s => s.trim()).filter(Boolean);
   const url = isEdit ? '/api/llms/' + encodeURIComponent(editName) : '/api/llms';
   const method = isEdit ? 'PUT' : 'POST';
   apiFetch(url, {
@@ -9795,10 +9956,97 @@ function prdAction(id, action, method, body) {
   const url = '/api/autonomous/prds/' + encodeURIComponent(id) + (action ? '/' + action : '');
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
+  // BL328 - decompose/plan returns 202 with stream_url; open SSE progress.
+  if ((action === 'decompose' || action === 'plan') && method === 'POST') {
+    apiFetch(url, opts).then(async resp => {
+      if (resp.status === 202) {
+        const data = await resp.json();
+        if (data.stream_url) { _startDecomposeStream(id, data.stream_url); return; }
+      }
+      showToast(t('prd_step_plan') || 'Plan started', 'success', 1500);
+      _refreshAutomataOrPRD();
+    }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
+    return;
+  }
   apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
     .catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
 }
 window.prdAction = prdAction;
+
+// BL328 - SSE decompose progress handler.
+// Reconnects with exponential backoff (1s->2s->4s, cap 30s).
+// Falls back to polling /decompose/status every 5s after 3 failures.
+function _startDecomposeStream(prdID, streamUrl) {
+  const containerId = 'decompose-progress-' + prdID;
+  let container = document.getElementById(containerId);
+  if (!container) {
+    container = document.createElement('div');
+    container.id = containerId;
+    container.style.cssText = 'padding:8px 12px;margin:4px 0;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;border-radius:4px;font-size:12px;color:var(--text);';
+    const prdEl = document.querySelector('[data-prd-id="' + prdID + '"]') || document.querySelector('#prd-' + prdID);
+    if (prdEl && prdEl.parentNode) prdEl.parentNode.insertBefore(container, prdEl.nextSibling);
+    else { const l = document.getElementById('automata-list') || document.getElementById('prd-list'); if (l) l.prepend(container); }
+  }
+  const spin = '<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:4px;">&#10227;</span>';
+  container.innerHTML = spin + (t('decompose_in_progress') || 'Decomposing PRD...');
+  let es = null, retries = 0, pollIv = null, lastEID = null, wasHidden = false;
+  const maxR = 3;
+  function teardown() { if (es) { try { es.close(); } catch(e){} es = null; } if (pollIv) { clearInterval(pollIv); pollIv = null; } }
+  function poll() {
+    if (pollIv) return;
+    pollIv = setInterval(() => {
+      apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/decompose/status')
+        .then(r => r.json()).then(d => { render(d); if (d.status === 'complete' || d.status === 'error') { clearInterval(pollIv); pollIv = null; } }).catch(() => {});
+    }, 5000);
+  }
+  function render(d) {
+    if (d.status === 'complete') {
+      const n = (d.stories || []).length;
+      container.innerHTML = '&#10003; ' + (t('decompose_story_count') || '{{count}} stories generated').replace('{{count}}', n);
+      container.style.borderLeftColor = '#10b981';
+      setTimeout(() => { container.remove(); _refreshAutomataOrPRD(); }, 3000);
+    } else if (d.status === 'error') {
+      container.innerHTML = '&#10007; ' + (t('decompose_error') || 'Decompose failed') + ': ' + (d.error || '');
+      container.style.borderLeftColor = '#ef4444';
+      setTimeout(() => container.remove(), 8000);
+    } else if (typeof d.done === 'number' && d.total > 0) {
+      container.innerHTML = spin + (t('decompose_in_progress') || 'Decomposing PRD...') + ' (' + d.done + '/' + d.total + ')';
+    }
+  }
+  function connect() {
+    teardown();
+    if (document.hidden) { wasHidden = true; return; }
+    var u = lastEID !== null ? streamUrl + '?lastEventID=' + lastEID : streamUrl;
+    es = new EventSource(u);
+    es.onopen = function() { retries = 0; };
+    es.onmessage = function(e) {
+      if (e.lastEventId) lastEID = e.lastEventId;
+      var d; try { d = JSON.parse(e.data); } catch(ex) { return; }
+      if (d.type === 'story') {
+        container.innerHTML = spin + (t('decompose_in_progress') || 'Decomposing PRD...') +
+          '<br><span style="opacity:0.7;margin-left:16px;">+ ' + (d.title || 'Story ' + ((d.index || 0) + 1)) + '</span>';
+      } else if (d.type === 'progress') { render({ status: 'in_progress', done: d.done, total: d.total });
+      } else if (d.type === 'complete') { render({ status: 'complete', stories: Array(d.story_count || 0).fill(null) }); teardown();
+      } else if (d.type === 'error') { render({ status: 'error', error: d.message }); teardown(); }
+    };
+    es.onerror = function() {
+      if (es) { es.close(); es = null; }
+      retries++;
+      if (retries > maxR) { container.innerHTML = spin + (t('decompose_reconnecting') || 'Reconnecting...') + ' (polling)'; poll(); return; }
+      container.innerHTML = spin + (t('decompose_reconnecting') || 'Reconnecting...') + ' (' + retries + '/' + maxR + ')';
+      setTimeout(connect, Math.min(1000 * Math.pow(2, retries - 1), 30000));
+    };
+  }
+  function onVisibility() {
+    if (document.hidden) { wasHidden = true; if (es) { es.close(); es = null; } }
+    else if (wasHidden) { wasHidden = false; connect(); }
+  }
+  document.addEventListener('visibilitychange', onVisibility);
+  var obs = new MutationObserver(function() { if (!document.getElementById(containerId)) { teardown(); document.removeEventListener('visibilitychange', onVisibility); obs.disconnect(); } });
+  if (container.parentNode) obs.observe(container.parentNode, { childList: true });
+  connect();
+}
+window._startDecomposeStream = _startDecomposeStream;
 
 function prdActionPrompt(id, action, key, prompt) {
   const val = window.prompt(prompt, '');
@@ -10984,21 +11232,31 @@ function loadLLMTabConfig() {
             <div class="settings-label">${escHtml(f.label)}</div>
             <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
           </div>`;
+        } else if (f.csv) {
+          // BL327 — badge/chip multi-select for CSV list fields
+          const displayVal = effectiveVal !== undefined && effectiveVal !== null ? String(effectiveVal) : '';
+          const inputId = 'gcfg-input-' + f.key.replace(/[^a-z0-9_-]/gi, '-');
+          html += `<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            ${renderBadgeInput(inputId, displayVal, { freeform: true, placeholder: f.placeholder || 'Add item…' })}
+          </div>`;
+          // Wire save on change after insertion (deferred)
+          setTimeout(() => {
+            const el2 = document.getElementById(inputId);
+            if (el2) {
+              initBadgeInput(inputId, { freeform: true });
+              el2.addEventListener('change', () => saveGeneralField(f.key, getBadgeInputValue(inputId)));
+            }
+          }, 0);
         } else {
           const displayVal = effectiveVal !== undefined && effectiveVal !== null ? String(effectiveVal) : '';
-          // v5.26.8 — CSV-list inputs get a [✎] button next to them
-          // that opens a textarea-based modal (one item per line + mic
-          // input when whisper is enabled). The auto-generated input
-          // ID lets the modal find the live input on Save.
           const inputId = 'gcfg-input-' + f.key.replace(/[^a-z0-9_-]/gi, '-');
-          const csvBtn = f.csv ? csvExpandButtonHTML(inputId, f.label) : '';
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
             <span style="display:flex;align-items:center;flex:1;justify-content:flex-end;">
               <input id="${inputId}" type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
                 placeholder="${escHtml(effectivePlaceholder)}"
                 onchange="saveGeneralField('${f.key}', this.value)" />
-              ${csvBtn}
             </span>
           </div>`;
         }
@@ -12460,7 +12718,6 @@ function showServerForm(entry) {
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
   const capsWrap = document.getElementById('serverFormCapsWrap');
-  const capsEl = document.getElementById('serverFormCaps');
   if (!wrap || !nameEl || !urlEl) return;
   nameEl.value = entry ? (entry.name||'') : '';
   nameEl.disabled = !!(entry);
@@ -12473,16 +12730,17 @@ function showServerForm(entry) {
     if (capsWrap) capsWrap.style.display = fedEl.checked ? '' : 'none';
     fedEl.onchange = () => { if (capsWrap) capsWrap.style.display = fedEl.checked ? '' : 'none'; };
   }
-  if (capsEl) capsEl.value = (entry && entry.capabilities) ? entry.capabilities.join(', ') : '';
+  const initCaps = (entry && entry.capabilities) ? entry.capabilities.join(', ') : '';
   if (errEl) errEl.textContent = '';
-  // Load available group names as hints.
-  const hintsEl = document.getElementById('serverFormCapsHints');
-  if (hintsEl) {
-    apiFetch('/api/federation/groups/builtins').then(d => {
-      const groups = Array.isArray(d) ? d : [];
-      if (groups.length) hintsEl.innerHTML = 'Builtin groups: ' + groups.map(g => `<code style="background:var(--bg);padding:0 3px;border-radius:2px;" title="${escHtml(g.description||'')}">${escHtml(g.name)}</code>`).join(' ');
-    }).catch(() => {});
-  }
+  // Init badge input for capabilities; load builtin group names as known-set options
+  apiFetch('/api/federation/groups/builtins').then(d => {
+    const groups = Array.isArray(d) ? d.map(g => g.name) : [];
+    setBadgeInputValue('serverFormCaps', initCaps);
+    initBadgeInput('serverFormCaps', { freeform: true, items: groups, placeholder: 'federation-peer, session-operator…' });
+  }).catch(() => {
+    setBadgeInputValue('serverFormCaps', initCaps);
+    initBadgeInput('serverFormCaps', { freeform: true, placeholder: 'federation-peer, session-operator…' });
+  });
   wrap.style.display = '';
 }
 
@@ -12499,7 +12757,6 @@ function saveServer() {
   const editNameEl = document.getElementById('serverFormEditName');
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
-  const capsEl = document.getElementById('serverFormCaps');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -12511,8 +12768,8 @@ function saveServer() {
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true };
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
-  if (fedEl && fedEl.checked && capsEl) {
-    const caps = capsEl.value.split(',').map(s => s.trim()).filter(Boolean);
+  if (fedEl && fedEl.checked) {
+    const caps = getBadgeInputValue('serverFormCaps').split(',').map(s => s.trim()).filter(Boolean);
     if (caps.length) body.capabilities = caps;
   }
   const isEdit = !!(editName);
@@ -13532,7 +13789,10 @@ function renderProjectEditorForm(existing) {
     ${sel('sidecar','Sidecar image', (p.image_pair && p.image_pair.sidecar) || '', _profileKnown.sidecars)}
     ${sel('memory_mode','Memory mode', (p.memory && p.memory.mode) || 'sync-back', _profileKnown.memoryModes)}
     ${inp('memory_namespace','Memory namespace', p.memory && p.memory.namespace, 'defaults to project-<name>')}
-    ${inp('memory_shared_with','Memory shared_with (comma-separated)', (p.memory && p.memory.shared_with || []).join(', '), 'peer profiles must reciprocate')}
+    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div class="settings-label">Memory shared_with</div>
+      ${renderBadgeInput('pp_memory_shared_with', (p.memory && p.memory.shared_with || []).join(', '), { freeform: true, placeholder: 'peer profiles must reciprocate' })}
+    </div>
     ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
     ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
     ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
@@ -13546,17 +13806,14 @@ function renderProjectEditorForm(existing) {
     ${inp('as_ollama_model', t('profile_ollama_model_label') || 'OpenCode model (default)',
           (p.agent_settings && p.agent_settings.opencode_model) || '',
           t('profile_ollama_model_ph') || 'qwen3:8b → OPENCODE_MODEL')}
-    ${inp('as_ollama_models', t('profile_ollama_models_label') || 'OpenCode model pool (multi-select; comma-separated)',
-          (p.agent_settings && (p.agent_settings.opencode_models || []).join(', ')) || '',
-          t('profile_ollama_models_ph') || 'qwen3:8b, llama3.1:70b → OPENCODE_MODELS (alpha.28 #243)')}
-    <!-- v6.13.1 (A9) — operator: "skills (available in agent profile) — i look at
-         profile settings in settings/agent/profiles and there is no skills option
-         or listing, should there be?". Yes — Skills are a comma-separated list of
-         synced skill names; resolved at session spawn time and copied into
-         <project_dir>/.datawatch/skills/<name>/. -->
-    ${inp('skills', t('profile_skills_label') || 'Skills (comma-separated)',
-          (p.skills || []).join(', '),
-          t('profile_skills_ph') || 'e.g. test-first,go-style — sync via Settings → Automate → Skill Registries')}
+    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div class="settings-label">${t('profile_ollama_models_label') || 'OpenCode model pool'}</div>
+      ${renderBadgeInput('pp_as_ollama_models', (p.agent_settings && (p.agent_settings.opencode_models || []).join(', ')) || '', { freeform: true, placeholder: 'qwen3:8b, llama3.1:70b…' })}
+    </div>
+    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div class="settings-label">${t('profile_skills_label') || 'Skills'}</div>
+      ${renderBadgeInput('pp_skills', (p.skills || []).join(', '), { freeform: true, placeholder: 'test-first, go-style…' })}
+    </div>
   `;
 }
 
@@ -13710,8 +13967,7 @@ function collectProjectForm() {
     memory: {
       mode: val('memory_mode'),
       namespace: val('memory_namespace'),
-      shared_with: (val('memory_shared_with') || '')
-        .split(',').map(s => s.trim()).filter(s => s.length > 0),
+      shared_with: getBadgeInputValue('pp_memory_shared_with').split(',').map(s => s.trim()).filter(s => s.length > 0),
     },
     allow_spawn_children: chk('allow_spawn'),
     spawn_budget_total: num('spawn_total'),
@@ -13720,13 +13976,9 @@ function collectProjectForm() {
       claude_auth_key_secret: val('as_claude_key_secret'),
       opencode_ollama_url: val('as_ollama_url'),
       opencode_model: val('as_ollama_model'),
-      // alpha.28 #243 — comma-separated multi-model pool.
-      opencode_models: val('as_ollama_models').split(',').map(s => s.trim()).filter(Boolean),
+      opencode_models: getBadgeInputValue('pp_as_ollama_models').split(',').map(s => s.trim()).filter(Boolean),
     },
-    // v6.13.1 (A9) — comma-separated skill names; resolved at session
-    // spawn time. Empty list = no skills synced into the workspace.
-    skills: (val('skills') || '')
-      .split(',').map(s => s.trim()).filter(s => s.length > 0),
+    skills: getBadgeInputValue('pp_skills').split(',').map(s => s.trim()).filter(s => s.length > 0),
   };
 }
 
@@ -19601,9 +19853,25 @@ function loadFederationPeersPanel() {
 }
 window.loadFederationPeersPanel = loadFederationPeersPanel;
 
-function showFedPeerForm() {
+function showFedPeerForm(entry) {
   const wrap = document.getElementById('fedPeerFormWrap');
-  if (wrap) wrap.style.display = '';
+  if (!wrap) return;
+  wrap.style.display = '';
+  // Init badge input with builtin group names as known-set options
+  apiFetch('/api/federation/groups/builtins').then(d => {
+    const groups = Array.isArray(d) ? d.map(g => g.name) : [];
+    const initCaps = entry && entry.capabilities ? entry.capabilities.join(', ') : '';
+    setBadgeInputValue('fedPeerFormCaps', initCaps);
+    initBadgeInput('fedPeerFormCaps', { freeform: true, items: groups, placeholder: 'federation-peer…' });
+  }).catch(() => {
+    initBadgeInput('fedPeerFormCaps', { freeform: true, placeholder: 'federation-peer…' });
+  });
+  if (entry) {
+    const nameEl = document.getElementById('fedPeerFormName');
+    const urlEl = document.getElementById('fedPeerFormURL');
+    if (nameEl) { nameEl.value = entry.name || ''; nameEl.disabled = true; }
+    if (urlEl) urlEl.value = entry.url || '';
+  }
 }
 window.showFedPeerForm = showFedPeerForm;
 
@@ -19619,7 +19887,7 @@ function submitFedPeerForm() {
   const name = (document.getElementById('fedPeerFormName') || {}).value || '';
   const url = (document.getElementById('fedPeerFormURL') || {}).value || '';
   const token = (document.getElementById('fedPeerFormToken') || {}).value || '';
-  const capsRaw = (document.getElementById('fedPeerFormCaps') || {}).value || '';
+  const capsRaw = getBadgeInputValue('fedPeerFormCaps');
   const errEl = document.getElementById('fedPeerFormError');
 
   if (!name) { if (errEl) { errEl.textContent = 'Name is required'; errEl.style.display = ''; } return; }
@@ -20136,11 +20404,10 @@ window.tailscaleACLGenerateAndPush = tailscaleACLGenerateAndPush;
 window.saveSecret = function() {
   const name = (document.getElementById('newSecretName')||{}).value || '';
   const value = (document.getElementById('newSecretValue')||{}).value || '';
-  const tagsRaw = (document.getElementById('newSecretTags')||{}).value || '';
   const desc = (document.getElementById('newSecretDesc')||{}).value || '';
   const scopesRaw = (document.getElementById('newSecretScopes')||{}).value || '';
   if (!name) { showToast(t('secrets_name_required') || 'Name required', 'error'); return; }
-  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+  const tags = getBadgeInputValue('newSecretTags').split(',').map(t => t.trim()).filter(Boolean);
   const scopes = scopesRaw.split(',').map(s => s.trim()).filter(Boolean);
   apiFetch('/api/secrets', {
     method: 'POST',
@@ -20149,9 +20416,10 @@ window.saveSecret = function() {
   })
     .then(() => {
       showToast(t('secrets_saved') || 'Secret saved', 'success', 1500);
-      ['newSecretName','newSecretValue','newSecretTags','newSecretDesc','newSecretScopes'].forEach(id => {
+      ['newSecretName','newSecretValue','newSecretDesc','newSecretScopes'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
+      setBadgeInputValue('newSecretTags', '');
       loadSecretsPanel();
     })
     .catch(e => showToast(String(e.message||e), 'error'));

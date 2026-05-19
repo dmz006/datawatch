@@ -820,7 +820,7 @@
   "secrets_scopes_placeholder": "Ámbitos (ej. agent:ci-runner, plugin:gh-hooks) — vacío = universal",
   "secrets_scopes_universal": "(universal)",
   "secrets_section_store": "Almacén de secretos",
-  "secrets_tags_placeholder": "Etiquetas (separadas por coma, ej. git,cloud)",
+  "secrets_tags_placeholder": "Etiquetas (git, cloud…)",
   "secrets_value_placeholder": "Valor",
   "security_biometric_desc": "Requiere huella dactilar o cara en cada apertura de la app. La clave de base de datos está vinculada a biometría cuando está activado.",
   "security_biometric_title": "Desbloqueo biométrico",
@@ -1194,5 +1194,9 @@
   "widget_description": "Recuentos de sesiones en ejecución / en espera / totales de un vistazo.",
   "widget_monitor_description": "Carga de CPU, memoria y recuentos de sesiones del servidor datawatch activo.",
   "widget_monitor_label": "Monitor de datawatch",
-  "widget_sessions_label": "Sesiones de datawatch"
+  "widget_sessions_label": "Sesiones de datawatch",
+  "decompose_in_progress": "Descomponiendo PRD...",
+  "decompose_story_count": "{{count}} historias generadas",
+  "decompose_error": "Error al descomponer",
+  "decompose_reconnecting": "Reconectando..."
 }

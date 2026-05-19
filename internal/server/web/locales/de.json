@@ -820,7 +820,7 @@
   "secrets_scopes_placeholder": "Geltungsbereiche (z.B. agent:ci-runner, plugin:gh-hooks) — leer = universal",
   "secrets_scopes_universal": "(universal)",
   "secrets_section_store": "Geheimnisspeicher",
-  "secrets_tags_placeholder": "Tags (kommagetrennt, z.B. git,cloud)",
+  "secrets_tags_placeholder": "Tags (git, cloud…)",
   "secrets_value_placeholder": "Wert",
   "security_biometric_desc": "Fingerabdruck oder Gesicht bei jedem App-Start erforderlich. Datenbankschlüssel ist biometrisch gebunden wenn aktiviert.",
   "security_biometric_title": "Biometrische Entsperrung",
@@ -1194,5 +1194,9 @@
   "widget_description": "Laufende / wartende / Gesamtsitzungsanzahl auf einen Blick.",
   "widget_monitor_description": "CPU-Last, Speicher und Sitzungsanzahl des aktiven Datawatch-Servers.",
   "widget_monitor_label": "Datawatch-Monitor",
-  "widget_sessions_label": "Datawatch-Sitzungen"
+  "widget_sessions_label": "Datawatch-Sitzungen",
+  "decompose_in_progress": "PRD wird zerlegt...",
+  "decompose_story_count": "{{count}} Stories generiert",
+  "decompose_error": "Zerlegung fehlgeschlagen",
+  "decompose_reconnecting": "Verbindung wird wiederhergestellt..."
 }

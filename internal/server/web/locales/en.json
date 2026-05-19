@@ -820,7 +820,7 @@
   "secrets_scopes_placeholder": "Scopes (e.g. agent:ci-runner, plugin:gh-hooks) — blank = universal",
   "secrets_scopes_universal": "(universal)",
   "secrets_section_store": "Secrets Store",
-  "secrets_tags_placeholder": "Tags (comma-separated, e.g. git,cloud)",
+  "secrets_tags_placeholder": "Tags (git, cloud…)",
   "secrets_value_placeholder": "Value",
   "security_biometric_desc": "Require fingerprint or face on every app open. Database key is biometric-bound when enabled.",
   "security_biometric_title": "Biometric unlock",
@@ -1194,5 +1194,9 @@
   "widget_description": "Running / waiting / total session counts at a glance.",
   "widget_monitor_description": "CPU load, memory and session counts from the active datawatch server.",
   "widget_monitor_label": "datawatch Monitor",
-  "widget_sessions_label": "datawatch Sessions"
+  "widget_sessions_label": "datawatch Sessions",
+  "decompose_in_progress": "Decomposing PRD...",
+  "decompose_story_count": "{{count}} stories generated",
+  "decompose_error": "Decompose failed",
+  "decompose_reconnecting": "Reconnecting..."
 }

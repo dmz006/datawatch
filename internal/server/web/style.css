@@ -5275,3 +5275,78 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 @media (max-width: 600px) {
   #headerFullscreenBtn { display: none !important; }
 }
+
+/* BL327 — Badge/chip multi-select input (replaces CSV text fields) */
+.badge-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 4px 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: text;
+  box-sizing: border-box;
+  width: 100%;
+}
+.badge-input-wrap:focus-within { border-color: var(--accent); }
+.badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px 2px 8px;
+  background: var(--accent2,#6366f1);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.badge-chip-del {
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.75;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0 0 0 3px;
+  flex-shrink: 0;
+}
+.badge-chip-del:hover { opacity: 1; }
+.badge-input-inner {
+  flex: 1;
+  min-width: 80px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  padding: 2px 2px;
+}
+.badge-input-dropdown {
+  position: absolute;
+  z-index: 200;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 180px;
+}
+.badge-input-dropdown-item {
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+.badge-input-dropdown-item:hover,
+.badge-input-dropdown-item.focused { background: var(--bg3,#2d3148); }
+.badge-input-wrap-container { position: relative; width: 100%; }

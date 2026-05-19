@@ -820,7 +820,7 @@
   "secrets_scopes_placeholder": "Portées (ex. agent:ci-runner, plugin:gh-hooks) — vide = universel",
   "secrets_scopes_universal": "(universel)",
   "secrets_section_store": "Coffre-fort",
-  "secrets_tags_placeholder": "Tags (séparés par virgule, ex. git,cloud)",
+  "secrets_tags_placeholder": "Tags (git, cloud…)",
   "secrets_value_placeholder": "Valeur",
   "security_biometric_desc": "Exige une empreinte digitale ou un visage à chaque ouverture de l'app. La clé de base de données est liée à la biométrie quand activé.",
   "security_biometric_title": "Déverrouillage biométrique",
@@ -1194,5 +1194,9 @@
   "widget_description": "Nombre de sessions en cours / en attente / totales en un coup d'œil.",
   "widget_monitor_description": "Charge CPU, mémoire et nombre de sessions du serveur datawatch actif.",
   "widget_monitor_label": "Moniteur datawatch",
-  "widget_sessions_label": "Sessions datawatch"
+  "widget_sessions_label": "Sessions datawatch",
+  "decompose_in_progress": "Décomposition du PRD...",
+  "decompose_story_count": "{{count}} stories générées",
+  "decompose_error": "Échec de la décomposition",
+  "decompose_reconnecting": "Reconnexion..."
 }

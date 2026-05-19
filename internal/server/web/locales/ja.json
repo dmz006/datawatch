@@ -820,7 +820,7 @@
   "secrets_scopes_placeholder": "スコープ (例: agent:ci-runner, plugin:gh-hooks) — 空白=全体",
   "secrets_scopes_universal": "(全体)",
   "secrets_section_store": "シークレットストア",
-  "secrets_tags_placeholder": "タグ（カンマ区切り、例: git,cloud）",
+  "secrets_tags_placeholder": "タグ (git, cloud…)",
   "secrets_value_placeholder": "値",
   "security_biometric_desc": "アプリを開くたびに指紋または顔認証が必要です。有効時はデータベースキーが生体認証に紐づけられます。",
   "security_biometric_title": "生体認証ロック解除",
@@ -1194,5 +1194,9 @@
   "widget_description": "実行中 / 待機中 / 合計セッション数を一目で確認。",
   "widget_monitor_description": "アクティブなdatawatchサーバーのCPU負荷、メモリ、セッション数。",
   "widget_monitor_label": "datawatchモニター",
-  "widget_sessions_label": "datawatchセッション"
+  "widget_sessions_label": "datawatchセッション",
+  "decompose_in_progress": "PRDを分解中...",
+  "decompose_story_count": "{{count}}個のストーリーを生成",
+  "decompose_error": "分解に失敗しました",
+  "decompose_reconnecting": "再接続中..."
 }
