@@ -401,6 +401,28 @@ Connection pooling + circuit breaker policies for outbound HTTP from the daemon 
 
 Comm-channel → backend routing. Each rule is a (sender / channel / pattern) → (backend / profile / model / effort) mapping. Used by the channel adapters to pick which LLM handles an inbound message. Empty list = all messages route to the default backend. Click a rule to edit; reorder by drag.
 
+#### Channel Routing (v8.3.0)
+
+Federation-level channel-address routing. Rules map an inbound channel address (e.g. a Telegram group ID, Signal number, Matrix room) to a specific federation peer with an optional automata type and default project directory. Config stored in `~/.datawatch/channel_routing.json`.
+
+**Card:** Settings → Comms → Channel Routing. Lists all rules; each row shows `channel_pattern`, `peer_name`, `automata_type`. Add Rule form with the same fields. Rules are evaluated in order; the first match wins.
+
+**Rule fields:**
+- `channel_pattern` — required; the channel address to match (e.g. `telegram:group:-1001234567890`)
+- `peer_name` — required; the federation peer to route to
+- `automata_type` — optional; Automata type to use when spawning PRDs from this peer
+- `default_project_dir` — optional; default project directory for sessions created by this peer
+
+**REST:** `GET /api/channel/routing` (requires `comm:read`) · `PUT /api/channel/routing` (requires `comm:write`)
+
+**CLI:** `datawatch channel routing list | add`
+
+**Federated peer `channel_identity` field:** a `[]string` on the `multiserver.Entry` struct listing which channel addresses belong to this peer. Set in the Federation peer add/update form, via `datawatch federation peer add --channel-identity ...`, or via MCP `federation_peer_add`.
+
+**`owner_peer` on sessions and PRDs:** when a session or PRD is created via a channel routing match, `owner_peer` is set to the matched peer's name. Surfaced in `GET /api/sessions` and `GET /api/autonomous/prds`.
+
+See [`howto/channel-routing.md`](howto/channel-routing.md).
+
 ### Settings — Compute
 
 > **v7 rename:** The "LLM" tab was renamed to "Compute" in v7.0.0 and the "Agents" tab was eliminated. All content from both tabs now lives here. If you're on a saved `cs_settings_tab=llm` or `cs_settings_tab=agents` bookmark, the PWA auto-redirects to `compute`.
@@ -545,6 +567,29 @@ CLI: `datawatch push list | test [--id <id>] [--message <m>] | unregister [--id 
 UnifiedPush auto-discovery: `GET /.well-known/unifiedpush` returns `{"version":1,"unifiedpush":{"gateway":"/api/push/notify"}}`.
 
 See [`howto/push-setup.md`](howto/push-setup.md) · [`howto/push-notifications.md`](howto/push-notifications.md).
+
+#### File Service (v8.3.0)
+
+Structured file storage on the daemon, organized into `peers/` and `discussions/` subdirectories under a configurable root. Accessible from all surfaces and federation-gated via `config:read` / `config:write`.
+
+**Card:** Settings → General → File Service. Shows storage root path, peer count, discussion count, and total disk usage (from `GET /api/files/meta`). Upload button for adding files via the browser.
+
+**Config field:** `file_service_root` under `session:` in `datawatch.yaml`. Priority: `file_service_root` → `root_path` → user home directory.
+
+**REST endpoints:**
+- `POST /api/files` (multipart/form-data with `file` + `path` fields) — upload; requires `config:write`
+- `DELETE /api/files` (JSON `{path}`) — delete; requires `config:write`
+- `GET /api/files/peers/{name}` — list `<root>/peers/<name>/`; requires `config:read`
+- `GET /api/files/discussions/{id}` — list `<root>/discussions/<id>/`; requires `config:read`
+- `GET /api/files/meta` — storage overview; requires `config:read`
+
+**MCP tools:** `files_upload`, `files_delete`, `files_meta`
+
+**CLI:** `datawatch files list | upload | delete | peer`
+
+Path traversal (`..` in any path argument) is rejected with 400 on all write endpoints.
+
+See [`howto/file-service.md`](howto/file-service.md).
 
 #### Notifications
 
@@ -730,6 +775,8 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Push notifications | [`howto/push-notifications.md`](howto/push-notifications.md) | v7.0.0-alpha.35 | UnifiedPush + ntfy SSE |
 | Push registration API | [`howto/push-setup.md`](howto/push-setup.md) | v8.2.0 | register/unregister/notify + Android UP |
 | Async PRD decompose | [`howto/decompose-async.md`](howto/decompose-async.md) | v8.2.0 | 202 + SSE stream + Last-Event-ID |
+| Channel-address federation | [`howto/channel-routing.md`](howto/channel-routing.md) | v8.3.0 | channel_identity + routing rules + owner_peer |
+| Federated file service | [`howto/file-service.md`](howto/file-service.md) | v8.3.0 | peers/ + discussions/ subdirs, config:read/write caps |
 | Claude hooks | [`howto/claude-hooks.md`](howto/claude-hooks.md) | v7.0.0-alpha.34 | hook scripts + status board |
 | Alerts & notifications | [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) | v7.0.0 | alert dock + per-channel delivery |
 | Guardrail library | [`howto/guardrail-library.md`](howto/guardrail-library.md) | v7.0.0 | SAST/secrets/deps/LLM scan profiles |
@@ -761,6 +808,7 @@ Comms + LLM:
 - [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) — alert dock, per-channel delivery, push notifications
 - [`howto/push-notifications.md`](howto/push-notifications.md) — UnifiedPush registration, ntfy-compat SSE streams
 - [`howto/push-setup.md`](howto/push-setup.md) — BL330 register/unregister/notify API, Android integration (v8.2.0)
+- [`howto/channel-routing.md`](howto/channel-routing.md) — BL331 channel-address federation: route channel messages to peers, owner_peer attribution (v8.3.0)
 - [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
 - [`howto/mcp-resources.md`](howto/mcp-resources.md) — 21 URI-addressed live resources
 - [`howto/mcp-prompts.md`](howto/mcp-prompts.md) — 10 prompt slash commands with live context injection
@@ -786,6 +834,7 @@ Infrastructure:
 - [`howto/llm-registry.md`](howto/llm-registry.md) — named LLM registry, per-node model lists, failover routing
 - [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) — browse and pull models from the embedded Ollama catalog
 - [`howto/guardrail-library.md`](howto/guardrail-library.md) — SAST/secrets/deps/LLM grader scan profiles
+- [`howto/file-service.md`](howto/file-service.md) — BL333 federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
 - [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 

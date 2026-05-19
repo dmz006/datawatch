@@ -67,9 +67,10 @@ graph TD
     end
 
     subgraph "Federation layer"
-        FedPeers["Federation peer registry\n/api/federation/peers/*\n50 capabilities · 13 groups"]
+        FedPeers["Federation peer registry\n/api/federation/peers/*\n50 capabilities · 14 groups"]
         CBAC["fedCap() CBAC guard\n(every REST handler + MCP tool)"]
         FedRemDisp["Remote dispatcher\n(proxy mode)"]
+        ChanRouter["ChannelRouter\n/api/channel/routing\nchannel_identity + owner_peer\n(comm:read/write)"]
     end
 
     subgraph "Compute layer"
@@ -98,6 +99,7 @@ graph TD
         SessJSON["sessions.json (encrypted)"]
         OutLog["output.log(.enc) — XChaCha20 envelope"]
         VecMem["Vector store\nSQLite or PostgreSQL+pgvector"]
+        FileStore["FileService\n/api/files/*\npeers/ + discussions/\n(config:read/write)"]
         KG["Knowledge graph\n(temporal triples)"]
         Wake["4-layer wake-up stack\nL0 identity / L1 facts / L2 room / L3 search"]
     end
@@ -134,6 +136,9 @@ graph TD
 
     HTTP --> CBAC --> FedPeers
     MCP --> CBAC
+    MsgReg --> ChanRouter
+    ChanRouter --> FedPeers
+    HTTP --> FileStore
 
     Cursor -->|stdio| MCP
     RemoteAI -->|HTTPS/SSE| MCP
@@ -341,6 +346,8 @@ diagram with an arrow from a worker back to `Parent`.
 | Compute Node routing (direct / docker-network / datawatch-proxy) | `internal/compute`, `internal/inference` | CHANGELOG.md BL318–BL322 — shipped v8.0.0 |
 | LLM proxy router (`/api/proxy/llm/<name>`) | `internal/inference/proxy_router.go`, `internal/server/bl320_proxy_llm.go` | CHANGELOG.md BL320 — shipped v8.0.0 |
 | Multi-server proxy surface | `internal/server/multiserver` | [docs/operations.md](operations.md) — shipped v8.0.0 |
+| Channel-address federation router (BL331) | `internal/server/bl331_channel_routing.go` | [howto/channel-routing.md](howto/channel-routing.md) — `ChannelIdentity` on peers, routing rules, `owner_peer` on sessions/PRDs; caps: `comm:read` (GET), `comm:write` (PUT) |
+| Federated file service (BL333) | `internal/server/bl333_file_service.go` | [howto/file-service.md](howto/file-service.md) — multipart upload, path-validated delete, peers/ + discussions/ subdirs; caps: `config:write` (write), `config:read` (read) |
 
 ---
 
@@ -421,7 +428,7 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 
 ---
 
-## v8.x deltas (v8.0)
+## v8.x deltas (v8.0 → v8.3)
 
 | Subsystem | Shipped | Reference |
 |-----------|---------|-----------|
@@ -433,6 +440,16 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 | OneShot session mode — fire-and-forget sessions that exit after task completion | v8.0.0 | [docs/api/sessions.md](api/sessions.md) |
 | Multi-server proxy surface — `GET /api/servers` + per-server test endpoint | v8.0.0 | [docs/operations.md](operations.md) |
 | 626 E2E test stories — 560 shell + 66 PWA covering all 7 surfaces | v8.0.0 | [docs/testing/](testing/) |
+| BL325 Plugin install from community registry — `POST /api/plugins/install` + CLI + MCP | v8.1.0 | [howto/](howto/) |
+| BL326 Voice mic overlay — `POST /api/voice/transcribe` mobile surface + mic-access popup | v8.1.0 | [howto/voice-input.md](howto/voice-input.md) |
+| Alert rules — threshold checks, firings ring buffer, `GET /api/alert-rules` CRUD | v8.1.0 | [howto/alert-rules.md](howto/alert-rules.md) |
+| Badge/chip multi-select input (BL327) — all comma-string fields now use chip input in PWA | v8.2.0 | [docs/datawatch-definitions.md](datawatch-definitions.md) |
+| Async PRD decompose (BL328) — `POST /api/autonomous/prds/{id}/decompose` → 202 + SSE stream | v8.2.0 | [howto/decompose-async.md](howto/decompose-async.md) |
+| Identity POST alias (BL329) — `POST /api/identity` as PATCH alias for mobile compat | v8.2.0 | [docs/operations.md](operations.md) |
+| UnifiedPush registration (BL330) — register/unregister/notify endpoints + Android UP | v8.2.0 | [howto/push-setup.md](howto/push-setup.md) |
+| Channel-address federation router (BL331) — `channel_identity` on peers, routing rules, `owner_peer` attribution | v8.3.0 | [howto/channel-routing.md](howto/channel-routing.md) |
+| `comms-channel-agent` builtin group — 14th federation capability group | v8.3.0 | [docs/datawatch-definitions.md](datawatch-definitions.md) |
+| Federated file service (BL333) — `POST/DELETE /api/files`, peers/discussions subdirs, `files_upload/delete/meta` MCP | v8.3.0 | [howto/file-service.md](howto/file-service.md) |
 
 ---
 
