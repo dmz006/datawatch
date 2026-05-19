@@ -131,8 +131,22 @@ stop_test_daemon() {
   fi
 }
 
+stop_docker_sim() {
+  if [[ -n "$DOCKER_SIM_CONTAINER" ]]; then
+    docker stop "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
+    docker rm   "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
+    DOCKER_SIM_CONTAINER=""
+  fi
+  if [[ -n "$DOCKER_SIM_IMAGE" ]]; then
+    docker rmi "$DOCKER_SIM_IMAGE" 2>/dev/null || true
+    DOCKER_SIM_IMAGE=""
+  fi
+  [[ -n "$DOCKER_SIM_DATA" ]] && rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
+}
+
 cleanup() {
   stop_test_daemon
+  stop_docker_sim
   destroy_pool
   if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then
     echo ""
