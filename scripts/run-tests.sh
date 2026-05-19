@@ -86,11 +86,12 @@ start_test_daemon() {
   "$binary" start --foreground --config "$test_cfg" >> "$TEST_DATA/daemon.log" 2>&1 &
   DAEMON_PID=$!
 
-  # Poll /api/health up to 30s
+  # Poll /api/health up to 30s (use HTTPS since HTTP port redirects when TLS enabled)
   local deadline=$(( $(date +%s) + 30 ))
   local healthy=0
   while [[ $(date +%s) -lt $deadline ]]; do
-    if curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
+    if curl -skf "https://127.0.0.1:$TEST_TLS_PORT/api/health" > /dev/null 2>&1 || \
+       curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
       healthy=1
       break
     fi
@@ -187,7 +188,8 @@ export TEST_PORT="$(_fresh_port "${TEST_PORT:-}")"
 export TEST_TLS_PORT="$(_fresh_port "${TEST_TLS_PORT:-}")"
 export TEST_MCP_PORT="$(_fresh_port "${TEST_MCP_PORT:-}")"
 export TEST_DATA="${TEST_DATA:-${DATAWATCH_TEST_DATA}}"
-export TEST_BASE="http://127.0.0.1:$TEST_PORT"
+export TEST_BASE="https://127.0.0.1:$TEST_TLS_PORT"
+export TEST_BASE_HTTP="http://127.0.0.1:$TEST_PORT"
 export TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
 
 echo "Run ID  : $RUN_ID"
@@ -374,6 +376,8 @@ STORIES_DIR="$SCRIPT_DIR/test-stories"
 PASS=0; FAIL=0; SKIP=0
 EVIDENCE_DIR="$TEST_DIR/evidence"
 mkdir -p "$EVIDENCE_DIR"
+RUN_START=$(date +%s)
+declare -A FEAT_PASS FEAT_FAIL FEAT_SKIP FEAT_MS
 
 if [[ ! -d "$STORIES_DIR" ]]; then
   echo "No story implementations yet. Add scripts to scripts/test-stories/TS-NNN.sh"
@@ -383,7 +387,8 @@ fi
 
 # --- daemon startup ---------------------------------------------------------
 if [[ $NO_DAEMON -eq 0 ]]; then
-  if curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
+  if curl -skf "https://127.0.0.1:$TEST_TLS_PORT/api/health" > /dev/null 2>&1 || \
+     curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
     echo "Using existing daemon at $TEST_BASE"
     # Create TEST_DATA/config.yaml so cli_test (--config) uses the right port.
     if [[ -n "${TEST_DATA:-}" && -f "$REPO_DIR/testdata/datawatch.yaml" ]]; then
@@ -399,7 +404,7 @@ if [[ $NO_DAEMON -eq 0 ]]; then
     fi
     # Discover actual MCP SSE port from the daemon's config so TS-624 and
     # other MCP stories hit the right port instead of the default TEST_PORT+1.
-    _mcp_port=$(curl -s "http://127.0.0.1:$TEST_PORT/api/config" \
+    _mcp_port=$(curl -sk "https://127.0.0.1:$TEST_TLS_PORT/api/config" \
       -H "Authorization: Bearer ${TEST_TOKEN}" 2>/dev/null \
       | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("mcp",{}).get("sse_port",""))' \
       2>/dev/null || true)
@@ -486,16 +491,23 @@ for story_script in "$STORIES_DIR"/TS-*.sh; do
     RESULT=""
     CURRENT_STORY="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
+    _story_start=$(date +%s%3N)
     # shellcheck source=/dev/null
     source "$story_script"
     flush_story_cleanup
+    _story_ms=$(( $(date +%s%3N) - _story_start ))
+
+    # accumulate per-feature timing
+    _feat=$(grep -m1 '^# tags:' "$story_script" 2>/dev/null | grep -oP 'feature:\K[^ ]+' | head -1 || echo "other")
+    FEAT_MS[$_feat]=$(( ${FEAT_MS[$_feat]:-0} + _story_ms ))
 
     case "${RESULT:-fail}" in
-      pass) ((PASS++)); echo "✓ $story_id" ;;
-      skip) ((SKIP++)); echo "- $story_id (skip)" ;;
+      pass) ((PASS++)); FEAT_PASS[$_feat]=$(( ${FEAT_PASS[$_feat]:-0} + 1 )); echo "✓ $story_id (${_story_ms}ms)" ;;
+      skip) ((SKIP++)); FEAT_SKIP[$_feat]=$(( ${FEAT_SKIP[$_feat]:-0} + 1 )); echo "- $story_id (skip)" ;;
       fail|*)
         ((FAIL++))
-        echo "✗ $story_id"
+        FEAT_FAIL[$_feat]=$(( ${FEAT_FAIL[$_feat]:-0} + 1 ))
+        echo "✗ $story_id (${_story_ms}ms)"
         if [[ $FAIL_FAST -eq 1 ]]; then
           echo "Stopping at first failure (--fail-fast)."
           drain_parallel
@@ -519,10 +531,26 @@ if [[ $FAIL_FAST -eq 1 && $FAILED -ne 0 ]]; then
 fi
 
 # --- summary ----------------------------------------------------------------
+RUN_ELAPSED=$(( $(date +%s) - RUN_START ))
 echo ""
-echo "Results: $PASS passed  $FAIL failed  $SKIP skipped"
+echo "Results: $PASS passed  $FAIL failed  $SKIP skipped  (${RUN_ELAPSED}s total)"
 if [[ $SERIAL -eq 0 ]]; then
   echo "Workers: adaptive (peak ~$(suggest_workers), cpu=$(cpu_pct)% mem=$(mem_free_pct)% free)"
+fi
+
+# Per-feature breakdown table
+if [[ ${#FEAT_MS[@]} -gt 0 ]]; then
+  echo ""
+  printf "%-22s %5s %5s %5s %7s\n" "Feature" "pass" "fail" "skip" "time(s)"
+  printf "%-22s %5s %5s %5s %7s\n" "----------------------" "-----" "-----" "-----" "-------"
+  for _f in $(echo "${!FEAT_MS[@]}" | tr ' ' '\n' | sort); do
+    printf "%-22s %5d %5d %5d %7.1f\n" \
+      "$_f" \
+      "${FEAT_PASS[$_f]:-0}" \
+      "${FEAT_FAIL[$_f]:-0}" \
+      "${FEAT_SKIP[$_f]:-0}" \
+      "$(echo "scale=1; ${FEAT_MS[$_f]:-0}/1000" | bc)"
+  done
 fi
 
 if [[ $FAIL -gt 0 ]]; then
