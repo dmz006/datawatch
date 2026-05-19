@@ -88,6 +88,21 @@ jobs:
             ${{ matrix.name == 'agent-base' && format('ghcr.io/dmz006/datawatch/agent-base:{0}', steps.ver.outputs.version) || '' }}
             ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
           push: true
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin v0.70.0
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
+        # Unfixable base-image CVE exceptions live in .trivyignore.
+        # Net-new findings not listed there will fail this step.
+        # See docs/security-review.md#container-image-scanning.
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 1 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
 
   # Stage 2 — agent-* images that `FROM ${REGISTRY}/agent-base:${BASE_TAG}`.
   # Override REGISTRY + BASE_TAG so they pull the just-pushed GHCR copy
@@ -150,6 +165,18 @@ jobs:
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
           push: true
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin v0.70.0
+      - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 1 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
 
   # Operator approved (c) for stats-cluster only: also attach a
   # docker-save tarball to the GH release so air-gapped installs

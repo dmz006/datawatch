@@ -1,0 +1,72 @@
+# Container image CVE exceptions — v8.0.0
+# Reviewed: 2026-05-19  |  Re-review: each release cycle
+# All entries are base-image (bitnami/minideb:bookworm) CVEs with no
+# upstream fix available in Debian bookworm. Trivy status column is
+# "affected" or "will_not_fix" for each.
+# See docs/security-review.md#container-image-scanning for full rationale.
+
+# zlib1g CVE-2023-45853 — CRITICAL, Debian will_not_fix
+# Integer overflow in inflate(). Only exploitable when processing
+# attacker-controlled deflate streams with a specific window size.
+# curl and git in this image decompress only trusted responses from
+# operator-configured remotes. Not network-exposed via datawatch APIs.
+CVE-2023-45853
+
+# libgnutls30 — no fix in bookworm (5 CVEs across CRITICAL and HIGH)
+# datawatch uses Go crypto/tls, not gnutls; gnutls is pulled transitively
+# by curl and git. None of these affect the datawatch TLS listener.
+#   CVE-2026-33845 (CRITICAL): DTLS zero-length DoS. Container runs no
+#     DTLS listener; not reachable.
+#   CVE-2026-42010 (CRITICAL): Auth bypass via NUL in cert CN. Only
+#     triggerable by a malicious TLS server; git/curl connect only to
+#     operator-configured remotes.
+#   CVE-2026-33846 (HIGH): heap buffer overflow in DTLS. Same surface
+#     as CVE-2026-33845; unreachable without DTLS listener.
+#   CVE-2026-3833 (HIGH): policy bypass via case-sensitive comparison.
+#     Affects cert policy enforcement; mitigated by use of trusted CAs.
+#   CVE-2026-42011 (HIGH): security bypass via incorrect name matching.
+#     Same mitigation as CVE-2026-3833.
+CVE-2026-33845
+CVE-2026-42010
+CVE-2026-33846
+CVE-2026-3833
+CVE-2026-42011
+
+# libsqlite3-0 CVE-2025-7458 — CRITICAL, no fix in bookworm
+# Integer overflow in SQLite. Used internally by the gh CLI binary;
+# not exposed via datawatch REST/MCP APIs. Only processes trusted
+# local state, not attacker-supplied SQL.
+CVE-2025-7458
+
+# curl / libcurl4 — no fix in bookworm (2 HIGH)
+#   CVE-2026-5773: Wrong file transfer via SMB protocol. SMB is not
+#     used by curl in this image (no SMB server configured).
+#   CVE-2026-6276: Cookie leak on cross-origin redirect. curl is used
+#     by agent tooling for REST API calls; operator-configured endpoints.
+CVE-2026-5773
+CVE-2026-6276
+
+# libldap-2.5-0 CVE-2023-2953 — HIGH, no fix in bookworm
+# Null pointer dereference in ber_memalloc_x via malformed LDAP response.
+# OpenLDAP not directly used; pulled transitively by OpenSSH. No LDAP
+# connections made from within the container.
+CVE-2023-2953
+
+# ncurses CVE-2025-69720 — HIGH, no fix in bookworm
+# (affects libncursesw6, libtinfo6, ncurses-base)
+# Buffer overflow in terminal escape sequence parsing. Triggerable only
+# by attacker-controlled terminal output inside a tmux session. Requires
+# prior container shell access.
+CVE-2025-69720
+
+# libssh2-1 CVE-2026-7598 — HIGH, no fix in bookworm
+# Integer overflow in username/password handling. libssh2 is used by
+# git for SSH transport. Only triggerable by a malicious SSH server;
+# git SSH remotes are operator-configured, not attacker-controlled.
+CVE-2026-7598
+
+# libgcrypt20 CVE-2026-41989 — HIGH, no fix in bookworm
+# DoS / buffer overflow in gnupg crypto backend. gnupg is used for
+# package signature verification during apt installs (build-time only).
+# Not present in the runtime attack surface of a deployed container.
+CVE-2026-41989

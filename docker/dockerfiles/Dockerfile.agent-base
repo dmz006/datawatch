@@ -94,6 +94,16 @@ RUN install_packages curl gnupg && \
         | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
     install_packages gh
 
+# ── Layer 2b: apply available security upgrades ─────────────────────────
+# Pull in Debian bookworm security patches that postdate the base image
+# build (fixes libc-bin CVE-2026-0861, libcap2 CVE-2026-4878,
+# libsystemd0/libudev1 CVE-2026-29111, and any future bookworm patches).
+# Separate layer so the upgrade isn't hidden inside install_packages.
+RUN apt-get update -qq && \
+    apt-get upgrade -y -q --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # ── Layer 3: rtk binary (token-saving CLI used by every agent) ─────────
 RUN ARCH="$TARGETARCH"; case "$ARCH" in \
         amd64) RTK_ARCH="x86_64-unknown-linux-musl" ;; \

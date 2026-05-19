@@ -88,8 +88,55 @@ These are downstream of G702 — gosec's taint propagation considers the same "t
 - govulncheck — bumped `golang.org/x/net`, `filippo.io/edwards25519`, and the routine `go mod tidy` cascade. Both flagged advisories cleared.
 - This document — written so the next pre-release pass can diff against it and only review *new* findings.
 
+## Container image scanning — v8.0.0
+
+Added in v8.0.0. Trivy v0.70.0 scans every image after push in both
+`containers.yaml` (manual dispatch) and `release.yaml` (tag-triggered).
+Severity gate: HIGH and CRITICAL. Exit code 1 on any finding not in
+`.trivyignore`. Exceptions below are all `bitnami/minideb:bookworm`
+base-image CVEs with no fix available in Debian at time of v8.0.0.
+
+Tool: `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1`
+Scan date: 2026-05-19 against `local/datawatch:dev` (same base as v8.0.0)
+Result: 23 findings — 4 fixed by `apt-get upgrade` in Dockerfile, 19 accepted below.
+
+### Fixable CVEs resolved in Dockerfile.agent-base
+
+Added `apt-get upgrade` layer (Layer 2b) to pull current bookworm security patches:
+
+| CVE | Package | Severity | Fix |
+|-----|---------|----------|-----|
+| CVE-2026-0861 | libc-bin | HIGH | `2.36-9+deb12u14` |
+| CVE-2026-4878 | libcap2 | HIGH | `1:2.66-4+deb12u3` |
+| CVE-2026-29111 | libsystemd0, libudev1 | HIGH | `252.39-1~deb12u2` |
+
+### Accepted exceptions (.trivyignore)
+
+All entries are Debian bookworm `affected` or `will_not_fix`; no upstream fix available.
+
+| CVE | Package | Severity | Rationale |
+|-----|---------|----------|-----------|
+| CVE-2023-45853 | zlib1g | CRITICAL | Debian will_not_fix; only exploitable processing attacker-controlled deflate streams; curl/git decompress trusted responses from operator-configured remotes only |
+| CVE-2026-33845 | libgnutls30 | CRITICAL | DTLS zero-length DoS; container runs no DTLS listener; not reachable |
+| CVE-2026-42010 | libgnutls30 | CRITICAL | Auth bypass via NUL in cert CN; only triggerable by malicious TLS server; git/curl connect to operator-configured remotes only |
+| CVE-2025-7458 | libsqlite3-0 | CRITICAL | No fix in bookworm; SQLite used internally by gh CLI; not network-exposed via datawatch APIs |
+| CVE-2026-33846 | libgnutls30 | HIGH | DTLS heap overflow; same surface as CVE-2026-33845; unreachable |
+| CVE-2026-3833 | libgnutls30 | HIGH | Policy bypass via case-sensitive comparison; mitigated by use of trusted CAs |
+| CVE-2026-42011 | libgnutls30 | HIGH | Security bypass via incorrect name matching; same mitigation |
+| CVE-2026-5773 | curl, libcurl4 | HIGH | SMB protocol bug; SMB not used in this image |
+| CVE-2026-6276 | curl, libcurl4 | HIGH | Cookie leak on cross-origin redirect; curl used for REST API calls to operator-configured endpoints |
+| CVE-2023-2953 | libldap-2.5-0 | HIGH | Null pointer via malformed LDAP response; OpenLDAP not used directly; no LDAP connections from container |
+| CVE-2025-69720 | libncursesw6, libtinfo6, ncurses-base | HIGH | Buffer overflow in terminal escape parsing (tmux dep); requires prior container shell access |
+| CVE-2026-7598 | libssh2-1 | HIGH | Integer overflow in SSH username/password; only triggerable by malicious SSH server; git SSH remotes are operator-configured |
+| CVE-2026-41989 | libgcrypt20 | HIGH | DoS/buffer overflow in gnupg crypto backend; gnupg used for apt package signature verification (build-time), not in runtime attack surface |
+
+Re-review: each release cycle — check if Debian bookworm has published fixes for any accepted entry.
+To lower an accepted CVE once fixed: remove from `.trivyignore` and rebuild.
+
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
+- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically.
 - New `//#nosec` annotations must include the rule ID *and* a one-line reason. PRs adding bare `//#nosec` get rejected by review.
 - New `InsecureSkipVerify=true` sites must be paired with pinning (`VerifyPeerCertificate` + a fingerprint check) or get an entry in the G402 table above with an "accept (documented)" verdict and a config gate.
+- New `.trivyignore` entries require a one-line rationale in this document. PRs adding bare CVE IDs without rationale get rejected.
