@@ -37,7 +37,7 @@ graph TD
         Email["Email SMTP"]
     end
 
-    subgraph "Mobile / device push (planned)"
+    subgraph "Mobile / device push"
         FCM["FCM transport"]
         DevReg["Device registry\n/api/devices/*"]
     end
@@ -46,17 +46,16 @@ graph TD
         Cursor["Cursor / Claude Desktop\nMCP stdio"]
         RemoteAI["Remote AI agent\nMCP SSE :8081"]
         PWA["Browser / PWA\nTailscale :8080"]
-        MobileApp["Mobile app\n(planned)"]
+        MobileApp["Mobile app"]
     end
 
     subgraph "datawatch daemon"
         HTTP["HTTP/WebSocket server :8080\nREST + /ws + Prometheus + healthz/readyz"]
         Router["Router\n(command parser)"]
         MsgReg["Messaging registry"]
-        MCP["MCP server\n(stdio + SSE :8081)"]
-        Voice["Voice dispatcher (planned)\n/api/voice/transcribe"]
+        MCP["MCP server\n(stdio + SSE :8081)\nfederated auth v7.4"]
+        Voice["Voice dispatcher\n/api/voice/transcribe"]
         Whisper["Whisper transcriber\n(internal/transcribe)"]
-        Federation["Federation aggregator (planned)\n/api/federation/sessions"]
         RemDisp["Remote dispatcher\n(proxy mode)"]
         Mgr["Session manager\n+ profiles & fallback chains"]
         Pipe["Pipeline executor\n(DAG / parallel / quality gates)"]
@@ -66,9 +65,22 @@ graph TD
         Stats["SystemStats / Prometheus / WS broadcast"]
     end
 
+    subgraph "Federation layer"
+        FedPeers["Federation peer registry\n/api/federation/peers/*\n50 capabilities · 13 groups"]
+        CBAC["fedCap() CBAC guard\n(every REST handler + MCP tool)"]
+        FedRemDisp["Remote dispatcher\n(proxy mode)"]
+    end
+
+    subgraph "Compute layer"
+        ComputeReg["Compute Node registry\n/api/compute/nodes/*"]
+        LLMDisp["LLM dispatcher\n(named LLMs + ordered failover)"]
+        DockerLC["DockerLifecycle\n(docker-network routing)"]
+        ProxyRtr["ProxyRouter\n/api/proxy/llm/<name>\n(datawatch-proxy routing)"]
+    end
+
     subgraph "AI sessions (tmux)"
         Tmux["tmux pane\n+ pipe-pane log\n+ fsnotify monitor"]
-        Backends["LLM backends\nclaude-code / opencode / opencode-acp /\nollama / openwebui / aider / goose / gemini /\nshell — RTK token-saving on supported backends"]
+        Backends["LLM backends\nclaude-code / opencode / opencode-acp /\nollama / openwebui / gemini-api / opencode-api /\naider / goose / shell\n— RTK token-saving on supported backends"]
     end
 
     subgraph "Ephemeral agents"
@@ -84,7 +96,6 @@ graph TD
     subgraph "Storage"
         SessJSON["sessions.json (encrypted)"]
         OutLog["output.log(.enc) — XChaCha20 envelope"]
-        DevJSON["devices.json (planned, encrypted)"]
         VecMem["Vector store\nSQLite or PostgreSQL+pgvector"]
         KG["Knowledge graph\n(temporal triples)"]
         Wake["4-layer wake-up stack\nL0 identity / L1 facts / L2 room / L3 search"]
@@ -108,7 +119,7 @@ graph TD
 
     MobileApp -->|register / list / revoke| DevReg
     MobileApp -->|voice POST| Voice
-    MobileApp -->|all-servers GET| Federation
+    MobileApp -->|all-servers GET| FedPeers
     DevReg --> FCM
     DevReg --> Ntfy
     Mgr -->|state callback| DevReg
@@ -117,8 +128,11 @@ graph TD
     Voice --> Router
     Telegram -.legacy voice path.-> Whisper
 
-    Federation --> Mgr
-    Federation --> RemDisp
+    FedPeers --> Mgr
+    FedPeers --> FedRemDisp
+
+    HTTP --> CBAC --> FedPeers
+    MCP --> CBAC
 
     Cursor -->|stdio| MCP
     RemoteAI -->|HTTPS/SSE| MCP
@@ -129,6 +143,11 @@ graph TD
     HTTP --> Mgr
     HTTP -->|/ws broadcast| PWA
     HTTP --> Stats
+
+    Mgr --> LLMDisp --> ComputeReg
+    LLMDisp --> DockerLC
+    LLMDisp --> ProxyRtr
+    ProxyRtr -->|"datawatch-proxy"| FedPeers
 
     Mgr --> Tmux
     Mgr --> Backends
@@ -149,23 +168,18 @@ graph TD
     Mgr --> SessJSON
     Mgr --> OutLog
 
-    DevReg --> DevJSON
     Memory --> VecMem
     Memory --> KG
     Memory --> Wake
 
     RemDisp -->|HTTP/WS proxy| Mgr
 ```
-<sub>🔍 <a href="https://mermaid.live/view#pako:eNqFV21v4zYS_iuEPxySZhUl2x4uTYEDvHndW2fXjYymQH0faImReZZFlaTsddf73-8ZUpJN2XcJkogcDWeG8_ro2yBVmRhcD3LNqzmb3E5Lhh9TzzxhOvhYzlRdZmwpjOG5LHN2MpOZ1CK1UpW8OJ0O_Bn6SWQO0h_TgV-waf3-4vInZtwuSgs5Hfx7xz0RhYCaJfjbJfugLDs5YyslU3EacD9xq-VX8PoFe1ZqGTDcSpMqnYGjWZGwgCMpeLog6-h58HayloVUZIxbsOQpCeV_Tm7mvCT5nxOWYlmK7oqT3yfv2OPT8CY48vD48gj-B2kf6xlbi9lcqYUJWDyDKIWW6SGHKLNpeRCTL7U9CIoBa6TKYhME5LN93UB-iQerajMPVN8tuaRguSeuOxm_ofdJzWQhWMwysUJ8nER2UhXkiaz1xP3lPwIT7m-eoAP_mdW8NJXSodtvxepZ5ORVL1SLXBqrN9NpGfNKxl6XiX94w7jhR8ZzUVqGNMPD7NtwU2ujNHT4BW5wU_A6E1BuFlZV0PV0M2bGZlIFxj2LpbJi-BFH_ZK1apojSXLHrq8uri6DY-OXIU580GptBGnDHvwTuNmkHB6kExdhdjvXDqvqj87NvCK7jrg3vr-8wt_Pp294JOOWr7lN5yzjML7c98jjZDKGKnrEL2KWqHQhLIO1KxjszZuWz3fJhJ2xeG3wf6zVUti5qGkzF7yw879iLXi2-St0maqtIF_7BV0hVcslR7pWXENDr6xN7sP_1OVylwEB3w3Z66LkjCS5Ll6wpgtCKPo3aiI45J4sk6YiZ-B-hz69Om3TzXWe2KVqquVMhMU6hxB3uWbFdozOIlniyuh1ewJCm-5FJjSn1klF0W2QUzmuza06Zt3PnXWv3YnYwF94mn6-ovlVu3Td3drlklZfN2yJlt8LQk53SrxEhlghxenAGcOJVySjYX9jr7woZtQ40fpkT-9YVuRpehSyFEx8FWmNy5DS2-EDSgCxx3k0zJj9WfNC2g3DdYUJDRkWQlsDSW6BglRaODtgBDyLREeGhDEZQs_ziG4McVEhl9IyDlqEEaWQKL00gls0tcS7ShqVoecuHcUpWZRqXYgsF8yVUDg7LHeGJRtjxdLtqLB3RRGzl4TNtOJZyo19u1m18WMndll_DVrmBASoIjr8VnoPVPBtRDtWqNz7xJTKylcKaCnJ2fv2fkCkoJtMHo2e2KzZ4mDqWl9Egx9Gq0qUvWXE04rF4FRFwZe8eYPZVEusucxcT8uVMnQqF0tZSsdv5qLoJuLz5BOzCkojw1dU1sgsU1fU_5HbnT3_30_3lxdMVHOxRNYXvvHCYabSkhY_Rn8P_Dak9z6X3XIvk3eV6YWEaXdL7U_f6hWNIbdmmZbUZfa5Pl0Zz4JF856dLOoZoFDRS2PSMaZiA7crXFd5Xnf8TWbf4_Pzc5ilBYTAjb4wzyiFtCh4mLMT8iKGycJ1HrejRFv0L1bbOTUKhMNCFESDBQuzFqLCE1GX4egFLoGRKwqoRylkh9syPkMH5g7jBUpyaUlHPmc3o4-_MGwLPkOd1rOwUSoN88bK5Z_fsFSVFo1D6Bh0ErqbT8ZyVHsUvaLcc03QBu9l6QMe_QDj0RJzLOQSpLfmXoJaAFsATFFs_0q-fIY1bd2d_8cgI0-Q8npTISXDCAJijRSNJQyxqrbnqLmTc_Cetun9O7Agft8jP8uVKFAhfVTT6GvwS6PucJq_Y__DhN9Eim5F8wsJhrnQNsPk15FEZwdlrIzF2ADhrMpXjitM2AdK1l5Tg-PRwFCGKCgA6aro9-AXvqBe_lOEPETY1thGdUUxShc4PbpgyJDSUgeP2egScyF1vXD0nmlgclr9iO7GdTo_Fqjm0yCK_tnMfk_uvgD6Lxq43ye3GL9P99j-QLqH9AdCPKQ_oBNuPyD2SI11budeNHin3IEgz58f0La-b2_De-4kEWo_IDqU3qlt4aIT5wGT68oFFnj44t824PrYGYdz2PhLMtl6oHSMCRM78nDLsIc7cO4QS-NAJ9_ZB4R_QNu7SO5vjixC7qYNlNgZ6Lk8UqOTDb7qk_d9vMuYcyx4uvFfjZiYdn6-L8Kz74GtICw9eoOg2lPNB4M3HWhzS0C0iWfzbeBeEpBOYgDRPQYCq50qT8KHgCMRu6fQ6uBqHbGzsqVsCYx3KGPrvizCIw6adHni3e4QRUhp8UFIbSeop7Y796qbkUfe-cl45MXe6GqSo5XiLoNuXPE1Pky2exPDM3qRDVczZOmTqNgc497tkQ3uyEwpSyOsYieTURJVktruKZ3d-X43phs9_nMo8eP4mJ7Oy7ujTTLuLure743Wnocdwu3RHIQNaR6ohjSC1yGlnWsh1Q-v6WGNNlOp4XYaHN2PmgPyp4cDEg2HVnBTKl3-d57bkiWDdwOgNjStbHA9-PYd27rCxBd3GWHVwTU-J4x4NyConmzKdHBtdS1aplvJqbQbru__BVPU6Lo">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ---
 
 ## How to read this diagram
 
 - **Solid arrows** are data/command paths active today.
-- **`(planned — Fxx)` nodes** are landing soon. They are linked here pre-emptively so the
-  diagram doesn't need a full rewrite each release. Each planned node has a tracker entry
-  in [docs/plans/README.md](plans/README.md) and a per-feature plan doc in `docs/plans/`.
 - **All-five-channels rule.** Per [AGENT.md](../AGENT.md), every configurable item in
   every box above is reachable through YAML, CLI, Web UI, REST API, comm channels, and
   (for stats/status) MCP. New nodes are not merged until they meet that bar.
@@ -332,8 +346,7 @@ diagram with an arrow from a worker back to `Parent`.
 When you land a new top-level interface or subsystem:
 
 1. Add a node (or a new `subgraph`) to the Mermaid block above.
-2. Mark it `(planned — Fxx)` if not yet shipped; remove the marker on completion.
-3. Add the row to the **Subsystem ownership map** table.
+2. Add the row to the **Subsystem ownership map** table.
 4. Verify the [AGENT.md "Configuration Accessibility Rule"](../AGENT.md) — YAML, CLI,
    Web UI, REST API, comm channel, MCP are all covered before flipping the marker off.
 5. Cross-link the per-feature plan doc in `docs/plans/`.

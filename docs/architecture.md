@@ -1,6 +1,6 @@
 # Architecture
 
-> **Doc-alignment audit:** last refreshed for **v5.26.3** (2026-04-27). The package list below is authoritative. Subsystems added since the original v3.x cut (autonomous, orchestrator, observer, plugins, agents, channel) are listed at the end.
+> **Doc-alignment audit:** last refreshed for **v8.0.0** (2026-05-19). The package list below is authoritative. Subsystems added since the original v3.x cut (autonomous, orchestrator, observer, plugins, agents, channel, federation, compute, inference) are listed at the end.
 
 ## Component Overview
 
@@ -36,6 +36,9 @@
 | `cost` | `internal/cost` | Token accounting + price tables (BL6) |
 | `pipeline` | `internal/pipeline` | DAG pipelines + before/after gates |
 | `kg` + `memory` | `internal/kg` + `internal/memory` | Episodic memory + knowledge graph |
+| `federation` | `internal/federation` | CBAC peer registry — 50 capabilities, 13 groups, `fedCap()` guards on every REST handler + MCP tool (v7.3–v7.4) |
+| `compute` | `internal/compute` | Compute Node registry — hardware abstraction (hosts, GPUs, k8s, remote peers); DockerLifecycle for docker-network routing (v7.0, v8.0) |
+| `inference` | `internal/inference` | LLM dispatcher — named LLMs, ordered failover, 4 adapters; ProxyRouter `/api/proxy/llm/<name>` for datawatch-proxy routing (v7.0, v8.0) |
 
 ---
 
@@ -69,13 +72,17 @@ graph TD
     subgraph "datawatch daemon"
         MsgRegistry["Messaging Registry\n(messaging.Backend)"]
         Router["Router\ncommand dispatch"]
-        MCPServer["MCP Server\n(internal/mcp)"]
+        MCPServer["MCP Server\n(internal/mcp)\nfederated auth v7.4"]
         Manager["Session Manager"]
         Store["Store\n(sessions.json)"]
         Tmux["TmuxManager"]
         HTTPServer["HTTPServer\n:8080"]
         Hub["WebSocket Hub"]
         LLMRegistry["LLM Registry\n(llm.Backend)"]
+        CBAC["fedCap() CBAC\n(internal/federation)"]
+        FedPeers["Federation peer registry\n/api/federation/peers/*"]
+        LLMDisp["LLM dispatcher\n(internal/inference)"]
+        ComputeReg["Compute Node registry\n(internal/compute)"]
     end
 
     subgraph "AI sessions (tmux)"
@@ -116,6 +123,10 @@ graph TD
     S2 --> L2
     Manager -->|monitor goroutines| L1
     Manager -->|monitor goroutines| L2
+
+    HTTPServer --> CBAC --> FedPeers
+    MCPServer --> CBAC
+    Manager --> LLMDisp --> ComputeReg
 
     Manager -->|onStateChange / onNeedsInput| HTTPServer
     HTTPServer --> Hub
@@ -179,9 +190,11 @@ type Backend interface {
 }
 ```
 
-All LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell)
-implement this interface and are registered in `internal/llm/registry.go`. The active
-backend is selected via `session.llm_backend` in config.
+All LLM backends (claude-code, opencode, opencode-acp, opencode-api, ollama, openwebui,
+gemini-api, aider, goose, shell) implement this interface and are registered in
+`internal/llm/registry.go`. Named LLMs with ordered failover are managed by the LLM
+dispatcher (`internal/inference`). The active backend is selected via
+`session.llm_backend` in config or via a named LLM profile.
 
 ---
 
