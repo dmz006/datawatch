@@ -299,11 +299,13 @@ Tail of `~/.datawatch/daemon.log`. For deeper investigation, tail the file direc
 
 The daily-driver knobs.
 
-- **Operator identity** — wake-up L0 layer self-description loaded from `~/.datawatch/identity.yaml`. Auto-injected into every spawned session so the LLM stays anchored to your role / north-star goals / current projects / values / context. Edit via inline form, the 🤖 wizard on the Automata page, or `datawatch identity {get,set,configure,edit}`.
+- **Operator identity** — wake-up L0 layer self-description loaded from `~/.datawatch/identity.yaml`. Auto-injected into every spawned session so the LLM stays anchored to your role / north-star goals / current projects / values / context. Edit via inline form, the 🤖 wizard on the Automata page, or `datawatch identity {get,set,configure,edit}`. REST: `GET/PUT/PATCH/POST /api/identity` (POST is an alias for PATCH, added in v8.2.0 for mobile compat).
 - **Session templates** — named bundles of (backend, effort, model, profile, skills) saved as `~/.datawatch/session-templates/<name>.yaml`. Used when starting new sessions to skip the picker.
 - **Device aliases** — friendly names for the device IDs in your federation. Cosmetic; helps observer rows / audit log read more cleanly.
 - **Backend artifact lifecycle** — per-backend cleanup policy (e.g. claude `.mcp.json` removal post-session, opencode workspace teardown). Defaults are sensible; only touch if you see leftover artifacts.
 - **Secrets store** — credentials, tokens, environment values. Native AES-256-GCM at `~/.datawatch/secrets.db` plus optional KeePass, 1Password, and HashiCorp Vault / OpenBao (KV v2, static-token auth) backends. `${secret:name}` references in YAML/plugins/spawn-time env injection. Per-secret tags + scope. Audit-logged on every read. Vault status card shows reachability + last request ID; nav badge turns red when Vault is active but unreachable.
+
+**Badge/chip multi-select input (v8.2.0)** — all fields that previously accepted raw comma-separated text (tags, capabilities, models, skills, shared-with lists) now use a chip-based badge input: click to add a chip, × to remove, drag-to-reorder for ordered fields (e.g. LLM fallback chain). When the field has a defined set of known values (e.g. federation capability group names), a typeahead dropdown appears. Underlying value is still a comma-separated string; no schema change.
 - **Docs Search (Docs-as-MCP-Interface)** — every doc, howto, and plan is searchable through a hybrid index (vector primary + keyword fallback). The same surface drives docs read, how-to listing, and plan-then-execute: a curated how-to declares its MCP-call sequence in front-matter; the operator approves once and an agent runs the steps. Per-step risk gate available for write operations. Skills + plugins must be opted-in before their docs land in the index. See [`howto/docs-as-mcp.md`](howto/docs-as-mcp.md).
 - **Federated Observer (findability)** — quick-link to the Observer view (where shape A/B/C config + Federated Peers card + per-peer stats live). The card itself only links; the full observer surface is the Observer view + REST/MCP/CLI/comm parity.
 
@@ -529,6 +531,21 @@ The agent worker fleet — Docker locally OR Kubernetes-spawned per-session pods
 
 Headscale-first (self-hosted), commercial Tailscale supported. Status card shows current node + advertised routes; Configuration accepts pre-auth keys or OAuth device flow. ACL Generator builds a Tailscale ACL from current node tags + agent fleet membership.
 
+#### Push Notifications (v8.2.0)
+
+UnifiedPush + ntfy registration and fan-out. The card shows:
+
+- **Registration status** — whether this device/browser has a registered push endpoint.
+- **Register** button — calls the browser Push API, then POSTs to `POST /api/push/register` with the subscription `{endpoint, keys: {p256dh, auth}}`. Returns a registration `id`.
+- **Test** button — fires `POST /api/push/notify` to send a test message to all registered endpoints.
+- **Unregister** button — calls `DELETE /api/push/unregister` with the stored `id`.
+
+CLI: `datawatch push list | test [--id <id>] [--message <m>] | unregister [--id <id>|--endpoint <url>]`.
+
+UnifiedPush auto-discovery: `GET /.well-known/unifiedpush` returns `{"version":1,"unifiedpush":{"gateway":"/api/push/notify"}}`.
+
+See [`howto/push-setup.md`](howto/push-setup.md) · [`howto/push-notifications.md`](howto/push-notifications.md).
+
 #### Notifications
 
 Per-channel preference for daemon-emitted events: state changes, needs-input, rate-limit hits, autonomous step approvals. Off by default for chatty events; on for needs-input.
@@ -711,6 +728,8 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | LLM Registry | [`howto/llm-registry.md`](howto/llm-registry.md) | v7.0.0 | `/api/llms` CRUD + named routing |
 | Compute Nodes | [`howto/compute-nodes.md`](howto/compute-nodes.md) | v7.0.0 | `/api/compute/nodes` CRUD |
 | Push notifications | [`howto/push-notifications.md`](howto/push-notifications.md) | v7.0.0-alpha.35 | UnifiedPush + ntfy SSE |
+| Push registration API | [`howto/push-setup.md`](howto/push-setup.md) | v8.2.0 | register/unregister/notify + Android UP |
+| Async PRD decompose | [`howto/decompose-async.md`](howto/decompose-async.md) | v8.2.0 | 202 + SSE stream + Last-Event-ID |
 | Claude hooks | [`howto/claude-hooks.md`](howto/claude-hooks.md) | v7.0.0-alpha.34 | hook scripts + status board |
 | Alerts & notifications | [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) | v7.0.0 | alert dock + per-channel delivery |
 | Guardrail library | [`howto/guardrail-library.md`](howto/guardrail-library.md) | v7.0.0 | SAST/secrets/deps/LLM scan profiles |
@@ -741,6 +760,7 @@ Comms + LLM:
 - [`howto/voice-input.md`](howto/voice-input.md) — transcription backends
 - [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) — alert dock, per-channel delivery, push notifications
 - [`howto/push-notifications.md`](howto/push-notifications.md) — UnifiedPush registration, ntfy-compat SSE streams
+- [`howto/push-setup.md`](howto/push-setup.md) — BL330 register/unregister/notify API, Android integration (v8.2.0)
 - [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
 - [`howto/mcp-resources.md`](howto/mcp-resources.md) — 21 URI-addressed live resources
 - [`howto/mcp-prompts.md`](howto/mcp-prompts.md) — 10 prompt slash commands with live context injection
@@ -749,6 +769,7 @@ Comms + LLM:
 
 Automata + orchestration:
 - [`howto/autonomous-planning.md`](howto/autonomous-planning.md) — submit a free-form spec, watch it decompose
+- [`howto/decompose-async.md`](howto/decompose-async.md) — async decompose: 202 + SSE story stream + Last-Event-ID resume (v8.2.0)
 - [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md) — PRD lifecycle gate
 - [`howto/automata-orchestrator.md`](howto/automata-orchestrator.md) — multi-Automata graphs with guardrails
 - [`howto/pipeline-chaining.md`](howto/pipeline-chaining.md) — DAG pipelines with before/after gates
