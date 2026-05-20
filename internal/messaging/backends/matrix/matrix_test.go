@@ -95,6 +95,45 @@ func TestNormaliseSender(t *testing.T) {
 	}
 }
 
+// ── backend.go — ValidateSecrets + session embed ──────────────────────────────
+
+func TestValidateSecrets(t *testing.T) {
+	if err := ValidateSecrets(""); err != nil {
+		t.Errorf("empty token should be ok, got: %v", err)
+	}
+	if err := ValidateSecrets("${secret:matrix-access-token}"); err != nil {
+		t.Errorf("secret ref should be ok, got: %v", err)
+	}
+	if err := ValidateSecrets("syt_abc123plaintext"); err == nil {
+		t.Error("plaintext token should return ErrPlaintextToken, got nil")
+	}
+	if err := ValidateSecrets("${secret:other-name}"); err != nil {
+		t.Errorf("any secret ref should be ok, got: %v", err)
+	}
+}
+
+func TestSessionTag(t *testing.T) {
+	b := &Backend{hostname: "myhost"}
+	tag := b.sessionTag()
+	if tag.Host != "myhost" {
+		t.Errorf("Host = %q; want %q", tag.Host, "myhost")
+	}
+	if tag.Role != "output" {
+		t.Errorf("Role = %q; want %q", tag.Role, "output")
+	}
+	if tag.SessionID != "" {
+		t.Errorf("SessionID should be empty for V1, got %q", tag.SessionID)
+	}
+}
+
+func TestSetHostname(t *testing.T) {
+	b := &Backend{}
+	b.SetHostname("testhost")
+	if b.hostname != "testhost" {
+		t.Errorf("hostname = %q; want %q", b.hostname, "testhost")
+	}
+}
+
 // ── aliases.go ───────────────────────────────────────────────────────────────
 
 func TestIsAlias(t *testing.T) {

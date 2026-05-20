@@ -34,7 +34,14 @@ type Backend struct {
 	// rawRoomID is the original config value (may be an alias); resolver maps
 	// it to the real room ID stored in b.roomID at Subscribe time.
 	rawRoomID string
+
+	// hostname is embedded in m.datawatch.session on every outbound message (Q5.3).
+	hostname string
 }
+
+// SetHostname sets the daemon hostname embedded in every outbound message content
+// as m.datawatch.session.host (Q5.3 session_id embed).
+func (b *Backend) SetHostname(hostname string) { b.hostname = hostname }
 
 // New creates a new Matrix backend.
 // roomID accepts both !id:server and #alias:server syntax; the alias is
@@ -65,6 +72,25 @@ func NewWithDevice(homeserver, userID, accessToken, deviceID, roomID string) (*B
 
 func (b *Backend) Name() string { return "matrix" }
 
+// datawatchSession is embedded in every outbound m.room.message content as
+// "m.datawatch.session" per Q5.3 of the BL241 design. It lets V2 routing layer
+// identify which session/host produced each message without changing the wire format.
+type datawatchSession struct {
+	SessionID string `json:"session_id"` // empty in V1 single-room mode; V2 populates
+	Host      string `json:"host,omitempty"`
+	Role      string `json:"role"` // "output" for daemon→room messages
+}
+
+// outboundContent wraps MessageEventContent with the datawatch session extension field.
+type outboundContent struct {
+	*event.MessageEventContent
+	DatawatchSession datawatchSession `json:"m.datawatch.session,omitempty"`
+}
+
+func (b *Backend) sessionTag() datawatchSession {
+	return datawatchSession{Host: b.hostname, Role: "output"}
+}
+
 // Send sends a plain-text message to the given recipient room.
 // If recipient is empty, the configured room is used.
 func (b *Backend) Send(recipient, message string) error {
@@ -72,9 +98,12 @@ func (b *Backend) Send(recipient, message string) error {
 	if err != nil {
 		return err
 	}
-	content := &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    message,
+	content := &outboundContent{
+		MessageEventContent: &event.MessageEventContent{
+			MsgType: event.MsgText,
+			Body:    message,
+		},
+		DatawatchSession: b.sessionTag(),
 	}
 	_, err = b.client.SendMessageEvent(context.Background(), roomID, event.EventMessage, content)
 	return err
@@ -89,11 +118,14 @@ func (b *Backend) SendMarkdown(recipient, markdown string) error {
 		return err
 	}
 	html := markdownToMatrixHTML(markdown)
-	content := &event.MessageEventContent{
-		MsgType:       event.MsgText,
-		Body:          markdown,
-		Format:        event.FormatHTML,
-		FormattedBody: html,
+	content := &outboundContent{
+		MessageEventContent: &event.MessageEventContent{
+			MsgType:       event.MsgText,
+			Body:          markdown,
+			Format:        event.FormatHTML,
+			FormattedBody: html,
+		},
+		DatawatchSession: b.sessionTag(),
 	}
 	_, err = b.client.SendMessageEvent(context.Background(), roomID, event.EventMessage, content)
 	return err
@@ -109,16 +141,19 @@ func (b *Backend) SendThreaded(recipient, message, threadID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	content := &event.MessageEventContent{
+	base := &event.MessageEventContent{
 		MsgType: event.MsgText,
 		Body:    message,
 	}
 	if threadID != "" {
-		content.RelatesTo = &event.RelatesTo{
+		base.RelatesTo = &event.RelatesTo{
 			Type:    event.RelThread,
 			EventID: id.EventID(threadID),
-			// IsFallingBack=false: this is a real threaded reply, not a fallback.
 		}
+	}
+	content := &outboundContent{
+		MessageEventContent: base,
+		DatawatchSession:    b.sessionTag(),
 	}
 	resp, err := b.client.SendMessageEvent(context.Background(), roomID, event.EventMessage, content)
 	if err != nil {
@@ -126,7 +161,6 @@ func (b *Backend) SendThreaded(recipient, message, threadID string) (string, err
 	}
 	evID := resp.EventID.String()
 	if threadID == "" {
-		// The sent event becomes the thread root; return its ID.
 		return evID, nil
 	}
 	return threadID, nil
@@ -253,6 +287,25 @@ func markdownToMatrixHTML(md string) string {
 	// newlines → <br/>
 	html = strings.ReplaceAll(html, "\n", "<br/>")
 	return html
+}
+
+// ErrPlaintextToken is returned by ValidateSecrets when access_token is a
+// literal token instead of a ${secret:...} reference.
+var ErrPlaintextToken = fmt.Errorf("matrix: access_token must use ${secret:name} syntax (Secrets-Store Rule, BL241). " +
+	"Store the token with: datawatch secrets set matrix-access-token <token>\n" +
+	"Then set access_token: ${secret:matrix-access-token} in config.yaml")
+
+// ValidateSecrets enforces the Secrets-Store Rule for the Matrix access token.
+// Returns ErrPlaintextToken if access_token is non-empty and is not a
+// ${secret:...} reference. Call this before constructing the backend.
+func ValidateSecrets(accessToken string) error {
+	if accessToken == "" {
+		return nil
+	}
+	if strings.HasPrefix(accessToken, "${secret:") {
+		return nil
+	}
+	return ErrPlaintextToken
 }
 
 // applyInlineMarkup replaces paired delimiters with open/close HTML tags.

@@ -2477,34 +2477,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
-	// Matrix (BL241 P1)
-	if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
-		var matrixB *matrix.Backend
-		var matrixErr error
-		if cfg.Matrix.DeviceID != "" {
-			matrixB, matrixErr = matrix.NewWithDevice(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.DeviceID, cfg.Matrix.RoomID)
-		} else {
-			matrixB, matrixErr = matrix.New(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.RoomID)
-		}
-		if matrixErr != nil {
-			fmt.Printf("[warn] Matrix backend: %v\n", matrixErr)
-		} else {
-			defer matrixB.Close() //nolint:errcheck
-			r := newRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB)
-			routers = append(routers, r)
-			// Wire into HTTPServer for /api/matrix/status and /api/matrix/test.
-			httpServer.SetMatrixBackend(matrixB)
-			fmt.Printf("[%s] Matrix backend enabled (room: %s)\n", cfg.Hostname, cfg.Matrix.RoomID)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
-					fmt.Printf("[%s] Matrix router error: %v\n", cfg.Hostname, rErr)
-				}
-			}()
-		}
-	}
-
 	// ntfy (send-only, wire as state-change notifier, not a router)
 	var ntfyBackend *ntfymsg.Backend
 	if cfg.Ntfy.Enabled && cfg.Ntfy.Topic != "" {
@@ -3139,6 +3111,41 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[secrets] config refs resolved\n")
 			}
 		}
+
+		// BL241 P1 — Matrix backend must start AFTER ResolveConfig so that
+		// ${secret:matrix-access-token} refs are expanded before the client is created.
+		// ValidateSecrets enforces the Secrets-Store Rule: plaintext tokens are rejected.
+		if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
+			if err := matrix.ValidateSecrets(cfg.Matrix.AccessToken); err != nil {
+				fmt.Printf("[error] %v\n", err)
+			} else {
+				var matrixB *matrix.Backend
+				var matrixErr error
+				if cfg.Matrix.DeviceID != "" {
+					matrixB, matrixErr = matrix.NewWithDevice(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.DeviceID, cfg.Matrix.RoomID)
+				} else {
+					matrixB, matrixErr = matrix.New(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.RoomID)
+				}
+				if matrixErr != nil {
+					fmt.Printf("[warn] Matrix backend: %v\n", matrixErr)
+				} else {
+					matrixB.SetHostname(cfg.Hostname) // Q5.3 session embed
+					defer matrixB.Close()             //nolint:errcheck
+					r := newRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB)
+					routers = append(routers, r)
+					httpServer.SetMatrixBackend(matrixB)
+					fmt.Printf("[%s] Matrix backend enabled (room: %s)\n", cfg.Hostname, cfg.Matrix.RoomID)
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+							fmt.Printf("[%s] Matrix router error: %v\n", cfg.Hostname, rErr)
+						}
+					}()
+				}
+			}
+		}
+
 		// BL274 (v6.16.0) — Docs-as-MCP runtime (BM25 search index, trust
 		// state, pending-trust queue). Loads the embedded BM25 index
 		// generated at build time by `make docs-index`.
