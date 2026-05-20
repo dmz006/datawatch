@@ -59,6 +59,16 @@ func newFederationCmd() *cobra.Command {
 				}
 				body["capabilities"] = caps
 			}
+			ciStr, _ := cmd.Flags().GetString("channel-identity")
+			if ciStr != "" {
+				var ci []string
+				for _, c := range strings.Split(ciStr, ",") {
+					if t := strings.TrimSpace(c); t != "" {
+						ci = append(ci, t)
+					}
+				}
+				body["channel_identity"] = ci
+			}
 			return daemonJSON(http.MethodPost, "/api/federation/peers", body)
 		},
 	}
@@ -66,6 +76,7 @@ func newFederationCmd() *cobra.Command {
 	peerAddCmd.Flags().String("url", "", "base URL of the remote instance (required)")
 	peerAddCmd.Flags().String("token", "", "bearer token for authentication (optional)")
 	peerAddCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names (optional)")
+	peerAddCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns (e.g. telegram:group:-123,signal:+1555)")
 	peerCmd.AddCommand(peerAddCmd)
 
 	peerCmd.AddCommand(&cobra.Command{
@@ -102,12 +113,23 @@ func newFederationCmd() *cobra.Command {
 				}
 				body["capabilities"] = caps
 			}
+			ciStr, _ := cmd.Flags().GetString("channel-identity")
+			if ciStr != "" {
+				var ci []string
+				for _, c := range strings.Split(ciStr, ",") {
+					if t := strings.TrimSpace(c); t != "" {
+						ci = append(ci, t)
+					}
+				}
+				body["channel_identity"] = ci
+			}
 			return daemonJSON(http.MethodPut, "/api/federation/peers/"+args[0], body)
 		},
 	}
 	peerUpdateCmd.Flags().String("url", "", "new base URL")
 	peerUpdateCmd.Flags().String("token", "", "new bearer token")
 	peerUpdateCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names")
+	peerUpdateCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns")
 	peerCmd.AddCommand(peerUpdateCmd)
 
 	peerCmd.AddCommand(&cobra.Command{

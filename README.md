@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.1.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.1.0)
+[![Release](https://img.shields.io/badge/release-v8.4.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.4.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -48,9 +48,29 @@ datawatch skills sync community
 
 ## Current release
 
-**v8.1.0 (2026-05-19)** — E2E stories, community registry launch, alert rules (S14b), plugin install UI, mic popup. See [release notes](docs/RELEASE_NOTES_v8.1.0.md).
+**v8.4.0 (2026-05-19)** — Discussion Scopes: federated per-discussion WAL memory with conflict detection, rate throttle, and participant sync. See [release notes](docs/RELEASE_NOTES_v8.4.0.md) and [CHANGELOG.md](CHANGELOG.md).
 
-**In progress: v8.2.0** — Android 1.0.0 blocker sprint + settings UX. Ships: async PRD decompose (SSE streaming, unblocks Android T13), `/api/identity` POST alias, UnifiedPush register/unregister endpoints, badge/chip multi-select for all comma-separated settings fields. Sprint plan: [docs/plans/2026-05-19-v820-sprint.md](docs/plans/2026-05-19-v820-sprint.md).
+**v8.3.0 (2026-05-19)** — Channel Routing (inbound channel → peer mapping), File Service (federated upload/delete/list), and 14th built-in federation group (`comms-channel-agent`). See [release notes](docs/RELEASE_NOTES_v8.3.0.md).
+
+**v8.2.0 (2026-05-19)** — Android 1.0.0 blockers: async PRD decompose with SSE streaming, `/api/identity` POST alias, UnifiedPush register/notify/unregister, badge/chip multi-select for all settings fields. See [release notes](docs/RELEASE_NOTES_v8.2.0.md).
+
+### v8.4 highlights
+
+- **Discussion Scopes (BL332)** — A new `discussion` memory scope lets multiple federated peers share a named WAL-backed memory namespace. Append-only JSONL WAL at `~/.datawatch/discussions/<id>/wal.jsonl`. Conflict detection (same 64-char content prefix from different origin peers within 5 s). Per-peer 60 writes/min rate throttle (keyed by Bearer token). Async fan-out sync to registered participants on every write. REST: `/api/memory/discussion`, `/api/memory/discussion/{id}`, `…/wal`, `…/conflicts`, `…/participants`. MCP: `memory_discussion_write`, `memory_discussion_recall`, `memory_discussion_wal`, `memory_discussion_participants`. CLI: `datawatch memory discussion {list,write,recall,wal,participants}`. PWA: Settings → General → Discussion Scopes card.
+- **794 E2E test stories** — 114 new stories (TS-637–TS-750) covering every surface of v8.2.0 + v8.3.0 + v8.4.0.
+
+### v8.3 highlights
+
+- **Channel Routing (BL331)** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. Stored at `~/.datawatch/channel_routing.json`. `GET/PUT /api/channel/routing`. PWA: Settings → Comms → Channel Routing card. CLI: `datawatch federation peer add --channel-identity`.
+- **File Service (BL333)** — Federated upload/delete/list under a configurable service root. `POST /api/files` (multipart), `DELETE /api/files` (JSON `{path}`), `GET /api/files/peers/{name}`, `GET /api/files/discussions/{id}`, `GET /api/files/meta`. Path-traversal guard on every write path. CLI: `datawatch files {list,upload,delete,peer}`.
+- **14th federation builtin group: `comms-channel-agent`** — Peers that act as channel address agents get sessions+comms+alerts+autonomous capabilities without full operator access.
+
+### v8.2 highlights
+
+- **Async PRD decompose (BL328)** — `POST /api/autonomous/prds/<id>/decompose` returns immediately with `{task_id, stream_url}`. Stories stream via SSE; idempotent second calls return same task_id. Status poll at `.../decompose/status`. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
+- **Identity POST alias (BL329)** — `POST /api/identity` now aliases `PATCH` (partial update) for mobile Android compat. All methods (GET/PUT/PATCH/POST) routed through single handler with capability gates.
+- **UnifiedPush (BL330)** — `GET /.well-known/unifiedpush`, `POST /api/push/register`, `GET /api/push/register`, `DELETE /api/push/unregister`, `POST /api/push/notify`. Registrations keyed by endpoint URL. PWA: Settings → Comms → Push Notifications card. CLI: `datawatch push {register,unregister,notify}`. MCP: `push_register`, `push_notify`.
+- **Badge/chip multi-select (BL327)** — All comma-separated settings fields (secrets tags, federation caps, LLM fallback chain, compute node tags, profile memory_shared_with, profile skills) now render as badge inputs with dropdown completion and drag-to-reorder.
 
 ### v8.1 highlights
 
@@ -62,7 +82,7 @@ datawatch skills sync community
 
 ### v8.0 highlights
 
-- **Federation CBAC** — 50 capabilities, 13 built-in groups, `fedCap()` guards every REST handler and MCP tool.
+- **Federation CBAC** — 50 capabilities, **14 built-in groups** (admin, observer, operator, readonly, …, comms-channel-agent), `fedCap()` guards every REST handler and MCP tool.
 - **Compute Node routing** — `direct`, `docker-network`, `datawatch-proxy` modes. DockerLifecycle manages container spin-up/teardown.
 - **MCP SSE federation** — MCP SSE transport accepts federation peer tokens with per-tool CBAC.
 - **Multi-server proxy** — `GET /api/servers` + per-server test endpoint.
@@ -98,9 +118,25 @@ That uniformity is the whole point. Read once, write once, audit once.
 
 ## What it does
 
+### 💬 Discussion Scopes — *new in v8.4*
+
+A `discussion` memory scope shared across multiple federation peers. Entries accumulate in an append-only JSONL WAL (`~/.datawatch/discussions/<id>/wal.jsonl`), each timestamped with origin peer and sequence number. Conflict detection flags same-content-prefix writes from different peers within 5 seconds. Per-peer write throttle (60 writes/min per Bearer token). Async fan-out syncs every write to all registered participants. REST: `/api/memory/discussion/{id}` CRUD + `/wal` + `/conflicts` + `/participants`. CLI: `datawatch memory discussion {list,write,recall,wal,participants}`. MCP: `memory_discussion_*`.
+
+### 🗂 Channel Routing + File Service — *new in v8.3*
+
+**Channel Routing**: map inbound channel identities (Telegram groups, Signal numbers, webhook URLs) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. Federation peers now carry a `channel_identity[]` field. CLI: `datawatch federation peer add --channel-identity <pattern>`.
+
+**File Service**: federated upload/delete/list under a configurable service root (`session.file_service_root` or `session.root_path`). Path-traversal guard on every write. `POST /api/files`, `DELETE /api/files`, `GET /api/files/peers/{name}`, `GET /api/files/discussions/{id}`, `GET /api/files/meta`. CLI: `datawatch files {list,upload,delete,peer}`.
+
+### 🔔 Async PRD decompose + Push — *new in v8.2*
+
+**Async decompose**: `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately; stories stream via SSE with `Last-Event-ID` replay. Idempotent second calls return the same task_id. PWA: inline progress panel with reconnect. CLI: `datawatch autonomous prd decompose <id>`. MCP: `autonomous_prd_decompose`.
+
+**UnifiedPush**: `POST /api/push/register` registers an endpoint, `POST /api/push/notify` fans out to all (or one) registration. `GET /.well-known/unifiedpush` for discovery. PWA: Settings → Comms → Push Notifications card.
+
 ### 🔐 Federation CBAC — *new in v8.0*
 
-50 capabilities organized into 13 built-in groups (admin, observer, operator, readonly, …). Every REST endpoint and MCP tool is gated with `fedCap()` / `mcpFedCap()`. Federated peers declare a group (or a custom capability set), and the daemon enforces it on every request — not admin-or-nothing. Groups are manageable at runtime: `POST /api/federation/groups` + `PUT /api/federation/peers/<name>`. MCP tools `federation_group_*`, `federation_peer_*`. CLI `datawatch federation group {list,get,add,update,delete}`.
+50 capabilities organized into **14 built-in groups** (admin, observer, operator, readonly, …, comms-channel-agent). Every REST endpoint and MCP tool is gated with `fedCap()` / `mcpFedCap()`. Federated peers declare a group (or a custom capability set), and the daemon enforces it on every request — not admin-or-nothing. Groups are manageable at runtime: `POST /api/federation/groups` + `PUT /api/federation/peers/<name>`. MCP tools `federation_group_*`, `federation_peer_*`. CLI `datawatch federation group {list,get,add,update,delete}`.
 
 ### 🔀 Compute Node routing — *new in v8.0*
 
@@ -172,7 +208,7 @@ Tailscale k8s sidecar injected into agent pods for private overlay networking. H
 
 - **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper transcription
 - **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell — all routed through the v7.0 LLM registry dispatcher
-- **Episodic memory** — vector-indexed project knowledge; SQLite (pure Go) or PostgreSQL+pgvector; Ollama / OpenAI embeddings; XChaCha20-Poly1305 content encryption with key rotation; 4-scope hierarchy (persona-global → persona-in-project → project-shared → session-local)
+- **Episodic memory** — vector-indexed project knowledge; SQLite (pure Go) or PostgreSQL+pgvector; Ollama / OpenAI embeddings; XChaCha20-Poly1305 content encryption with key rotation; **5-scope hierarchy** (persona-global → persona-in-project → project-shared → session-local → **discussion**)
 - **Temporal knowledge graph** — entity-relationship triples with validity windows
 - **Full mempalace 6-axis spatial schema** — floor / wing / room / hall / shelf / box auto-derived at save time; +34pp retrieval improvement
 - **4-layer wake-up stack** — L0 identity (incl. Telos) + L1 critical facts + L2 room recall + L3 deep search
@@ -185,7 +221,7 @@ Tailscale k8s sidecar injected into agent pods for private overlay networking. H
 - **System monitoring** — CPU, memory, disk, GPU, network, per-session resource usage; eBPF per-process TCP tracking; Prometheus `/metrics`
 - **Bearer token auth + TLS** — auto-generated or custom certs with dual-port HTTP+HTTPS
 - **Full audit log** — every operator action recorded with actor / action / details / timestamp
-- **Federation** — cross-cluster proxy mode with circuit breaker, offline queue, peer registry, observer rollup
+- **Federation** — cross-cluster proxy mode with circuit breaker, offline queue, peer registry, observer rollup; channel routing (inbound message → peer mapping); capability-based access control (14 built-in groups)
 
 See **[docs/architecture-overview.md](docs/architecture-overview.md)** for the one-screen Mermaid map of every interface, subsystem, and data path.
 
@@ -407,6 +443,14 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | [docs/skills.md](docs/skills.md) | Skill Registries + manifest format |
 | [dmz006/datawatch-community](https://github.com/dmz006/datawatch-community) | Community Skills + Plugins registry — browse and contribute |
 | [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) | OpenAPI 3.0 REST API specification |
+
+### Comms + Federation (v8.2–v8.4)
+
+| Document | Description |
+|---|---|
+| [docs/howto/channel-routing.md](docs/howto/channel-routing.md) | Route inbound channel messages to specific federation peers (BL331) |
+| [docs/howto/file-service.md](docs/howto/file-service.md) | Federated file upload/delete/list under service root (BL333) |
+| [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) | Shared WAL-backed discussion memory scopes (BL332) |
 
 ### Comm channels
 

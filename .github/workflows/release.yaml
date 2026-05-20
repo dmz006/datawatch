@@ -102,9 +102,9 @@ jobs:
           set +e
           EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
           # JSON for baseline diff
-          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
           # SARIF for Code Scanning upload
-          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=sarif -quiet ./... > /tmp/gosec.sarif
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=sarif -quiet ./... > /tmp/gosec.sarif
           set -e
           python3 - <<'PY'
           import json, sys

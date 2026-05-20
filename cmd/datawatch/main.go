@@ -102,7 +102,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.1.5"
+var Version = "8.4.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8363,7 +8363,8 @@ func newMemoryCliCmd() *cobra.Command {
 			},
 		})
 	}
-	cmd.AddCommand(newMemoryScopeCmd()) // v7.0.0 S5 scope-hierarchy
+	cmd.AddCommand(newMemoryScopeCmd())  // v7.0.0 S5 scope-hierarchy
+	cmd.AddCommand(newDiscussionCmd())   // BL332 T42c — discussion scopes
 	return cmd
 }
 

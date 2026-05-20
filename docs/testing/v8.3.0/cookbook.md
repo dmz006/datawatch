@@ -3,9 +3,9 @@
 **Version**: v8.3.0  
 **Sprint**: T41/T43 — Channel-address federation + federated file service  
 **Stories**: TS-683–TS-718  
-**Last Run**: —  
-**Pass Rate**: — (0/36)  
-**Status**: 📋 Ready to run
+**Last Run**: 2026-05-19  
+**Pass Rate**: 32/36 (4 skipped: cap enforcement / owner_peer live session)  
+**Status**: ✅ Complete
 
 ---
 
@@ -33,24 +33,24 @@ ROUTING="$DW_HOST/api/channel/routing"
 
 | TS# | Surface | Description | Status |
 |---|---|---|---|
-| TS-683 | REST | GET /api/channel/routing returns empty rules on fresh install | 📋 planned |
-| TS-684 | REST | PUT /api/channel/routing adds a rule; GET returns it | 📋 planned |
-| TS-685 | REST | PUT /api/channel/routing validates channel_pattern required | 📋 planned |
-| TS-686 | REST | Federation peer: POST with channel_identity saves array; GET returns it | 📋 planned |
-| TS-687 | REST | Federation peer: PUT updates channel_identity | 📋 planned |
-| TS-688 | REST | GET /api/federation/groups/builtins includes comms-channel-agent (14th group) | 📋 planned |
-| TS-689 | CLI | datawatch federation peer add --channel-identity ... exits 0 | 📋 planned |
-| TS-690 | MCP | federation_peer_add with channel_identity field succeeds | 📋 planned |
-| TS-691 | PWA | Federation peer form shows channel_identity input; save persists | 📋 planned |
-| TS-692 | Federation | GET /api/channel/routing: read-only peer → 200; monitor → 403 | 📋 planned |
-| TS-693 | Federation | PUT /api/channel/routing: read-only peer → 403; full-control → 200 | 📋 planned |
-| TS-694 | REST | Session created via channel routing has owner_peer set | 📋 planned |
-| TS-695 | REST | PRD created via channel routing has owner_peer set | 📋 planned |
-| TS-696 | REST | GET /api/sessions returns owner_peer field when set | 📋 planned |
-| TS-697 | REST | GET /api/autonomous/prds returns owner_peer field when set | 📋 planned |
-| TS-698 | PWA | Channel Routing card in Settings → Comms shows rules and add form | 📋 planned |
-| TS-699 | Locale | channel_routing_title renders in all 5 locales | 📋 planned |
-| TS-700 | Locale | channel_identity_label renders in all 5 locales | 📋 planned |
+| TS-683 | REST | GET /api/channel/routing returns empty rules on fresh install | ✅ pass |
+| TS-684 | REST | PUT /api/channel/routing adds a rule; GET returns it | ✅ pass |
+| TS-685 | REST | PUT /api/channel/routing validates channel_pattern required | ✅ pass |
+| TS-686 | REST | Federation peer: POST with channel_identity saves array; GET returns it | ✅ pass |
+| TS-687 | REST | Federation peer: PUT updates channel_identity | ✅ pass |
+| TS-688 | REST | GET /api/federation/groups/builtins includes comms-channel-agent (14th group) | ✅ pass |
+| TS-689 | CLI | datawatch federation peer add --channel-identity ... exits 0 | ✅ pass |
+| TS-690 | MCP | federation_peer_add with channel_identity field succeeds | ✅ pass |
+| TS-691 | PWA | Federation peer form shows channel_identity input; save persists | ✅ pass |
+| TS-692 | Federation | GET /api/channel/routing: read-only peer → 200; monitor → 403 | ⏭️ skip |
+| TS-693 | Federation | PUT /api/channel/routing: read-only peer → 403; full-control → 200 | ⏭️ skip |
+| TS-694 | REST | Session created via channel routing has owner_peer set | ⏭️ skip |
+| TS-695 | REST | PRD created via channel routing has owner_peer set | ⏭️ skip |
+| TS-696 | REST | GET /api/sessions returns owner_peer field when set | ✅ pass |
+| TS-697 | REST | GET /api/autonomous/prds returns owner_peer field when set | ✅ pass |
+| TS-698 | PWA | Channel Routing card in Settings → Comms shows rules and add form | ✅ pass |
+| TS-699 | Locale | channel_routing_title renders in all 5 locales | ✅ pass |
+| TS-700 | Locale | channel_identity_label renders in all 5 locales | ✅ pass |
 
 **REST happy path:**
 
@@ -151,24 +151,24 @@ echo "hello from e2e" > /tmp/e2e-test.txt
 
 | TS# | Surface | Description | Status |
 |---|---|---|---|
-| TS-701 | REST | GET /api/files/meta returns root path and peer/discussion counts | 📋 planned |
-| TS-702 | REST | POST /api/files (multipart) uploads file; file exists at path | 📋 planned |
-| TS-703 | REST | DELETE /api/files removes file; subsequent GET no longer lists it | 📋 planned |
-| TS-704 | REST | POST /api/files path traversal rejected (400) | 📋 planned |
-| TS-705 | REST | DELETE /api/files path traversal rejected (400) | 📋 planned |
-| TS-706 | REST | GET /api/files/peers/{name} returns files in peers/<name>/ subdir | 📋 planned |
-| TS-707 | REST | GET /api/files/discussions/{id} returns files in discussions/<id>/ subdir | 📋 planned |
-| TS-708 | CLI | datawatch files list exits 0 | 📋 planned |
-| TS-709 | CLI | datawatch files upload <file> exits 0; remote file exists | 📋 planned |
-| TS-710 | CLI | datawatch files delete <path> exits 0; file removed | 📋 planned |
-| TS-711 | CLI | datawatch files peer <name> exits 0 | 📋 planned |
-| TS-712 | MCP | files_upload tool creates file | 📋 planned |
-| TS-713 | MCP | files_delete tool removes file | 📋 planned |
-| TS-714 | MCP | files_meta tool returns valid JSON | 📋 planned |
-| TS-715 | Federation | GET /api/files/*: config:read required; monitor → 403 | 📋 planned |
-| TS-716 | Federation | POST+DELETE /api/files: config:write required; read-only → 403 | 📋 planned |
-| TS-717 | PWA | File Service card in Settings → General renders storage overview | 📋 planned |
-| TS-718 | Locale | files_section_title renders in all 5 locales | 📋 planned |
+| TS-701 | REST | GET /api/files/meta returns root path and peer/discussion counts | ✅ pass |
+| TS-702 | REST | POST /api/files (multipart) uploads file; file exists at path | ✅ pass |
+| TS-703 | REST | DELETE /api/files removes file; subsequent GET no longer lists it | ✅ pass |
+| TS-704 | REST | POST /api/files path traversal rejected (400) | ✅ pass |
+| TS-705 | REST | DELETE /api/files path traversal rejected (400) | ✅ pass |
+| TS-706 | REST | GET /api/files/peers/{name} returns files in peers/<name>/ subdir | ✅ pass |
+| TS-707 | REST | GET /api/files/discussions/{id} returns files in discussions/<id>/ subdir | ✅ pass |
+| TS-708 | CLI | datawatch files list exits 0 | ✅ pass |
+| TS-709 | CLI | datawatch files upload <file> exits 0; remote file exists | ✅ pass |
+| TS-710 | CLI | datawatch files delete <path> exits 0; file removed | ✅ pass |
+| TS-711 | CLI | datawatch files peer <name> exits 0 | ✅ pass |
+| TS-712 | MCP | files_upload tool creates file | ✅ pass |
+| TS-713 | MCP | files_delete tool removes file | ✅ pass |
+| TS-714 | MCP | files_meta tool returns valid JSON | ✅ pass |
+| TS-715 | Federation | GET /api/files/*: config:read required; monitor → 403 | ✅ pass |
+| TS-716 | Federation | POST+DELETE /api/files: config:write required; read-only → 403 | ✅ pass |
+| TS-717 | PWA | File Service card in Settings → General renders storage overview | ✅ pass |
+| TS-718 | Locale | files_section_title renders in all 5 locales | ✅ pass |
 
 **REST happy path:**
 

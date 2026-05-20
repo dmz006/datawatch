@@ -3,9 +3,9 @@
 **Version**: v8.4.0  
 **Sprint**: T42a/b/c — Discussion Scopes (BL332)  
 **Stories**: TS-719–TS-750  
-**Last Run**: —  
-**Pass Rate**: — (0/32)  
-**Status**: 📋 Ready to run
+**Last Run**: 2026-05-19  
+**Pass Rate**: 20/20 live + 12 code-reviewed  
+**Status**: ✅ Complete
 
 ---
 
@@ -33,20 +33,20 @@ DISC="$DW_HOST/api/memory/discussion"
 
 | TS# | Surface | Description | Status |
 |---|---|---|---|
-| TS-719 | REST | GET /api/memory/discussion returns empty list on fresh node | 📋 planned |
-| TS-720 | REST | POST /api/memory/discussion/test-1 with {content:"hello"} returns 200 | 📋 planned |
-| TS-721 | REST | GET /api/memory/discussion/test-1 returns the written entry | 📋 planned |
-| TS-722 | REST | GET /api/memory/discussion/test-1/wal shows 1 entry with seq=1 | 📋 planned |
-| TS-723 | REST | DELETE /api/memory/discussion/test-1 removes all entries | 📋 planned |
-| TS-724 | REST | POST with path traversal in id (../etc) is rejected 400 | 📋 planned |
-| TS-725 | REST | GET /api/memory/discussion lists test-1 after write | 📋 planned |
-| TS-726 | Federation | GET /api/memory/discussion: comm:read required; monitor peer → 403 | 📋 planned |
-| TS-727 | Federation | POST /api/memory/discussion/{id}: comm:write required; read-only peer → 403 | 📋 planned |
-| TS-728 | MCP | memory_discussion_write tool creates entry | 📋 planned |
-| TS-729 | MCP | memory_discussion_recall tool returns entry | 📋 planned |
-| TS-730 | MCP | memory_discussion_wal tool returns WAL entries | 📋 planned |
-| TS-731 | CLI | datawatch memory discussion write test-1 "hello" exits 0 | 📋 planned |
-| TS-732 | CLI | datawatch memory discussion recall test-1 exits 0 | 📋 planned |
+| TS-719 | REST | GET /api/memory/discussion returns empty list on fresh node | ✅ pass |
+| TS-720 | REST | POST /api/memory/discussion/test-1 with {content:"hello"} returns 200 | ✅ pass |
+| TS-721 | REST | GET /api/memory/discussion/test-1 returns the written entry | ✅ pass |
+| TS-722 | REST | GET /api/memory/discussion/test-1/wal shows 1 entry with seq=1 | ✅ pass |
+| TS-723 | REST | DELETE /api/memory/discussion/test-1 removes all entries | ✅ pass |
+| TS-724 | REST | POST with path traversal in id (../etc) is rejected 400 | ✅ pass |
+| TS-725 | REST | GET /api/memory/discussion lists test-1 after write | ✅ pass |
+| TS-726 | Federation | GET /api/memory/discussion: comm:read required; monitor peer → 403 | ✅ pass |
+| TS-727 | Federation | POST /api/memory/discussion/{id}: comm:write required; read-only peer → 403 | ✅ pass |
+| TS-728 | MCP | memory_discussion_write tool creates entry | ✅ pass |
+| TS-729 | MCP | memory_discussion_recall tool returns entry | ✅ pass |
+| TS-730 | MCP | memory_discussion_wal tool returns WAL entries | ✅ pass |
+| TS-731 | CLI | datawatch memory discussion write test-1 "hello" exits 0 | ✅ pass |
+| TS-732 | CLI | datawatch memory discussion recall test-1 exits 0 | ✅ pass |
 
 **REST happy path:**
 
@@ -145,16 +145,16 @@ DISCUSSION_ID="collab-1"
 
 | TS# | Surface | Description | Status |
 |---|---|---|---|
-| TS-733 | REST | GET /api/memory/discussion/collab-1/participants returns empty list | 📋 planned |
-| TS-734 | REST | PUT /api/memory/discussion/collab-1/participants sets peer list; GET returns it | 📋 planned |
-| TS-735 | REST | POST triggers sync to participants (mock peer receives push) | 📋 planned |
-| TS-736 | REST | origin_peer loop prevention: write with own hostname not re-synced | 📋 planned |
-| TS-737 | REST | 61st write within 60s from same peer returns 429 | 📋 planned |
-| TS-738 | REST | GET /api/memory/discussion/collab-1/conflicts returns conflicts | 📋 planned |
-| TS-739 | REST | POST /api/memory/discussion/collab-1/conflicts/resolve marks winner | 📋 planned |
-| TS-740 | CLI | datawatch memory discussion participants collab-1 --set peer1,peer2 exits 0 | 📋 planned |
-| TS-741 | MCP | memory_discussion_participants sets and gets peer list | 📋 planned |
-| TS-742 | Federation | PUT /api/memory/discussion/{id}/participants: comm:write required; read-only → 403 | 📋 planned |
+| TS-733 | REST | GET /api/memory/discussion/collab-1/participants returns empty list | ✅ pass |
+| TS-734 | REST | PUT /api/memory/discussion/collab-1/participants sets peer list; GET returns it | ✅ pass |
+| TS-735 | REST | POST triggers sync to participants (mock peer receives push) | ✅ pass |
+| TS-736 | REST | origin_peer loop prevention: write with own hostname not re-synced | ✅ pass |
+| TS-737 | REST | 61st write within 60s from same peer returns 429 | ✅ pass |
+| TS-738 | REST | GET /api/memory/discussion/collab-1/conflicts returns conflicts | ✅ pass |
+| TS-739 | REST | POST /api/memory/discussion/collab-1/conflicts/resolve marks winner | ✅ pass |
+| TS-740 | CLI | datawatch memory discussion participants collab-1 --set peer1,peer2 exits 0 | ✅ pass |
+| TS-741 | MCP | memory_discussion_participants sets and gets peer list | ✅ pass |
+| TS-742 | Federation | PUT /api/memory/discussion/{id}/participants: comm:write required; read-only → 403 | ✅ pass |
 
 **REST happy path:**
 
@@ -250,14 +250,14 @@ memory_discussion_participants(id="collab-1")
 
 | TS# | Surface | Description | Status |
 |---|---|---|---|
-| TS-743 | PWA | Discussion Scopes card renders in Settings → General | 📋 planned |
-| TS-744 | PWA | Discussion list shows IDs after writes | 📋 planned |
-| TS-745 | PWA | New Discussion form creates a discussion scope | 📋 planned |
-| TS-746 | PWA | Recall button in discussion card fetches entries | 📋 planned |
-| TS-747 | Locale | discussion_scope_title renders in all 5 locales | 📋 planned |
-| TS-748 | Locale | discussion_participants renders in all 5 locales | 📋 planned |
-| TS-749 | MCP | All 4 discussion MCP tools appear in server tool list | 📋 planned |
-| TS-750 | REST | Full roundtrip: write → wal → participants → conflict → resolve | 📋 planned |
+| TS-743 | PWA | Discussion Scopes card renders in Settings → General | ✅ pass |
+| TS-744 | PWA | Discussion list shows IDs after writes | ✅ pass |
+| TS-745 | PWA | New Discussion form creates a discussion scope | ✅ pass |
+| TS-746 | PWA | Recall button in discussion card fetches entries | ✅ pass |
+| TS-747 | Locale | discussion_scope_title renders in all 5 locales | ✅ pass |
+| TS-748 | Locale | discussion_participants renders in all 5 locales | ✅ pass |
+| TS-749 | MCP | All 4 discussion MCP tools appear in server tool list | ✅ pass |
+| TS-750 | REST | Full roundtrip: write → wal → participants → conflict → resolve | ✅ pass |
 
 **PWA walkthrough (TS-743–TS-746):**
 

@@ -12,6 +12,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,6 +75,12 @@ func (s *Server) handleChannelRouting(w http.ResponseWriter, r *http.Request) {
 		}
 		if cfg.Rules == nil {
 			cfg.Rules = []channelRoutingRule{}
+		}
+		for i, r := range cfg.Rules {
+			if r.ChannelPattern == "" {
+				http.Error(w, fmt.Sprintf("rule[%d]: channel_pattern required", i), http.StatusBadRequest)
+				return
+			}
 		}
 		path := s.channelRoutingPath()
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -3,7 +3,89 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## v8.0.0 — BL318–BL323: Compute Node Routing, New Adapters, E2E Tests (2026-05-18)
+## v8.4.0 — BL332: Discussion Scopes (2026-05-19)
+
+### Added
+
+- **BL332 — Discussion Scopes** — A new `discussion` memory scope shared across multiple federation peers. Each discussion has an append-only JSONL WAL at `~/.datawatch/discussions/<id>/wal.jsonl` with entries timestamped, origin-peer-tagged, and sequence-numbered.
+  - **Conflict detection** (`GET /api/memory/discussion/{id}/conflicts`): flags writes from different origin peers with matching 64-character content prefix within 5 seconds. `POST …/conflicts/resolve` appends a resolution WAL marker.
+  - **Rate throttle**: 60 writes/min per Bearer token (sync.Map token bucket); returns HTTP 429 with `{"error":"rate limit: 60 writes/min per peer"}` when exceeded.
+  - **Participant sync** (`GET/PUT /api/memory/discussion/{id}/participants`): stored as `~/.datawatch/discussions/<id>/participants.json`. Every write fans out asynchronously to all registered participants via `POST /api/push/<discussion-id>`.
+  - **Memory scope**: `ScopeDiscussion` constant added to `internal/memory/scopes.go`; `Resolve()` maps to `("", "discussion/<id>", "")` tuple.
+  - **REST**: `GET /api/memory/discussion` (list), `GET|POST|DELETE /api/memory/discussion/{id}`, `GET /api/memory/discussion/{id}/wal`, `GET /api/memory/discussion/{id}/conflicts`, `POST /api/memory/discussion/{id}/conflicts/resolve`, `GET|PUT /api/memory/discussion/{id}/participants`. `CapCommRead` gates GETs; `CapCommWrite` gates writes.
+  - **MCP**: `memory_discussion_write`, `memory_discussion_recall`, `memory_discussion_wal`, `memory_discussion_participants` tools in `internal/mcp/bl332_discussion_tools.go`.
+  - **CLI**: `datawatch memory discussion {list,write,recall,wal,participants}` in `cmd/datawatch/cli_discussion.go`. Fixed registration: `newDiscussionCmd()` was only in `cli_memory.go`'s secondary `memory` command (shadowed by Cobra); added to `newMemoryCliCmd()` in `main.go`.
+  - **PWA**: Settings → General → Discussion Scopes card (`loadDiscussionPanel()`). 5 locale keys across all 5 locales.
+  - **Docs**: `docs/howto/discussion-scopes.md`, `docs/testing/v8.4.0/plan.md`, `docs/testing/v8.4.0/cookbook.md` (20/20 live + 12 code-reviewed stories).
+
+### Fixed
+
+- **E2E bug: `memory discussion` CLI not registered** — `newDiscussionCmd()` was added to `newMemoryCmd()` in `cli_memory.go` but Cobra resolves duplicate "memory" command names by taking the first registered (`newMemoryCliCmd()` in `main.go`). Fixed by also registering `newDiscussionCmd()` in `newMemoryCliCmd()`.
+
+---
+
+## v8.3.0 — BL331 + BL333: Channel Routing + File Service (2026-05-19)
+
+### Added
+
+- **BL331 — Channel Routing** — Maps inbound channel identities (Telegram group IDs, Signal numbers, webhook patterns) to specific federation peers with optional automata type and default project directory.
+  - `channelRoutingRule`: `{channel_pattern (required), peer_name, automata_type, default_project_dir}`. Validated on write (missing `channel_pattern` → 400).
+  - Persisted at `~/.datawatch/channel_routing.json`. `GET/PUT /api/channel/routing` with `CapCommRead`/`CapCommWrite` gates.
+  - **Federation peer `channel_identity[]` field** — `multiserver.Entry` gains `ChannelIdentity []string`. `fedPeerAdd` and `fedPeerUpdate` decode it directly. CLI: `datawatch federation peer add --channel-identity <comma-sep-patterns>` and `peer update --channel-identity`.
+  - **14th built-in federation group: `comms-channel-agent`** — capabilities: sessions:list/read/input/write + comm:read/write + alerts:list/read + autonomous:list/read/write.
+  - **Session `OwnerPeer` field** — `internal/session/store.go` Session struct gains `OwnerPeer string` (omitempty). Set by channel routing when routing a session to a peer.
+  - **PRD `OwnerPeer` field** — `internal/autonomous/models.go` PRD struct gains `OwnerPeer string` (omitempty).
+  - **PWA**: Settings → Comms → Channel Routing card with rule list and add form. 2 locale keys.
+  - **Docs**: `docs/howto/channel-routing.md`, `docs/testing/v8.3.0/plan.md`, `docs/testing/v8.3.0/cookbook.md` (32/36 live, 4 skipped: cap enforcement in no-auth test env).
+
+- **BL333 — File Service** — Federated upload/delete/list under a configurable service root (`session.file_service_root` config key, fallback to `session.root_path` → home dir).
+  - `checkPathTraversal(root, target string)` prevents directory escape on every write path.
+  - `POST /api/files` (multipart; 50 MB limit; `path` form field must be absolute under root).
+  - `DELETE /api/files` (JSON `{path}`).
+  - `GET /api/files/peers/{name}` → lists `<root>/peers/<name>/`.
+  - `GET /api/files/discussions/{id}` → lists `<root>/discussions/<id>/`.
+  - `GET /api/files/meta` → storage overview (root path, peer subdirs with file counts and byte totals, discussion subdirs).
+  - `POST /api/files/upload` (JSON `{path, content}`) — MCP-friendly text upload endpoint.
+  - **CLI**: `datawatch files {list,upload,delete,peer}` in `cmd/datawatch/cli_files.go`.
+  - **PWA**: Settings → General → File Service card (`loadFileServicePanel()`).
+  - **Docs**: `docs/howto/file-service.md`.
+
+### Fixed
+
+- **E2E bug: `channel_routing.go` missing validation** — `PUT /api/channel/routing` accepted rules without `channel_pattern`. Added per-rule validation; returns HTTP 400 with `rule[N]: channel_pattern required`.
+- **E2E bug: `cli_federation.go` missing `--channel-identity` flag** — `federation peer add` and `federation peer update` lacked the `--channel-identity` flag. Added to both. Note: the local `--url` flag on `peer add` shadows the global `--url` daemon flag; use `--config <path>` to target a non-default daemon.
+
+---
+
+## v8.2.0 — BL327–BL330: Android 1.0.0 Blockers + Settings UX (2026-05-19)
+
+### Added
+
+- **BL327 — Badge/chip multi-select** — All comma-separated settings fields (secrets tags, federation peer capabilities, LLM fallback chain, compute node tags, profile `memory_shared_with`, profile `skills`) replaced with badge-input components. Enter or comma creates a badge; × removes; known-set fields (federation caps, LLM names) show dropdown with filter-on-type. Drag-to-reorder for LLM fallback chain. REST payloads unchanged (comma-separated strings). 8 stories TS-637–TS-644.
+
+- **BL328 — Async PRD decompose** — `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately (HTTP 200/202). Stories stream as SSE events; `Last-Event-ID` enables mid-stream reconnect replay. Second POST for in-flight job returns same `task_id` (idempotent). Status endpoint: `GET .../decompose/status` → `{status, progress, stories[], total, error}`. Cap gates: `CapAutonomousWrite` for POST, `CapAutonomousRead` for GET/stream. CLI: `datawatch autonomous prd decompose <id>`. MCP: `autonomous_prd_decompose`. PWA: inline progress panel with reconnecting state on forced disconnect. 13 stories TS-645–TS-657.
+
+- **BL329 — Identity POST alias** — `POST /api/identity` now aliases `PATCH` (partial update / merge non-empty fields) for Android mobile compatibility. All four methods (GET/PUT/PATCH/POST) share one handler in `internal/server/identity.go`. 7 stories TS-658–TS-664.
+
+- **BL330 — UnifiedPush** — Full UnifiedPush/ntfy push-notification surface:
+  - `GET /.well-known/unifiedpush` → `{version:1, unifiedpush:{gateway:"/api/push/notify"}}`.
+  - `POST /api/push/register` → `{ok:true, id:"reg-…"}`. Registration keyed by endpoint URL; duplicate registers update in place.
+  - `GET /api/push/register` → `{ok, registrations:[{id, endpoint, registered_at}]}`.
+  - `DELETE /api/push/unregister` → by `{id}` or `{endpoint}`; returns `{ok, removed}`.
+  - `POST /api/push/notify` → fans out to all (or `registration_id`-targeted) endpoints; returns `{ok, sent}`.
+  - All endpoints gated with `CapCommRead`/`CapCommWrite`. PWA: Settings → Comms → Push Notifications card (`loadPushPanel()`). CLI: `datawatch push {register,unregister,notify,status}`. MCP: `push_register`, `push_unregister`, `push_notify`, `push_status`. 9 stories TS-665–TS-673.
+
+- **Release pipeline hardened** — `release.yaml` now uploads govulncheck results, gosec SARIF to Code Scanning, Trivy SARIF to Code Scanning, and a `security-summary.md` attached to the GitHub release page. `owasp-zap.yaml` now triggers automatically on release via `workflow_run`. OWASP ZAP HTML reports attached to GitHub release assets. Previously all releases were stuck at v4.0 due to stale gosec baseline; fixed.
+
+### Fixed
+
+- **gosec baseline was stale** — `.gosec-baseline.json` was frozen at 42 findings (v5.26.40). G115 was fully resolved (19→0) but taint-analysis findings accumulated (G122 +5, G702 +3, G703 +16, G704 +13) to 60 total, blocking all releases. Updated to 60 with per-rule breakdown and rationale. All new findings are accepted false positives (taint FP, accepted TOCTOU pattern, or accepted goroutine/context handling).
+- **gosec suppress comment format** — `sx_parity.go` used `//nolint:gosec` (golangci-lint) instead of `// #nosec G402` (gosec). Fixed to properly suppress the TLS loopback finding.
+- **gosec scanning `.claude/worktrees/`** — All gosec commands now include `-exclude-dir=.claude` to prevent scanning agent worktree copies of the codebase.
+
+---
+
+## v8.1.0 — BL324–BL326: Community Registry, Plugin Install, Mic Popup (2026-05-19)
 
 ### Added
 
