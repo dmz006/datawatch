@@ -102,7 +102,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.4.0"
+var Version = "8.5.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -323,6 +323,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newScheduleTopCmd(),// top-level schedule command (mirrors session schedule)
 		newPushCmd(),       // BL330 — UnifiedPush registration management
 		newFilesCmd(),      // BL333 — federated file service
+		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
 	)
 
 	if err := root.Execute(); err != nil {
@@ -707,6 +708,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		trackingFull := cfg.Session.SecureTracking == "full"
 		if err := secfile.MigratePlaintextToEncrypted(expandHome(cfg.DataDir), encKey, trackingFull); err != nil {
 			fmt.Printf("[warn] migration: %v\n", err)
+		}
+		// BL334 T43d — migrate operational data files (discussion WAL,
+		// participants.json, channel_routing.json) to encrypted format.
+		home, _ := os.UserHomeDir()
+		discussionsDir := filepath.Join(home, ".datawatch", "discussions")
+		if _, err := secfile.MigrateDiscussionWALs(discussionsDir, encKey); err != nil {
+			fmt.Printf("[warn] discussion migration: %v\n", err)
+		}
+		crPath := filepath.Join(home, ".datawatch", "channel_routing.json")
+		if err := secfile.MigrateChannelRouting(crPath, encKey); err != nil {
+			fmt.Printf("[warn] channel_routing migration: %v\n", err)
 		}
 	}
 
@@ -2535,6 +2547,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		server.Version = Version
+		// BL334 T43a — wire derived key so file-persisted handlers encrypt
+		// discussion WAL, participants, and channel routing when --secure.
+		if encKey != nil {
+			httpServer.SetEncKey(encKey)
+		}
 		// v5.26.24 — wire the BL113 broker adapter (captured earlier
 		// during agent-manager auth setup) into the daemon-side clone
 		// path so handleStartSession with project_profile mints/revokes

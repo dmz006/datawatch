@@ -21,6 +21,8 @@ package server
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,6 +34,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // discussionWALEntry is one WAL record for a discussion scope write.
@@ -53,6 +56,49 @@ var discussionMu sync.Map
 func discussionLock(id string) *sync.Mutex {
 	v, _ := discussionMu.LoadOrStore(id, &sync.Mutex{})
 	return v.(*sync.Mutex)
+}
+
+// ---------------------------------------------------------------------------
+// BL334 T43c — per-WAL-line encryption helpers
+// ---------------------------------------------------------------------------
+
+// walEncryptLine encrypts a JSON blob as "ENC:<base64(nonce24+ciphertext)>".
+// Produces a single token with no embedded newlines, safe to write as a JSONL line.
+func walEncryptLine(data, key []byte) (string, error) {
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, 24)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	ct := aead.Seal(nonce, nonce, data, nil) // prepend nonce → nonce || ciphertext
+	return "ENC:" + base64.StdEncoding.EncodeToString(ct), nil
+}
+
+// walDecryptLine decrypts an "ENC:…" WAL line; returns the raw JSON bytes
+// for lines that were written before encryption was enabled (no ENC: prefix).
+func walDecryptLine(line string, key []byte) ([]byte, error) {
+	if !strings.HasPrefix(line, "ENC:") {
+		return []byte(line), nil // plaintext line — migration / no-secure compat
+	}
+	combined, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(line, "ENC:"))
+	if err != nil {
+		return nil, fmt.Errorf("wal decrypt: base64: %w", err)
+	}
+	if len(combined) < 25 { // 24-byte nonce + at least 1 byte ciphertext
+		return nil, fmt.Errorf("wal decrypt: combined too short")
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := aead.Open(nil, combined[:24], combined[24:], nil)
+	if err != nil {
+		return nil, fmt.Errorf("wal decrypt: %w", err)
+	}
+	return pt, nil
 }
 
 // discussionsBaseDir returns ~/.datawatch/discussions, creating it on demand.
@@ -298,7 +344,7 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 	}
 
 	// Append to WAL and capture the entry for sync.
-	walEntry, err := discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer)
+	walEntry, err := discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer, s.encKey)
 	if err != nil {
 		// WAL failure is non-fatal.
 		_ = err
@@ -358,7 +404,7 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 	q := r.URL.Query()
 	n := atoiDefault(q.Get("n"), 50)
 
-	entries, err := discussionReadWAL(id, n)
+	entries, err := discussionReadWAL(id, n, s.encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSONOK(w, map[string]any{"discussion_id": id, "entries": []any{}, "count": 0})
@@ -376,14 +422,15 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 
 // discussionAppendWAL appends one entry to the discussion WAL file.
 // Kept for backward compat; delegates to discussionAppendWALEntry.
-func discussionAppendWAL(id, content, role string) error {
-	_, err := discussionAppendWALEntry(id, content, role, "")
+func discussionAppendWAL(id, content, role string, encKey []byte) error {
+	_, err := discussionAppendWALEntry(id, content, role, "", encKey)
 	return err
 }
 
 // discussionAppendWALEntry appends one entry and returns it (for sync).
-// originPeer may be empty for local writes.
-func discussionAppendWALEntry(id, content, role, originPeer string) (*discussionWALEntry, error) {
+// originPeer may be empty for local writes. When encKey is non-nil each
+// line is encrypted as "ENC:<base64(nonce24+ciphertext)>" (BL334 T43c).
+func discussionAppendWALEntry(id, content, role, originPeer string, encKey []byte) (*discussionWALEntry, error) {
 	walPath, err := discussionWALPath(id)
 	if err != nil {
 		return nil, err
@@ -406,25 +453,36 @@ func discussionAppendWALEntry(id, content, role, originPeer string) (*discussion
 		Timestamp:  time.Now().UTC(),
 		OriginPeer: originPeer,
 	}
-	line, err := json.Marshal(entry)
+	jsonBytes, err := json.Marshal(entry)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	// Encrypt the line when --secure is active.
+	lineStr := string(jsonBytes)
+	if encKey != nil {
+		enc, err := walEncryptLine(jsonBytes, encKey)
+		if err != nil {
+			return nil, fmt.Errorf("wal encrypt: %w", err)
+		}
+		lineStr = enc
+	}
+
+	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", line)
-	if err != nil {
+	if _, err = fmt.Fprintf(f, "%s\n", lineStr); err != nil {
 		return nil, err
 	}
 	return &entry, nil
 }
 
 // discussionReadWAL reads the last n entries from the discussion WAL.
-func discussionReadWAL(id string, n int) ([]discussionWALEntry, error) {
+// When encKey is non-nil each line is decrypted before parsing (BL334 T43c).
+// Lines without the "ENC:" prefix are accepted transparently for migration compat.
+func discussionReadWAL(id string, n int, encKey []byte) ([]discussionWALEntry, error) {
 	walPath, err := discussionWALPath(id)
 	if err != nil {
 		return nil, err
@@ -438,9 +496,18 @@ func discussionReadWAL(id string, n int) ([]discussionWALEntry, error) {
 
 	var all []discussionWALEntry
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB max line (encrypted lines are larger)
 	for sc.Scan() {
+		raw := sc.Text()
+		if encKey != nil {
+			dec, err := walDecryptLine(raw, encKey)
+			if err != nil {
+				continue // skip corrupted/unreadable lines
+			}
+			raw = string(dec)
+		}
 		var e discussionWALEntry
-		if err := json.Unmarshal(sc.Bytes(), &e); err == nil {
+		if err := json.Unmarshal([]byte(raw), &e); err == nil {
 			all = append(all, e)
 		}
 	}

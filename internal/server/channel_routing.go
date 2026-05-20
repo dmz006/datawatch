@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // channelRoutingRule describes how a channel identity pattern maps to a
@@ -45,7 +46,7 @@ func (s *Server) handleChannelRouting(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapCommRead) {
 			return
 		}
-		data, err := os.ReadFile(s.channelRoutingPath())
+		data, err := secfile.ReadFile(s.channelRoutingPath(), s.encKey)
 		if err != nil {
 			if os.IsNotExist(err) {
 				writeJSONOK(w, &channelRoutingConfig{Rules: []channelRoutingRule{}})
@@ -92,13 +93,8 @@ func (s *Server) handleChannelRouting(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "encode failed", http.StatusInternalServerError)
 			return
 		}
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		if err := secfile.WriteFile(path, out, 0o600, s.encKey); err != nil {
 			http.Error(w, "write failed", http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			http.Error(w, "rename failed", http.StatusInternalServerError)
 			return
 		}
 		writeJSONOK(w, &cfg)

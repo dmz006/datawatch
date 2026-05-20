@@ -140,14 +140,14 @@ func TestDiscussionConflicts_Detected(t *testing.T) {
 	const sharedContent = "conflicting message about the same topic"
 
 	// Write the first entry directly via the WAL helper (simulating a local write).
-	_, err := discussionAppendWALEntry(id, sharedContent, "user", "node-a")
+	_, err := discussionAppendWALEntry(id, sharedContent, "user", "node-a", nil)
 	if err != nil {
 		t.Fatalf("write WAL entry 1: %v", err)
 	}
 
 	// Write the second entry from a different peer within the 5s window.
 	// We do this immediately so the timestamp difference is <5s.
-	_, err = discussionAppendWALEntry(id, sharedContent, "user", "node-b")
+	_, err = discussionAppendWALEntry(id, sharedContent, "user", "node-b", nil)
 	if err != nil {
 		t.Fatalf("write WAL entry 2: %v", err)
 	}

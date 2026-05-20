@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // ---------------------------------------------------------------------------
@@ -48,13 +50,14 @@ func discussionParticipantsPath(id string) (string, error) {
 }
 
 // discussionReadParticipants reads the participant list for a discussion.
-// Returns an empty slice when no file exists.
-func discussionReadParticipants(id string) ([]string, error) {
+// Returns an empty slice when no file exists. When encKey is non-nil the
+// file is decrypted transparently (BL334 T43c).
+func discussionReadParticipants(id string, encKey []byte) ([]string, error) {
 	p, err := discussionParticipantsPath(id)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := secfile.ReadFile(p, encKey)
 	if os.IsNotExist(err) {
 		return []string{}, nil
 	}
@@ -74,7 +77,8 @@ func discussionReadParticipants(id string) ([]string, error) {
 }
 
 // discussionWriteParticipants atomically replaces the participant list.
-func discussionWriteParticipants(id string, peers []string) error {
+// When encKey is non-nil the file is encrypted (BL334 T43c).
+func discussionWriteParticipants(id string, peers []string, encKey []byte) error {
 	p, err := discussionParticipantsPath(id)
 	if err != nil {
 		return err
@@ -83,7 +87,7 @@ func discussionWriteParticipants(id string, peers []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0644)
+	return secfile.WriteFile(p, data, 0600, encKey)
 }
 
 // handleDiscussionParticipants handles GET and PUT for
@@ -91,7 +95,7 @@ func discussionWriteParticipants(id string, peers []string) error {
 func (s *Server) handleDiscussionParticipants(w http.ResponseWriter, r *http.Request, id string) {
 	switch r.Method {
 	case http.MethodGet:
-		peers, err := discussionReadParticipants(id)
+		peers, err := discussionReadParticipants(id, s.encKey)
 		if err != nil {
 			http.Error(w, "read participants: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -109,7 +113,7 @@ func (s *Server) handleDiscussionParticipants(w http.ResponseWriter, r *http.Req
 		if body.Peers == nil {
 			body.Peers = []string{}
 		}
-		if err := discussionWriteParticipants(id, body.Peers); err != nil {
+		if err := discussionWriteParticipants(id, body.Peers, s.encKey); err != nil {
 			http.Error(w, "write participants: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -211,7 +215,7 @@ type syncWritePayload struct {
 // discussionSyncToParticipants fans out an entry to all participant peers
 // asynchronously. Errors are logged (not returned to the caller).
 func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntry) {
-	peers, err := discussionReadParticipants(id)
+	peers, err := discussionReadParticipants(id, s.encKey)
 	if err != nil || len(peers) == 0 {
 		return
 	}
@@ -281,8 +285,8 @@ type conflictGroup struct {
 }
 
 // discussionDetectConflicts scans the WAL and returns groups of conflicting entries.
-func discussionDetectConflicts(id string) ([]conflictGroup, error) {
-	entries, err := discussionReadWAL(id, 100000)
+func discussionDetectConflicts(id string, encKey []byte) ([]conflictGroup, error) {
+	entries, err := discussionReadWAL(id, 100000, encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []conflictGroup{}, nil
@@ -356,7 +360,7 @@ func (s *Server) handleDiscussionConflicts(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	conflicts, err := discussionDetectConflicts(id)
+	conflicts, err := discussionDetectConflicts(id, s.encKey)
 	if err != nil {
 		http.Error(w, "detect conflicts: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -382,7 +386,7 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 	}
 
 	// Find all entries for the same content hash as the winning seq.
-	entries, err := discussionReadWAL(id, 100000)
+	entries, err := discussionReadWAL(id, 100000, s.encKey)
 	if err != nil {
 		http.Error(w, "read wal: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -406,24 +410,12 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 	}
 
 	// Append conflict-resolved markers for all non-winning entries with the same hash.
-	walPath, err := discussionWALPath(id)
-	if err != nil {
-		http.Error(w, "wal path: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// Use discussionAppendWALEntry so markers are encrypted when --secure is active.
 	mu := discussionLock(id)
 	mu.Lock()
 	defer mu.Unlock()
 
-	f, err := os.OpenFile(walPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		http.Error(w, "open wal: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-
 	resolved := 0
-	nextSeq := len(entries)
 	for _, e := range entries {
 		if e.Seq == body.Seq || e.Op != "" {
 			continue
@@ -435,15 +427,8 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 		if h != winningHash {
 			continue
 		}
-		marker := discussionWALEntry{
-			Seq:       nextSeq,
-			Op:        "conflict-resolved",
-			Content:   fmt.Sprintf("conflict-resolved: seq=%d losing, winner=%d", e.Seq, body.Seq),
-			Timestamp: time.Now().UTC(),
-		}
-		nextSeq++
-		line, _ := json.Marshal(marker)
-		fmt.Fprintf(f, "%s\n", line) //nolint:errcheck
+		markerContent := fmt.Sprintf("conflict-resolved: seq=%d losing, winner=%d", e.Seq, body.Seq)
+		_, _ = discussionAppendWALEntry(id, markerContent, "conflict-resolved", "", s.encKey)
 		resolved++
 	}
 

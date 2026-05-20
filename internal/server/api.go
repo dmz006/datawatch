@@ -396,7 +396,18 @@ type Server struct {
 	// S14b — per-pod alert rules + observer-driven autoscaling store.
 	// Nil when not wired; handlers return 503.
 	alertRulesAPI AlertRulesAPI
+
+	// BL334 T43a — derived encryption key from --secure / Argon2id.
+	// Non-nil when the daemon is started with --secure. Used by handlers
+	// that persist JSON files not managed by the secfile data-store layer
+	// (discussion WAL, participants, channel routing). Must be zeroed on
+	// daemon exit; main.go owns the zero via defer.
+	encKey []byte
 }
+
+// SetEncKey wires the Argon2id-derived key so file-persisted handlers can
+// encrypt their data when --secure is active. Pass nil to disable encryption.
+func (s *Server) SetEncKey(key []byte) { s.encKey = key }
 
 // SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).
 func (s *Server) SetSmokeForward(url, token string) {

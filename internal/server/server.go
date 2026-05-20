@@ -382,7 +382,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 	apiMux.HandleFunc("/api/channel/history", api.handleChannelHistory)
-	apiMux.HandleFunc("/api/channel/routing", api.handleChannelRouting) // BL331
+	apiMux.HandleFunc("/api/channel/routing", api.handleChannelRouting)                   // BL331
+	apiMux.HandleFunc("/api/security/encryption/status", api.handleSecurityEncryptionStatus) // BL334 T43e
+	apiMux.HandleFunc("/api/security/encryption/migrate", api.handleSecurityEncryptionMigrate)
+	apiMux.HandleFunc("/api/security/wipe-plaintext", api.handleSecurityWipePlaintext)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/update/check", api.handleUpdateCheck)
 	apiMux.HandleFunc("/api/llm/claude/models", api.handleClaudeModels)
@@ -586,6 +589,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 	s.api.SetScheduleStore(store)
 }
+
+// SetEncKey wires the Argon2id-derived key for file-persisted handlers
+// that encrypt discussion WAL, participants, and channel routing (BL334 T43a).
+func (s *HTTPServer) SetEncKey(key []byte) { s.api.SetEncKey(key) }
 
 // SetCmdLibrary wires a command library into the server for /api/commands.
 func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {

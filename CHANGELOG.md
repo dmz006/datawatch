@@ -3,6 +3,30 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.5.0 — BL334: Operational Data Encryption (2026-05-19)
+
+### Added
+
+- **BL334 — Operational Data Encryption** — closes the `--secure` coverage gap for files not managed by the secfile data-store layer.
+  - **Discussion WAL** (`~/.datawatch/discussions/<id>/wal.jsonl`): each appended line is encrypted as `ENC:<base64(nonce24+ciphertext)>` using XChaCha20-Poly1305 with the Argon2id-derived key. Lines without the `ENC:` prefix are read as plaintext (upgrade compat).
+  - **Discussion participants** (`participants.json`): encrypted via `secfile.WriteFile` (DWDAT2).
+  - **Channel routing** (`channel_routing.json`): encrypted via `secfile.ReadFile` / `secfile.WriteFile` (DWDAT2).
+  - **Startup migration**: on first `--secure` startup after upgrade, `secfile.MigrateDiscussionWALs` and `secfile.MigrateChannelRouting` encrypt all existing plaintext files. Idempotent.
+  - **Encryption status** (`GET /api/security/encryption/status`): reports per-file encrypted/plaintext state.
+  - **Migrate trigger** (`POST /api/security/encryption/migrate`): encrypt all plaintext files without restarting daemon.
+  - **Secure wipe** (`POST /api/security/wipe-plaintext`, body `{"confirm":true}`): 3-pass overwrite (zeros/ones/random) then unlink. CLI: `datawatch security wipe-plaintext --confirm`.
+  - **CLI**: `datawatch security encryption {status,migrate}`, `datawatch security wipe-plaintext --confirm`.
+  - **Server field**: `encKey []byte` added to `Server` struct; exposed via `SetEncKey()` on both `Server` and `HTTPServer`; wired from `main.go` after `server.New()`.
+  - **`${secret:name}` references** (pre-existing, now documented): config fields accept vault references resolved at startup; API keys can live exclusively in `~/.datawatch/secrets.db`.
+
+### Fixed
+
+- Discussion WAL file mode changed from `0644` → `0600` (was world-readable on multi-user systems).
+- Conflict-resolve WAL markers now written via `discussionAppendWALEntry` so they are encrypted when `--secure` is active (previously raw `fmt.Fprintf` bypassed encryption path).
+- `discussionReadWAL` scanner buffer raised to 1 MB (default 64 KB was too small for encrypted lines that are ~33% larger than plaintext).
+
+---
+
 ## v8.4.0 — BL332: Discussion Scopes (2026-05-19)
 
 ### Added

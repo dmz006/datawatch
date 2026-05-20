@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.4.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.4.0)
+[![Release](https://img.shields.io/badge/release-v8.5.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.5.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -48,16 +48,21 @@ datawatch skills sync community
 
 ## Current release
 
-**v8.4.0 (2026-05-19)** — Discussion Scopes: federated per-discussion WAL memory with conflict detection, rate throttle, and participant sync. See [release notes](docs/RELEASE_NOTES_v8.4.0.md) and [CHANGELOG.md](CHANGELOG.md).
+**v8.5.0 (2026-05-19)** — Operational Data Encryption: `--secure` now covers discussion WAL, participants.json, and channel_routing.json. Upgrade-compatible migration on first startup. Secure wipe with manual confirmation gate. See [release notes](docs/RELEASE_NOTES_v8.5.0.md) and [CHANGELOG.md](CHANGELOG.md).
+
+**v8.4.0 (2026-05-19)** — Discussion Scopes: federated per-discussion WAL memory with conflict detection, rate throttle, and participant sync. See [release notes](docs/RELEASE_NOTES_v8.4.0.md).
 
 **v8.3.0 (2026-05-19)** — Channel Routing (inbound channel → peer mapping), File Service (federated upload/delete/list), and 14th built-in federation group (`comms-channel-agent`). See [release notes](docs/RELEASE_NOTES_v8.3.0.md).
 
 **v8.2.0 (2026-05-19)** — Android 1.0.0 blockers: async PRD decompose with SSE streaming, `/api/identity` POST alias, UnifiedPush register/notify/unregister, badge/chip multi-select for all settings fields. See [release notes](docs/RELEASE_NOTES_v8.2.0.md).
 
-### v8.4 highlights
+### v8.5 highlights
 
-- **Discussion Scopes (BL332)** — A new `discussion` memory scope lets multiple federated peers share a named WAL-backed memory namespace. Append-only JSONL WAL at `~/.datawatch/discussions/<id>/wal.jsonl`. Conflict detection (same 64-char content prefix from different origin peers within 5 s). Per-peer 60 writes/min rate throttle (keyed by Bearer token). Async fan-out sync to registered participants on every write. REST: `/api/memory/discussion`, `/api/memory/discussion/{id}`, `…/wal`, `…/conflicts`, `…/participants`. MCP: `memory_discussion_write`, `memory_discussion_recall`, `memory_discussion_wal`, `memory_discussion_participants`. CLI: `datawatch memory discussion {list,write,recall,wal,participants}`. PWA: Settings → General → Discussion Scopes card.
-- **794 E2E test stories** — 114 new stories (TS-637–TS-750) covering every surface of v8.2.0 + v8.3.0 + v8.4.0.
+- **Operational Data Encryption (BL334)** — closes the `--secure` coverage gap. All operational data files (discussion WAL, participants.json, channel_routing.json) are now encrypted with the same Argon2id-derived XChaCha20-Poly1305 key as the config and data stores. WAL uses a per-line `ENC:<b64>` format that is append-compatible. Upgrade-compatible migration runs automatically on first `--secure` startup.
+- **Secure wipe** — `datawatch security wipe-plaintext --confirm` (REST: `POST /api/security/wipe-plaintext {"confirm":true}`) does 3-pass overwrite (zeros/ones/random) then unlinks plaintext files. Manual gate prevents accidental invocation.
+- **Encryption status** — `datawatch security encryption status` / `GET /api/security/encryption/status` shows per-file encrypted vs. plaintext state.
+- **Secrets vault fully covers secrets** — `${secret:name}` config references are resolved at startup; API keys, webhook tokens, and auth credentials can live exclusively in `~/.datawatch/secrets.db` (AES-256-GCM, own key file, independent of `--secure`).
+- **822 E2E test stories** — 28 new stories (TS-751–TS-778).
 
 ### v8.3 highlights
 
