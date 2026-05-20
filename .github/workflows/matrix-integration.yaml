@@ -46,7 +46,7 @@ jobs:
           cache: true
 
       - name: Generate docs-bm25 stub
-        run: echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+        run: mkdir -p internal/docsindex/assets && echo '{}' > internal/docsindex/assets/docs-bm25-index.json
 
       - name: Build datawatch binary
         run: go build -o datawatch-test ./cmd/datawatch/
