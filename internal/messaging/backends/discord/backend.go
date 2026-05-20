@@ -52,9 +52,10 @@ func (b *Backend) SendWithButtons(recipient, message string, buttons []messaging
 	var btns []discordgo.MessageComponent
 	for _, btn := range buttons {
 		style := discordgo.SecondaryButton
-		if btn.Style == "primary" {
+		switch btn.Style {
+		case "primary":
 			style = discordgo.PrimaryButton
-		} else if btn.Style == "danger" {
+		case "danger":
 			style = discordgo.DangerButton
 		}
 		btns = append(btns, discordgo.Button{

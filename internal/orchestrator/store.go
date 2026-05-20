@@ -132,7 +132,7 @@ func (s *Store) persist() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
 	for _, g := range s.graphs {
 		if err := enc.Encode(g); err != nil {

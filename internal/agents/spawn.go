@@ -643,10 +643,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 // then surface a "check token scope" error from gh which is
 // actionable enough.
 func repoFromGitURL(url string) string {
-	// Strip trailing .git
-	if strings.HasSuffix(url, ".git") {
-		url = url[:len(url)-4]
-	}
+	url = strings.TrimSuffix(url, ".git")
 	// SSH form: git@host:owner/repo
 	if i := strings.Index(url, ":"); i > 0 && strings.HasPrefix(url, "git@") {
 		return url[i+1:]

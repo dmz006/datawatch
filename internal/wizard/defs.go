@@ -151,7 +151,7 @@ Type 'cancel' at any time to abort.`,
 				Prompt: "Paste your Telegram bot token:",
 				Validate: func(v string) error {
 					if !strings.Contains(v, ":") {
-						return fmt.Errorf("invalid token format — should contain a colon, e.g. 123456:ABC-DEF...")
+						return fmt.Errorf("invalid token format — should contain a colon, e.g. 123456:ABC-DEF")
 					}
 					return nil
 				},

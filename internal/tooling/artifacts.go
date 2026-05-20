@@ -136,7 +136,7 @@ func appendMissing(path string, patterns []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, _ := f.Stat()
 	if info != nil && info.Size() > 0 {

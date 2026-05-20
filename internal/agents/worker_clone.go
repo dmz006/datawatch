@@ -75,10 +75,7 @@ func CloneOnBootstrap(ctx context.Context, resp *BootstrapResponse, workspaceRoo
 // repoNameFromURL extracts a sensible directory name for the cloned
 // repo. Handles GitHub HTTPS + SSH forms; falls back to "repo".
 func repoNameFromURL(u string) string {
-	s := u
-	if strings.HasSuffix(s, ".git") {
-		s = s[:len(s)-4]
-	}
+	s := strings.TrimSuffix(u, ".git")
 	// SSH form: git@host:owner/repo
 	if i := strings.Index(s, ":"); i > 0 && strings.HasPrefix(s, "git@") {
 		s = s[i+1:]

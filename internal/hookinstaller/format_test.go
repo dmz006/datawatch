@@ -49,11 +49,17 @@ func TestInstallWritesNestedHookFormat(t *testing.T) {
 
 func TestInstallIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	Install(dir, "test:first", "https://localhost:8443", "")
-	Install(dir, "test:second", "https://localhost:8443", "") // second call must not duplicate
+	if err := Install(dir, "test:first", "https://localhost:8443", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(dir, "test:second", "https://localhost:8443", ""); err != nil { // second call must not duplicate
+		t.Fatal(err)
+	}
 	data, _ := os.ReadFile(dir + "/.claude/settings.json")
 	var doc map[string]any
-	json.Unmarshal(data, &doc)
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
 	hooks := doc["hooks"].(map[string]any)
 	arr := hooks["Stop"].([]any)
 	if len(arr) != 1 {
@@ -76,13 +82,19 @@ func TestInstallUpgradesOldFlatFormat(t *testing.T) {
 		},
 	}
 	b, _ := json.Marshal(oldFlat)
-	os.WriteFile(dir+"/.claude/settings.json", b, 0o644)
+	if err := os.WriteFile(dir+"/.claude/settings.json", b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Install should add nested entry alongside old flat one
-	Install(dir, "test:upgrade", "https://localhost:8443", "tok")
+	if err := Install(dir, "test:upgrade", "https://localhost:8443", "tok"); err != nil {
+		t.Fatal(err)
+	}
 	data, _ := os.ReadFile(dir + "/.claude/settings.json")
 	var doc map[string]any
-	json.Unmarshal(data, &doc)
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
 	hooks := doc["hooks"].(map[string]any)
 	arr := hooks["Stop"].([]any)
 	// Expect 2: old flat + new nested

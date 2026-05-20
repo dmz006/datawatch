@@ -59,7 +59,7 @@ func (b *Backend) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read error", 500)
 		return
 	}
-	r.Body.Close()
+	_ = r.Body.Close()
 	eventType := r.Header.Get("X-GitHub-Event")
 	var payload map[string]interface{}
 	if err := json.Unmarshal(body, &payload); err != nil {

@@ -497,9 +497,8 @@ func TestGetDetection_PerBackendOverride(t *testing.T) {
 
 func TestPipelineConfig_Defaults(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Pipeline.MaxParallel != 0 {
-		// 0 means executor uses default of 3
-	}
+	// 0 means executor uses default of 3
+	_ = cfg.Pipeline.MaxParallel
 }
 
 // ── F10: workspace_root resolver ──

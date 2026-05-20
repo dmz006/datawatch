@@ -150,7 +150,7 @@ func CorrelateCallers(envelopes []Envelope, procRoot string) []Envelope {
 				{IP: "0.0.0.0", Port: r.RemotePort},
 				{IP: "::", Port: r.RemotePort},
 			}
-			var serverEnv int = -1
+			serverEnv := -1
 			if isLocalhostScope(r.RemoteIP) {
 				for _, lk := range lookup {
 					if idx, ok := listenToEnv[lk]; ok {
@@ -262,7 +262,7 @@ func readProcTCP(procRoot string, pid int) ([]connRow, error) {
 				rows = append(rows, r)
 			}
 		}
-		f.Close()
+		_ = f.Close()
 	}
 	return rows, nil
 }
@@ -476,7 +476,7 @@ func CorrelateAcrossPeers(byPeer map[string][]Envelope, localPeerName string) {
 	for peer, envs := range byPeer {
 		for i, e := range envs {
 			for _, la := range e.ListenAddrs {
-				k := listenKey{IP: la.IP, Port: la.Port}
+				k := listenKey(la)
 				listeners[k] = append(listeners[k], listenHit{
 					Peer: peer, EnvIdx: i,
 					Wildcard: la.IP == "0.0.0.0" || la.IP == "::",

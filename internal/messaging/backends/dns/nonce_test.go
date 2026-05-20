@@ -51,11 +51,8 @@ func TestNonceLRU(t *testing.T) {
 		t.Error("evicted nonce 'a' should be accepted")
 	}
 
-	// "b" might still be there
-	if store.Check("b") {
-		// Could have been evicted too, depends on map iteration order
-		// This is acceptable — LRU with map is approximate
-	}
+	// "b" might still be there (depends on map iteration order — LRU with map is approximate)
+	_ = store.Check("b")
 }
 
 func TestNonceEmpty(t *testing.T) {

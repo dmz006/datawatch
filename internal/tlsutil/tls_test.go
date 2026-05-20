@@ -47,7 +47,7 @@ func TestBuild_CustomCert(t *testing.T) {
 	dir := t.TempDir()
 	// First generate a cert
 	cfg := Config{Enabled: true, AutoGenerate: true, DataDir: dir, Name: "gen"}
-	Build(cfg)
+	_, _ = Build(cfg)
 
 	certPath := filepath.Join(dir, "tls", "gen", "cert.pem")
 	keyPath := filepath.Join(dir, "tls", "gen", "key.pem")

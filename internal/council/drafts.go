@@ -192,7 +192,7 @@ func (s *DraftsStore) List() ([]*Draft, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*Draft
 	for rows.Next() {
 		d := &Draft{}

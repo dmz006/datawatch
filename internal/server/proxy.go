@@ -66,7 +66,7 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 	// Upgrade client connection
 	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		remoteConn.Close()
+		_ = remoteConn.Close()
 		return
 	}
 
@@ -74,8 +74,8 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 	var once sync.Once
 	closeBoth := func() {
 		once.Do(func() {
-			clientConn.Close()
-			remoteConn.Close()
+			_ = clientConn.Close()
+			_ = remoteConn.Close()
 		})
 	}
 
@@ -328,14 +328,31 @@ func rewritePWAContent(body []byte, serverName string) []byte {
 	content = strings.ReplaceAll(content, `"/ws"`, `"`+proxyAPI+`/ws"`)
 
 	// Rewrite fetch/XHR API calls: '/api/...' or "/api/..."
-	// Use regex to avoid double-rewriting /api/proxy/ paths
-	apiRe := regexp.MustCompile(`(['"])(/api/)(?!proxy/)`)
+	// Avoid double-rewriting /api/proxy/ paths by replacing that sentinel first,
+	// then rewriting all remaining /api/ references, then restoring the sentinel.
+	const proxysentinel = "\x00PROXYSENTINEL\x00"
+	content = strings.ReplaceAll(content, "/api/proxy/", proxysentinel)
+	apiRe := regexp.MustCompile(`(['"])(/api/)`)
 	content = apiRe.ReplaceAllString(content, `${1}`+proxyAPI+`/api/`)
+	content = strings.ReplaceAll(content, proxysentinel, "/api/proxy/")
 
 	// Rewrite absolute asset references in HTML: href="/...", src="/..."
-	// But not /api/ (already handled) or /remote/ (avoid loops)
-	assetRe := regexp.MustCompile(`((?:href|src|action)=["'])(/(?!api/|remote/|metrics|healthz))`)
-	content = assetRe.ReplaceAllString(content, `${1}`+remotePWA+`${2}`)
+	// Exclude /api/, /remote/, /metrics, /healthz by checking the captured suffix.
+	assetRe := regexp.MustCompile(`((?:href|src|action)=["'])(/[^"']+)`)
+	skipPrefixes := []string{"/api/", "/remote/", "/metrics", "/healthz"}
+	content = assetRe.ReplaceAllStringFunc(content, func(m string) string {
+		groups := assetRe.FindStringSubmatch(m)
+		if len(groups) < 3 {
+			return m
+		}
+		path := groups[2]
+		for _, skip := range skipPrefixes {
+			if strings.HasPrefix(path, skip) {
+				return m
+			}
+		}
+		return groups[1] + remotePWA + path
+	})
 
 	// Rewrite favicon and manifest references
 	content = strings.ReplaceAll(content, `href="/favicon`, `href="`+remotePWA+`/favicon`)
@@ -350,9 +367,4 @@ func (s *Server) handleRemotePWARedirect(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 }
 
-// isRemotePWAPath checks if a request is for a remote PWA sub-path.
-func isRemotePWAPath(path string) bool {
-	trimmed := strings.TrimPrefix(path, "/remote/")
-	return trimmed != path && len(trimmed) > 0
-}
 

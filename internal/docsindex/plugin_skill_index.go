@@ -187,7 +187,7 @@ func (p *PluginSkillIndexer) Watch(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("docsindex: fsnotify: %w", err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	for _, root := range []string{p.skillsDir, p.pluginsDir} {
 		if _, err := os.Stat(root); os.IsNotExist(err) {
 			_ = os.MkdirAll(root, 0o755)

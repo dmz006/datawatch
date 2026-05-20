@@ -420,13 +420,6 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 	})
 }
 
-// discussionAppendWAL appends one entry to the discussion WAL file.
-// Kept for backward compat; delegates to discussionAppendWALEntry.
-func discussionAppendWAL(id, content, role string, encKey []byte) error {
-	_, err := discussionAppendWALEntry(id, content, role, "", encKey)
-	return err
-}
-
 // discussionAppendWALEntry appends one entry and returns it (for sync).
 // originPeer may be empty for local writes. When encKey is non-nil each
 // line is encrypted as "ENC:<base64(nonce24+ciphertext)>" (BL334 T43c).

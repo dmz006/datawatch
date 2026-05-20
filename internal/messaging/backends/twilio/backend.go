@@ -142,7 +142,7 @@ func (b *Backend) Subscribe(ctx context.Context, handler func(messaging.Message)
 
 		// Twilio expects a TwiML response; an empty Response is fine.
 		w.Header().Set("Content-Type", "text/xml")
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`)
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`)
 	})
 
 	b.srv = &http.Server{

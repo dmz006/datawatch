@@ -84,9 +84,10 @@ func (r *Router) handleTelemetryGet(id string) {
 	}
 	for _, v := range tel.GuardrailVerdicts {
 		icon := "✓"
-		if v.Outcome == "warn" {
+		switch v.Outcome {
+		case "warn":
 			icon = "⚠"
-		} else if v.Outcome == "block" {
+		case "block":
 			icon = "✗"
 		}
 		sb.WriteString(fmt.Sprintf("  %s %s: %s\n", icon, v.Guardrail, v.Outcome))

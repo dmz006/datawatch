@@ -260,11 +260,7 @@ func optString(req mcpsdk.CallToolRequest, key string) string {
 	return v
 }
 func splitCSV(s string) []string {
-	var out []string
-	for _, p := range jsonSplitCSV(s) {
-		out = append(out, p)
-	}
-	return out
+	return append([]string{}, jsonSplitCSV(s)...)
 }
 func jsonSplitCSV(s string) []string {
 	if s == "" {

@@ -261,7 +261,7 @@ func (o *Orchestrator) loadOrSeed() {
 			continue
 		}
 		n := e.Name()
-		if !(strings.HasSuffix(n, ".yaml") || strings.HasSuffix(n, ".yml")) {
+		if !strings.HasSuffix(n, ".yaml") && !strings.HasSuffix(n, ".yml") {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(dir, n))
@@ -657,13 +657,6 @@ func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []stri
 		return run, err
 	}
 	return run, nil
-}
-
-// runRoundWithEvents is the v7.0.0 S4 variant — emits per-persona
-// SSE events around each call. runRound is kept as a thin wrapper
-// for tests that don't care about events.
-func (o *Orchestrator) runRound(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int) map[string]string {
-	return o.runRoundWithEvents(ctx, "", chosen, proposal, prior, maxPar, nil, 0)
 }
 
 func (o *Orchestrator) runRoundWithEvents(ctx context.Context, runID string, chosen []Persona, proposal string, prior []Round, maxPar int, emit func(string, map[string]any), roundNum int) map[string]string {

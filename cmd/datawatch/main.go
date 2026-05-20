@@ -651,7 +651,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		tmpCfg, loadErr := loadConfig()
 		if loadErr != nil {
 			// Config may be encrypted — try secure load for PID check
-			tmpCfg, loadErr = loadConfigSecure()
+			tmpCfg, _ = loadConfigSecure()
 		}
 		if tmpCfg == nil {
 			tmpCfg = config.DefaultConfig()
@@ -1959,8 +1959,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			// Route through the test message handler to get formatted response
 			if httpServer != nil {
-				port := cfg.Server.Port
-				if port == 0 { port = 8080 }
 				apiURL := loopbackBaseURL(cfg)+"/api/test/message"
 				body := fmt.Sprintf(`{"text":%q}`, text)
 				req, _ := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
@@ -2264,8 +2262,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			apiURL := loopbackBaseURL(cfg)+"/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			// Try as number or bool
@@ -3369,8 +3365,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return raw, "", nil
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			rawBackend := amgrCfg.PlanningBackend
 			if rawBackend == "" {
 				rawBackend = req.Backend
@@ -3457,8 +3451,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return "" // empty → daemon falls back to session.default_effort
 		}
 		autonomousSpawn := func(ctx context.Context, req autonomouspkg.SpawnRequest) (autonomouspkg.SpawnResult, error) {
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			spec := req.Spec
 			if req.RetryHint != "" {
 				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
@@ -3549,8 +3541,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 Verify whether the task was plausibly completed. Reply with STRICT JSON:
 {"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
 				task.Spec)
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			vbackend := amgrCfg.VerificationBackend
 			if vbackend == "" { vbackend = "ollama" }
 			// BL306: resolve named LLMs for verification backend too.
@@ -3608,10 +3598,6 @@ Spec: %s
 Reply with STRICT JSON:
 {"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
 				req.Guardrail, req.Level, req.UnitTitle, req.UnitSpec)
-			port := cfg.Server.Port
-			if port == 0 {
-				port = 8080
-			}
 			gbackend := amgrCfg.VerificationBackend
 			if gbackend == "" { gbackend = "ollama" }
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
@@ -3684,10 +3670,6 @@ Reply with STRICT JSON:
 			// BL221 (v6.2.0) Phase 3 — wire scan grader + rule editor via
 			// POST /api/ask loopback (Option C: same pattern as decomposeFn).
 			askFn := func(prompt string) (string, error) {
-				port := cfg.Server.Port
-				if port == 0 {
-					port = 8080
-				}
 				backend := amgrCfg.PlanningBackend
 				if backend == "" {
 					backend = "ollama"
@@ -3891,8 +3873,6 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// Empty stub in the nil-autonomous case; the orchestrator
 			// runner records nodes as failed.
 			prdRun := func(ctx context.Context, prdID string) (string, error) {
-				port := cfg.Server.Port
-				if port == 0 { port = 8080 }
 				httpReq, err := http.NewRequest(http.MethodPost,
 					loopbackBaseURL(cfg)+fmt.Sprintf("/api/autonomous/prds/%s/run", prdID), nil)
 				if err != nil {
@@ -3956,8 +3936,6 @@ PRD %s summary:
 Return STRICT JSON:
 {"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}`,
 					sys, req.PRDID, req.Summary)
-				port := cfg.Server.Port
-				if port == 0 { port = 8080 }
 				gbackend := ocfg.GuardrailBackend
 				if !askCompatible(gbackend) { gbackend = "ollama" }
 				askBody := map[string]any{
@@ -4195,8 +4173,6 @@ Return STRICT JSON:
 		// /api/test/message surface would return "Channel info not wired".
 		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetConfigureFunc(func(key, value string) error {
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			apiURL := loopbackBaseURL(cfg)+"/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			if value == "true" || value == "false" {
@@ -4361,9 +4337,10 @@ Return STRICT JSON:
 					st.active++
 				}
 				// Duration for completed/failed sessions
-				if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+				switch s.State {
+				case session.StateComplete, session.StateFailed, session.StateKilled:
 					st.durations = append(st.durations, s.UpdatedAt.Sub(s.CreatedAt).Seconds())
-				} else if s.State == session.StateRunning || s.State == session.StateWaitingInput {
+				case session.StateRunning, session.StateWaitingInput:
 					st.durations = append(st.durations, time.Since(s.CreatedAt).Seconds())
 				}
 			}
@@ -5960,44 +5937,6 @@ func ensureChannelExtracted(cfg *config.Config) error {
 	return nil
 }
 
-// setupChannelMCP extracts the embedded channel server and registers it with
-// claude mcp. Called at daemon start when channel_enabled is true.
-// Returns an error (non-fatal: caller prints a warning) if node is missing.
-func setupChannelMCP(cfg *config.Config) error {
-	// Require Node.js ≥ 18 — the channel server uses ESM top-level await.
-	if _, err := channel.NodePath(); err != nil {
-		return fmt.Errorf("channel_enabled requires Node.js (≥18) in PATH: %w\n"+
-			"  Install: https://nodejs.org/en/download  or  sudo apt install nodejs npm\n"+
-			"  Disable with: channel_enabled: false in config to suppress this warning", err)
-	}
-
-	dataDir := expandHome(cfg.DataDir)
-	jsPath, err := channel.EnsureExtracted(dataDir)
-	if err != nil {
-		return fmt.Errorf("extract channel.js: %w", err)
-	}
-
-	// Build env: API URL and optional token.
-	apiURL := loopbackBaseURL(cfg)
-	if cfg.Server.Port == 0 {
-		apiURL = "http://127.0.0.1:8080"
-	}
-	env := map[string]string{
-		"DATAWATCH_API_URL": apiURL,
-	}
-	if cfg.Server.Token != "" {
-		env["DATAWATCH_TOKEN"] = cfg.Server.Token
-	}
-	if cfg.Server.ChannelPort != 0 {
-		env["DATAWATCH_CHANNEL_PORT"] = fmt.Sprintf("%d", cfg.Server.ChannelPort)
-	}
-
-	if err := channel.RegisterMCP(jsPath, env); err != nil {
-		return fmt.Errorf("register claude mcp: %w", err)
-	}
-	fmt.Printf("[channel] registered channel server with claude mcp (%s)\n", jsPath)
-	return nil
-}
 
 // ---- stop command ---------------------------------------------------------
 
@@ -6149,8 +6088,6 @@ func newStatsCmd() *cobra.Command {
 		Long:  "Display system resource usage, session statistics, and communication channel stats from the running daemon.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			resp, err := http.Get(loopbackBaseURL(cfg)+"/api/stats")
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
@@ -6259,8 +6196,6 @@ func newAlertsCmd() *cobra.Command {
 		Long:  "Show recent system alerts. Use --mark-read <id> to mark one alert as read, or --mark-all-read to mark all as read.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
-			port := cfg.Server.Port
-			if port == 0 { port = 8080 }
 			baseURL := loopbackBaseURL(cfg)+"/api/alerts"
 
 			markID, _ := cmd.Flags().GetString("mark-read")
@@ -8058,9 +7993,10 @@ func runSessionTelemetry(cfg *config.Config, id string) error {
 		fmt.Printf("\nGuardrail verdicts:\n")
 		for _, v := range tel.GuardrailVerdicts {
 			icon := "✓"
-			if v.Outcome == "warn" {
+			switch v.Outcome {
+			case "warn":
 				icon = "⚠"
-			} else if v.Outcome == "block" {
+			case "block":
 				icon = "✗"
 			}
 			line := fmt.Sprintf("  %s %s: %s", icon, v.Guardrail, v.Outcome)
@@ -8100,9 +8036,10 @@ func runSessionGuardrail(cfg *config.Config, id, name string) error {
 		return nil
 	}
 	icon := "✓"
-	if v.Outcome == "warn" {
+	switch v.Outcome {
+	case "warn":
 		icon = "⚠"
-	} else if v.Outcome == "block" {
+	case "block":
 		icon = "✗"
 	}
 	fmt.Printf("%s %s: %s", icon, v.Guardrail, v.Outcome)
@@ -11781,13 +11718,13 @@ func openTestingTrackerPR(cfg *config.Config, statuses []testInterfaceStatus) er
 	// Build PR body
 	var sb strings.Builder
 	sb.WriteString("## Interface Status Update\n\n")
-	sb.WriteString(fmt.Sprintf("Collected from host `%s` on %s using `datawatch test --pr`.\n\n", hostnameStr, now))
+	fmt.Fprintf(&sb, "Collected from host `%s` on %s using `datawatch test --pr`.\n\n", hostnameStr, now)
 	sb.WriteString("### Enabled Interfaces\n\n")
 	for _, s := range statuses {
 		if !s.Enabled {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", s.Name, s.Category, strings.Join(s.Details, ", ")))
+		fmt.Fprintf(&sb, "- **%s** (%s): %s\n", s.Name, s.Category, strings.Join(s.Details, ", "))
 	}
 	sb.WriteString("\n### Validation Checklists\n\n")
 	sb.WriteString("The following checks should be performed for each enabled interface before marking as Validated:\n\n")
@@ -11795,9 +11732,9 @@ func openTestingTrackerPR(cfg *config.Config, statuses []testInterfaceStatus) er
 		if !s.Enabled {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("**%s:**\n", s.Name))
+		fmt.Fprintf(&sb, "**%s:**\n", s.Name)
 		for _, c := range s.Checks {
-			sb.WriteString(fmt.Sprintf("- [ ] %s\n", c))
+			fmt.Fprintf(&sb, "- [ ] %s\n", c)
 		}
 		sb.WriteString("\n")
 	}

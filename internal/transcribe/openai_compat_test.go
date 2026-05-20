@@ -49,8 +49,8 @@ func TestOpenAICompat_PostsMultipartAndDecodesResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmp.WriteString("RIFFXXXX") // dummy bytes; server doesn't actually decode
-	tmp.Close()
+	_, _ = tmp.WriteString("RIFFXXXX") // dummy bytes; server doesn't actually decode
+	_ = tmp.Close()
 
 	tx, err := NewOpenAICompat(srv.URL, "test-key", "whisper-1", "en")
 	if err != nil {
@@ -84,7 +84,7 @@ func TestOpenAICompat_HTTPErrorSurfaces(t *testing.T) {
 	}))
 	defer srv.Close()
 	tmp, _ := os.CreateTemp(t.TempDir(), "audio-*.wav")
-	tmp.Close()
+	_ = tmp.Close()
 	tx, _ := NewOpenAICompat(srv.URL, "", "", "")
 	_, err := tx.Transcribe(context.Background(), tmp.Name())
 	if err == nil {
@@ -104,7 +104,7 @@ func TestOpenAICompat_AuthOmittedWhenAPIKeyEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 	tmp, _ := os.CreateTemp(t.TempDir(), "audio-*.wav")
-	tmp.Close()
+	_ = tmp.Close()
 	tx, _ := NewOpenAICompat(srv.URL, "", "", "")
 	_, _ = tx.Transcribe(context.Background(), tmp.Name())
 	if sawAuth != "" {

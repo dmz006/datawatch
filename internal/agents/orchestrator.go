@@ -187,13 +187,7 @@ func (o *Orchestrator) Run(ctx context.Context, plan OrchestratorPlan) (*PlanRun
 		return true
 	}
 
-	for {
-		if ctx.Err() != nil {
-			break
-		}
-		if allDone() {
-			break
-		}
+	for ctx.Err() == nil && !allDone() {
 		ready := readyToSpawn()
 		for _, nodeID := range ready {
 			node := plannedByID[nodeID]

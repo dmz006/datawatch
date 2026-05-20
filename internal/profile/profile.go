@@ -16,7 +16,6 @@ package profile
 import (
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -105,15 +104,6 @@ func (m MemoryMode) Valid() bool {
 		return true
 	}
 	return false
-}
-
-// effective returns the concrete mode, substituting the default when
-// the stored value is empty.
-func (m MemoryMode) effective() MemoryMode {
-	if m == "" {
-		return MemorySyncBack
-	}
-	return m
 }
 
 // ── Cluster kinds ────────────────────────────────────────────────────
@@ -229,16 +219,3 @@ func deepCopyMap(in map[string]string) map[string]string {
 	return out
 }
 
-// trimStrings maps strings.TrimSpace across a slice, dropping empties.
-func trimStrings(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if t := strings.TrimSpace(s); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}

@@ -37,8 +37,8 @@ func EnsureCompatibleJava() (string, error) {
 	javaFixOnce.Do(func() {
 		javaFixHome, javaFixErr = ensureCompatibleJavaOnce()
 		if javaFixHome != "" {
-			os.Setenv("JAVA_HOME", javaFixHome)
-			os.Setenv("PATH", filepath.Join(javaFixHome, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
+			_ = os.Setenv("JAVA_HOME", javaFixHome)
+			_ = os.Setenv("PATH", filepath.Join(javaFixHome, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 		}
 	})
 	return javaFixHome, javaFixErr
@@ -70,7 +70,7 @@ func ensureCompatibleJavaOnce() (string, error) {
 			jver = strings.TrimSpace(lines[0])
 		}
 	}
-	return "", fmt.Errorf("signal-cli requires Java %d but no compatible JRE was found.\n"+
+	return "", fmt.Errorf("signal-cli requires Java %d but no compatible JRE was found\n"+
 		"  Default `java` on PATH is: %s\n\n"+
 		"Fix one of:\n"+
 		"  1) Install Java %d:\n"+
@@ -78,7 +78,7 @@ func ensureCompatibleJavaOnce() (string, error) {
 		"       brew:   brew install openjdk@%d\n"+
 		"       sdkman: sdk install java %d-tem  &&  sdk use java %d-tem\n"+
 		"  2) Downgrade signal-cli to a Java-21-compatible release (0.13.x):\n"+
-		"       https://github.com/AsamK/signal-cli/releases/tag/v0.13.4\n",
+		"       https://github.com/AsamK/signal-cli/releases/tag/v0.13.4",
 		needMajor, jver, needMajor, needMajor, needMajor, needMajor, needMajor)
 }
 

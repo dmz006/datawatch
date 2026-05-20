@@ -203,7 +203,7 @@ func (m *Manager) sendStep(sess *Session) {
 			var sb strings.Builder
 			sb.WriteString(step.Prompt + "\n")
 			for i, o := range opts {
-				sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, o))
+				fmt.Fprintf(&sb, "  %d. %s\n", i+1, o)
 			}
 			sb.WriteString("Reply with a number, or 'cancel' to abort.")
 			sess.sendFn(sb.String())

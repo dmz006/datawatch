@@ -1543,11 +1543,8 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
-	// Update pre-session commit to use proper session ID now that we have one
-	if m.autoGit && projGit.IsRepo() {
-		// The pre-session commit was already made above; nothing more to do here.
-		// (projectDir git commit uses the ID for identification in post-session)
-	}
+	// Update pre-session commit to use proper session ID now that we have one.
+	// The pre-session commit was already made above; nothing more to do here.
 
 	// Persist the session
 	if err := m.store.Save(sess); err != nil {
@@ -1625,7 +1622,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				capture := displayCapture
 				// Only send if content changed
 				if capture != lastCapture {
-					lastCapture = capture
+					lastCapture = capture //nolint:staticcheck
 					// BL266 / v6.11.24 — pane content changed counts as
 					// "running" activity for the channel-state watcher.
 					// Lets backends with no structural idle signal
@@ -2365,8 +2362,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if backendName == "" {
 		backendName = m.llmBackend
 	}
-	var launchFn LaunchFunc = m.launchFn
-	var backendObj llm.Backend = m.backendObj
+	launchFn := m.launchFn
+	backendObj := m.backendObj
 	if backendName != "" {
 		if b, err := llm.Get(backendName); err == nil {
 			b2 := b
@@ -3786,23 +3783,6 @@ func parseRelativeDuration(low, marker string) time.Time {
 	return time.Now().Add(d)
 }
 
-// isClockToken returns true for "9pm", "9:30pm", "21:00", "5:00pm",
-// "5:00pmpst" (zone suffix tolerated).
-func isClockToken(s string) bool {
-	if s == "" {
-		return false
-	}
-	if s[0] < '0' || s[0] > '9' {
-		return false
-	}
-	hasDigit := false
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			hasDigit = true
-		}
-	}
-	return hasDigit
-}
 
 // parseClock extracts (hour, minute) from common clock formats.
 func parseClock(s string) (int, int, bool) {
@@ -4603,7 +4583,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	current, ok := m.store.Get(sess.FullID)
 	if ok {
 		now := time.Now()
-		if current.State == StateWaitingInput {
+		switch current.State {
+		case StateWaitingInput:
 			oldState := current.State
 			current.State = StateRunning
 			current.UpdatedAt = now
@@ -4620,7 +4601,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			if m.onStateChange != nil {
 				m.onStateChange(current, oldState)
 			}
-		} else if current.State == StateRunning {
+		case StateRunning:
 			// Already Running — just bump LCE so the gap watcher sees it.
 			current.LastChannelEventAt = now
 			_ = m.store.Save(current)

@@ -52,7 +52,7 @@ func FetchOllamaStats(host string) OllamaStats {
 		stats.Error = fmt.Sprintf("connect: %v", err)
 		return stats
 	}
-	defer tagsResp.Body.Close()
+	defer func() { _ = tagsResp.Body.Close() }()
 	if tagsResp.StatusCode != 200 {
 		stats.Error = fmt.Sprintf("tags: HTTP %d", tagsResp.StatusCode)
 		return stats
@@ -90,7 +90,7 @@ func FetchOllamaStats(host string) OllamaStats {
 	// Fetch running models
 	psResp, err := client.Get(host + "/api/ps")
 	if err == nil {
-		defer psResp.Body.Close()
+		defer func() { _ = psResp.Body.Close() }()
 		if psResp.StatusCode == 200 {
 			var psData struct {
 				Models []struct {

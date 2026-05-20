@@ -4,10 +4,6 @@
 // comm channels) must call fedCap() before executing the sensitive operation.
 // Admin-token requests pass through unconditionally; federated-peer requests
 // are gated on the peer's resolved capability set.
-//
-// fedPeerFrom() identifies the caller by matching the Bearer token against the
-// serverStore. The admin token is never stored in the serverStore, so an admin
-// request always returns nil and bypasses capability enforcement.
 
 package server
 
@@ -24,66 +20,6 @@ import (
 type contextKey int
 
 const fedPeerKey contextKey = iota
-
-// fedPeerFrom returns the federation peer Entry whose Token matches the
-// request's Bearer token, or nil if the request carries the admin token or
-// an unknown token.
-func (s *Server) fedPeerFrom(r *http.Request) *multiserver.Entry {
-	if s.serverStore == nil {
-		return nil
-	}
-	tok := r.URL.Query().Get("token")
-	if tok == "" {
-		auth := r.Header.Get("Authorization")
-		tok = strings.TrimPrefix(auth, "Bearer ")
-	}
-	if tok == "" || tok == s.token {
-		return nil
-	}
-	peer, ok := s.serverStore.GetByToken(tok)
-	if !ok || !peer.Federated {
-		return nil
-	}
-	return peer
-}
-
-// fedCapMiddleware extends the auth middleware to also accept federation peer
-// tokens. It tags the request context with the peer Entry so downstream
-// handlers can call fedCap() without re-querying the store.
-//
-// Note: this middleware runs AFTER authMiddleware, which already rejected
-// requests with no valid token. Here we re-examine requests that carried a
-// non-admin token and accept them if they match a federated peer.
-func (s *Server) fedCapMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.serverStore == nil || s.token == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		tok := r.URL.Query().Get("token")
-		if tok == "" {
-			auth := r.Header.Get("Authorization")
-			tok = strings.TrimPrefix(auth, "Bearer ")
-		}
-		// Admin token — pass through (authMiddleware already validated it).
-		if tok == s.token {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Check if this is a known federated peer token.
-		peer, ok := s.serverStore.GetByToken(tok)
-		if !ok || !peer.Federated {
-			// authMiddleware already rejected non-admin unknown tokens with 401;
-			// we should not reach here in normal flow. Pass through to let
-			// authMiddleware's response stand.
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Tag context with the peer so handlers can enforce capabilities.
-		ctx := context.WithValue(r.Context(), fedPeerKey, peer)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
 
 // peerFromContext returns the federated peer from the request context,
 // or nil if the request is from an admin.

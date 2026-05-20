@@ -155,7 +155,7 @@ func (b *Backend) downloadFile(fileID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	ext := filepath.Ext(tgFile.FilePath)
 	if ext == "" {
@@ -165,10 +165,10 @@ func (b *Backend) downloadFile(fileID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("temp file: %w", err)
 	}
-	defer tmpFile.Close()
+	defer func() { _ = tmpFile.Close() }()
 
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("save: %w", err)
 	}
 	return tmpFile.Name(), nil

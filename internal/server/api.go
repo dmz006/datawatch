@@ -982,7 +982,7 @@ func (s *Server) handleMCPDocs(w http.ResponseWriter, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "text/html") {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html><html><head><title>datawatch MCP Tools</title>
+		_, _ = fmt.Fprintf(w, `<!DOCTYPE html><html><head><title>datawatch MCP Tools</title>
 <style>body{font-family:system-ui;max-width:800px;margin:40px auto;padding:0 20px;background:#1a1d27;color:#e2e8f0}
 h1{color:#a855f7}h2{color:#7c3aed;border-bottom:1px solid #2d3148;padding-bottom:4px}
 .tool{margin:16px 0;padding:12px;background:#22263a;border-radius:8px}
@@ -995,7 +995,7 @@ code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
 		if toolDocs, ok := docs.([]interface{}); ok {
 			for _, td := range toolDocs {
 				if m, ok := td.(map[string]interface{}); ok {
-					fmt.Fprintf(w, `<div class="tool"><div class="tool-name">%v</div><p>%v</p>`, m["name"], m["description"])
+					_, _ = fmt.Fprintf(w, `<div class="tool"><div class="tool-name">%v</div><p>%v</p>`, m["name"], m["description"])
 					if params, ok := m["parameters"].([]interface{}); ok {
 						for _, p := range params {
 							if pm, ok := p.(map[string]interface{}); ok {
@@ -1003,15 +1003,15 @@ code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
 								if r, ok := pm["required"].(bool); ok && r {
 									req = ` <span class="required">required</span>`
 								}
-								fmt.Fprintf(w, `<div class="param"><code>%v</code> (%v)%s — %v</div>`, pm["name"], pm["type"], req, pm["description"])
+								_, _ = fmt.Fprintf(w, `<div class="param"><code>%v</code> (%v)%s — %v</div>`, pm["name"], pm["type"], req, pm["description"])
 							}
 						}
 					}
-					fmt.Fprint(w, `</div>`)
+					_, _ = fmt.Fprint(w, `</div>`)
 				}
 			}
 		}
-		fmt.Fprint(w, `</body></html>`)
+		_, _ = fmt.Fprint(w, `</body></html>`)
 		return
 	}
 
@@ -1051,27 +1051,6 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SetUpdateFuncs(installFn func(version string, progress func(downloaded, total int64)) error, latestFn func() (string, error)) {
 	s.installUpdate = installFn
 	s.latestVersion = latestFn
-}
-
-// authMiddleware checks the Bearer token if one is configured
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.token == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Check Authorization header or ?token= query param
-		tok := r.URL.Query().Get("token")
-		if tok == "" {
-			auth := r.Header.Get("Authorization")
-			tok = strings.TrimPrefix(auth, "Bearer ")
-		}
-		if tok != s.token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // handleSessions returns all sessions as JSON.
@@ -1289,7 +1268,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		}
 		var sb strings.Builder
 		for _, sess := range sessions {
-			sb.WriteString(fmt.Sprintf("[%s] %s — %s\n  %s\n", sess.ID, sess.State, sess.UpdatedAt.Format("15:04:05"), truncate(sess.Task, 60)))
+			fmt.Fprintf(&sb, "[%s] %s — %s\n  %s\n", sess.ID, sess.State, sess.UpdatedAt.Format("15:04:05"), truncate(sess.Task, 60))
 		}
 		return sb.String()
 
@@ -1393,7 +1372,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		c.mu.Unlock()
 		s.hub.unregister <- c
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	conn.SetReadLimit(32 * 1024)
@@ -1481,7 +1460,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if ok {
-					s.manager.SendRawKeys(sess.FullID, d.Text)
+					_ = s.manager.SendRawKeys(sess.FullID, d.Text)
 				}
 			} else {
 				cmd := router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}
@@ -2406,7 +2385,7 @@ func (s *Server) handleMemoryLearnings(w http.ResponseWriter, r *http.Request) {
 	projectDir := r.URL.Query().Get("project_dir")
 	n := 20
 	if nStr := r.URL.Query().Get("limit"); nStr != "" {
-		fmt.Sscanf(nStr, "%d", &n)
+		_, _ = fmt.Sscanf(nStr, "%d", &n)
 	}
 	results, err := s.memoryAPI.ListLearnings(projectDir, query, n)
 	if err != nil {
@@ -2433,7 +2412,7 @@ func (s *Server) handleMemoryResearch(w http.ResponseWriter, r *http.Request) {
 	}
 	maxResults := 20
 	if nStr := r.URL.Query().Get("limit"); nStr != "" {
-		fmt.Sscanf(nStr, "%d", &maxResults)
+		_, _ = fmt.Sscanf(nStr, "%d", &maxResults)
 	}
 	results, err := s.memoryAPI.Research(query, maxResults)
 	if err != nil {
@@ -2515,7 +2494,7 @@ func (s *Server) handlePipelineAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, s.pipelineExec.GetStatus(id))
+		_, _ = fmt.Fprint(w, s.pipelineExec.GetStatus(id))
 	}
 }
 
@@ -2689,21 +2668,21 @@ func (s *Server) handleMemoryTest(w http.ResponseWriter, r *http.Request) {
 	}
 	dims, err := s.memoryTestFn(host, model)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
 			"host":    host,
 			"model":   model,
-		}) //nolint:errcheck
+		})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
 		"embedder":   "ollama",
 		"host":       host,
 		"model":      model,
 		"dimensions": dims,
-	}) //nolint:errcheck
+	})
 }
 
 // handleOllamaStats returns current Ollama server statistics.
@@ -4820,7 +4799,7 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.testMessageHandler == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"error": "test message handler not wired"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "test message handler not wired"})
 		return
 	}
 	var req struct {

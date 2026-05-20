@@ -408,14 +408,14 @@ func (r *Registry) Fanout(ctx context.Context, hook Hook, req Request) (Response
 // ${secret:name} refs are resolved via store with caller scope enforcement;
 // denied or missing secrets are skipped with a stderr warning.
 func resolvePluginEnv(p *Plugin, store secrets.Store) []string {
-	if len(p.Manifest.Env) == 0 {
+	if len(p.Env) == 0 {
 		return nil
 	}
 	base := os.Environ()
-	extra := make([]string, 0, len(base)+len(p.Manifest.Env))
+	extra := make([]string, 0, len(base)+len(p.Env))
 	extra = append(extra, base...)
 	caller := secrets.CallerCtx{Type: "plugin", Name: p.Name}
-	for k, v := range p.Manifest.Env {
+	for k, v := range p.Env {
 		resolved := v
 		if store != nil {
 			res, err := secrets.ResolveRefAs(v, store, caller)
@@ -461,7 +461,7 @@ func (r *Registry) CommCommandRoute(verb string) (method, route, plugin string, 
 		if !p.Enabled {
 			continue
 		}
-		for _, cc := range p.Manifest.CommCommands {
+		for _, cc := range p.CommCommands {
 			if cc.Name == verb {
 				m := cc.Method
 				if m == "" {
@@ -483,12 +483,12 @@ func (r *Registry) ContextForPRDType(prdType string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, p := range r.byName {
-		if !p.Enabled || p.Manifest.SessionInjection == nil {
+		if !p.Enabled || p.SessionInjection == nil {
 			continue
 		}
-		for _, t := range p.Manifest.SessionInjection.Types {
+		for _, t := range p.SessionInjection.Types {
 			if t == prdType {
-				return p.Manifest.SessionInjection.ContextPrepend
+				return p.SessionInjection.ContextPrepend
 			}
 		}
 	}
@@ -536,11 +536,11 @@ func (r *Registry) Watch(ctx context.Context) error {
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	if err := w.Add(r.cfg.Dir); err != nil {
-		w.Close()
+		_ = w.Close()
 		return fmt.Errorf("watch %s: %w", r.cfg.Dir, err)
 	}
 	go func() {
-		defer w.Close()
+		defer w.Close() //nolint:errcheck
 		var timer *time.Timer
 		fire := func() {
 			if err := r.Discover(); err != nil {

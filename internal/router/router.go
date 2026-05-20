@@ -601,10 +601,7 @@ func (r *Router) handleMemPin(cmd Command) {
 		r.send(fmt.Sprintf("[%s] memory pin: bad id %q", r.hostname, parts[0]))
 		return
 	}
-	pinned := true
-	if len(parts) >= 2 && (parts[1] == "off" || parts[1] == "false" || parts[1] == "0") {
-		pinned = false
-	}
+	pinned := len(parts) < 2 || (parts[1] != "off" && parts[1] != "false" && parts[1] != "0")
 	if err := r.memoryRetriever.Store().SetPinned(id, pinned); err != nil {
 		r.send(fmt.Sprintf("[%s] memory pin error: %v", r.hostname, err))
 		return

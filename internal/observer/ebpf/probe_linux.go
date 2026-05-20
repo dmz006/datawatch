@@ -5,7 +5,6 @@ package ebpf
 import (
 	"fmt"
 	"os"
-	"sync"
 )
 
 // NewNetProbe attempts to attach real kprobes on Linux. Without the
@@ -96,17 +95,3 @@ func newLinuxKprobeProbe() (NetProbe, error) {
 	return loadAndAttach()
 }
 
-// Legacy stub kept for the test file's import; unused by NewNetProbe.
-type linuxKprobeProbe struct {
-	mu     sync.Mutex
-	closed bool
-}
-
-func (l *linuxKprobeProbe) Read() []ProcessNet { return nil }
-func (l *linuxKprobeProbe) Loaded() bool       { return false }
-func (l *linuxKprobeProbe) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.closed = true
-	return nil
-}

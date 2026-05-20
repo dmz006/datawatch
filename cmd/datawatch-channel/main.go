@@ -268,7 +268,7 @@ func (b *bridge) callParent(ctx context.Context, method, path string, body any) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	out, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("parent %s %s: %d %s", method, path, resp.StatusCode, string(out))
@@ -364,12 +364,12 @@ func (b *bridge) postToParent(ctx context.Context, path string, body any) error 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		buf, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("parent %s: %d %s", path, resp.StatusCode, string(buf))
 	}
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 

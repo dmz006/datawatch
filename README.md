@@ -48,52 +48,53 @@ datawatch skills sync community
 
 ## Current release
 
-**v8.6.0 (2026-05-19)** — Full operational data encryption: `--secure` now covers servers.json, skills.json, compute/nodes.json, inference/llms.json, and daemon-app.log. New `datawatch security logs` command decrypts the encrypted app log. See [release notes](docs/RELEASE_NOTES_v8.6.0.md) and [CHANGELOG.md](CHANGELOG.md).
+**[v8.6.0](https://github.com/dmz006/datawatch/releases/tag/v8.6.0) (2026-05-20)** — The first GitHub release since v8.0.0. Covers all work from v8.1 through v8.6: compute routing modes, community registry + plugin install, Android 1.0 blockers (async PRD decompose, UnifiedPush, badge inputs), channel routing, federated file service, discussion scopes, and full operational data encryption (`--secure` now covers every file that can structurally be encrypted). 301 total E2E stories across 7 surfaces.
 
-**v8.5.0 (2026-05-19)** — Operational Data Encryption: `--secure` now covers discussion WAL, participants.json, and channel_routing.json. Upgrade-compatible migration on first startup. Secure wipe with manual confirmation gate. See [release notes](docs/RELEASE_NOTES_v8.5.0.md) and [CHANGELOG.md](CHANGELOG.md).
+See the [comprehensive release notes](docs/RELEASE_NOTES_v8.6.0.md) and [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v8.4.0 (2026-05-19)** — Discussion Scopes: federated per-discussion WAL memory with conflict detection, rate throttle, and participant sync. See [release notes](docs/RELEASE_NOTES_v8.4.0.md).
+### v8.6 highlights
 
-**v8.3.0 (2026-05-19)** — Channel Routing (inbound channel → peer mapping), File Service (federated upload/delete/list), and 14th built-in federation group (`comms-channel-agent`). See [release notes](docs/RELEASE_NOTES_v8.3.0.md).
-
-**v8.2.0 (2026-05-19)** — Android 1.0.0 blockers: async PRD decompose with SSE streaming, `/api/identity` POST alias, UnifiedPush register/notify/unregister, badge/chip multi-select for all settings fields. See [release notes](docs/RELEASE_NOTES_v8.2.0.md).
+- **Full operational data encryption (BL334 T43g+T43h)** — `--secure` closes all remaining coverage gaps. JSON stores: `servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json` — all encrypted with XChaCha20-Poly1305 (DWDAT2 format). Upgrade migration runs automatically on first `--secure` startup.
+- **Encrypted daemon-app.log (T43h)** — Runtime log output redirected to `secfile.EncryptedLogWriter` (DWLOG1 format) after key derivation. Append-mode on restart preserves history. Decrypt with `datawatch security logs [--tail N]`.
+- **Encryption status covers all six categories** — `datawatch security encryption status` probes channel_routing, servers, skills, compute/nodes, inference/llms, and daemon-app.log.
 
 ### v8.5 highlights
 
-- **Operational Data Encryption (BL334)** — closes the `--secure` coverage gap. All operational data files (discussion WAL, participants.json, channel_routing.json) are now encrypted with the same Argon2id-derived XChaCha20-Poly1305 key as the config and data stores. WAL uses a per-line `ENC:<b64>` format that is append-compatible. Upgrade-compatible migration runs automatically on first `--secure` startup.
-- **Secure wipe** — `datawatch security wipe-plaintext --confirm` (REST: `POST /api/security/wipe-plaintext {"confirm":true}`) does 3-pass overwrite (zeros/ones/random) then unlinks plaintext files. Manual gate prevents accidental invocation.
-- **Encryption status** — `datawatch security encryption status` / `GET /api/security/encryption/status` shows per-file encrypted vs. plaintext state.
-- **Secrets vault fully covers secrets** — `${secret:name}` config references are resolved at startup; API keys, webhook tokens, and auth credentials can live exclusively in `~/.datawatch/secrets.db` (AES-256-GCM, own key file, independent of `--secure`).
-- **822 E2E test stories** — 28 new stories (TS-751–TS-778).
+- **Operational Data Encryption (BL334 T43a–T43e)** — Discussion WAL lines encrypted as `ENC:<base64(nonce24+ciphertext)>`. `participants.json` and `channel_routing.json` encrypted via DWDAT2. Migration idempotent on first `--secure` startup.
+- **Secure wipe** — `datawatch security wipe-plaintext --confirm` does 3-pass overwrite (zeros/ones/random) then unlinks plaintext files.
+- **Encryption status + migrate** — `GET /api/security/encryption/status`, `POST /api/security/encryption/migrate`. CLI: `datawatch security encryption {status,migrate}`.
+- **`${secret:name}` config references** — API keys and tokens can live exclusively in `~/.datawatch/secrets.db` (AES-256-GCM, independent of `--secure`).
+
+### v8.4 highlights
+
+- **Discussion Scopes (BL332)** — Federated append-only WAL memory. Each discussion has `~/.datawatch/discussions/<id>/wal.jsonl` with entries timestamped, origin-peer-tagged, and sequence-numbered. Conflict detection (same-prefix writes from different peers within 5s), 60 writes/min rate throttle, participant sync via push fan-out.
+- **REST**: full discussion CRUD + `/wal` + `/conflicts` + `/participants`. **CLI**: `datawatch memory discussion {list,write,recall,wal,participants}`. **MCP**: `memory_discussion_*`. **PWA**: Settings → General → Discussion Scopes card.
 
 ### v8.3 highlights
 
-- **Channel Routing (BL331)** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. Stored at `~/.datawatch/channel_routing.json`. `GET/PUT /api/channel/routing`. PWA: Settings → Comms → Channel Routing card. CLI: `datawatch federation peer add --channel-identity`.
-- **File Service (BL333)** — Federated upload/delete/list under a configurable service root. `POST /api/files` (multipart), `DELETE /api/files` (JSON `{path}`), `GET /api/files/peers/{name}`, `GET /api/files/discussions/{id}`, `GET /api/files/meta`. Path-traversal guard on every write path. CLI: `datawatch files {list,upload,delete,peer}`.
-- **14th federation builtin group: `comms-channel-agent`** — Peers that act as channel address agents get sessions+comms+alerts+autonomous capabilities without full operator access.
+- **Channel Routing (BL331)** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. CLI: `datawatch federation peer add --channel-identity`.
+- **File Service (BL333)** — Federated upload/delete/list under a configurable service root. Path-traversal guard on every write path. `POST /api/files`, `DELETE /api/files`, `GET /api/files/{peers,discussions,meta}`. CLI: `datawatch files {list,upload,delete,peer}`.
+- **14th federation builtin group: `comms-channel-agent`** — sessions+comms+alerts+autonomous without full operator access.
 
 ### v8.2 highlights
 
-- **Async PRD decompose (BL328)** — `POST /api/autonomous/prds/<id>/decompose` returns immediately with `{task_id, stream_url}`. Stories stream via SSE; idempotent second calls return same task_id. Status poll at `.../decompose/status`. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
-- **Identity POST alias (BL329)** — `POST /api/identity` now aliases `PATCH` (partial update) for mobile Android compat. All methods (GET/PUT/PATCH/POST) routed through single handler with capability gates.
-- **UnifiedPush (BL330)** — `GET /.well-known/unifiedpush`, `POST /api/push/register`, `GET /api/push/register`, `DELETE /api/push/unregister`, `POST /api/push/notify`. Registrations keyed by endpoint URL. PWA: Settings → Comms → Push Notifications card. CLI: `datawatch push {register,unregister,notify}`. MCP: `push_register`, `push_notify`.
-- **Badge/chip multi-select (BL327)** — All comma-separated settings fields (secrets tags, federation caps, LLM fallback chain, compute node tags, profile memory_shared_with, profile skills) now render as badge inputs with dropdown completion and drag-to-reorder.
+- **Async PRD decompose (BL328)** — `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately. Stories stream via SSE with `Last-Event-ID` replay. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
+- **Identity POST alias (BL329)** — `POST /api/identity` aliases `PATCH` for Android compatibility. All four methods share one handler.
+- **UnifiedPush (BL330)** — `GET /.well-known/unifiedpush`, register/unregister/notify endpoints. PWA: Settings → Comms → Push Notifications card.
+- **Badge/chip multi-select (BL327)** — All comma-separated settings fields use badge inputs with dropdown completion and drag-to-reorder.
 
 ### v8.1 highlights
 
-- **E2E test suite** — 680+ stories covering every feature surface including alert rules, plugin install, community registry, and mic popup.
-- **Community Skills + Plugins registry** — `dmz006/datawatch-community` is the official hub. Connect with `datawatch skills registry connect`.
-- **Alert rules (BL325 S14b)** — CRUD UI + firings log in PWA and Android.
-- **Community registry browser + plugin install (BL324/BL325)** — browse available skills/plugins in-app, install with one click, uninstall with confirmation.
-- **Mic popup (BL326)** — animated waveform recording overlay, Cancel/Send UI.
+- **Compute Node routing modes (BL318–BL322)** — `direct`, `docker-network` (DockerLifecycle manages container lifecycle), `datawatch-proxy` (forward through a peer's `/api/proxy/llm/<name>`). New `gemini-api` and `opencode-api` adapter kinds.
+- **Community Skills + Plugins registry (BL324–BL326)** — `dmz006/datawatch-community` is the official hub. In-app registry browser, one-click install, plugin install without restart. Connect: `datawatch skills registry connect`.
+- **Mic popup (BL326)** — animated waveform recording overlay in PWA.
+- **301 E2E test stories** — 142 new stories (TS-637–TS-778) across v8.2–v8.5 cohorts.
 
 ### v8.0 highlights
 
 - **Federation CBAC** — 50 capabilities, **14 built-in groups** (admin, observer, operator, readonly, …, comms-channel-agent), `fedCap()` guards every REST handler and MCP tool.
-- **Compute Node routing** — `direct`, `docker-network`, `datawatch-proxy` modes. DockerLifecycle manages container spin-up/teardown.
+- **Compute Node routing** — `direct`, `docker-network`, `datawatch-proxy` modes.
 - **MCP SSE federation** — MCP SSE transport accepts federation peer tokens with per-tool CBAC.
-- **Multi-server proxy** — `GET /api/servers` + per-server test endpoint.
-- **OneShot sessions** — fire-and-forget session mode.
 - **626 E2E test stories** — full plugin, skill, and inline peer daemon coverage.
 
 ### v7.x highlights (v7.0.0 → v7.4.0)

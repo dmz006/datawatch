@@ -219,10 +219,10 @@ func (s *Server) docsApplyPlan(w http.ResponseWriter, r *http.Request, rt *docsi
 	steps, provenance, err := resolveHowtoSteps(r.Context(), rt, howtoID, params)
 	if err != nil {
 		// Map error type to status.
-		switch {
-		case err == docsindex.ErrChunkNotFound:
+		switch err {
+		case docsindex.ErrChunkNotFound:
 			http.Error(w, "howto not found: "+howtoID, http.StatusNotFound)
-		case err == errNoExecSteps:
+		case errNoExecSteps:
 			http.Error(w, "howto has no authored exec_steps and no LLM translator is configured", http.StatusNotImplemented)
 		default:
 			http.Error(w, err.Error(), http.StatusBadRequest)

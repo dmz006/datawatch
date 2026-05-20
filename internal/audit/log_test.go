@@ -13,13 +13,13 @@ func TestBL9_NewLog_CreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 }
 
 func TestBL9_WriteRead_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := New(dir)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	if err := l.Write(Entry{Actor: "operator", Action: "start", SessionID: "aa"}); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestBL9_WriteRead_RoundTrip(t *testing.T) {
 func TestBL9_Read_ActorFilter(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := New(dir)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	_ = l.Write(Entry{Actor: "operator", Action: "start"})
 	_ = l.Write(Entry{Actor: "channel:signal", Action: "send_input"})
 	out, _ := l.Read(QueryFilter{Actor: "operator"})
@@ -54,7 +54,7 @@ func TestBL9_Read_ActorFilter(t *testing.T) {
 func TestBL9_Read_SessionFilter(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := New(dir)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	_ = l.Write(Entry{Actor: "operator", Action: "start", SessionID: "aa"})
 	_ = l.Write(Entry{Actor: "operator", Action: "start", SessionID: "bb"})
 	out, _ := l.Read(QueryFilter{SessionID: "bb"})
@@ -66,7 +66,7 @@ func TestBL9_Read_SessionFilter(t *testing.T) {
 func TestBL9_Read_SinceUntilWindow(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := New(dir)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	now := time.Now()
 	_ = l.Write(Entry{Timestamp: now.Add(-2 * time.Hour), Action: "old"})
 	_ = l.Write(Entry{Timestamp: now.Add(-30 * time.Minute), Action: "recent"})
@@ -84,7 +84,7 @@ func TestBL9_Read_SinceUntilWindow(t *testing.T) {
 func TestBL9_Read_LimitNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := New(dir)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	for i := 0; i < 5; i++ {
 		_ = l.Write(Entry{Action: "x", Details: map[string]any{"i": i}})
 	}

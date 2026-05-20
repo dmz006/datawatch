@@ -16,7 +16,6 @@ package observer
 import (
 	"bufio"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -231,5 +230,3 @@ func labelValue(labels, key string) string {
 	return ""
 }
 
-// errDCGMUnreachable is reserved for future explicit error surfacing.
-var errDCGMUnreachable = errors.New("dcgm exporter unreachable")

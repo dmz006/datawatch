@@ -20,7 +20,7 @@ func TestEmitSnapshot_WrapsWithShapeAndPeer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("temp: %v", err)
 	}
-	defer tmp.Close()
+	defer tmp.Close() //nolint:errcheck
 
 	snap := &observer.StatsResponse{V: 2}
 	emitSnapshot(tmp, snap, "ollama-box", "B")
@@ -84,7 +84,7 @@ func TestSidecarServesStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d want 200", resp.StatusCode)
 	}

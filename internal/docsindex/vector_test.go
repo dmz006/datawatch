@@ -86,7 +86,7 @@ func TestVectorIndex_BuildAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVectorIndex: %v", err)
 	}
-	defer vi.Close()
+	defer func() { _ = vi.Close() }()
 
 	chunks := []Chunk{
 		{Path: "a.md", Anchor: "x", Source: "core", Body: "hello world", ContentHash: "h1"},
@@ -105,7 +105,7 @@ func TestVectorIndex_BuildAndSearch(t *testing.T) {
 	}
 
 	// Re-build with same chunks: zero re-embeds (content_hash unchanged).
-	embedded, dropped, err = vi.Build(context.Background(), chunks, 2)
+	embedded, _, err = vi.Build(context.Background(), chunks, 2)
 	if err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestVectorIndex_BuildAndSearch(t *testing.T) {
 	}
 
 	// Drop a chunk; it should be purged from the store.
-	embedded, dropped, err = vi.Build(context.Background(), chunks[:2], 2)
+	_, dropped, err = vi.Build(context.Background(), chunks[:2], 2)
 	if err != nil {
 		t.Fatalf("partial rebuild: %v", err)
 	}
@@ -150,14 +150,14 @@ func TestVectorIndex_PersistsAcrossRestart(t *testing.T) {
 	if _, _, err := vi1.Build(context.Background(), chunks, 1); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	vi1.Close()
+	_ = vi1.Close()
 
 	// Reopen — vectors should load from disk without re-embedding.
 	vi2, err := NewVectorIndex(dbPath, emb)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer vi2.Close()
+	defer func() { _ = vi2.Close() }()
 	if vi2.Count() != 1 {
 		t.Errorf("post-reopen Count = %d, want 1", vi2.Count())
 	}
@@ -171,7 +171,7 @@ func TestHybridSearcher_VectorPrimaryBM25Fallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVectorIndex: %v", err)
 	}
-	defer vi.Close()
+	defer func() { _ = vi.Close() }()
 
 	chunks := []Chunk{
 		{Path: "a.md", Anchor: "x", Source: "core", Body: "secrets manager rotate token", ContentHash: "h1", Title: "secrets"},

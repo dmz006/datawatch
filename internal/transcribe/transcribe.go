@@ -88,8 +88,8 @@ func (w *WhisperTranscriber) Transcribe(ctx context.Context, audioPath string) (
 	if err != nil {
 		return "", fmt.Errorf("transcribe: temp file: %w", err)
 	}
-	tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	cmd := exec.CommandContext(ctx, w.Python, "-c", whisperScript,
 		audioPath, w.Model, w.Language, tmpFile.Name())

@@ -24,10 +24,8 @@ import (
 // - Non-datawatch queries receive REFUSED (no information leakage)
 // - Failed auth queries are indistinguishable from non-datawatch queries
 type ServerBackend struct {
-	cfg    config.DNSChannelConfig
-	nonces *NonceStore
-
-	mu              sync.Mutex
+	cfg             config.DNSChannelConfig
+	nonces          *NonceStore
 	pendingResponse chan string // single-slot channel for synchronous DNS query→response
 
 	// Per-IP rate limiting
@@ -44,10 +42,6 @@ type rateBucket struct {
 
 // NewServer creates a DNS channel server backend.
 func NewServer(cfg config.DNSChannelConfig) *ServerBackend {
-	maxResp := cfg.MaxResponseSize
-	if maxResp <= 0 {
-		maxResp = 512
-	}
 	rateLimit := cfg.RateLimit
 	if rateLimit == 0 {
 		rateLimit = 30 // default: 30 queries per IP per minute

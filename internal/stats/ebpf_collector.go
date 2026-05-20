@@ -225,7 +225,7 @@ func (c *EBPFCollector) Close() {
 	defer c.mu.Unlock()
 	c.closed = true
 	for _, l := range c.links {
-		l.Close()
+		_ = l.Close()
 	}
 	if c.coll != nil {
 		c.coll.Close()

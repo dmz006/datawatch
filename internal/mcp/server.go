@@ -911,14 +911,6 @@ func (s *Server) ElicitationDispatcher() *ElicitationDispatcher {
 	return s.elicitationDisp
 }
 
-// trackCall records a tool call in the channel stats.
-func (s *Server) trackCall(reqSize, respSize int) {
-	if s.chanStats != nil {
-		s.chanStats.RecordRecv(reqSize)
-		s.chanStats.RecordSent(respSize)
-	}
-}
-
 // ToolDocs returns structured documentation for all registered MCP tools.
 func (s *Server) ToolDocs() []ToolDoc {
 	type toolDef struct {
@@ -1114,17 +1106,6 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
-}
-
-// bearerAuthMiddleware requires a valid Authorization: Bearer <token> header.
-func bearerAuthMiddleware(token string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+token {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // ---- tool definitions -------------------------------------------------------

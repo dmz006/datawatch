@@ -512,7 +512,7 @@ func writeLogLine(logFile, text string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
@@ -525,6 +525,6 @@ func freePort() (int, error) {
 		return 0, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 	return port, nil
 }

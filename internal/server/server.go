@@ -558,7 +558,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 				}
 				out := strings.ReplaceAll(string(body), "%%DW_VERSION%%", Version)
 				w2.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w2.Write([]byte(out))
+				_, _ = w2.Write([]byte(out))
 			})).ServeHTTP(w, r)
 			return
 		}
@@ -1104,21 +1104,6 @@ func (s *HTTPServer) Hub() *Hub {
 	return s.hub
 }
 
-// tlsAuthMiddleware wraps an http.Handler with bearer token auth and TLS enforcement.
-// It is used by the MCP SSE server to gate remote connections.
-func tlsAuthMiddleware(token string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if token != "" {
-			auth := r.Header.Get("Authorization")
-			if auth != "Bearer "+token {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // BuildTLSConfig is a convenience wrapper for building a *tls.Config from a ServerConfig.
 func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, error) {
 	return tlsutil.Build(tlsutil.Config{
@@ -1246,7 +1231,7 @@ func gzipFileServer(next http.Handler) http.Handler {
 		gz := gzipPool.Get().(*gzip.Writer)
 		defer gzipPool.Put(gz)
 		gz.Reset(w)
-		defer gz.Close()
+		defer gz.Close() //nolint:errcheck
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Set("Vary", "Accept-Encoding")
 		// We're rewriting the body; let downstream regenerate

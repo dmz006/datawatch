@@ -11,7 +11,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -164,31 +163,4 @@ func newFilesMetaCmd() *cobra.Command {
 			return daemonGet("/api/files/meta")
 		},
 	}
-}
-
-// filesUploadJSON sends a JSON-body upload (used internally for small text files).
-func filesUploadJSON(destPath, content string) error {
-	body, _ := json.Marshal(map[string]string{
-		"path":    destPath,
-		"content": content,
-	})
-	req, err := http.NewRequest(http.MethodPost, daemonURL()+"/api/files/upload", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if tok := daemonToken(); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
-	}
-	resp, err := daemonClient().Do(req)
-	if err != nil {
-		return fmt.Errorf("daemon not reachable: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
-	}
-	prettyPrint(respBody)
-	return nil
 }

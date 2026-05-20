@@ -105,13 +105,14 @@ func (e *Executor) run(p *Pipeline) {
 		for _, t := range p.Tasks {
 			if t.State == StateRunning && t.SessionID != "" {
 				state := e.starter.GetSessionState(t.SessionID)
-				if state == "complete" {
+				switch state {
+				case "complete":
 					p.MarkCompleted(t.ID)
 					log.Printf("[pipeline] task %s completed (session %s)", t.ID, t.SessionID)
 					if e.onUpdate != nil {
 						e.onUpdate(p)
 					}
-				} else if state == "failed" || state == "killed" {
+				case "failed", "killed":
 					p.MarkFailed(t.ID, "session "+state)
 					log.Printf("[pipeline] task %s failed (session %s: %s)", t.ID, t.SessionID, state)
 					alerts.EmitSystem(alerts.LevelWarn, "Pipeline task failed",

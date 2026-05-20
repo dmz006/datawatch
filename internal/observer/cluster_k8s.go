@@ -324,14 +324,14 @@ func parseCPUtoMilli(s string) int64 {
 		return 0
 	}
 	last := s[len(s)-1]
-	switch {
-	case last == 'n':
+	switch last {
+	case 'n':
 		v, _ := strconv.ParseInt(s[:len(s)-1], 10, 64)
 		return v / 1_000_000
-	case last == 'u':
+	case 'u':
 		v, _ := strconv.ParseInt(s[:len(s)-1], 10, 64)
 		return v / 1_000
-	case last == 'm':
+	case 'm':
 		v, _ := strconv.ParseInt(s[:len(s)-1], 10, 64)
 		return v
 	}

@@ -167,13 +167,6 @@ type vaultResponse struct {
 	Errors    []string               `json:"errors,omitempty"`
 }
 
-// kvData is the inner shape of a KV-v2 read: Data.data is the user value
-// map, Data.metadata holds versioning info.
-type kvData struct {
-	Data     map[string]string      `json:"data"`
-	Metadata map[string]interface{} `json:"metadata"`
-}
-
 // do executes a Vault HTTP call and returns the parsed envelope. Records
 // LastError / LastSuccess / LastReqID for the status surface.
 func (s *VaultStore) do(method, path string, body interface{}) (*vaultResponse, int, error) {
@@ -516,7 +509,3 @@ func (s *VaultStore) Exists(name string) (bool, error) {
 	return false, err
 }
 
-// isVaultNotFound returns true for 404-shaped errors from do().
-func isVaultNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "HTTP 404")
-}

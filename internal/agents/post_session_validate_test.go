@@ -117,9 +117,9 @@ func TestValidateHook_NotAWorkerSession(t *testing.T) {
 }
 
 func TestValidateHook_SpawnFailureLogged(t *testing.T) {
-	hook, rec, _, agentID := validatorFixture(t, true, "")
+	_, rec, _, agentID := validatorFixture(t, true, "")
 	// Override the SpawnFunc to fail.
-	hook = PostSessionValidateHook(ValidatorSpawnerConfig{
+	hook := PostSessionValidateHook(ValidatorSpawnerConfig{
 		Manager: nil, // intentionally nil so config-incomplete branch fires
 		SpawnFunc: func(_ context.Context, _ SpawnRequest) (*Agent, error) {
 			return nil, errors.New("driver unhealthy")

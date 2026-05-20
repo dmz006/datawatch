@@ -149,7 +149,7 @@ func ensureSelfSigned(cfg Config) (certFile, keyFile string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("write cert: %w", err)
 	}
-	defer cf.Close()
+	defer func() { _ = cf.Close() }()
 	if err := pem.Encode(cf, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
 		return "", "", err
 	}
@@ -163,7 +163,7 @@ func ensureSelfSigned(cfg Config) (certFile, keyFile string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("write key: %w", err)
 	}
-	defer kf.Close()
+	defer func() { _ = kf.Close() }()
 	if err := pem.Encode(kf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: privDER}); err != nil {
 		return "", "", err
 	}

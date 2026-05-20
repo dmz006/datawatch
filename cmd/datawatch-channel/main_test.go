@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 // real datawatch parent, so tests can assert on the wire contract.
 type fakeParent struct {
 	srv      *httptest.Server
-	mu       atomic.Value // []receivedRequest
 	received []receivedRequest
 }
 

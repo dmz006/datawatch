@@ -56,9 +56,10 @@ func (b *Backend) SendWithButtons(recipient, message string, buttons []messaging
 	var btnElements []slack.BlockElement
 	for _, btn := range buttons {
 		style := slack.StyleDefault
-		if btn.Style == "primary" {
+		switch btn.Style {
+		case "primary":
 			style = slack.StylePrimary
-		} else if btn.Style == "danger" {
+		case "danger":
 			style = slack.StyleDanger
 		}
 		btnEl := slack.NewButtonBlockElement(btn.Value, btn.Value,

@@ -23,17 +23,8 @@ type MCPStatsCounters struct {
 	SamplingReqs    atomic.Int64
 	ElicitationReqs atomic.Int64
 
-	// Per-URI and per-name breakdown (guarded by a separate approach: copy-on-write map).
-	// We use a simple atomic approach: snapshot is taken under the global stats lock.
-	uriMu   noCopyMutex
-	byURI   map[string]*atomic.Int64
-	nameMu  noCopyMutex
-	byName  map[string]*atomic.Int64
-}
-
-// noCopyMutex is a thin mutex alias to avoid pulling in sync directly here.
-type noCopyMutex struct {
-	mu [0]struct{ _ [0]func() } // zero-size placeholder
+	byURI  map[string]*atomic.Int64
+	byName map[string]*atomic.Int64
 }
 
 // NewMCPStatsCounters creates a ready-to-use counters set.

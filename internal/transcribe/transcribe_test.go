@@ -23,9 +23,9 @@ func TestNew_AutoLanguage(t *testing.T) {
 	// Create a fake venv with python3 and whisper importable
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
-	os.MkdirAll(binDir, 0o755)
+	_ = os.MkdirAll(binDir, 0o755)
 	// Create a fake python3 that succeeds on "import whisper"
-	os.WriteFile(filepath.Join(binDir, "python3"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	_ = os.WriteFile(filepath.Join(binDir, "python3"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 
 	w, err := New(dir, "base", "auto")
 	if err != nil {
@@ -124,15 +124,15 @@ func createSilentWAV(t *testing.T, path string, samples int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dataSize := samples * 2
 	fileSize := 36 + dataSize
 
-	f.Write([]byte("RIFF"))
+	_, _ = f.Write([]byte("RIFF"))
 	writeLE32(f, uint32(fileSize))
-	f.Write([]byte("WAVE"))
-	f.Write([]byte("fmt "))
+	_, _ = f.Write([]byte("WAVE"))
+	_, _ = f.Write([]byte("fmt "))
 	writeLE32(f, 16)
 	writeLE16(f, 1)
 	writeLE16(f, 1)
@@ -140,17 +140,17 @@ func createSilentWAV(t *testing.T, path string, samples int) {
 	writeLE32(f, 16000)
 	writeLE16(f, 2)
 	writeLE16(f, 16)
-	f.Write([]byte("data"))
+	_, _ = f.Write([]byte("data"))
 	writeLE32(f, uint32(dataSize))
-	f.Write(make([]byte, dataSize))
+	_, _ = f.Write(make([]byte, dataSize))
 }
 
 func writeLE32(f *os.File, v uint32) {
-	f.Write([]byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)})
+	_, _ = f.Write([]byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)})
 }
 
 func writeLE16(f *os.File, v uint16) {
-	f.Write([]byte{byte(v), byte(v >> 8)})
+	_, _ = f.Write([]byte{byte(v), byte(v >> 8)})
 }
 
 func contains(s, sub string) bool {

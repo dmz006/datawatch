@@ -9,7 +9,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,11 +16,9 @@ import (
 
 // PGStore is the PostgreSQL-backed memory store using pgvector for vector search.
 type PGStore struct {
-	pool       *pgxpool.Pool
-	walPath    string
-	walMu      sync.Mutex
-	encKey     []byte
-	hasVector  bool // true if pgvector extension is available
+	pool      *pgxpool.Pool
+	encKey    []byte
+	hasVector bool // true if pgvector extension is available
 }
 
 // NewPGStore opens a PostgreSQL memory store.
@@ -282,7 +279,6 @@ func (s *PGStore) SearchFiltered(wing, room string, queryVec []float32, topK int
 	if room != "" {
 		query += fmt.Sprintf(` AND room = $%d`, argN)
 		args = append(args, room)
-		argN++
 	}
 	rows, err := s.pool.Query(context.Background(), query, args...)
 	if err != nil {

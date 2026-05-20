@@ -148,7 +148,7 @@ func (c *Collector) ebpfProbeStatus() (loaded bool, message string) {
 	defer c.ebpfMu.Unlock()
 	if c.ebpfProbe == nil {
 		p, err := ebpf.NewNetProbe()
-		if err != nil || p == nil {
+		if err != nil {
 			c.ebpfProbe = ebpf.NewNoopProbe("probe init failed; falling back to /proc-only")
 			alerts.EmitSystem(alerts.LevelWarn, "eBPF probe unavailable",
 				"kprobe load failed; network metrics will use /proc-only (reduced resolution). Check CAP_BPF capability.")

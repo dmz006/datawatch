@@ -59,13 +59,13 @@ type taskRequest struct {
 
 func (b *Backend) handleTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", 405)
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 	if b.token != "" {
 		auth := r.Header.Get("Authorization")
 		if auth != "Bearer "+b.token {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 	}

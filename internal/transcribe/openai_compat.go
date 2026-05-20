@@ -140,14 +140,14 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 		mw2 := multipart.NewWriter(body2)
 		part2, perr := mw2.CreateFormFile("file", filepath.Base(audioPath))
 		if perr != nil {
-			f2.Close()
+			_ = f2.Close()
 			return "", fmt.Errorf("transcribe(openai_compat): retry multipart: %w", perr)
 		}
 		if _, cerr := io.Copy(part2, f2); cerr != nil {
-			f2.Close()
+			_ = f2.Close()
 			return "", fmt.Errorf("transcribe(openai_compat): retry copy: %w", cerr)
 		}
-		f2.Close()
+		_ = f2.Close()
 		_ = mw2.WriteField("model", o.Model)
 		if o.Language != "" {
 			_ = mw2.WriteField("language", o.Language)
@@ -228,9 +228,7 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 				modelList = strings.Join(models, ", ")
 			}
 			triedList := []string{o.Model}
-			for _, n := range candidates {
-				triedList = append(triedList, n)
-			}
+			triedList = append(triedList, candidates...)
 			return "", fmt.Errorf("transcribe(openai_compat): no working whisper model on %s.\n  Configured: %q (404)\n  Auto-tried: %s — all 404\n  Models listed by /v1/models: %s\n\nFix:\n  1. Set cfg.voice.whisper_model to a model the server actually has (consult your OpenWebUI / whisper-server admin)\n  2. Or install one (whisper.cpp: download ggml-large-v3.bin to its models/ dir)\nLast server response: %s", o.Endpoint, o.Model, strings.Join(triedList[1:], ", "), modelList, body)
 		}
 		return "", fmt.Errorf("transcribe(openai_compat): HTTP %d: %s", resp.StatusCode, body)
@@ -410,17 +408,17 @@ func (o *OpenAICompatTranscriber) Preflight(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("preflight: %w", err)
 	}
-	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusOK:
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusOK:
 		return nil
-	case resp.StatusCode == http.StatusNotFound:
+	case http.StatusNotFound:
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("preflight: model %q not found on %s (server: %s) — runtime will use fallback chain", o.Model, o.Endpoint, strings.TrimSpace(string(raw)))
-	case resp.StatusCode == http.StatusServiceUnavailable, resp.StatusCode == http.StatusGatewayTimeout:
+	case http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		// Server is loading; not an error per se.
 		return nil
-	case resp.StatusCode == http.StatusBadRequest:
+	case http.StatusBadRequest:
 		// v7.0.0-alpha.14 (#236) — some servers (OpenWebUI) reject the
 		// synthetic silent WAV with "format not supported". The endpoint
 		// + auth + model resolution all clearly work; the probe payload

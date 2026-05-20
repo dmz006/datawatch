@@ -103,7 +103,7 @@ func (b *InteractiveBackend) Launch(ctx context.Context, task, tmuxSession, proj
 
 	// Send the initial task if provided
 	if task != "" {
-		go b.sendAndStream(ctx, tmuxSession, task, true)
+		go func() { _ = b.sendAndStream(ctx, tmuxSession, task, true) }()
 	} else {
 		// No task — show prompt and wait
 		exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,

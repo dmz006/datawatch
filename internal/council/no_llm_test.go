@@ -17,6 +17,7 @@ package council
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 )
 
@@ -135,21 +136,21 @@ func TestRunCtx_PerPersonaErrorContinuesRun(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	called := false
+	var called atomic.Bool
 	o := &Orchestrator{
 		personas:    map[string]Persona{"p": {Name: "p", SystemPrompt: "x"}},
 		MaxParallel: 1,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "test",
 		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
-			called = true
+			called.Store(true)
 			<-ctx.Done()
 			return "", "", ctx.Err()
 		},
 	}
 	go func() {
 		// Wait until the call is in flight before cancelling.
-		for !called {
+		for !called.Load() {
 		}
 		// Find the running cancel func and trigger it.
 		o.mu.Lock()

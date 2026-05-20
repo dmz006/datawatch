@@ -250,7 +250,7 @@ func findSubstr(s, sub string, from int) int {
 
 func isVarName(s string) bool {
 	for _, c := range s {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
 			return false
 		}
 	}

@@ -95,7 +95,7 @@ func ResolveMapRefs(m map[string]string, store Store) (map[string]string, error)
 // Errors from missing secrets are accumulated and returned joined.
 func ResolveConfig(v any, store Store) error {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("ResolveConfig: requires a non-nil pointer to struct")
 	}
 	var errs []string
@@ -124,7 +124,7 @@ func walkValue(v reflect.Value, store Store, errs *[]string) {
 			walkValue(v.Field(i), store, errs)
 		}
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if !v.IsNil() {
 			walkValue(v.Elem(), store, errs)
 		}

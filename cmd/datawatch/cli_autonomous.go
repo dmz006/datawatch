@@ -219,15 +219,6 @@ func newAutonomousPRDPlanCmd() *cobra.Command {
 	}
 }
 
-// newAutonomousPRDDecomposeCmd is a back-compat alias for newAutonomousPRDPlanCmd.
-func newAutonomousPRDDecomposeCmd() *cobra.Command {
-	cmd := newAutonomousPRDPlanCmd()
-	cmd.Use = "prd-decompose <id>"
-	cmd.Short = "Run the LLM planning phase for a PRD (alias: prd-plan)"
-	cmd.Aliases = []string{"prd-plan"}
-	return cmd
-}
-
 func newAutonomousPRDRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prd-run <id>",

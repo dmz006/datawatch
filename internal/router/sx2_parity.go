@@ -537,11 +537,12 @@ func (r *Router) handleAutonomous(cmd Command) {
 				if i := strings.IndexByte(kv, '='); i > 0 {
 					k := strings.TrimSpace(kv[:i])
 					v := strings.TrimSpace(kv[i+1:])
-					if v == "true" {
+					switch v {
+					case "true":
 						kvBody[k] = true
-					} else if v == "false" {
+					case "false":
 						kvBody[k] = false
-					} else {
+					default:
 						kvBody[k] = v
 					}
 				}

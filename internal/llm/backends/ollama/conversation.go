@@ -85,7 +85,7 @@ func (b *Backend) LaunchChat(ctx context.Context, task, tmuxSession, projectDir 
 	emitChat(tmuxSession, "system", fmt.Sprintf("Chat mode — model: %s", b.model), false)
 
 	if task != "" {
-		go b.sendAndStream(ctx, tmuxSession, task, true)
+		go func() { _ = b.sendAndStream(ctx, tmuxSession, task, true) }()
 	} else {
 		emitChat(tmuxSession, "system", "Ready — send a message to begin", false)
 		exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,

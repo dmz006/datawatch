@@ -84,14 +84,14 @@ func main() {
 	// so this is purely cosmetic + doc-consistency. Single-dash continues
 	// to work for backward compat.
 	flag.CommandLine.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "datawatch-stats — Shape B/C standalone observer daemon (version %s)\n\n", Version)
-		fmt.Fprintln(flag.CommandLine.Output(), "Usage of datawatch-stats:")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "datawatch-stats — Shape B/C standalone observer daemon (version %s)\n\n", Version)
+		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "Usage of datawatch-stats:")
 		flag.VisitAll(func(f *flag.Flag) {
 			defaultStr := ""
 			if f.DefValue != "" && f.DefValue != "false" {
 				defaultStr = fmt.Sprintf(" (default %q)", f.DefValue)
 			}
-			fmt.Fprintf(flag.CommandLine.Output(), "  --%-18s %s%s\n", f.Name, f.Usage, defaultStr)
+			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  --%-18s %s%s\n", f.Name, f.Usage, defaultStr)
 		})
 	}
 	flag.Parse()
@@ -614,7 +614,7 @@ func serveSidecar(addr string, col *observer.Collector, peerName string) {
 		})
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

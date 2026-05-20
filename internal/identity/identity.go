@@ -94,8 +94,6 @@ func (m *Manager) Reload() error {
 	if err := m.load(); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if os.IsNotExist(nil) { // no-op marker
-	}
 	return nil
 }
 
