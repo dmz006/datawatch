@@ -1,0 +1,65 @@
+name: Matrix Integration
+
+# BL241 P1 — Spins up a local Synapse via Docker Compose and runs
+# scripts/test-matrix-synapse.sh against a real datawatch binary.
+#
+# Triggers on PRs / pushes that touch Matrix code or the test harness itself.
+# NOT triggered on tag pushes (release CI is separate).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/messaging/backends/matrix/**'
+      - 'internal/config/config.go'
+      - 'cmd/datawatch/main.go'
+      - 'scripts/test-matrix-synapse.sh'
+      - 'scripts/matrix-stack.yml'
+      - 'scripts/test-matrix-nio-client.py'
+      - '.github/workflows/matrix-integration.yaml'
+  pull_request:
+    paths:
+      - 'internal/messaging/backends/matrix/**'
+      - 'internal/config/config.go'
+      - 'cmd/datawatch/main.go'
+      - 'scripts/test-matrix-synapse.sh'
+      - 'scripts/matrix-stack.yml'
+      - 'scripts/test-matrix-nio-client.py'
+      - '.github/workflows/matrix-integration.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix-integration:
+    name: Synapse integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build datawatch binary
+        run: go build -o datawatch-test ./cmd/datawatch/
+
+      - name: Pull Synapse image
+        run: docker pull matrixdotorg/synapse:v1.127.1
+
+      - name: Run Matrix integration tests
+        env:
+          DW_BIN: ./datawatch-test
+        run: bash scripts/test-matrix-synapse.sh --datawatch-bin ./datawatch-test
+
+      - name: Upload daemon log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-daemon-log
+          path: /tmp/tmp*/daemon*.log
+          if-no-files-found: ignore

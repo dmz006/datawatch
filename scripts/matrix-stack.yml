@@ -1,0 +1,56 @@
+# BL241 P1 — Matrix integration test stack.
+#
+# Brings up:
+#   synapse    — Matrix homeserver (matrixdotorg/synapse:v1.127.1, open registration)
+#   nio-client — python-matrix-nio test peer that sends/receives messages
+#
+# Usage (via test-matrix-synapse.sh):
+#   docker compose -f scripts/matrix-stack.yml up -d
+#   docker compose -f scripts/matrix-stack.yml down -v
+#
+# The Synapse homeserver_url is http://synapse:8008 inside the Docker network,
+# and http://localhost:8008 from the host running the tests.
+
+version: "3.8"
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:v1.127.1
+    container_name: dw-test-synapse
+    environment:
+      SYNAPSE_SERVER_NAME: localhost
+      SYNAPSE_REPORT_STATS: "no"
+      # Open registration — test bot creates its own account at startup.
+      SYNAPSE_ENABLE_REGISTRATION: "1"
+      SYNAPSE_ENABLE_REGISTRATION_WITHOUT_VERIFICATION: "1"
+    ports:
+      - "8008:8008"
+    volumes:
+      - synapse-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8008/_matrix/client/versions"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  nio-client:
+    image: python:3.12-slim
+    container_name: dw-test-nio-client
+    depends_on:
+      synapse:
+        condition: service_healthy
+    environment:
+      SYNAPSE_URL: http://synapse:8008
+      NIO_USER: "@niotestuser:localhost"
+      NIO_PASSWORD: niotestpassword
+      NIO_ROOM: "#dw-test:localhost"
+    volumes:
+      - ./test-matrix-nio-client.py:/app/client.py:ro
+    command: >
+      sh -c "pip install matrix-nio==0.24.0 --quiet &&
+             python /app/client.py"
+    restart: "no"
+
+volumes:
+  synapse-data:
