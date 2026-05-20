@@ -160,7 +160,7 @@ media_store_path: /data/media_store
 signing_key_path: /data/localhost.signing.key
 registration_shared_secret: \"''' + secret + '''\"
 enable_registration: true
-enable_registration_without_email_verification: true
+enable_registration_without_verification: true
 report_stats: false
 suppress_key_server_warning: true
 trusted_key_servers: []
