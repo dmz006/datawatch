@@ -191,7 +191,7 @@ jobs:
 
           # Update release
           r = subprocess.run(
-              ["gh", "release", "edit", tag, "--notes", new_body],
+              ["gh", "release", "edit", tag, "--repo", repo, "--notes", new_body],
               capture_output=True, text=True
           )
           if r.returncode != 0:
