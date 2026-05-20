@@ -2727,7 +2727,26 @@ echo "$TEL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not
   && ok "MCP telemetry_list returns result" \
   || ko "MCP telemetry_list unexpected: ${TEL:0:120}"
 
-H "49. Smoke progress DELETE (cleanup)"
+H "49. BL241 — Matrix backend REST surface"
+# GET /api/matrix/status — always responds (200 whether enabled or not)
+MX_STATUS=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/matrix/status" 2>/dev/null || echo "000")
+case "$MX_STATUS" in
+  200) ok "GET /api/matrix/status returns 200" ;;
+  *)   ko "GET /api/matrix/status returned HTTP $MX_STATUS" ;;
+esac
+# POST /api/matrix/test — returns 200 with ok=true (matrix disabled → ok=false, still 200)
+MX_TEST_BODY=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/matrix/test" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo "{}")
+MX_TEST_HTTP=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/matrix/test" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo "000")
+case "$MX_TEST_HTTP" in
+  200) ok "POST /api/matrix/test returns 200" ;;
+  *)   ko "POST /api/matrix/test returned HTTP $MX_TEST_HTTP: ${MX_TEST_BODY:0:120}" ;;
+esac
+# CLI: datawatch matrix status
+if [[ -n "${DW_CLI:-}" ]]; then
+  $DW_CLI matrix status >/dev/null 2>&1 && ok "datawatch matrix status exits 0" || ko "datawatch matrix status failed"
+fi
+
+H "50. Smoke progress DELETE (cleanup)"
 # Verify the DELETE /api/smoke/progress endpoint works (part of dashboard cleanup flow)
 # We skip the actual delete so the dashboard keeps the run data visible.
 DP=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/api/smoke/progress" 2>/dev/null || echo "000")

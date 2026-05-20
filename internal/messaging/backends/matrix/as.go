@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -168,9 +167,4 @@ func GenerateTokens() (asToken, hsToken string, err error) {
 	}
 	hsToken = fmt.Sprintf("%x", buf)
 	return
-}
-
-// timestampSuffix returns a short timestamp string for generating unique ASID.
-func timestampSuffix() string {
-	return fmt.Sprintf("%d", time.Now().Unix()%100000)
 }
