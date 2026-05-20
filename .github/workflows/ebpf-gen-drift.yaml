@@ -26,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # v5.26.38 — SHA-pinned (see containers.yaml header for bump procedure).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: Install clang + bpftool + libbpf-dev
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm linux-headers-$(uname -r) libbpf-dev
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version: stable
           cache: true

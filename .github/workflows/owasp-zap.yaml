@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
 
       - name: Install kind + kubectl + helm
         run: |
@@ -102,7 +102,7 @@ jobs:
       - name: ZAP PWA baseline scan
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
-          target: 'http://${{ inputs.target_host }}/'
+          target: 'http://${{ inputs.target_host || 'localhost:18080' }}/'
           cmd_options: '-a -j -m 5'
           fail_action: true
           allow_issue_writing: true
@@ -112,7 +112,7 @@ jobs:
       - name: ZAP API scan (OpenAPI-driven)
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: 'http://${{ inputs.target_host }}/api/'
+          target: 'http://${{ inputs.target_host || 'localhost:18080' }}/api/'
           format: openapi
           # The daemon embeds the OpenAPI spec at docs/api/openapi.yaml;
           # checkout has the raw file. Pass the local path so ZAP
@@ -127,7 +127,7 @@ jobs:
       - name: ZAP diagrams.html baseline scan
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
-          target: 'http://${{ inputs.target_host }}/diagrams.html'
+          target: 'http://${{ inputs.target_host || 'localhost:18080' }}/diagrams.html'
           cmd_options: '-a -j -m 3'
           fail_action: false  # diagrams is largely static; advisory
           allow_issue_writing: true
@@ -142,7 +142,7 @@ jobs:
       - name: ZAP PWA full active scan
         uses: zaproxy/action-full-scan@d479641f7e99facb91d7738171b3448e3f3c7bba  # v0.10.0
         with:
-          target: 'http://${{ inputs.target_host }}/'
+          target: 'http://${{ inputs.target_host || 'localhost:18080' }}/'
           cmd_options: '-a -j -m 10'
           fail_action: false  # advisory until the active baseline is set
           allow_issue_writing: true
@@ -155,7 +155,7 @@ jobs:
       - name: ZAP API full active scan
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: 'http://${{ inputs.target_host }}/api/'
+          target: 'http://${{ inputs.target_host || 'localhost:18080' }}/api/'
           format: openapi
           api_definition: 'docs/api/openapi.yaml'
           # -t turns active rules on (api-scan defaults to passive).
@@ -175,7 +175,7 @@ jobs:
       # upload so they're accessible from the Actions run and, for
       # release-triggered runs, we can attach them to the release.
       - name: Upload ZAP reports artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         if: always()
         with:
           name: owasp-zap-reports
