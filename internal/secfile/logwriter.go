@@ -74,7 +74,7 @@ func NewEncryptedLogWriter(path string, key []byte) (*EncryptedLogWriter, error)
 	}
 	if !appendMode {
 		if _, err := f.WriteString(logMagic); err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 	}
@@ -87,7 +87,7 @@ func readFileHeader(path string, n int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(f, buf); err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (w *EncryptedLogWriter) Close() error {
 	w.closed = true
 	if len(w.buf) > 0 {
 		if err := w.flushBlock(w.buf); err != nil {
-			w.f.Close()
+			_ = w.f.Close()
 			return err
 		}
 	}
@@ -178,16 +178,16 @@ func NewEncryptedLogReader(path string, key []byte) (*EncryptedLogReader, error)
 	// Read and verify magic header
 	header := make([]byte, len(logMagic))
 	if _, err := io.ReadFull(f, header); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("secfile: read header: %w", err)
 	}
 	if string(header) != logMagic {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("secfile: not an encrypted log file")
 	}
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	return &EncryptedLogReader{f: f, aead: aead}, nil

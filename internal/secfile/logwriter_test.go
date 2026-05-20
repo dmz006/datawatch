@@ -48,7 +48,7 @@ func TestEncryptedLogRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEncryptedLogReader: %v", err)
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	got, err := r.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -71,14 +71,14 @@ func TestEncryptedLogLargeData(t *testing.T) {
 	// Write more than flushSize to trigger multiple blocks
 	data := make([]byte, flushSize*3+500)
 	rand.Read(data)
-	w.Write(data)
-	w.Close()
+	w.Write(data) //nolint:errcheck
+	w.Close()     //nolint:errcheck
 
 	r, err := NewEncryptedLogReader(path, key)
 	if err != nil {
 		t.Fatalf("NewEncryptedLogReader: %v", err)
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	got, err := r.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -95,14 +95,14 @@ func TestEncryptedLogWrongKey(t *testing.T) {
 	key2 := testKey()
 
 	w, _ := NewEncryptedLogWriter(path, key1)
-	w.Write([]byte("secret data"))
-	w.Close()
+	w.Write([]byte("secret data")) //nolint:errcheck
+	w.Close()                      //nolint:errcheck
 
 	r, err := NewEncryptedLogReader(path, key2)
 	if err != nil {
 		t.Fatalf("NewEncryptedLogReader: %v", err)
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	_, err = r.ReadAll()
 	if err == nil {
 		t.Error("expected decrypt error with wrong key")
@@ -115,15 +115,15 @@ func TestEncryptedLogMultipleWrites(t *testing.T) {
 	key := testKey()
 
 	w, _ := NewEncryptedLogWriter(path, key)
-	w.Write([]byte("line 1\n"))
-	w.Write([]byte("line 2\n"))
-	w.Write([]byte("line 3\n"))
-	w.Flush()
-	w.Write([]byte("line 4\n"))
-	w.Close()
+	w.Write([]byte("line 1\n")) //nolint:errcheck
+	w.Write([]byte("line 2\n")) //nolint:errcheck
+	w.Write([]byte("line 3\n")) //nolint:errcheck
+	w.Flush()                   //nolint:errcheck
+	w.Write([]byte("line 4\n")) //nolint:errcheck
+	w.Close()                   //nolint:errcheck
 
 	r, _ := NewEncryptedLogReader(path, key)
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	got, err := r.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -140,15 +140,15 @@ func TestEncryptedLogFlush(t *testing.T) {
 	key := testKey()
 
 	w, _ := NewEncryptedLogWriter(path, key)
-	w.Write([]byte("data"))
-	w.Flush()
+	w.Write([]byte("data")) //nolint:errcheck
+	w.Flush()               //nolint:errcheck
 
 	// File should have at least one block after flush
 	info, _ := os.Stat(path)
 	if info.Size() <= int64(len(logMagic)) {
 		t.Error("file should have data after flush")
 	}
-	w.Close()
+	w.Close() //nolint:errcheck
 }
 
 func TestEncryptedLogEmptyFile(t *testing.T) {
@@ -157,10 +157,10 @@ func TestEncryptedLogEmptyFile(t *testing.T) {
 	key := testKey()
 
 	w, _ := NewEncryptedLogWriter(path, key)
-	w.Close()
+	w.Close() //nolint:errcheck
 
 	r, _ := NewEncryptedLogReader(path, key)
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	got, err := r.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll on empty: %v", err)

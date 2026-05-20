@@ -79,7 +79,7 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 	if err != nil {
 		return "", fmt.Errorf("transcribe(openai_compat): open audio: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
@@ -117,7 +117,7 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 	if err != nil {
 		return "", fmt.Errorf("transcribe(openai_compat): %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	// v7.0.0-alpha.14 (#236) — 503/504 = server is loading the model.
 	// Retry with exponential backoff up to 4 attempts (≈1s + 2s + 4s
@@ -265,7 +265,7 @@ func (o *OpenAICompatTranscriber) listModels(ctx context.Context) []string {
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}

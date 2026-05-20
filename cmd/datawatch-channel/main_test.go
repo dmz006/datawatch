@@ -147,7 +147,7 @@ func TestHTTPSendForwardsAsNotification(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck
 	// We don't assert on the broadcast itself — there are no MCP clients
 	// connected in unit tests — but the handler must not 500.
 }
@@ -163,7 +163,7 @@ func TestHTTPSendRejectsNonPOST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d want 405", resp.StatusCode)
 	}

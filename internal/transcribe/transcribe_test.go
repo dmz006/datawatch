@@ -39,8 +39,8 @@ func TestNew_AutoLanguage(t *testing.T) {
 func TestNew_ExplicitLanguage(t *testing.T) {
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
-	os.MkdirAll(binDir, 0o755)
-	os.WriteFile(filepath.Join(binDir, "python3"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	os.MkdirAll(binDir, 0o755)                                                             //nolint:errcheck
+	os.WriteFile(filepath.Join(binDir, "python3"), []byte("#!/bin/sh\nexit 0\n"), 0o755) //nolint:errcheck
 
 	w, err := New(dir, "small", "ja")
 	if err != nil {

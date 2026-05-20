@@ -18,11 +18,11 @@ func TestMigrateLogOnly(t *testing.T) {
 	dir := t.TempDir()
 	sessDir := filepath.Join(dir, "sessions", "test-abcd")
 	trackDir := filepath.Join(sessDir, "tracking")
-	os.MkdirAll(trackDir, 0755)
+	os.MkdirAll(trackDir, 0755) //nolint:errcheck
 
 	// Write plaintext files
-	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("plaintext output\n"), 0644)
-	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nhello"), 0644)
+	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("plaintext output\n"), 0644)   //nolint:errcheck
+	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nhello"), 0644) //nolint:errcheck
 
 	key := migrateTestKey()
 
@@ -65,11 +65,11 @@ func TestMigrateFull(t *testing.T) {
 	dir := t.TempDir()
 	sessDir := filepath.Join(dir, "sessions", "test-efgh")
 	trackDir := filepath.Join(sessDir, "tracking")
-	os.MkdirAll(trackDir, 0755)
+	os.MkdirAll(trackDir, 0755) //nolint:errcheck
 
-	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("secret output\n"), 0644)
-	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nsecret chat"), 0644)
-	os.WriteFile(filepath.Join(trackDir, "timeline.md"), []byte("# Timeline\n- event"), 0644)
+	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("secret output\n"), 0644)              //nolint:errcheck
+	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nsecret chat"), 0644)   //nolint:errcheck
+	os.WriteFile(filepath.Join(trackDir, "timeline.md"), []byte("# Timeline\n- event"), 0644)       //nolint:errcheck
 
 	key := migrateTestKey()
 
@@ -110,13 +110,13 @@ func TestMigrateFull(t *testing.T) {
 func TestMigrateSkipsEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	sessDir := filepath.Join(dir, "sessions", "test-skip")
-	os.MkdirAll(sessDir, 0755)
+	os.MkdirAll(sessDir, 0755) //nolint:errcheck
 
 	key := migrateTestKey()
 
 	// Write an already-encrypted file
 	enc, _ := Encrypt([]byte("already encrypted"), key)
-	os.WriteFile(filepath.Join(sessDir, "output.log"), enc, 0644)
+	os.WriteFile(filepath.Join(sessDir, "output.log"), enc, 0644) //nolint:errcheck
 
 	if err := MigratePlaintextToEncrypted(dir, key, false); err != nil {
 		t.Fatalf("migration failed: %v", err)

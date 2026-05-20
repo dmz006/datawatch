@@ -191,9 +191,6 @@ func (c *ClusterProfile) Validate() error {
 
 	if !c.Kind.Valid() {
 		errs = append(errs, fmt.Sprintf("kind %q: must be docker|k8s|cf", c.Kind))
-	} else if c.Kind == ClusterCF {
-		// CF support deferred per the F10 plan. Accept at schema
-		// level so profiles can be authored ahead of time, but warn.
 	}
 
 	// Kind-specific rules: k8s needs a context; docker can fall back

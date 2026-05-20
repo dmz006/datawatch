@@ -38,9 +38,7 @@ type QualityGateResult struct {
 
 // RunTests executes the test command and parses results.
 func RunTests(command, projectDir string, timeout int) TestResult {
-	if timeout <= 0 {
-		timeout = 300
-	}
+	_ = timeout // reserved for future context-based cancellation
 
 	start := time.Now()
 	parts := strings.Fields(command)

@@ -473,7 +473,7 @@ Type 'cancel' at any time to abort.`,
 				cfg.Email.Host = data["host"]
 				port := 587
 				if p := data["port"]; p != "" {
-					fmt.Sscanf(p, "%d", &port)
+					_, _ = fmt.Sscanf(p, "%d", &port)
 				}
 				cfg.Email.Port = port
 				cfg.Email.Username = data["username"]
@@ -597,7 +597,7 @@ Type 'cancel' at any time to abort.`,
 					cfg.Server.Host = h
 				}
 				if p := data["port"]; p != "" {
-					fmt.Sscanf(p, "%d", &cfg.Server.Port)
+					_, _ = fmt.Sscanf(p, "%d", &cfg.Server.Port)
 				}
 				cfg.Server.Token = data["token"]
 				tls := strings.ToLower(data["tls"])

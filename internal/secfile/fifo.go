@@ -23,7 +23,7 @@ type EncryptingFIFO struct {
 // reads from it and writes encrypted blocks to outputPath.
 func NewEncryptingFIFO(fifoPath, outputPath string, key []byte) (*EncryptingFIFO, error) {
 	// Remove stale FIFO if exists
-	os.Remove(fifoPath)
+	_ = os.Remove(fifoPath)
 
 	// Create named pipe
 	if err := syscall.Mkfifo(fifoPath, 0600); err != nil {
@@ -32,7 +32,7 @@ func NewEncryptingFIFO(fifoPath, outputPath string, key []byte) (*EncryptingFIFO
 
 	writer, err := NewEncryptedLogWriter(outputPath, key)
 	if err != nil {
-		os.Remove(fifoPath)
+		_ = os.Remove(fifoPath)
 		return nil, err
 	}
 
@@ -60,8 +60,8 @@ func (f *EncryptingFIFO) Close() error {
 	case <-f.doneCh:
 	case <-time.After(2 * time.Second):
 	}
-	f.writer.Close()
-	os.Remove(f.fifoPath)
+	_ = f.writer.Close()
+	_ = os.Remove(f.fifoPath)
 	return nil
 }
 
@@ -94,17 +94,17 @@ func (f *EncryptingFIFO) readLoop() {
 		for scanner.Scan() {
 			select {
 			case <-f.stopCh:
-				file.Close()
+				_ = file.Close()
 				return
 			default:
 			}
 			line := scanner.Bytes()
 			line = append(line, '\n')
-			f.writer.Write(line)
+			_, _ = f.writer.Write(line)
 		}
-		file.Close()
+		_ = file.Close()
 
 		// Flush after each writer disconnect (tmux session ends or restarts)
-		f.writer.Flush()
+		_ = f.writer.Flush()
 	}
 }

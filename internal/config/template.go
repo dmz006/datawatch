@@ -257,20 +257,20 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 }
 
 func section(b *strings.Builder, title, desc string) {
-	b.WriteString(fmt.Sprintf("# ── %s ──\n", title))
+	fmt.Fprintf(b, "# ── %s ──\n", title)
 	if desc != "" {
-		b.WriteString(fmt.Sprintf("# %s\n", desc))
+		fmt.Fprintf(b, "# %s\n", desc)
 	}
 }
 
 func field(b *strings.Builder, key string, val interface{}, comment string) {
-	b.WriteString(fmt.Sprintf("# %s\n", comment))
-	b.WriteString(fmt.Sprintf("%s: %s\n", key, yamlVal(val)))
+	fmt.Fprintf(b, "# %s\n", comment)
+	fmt.Fprintf(b, "%s: %s\n", key, yamlVal(val))
 }
 
 func fieldi(b *strings.Builder, key string, val interface{}, comment string) {
-	b.WriteString(fmt.Sprintf("  # %s\n", comment))
-	b.WriteString(fmt.Sprintf("  %s: %s\n", key, yamlVal(val)))
+	fmt.Fprintf(b, "  # %s\n", comment)
+	fmt.Fprintf(b, "  %s: %s\n", key, yamlVal(val))
 }
 
 func yamlVal(v interface{}) string {

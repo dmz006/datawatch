@@ -102,7 +102,7 @@ func TestStore_UnreadCount(t *testing.T) {
 	}
 
 	alerts := s.List()
-	s.MarkRead(alerts[0].ID)
+	s.MarkRead(alerts[0].ID) //nolint:errcheck
 	if s.UnreadCount() != 1 {
 		t.Fatalf("expected 1 unread after mark, got %d", s.UnreadCount())
 	}

@@ -457,7 +457,7 @@ func writeJSONL(path string, _ int, fn func(emit func(any) error) error) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	enc := json.NewEncoder(f)
 	return fn(func(v any) error { return enc.Encode(v) })
 }
