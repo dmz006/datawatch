@@ -140,7 +140,7 @@ jobs:
       # send real attack payloads (SQLi, XSS, command-injection
       # probes) — only safe against an ephemeral test daemon.
       - name: ZAP PWA full active scan
-        uses: zaproxy/action-full-scan@76dd255b6b889d4d61a9c2a7aab83bbcb4d4f1ce  # v0.10.0
+        uses: zaproxy/action-full-scan@d479641f7e99facb91d7738171b3448e3f3c7bba  # v0.10.0
         with:
           target: 'http://${{ inputs.target_host }}/'
           cmd_options: '-a -j -m 10'
