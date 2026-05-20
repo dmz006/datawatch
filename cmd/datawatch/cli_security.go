@@ -5,17 +5,23 @@
 //	datawatch security encryption status   — show which files are encrypted
 //	datawatch security encryption migrate  — encrypt all plaintext operational files
 //	datawatch security wipe-plaintext      — 3-pass secure wipe + unlink of plaintext files
+//	datawatch security logs                — decrypt and print daemon-app.log (T43h)
 
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 func newSecurityCmd() *cobra.Command {
@@ -31,6 +37,7 @@ func newSecurityCmd() *cobra.Command {
 	enc.AddCommand(newSecurityEncryptionMigrateCmd())
 	cmd.AddCommand(enc)
 	cmd.AddCommand(newSecurityWipePlaintextCmd())
+	cmd.AddCommand(newSecurityLogsCmd())
 	return cmd
 }
 
@@ -145,6 +152,64 @@ You must pass --confirm to proceed.`,
 		},
 	}
 	c.Flags().BoolVar(&confirm, "confirm", false, "Required: confirms intent to irreversibly wipe plaintext files")
+	return c
+}
+
+// newSecurityLogsCmd implements `datawatch security logs`.
+// Decrypts daemon-app.log using the same Argon2id key as --secure mode.
+func newSecurityLogsCmd() *cobra.Command {
+	var tail int
+	c := &cobra.Command{
+		Use:   "logs",
+		Short: "Decrypt and print the encrypted application log (daemon-app.log)",
+		Long: `Reads daemon-app.log from the data directory, decrypts it using the
+--secure password, and prints the log lines to stdout.
+
+Boot messages written before key derivation remain in the plaintext daemon.log
+and are not handled by this command.`,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, encKey, err := loadConfigAndDeriveKey()
+			if err != nil {
+				return fmt.Errorf("derive key: %w", err)
+			}
+			if encKey == nil {
+				return fmt.Errorf("--secure mode not active; daemon-app.log is not encrypted")
+			}
+			defer zeroBytes(encKey)
+
+			logPath := filepath.Join(expandHome(cfg.DataDir), "daemon-app.log")
+			if _, err := os.Stat(logPath); os.IsNotExist(err) {
+				return fmt.Errorf("daemon-app.log not found at %s (daemon may not have written any log lines yet)", logPath)
+			}
+
+			r, err := secfile.NewEncryptedLogReader(logPath, encKey)
+			if err != nil {
+				return fmt.Errorf("open log: %w", err)
+			}
+			defer r.Close() //nolint:errcheck
+
+			data, err := r.ReadAll()
+			if err != nil {
+				return fmt.Errorf("read log: %w", err)
+			}
+
+			var lines []string
+			sc := bufio.NewScanner(strings.NewReader(string(data)))
+			for sc.Scan() {
+				lines = append(lines, sc.Text())
+			}
+
+			start := 0
+			if tail > 0 && tail < len(lines) {
+				start = len(lines) - tail
+			}
+			for _, l := range lines[start:] {
+				fmt.Println(l)
+			}
+			return nil
+		},
+	}
+	c.Flags().IntVar(&tail, "tail", 0, "Show last N lines (0 = all)")
 	return c
 }
 

@@ -3,6 +3,29 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.6.0 — BL334: Full Operational Data Encryption (2026-05-19)
+
+### Added
+
+- **BL334 T43g — JSON store encryption** (`--secure` closes remaining coverage gap):
+  - **`servers.json`** (federation peer registry, contains peer tokens): `multiserver.NewStoreEncrypted` wires `secfile` for read + atomic-write.
+  - **`skills.json`** (skills registry index): `skills.NewStoreEncrypted` / `NewManagerEncrypted` wires `secfile`.
+  - **`compute/nodes.json`** (ComputeNode registry): `compute.NewRegistryEncrypted` wires `secfile`.
+  - **`inference/llms.json`** (LLM registry): `inference.NewRegistryFromFileEncrypted` wires `secfile` in persist closure.
+  - **Startup migration** (`secfile.MigrateJSONStore`): on first `--secure` startup after upgrade, each of the four files is encrypted in place. Idempotent — already-encrypted files skipped.
+  - Encryption status, migrate, and wipe-plaintext endpoints updated to cover all four new stores.
+
+- **BL334 T43h — Encrypted application log** (`daemon-app.log`):
+  - When `--secure` is active, `log.SetOutput` is redirected to a `secfile.EncryptedLogWriter` at `<data-dir>/daemon-app.log` after key derivation. Boot messages before key derivation remain in the plaintext `daemon.log` managed by the parent `daemonize` process.
+  - **CLI**: `datawatch security logs [--tail N]` — derives the Argon2id key, decrypts `daemon-app.log`, and prints lines to stdout.
+  - Encryption status endpoint probes the DWLOG1 magic header to detect whether `daemon-app.log` is encrypted.
+
+### Fixed
+
+- `security encryption status` and `security encryption migrate` now cover all operational files added in v8.5.x (`servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json`, `daemon-app.log`).
+
+---
+
 ## v8.5.0 — BL334: Operational Data Encryption (2026-05-19)
 
 ### Added

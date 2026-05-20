@@ -9,16 +9,28 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // NewRegistryFromFile opens / creates the JSON-backed registry at
 // the given path. <data-dir>/inference/llms.json is the convention.
 func NewRegistryFromFile(path string) (*Registry, error) {
+	return newRegistryFromFile(path, nil)
+}
+
+// NewRegistryFromFileEncrypted is like NewRegistryFromFile but encrypts
+// llms.json with key (BL334 T43g).
+func NewRegistryFromFileEncrypted(path string, key []byte) (*Registry, error) {
+	return newRegistryFromFile(path, key)
+}
+
+func newRegistryFromFile(path string, key []byte) (*Registry, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("llm registry: mkdir: %w", err)
 	}
 	r := NewRegistry()
-	if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
+	if b, err := secfile.ReadFile(path, key); err == nil && len(b) > 0 {
 		var stored []LLM
 		if err := json.Unmarshal(b, &stored); err != nil {
 			return nil, fmt.Errorf("llm registry: parse: %w", err)
@@ -35,11 +47,7 @@ func NewRegistryFromFile(path string) (*Registry, error) {
 		if err != nil {
 			return fmt.Errorf("llm registry: marshal: %w", err)
 		}
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, data, 0o644); err != nil {
-			return fmt.Errorf("llm registry: write: %w", err)
-		}
-		return os.Rename(tmp, path)
+		return secfile.WriteFile(path, data, 0o600, key)
 	})
 	return r, nil
 }

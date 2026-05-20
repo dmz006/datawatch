@@ -47,7 +47,12 @@ type Manager struct {
 // NewManager creates a Manager rooted at dataDir. Lazily creates the
 // skills index file + cache + synced dirs.
 func NewManager(dataDir string) (*Manager, error) {
-	store, err := NewStore(filepath.Join(dataDir, "skills.json"))
+	return NewManagerEncrypted(dataDir, nil)
+}
+
+// NewManagerEncrypted is like NewManager but encrypts skills.json (BL334 T43g).
+func NewManagerEncrypted(dataDir string, key []byte) (*Manager, error) {
+	store, err := NewStoreEncrypted(filepath.Join(dataDir, "skills.json"), key)
 	if err != nil {
 		return nil, err
 	}

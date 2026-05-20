@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -102,7 +103,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.5.0"
+var Version = "8.6.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -720,6 +721,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if err := secfile.MigrateChannelRouting(crPath, encKey); err != nil {
 			fmt.Printf("[warn] channel_routing migration: %v\n", err)
 		}
+		// BL334 T43g — migrate JSON stores added in v8.5.x.
+		dataDir := expandHome(cfg.DataDir)
+		for _, store := range []struct{ path, label string }{
+			{filepath.Join(dataDir, "servers.json"), "servers.json"},
+			{filepath.Join(dataDir, "skills.json"), "skills.json"},
+			{filepath.Join(dataDir, "compute", "nodes.json"), "compute/nodes.json"},
+			{filepath.Join(dataDir, "inference", "llms.json"), "inference/llms.json"},
+		} {
+			if err := secfile.MigrateJSONStore(store.path, store.label, encKey); err != nil {
+				fmt.Printf("[warn] %s migration: %v\n", store.label, err)
+			}
+		}
+	}
+
+	// BL334 T43h — encrypted application log when --secure is active.
+	// Boot messages before key derivation remain in the plaintext daemon.log
+	// written by the parent daemonize process. Once the key is available we
+	// redirect the standard logger to an EncryptedLogWriter at daemon-app.log.
+	if encKey != nil {
+		appLogPath := filepath.Join(expandHome(cfg.DataDir), "daemon-app.log")
+		if appLogWriter, err := secfile.NewEncryptedLogWriter(appLogPath, encKey); err == nil {
+			log.SetOutput(appLogWriter)
+			defer appLogWriter.Close() //nolint:errcheck
+		} else {
+			fmt.Printf("[warn] encrypted app log: %v\n", err)
+		}
 	}
 
 	// Apply flag overrides
@@ -966,7 +993,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// (registries + synced index), exposes connect/browse/sync/unsync
 	// to REST/MCP/CLI/comm/PWA. Optional add-default-on-start seeds the
 	// PAI registry if not already present.
-	skillsMgr, err := skills.NewManager(expandHome(cfg.DataDir))
+	var skillsMgr *skills.Manager
+	if encKey != nil {
+		skillsMgr, err = skills.NewManagerEncrypted(expandHome(cfg.DataDir), encKey)
+	} else {
+		skillsMgr, err = skills.NewManager(expandHome(cfg.DataDir))
+	}
 	if err != nil {
 		fmt.Printf("[warn] skills manager init: %v\n", err)
 	} else {
@@ -2634,7 +2666,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// <data-dir>/compute/nodes.json. cfg.compute_nodes seeds entries
 		// only if no JSON entry already exists for that name (operator
 		// runtime edits via REST/MCP/CLI/comm/UI win).
-		if computeReg, cerr := compute.NewRegistry(filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")); cerr == nil {
+		computeNodesPath := filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")
+		var computeInitErr error
+		var computeReg *compute.Registry
+		if encKey != nil {
+			computeReg, computeInitErr = compute.NewRegistryEncrypted(computeNodesPath, encKey)
+		} else {
+			computeReg, computeInitErr = compute.NewRegistry(computeNodesPath)
+		}
+		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
 				n := compute.Node{
@@ -2672,12 +2712,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// BL312 S1 — multi-server registry.
 			// JSON store at <data-dir>/servers.json; YAML cfg.Servers
 			// are seeded as read-only builtins.
-			if multiSrvStore, merr := multiserver.NewStore(
-				expandHome(cfg.DataDir), cfg.Servers,
-			); merr == nil {
-				httpServer.SetServerStore(multiSrvStore)
-			} else {
-				fmt.Printf("[servers] store init failed: %v\n", merr)
+			{
+				var msStore *multiserver.Store
+				var msErr error
+				if encKey != nil {
+					msStore, msErr = multiserver.NewStoreEncrypted(expandHome(cfg.DataDir), cfg.Servers, encKey)
+				} else {
+					msStore, msErr = multiserver.NewStore(expandHome(cfg.DataDir), cfg.Servers)
+				}
+				if msErr == nil {
+					httpServer.SetServerStore(msStore)
+				} else {
+					fmt.Printf("[servers] store init failed: %v\n", msErr)
+				}
 			}
 
 			// BL316 — federation capability group store.
@@ -2693,7 +2740,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// migrates v6.x cfg.ollama.host / cfg.openwebui.url into
 			// "ollama" / "openwebui" entries on first startup so
 			// existing operators keep working.
-			if llmReg, lerr := inference.NewRegistryFromFile(filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")); lerr == nil {
+			llmsPath := filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")
+			var llmRegInitFn func() (*inference.Registry, error)
+			if encKey != nil {
+				llmRegInitFn = func() (*inference.Registry, error) {
+					return inference.NewRegistryFromFileEncrypted(llmsPath, encKey)
+				}
+			} else {
+				llmRegInitFn = func() (*inference.Registry, error) {
+					return inference.NewRegistryFromFile(llmsPath)
+				}
+			}
+			if llmReg, lerr := llmRegInitFn(); lerr == nil {
 				owuiKey := cfg.OpenWebUI.APIKey
 				// v7.0.0-alpha.15 (#229) — extended migration covering
 				// every populated v6 cfg.<Backend> block. Operator
@@ -2985,7 +3043,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] llm registry init: %v\n", lerr)
 			}
 		} else {
-			fmt.Printf("[warn] compute registry init: %v\n", cerr)
+			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
 		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {

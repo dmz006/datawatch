@@ -60,8 +60,34 @@ func (s *Server) handleSecurityEncryptionStatus(w http.ResponseWriter, r *http.R
 
 	var files []encryptionFileStatus
 
-	// channel_routing.json
-	files = append(files, probeFile(filepath.Join(base, "channel_routing.json")))
+	// Single-file JSON stores (BL334 T43b / T43g)
+	for _, rel := range []string{
+		"channel_routing.json",
+		"servers.json",
+		"skills.json",
+		"compute/nodes.json",
+		"inference/llms.json",
+	} {
+		files = append(files, probeFile(filepath.Join(base, rel)))
+	}
+
+	// Encrypted application log (BL334 T43h) — probe magic header
+	appLog := filepath.Join(base, "daemon-app.log")
+	if stat, err := os.Stat(appLog); err == nil && stat.Size() > 0 {
+		f, ferr := os.Open(appLog)
+		if ferr == nil {
+			hdr := make([]byte, 6)
+			n, _ := f.Read(hdr)
+			f.Close()
+			files = append(files, encryptionFileStatus{
+				Path:      appLog,
+				Exists:    true,
+				Encrypted: n >= 6 && string(hdr[:6]) == "DWLOG1",
+			})
+		}
+	} else if os.IsNotExist(err) {
+		files = append(files, encryptionFileStatus{Path: appLog, Exists: false})
+	}
 
 	// discussion WAL and participants under ~/.datawatch/discussions/
 	discussionsDir := filepath.Join(base, "discussions")
@@ -153,6 +179,18 @@ func (s *Server) handleSecurityEncryptionMigrate(w http.ResponseWriter, r *http.
 		http.Error(w, "channel_routing migration: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// BL334 T43g — migrate JSON stores added in v8.5.x.
+	for _, store := range []struct{ path, label string }{
+		{filepath.Join(base, "servers.json"), "servers.json"},
+		{filepath.Join(base, "skills.json"), "skills.json"},
+		{filepath.Join(base, "compute", "nodes.json"), "compute/nodes.json"},
+		{filepath.Join(base, "inference", "llms.json"), "inference/llms.json"},
+	} {
+		if err := secfile.MigrateJSONStore(store.path, store.label, s.encKey); err != nil {
+			http.Error(w, store.label+" migration: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 
 	writeJSONOK(w, map[string]any{
 		"ok":                   true,
@@ -222,17 +260,25 @@ func (s *Server) handleSecurityWipePlaintext(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// channel_routing.json
-	crPath := filepath.Join(base, "channel_routing.json")
-	if ok, enc := isPlaintext(crPath); ok {
-		if enc {
-			skipped = append(skipped, crPath)
-		} else {
-			if err := secureWipe(crPath); err != nil {
-				http.Error(w, "wipe failed: "+err.Error(), http.StatusInternalServerError)
-				return
+	// Single-file JSON stores (BL334 T43b / T43g)
+	for _, rel := range []string{
+		"channel_routing.json",
+		"servers.json",
+		"skills.json",
+		"compute/nodes.json",
+		"inference/llms.json",
+	} {
+		p := filepath.Join(base, rel)
+		if ok, enc := isPlaintext(p); ok {
+			if enc {
+				skipped = append(skipped, p)
+			} else {
+				if err := secureWipe(p); err != nil {
+					http.Error(w, "wipe failed: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				wiped = append(wiped, p)
 			}
-			wiped = append(wiped, crPath)
 		}
 	}
 

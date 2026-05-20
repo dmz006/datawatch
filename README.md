@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.5.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.5.0)
+[![Release](https://img.shields.io/badge/release-v8.6.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -47,6 +47,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**v8.6.0 (2026-05-19)** — Full operational data encryption: `--secure` now covers servers.json, skills.json, compute/nodes.json, inference/llms.json, and daemon-app.log. New `datawatch security logs` command decrypts the encrypted app log. See [release notes](docs/RELEASE_NOTES_v8.6.0.md) and [CHANGELOG.md](CHANGELOG.md).
 
 **v8.5.0 (2026-05-19)** — Operational Data Encryption: `--secure` now covers discussion WAL, participants.json, and channel_routing.json. Upgrade-compatible migration on first startup. Secure wipe with manual confirmation gate. See [release notes](docs/RELEASE_NOTES_v8.5.0.md) and [CHANGELOG.md](CHANGELOG.md).
 

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"github.com/dmz006/datawatch/internal/secfile"
 	"path/filepath"
 	"sync"
 	"time"
@@ -58,14 +59,24 @@ type Store struct {
 	mu      sync.RWMutex
 	path    string
 	entries []*Entry
+	encKey  []byte // BL334 T43g — non-nil when --secure is active
 }
 
 // NewStore loads (or creates) the JSON store at <dataDir>/servers.json
 // and merges YAML-seeded entries from seeds. Seeds have Builtin=true
 // and are not written to disk.
 func NewStore(dataDir string, seeds []config.RemoteServerConfig) (*Store, error) {
+	return newStore(dataDir, seeds, nil)
+}
+
+// NewStoreEncrypted is like NewStore but encrypts servers.json with key (BL334 T43g).
+func NewStoreEncrypted(dataDir string, seeds []config.RemoteServerConfig, key []byte) (*Store, error) {
+	return newStore(dataDir, seeds, key)
+}
+
+func newStore(dataDir string, seeds []config.RemoteServerConfig, key []byte) (*Store, error) {
 	path := filepath.Join(dataDir, "servers.json")
-	s := &Store{path: path}
+	s := &Store{path: path, encKey: key}
 
 	// Load persisted runtime entries.
 	if err := s.load(); err != nil {
@@ -301,17 +312,16 @@ func (s *Store) persist() error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := secfile.WriteFile(s.path, data, 0o600, s.encKey); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	return nil
 }
 
 // load reads the persisted runtime entries from disk. If the file does
 // not exist, it initialises an empty list (not an error).
 func (s *Store) load() error {
-	data, err := os.ReadFile(s.path)
+	data, err := secfile.ReadFile(s.path, s.encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.entries = []*Entry{}

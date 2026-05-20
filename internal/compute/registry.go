@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 	"time"
 )
 
@@ -27,18 +29,28 @@ var ErrConflict = errors.New("compute node already exists")
 // Registry is the in-memory + on-disk store for ComputeNodes.
 // Goroutine-safe.
 type Registry struct {
-	mu    sync.RWMutex
-	path  string
-	nodes map[string]*Node
+	mu     sync.RWMutex
+	path   string
+	nodes  map[string]*Node
+	encKey []byte // BL334 T43g — non-nil when --secure is active
 }
 
 // NewRegistry opens / creates the JSON registry at the given path.
 // path is normally <data-dir>/compute/nodes.json.
 func NewRegistry(path string) (*Registry, error) {
+	return newRegistry(path, nil)
+}
+
+// NewRegistryEncrypted is like NewRegistry but encrypts nodes.json (BL334 T43g).
+func NewRegistryEncrypted(path string, key []byte) (*Registry, error) {
+	return newRegistry(path, key)
+}
+
+func newRegistry(path string, key []byte) (*Registry, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("compute registry: mkdir: %w", err)
 	}
-	r := &Registry{path: path, nodes: map[string]*Node{}}
+	r := &Registry{path: path, nodes: map[string]*Node{}, encKey: key}
 	if err := r.load(); err != nil {
 		return nil, err
 	}
@@ -185,7 +197,7 @@ func (r *Registry) EnsureFromStatsPeer(peerName, peerAddr, shape string) (*Node,
 
 // load reads the JSON file (if present). Missing file = empty registry.
 func (r *Registry) load() error {
-	b, err := os.ReadFile(r.path)
+	b, err := secfile.ReadFile(r.path, r.encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -219,12 +231,8 @@ func (r *Registry) persistLocked() error {
 	if err != nil {
 		return fmt.Errorf("compute registry: marshal: %w", err)
 	}
-	tmp := r.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := secfile.WriteFile(r.path, data, 0o600, r.encKey); err != nil {
 		return fmt.Errorf("compute registry: write: %w", err)
-	}
-	if err := os.Rename(tmp, r.path); err != nil {
-		return fmt.Errorf("compute registry: rename: %w", err)
 	}
 	return nil
 }

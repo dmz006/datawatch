@@ -220,3 +220,18 @@ func MigrateChannelRouting(path string, key []byte) error {
 	}
 	return nil
 }
+
+// MigrateJSONStore encrypts a single JSON file in place when --secure is
+// active. Used for servers.json, skills.json, compute/nodes.json, and
+// inference/llms.json. Safe to call on every startup — no-op when absent
+// or already encrypted.
+func MigrateJSONStore(path, label string, key []byte) error {
+	n, err := migrateFile(path, key)
+	if err != nil {
+		return fmt.Errorf("migrate %s: %w", label, err)
+	}
+	if n > 0 {
+		fmt.Printf("[migrate] Encrypted %s\n", label)
+	}
+	return nil
+}

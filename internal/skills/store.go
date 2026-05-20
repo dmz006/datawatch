@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // Registry is one place skills come from. Today only kind="git" is wired;
@@ -62,17 +64,27 @@ type Index struct {
 
 // Store persists the Index to a single JSON file. Thread-safe.
 type Store struct {
-	mu    sync.Mutex
-	path  string
-	idx   *Index
+	mu     sync.Mutex
+	path   string
+	idx    *Index
+	encKey []byte // BL334 T43g — non-nil when --secure is active
 }
 
 // NewStore opens (or creates) a skills index at path.
 func NewStore(path string) (*Store, error) {
+	return newSkillsStore(path, nil)
+}
+
+// NewStoreEncrypted is like NewStore but encrypts skills.json (BL334 T43g).
+func NewStoreEncrypted(path string, key []byte) (*Store, error) {
+	return newSkillsStore(path, key)
+}
+
+func newSkillsStore(path string, key []byte) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("create skills dir: %w", err)
 	}
-	s := &Store{path: path, idx: &Index{AvailableCache: map[string][]*AvailableSkill{}}}
+	s := &Store{path: path, idx: &Index{AvailableCache: map[string][]*AvailableSkill{}}, encKey: key}
 	if err := s.load(); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("load skills index: %w", err)
 	}
@@ -80,7 +92,7 @@ func NewStore(path string) (*Store, error) {
 }
 
 func (s *Store) load() error {
-	data, err := os.ReadFile(s.path)
+	data, err := secfile.ReadFile(s.path, s.encKey)
 	if err != nil {
 		return err
 	}
@@ -104,11 +116,7 @@ func (s *Store) save() error {
 	if err != nil {
 		return fmt.Errorf("marshal skills index: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("write skills index: %w", err)
-	}
-	return os.Rename(tmp, s.path)
+	return secfile.WriteFile(s.path, data, 0600, s.encKey)
 }
 
 // ── Registry CRUD ───────────────────────────────────────────────────────
