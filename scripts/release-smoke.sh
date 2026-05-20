@@ -67,6 +67,7 @@ SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-$(free_port)}"
 TEST_CONFIG="$TEST_WORK_DIR/test-config.yaml"
 cat > "$TEST_CONFIG" <<YAML
 data_dir: ${TEST_DATA_DIR}
+hostname: dw-smoke-test
 server:
   enabled: true
   host: 127.0.0.1
@@ -249,6 +250,9 @@ except Exception:
     kill "$TEST_DAEMON_PID" 2>/dev/null || true
     wait "$TEST_DAEMON_PID" 2>/dev/null || true
   fi
+  # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
+  tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
+    while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
   if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
     echo "Test data kept: $TEST_WORK_DIR"
   else

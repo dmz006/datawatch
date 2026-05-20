@@ -177,6 +177,10 @@ stop_test_daemon() {
     wait "$DAEMON_PID" 2>/dev/null || true
     DAEMON_PID=""
   fi
+  # Kill any tmux sessions the test daemon created (cs-dw-e2e-test-*).
+  # The hostname comes from testdata/datawatch.yaml (hostname: dw-e2e-test).
+  tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-e2e-test-' | \
+    while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
 }
 
 stop_docker_sim() {
