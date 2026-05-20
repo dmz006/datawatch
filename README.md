@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.6.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.0)
+[![Release](https://img.shields.io/badge/release-v8.6.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -48,9 +48,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.6.0](https://github.com/dmz006/datawatch/releases/tag/v8.6.0) (2026-05-20)** — The first GitHub release since v8.0.0. Covers all work from v8.1 through v8.6: compute routing modes, community registry + plugin install, Android 1.0 blockers (async PRD decompose, UnifiedPush, badge inputs), channel routing, federated file service, discussion scopes, and full operational data encryption (`--secure` now covers every file that can structurally be encrypted). 301 total E2E stories across 7 surfaces.
+**[v8.6.1](https://github.com/dmz006/datawatch/releases/tag/v8.6.1) (2026-05-20)** — Patch release. Matrix backend (BL241 P1): cleartext send/receive, alias resolution, 7-surface parity, `m.datawatch.session` tag. Fixes `ValidateSecrets` ordering bug that silently disabled Matrix for all secrets-store users. Fixes instance-scoped Claude config (BL318): test daemons no longer corrupt the production `~/.claude.json` or `~/.mcp.json`.
 
-See the [comprehensive release notes](docs/RELEASE_NOTES_v8.6.0.md) and [CHANGELOG.md](CHANGELOG.md) for the full history.
+See the [v8.6.1 release notes](docs/RELEASE_NOTES_v8.6.1.md), [v8.6.0 release notes](docs/RELEASE_NOTES_v8.6.0.md), and [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ### v8.6 highlights
 

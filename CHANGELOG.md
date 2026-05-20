@@ -3,6 +3,21 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.6.1 — BL241 patch: Matrix backend + instance-scoped Claude config (2026-05-20)
+
+### Added
+
+- **BL241 P1 — Matrix backend foundation**: cleartext send/receive, alias resolution, bridge classifier, 7-surface parity (REST, MCP, CLI, PWA, Observer status, session telemetry, E2E CI).
+- **BL241 Q5.3 — `m.datawatch.session` tag**: every outbound Matrix message carries `{"role":"output","host":"<hostname>"}` for session attribution.
+- **BL241 — Matrix integration CI** (`.github/workflows/matrix-integration.yaml`): runs `scripts/test-matrix-synapse.sh` against a real Docker Synapse instance on every Matrix-touching push.
+
+### Fixed
+
+- **BL241 — `ValidateSecrets` ordering bug**: `ValidateSecrets` was called after `ResolveConfig`, so the resolved (real) token always failed the "must use `${secret:…}` syntax" check and silently disabled the Matrix backend for all secrets-store users.
+- **BL318 — Instance-scoped Claude config**: `SweepUserScopeMCPConfig` wrote to `~/.mcp.json` and `claude mcp add` wrote to `~/.claude.json` on every session spawn. On shared hosts, a test daemon overwrote the production daemon's MCP registration. Fixed by writing to `$DATAWATCH_DATA_DIR/.mcp.json` and injecting `CLAUDE_CONFIG_DIR=$DATAWATCH_DATA_DIR/.claude` into all `claude` subprocesses.
+
+---
+
 ## v8.6.0 — BL334: Full Operational Data Encryption (2026-05-19)
 
 ### Added
