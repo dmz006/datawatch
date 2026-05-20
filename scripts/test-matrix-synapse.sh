@@ -39,8 +39,8 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-ok()   { echo -e "  ${GREEN}PASS${NC}  $*"; (( PASS++ )); }
-ko()   { echo -e "  ${RED}FAIL${NC}  $*"; (( FAIL++ )); }
+ok()   { echo -e "  ${GREEN}PASS${NC}  $*"; PASS=$(( PASS + 1 )); }
+ko()   { echo -e "  ${RED}FAIL${NC}  $*"; FAIL=$(( FAIL + 1 )); }
 skip() { echo -e "  ${YELLOW}SKIP${NC}  $*"; }
 H()    { echo ""; echo "── $* ──────────────────────────────────────"; }
 
@@ -84,8 +84,12 @@ cleanup() {
     # Stop and remove Synapse container
     docker stop dw-test-synapse 2>/dev/null || true
     docker rm   dw-test-synapse 2>/dev/null || true
-    # Remove Synapse data dir
-    [[ -n "$SYNAPSE_DATA" ]] && rm -rf "$SYNAPSE_DATA" || true
+    # Remove Synapse data dir (files may be owned by uid 991, use Docker to clean)
+    if [[ -n "$SYNAPSE_DATA" ]]; then
+      docker run --rm -v "${SYNAPSE_DATA}:/data" --entrypoint sh \
+        matrixdotorg/synapse:v1.127.1 -c "rm -rf /data/" 2>/dev/null || true
+      rm -rf "$SYNAPSE_DATA" 2>/dev/null || true
+    fi
     # Remove temp files
     rm -rf "$TMPDIR_DW"
     # Remove test binary if we built it
