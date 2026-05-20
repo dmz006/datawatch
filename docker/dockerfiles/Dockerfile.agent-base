@@ -35,6 +35,9 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY . .
+# Satisfy //go:embed in internal/docsindex — generate stub if not already present.
+RUN mkdir -p internal/docsindex/assets && \
+    [ -f internal/docsindex/assets/docs-bm25-index.json ] || echo '{}' > internal/docsindex/assets/docs-bm25-index.json
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
