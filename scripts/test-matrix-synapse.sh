@@ -108,6 +108,9 @@ SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
 BOT_PASS="$(openssl rand -hex 16)"
 BOT_MXID="@${BOT_USER}:localhost"
+# Shared secret for Synapse admin registration — avoids relying on
+# enable_registration config which has changed semantics across Synapse versions.
+REG_SECRET="dw-test-$(openssl rand -hex 12)"
 DW_PORT=19872
 
 # ── Step 1: Generate Synapse config, patch, and start ────────────────────────
@@ -119,36 +122,53 @@ docker rm -f dw-test-synapse 2>/dev/null || true
 # Create temp dir for Synapse data (owned by current user)
 SYNAPSE_DATA="$(mktemp -d -t synapse.XXXXXX)"
 
-# Generate Synapse config + signing key using the same image
-echo "Generating Synapse config…"
+# Generate signing key + log config using the Synapse image
+echo "Generating Synapse signing key and log config…"
 docker run --rm \
   -e SYNAPSE_SERVER_NAME=localhost \
   -e SYNAPSE_REPORT_STATS=no \
   -v "${SYNAPSE_DATA}:/data" \
   matrixdotorg/synapse:v1.127.1 generate 2>&1 | tail -3
 
-# Patch homeserver.yaml to enable open registration (test-only).
-# Runs as the same user as the generate step, so file permissions match.
+# Write a complete, known-good homeserver.yaml (replacing the generated one).
+# Keeps the signing key and log config created above; sets our shared secret.
+# Using Python inside the same image ensures correct file ownership (uid 991).
 docker run --rm \
   -v "${SYNAPSE_DATA}:/data" \
-  --entrypoint sh \
+  -e "REG_SECRET=${REG_SECRET}" \
+  --entrypoint python3 \
   matrixdotorg/synapse:v1.127.1 \
-  -c '
-    cfg=/data/homeserver.yaml
-    # Enable registration (uncomment or add)
-    if grep -q "^#*enable_registration:" "$cfg" 2>/dev/null; then
-      sed -i "s/^#*enable_registration: .*/enable_registration: true/" "$cfg"
-    else
-      echo "enable_registration: true" >> "$cfg"
-    fi
-    # Enable registration without email verification
-    if grep -q "^#*enable_registration_without_email_verification:" "$cfg" 2>/dev/null; then
-      sed -i "s/^#*enable_registration_without_email_verification: .*/enable_registration_without_email_verification: true/" "$cfg"
-    else
-      echo "enable_registration_without_email_verification: true" >> "$cfg"
-    fi
-    echo "Config patched: enable_registration=true"
-  '
+  -c "
+import os
+secret = os.environ['REG_SECRET']
+cfg = '''server_name: localhost
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+log_config: /data/localhost.log.config
+media_store_path: /data/media_store
+signing_key_path: /data/localhost.signing.key
+registration_shared_secret: \"''' + secret + '''\"
+enable_registration: true
+enable_registration_without_email_verification: true
+report_stats: false
+suppress_key_server_warning: true
+trusted_key_servers: []
+'''
+with open('/data/homeserver.yaml', 'w') as f:
+    f.write(cfg)
+print('homeserver.yaml written (registration_shared_secret set)')
+"
 
 # Start Synapse
 docker run -d \
@@ -179,29 +199,38 @@ ok "Synapse healthy at $SYNAPSE_URL"
 # ── Step 2: Register bot account ──────────────────────────────────────────────
 H "2. Register bot account ($BOT_MXID)"
 
-# Synapse v1.x requires a two-step registration:
-#   1. POST without auth → 401 with session ID
-#   2. POST with auth.type=m.login.dummy + session ID → 200 with access_token
-REG_INIT=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${BOT_USER}\",\"password\":\"${BOT_PASS}\"}" \
-  2>/dev/null || echo "{}")
-SESSION_ID=$(echo "$REG_INIT" | jq -r '.session // empty')
-BOT_TOKEN=$(echo "$REG_INIT" | jq -r '.access_token // empty')
+# Use Synapse's admin API with HMAC-signed nonce — more reliable than open
+# registration which has changed semantics across Synapse versions.
+BOT_TOKEN=$(python3 - <<PYEOF
+import hmac, hashlib, json, sys
+try:
+    import urllib.request as urlreq
+    SYNAPSE_URL = '${SYNAPSE_URL}'
+    SECRET = '${REG_SECRET}'
+    USERNAME = '${BOT_USER}'
+    PASSWORD = '${BOT_PASS}'
+    resp = urlreq.urlopen(f'{SYNAPSE_URL}/_synapse/admin/v1/register')
+    nonce = json.loads(resp.read())['nonce']
+    h = hmac.new(SECRET.encode(), digestmod=hashlib.sha1)
+    h.update(nonce.encode()); h.update(b'\x00')
+    h.update(USERNAME.encode()); h.update(b'\x00')
+    h.update(PASSWORD.encode()); h.update(b'\x00')
+    h.update(b'notadmin')
+    data = json.dumps({'nonce':nonce,'username':USERNAME,'password':PASSWORD,'mac':h.hexdigest()}).encode()
+    req = urlreq.Request(f'{SYNAPSE_URL}/_synapse/admin/v1/register', data=data, headers={'Content-Type':'application/json'})
+    reg = json.loads(urlreq.urlopen(req).read())
+    print(reg.get('access_token',''))
+except Exception as e:
+    print(f'ERR:{e}', file=sys.stderr)
+    sys.exit(1)
+PYEOF
+)
 
-if [[ -z "$BOT_TOKEN" ]] && [[ -n "$SESSION_ID" ]]; then
-  REG=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
-    -H 'Content-Type: application/json' \
-    -d "{\"username\":\"${BOT_USER}\",\"password\":\"${BOT_PASS}\",\"auth\":{\"type\":\"m.login.dummy\",\"session\":\"${SESSION_ID}\"}}" \
-    2>/dev/null || echo "{}")
-  BOT_TOKEN=$(echo "$REG" | jq -r '.access_token // empty')
-fi
-
-if [[ -z "$BOT_TOKEN" ]]; then
-  ko "Bot registration failed: $(echo "${REG_INIT}" | head -c 300)"
+if [[ -z "$BOT_TOKEN" ]] || [[ "$BOT_TOKEN" == ERR:* ]]; then
+  ko "Bot registration failed: $BOT_TOKEN"
   exit 1
 fi
-ok "Bot registered — token acquired"
+ok "Bot registered via admin API — token acquired"
 
 # ── Step 3: Create test room ──────────────────────────────────────────────────
 H "3. Create test room"
@@ -315,23 +344,32 @@ H "9. Inbound message from test peer"
 NIO_USER="niotestpeer"
 NIO_PASS="$(openssl rand -hex 16)"
 
-# Two-step registration for peer
-NIO_INIT=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${NIO_USER}\",\"password\":\"${NIO_PASS}\"}" \
-  2>/dev/null || echo "{}")
-NIO_SESSION=$(echo "$NIO_INIT" | jq -r '.session // empty')
-NIO_TOKEN=$(echo "$NIO_INIT" | jq -r '.access_token // empty')
+# Register peer via admin API (same as bot)
+NIO_TOKEN=$(python3 - <<PYEOF
+import hmac, hashlib, json, sys
+try:
+    import urllib.request as urlreq
+    SYNAPSE_URL = '${SYNAPSE_URL}'
+    SECRET = '${REG_SECRET}'
+    USERNAME = '${NIO_USER}'
+    PASSWORD = '${NIO_PASS}'
+    resp = urlreq.urlopen(f'{SYNAPSE_URL}/_synapse/admin/v1/register')
+    nonce = json.loads(resp.read())['nonce']
+    h = hmac.new(SECRET.encode(), digestmod=hashlib.sha1)
+    h.update(nonce.encode()); h.update(b'\x00')
+    h.update(USERNAME.encode()); h.update(b'\x00')
+    h.update(PASSWORD.encode()); h.update(b'\x00')
+    h.update(b'notadmin')
+    data = json.dumps({'nonce':nonce,'username':USERNAME,'password':PASSWORD,'mac':h.hexdigest()}).encode()
+    req = urlreq.Request(f'{SYNAPSE_URL}/_synapse/admin/v1/register', data=data, headers={'Content-Type':'application/json'})
+    reg = json.loads(urlreq.urlopen(req).read())
+    print(reg.get('access_token',''))
+except Exception as e:
+    print(f'ERR:{e}', file=sys.stderr)
+PYEOF
+)
 
-if [[ -z "$NIO_TOKEN" ]] && [[ -n "$NIO_SESSION" ]]; then
-  NIO_REG=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
-    -H 'Content-Type: application/json' \
-    -d "{\"username\":\"${NIO_USER}\",\"password\":\"${NIO_PASS}\",\"auth\":{\"type\":\"m.login.dummy\",\"session\":\"${NIO_SESSION}\"}}" \
-    2>/dev/null || echo "{}")
-  NIO_TOKEN=$(echo "$NIO_REG" | jq -r '.access_token // empty')
-fi
-
-if [[ -z "$NIO_TOKEN" ]]; then
+if [[ -z "$NIO_TOKEN" ]] || [[ "$NIO_TOKEN" == ERR:* ]]; then
   skip "Could not register nio peer — skipping inbound test"
 else
   # Join room
