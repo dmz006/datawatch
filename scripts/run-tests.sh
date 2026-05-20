@@ -43,6 +43,11 @@ mkdir -p "$TEST_DIR"
 FAILED=0
 DAEMON_PID=""
 
+# Prune stale artifacts left by runs that were SIGKILL'd or stories run standalone.
+# Anything older than 1 day is fair game; active runs are always recent.
+find /tmp -maxdepth 1 \( -name "dw-docker-sim-*" -o -name "dw-test-[0-9]*" \) -mtime +1 \
+  -exec rm -rf {} + 2>/dev/null || true
+
 # --- daemon lifecycle --------------------------------------------------------
 start_test_daemon() {
   local test_cfg="$TEST_DIR/config.yaml"
@@ -175,16 +180,23 @@ stop_test_daemon() {
 }
 
 stop_docker_sim() {
-  if [[ -n "$DOCKER_SIM_CONTAINER" ]]; then
+  # Recover names persisted by TS-160 in case env vars were lost (SIGKILL on a prior run).
+  if [[ -z "${DOCKER_SIM_CONTAINER:-}" && -n "${DOCKER_SIM_DATA:-}" && -f "$DOCKER_SIM_DATA/container.name" ]]; then
+    DOCKER_SIM_CONTAINER=$(cat "$DOCKER_SIM_DATA/container.name" 2>/dev/null || true)
+  fi
+  if [[ -z "${DOCKER_SIM_IMAGE:-}" && -n "${DOCKER_SIM_DATA:-}" && -f "$DOCKER_SIM_DATA/image.name" ]]; then
+    DOCKER_SIM_IMAGE=$(cat "$DOCKER_SIM_DATA/image.name" 2>/dev/null || true)
+  fi
+  if [[ -n "${DOCKER_SIM_CONTAINER:-}" ]]; then
     docker stop "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
     docker rm   "$DOCKER_SIM_CONTAINER" 2>/dev/null || true
     DOCKER_SIM_CONTAINER=""
   fi
-  if [[ -n "$DOCKER_SIM_IMAGE" ]]; then
+  if [[ -n "${DOCKER_SIM_IMAGE:-}" ]]; then
     docker rmi "$DOCKER_SIM_IMAGE" 2>/dev/null || true
     DOCKER_SIM_IMAGE=""
   fi
-  [[ -n "$DOCKER_SIM_DATA" ]] && rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
+  [[ -n "${DOCKER_SIM_DATA:-}" ]] && rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
 }
 
 cleanup() {
@@ -265,6 +277,10 @@ export DOCKER_SIM_HTTP="$(_fresh_port "${DOCKER_SIM_HTTP:-}")"
 export DOCKER_SIM_TLS="$(_fresh_port "${DOCKER_SIM_TLS:-}")"
 export DOCKER_SIM_MCP="$(_fresh_port "${DOCKER_SIM_MCP:-}")"
 export DOCKER_SIM_CHAN="$(_fresh_port "${DOCKER_SIM_CHAN:-}")"
+# Stable path keyed by RUN_ID so the EXIT trap can always find and remove it,
+# even after a resume. lib.sh falls back to /tmp/dw-docker-sim-$$ only when
+# this var is unset (standalone story invocation).
+export DOCKER_SIM_DATA="/tmp/dw-docker-sim-${RUN_ID}"
 export TEST_WEBHOOK_PORT="$(_fresh_port "${TEST_WEBHOOK_PORT:-}")"
 export TEST_DATA="${TEST_DATA:-${DATAWATCH_TEST_DATA}}"
 export TEST_BASE="https://127.0.0.1:$TEST_TLS_PORT"

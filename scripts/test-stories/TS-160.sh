@@ -59,6 +59,9 @@ DOCKEREOF
   DOCKER_SIM_PID=$(cat "$DOCKER_SIM_DATA/container.id")
   DOCKER_SIM_CONTAINER="$container_name"
   DOCKER_SIM_IMAGE="$image_tag"
+  # Persist names so stop_docker_sim() can recover them after a SIGKILL.
+  echo "$container_name" > "$DOCKER_SIM_DATA/container.name"
+  echo "$image_tag"      > "$DOCKER_SIM_DATA/image.name"
   echo "  Docker container: $DOCKER_SIM_CONTAINER (ports: $DOCKER_SIM_HTTP:HTTP $DOCKER_SIM_TLS:TLS)"
 
   # Wait for health — try HTTPS first (TLS enabled by default), fall back to HTTP
