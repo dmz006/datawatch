@@ -3101,6 +3101,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[secrets] built-in store ready (%s/secrets.db)\n", expandHome(cfg.DataDir))
 			}
 		}
+		// BL241 P1 — Secrets-Store Rule: validate raw config value BEFORE ResolveConfig
+		// so we check the literal string in the config file (e.g. "${secret:...}"),
+		// not the resolved token (which would never start with "${secret:").
+		if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
+			if err := matrix.ValidateSecrets(cfg.Matrix.AccessToken); err != nil {
+				fmt.Printf("[warn] Matrix disabled: %v\n", err)
+				cfg.Matrix.Enabled = false
+			}
+		}
+
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
@@ -3112,12 +3122,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 
-		// BL241 P1 — Matrix backend must start AFTER ResolveConfig so that
-		// ${secret:matrix-access-token} refs are expanded before the client is created.
-		// ValidateSecrets enforces the Secrets-Store Rule: plaintext tokens are rejected.
+		// BL241 P1 — Matrix backend starts AFTER ResolveConfig so the resolved
+		// access token (not the ${secret:...} ref) is passed to the client.
 		if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
-			if err := matrix.ValidateSecrets(cfg.Matrix.AccessToken); err != nil {
-				fmt.Printf("[error] %v\n", err)
+			// Guard: if the token is still an unresolved ref, the secrets store
+			// is missing or failed — refuse to start with a placeholder token.
+			if strings.HasPrefix(cfg.Matrix.AccessToken, "${secret:") {
+				fmt.Printf("[warn] Matrix disabled: access_token ref unresolved (no secrets store?)\n")
 			} else {
 				var matrixB *matrix.Backend
 				var matrixErr error
