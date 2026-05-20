@@ -45,6 +45,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Generate docs-bm25 stub
+        run: echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+
       - name: Build datawatch binary
         run: go build -o datawatch-test ./cmd/datawatch/
 
