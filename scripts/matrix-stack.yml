@@ -1,11 +1,11 @@
-# BL241 P1 — Matrix integration test stack.
+# BL241 P1 — Matrix integration test stack (local dev reference).
 #
-# Brings up:
-#   synapse    — Matrix homeserver (matrixdotorg/synapse:v1.127.1, open registration)
-#   nio-client — python-matrix-nio test peer that sends/receives messages
+# NOTE: The CI test script (test-matrix-synapse.sh) uses `docker run` directly
+# for reliable config generation.  This compose file is provided for local dev
+# convenience only — it is NOT used by GitHub Actions.
 #
-# Usage (via test-matrix-synapse.sh):
-#   docker compose -f scripts/matrix-stack.yml up -d
+# Usage (local dev):
+#   docker compose -f scripts/matrix-stack.yml up -d synapse
 #   docker compose -f scripts/matrix-stack.yml down -v
 #
 # The Synapse homeserver_url is http://synapse:8008 inside the Docker network,

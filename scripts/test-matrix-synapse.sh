@@ -5,33 +5,33 @@
 #   scripts/test-matrix-synapse.sh [--no-cleanup] [--datawatch-bin <path>]
 #
 # What this does:
-#   1. Starts Synapse via docker compose (scripts/matrix-stack.yml)
-#   2. Waits for Synapse health
+#   1. Generates Synapse config (explicit generate → patch → run)
+#   2. Waits for Synapse health (60s timeout)
 #   3. Registers two Matrix users: the datawatch bot + the nio test peer
 #   4. Creates a test room and invites both users
 #   5. Starts the datawatch daemon with a minimal Matrix config
-#   6. Sends a test message via `datawatch matrix test`
-#   7. Runs the nio-client to send a message from the peer side
-#   8. Verifies bidirectional delivery via the daemon audit log
+#   6. Sends a test message via POST /api/matrix/test
+#   7. Verifies outbound delivery via room timeline + m.datawatch.session (Q5.3)
+#   8. Registers a second user (peer), joins room, sends inbound message
 #   9. Tests daemon restart mid-conversation (no message loss)
 #  10. Tears down Synapse
 #
 # Exit 0 = all assertions pass; exit 1 = any failure.
 #
 # Requirements:
-#   docker, docker compose v2, curl, python3, jq
+#   docker, curl, python3, jq
 #   datawatch binary (defaults to ./datawatch built from source)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPOSE_FILE="$SCRIPT_DIR/matrix-stack.yml"
 
 DW_BIN="${DW_BIN:-}"
 NO_CLEANUP=0
 PASS=0
 FAIL=0
+SYNAPSE_DATA=""
 
 # ── colours ──────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -81,15 +81,21 @@ cleanup() {
       kill "$DW_PID" 2>/dev/null || true
       wait "$DW_PID" 2>/dev/null || true
     fi
-    # Stop Docker stack
-    docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+    # Stop and remove Synapse container
+    docker stop dw-test-synapse 2>/dev/null || true
+    docker rm   dw-test-synapse 2>/dev/null || true
+    # Remove Synapse data dir
+    [[ -n "$SYNAPSE_DATA" ]] && rm -rf "$SYNAPSE_DATA" || true
     # Remove temp files
     rm -rf "$TMPDIR_DW"
     # Remove test binary if we built it
     [[ "$DW_BIN" == *"-matrix-test" ]] && rm -f "$DW_BIN" || true
   else
     echo ""
-    echo "Skipping cleanup (--no-cleanup). Temp dir: $TMPDIR_DW"
+    echo "Skipping cleanup (--no-cleanup)."
+    echo "  Temp dir:     $TMPDIR_DW"
+    echo "  Synapse data: ${SYNAPSE_DATA:-unknown}"
+    echo "  Synapse ctr:  dw-test-synapse (still running)"
   fi
 }
 trap cleanup EXIT
@@ -98,25 +104,69 @@ SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
 BOT_PASS="$(openssl rand -hex 16)"
 BOT_MXID="@${BOT_USER}:localhost"
-ROOM_ALIAS="#dw-integration-test:localhost"
 DW_PORT=19872
 
-# ── Step 1: Start Synapse ─────────────────────────────────────────────────────
+# ── Step 1: Generate Synapse config, patch, and start ────────────────────────
 H "1. Start Synapse"
-docker compose -f "$COMPOSE_FILE" up -d synapse 2>&1 | tail -3
 
-# Wait for health
+# Remove any leftover container from a previous run
+docker rm -f dw-test-synapse 2>/dev/null || true
+
+# Create temp dir for Synapse data (owned by current user)
+SYNAPSE_DATA="$(mktemp -d -t synapse.XXXXXX)"
+
+# Generate Synapse config + signing key using the same image
+echo "Generating Synapse config…"
+docker run --rm \
+  -e SYNAPSE_SERVER_NAME=localhost \
+  -e SYNAPSE_REPORT_STATS=no \
+  -v "${SYNAPSE_DATA}:/data" \
+  matrixdotorg/synapse:v1.127.1 generate 2>&1 | tail -3
+
+# Patch homeserver.yaml to enable open registration (test-only).
+# Runs as the same user as the generate step, so file permissions match.
+docker run --rm \
+  -v "${SYNAPSE_DATA}:/data" \
+  --entrypoint sh \
+  matrixdotorg/synapse:v1.127.1 \
+  -c '
+    cfg=/data/homeserver.yaml
+    # Enable registration (uncomment or add)
+    if grep -q "^#*enable_registration:" "$cfg" 2>/dev/null; then
+      sed -i "s/^#*enable_registration: .*/enable_registration: true/" "$cfg"
+    else
+      echo "enable_registration: true" >> "$cfg"
+    fi
+    # Enable registration without email verification
+    if grep -q "^#*enable_registration_without_email_verification:" "$cfg" 2>/dev/null; then
+      sed -i "s/^#*enable_registration_without_email_verification: .*/enable_registration_without_email_verification: true/" "$cfg"
+    else
+      echo "enable_registration_without_email_verification: true" >> "$cfg"
+    fi
+    echo "Config patched: enable_registration=true"
+  '
+
+# Start Synapse
+docker run -d \
+  --name dw-test-synapse \
+  -p 8008:8008 \
+  -v "${SYNAPSE_DATA}:/data" \
+  matrixdotorg/synapse:v1.127.1 >/dev/null 2>&1
+
+# Wait for health (60 second timeout — config is already generated, so startup is fast)
 echo -n "Waiting for Synapse health"
-for i in $(seq 1 40); do
+for i in $(seq 1 60); do
   if curl -sf "${SYNAPSE_URL}/_matrix/client/versions" >/dev/null 2>&1; then
     echo " ready (${i}s)"
     break
   fi
   echo -n "."
   sleep 1
-  if [[ "$i" -eq 40 ]]; then
+  if [[ "$i" -eq 60 ]]; then
     echo ""
-    ko "Synapse did not become healthy in 40s"
+    echo "Synapse container logs (last 30 lines):"
+    docker logs dw-test-synapse 2>&1 | tail -30
+    ko "Synapse did not become healthy in 60s"
     exit 1
   fi
 done
@@ -124,24 +174,37 @@ ok "Synapse healthy at $SYNAPSE_URL"
 
 # ── Step 2: Register bot account ──────────────────────────────────────────────
 H "2. Register bot account ($BOT_MXID)"
-REG=$(curl -sf -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${BOT_USER}\",\"password\":\"${BOT_PASS}\",\"auth\":{\"type\":\"m.login.dummy\"}}" \
-  2>/dev/null || echo "{}")
 
-BOT_TOKEN=$(echo "$REG" | jq -r '.access_token // empty')
+# Synapse v1.x requires a two-step registration:
+#   1. POST without auth → 401 with session ID
+#   2. POST with auth.type=m.login.dummy + session ID → 200 with access_token
+REG_INIT=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${BOT_USER}\",\"password\":\"${BOT_PASS}\"}" \
+  2>/dev/null || echo "{}")
+SESSION_ID=$(echo "$REG_INIT" | jq -r '.session // empty')
+BOT_TOKEN=$(echo "$REG_INIT" | jq -r '.access_token // empty')
+
+if [[ -z "$BOT_TOKEN" ]] && [[ -n "$SESSION_ID" ]]; then
+  REG=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"${BOT_USER}\",\"password\":\"${BOT_PASS}\",\"auth\":{\"type\":\"m.login.dummy\",\"session\":\"${SESSION_ID}\"}}" \
+    2>/dev/null || echo "{}")
+  BOT_TOKEN=$(echo "$REG" | jq -r '.access_token // empty')
+fi
+
 if [[ -z "$BOT_TOKEN" ]]; then
-  ko "Bot registration failed: $REG"
+  ko "Bot registration failed: $(echo "${REG_INIT}" | head -c 300)"
   exit 1
 fi
 ok "Bot registered — token acquired"
 
 # ── Step 3: Create test room ──────────────────────────────────────────────────
-H "3. Create test room ($ROOM_ALIAS)"
+H "3. Create test room"
 ROOM=$(curl -sf -X POST "${SYNAPSE_URL}/_matrix/client/v3/createRoom" \
   -H "Authorization: Bearer $BOT_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"preset\":\"public_chat\",\"room_alias_name\":\"dw-integration-test\",\"name\":\"Datawatch Integration Test\"}" \
+  -d '{"preset":"public_chat","room_alias_name":"dw-integration-test","name":"Datawatch Integration Test"}' \
   2>/dev/null || echo "{}")
 
 ROOM_ID=$(echo "$ROOM" | jq -r '.room_id // empty')
@@ -193,7 +256,7 @@ for i in $(seq 1 30); do
   if [[ "$i" -eq 30 ]]; then
     echo ""
     ko "Daemon did not become healthy in 30s"
-    cat "$TMPDIR_DW/daemon.log" | tail -20
+    tail -20 "$TMPDIR_DW/daemon.log"
     exit 1
   fi
 done
@@ -224,7 +287,7 @@ else
 fi
 
 # ── Step 8: Verify outbound message in room timeline ─────────────────────────
-H "8. Verify outbound message appears in room timeline"
+H "8. Verify outbound message + m.datawatch.session (Q5.3)"
 sleep 2  # let the event settle
 MSGS=$(curl -sf -H "Authorization: Bearer $BOT_TOKEN" \
   "${SYNAPSE_URL}/_matrix/client/v3/rooms/${ROOM_ID}/messages?dir=b&limit=10" \
@@ -232,7 +295,7 @@ MSGS=$(curl -sf -H "Authorization: Bearer $BOT_TOKEN" \
 if echo "$MSGS" | jq -r '.chunk[].content.body' 2>/dev/null | grep -q "datawatch-integration-test-outbound"; then
   ok "Outbound message found in room timeline"
 else
-  ko "Outbound message NOT found in room timeline: $(echo "$MSGS" | jq -r '.chunk[].content.body' 2>/dev/null | head -5)"
+  ko "Outbound message NOT found: $(echo "$MSGS" | jq -r '.chunk[].content.body' 2>/dev/null | head -5)"
 fi
 
 # Verify m.datawatch.session field (Q5.3)
@@ -243,15 +306,27 @@ else
   ko "Q5.3 — m.datawatch.session missing or wrong role: '$DW_SESSION'"
 fi
 
-# ── Step 9: Inbound message (nio peer → room) ─────────────────────────────────
-H "9. Inbound message from test peer (nio client)"
+# ── Step 9: Inbound message (peer → room) ─────────────────────────────────────
+H "9. Inbound message from test peer"
 NIO_USER="niotestpeer"
 NIO_PASS="$(openssl rand -hex 16)"
-NIO_REG=$(curl -sf -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
+
+# Two-step registration for peer
+NIO_INIT=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${NIO_USER}\",\"password\":\"${NIO_PASS}\",\"auth\":{\"type\":\"m.login.dummy\"}}" \
+  -d "{\"username\":\"${NIO_USER}\",\"password\":\"${NIO_PASS}\"}" \
   2>/dev/null || echo "{}")
-NIO_TOKEN=$(echo "$NIO_REG" | jq -r '.access_token // empty')
+NIO_SESSION=$(echo "$NIO_INIT" | jq -r '.session // empty')
+NIO_TOKEN=$(echo "$NIO_INIT" | jq -r '.access_token // empty')
+
+if [[ -z "$NIO_TOKEN" ]] && [[ -n "$NIO_SESSION" ]]; then
+  NIO_REG=$(curl -s -X POST "${SYNAPSE_URL}/_matrix/client/v3/register" \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"${NIO_USER}\",\"password\":\"${NIO_PASS}\",\"auth\":{\"type\":\"m.login.dummy\",\"session\":\"${NIO_SESSION}\"}}" \
+    2>/dev/null || echo "{}")
+  NIO_TOKEN=$(echo "$NIO_REG" | jq -r '.access_token // empty')
+fi
+
 if [[ -z "$NIO_TOKEN" ]]; then
   skip "Could not register nio peer — skipping inbound test"
 else
