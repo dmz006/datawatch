@@ -1224,5 +1224,19 @@
   "decompose_in_progress": "PRD wird zerlegt...",
   "decompose_story_count": "{{count}} Stories generiert",
   "decompose_error": "Zerlegung fehlgeschlagen",
-  "decompose_reconnecting": "Verbindung wird wiederhergestellt..."
+  "decompose_reconnecting": "Verbindung wird wiederhergestellt...",
+  "comm_matrix_title": "Matrix",
+  "comm_matrix_enabled": "Matrix aktivieren",
+  "comm_matrix_homeserver": "Homeserver-URL",
+  "comm_matrix_user_id": "Bot-Benutzer-ID",
+  "comm_matrix_access_token": "Zugriffstoken",
+  "comm_matrix_room_id": "Raum-ID oder Alias",
+  "comm_matrix_auto_manage": "Raum automatisch verwalten",
+  "comm_matrix_status_label": "Matrix",
+  "comm_matrix_status_connected": "Verbunden",
+  "comm_matrix_status_disconnected": "Nicht verbunden",
+  "comm_matrix_test_button": "Testnachricht senden",
+  "comm_matrix_test_success": "Testnachricht gesendet",
+  "comm_matrix_test_error": "Test fehlgeschlagen",
+  "comm_matrix_setup_hint": "Führen Sie 'datawatch setup matrix' aus"
 }

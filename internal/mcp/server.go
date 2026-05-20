@@ -613,6 +613,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL316 S2 — federation peer and group tools.
 	s.RegisterFederationTools()
 
+	// BL241 P1 — Matrix backend status + test.
+	mcpSrv.AddTool(s.toolMatrixStatus(), tracked(s.handleMatrixStatus))
+	mcpSrv.AddTool(s.toolMatrixTest(), tracked(s.handleMatrixTest))
+
 	return s
 }
 

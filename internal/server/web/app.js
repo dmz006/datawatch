@@ -6043,7 +6043,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); }
+  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); loadMatrixPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -6874,6 +6874,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL241 — Matrix status card (Settings → Comms) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('matrix_status', t('comm_matrix_title')||'Matrix', 'messaging-backends.md#matrix')}
+          <div id="settings-sec-matrix_status" style="${secContent('matrix_status')}">
+            <div id="matrixStatusPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+          </div>
+        </div>
+
         <!-- BL247 — Orchestrator moved from standalone tab to card in Automata tab -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('orchestrator_graphs', 'Automata Orchestrator', 'architecture.md')}
@@ -6967,7 +6975,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); } // BL312 S2 / BL316 S2 / BL330
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); loadMatrixPanel(); } // BL312 S2 / BL316 S2 / BL330 / BL241
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -12220,7 +12228,7 @@ const BACKEND_FIELDS = {
   telegram:       [{ key:'token', label:'Bot Token', type:'password' }, { key:'chat_id', label:'Chat ID', type:'text' }, { key:'auto_manage_group', label:'Auto-manage group', type:'checkbox' }],
   discord:        [{ key:'token', label:'Bot Token', type:'password' }, { key:'channel_id', label:'Channel ID', type:'text' }, { key:'auto_manage_channel', label:'Auto-manage channel', type:'checkbox' }],
   slack:          [{ key:'token', label:'OAuth Bot Token', type:'password' }, { key:'channel_id', label:'Channel ID', type:'text' }, { key:'auto_manage_channel', label:'Auto-manage channel', type:'checkbox' }],
-  matrix:         [{ key:'homeserver', label:'Homeserver URL', type:'text' }, { key:'user_id', label:'User ID (@bot:host)', type:'text' }, { key:'access_token', label:'Access Token', type:'password' }, { key:'room_id', label:'Room ID', type:'text' }, { key:'auto_manage_room', label:'Auto-manage room', type:'checkbox' }],
+  matrix:         [{ key:'homeserver', label:'Homeserver URL', type:'text' }, { key:'user_id', label:'User ID (@bot:host)', type:'text' }, { key:'access_token', label:'Access Token', type:'password', placeholder:'${secret:matrix-access-token}' }, { key:'room_id', label:'Room ID or Alias', type:'text', placeholder:'!roomid:matrix.org or #alias:matrix.org' }, { key:'auto_manage_room', label:'Auto-manage room', type:'checkbox' }, { key:'device_id', label:'Device ID (optional)', type:'text' }, { key:'device_name', label:'Device Name (optional)', type:'text' }],
   ntfy:           [{ key:'server_url', label:'Server URL', type:'text', placeholder:'https://ntfy.sh' }, { key:'topic', label:'Topic', type:'text' }, { key:'token', label:'Token (optional)', type:'password' }],
   email:          [{ key:'host', label:'SMTP Host', type:'text' }, { key:'port', label:'Port', type:'number', placeholder:'587' }, { key:'username', label:'Username', type:'text' }, { key:'password', label:'Password', type:'password' }, { key:'from', label:'From Address', type:'text' }, { key:'to', label:'To Address', type:'text' }],
   twilio:         [{ key:'account_sid', label:'Account SID', type:'text' }, { key:'auth_token', label:'Auth Token', type:'password' }, { key:'from_number', label:'From Number', type:'text' }, { key:'to_number', label:'To Number', type:'text' }, { key:'webhook_addr', label:'Webhook Addr', type:'text', placeholder:'127.0.0.1:9003' }],
@@ -20798,6 +20806,51 @@ window.pushSendTest = function() {
   apiFetch('/api/push/notify', { method: 'POST', body: JSON.stringify({ title: 'Datawatch test', message: 'Push notification test from Settings' }) })
     .then(() => showToast('Test notification sent', 'success', 2000))
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL241 Matrix status panel ────────────────────────────────────────────────
+
+function loadMatrixPanel() {
+  const el = document.getElementById('matrixStatusPanel');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  apiFetch('/api/matrix/status').then(data => {
+    const panel = document.getElementById('matrixStatusPanel');
+    if (!panel) return;
+    if (!data || !data.enabled) {
+      panel.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">${t('comm_matrix_setup_hint')||'Matrix not configured. See Communication Configuration above.'}</div>`;
+      return;
+    }
+    const connected = data.connected;
+    const statusLabel = connected ? (t('comm_matrix_status_connected')||'Connected') : (t('comm_matrix_status_disconnected')||'Disconnected');
+    const statusColor = connected ? 'var(--success,#10b981)' : 'var(--error,#ef4444)';
+    panel.innerHTML = `
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};flex-shrink:0;"></span>
+        <span style="font-size:13px;color:${statusColor};">${escHtml(statusLabel)}</span>
+      </div>
+      ${data.homeserver ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('comm_matrix_homeserver')||'Homeserver')}: <span style="color:var(--text);">${escHtml(data.homeserver)}</span></div>` : ''}
+      ${data.user_id ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('comm_matrix_user_id')||'User ID')}: <span style="color:var(--text);">${escHtml(data.user_id)}</span></div>` : ''}
+      ${data.room_id ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(t('comm_matrix_room_id')||'Room')}: <span style="color:var(--text);">${escHtml(data.room_id)}</span></div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="matrixSendTest()">
+          ${t('comm_matrix_test_button')||'Send test message'}
+        </button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="loadMatrixPanel()">
+          ${t('refresh')||'Refresh'}
+        </button>
+      </div>`;
+  }).catch(err => {
+    const panel = document.getElementById('matrixStatusPanel');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadMatrixPanel = loadMatrixPanel;
+
+window.matrixSendTest = function() {
+  apiFetch('/api/matrix/test', { method: 'POST', body: JSON.stringify({}) })
+    .then(() => showToast(t('comm_matrix_test_success')||'Test message sent', 'success', 2000))
+    .catch(e => showToast(t('comm_matrix_test_error')||String(e.message||e), 'error'));
 };
 
 // ── BL220-G15 Orchestrator panel ──────────────────────────────────────────────

@@ -712,15 +712,46 @@ type TelegramConfig struct {
 }
 
 // MatrixConfig holds Matrix homeserver configuration.
+// AccessToken MUST be a ${secret:name} reference per the Secrets-Store Rule
+// (BL241). Plaintext tokens are rejected at config-load time.
 type MatrixConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Homeserver  string `yaml:"homeserver"`
-	UserID      string `yaml:"user_id"`
-	AccessToken string `yaml:"access_token"`
-	RoomID      string `yaml:"room_id"`
+	Enabled     bool   `yaml:"enabled" json:"enabled"`
+	Homeserver  string `yaml:"homeserver" json:"homeserver"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	// AccessToken must use ${secret:matrix-access-token} syntax.
+	AccessToken string `yaml:"access_token" json:"access_token,omitempty"`
+	RoomID      string `yaml:"room_id" json:"room_id"`
 	// AutoManageRoom creates a room named after hostname if RoomID is empty.
-	AutoManageRoom bool `yaml:"auto_manage_room"`
+	AutoManageRoom bool              `yaml:"auto_manage_room" json:"auto_manage_room"`
+	DeviceID       string            `yaml:"device_id,omitempty" json:"device_id,omitempty"`
+	DeviceName     string            `yaml:"device_name,omitempty" json:"device_name,omitempty"`
+	Encryption     MatrixEncryptionCfg `yaml:"encryption,omitempty" json:"encryption,omitempty"`
+	AS             MatrixASCfg         `yaml:"application_service,omitempty" json:"application_service,omitempty"`
+	// Bridges is reserved for v2 per-bridge ACL/policy config (BL241 out-of-scope).
+	Bridges MatrixBridgesCfg `yaml:"bridges,omitempty" json:"bridges,omitempty"`
 }
+
+// MatrixEncryptionCfg controls E2EE behaviour (BL241 P2+).
+type MatrixEncryptionCfg struct {
+	// Mode: "cleartext" (default), "warn" (log warning + skip encrypted rooms),
+	// or "required" (reject rooms without encryption — P2+ only).
+	Mode      string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	CryptoStore string `yaml:"crypto_store,omitempty" json:"crypto_store,omitempty"`
+}
+
+// MatrixASCfg holds Application Service registration config.
+type MatrixASCfg struct {
+	Enabled          bool   `yaml:"enabled" json:"enabled"`
+	RegistrationFile string `yaml:"registration_file,omitempty" json:"registration_file,omitempty"`
+	// ASToken and HSToken must use ${secret:name} syntax per the Secrets-Store Rule.
+	ASToken    string `yaml:"as_token,omitempty" json:"as_token,omitempty"`
+	HSToken    string `yaml:"hs_token,omitempty" json:"hs_token,omitempty"`
+	Namespace  string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+	ListenAddr string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
+}
+
+// MatrixBridgesCfg is reserved for v2 per-bridge policy (empty in v1).
+type MatrixBridgesCfg struct{}
 
 // SecretsConfig (BL242) — centralized secrets manager backend selection.
 // BL267 (v6.15.0) — Vault backend added; per-secret backend via Secret.Backend

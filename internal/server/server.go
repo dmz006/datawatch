@@ -455,6 +455,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/tooling/status", api.handleToolingStatus)
 	apiMux.HandleFunc("/api/tooling/gitignore", api.handleToolingGitignore)
 	apiMux.HandleFunc("/api/tooling/cleanup", api.handleToolingCleanup)
+
+	// BL241 — Matrix backend status + test.
+	apiMux.HandleFunc("/api/matrix/status", api.handleMatrixStatus)
+	apiMux.HandleFunc("/api/matrix/test", api.handleMatrixTest)
 	// Serve TLS certificate for easy install on mobile devices.
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.
@@ -593,6 +597,9 @@ func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers
 // that encrypt discussion WAL, participants, and channel routing (BL334 T43a).
 func (s *HTTPServer) SetEncKey(key []byte) { s.api.SetEncKey(key) }
+
+// SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints (BL241).
+func (s *HTTPServer) SetMatrixBackend(b matrixBackendAPI) { s.api.SetMatrixBackend(b) }
 
 // SetCmdLibrary wires a command library into the server for /api/commands.
 func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {

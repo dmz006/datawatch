@@ -325,6 +325,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newPushCmd(),       // BL330 — UnifiedPush registration management
 		newFilesCmd(),      // BL333 — federated file service
 		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
+		newMatrixCmd(),     // BL241 — Matrix backend status + test
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2476,15 +2477,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
-	// Matrix
+	// Matrix (BL241 P1)
 	if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
-		matrixB, err := matrix.New(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.RoomID)
-		if err != nil {
-			fmt.Printf("[warn] Matrix backend: %v\n", err)
+		var matrixB *matrix.Backend
+		var matrixErr error
+		if cfg.Matrix.DeviceID != "" {
+			matrixB, matrixErr = matrix.NewWithDevice(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.DeviceID, cfg.Matrix.RoomID)
+		} else {
+			matrixB, matrixErr = matrix.New(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.RoomID)
+		}
+		if matrixErr != nil {
+			fmt.Printf("[warn] Matrix backend: %v\n", matrixErr)
 		} else {
 			defer matrixB.Close() //nolint:errcheck
 			r := newRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB)
 			routers = append(routers, r)
+			// Wire into HTTPServer for /api/matrix/status and /api/matrix/test.
+			httpServer.SetMatrixBackend(matrixB)
 			fmt.Printf("[%s] Matrix backend enabled (room: %s)\n", cfg.Hostname, cfg.Matrix.RoomID)
 			wg.Add(1)
 			go func() {
@@ -9621,11 +9630,16 @@ func runSetupSlack(_ *cobra.Command, _ []string) error {
 // ---- setup matrix ----------------------------------------------------------
 
 func newSetupMatrixCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "matrix",
 		Short: "Configure Matrix homeserver",
 		RunE:  runSetupMatrix,
 	}
+	cmd.AddCommand(
+		newSetupMatrixCreateAccountCmd(), // BL241 P1 — bot registration
+		newSetupMatrixASRegisterCmd(),    // BL241 P1 — AS registration.yaml
+	)
+	return cmd
 }
 
 func runSetupMatrix(_ *cobra.Command, _ []string) error {
@@ -9653,6 +9667,189 @@ func runSetupMatrix(_ *cobra.Command, _ []string) error {
 	}
 	fmt.Println("Matrix backend configured. Start the daemon with: datawatch start")
 	return nil
+}
+
+// ---- setup matrix create-account / as-register (BL241 P1) -----------------
+
+func newSetupMatrixCreateAccountCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create-account",
+		Short: "Create a Matrix bot account on a homeserver with open registration",
+		Long: `Registers a new bot account on a Matrix homeserver that allows open registration
+(typically a self-hosted Synapse). Stores the access token in the secrets store
+and writes the MXID + ${secret:matrix-access-token} reference into config.
+
+For closed homeservers (matrix.org, most self-hosted), create an account in
+Element first and then run 'datawatch setup matrix' to paste the token.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := setupLoadOrInit()
+			if err != nil {
+				return err
+			}
+			reader := bufio.NewReader(os.Stdin)
+			homeserver := cliPrompt(reader, "Homeserver URL (e.g. https://synapse.example.com)", cfg.Matrix.Homeserver)
+			username := cliPrompt(reader, "Desired username (localpart, e.g. datawatch-bot)", "")
+			if username == "" {
+				return fmt.Errorf("username required")
+			}
+			password, err := matrix.GeneratePassword()
+			if err != nil {
+				return fmt.Errorf("generate password: %w", err)
+			}
+			fmt.Printf("Registering @%s:%s ...\n", username, extractHost(homeserver))
+			creds, err := matrix.Register(cmd.Context(), homeserver, username, password)
+			if err != nil {
+				if err == matrix.ErrRegistrationClosed {
+					fmt.Println("ERROR:", err)
+					fmt.Println("\nAlternative: run 'datawatch setup matrix' to paste an existing token.")
+					return nil
+				}
+				return err
+			}
+			fmt.Printf("Registered: %s\n", creds.MXID)
+			// Store access token in secrets store; write reference in config.
+			cfg.Matrix.Homeserver = homeserver
+			cfg.Matrix.UserID = creds.MXID
+			cfg.Matrix.DeviceID = creds.DeviceID
+			cfg.Matrix.AccessToken = "${secret:matrix-access-token}"
+			cfg.Matrix.Enabled = true
+			// Try to store via secrets API if daemon is running.
+			if err2 := storeSecretIfDaemonRunning("matrix-access-token", creds.AccessToken, cfg); err2 != nil {
+				fmt.Printf("Daemon not running; storing token in config directly (run 'datawatch secrets set matrix-access-token <token>' once daemon is started)\n")
+				cfg.Matrix.AccessToken = creds.AccessToken
+			}
+			if err := setupSave(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("Matrix account configured. MXID: %s\n", creds.MXID)
+			fmt.Println("Now run: datawatch setup matrix  (to set the room ID)")
+			return nil
+		},
+	}
+}
+
+func newSetupMatrixASRegisterCmd() *cobra.Command {
+	var outputPath string
+	cmd := &cobra.Command{
+		Use:   "as-register",
+		Short: "Generate registration.yaml for Matrix Application Service mode",
+		Long: `Generates a registration.yaml that must be added to the homeserver's
+app_service_config_files list. After adding it, enable AS mode in config:
+  matrix:
+    application_service:
+      enabled: true
+      registration_file: /path/to/registration.yaml`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := setupLoadOrInit()
+			if err != nil {
+				return err
+			}
+			reader := bufio.NewReader(os.Stdin)
+			homeserver := cliPrompt(reader, "Homeserver URL", cfg.Matrix.Homeserver)
+			callbackURL := cliPrompt(reader, "Callback URL (where homeserver will POST events)", "http://localhost:29333")
+			asToken, hsToken, err := matrix.GenerateTokens()
+			if err != nil {
+				return fmt.Errorf("generate tokens: %w", err)
+			}
+			asCfg := matrix.ASConfig{
+				Homeserver:  homeserver,
+				ASID:        "datawatch",
+				Namespace:   "@datawatch_.*",
+				ASToken:     asToken,
+				HSToken:     hsToken,
+				CallbackURL: callbackURL,
+				ListenAddr:  ":29333",
+			}
+			if outputPath == "" {
+				outputPath = "registration.yaml"
+			}
+			if err := matrix.WriteRegistrationFile(outputPath, asCfg); err != nil {
+				return fmt.Errorf("write registration.yaml: %w", err)
+			}
+			fmt.Printf("Written: %s\n", outputPath)
+			fmt.Printf("\nAdd to your homeserver config:\n  app_service_config_files:\n    - %s\n", outputPath)
+			fmt.Printf("\nThen add to datawatch config:\n  matrix:\n    application_service:\n      enabled: true\n      registration_file: %s\n      as_token: ${secret:matrix-as-token}\n      hs_token: ${secret:matrix-hs-token}\n", outputPath)
+			fmt.Printf("\nStore the tokens:\n  datawatch secrets set matrix-as-token %s\n  datawatch secrets set matrix-hs-token %s\n", asToken, hsToken)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&outputPath, "output", "registration.yaml", "Output path for registration.yaml")
+	return cmd
+}
+
+// storeSecretIfDaemonRunning tries to POST to the local daemon's secrets API.
+// Returns an error if the daemon is not running or the store fails.
+func storeSecretIfDaemonRunning(name, value string, cfg *config.Config) error {
+	port := 8080
+	if cfg != nil && cfg.Server.Port != 0 {
+		port = cfg.Server.Port
+	}
+	url := fmt.Sprintf("http://localhost:%d/api/secrets", port)
+	body := fmt.Sprintf(`{"name":%q,"value":%q}`, name, value)
+	resp, err := http.Post(url, "application/json", strings.NewReader(body)) //nolint:gosec
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("daemon returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// extractHost extracts the hostname from a URL like https://matrix.org → matrix.org.
+func extractHost(u string) string {
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	if idx := strings.IndexByte(u, '/'); idx >= 0 {
+		u = u[:idx]
+	}
+	return u
+}
+
+// ---- matrix top-level command (BL241) -------------------------------------
+
+func newMatrixCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "matrix",
+		Short: "Matrix backend management",
+	}
+	cmd.AddCommand(
+		newMatrixStatusCmd(),
+		newMatrixTestCmd(),
+	)
+	return cmd
+}
+
+func newMatrixStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show Matrix backend connection status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonGet("/api/matrix/status")
+		},
+	}
+}
+
+func newMatrixTestCmd() *cobra.Command {
+	var room, message string
+	c := &cobra.Command{
+		Use:   "test",
+		Short: "Send a test message via the Matrix backend",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]interface{}{}
+			if room != "" {
+				body["room"] = room
+			}
+			if message != "" {
+				body["message"] = message
+			}
+			return daemonJSON(http.MethodPost, "/api/matrix/test", body)
+		},
+	}
+	c.Flags().StringVar(&room, "room", "", "Target room ID or alias (default: configured room)")
+	c.Flags().StringVar(&message, "message", "", "Message to send (default: test message)")
+	return c
 }
 
 // ---- setup twilio ----------------------------------------------------------

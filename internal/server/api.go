@@ -403,11 +403,28 @@ type Server struct {
 	// (discussion WAL, participants, channel routing). Must be zeroed on
 	// daemon exit; main.go owns the zero via defer.
 	encKey []byte
+
+	// BL241 — Matrix backend handle (nil when Matrix is not configured).
+	// Used by /api/matrix/status and /api/matrix/test.
+	matrixBackend matrixBackendAPI
+}
+
+// matrixBackendAPI is the minimal interface the REST handlers need from the
+// Matrix backend. Keeping it small avoids a hard dependency on the matrix
+// package from the server package.
+type matrixBackendAPI interface {
+	Name() string
+	Send(recipient, message string) error
+	SelfID() string
 }
 
 // SetEncKey wires the Argon2id-derived key so file-persisted handlers can
 // encrypt their data when --secure is active. Pass nil to disable encryption.
 func (s *Server) SetEncKey(key []byte) { s.encKey = key }
+
+// SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints.
+// Pass nil to disable (handlers return 503).
+func (s *Server) SetMatrixBackend(b matrixBackendAPI) { s.matrixBackend = b }
 
 // SetSmokeForward wires the cross-instance smoke-progress forwarder (#54).
 func (s *Server) SetSmokeForward(url, token string) {
@@ -6473,4 +6490,70 @@ func (s *Server) handleToolingCleanup(w http.ResponseWriter, r *http.Request) {
 		"backend":     req.Backend,
 		"removed":     removed,
 	})
+}
+
+// ---------------------------------------------------------------------------
+// BL241 — Matrix status + test endpoints
+// ---------------------------------------------------------------------------
+
+// handleMatrixStatus handles GET /api/matrix/status.
+// Returns the current Matrix backend state: enabled, connected MXID,
+// homeserver, room, and whether the backend is active.
+func (s *Server) handleMatrixStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	status := map[string]interface{}{
+		"enabled":    false,
+		"connected":  false,
+		"homeserver": "",
+		"user_id":    "",
+		"room_id":    "",
+		"mode":       "bot",
+	}
+	if s.cfg != nil {
+		status["enabled"] = s.cfg.Matrix.Enabled
+		status["homeserver"] = s.cfg.Matrix.Homeserver
+		status["user_id"] = s.cfg.Matrix.UserID
+		status["room_id"] = s.cfg.Matrix.RoomID
+		if s.cfg.Matrix.AS.Enabled {
+			status["mode"] = "application-service"
+		}
+	}
+	if s.matrixBackend != nil {
+		status["connected"] = true
+		status["self_id"] = s.matrixBackend.SelfID()
+	}
+	writeJSONOK(w, status)
+}
+
+// handleMatrixTest handles POST /api/matrix/test.
+// Sends a test message to the configured room and reports success/failure.
+func (s *Server) handleMatrixTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.matrixBackend == nil {
+		http.Error(w, `{"error":"matrix backend not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Room    string `json:"room"`
+		Message string `json:"message"`
+	}
+	if r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	if body.Message == "" {
+		body.Message = "datawatch test message"
+	}
+	if err := s.matrixBackend.Send(body.Room, body.Message); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	writeJSONOK(w, map[string]interface{}{"ok": true, "message": body.Message})
 }

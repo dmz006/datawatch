@@ -1224,5 +1224,19 @@
   "decompose_in_progress": "Décomposition du PRD...",
   "decompose_story_count": "{{count}} stories générées",
   "decompose_error": "Échec de la décomposition",
-  "decompose_reconnecting": "Reconnexion..."
+  "decompose_reconnecting": "Reconnexion...",
+  "comm_matrix_title": "Matrix",
+  "comm_matrix_enabled": "Activer Matrix",
+  "comm_matrix_homeserver": "URL du homeserver",
+  "comm_matrix_user_id": "ID utilisateur du bot",
+  "comm_matrix_access_token": "Jeton d'accès",
+  "comm_matrix_room_id": "ID ou alias de salon",
+  "comm_matrix_auto_manage": "Gérer automatiquement le salon",
+  "comm_matrix_status_label": "Matrix",
+  "comm_matrix_status_connected": "Connecté",
+  "comm_matrix_status_disconnected": "Non connecté",
+  "comm_matrix_test_button": "Envoyer un message test",
+  "comm_matrix_test_success": "Message test envoyé",
+  "comm_matrix_test_error": "Test échoué",
+  "comm_matrix_setup_hint": "Exécutez 'datawatch setup matrix' pour configurer"
 }
