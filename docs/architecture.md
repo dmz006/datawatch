@@ -1,6 +1,6 @@
 # Architecture
 
-> **Doc-alignment audit:** last refreshed for **v8.0.0** (2026-05-19). The package list below is authoritative. Subsystems added since the original v3.x cut (autonomous, orchestrator, observer, plugins, agents, channel, federation, compute, inference) are listed at the end.
+> **Doc-alignment audit:** last refreshed for **v8.6.0** (2026-05-19). The package list below is authoritative. Subsystems added since the original v3.x cut (autonomous, orchestrator, observer, plugins, agents, channel, federation, compute, inference) are listed at the end.
 
 ## Component Overview
 

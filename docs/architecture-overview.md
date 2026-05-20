@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Doc-alignment audit:** last refreshed for **v8.0.0** (2026-05-19). The Mermaid diagram below remains the canonical "one-screen" view; the **v5.x / v6.x / v7.x / v8.x deltas** sections at the bottom of this page enumerate every subsystem added since the original cut and point at the howto / API reference for each.
+> **Doc-alignment audit:** last refreshed for **v8.6.0** (2026-05-19). The Mermaid diagram below remains the canonical "one-screen" view; the **v5.x / v6.x / v7.x / v8.x deltas** sections at the bottom of this page enumerate every subsystem added since the original cut and point at the howto / API reference for each.
 
 Top-level map of every interface, subsystem, and data path in datawatch.
 
@@ -433,7 +433,7 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 
 ---
 
-## v8.x deltas (v8.0 → v8.3)
+## v8.x deltas (v8.0 → v8.6)
 
 | Subsystem | Shipped | Reference |
 |-----------|---------|-----------|
@@ -456,6 +456,8 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 | `comms-channel-agent` builtin group — 14th federation capability group | v8.3.0 | [docs/datawatch-definitions.md](datawatch-definitions.md) |
 | Federated file service (BL333) — `POST/DELETE /api/files`, peers/discussions subdirs, `files_upload/delete/meta` MCP | v8.3.0 | [howto/file-service.md](howto/file-service.md) |
 | Discussion scopes + federated sync (BL332) — `ScopeDiscussion` constant, WAL-backed `/api/memory/discussion/*`, async participant fan-out, 60/min throttle, conflict detect + resolve | v8.4.0 | [howto/discussion-scopes.md](howto/discussion-scopes.md) |
+| Operational data encryption Part 1 (BL334 T43a–T43e) — `--secure` covers `channel_routing.json`, discussion WAL (per-line ENC: prefix), `participants.json`; security REST + CLI + secure-wipe | v8.5.0 | [docs/encryption.md](encryption.md) |
+| Operational data encryption Part 2 (BL334 T43g–T43h) — `--secure` covers `servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json`, `daemon-app.log` (DWLOG1 append); `datawatch security logs` CLI; upgrade migration via `secfile.MigrateJSONStore` | v8.6.0 | [docs/encryption.md](encryption.md) |
 
 ---
 

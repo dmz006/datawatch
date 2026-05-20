@@ -40,18 +40,29 @@ single source of truth.
 
 ## Current state — 2026-05-19
 
-Latest release: **v8.1.5** (released 2026-05-19). Patch series fixing session termination (OneShot CBAC), xterm keyboard layout (iOS visualViewport), tmux view-full keyboard offset, voice Send button i18n.
+Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full operational data encryption — every file that can be encrypted with the `--secure` Argon2id key now is. `daemon-app.log` append-mode fix. E2E green (1 pre-existing TS-065 assertion fixed).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 7 | BL327–BL333 — v8.2.0/8.3.0/8.4.0 sprint plan filed 2026-05-19 |
+| Active backlog | 0 | BL327–BL334 all delivered v8.2.0–v8.6.0 |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
-| Recently closed | BL316–BL326 + S14b ✅ v7.3.0–v8.1.0 | CBAC, routing, adapters, E2E infra, community registry, mic popup, alert rules |
+| Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
-| GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328, GH#75→BL329, GH#76→BL330, GH#72→BL331, GH#68+69→BL332, GH#70→BL333+community | |
+| GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 open (PWA browser E2E, future sprint) | |
+
+v8.6.0 shipped 2026-05-19 (committed; publish pending) — closes BL334 T43g (servers.json, skills.json, compute/nodes.json, inference/llms.json encryption) and T43h (daemon-app.log DWLOG1 encryption + `datawatch security logs` CLI). Append-mode fix for `daemon-app.log` (logs survive restarts). TS-065 E2E assertion loosened (skill_load returns markdown string, not dict).
+
+v8.5.0 shipped 2026-05-19 — closes BL334 T43a–T43f: channel_routing.json, discussion WAL (per-line ENC:), participants.json, startup migration, security REST endpoints + CLI + secure-wipe.
+
+v8.4.0 shipped 2026-05-19 — closes BL332 (discussion scopes: WAL-backed federated memory, participant fan-out, conflict detect + resolve, MCP + CLI + PWA surfaces).
+
+v8.3.0 shipped 2026-05-19 — closes BL331 (channel-address federation router, `comms-channel-agent` group), BL333 (federated file service).
+
+v8.2.0 shipped 2026-05-19 — closes BL327 (badge/chip multi-select), BL328 (async PRD decompose + SSE), BL329 (identity POST alias), BL330 (UnifiedPush).
 
 v8.1.0 shipped 2026-05-19 — closes BL324 (community skills + plugins registry), BL325 (plugin install from registry: `POST /api/plugins/install`, `GET /api/plugins/browse`, CLI `datawatch plugins install/browse-registry`, MCP `plugin_install`/`plugin_browse_registry`, community registry seeded first by default), BL326 (mic recording overlay with animated waveform, Cancel/Send buttons), S14b (per-pod alert rules: `internal/alertrules/` package with YAML store + observer-driven evaluator, 8 REST endpoints, 8 MCP tools, CLI `datawatch alert-rules`, wired into daemon). Community registry (`dmz006/datawatch-community`) pre-seeded as first registry in all listing surfaces.
 
