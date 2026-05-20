@@ -3618,10 +3618,15 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				if m.onStateChange != nil {
 					m.onStateChange(sess, oldState)
 				}
-				// Resume monitoring
+				// Resume monitoring. Stamp restartedAt so the 30s grace window in
+				// processOutputLine suppresses any stale DATAWATCH_COMPLETE: that
+				// the terminal repaint stream re-emits from the visible pane buffer.
+				// Without this, the new monitor immediately re-detects the marker
+				// and creates the reconciler→complete→reconciler loop.
 				tracker := ResumeTracker(m.dataDir, sess)
 				m.mu.Lock()
 				m.trackers[sess.FullID] = tracker
+				m.restartedAt[sess.FullID] = time.Now()
 				m.mu.Unlock()
 				projGit := NewProjectGit(sess.ProjectDir)
 				monCtx, cancel := context.WithCancel(ctx)
@@ -4319,6 +4324,22 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				current, ok := m.store.Get(sess.FullID)
 				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 					oldState := current.State
+					if !current.OneShot {
+						// Interactive session: DATAWATCH_COMPLETE is not terminal —
+						// treat as idle so the operator can keep sending input.
+						// Mirrors the non-structured-channel path (line ~4514) and
+						// StartScreenCapture (line ~1767). The structured-channel
+						// block was missing this guard, causing interactive claude-code
+						// sessions to terminate on sprint completion.
+						m.debugf("processOutputLine: %s OneShot=false — DATAWATCH_COMPLETE → WaitingInput (structured-channel)", current.FullID)
+						current.State = StateWaitingInput
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
+						}
+						return
+					}
 					current.State = StateComplete
 					current.UpdatedAt = time.Now()
 					_ = m.store.Save(current)
