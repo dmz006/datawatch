@@ -192,12 +192,12 @@ func RegisterSessionMCP(sessionID, channelJSPath string, env map[string]string) 
 // UnregisterSessionMCP removes the per-session MCP channel server registration.
 func UnregisterSessionMCP(sessionID string) {
 	name := "datawatch-" + sessionID
-	exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+	claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 }
 
 // UnregisterGlobalMCP removes the legacy global "datawatch" MCP registration.
 func UnregisterGlobalMCP() {
-	exec.Command(claudeCliBin, "mcp", "remove", "datawatch", "-s", "user").Run() //nolint:errcheck
+	claudeCmd("mcp", "remove", "datawatch", "-s", "user").Run() //nolint:errcheck
 }
 
 // ChannelServerName returns the MCP server name for a given session.
@@ -209,7 +209,7 @@ func ChannelServerName(sessionID string) string {
 // sessionExists is called with the full session ID (hostname-id) to check if it's still tracked.
 // Runs on daemon startup to prevent stale entries from accumulating.
 func CleanupStaleMCP(sessionExists func(string) bool) {
-	out, err := exec.Command(claudeCliBin, "mcp", "list").Output()
+	out, err := claudeCmd("mcp", "list").Output()
 	if err != nil {
 		return
 	}
@@ -234,7 +234,7 @@ func CleanupStaleMCP(sessionExists func(string) bool) {
 			continue // session exists, keep the registration
 		}
 		// Session doesn't exist — remove the stale registration
-		exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+		claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 		removed++
 	}
 	if removed > 0 {
@@ -330,7 +330,7 @@ func RemoveLegacyJSArtifacts(dataDir string) []string {
 // were removed; logs are the caller's job.
 func CleanupStaleJSRegistrations() []string {
 	var removed []string
-	out, err := exec.Command(claudeCliBin, "mcp", "list").CombinedOutput()
+	out, err := claudeCmd("mcp", "list").CombinedOutput()
 	if err != nil {
 		return removed
 	}
@@ -350,7 +350,7 @@ func CleanupStaleJSRegistrations() []string {
 		}
 		// Try each scope until one removes it cleanly.
 		for _, scope := range []string{"user", "local", "project"} {
-			if err := exec.Command(claudeCliBin, "mcp", "remove", name, "-s", scope).Run(); err == nil {
+			if err := claudeCmd("mcp", "remove", name, "-s", scope).Run(); err == nil {
 				removed = append(removed, name+"@"+scope)
 				break
 			}
@@ -367,6 +367,11 @@ var channelBinPathForReg string
 // Set via SetClaudeBin when the daemon knows the full path.
 var claudeCliBin = "claude"
 
+// claudeConfigDir is the CLAUDE_CONFIG_DIR to pass to `claude mcp` subprocesses.
+// When set, all MCP registrations land in this directory instead of ~/.claude.json.
+// Set via SetClaudeConfigDir at daemon startup (BL318).
+var claudeConfigDir string
+
 // SetBinaryHint allows the parent daemon to pre-resolve the bridge
 // binary once at startup; registerMCPNamed will prefer it over the
 // JS path when set. Idempotent.
@@ -379,6 +384,27 @@ func SetClaudeBin(bin string) {
 	if bin != "" {
 		claudeCliBin = bin
 	}
+}
+
+// SetClaudeConfigDir sets the CLAUDE_CONFIG_DIR injected into every `claude`
+// subprocess spawned by this package. When dataDir is the instance's own data
+// directory, MCP registrations are isolated per daemon instance and never
+// pollute $HOME/.claude.json. Call once at daemon startup with
+// filepath.Join(expandedDataDir, ".claude"). BL318.
+func SetClaudeConfigDir(dir string) {
+	if dir != "" {
+		claudeConfigDir = dir
+	}
+}
+
+// claudeCmd builds an exec.Cmd for the claude binary. When claudeConfigDir
+// is set it injects CLAUDE_CONFIG_DIR so registrations stay instance-scoped.
+func claudeCmd(args ...string) *exec.Cmd {
+	cmd := exec.Command(claudeCliBin, args...)
+	if claudeConfigDir != "" {
+		cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+claudeConfigDir)
+	}
+	return cmd
 }
 
 // BridgeKind reports which bridge the daemon is currently configured
@@ -398,7 +424,7 @@ func BridgePath() string { return channelBinPathForReg }
 
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	// Remove existing entry (ignore errors — may not exist).
-	exec.Command(claudeCliBin, "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+	claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 
 	var args []string
 	if channelBinPathForReg != "" {
@@ -414,7 +440,7 @@ func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	for k, v := range env {
 		args = append(args, "--env", k+"="+v)
 	}
-	out, err := exec.Command(claudeCliBin, args...).CombinedOutput()
+	out, err := claudeCmd(args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("claude mcp add %s: %w\n%s", name, err, string(out))
 	}

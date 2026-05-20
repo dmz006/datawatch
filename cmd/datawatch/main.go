@@ -807,6 +807,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
 	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
 	channel.SetClaudeBin(claudeBin)
+	// BL318 — scope all `claude mcp add/remove` calls to the instance's own
+	// config directory. Prevents test daemons from corrupting the production
+	// operator's ~/.claude.json when multiple instances share a host.
+	channel.SetClaudeConfigDir(filepath.Join(expandHome(cfg.DataDir), ".claude"))
 
 	// Register LLM backends from config.
 	// Always register configured backends regardless of Enabled flag so they
@@ -1136,12 +1140,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = bridgePath // logged above; available for future debug use
 			}
 
-			// BL218 — sweep user-scope ~/.mcp.json so it tracks any bridge
-			// upgrade (JS→Go) that happened since the last session was registered.
-			if updated, err := channel.SweepUserScopeMCPConfig(channelJSPath, channelEnv); err != nil {
-				debugf("BL218 sweep ~/.mcp.json: %v", err)
+			// BL318 — write instance-scoped .mcp.json so it tracks any bridge
+			// upgrade (JS→Go). Targets $DataDir/.mcp.json, never $HOME/.mcp.json,
+			// so test daemons cannot corrupt the production instance's config.
+			if updated, err := channel.WriteInstanceMCPConfig(expandHome(cfg.DataDir), channelJSPath, channelEnv); err != nil {
+				debugf("BL318 write instance .mcp.json: %v", err)
 			} else if updated {
-				fmt.Printf("[channel] updated ~/.mcp.json to current %s bridge\n", channel.BridgeKind())
+				fmt.Printf("[channel] updated instance .mcp.json to current %s bridge\n", channel.BridgeKind())
 			}
 
 			// BL219 — ignore-file hygiene: append backend artifact patterns to

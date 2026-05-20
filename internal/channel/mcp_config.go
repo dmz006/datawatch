@@ -107,18 +107,38 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 	return nil
 }
 
+// WriteInstanceMCPConfig rewrites `<dataDir>/.mcp.json` so it tracks the
+// current bridge (Go or JS). Idempotent — skips the write when the entry is
+// already correct. Returns true when the file was rewritten. BL318.
+func WriteInstanceMCPConfig(dataDir, channelJSPath string, env map[string]string) (bool, error) {
+	if dataDir == "" {
+		return false, fmt.Errorf("WriteInstanceMCPConfig: dataDir is required")
+	}
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return false, fmt.Errorf("WriteInstanceMCPConfig: mkdir %s: %w", dataDir, err)
+	}
+	return sweepMCPConfigFile(filepath.Join(dataDir, ".mcp.json"), channelJSPath, env)
+}
+
 // SweepUserScopeMCPConfig checks the user-scope ~/.mcp.json and rewrites the
 // "datawatch" entry if it is stale — either pointing at a JS bridge whose
 // channel.js no longer exists, or pointing at node when the Go bridge is now
 // on hand. Preserves all other entries. Idempotent. Returns true when the
 // file was rewritten. v6.0.7 (BL218).
+//
+// Deprecated: use WriteInstanceMCPConfig with cfg.DataDir to avoid $HOME
+// pollution when multiple daemon instances share a host (BL318).
 func SweepUserScopeMCPConfig(channelJSPath string, env map[string]string) (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, fmt.Errorf("SweepUserScopeMCPConfig: %w", err)
 	}
-	path := filepath.Join(home, ".mcp.json")
+	return sweepMCPConfigFile(filepath.Join(home, ".mcp.json"), channelJSPath, env)
+}
 
+// sweepMCPConfigFile rewrites the "datawatch" entry in path if it is stale.
+// Shared by WriteInstanceMCPConfig and SweepUserScopeMCPConfig.
+func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool, error) {
 	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
 	if raw, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(raw, &cfg)
@@ -154,7 +174,7 @@ func SweepUserScopeMCPConfig(channelJSPath string, env map[string]string) (bool,
 	cfg.MCPServers["datawatch"] = want
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return false, fmt.Errorf("marshal ~/.mcp.json: %w", err)
+		return false, fmt.Errorf("marshal %s: %w", path, err)
 	}
 	if err := os.WriteFile(path, out, 0644); err != nil {
 		return false, fmt.Errorf("write %s: %w", path, err)
