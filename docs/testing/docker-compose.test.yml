@@ -19,7 +19,7 @@ services:
     environment:
       - DATAWATCH_DATA_DIR=/tmp/dw-test-data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -33,7 +33,7 @@ services:
       - DATAWATCH_DATA_DIR=/tmp/dw-peer-data
       - DATAWATCH_TOKEN=peer-test-token
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -55,7 +55,7 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/version"]
+      test: ["CMD", "ollama", "list"]
       interval: 5s
       timeout: 5s
       retries: 12
