@@ -247,8 +247,43 @@ if [[ -z "$ROOM_ID" ]]; then
 fi
 ok "Room created: $ROOM_ID"
 
-# ── Step 4: Write datawatch config ───────────────────────────────────────────
-H "4. Configure datawatch"
+# ── Step 4: Bootstrap secrets store (two-phase daemon start) ─────────────────
+H "4. Bootstrap secrets store"
+# Phase 1: start daemon without Matrix to initialise the secrets store,
+# then store the bot token via the running daemon, then stop it.
+cat > "$DW_CONFIG" <<YAML
+hostname: dw-matrix-test
+data_dir: ${DW_DATA}
+server:
+  port: ${DW_PORT}
+  token: matrixtesttoken
+YAML
+
+"$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon-init.log" 2>&1 &
+DW_PID=$!
+echo -n "Waiting for daemon (init phase)"
+for i in $(seq 1 20); do
+  if curl -sf -H "Authorization: Bearer matrixtesttoken" \
+      "http://localhost:${DW_PORT}/api/health" >/dev/null 2>&1; then
+    echo " ready (${i}s)"; break
+  fi
+  echo -n "."; sleep 1
+  if [[ "$i" -eq 20 ]]; then
+    echo ""; ko "Daemon (init phase) did not start in 20s"; tail -10 "$TMPDIR_DW/daemon-init.log"; exit 1
+  fi
+done
+
+# Store bot token via running daemon (daemon must be up for this to work)
+"$DW_BIN" secrets set matrix-access-token "$BOT_TOKEN" --config "$DW_CONFIG" \
+  || { ko "secrets set failed — check daemon logs"; exit 1; }
+ok "matrix-access-token stored in secrets store"
+
+# Stop init daemon
+kill -SIGTERM "$DW_PID" 2>/dev/null || true
+wait "$DW_PID" 2>/dev/null || true
+DW_PID=""
+
+# Phase 2: write full config with Matrix using ${secret:...} reference
 cat > "$DW_CONFIG" <<YAML
 hostname: dw-matrix-test
 data_dir: ${DW_DATA}
@@ -262,17 +297,9 @@ matrix:
   access_token: "\${secret:matrix-access-token}"
   room_id: "${ROOM_ID}"
 YAML
+ok "Full config written — Matrix uses secrets-store ref"
 
-# Store the bot token in the secrets store
-"$DW_BIN" secrets set matrix-access-token "$BOT_TOKEN" \
-  --config "$DW_CONFIG" 2>/dev/null || {
-  # secrets store not yet init'd — write token directly for test convenience
-  sed -i "s|\\\${secret:matrix-access-token}|${BOT_TOKEN}|" "$DW_CONFIG"
-  skip "Secrets store not available — using plaintext token for test only"
-}
-ok "Config written to $DW_CONFIG"
-
-# ── Step 5: Start datawatch daemon ────────────────────────────────────────────
+# ── Step 5: Start datawatch daemon (with Matrix) ──────────────────────────────
 H "5. Start datawatch daemon"
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon.log" 2>&1 &
 DW_PID=$!
