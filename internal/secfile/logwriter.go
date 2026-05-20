@@ -43,8 +43,10 @@ type EncryptedLogWriter struct {
 	closed bool
 }
 
-// NewEncryptedLogWriter creates a new encrypted log file at path.
-// Writes the magic header immediately. The key must be 32 bytes.
+// NewEncryptedLogWriter opens an encrypted log file at path for writing.
+// If the file already contains a valid DWLOG1 header it is opened in append
+// mode so logs accumulate across daemon restarts. Otherwise the file is
+// created (or truncated) and the magic header is written. Key must be 32 bytes.
 func NewEncryptedLogWriter(path string, key []byte) (*EncryptedLogWriter, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("secfile: key must be 32 bytes, got %d", len(key))
@@ -53,15 +55,44 @@ func NewEncryptedLogWriter(path string, key []byte) (*EncryptedLogWriter, error)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+
+	// Detect whether the file already holds a valid encrypted log.
+	appendMode := false
+	if hdr, rerr := readFileHeader(path, len(logMagic)); rerr == nil {
+		appendMode = string(hdr) == logMagic
+	}
+
+	var flags int
+	if appendMode {
+		flags = os.O_WRONLY | os.O_APPEND
+	} else {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	}
+	f, err := os.OpenFile(path, flags, 0600)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := f.WriteString(logMagic); err != nil {
-		f.Close()
-		return nil, err
+	if !appendMode {
+		if _, err := f.WriteString(logMagic); err != nil {
+			f.Close()
+			return nil, err
+		}
 	}
 	return &EncryptedLogWriter{f: f, aead: aead}, nil
+}
+
+// readFileHeader returns the first n bytes of path, or an error.
+func readFileHeader(path string, n int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 // Write appends data to the buffer and flushes encrypted blocks as needed.

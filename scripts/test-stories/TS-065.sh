@@ -26,8 +26,8 @@ print(arr[0].get('name','') if arr else '')
   load_resp=$(api POST /api/mcp/call "{\"tool\":\"skill_load\",\"params\":{\"name\":\"$first_skill\"}}" 2>/dev/null || echo '{}')
   load_resp=$(mcp_unwrap "$load_resp")
   save_evidence TS-065 "skill_load.json" "$load_resp"
-  if assert_json "$load_resp" 'isinstance(d, dict)'; then
-    ok "Skill $first_skill: skill_load MCP call returned dict"
+  if assert_json "$load_resp" 'isinstance(d, (dict, str)) and bool(d)'; then
+    ok "Skill $first_skill: skill_load MCP call returned content"
   else
     ko "Skill invoke failed: $(echo "$load_resp" | head -c 200)"
   fi
