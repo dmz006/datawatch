@@ -212,6 +212,10 @@ build: sync-docs docs-index
 
 install: sync-docs docs-index
 	go build -ldflags="$(LDFLAGS)" -o $(HOME)/.local/bin/$(BINARY) ./cmd/datawatch/
+	@if [ -e "$(HOME)/go/bin/$(BINARY)" ]; then \
+		echo ">>> v7.x binary found at $(HOME)/go/bin/$(BINARY) — updating to point to new install (issue #81)"; \
+		ln -sf "$(HOME)/.local/bin/$(BINARY)" "$(HOME)/go/bin/$(BINARY)"; \
+	fi
 
 clean:
 	rm -rf $(BUILD_DIR)

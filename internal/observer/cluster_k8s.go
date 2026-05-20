@@ -209,7 +209,7 @@ func (k *K8sMetricsScraper) get(ctx context.Context, path string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("api %s: %d", path, resp.StatusCode)
 	}

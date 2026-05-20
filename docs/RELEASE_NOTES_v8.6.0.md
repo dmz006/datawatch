@@ -227,6 +227,16 @@ datawatch security encryption status
 
 Non-`--secure` upgrades require no migration steps.
 
+### v7.x → v8.x upgrade notes
+
+**Binary path changed (GH#81)** — `make install` now writes to `~/.local/bin/datawatch` (was `~/go/bin/datawatch`). The Makefile auto-detects an existing `~/go/bin/datawatch` and replaces it with a symlink to the new location, so existing systemd units using `ExecStart=.../go/bin/datawatch` keep working without reconfiguration. If you installed manually (not via `make install`), update your unit file to `~/.local/bin/datawatch` or add `~/.local/bin` to the `PATH` in your systemd environment.
+
+**MCP SSE is now built-in (GH#82)** — In v7.x a separate `datawatch mcp --sse` process (often running as `datawatch-mcp-sse.service`) handled SSE on port 8081. In v8.x the main daemon integrates MCP SSE. If you have a `datawatch-mcp-sse.service` unit, disable it after upgrading:
+```bash
+sudo systemctl disable --now datawatch-mcp-sse.service
+```
+Leaving it running causes it to crash-loop on `bind: address already in use` (port 8081 is held by the main daemon).
+
 ---
 
 ## Known gaps (not in this release)

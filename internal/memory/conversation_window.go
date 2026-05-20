@@ -87,7 +87,7 @@ func (s *Store) StitchSessionWindow(hitID int64, before, after int) (*SessionWin
 					prev = append(prev, m)
 				}
 			}
-			rows.Close()
+			rows.Close() //nolint:errcheck
 			// Reverse so oldest-first.
 			for i := len(prev) - 1; i >= 0; i-- {
 				out.Chunks = append([]Memory{prev[i]}, out.Chunks...)
@@ -110,7 +110,7 @@ func (s *Store) StitchSessionWindow(hitID int64, before, after int) (*SessionWin
 					out.Chunks = append(out.Chunks, m)
 				}
 			}
-			rows.Close()
+			rows.Close() //nolint:errcheck
 		}
 	}
 
@@ -128,7 +128,7 @@ func (s *Store) fetchByID(id int64) (*Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	if !rows.Next() {
 		return nil, fmt.Errorf("memory %d not found", id)
 	}

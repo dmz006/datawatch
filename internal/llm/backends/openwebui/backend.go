@@ -48,7 +48,7 @@ func (b *Backend) Version() string {
 	if err != nil || resp.StatusCode != 200 {
 		return ""
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return b.baseURL
 }
 
@@ -68,7 +68,7 @@ func ListModels(baseURL, apiKey string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", baseURL, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("API returned %d", resp.StatusCode)
 	}

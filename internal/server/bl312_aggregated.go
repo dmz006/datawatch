@@ -32,11 +32,6 @@ func (s *Server) handleAggregatedAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	type taggedAlert struct {
-		json.RawMessage
-		Server string `json:"server"`
-	}
-
 	// Local alerts
 	var results []map[string]any
 	if s.alertStore != nil {
@@ -186,7 +181,7 @@ func fetchRemoteJSON(baseURL, token, path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	var v any
 	if err := json.Unmarshal(body, &v); err != nil {

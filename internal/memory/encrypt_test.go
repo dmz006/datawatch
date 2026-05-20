@@ -50,7 +50,7 @@ func TestStoreEncrypted_SaveAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStoreEncrypted: %v", err)
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	if !s.IsEncrypted() {
 		t.Error("store should report encrypted")
@@ -64,7 +64,7 @@ func TestStoreEncrypted_SaveAndRead(t *testing.T) {
 
 	// Verify raw DB has encrypted content
 	var rawContent string
-	s.db.QueryRow(`SELECT content FROM memories WHERE id = ?`, id).Scan(&rawContent)
+	s.db.QueryRow(`SELECT content FROM memories WHERE id = ?`, id).Scan(&rawContent) //nolint:errcheck
 	if rawContent == "secret content" {
 		t.Error("raw DB content should be encrypted, not plaintext")
 	}
@@ -95,10 +95,10 @@ func TestStoreEncrypted_SearchWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStoreEncrypted: %v", err)
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	vec := []float32{1.0, 0.0, 0.0}
-	s.Save("/proj", "encrypted searchable content", "", "manual", "", vec)
+	s.Save("/proj", "encrypted searchable content", "", "manual", "", vec) //nolint:errcheck
 
 	query := []float32{1.0, 0.0, 0.0}
 	results, err := s.Search("/proj", query, 5)
@@ -115,15 +115,15 @@ func TestStoreEncrypted_SearchWorks(t *testing.T) {
 
 func TestStoreUnencrypted_PlaintextPreserved(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	if s.IsEncrypted() {
 		t.Error("unencrypted store should not report encrypted")
 	}
 
-	s.Save("/proj", "plain text", "", "manual", "", nil)
+	s.Save("/proj", "plain text", "", "manual", "", nil)                               //nolint:errcheck
 	var raw string
-	s.db.QueryRow(`SELECT content FROM memories WHERE id = 1`).Scan(&raw)
+	s.db.QueryRow(`SELECT content FROM memories WHERE id = 1`).Scan(&raw) //nolint:errcheck
 	if raw != "plain text" {
 		t.Errorf("unencrypted store should save plaintext, got %q", raw)
 	}
@@ -135,9 +135,9 @@ func TestKeyRotation(t *testing.T) {
 	dir := t.TempDir()
 
 	s, _ := NewStoreEncrypted(dir+"/test.db", oldKey)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "content to rotate", "summary", "manual", "", nil)
+	s.Save("/proj", "content to rotate", "summary", "manual", "", nil) //nolint:errcheck
 
 	count, err := RotateKey(s, oldKey, newKey)
 	if err != nil {
@@ -163,8 +163,8 @@ func TestMigrateToEncrypted(t *testing.T) {
 
 	// Start unencrypted
 	s, _ := NewStore(dir + "/test.db")
-	s.Save("/proj", "plain1", "", "manual", "", nil)
-	s.Save("/proj", "plain2", "", "session", "s1", nil)
+	_, _ = s.Save("/proj", "plain1", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "plain2", "", "session", "s1", nil)
 
 	// Migrate
 	count, err := MigrateToEncrypted(s, key)
@@ -177,7 +177,7 @@ func TestMigrateToEncrypted(t *testing.T) {
 
 	// Verify encrypted in DB
 	var raw string
-	s.db.QueryRow(`SELECT content FROM memories WHERE id = 1`).Scan(&raw)
+	s.db.QueryRow(`SELECT content FROM memories WHERE id = 1`).Scan(&raw) //nolint:errcheck
 	if !startsWithENC(raw) {
 		t.Error("content should be encrypted after migration")
 	}
@@ -192,7 +192,7 @@ func TestMigrateToEncrypted(t *testing.T) {
 			t.Errorf("memory #%d content should be decrypted, got %q", m.ID, m.Content[:20])
 		}
 	}
-	s.Close()
+	_ = s.Close()
 }
 
 func startsWithENC(s string) bool {

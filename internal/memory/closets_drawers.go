@@ -98,7 +98,7 @@ func (s *Store) Drawer(closetID int64) (*Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	if !rows.Next() {
 		return nil, nil
 	}

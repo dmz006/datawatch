@@ -48,7 +48,7 @@ func TestFilterStore_Delete(t *testing.T) {
 func TestFilterStore_Persistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "filters.json")
 	s1, _ := NewFilterStore(path)
-	s1.Add("persist-pat", FilterActionSendInput, "yes")
+	s1.Add("persist-pat", FilterActionSendInput, "yes") //nolint:errcheck
 
 	s2, _ := NewFilterStore(path)
 	if len(s2.List()) != 1 {

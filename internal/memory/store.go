@@ -75,7 +75,7 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open memory db: %w", err)
 	}
 	if err := migrate(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate memory db: %w", err)
 	}
 	walPath := filepath.Join(filepath.Dir(dbPath), "memory-wal.jsonl")
@@ -91,7 +91,7 @@ func NewStoreEncrypted(dbPath string, encKey []byte) (*Store, error) {
 		return nil, err
 	}
 	if len(encKey) != 32 {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("memory encryption key must be 32 bytes, got %d", len(encKey))
 	}
 	s.encKey = make([]byte, 32)
@@ -208,10 +208,10 @@ func migrate(db *sql.DB) error {
 	// Each migration above is idempotent already; this table lets
 	// the operator see which version a database has been brought
 	// up to, surfaces in /api/memory/stats. Insert on first run.
-	db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (
 		version    TEXT PRIMARY KEY,
 		applied_at INTEGER NOT NULL DEFAULT 0
-	)`) //nolint:errcheck
+	)`)
 	db.Exec(`INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES('v5.27.0', strftime('%s','now'))`) //nolint:errcheck
 	return nil
 }
@@ -368,7 +368,7 @@ func (s *Store) SearchFiltered(wing, room string, queryVec []float32, topK int) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck //nolint:errcheck
 
 	type scored struct {
 		Memory
@@ -415,7 +415,7 @@ func (s *Store) ListRooms(wing string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var result []string
 	for rows.Next() {
 		var r string
@@ -434,7 +434,7 @@ func (s *Store) ListWings() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	result := make(map[string]int)
 	for rows.Next() {
 		var w string
@@ -471,7 +471,7 @@ func (s *Store) SearchInNamespaces(namespaces []string, queryVec []float32, topK
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	type scored struct {
 		Memory
@@ -519,7 +519,7 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	type scored struct {
 		Memory
@@ -570,7 +570,7 @@ func (s *Store) SearchAll(queryVec []float32, topK int) ([]Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	type scored struct {
 		Memory
@@ -622,7 +622,7 @@ func (s *Store) ListRecent(projectDir string, n int) ([]Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var result []Memory
 	for rows.Next() {
@@ -648,7 +648,7 @@ func (s *Store) ListByRole(projectDir, role string, n int) ([]Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var result []Memory
 	for rows.Next() {
@@ -692,7 +692,7 @@ func (s *Store) ListPinned(projectDir string, n int) ([]Memory, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var result []Memory
 	for rows.Next() {
@@ -802,7 +802,7 @@ func (s *Store) ListForReindex() ([]struct{ ID int64; Content string }, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var result []struct{ ID int64; Content string }
 	for rows.Next() {
 		var r struct{ ID int64; Content string }
@@ -885,7 +885,7 @@ func (s *Store) ListFiltered(projectDir, role, since string, n int) ([]Memory, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var result []Memory
 	for rows.Next() {
 		var m Memory
@@ -905,7 +905,7 @@ func (s *Store) DistinctProjects() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var result []string
 	for rows.Next() {
 		var p string
@@ -944,8 +944,8 @@ func (s *Store) walLog(operation string, params map[string]interface{}) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
-	f.Write(data)       //nolint:errcheck
+	defer f.Close() //nolint:errcheck
+	f.Write(data)   //nolint:errcheck
 	f.Write([]byte("\n")) //nolint:errcheck
 }
 
@@ -1002,7 +1002,7 @@ func (s *Store) Export(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var memories []ExportMemory
 	for rows.Next() {
 		var m ExportMemory
@@ -1084,7 +1084,7 @@ func (s *Store) ExportSince(w io.Writer, namespace string, since time.Time) erro
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	cutoff := since.UTC()
 	var memories []ExportMemory
 	for rows.Next() {
@@ -1122,7 +1122,7 @@ func (s *Store) FindTunnels() (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	tunnels := make(map[string][]string)
 	for rows.Next() {
 		var room, wingsStr string

@@ -10,7 +10,7 @@ import (
 
 func TestSaveWithMeta_AutoDeriveWing(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, err := s.SaveWithMeta("/home/user/projects/myapp", "test content", "", "manual", "", "", "", "", nil)
 	if err != nil {
@@ -32,13 +32,13 @@ func TestSaveWithMeta_AutoDeriveWing(t *testing.T) {
 
 func TestSearchFiltered(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	vec1 := []float32{1.0, 0.0, 0.0}
 	vec2 := []float32{0.9, 0.1, 0.0}
 
-	s.SaveWithMeta("/proj", "auth login", "", "manual", "", "myapp", "auth", "facts", vec1)
-	s.SaveWithMeta("/proj", "deploy pipeline", "", "manual", "", "myapp", "deploy", "facts", vec2)
+	_, _ = s.SaveWithMeta("/proj", "auth login", "", "manual", "", "myapp", "auth", "facts", vec1)
+	_, _ = s.SaveWithMeta("/proj", "deploy pipeline", "", "manual", "", "myapp", "deploy", "facts", vec2)
 
 	// Filtered search by wing+room
 	query := []float32{1.0, 0.0, 0.0}
@@ -62,11 +62,11 @@ func TestSearchFiltered(t *testing.T) {
 
 func TestListWings(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.SaveWithMeta("/proj", "a", "", "manual", "", "proj-a", "", "", nil)
-	s.SaveWithMeta("/proj", "b", "", "manual", "", "proj-a", "", "", nil)
-	s.SaveWithMeta("/proj", "c", "", "manual", "", "proj-b", "", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "a", "", "manual", "", "proj-a", "", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "b", "", "manual", "", "proj-a", "", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "c", "", "manual", "", "proj-b", "", "", nil)
 
 	wings, err := s.ListWings()
 	if err != nil {
@@ -82,11 +82,11 @@ func TestListWings(t *testing.T) {
 
 func TestListRooms(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.SaveWithMeta("/proj", "a", "", "manual", "", "myapp", "auth", "", nil)
-	s.SaveWithMeta("/proj", "b", "", "manual", "", "myapp", "deploy", "", nil)
-	s.SaveWithMeta("/proj", "c", "", "manual", "", "myapp", "auth", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "a", "", "manual", "", "myapp", "auth", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "b", "", "manual", "", "myapp", "deploy", "", nil)
+	_, _ = s.SaveWithMeta("/proj", "c", "", "manual", "", "myapp", "auth", "", nil)
 
 	rooms, err := s.ListRooms("myapp")
 	if err != nil {
@@ -101,7 +101,7 @@ func TestListRooms(t *testing.T) {
 
 func TestLayers_L0(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "identity.txt"), []byte("I am a test assistant."), 0600)
+	_ = os.WriteFile(filepath.Join(dir, "identity.txt"), []byte("I am a test assistant."), 0600)
 
 	layers := NewLayers(dir, nil)
 	l0 := layers.L0()
@@ -120,10 +120,10 @@ func TestLayers_L0_Missing(t *testing.T) {
 
 func TestLayers_L1(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "important learning", "", "learning", "", nil)
-	s.Save("/proj", "manual fact", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "important learning", "", "learning", "", nil)
+	_, _ = s.Save("/proj", "manual fact", "", "manual", "", nil)
 
 	r := NewRetriever(s, nil, 5)
 	layers := NewLayers(t.TempDir(), r)
@@ -152,7 +152,7 @@ func searchSubstr(s, sub string) bool {
 
 func TestKG_AddAndQuery(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	kg := NewKnowledgeGraph(s)
 
 	id, err := kg.AddTriple("Alice", "works_on", "datawatch", "2026-01-01", "manual")
@@ -177,11 +177,11 @@ func TestKG_AddAndQuery(t *testing.T) {
 
 func TestKG_Invalidate(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	kg := NewKnowledgeGraph(s)
 
-	kg.AddTriple("Bob", "does", "swimming", "2025-01-01", "")
-	kg.Invalidate("Bob", "does", "swimming", "2026-03-01")
+	_, _ = kg.AddTriple("Bob", "does", "swimming", "2025-01-01", "")
+	_ = kg.Invalidate("Bob", "does", "swimming", "2026-03-01")
 
 	triples, _ := kg.QueryEntity("Bob", "")
 	if len(triples) != 1 {
@@ -194,11 +194,11 @@ func TestKG_Invalidate(t *testing.T) {
 
 func TestKG_Timeline(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	kg := NewKnowledgeGraph(s)
 
-	kg.AddTriple("Max", "loves", "chess", "2025-01-01", "")
-	kg.AddTriple("Max", "started", "swimming", "2025-06-01", "")
+	_, _ = kg.AddTriple("Max", "loves", "chess", "2025-01-01", "")
+	_, _ = kg.AddTriple("Max", "started", "swimming", "2025-06-01", "")
 
 	timeline, err := kg.Timeline("Max")
 	if err != nil {
@@ -211,12 +211,12 @@ func TestKG_Timeline(t *testing.T) {
 
 func TestKG_Stats(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	kg := NewKnowledgeGraph(s)
 
-	kg.AddTriple("A", "rel", "B", "", "")
-	kg.AddTriple("C", "rel", "D", "", "")
-	kg.Invalidate("A", "rel", "B", "2026-01-01")
+	_, _ = kg.AddTriple("A", "rel", "B", "", "")
+	_, _ = kg.AddTriple("C", "rel", "D", "", "")
+	_ = kg.Invalidate("A", "rel", "B", "2026-01-01")
 
 	stats := kg.Stats()
 	if stats.TripleCount != 2 {

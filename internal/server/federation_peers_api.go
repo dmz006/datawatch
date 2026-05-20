@@ -136,15 +136,25 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name string) {
-	var body multiserver.Entry
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// Fix #80 — partial PUT was wiping unset fields to zero values.
+	// Read existing entry first, then unmarshal body on top of it so only
+	// explicitly-supplied JSON keys are changed.
+	existing, ok := s.serverStore.Get(name)
+	if !ok {
+		http.Error(w, multiserver.ErrNotFound.Error(), http.StatusNotFound)
+		return
+	}
+	if !existing.Federated {
+		http.Error(w, "not a federation peer", http.StatusNotFound)
+		return
+	}
+	merged := *existing // copy
+	if err := json.NewDecoder(r.Body).Decode(&merged); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// BL331 — channel_identity is decoded directly from the Entry struct;
-	// the store Update replaces the full entry so it is cleared when omitted.
-	body.Federated = true
-	if err := s.serverStore.Update(name, &body); err != nil {
+	merged.Federated = true // BL316 — always a federation peer
+	if err := s.serverStore.Update(name, &merged); err != nil {
 		switch err {
 		case multiserver.ErrNotFound:
 			http.Error(w, err.Error(), http.StatusNotFound)

@@ -31,7 +31,7 @@ func skipIfNoPG(t *testing.T) *PGStore {
 
 func TestPGStore_SaveAndList(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, err := s.Save("/test/proj", "pg test memory", "summary", "manual", "", nil)
 	if err != nil {
@@ -53,24 +53,24 @@ func TestPGStore_SaveAndList(t *testing.T) {
 	}
 
 	// Cleanup
-	s.Delete(id)
+	s.Delete(id) //nolint:errcheck
 }
 
 func TestPGStore_Dedup(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id1, _ := s.Save("/test/dedup", "same content", "", "manual", "", nil)
 	id2, _ := s.Save("/test/dedup", "same content", "", "manual", "", nil)
 	if id1 != id2 {
 		t.Errorf("dedup failed: id1=%d, id2=%d", id1, id2)
 	}
-	s.Delete(id1)
+	s.Delete(id1) //nolint:errcheck
 }
 
 func TestPGStore_VectorSearch(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	vec1 := []float32{1.0, 0.0, 0.0}
 	vec2 := []float32{0.0, 1.0, 0.0}
@@ -90,13 +90,13 @@ func TestPGStore_VectorSearch(t *testing.T) {
 		t.Errorf("top result = %q, want 'about dogs'", results[0].Content)
 	}
 
-	s.Delete(id1)
-	s.Delete(id2)
+	s.Delete(id1) //nolint:errcheck
+	s.Delete(id2) //nolint:errcheck
 }
 
 func TestPGStore_SpatialSearch(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	vec := []float32{1.0, 0.0, 0.0}
 	id1, _ := s.SaveWithMeta("/test/spatial", "auth login", "", "manual", "", "myapp", "auth", "facts", vec)
@@ -110,13 +110,13 @@ func TestPGStore_SpatialSearch(t *testing.T) {
 		t.Errorf("filtered to auth: expected 1, got %d", len(results))
 	}
 
-	s.Delete(id1)
-	s.Delete(id2)
+	s.Delete(id1) //nolint:errcheck
+	s.Delete(id2) //nolint:errcheck
 }
 
 func TestPGStore_KG(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, err := s.KGAddTriple("TestAlice", "works_on", "TestProject", "2026-01-01", "test")
 	if err != nil {
@@ -145,7 +145,7 @@ func TestPGStore_KG(t *testing.T) {
 
 func TestPGStore_Stats(t *testing.T) {
 	s := skipIfNoPG(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, _ := s.Save("/test/stats", "stats test", "", "manual", "", nil)
 	stats := s.Stats()
@@ -155,7 +155,7 @@ func TestPGStore_Stats(t *testing.T) {
 	if stats.DBSizeBytes <= 0 {
 		t.Error("expected positive DB size")
 	}
-	s.Delete(id)
+	s.Delete(id) //nolint:errcheck
 }
 
 func TestPGStore_Encryption(t *testing.T) {
@@ -164,7 +164,7 @@ func TestPGStore_Encryption(t *testing.T) {
 	if err != nil {
 		t.Skipf("PG not available: %v", err)
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	if !s.IsEncrypted() {
 		t.Error("should report encrypted")
@@ -181,5 +181,5 @@ func TestPGStore_Encryption(t *testing.T) {
 		t.Errorf("decrypted content = %q", memories[0].Content)
 	}
 
-	s.Delete(id)
+	s.Delete(id) //nolint:errcheck
 }

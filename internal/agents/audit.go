@@ -184,7 +184,7 @@ func ReadEvents(path string, filter ReadEventsFilter, limit int) ([]AuditEvent, 
 	if err != nil {
 		return nil, fmt.Errorf("open audit file: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	out := []AuditEvent{}
 	dec := json.NewDecoder(f)

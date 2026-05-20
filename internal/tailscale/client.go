@@ -161,7 +161,7 @@ func (c *Client) headscalePushACL(ctx context.Context, policy string) error {
 	if err != nil {
 		return fmt.Errorf("headscale acl push: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("headscale acl push %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
@@ -238,7 +238,7 @@ func (c *Client) GeneratePreAuthKey(ctx context.Context, opts PreAuthKeyOptions)
 	if err != nil {
 		return nil, fmt.Errorf("headscale preauthkey: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("headscale preauthkey %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
@@ -281,7 +281,7 @@ func (c *Client) apiGet(ctx context.Context, url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("api %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

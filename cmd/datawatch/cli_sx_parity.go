@@ -125,7 +125,7 @@ func daemonGet(path string) error {
 	if err != nil {
 		return fmt.Errorf("daemon not reachable (%s): %w", daemonURL(), err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
@@ -154,7 +154,7 @@ func daemonJSON(method, path string, body any) error {
 	if err != nil {
 		return fmt.Errorf("daemon not reachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))

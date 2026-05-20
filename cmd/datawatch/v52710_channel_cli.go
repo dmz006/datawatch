@@ -141,7 +141,7 @@ func fetchChannelInfo() (servercli.ChannelInfo, error) {
 	if err != nil {
 		return info, fmt.Errorf("daemon unreachable (is it running?): %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return info, fmt.Errorf("daemon returned %d", resp.StatusCode)
 	}

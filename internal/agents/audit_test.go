@@ -58,7 +58,7 @@ func TestFileAuditor_WritesValidJSONLines(t *testing.T) {
 	}
 	a.Append(AuditEvent{Event: "spawn", AgentID: "x", Project: "p"})
 	a.Append(AuditEvent{Event: "terminate", AgentID: "x"})
-	a.Close()
+	a.Close() //nolint:errcheck
 
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestFileAuditor_DefaultsAndAppendMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Append(AuditEvent{Event: "first"})
-	a.Close()
+	a.Close() //nolint:errcheck
 
 	// Reopen + append second line.
 	a2, err := NewFileAuditor(path)
@@ -92,7 +92,7 @@ func TestFileAuditor_DefaultsAndAppendMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	a2.Append(AuditEvent{Event: "second"})
-	a2.Close()
+	a2.Close() //nolint:errcheck
 
 	body, _ := os.ReadFile(path)
 	if !strings.Contains(string(body), `"first"`) || !strings.Contains(string(body), `"second"`) {
@@ -292,7 +292,7 @@ func TestFileAuditor_CEFFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Append(AuditEvent{Event: "spawn", AgentID: "x", Project: "p"})
-	a.Close()
+	a.Close() //nolint:errcheck
 	body, _ := os.ReadFile(path)
 	line := strings.TrimSpace(string(body))
 	if !strings.HasPrefix(line, "CEF:0|datawatch|datawatch|") {

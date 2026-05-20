@@ -494,7 +494,7 @@ func (t *Tracker) appendFile(name, content string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	_, err = f.WriteString(content)
 	return err
 }

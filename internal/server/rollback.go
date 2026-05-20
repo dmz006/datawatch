@@ -185,7 +185,7 @@ func (s *Server) proxySessionInput(w http.ResponseWriter, r *http.Request, peerN
 		http.Error(w, "proxy error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 
 	w.Header().Set("Content-Type", "application/json")

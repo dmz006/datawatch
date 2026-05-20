@@ -41,7 +41,7 @@ func NewKnowledgeGraph(store *Store) *KnowledgeGraph {
 }
 
 func (kg *KnowledgeGraph) migrate() {
-	kg.db.Exec(`
+	_, _ = kg.db.Exec(`
 		CREATE TABLE IF NOT EXISTS kg_entities (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -145,7 +145,7 @@ func (kg *KnowledgeGraph) queryTriples(query string, args ...interface{}) ([]KGT
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var result []KGTriple
 	for rows.Next() {

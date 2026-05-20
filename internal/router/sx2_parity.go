@@ -35,7 +35,7 @@ func (r *Router) commGet(path string, q url.Values) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
@@ -64,7 +64,7 @@ func (r *Router) commJSON(method, path, jsonBody string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))

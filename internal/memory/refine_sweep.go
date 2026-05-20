@@ -97,7 +97,7 @@ func (s *Store) RefineSweep(ctx context.Context, opts RefineSweepOpts) (*RefineS
 			todo = append(todo, p)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	res.Candidates = len(todo)
 	if opts.DryRun || opts.Refiner == nil {

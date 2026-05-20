@@ -98,7 +98,7 @@ func (b *Backend) Send(recipient, msg string) error {
 	if err != nil {
 		return fmt.Errorf("twilio send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)

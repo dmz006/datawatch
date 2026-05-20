@@ -52,6 +52,6 @@ func (s *Server) auditSelfConfig(key, value string) {
 		fmt.Fprintf(os.Stderr, "[mcp/self-config] open: %v\n", err)
 		return
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	_, _ = f.Write(append(raw, '\n'))
 }

@@ -177,7 +177,7 @@ func askOllama(s *Server, req AskRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("ollama: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		buf, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, string(buf))
@@ -228,7 +228,7 @@ func askOpenWebUI(s *Server, req AskRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("openwebui: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		buf, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("openwebui HTTP %d: %s", resp.StatusCode, string(buf))

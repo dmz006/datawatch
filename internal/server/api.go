@@ -4811,7 +4811,7 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	responses := s.testMessageHandler(req.Text)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"input":     req.Text,
 		"responses": responses,
 		"count":     len(responses),
@@ -5158,7 +5158,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	// Copy response headers and body
 	for k, vals := range resp.Header {
@@ -5952,7 +5952,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "send_failed", "error": err.Error()}) //nolint:errcheck
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	// Broadcast the task delivery to WS clients for the channel tab
 	s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")
@@ -6011,7 +6011,7 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("channel server unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	// Broadcast the outgoing send to WS clients so the channel tab shows it
 	s.recordChannelHistory(body.SessionID, body.Text, "outgoing")

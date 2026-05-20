@@ -163,8 +163,8 @@ func DecodeResponse(records []string) (string, error) {
 			continue
 		}
 		var idx, total int
-		fmt.Sscanf(parts[0], "%d", &idx)
-		fmt.Sscanf(parts[1], "%d", &total)
+		_, _ = fmt.Sscanf(parts[0], "%d", &idx)
+		_, _ = fmt.Sscanf(parts[1], "%d", &total)
 		frags = append(frags, fragment{idx: idx, total: total, data: data})
 	}
 

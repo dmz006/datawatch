@@ -270,7 +270,7 @@ func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Req
 		http.Error(w, "ollama delete: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		http.Error(w, fmt.Sprintf("ollama delete returned %d: %s", resp.StatusCode, string(b)), http.StatusBadGateway)
@@ -299,7 +299,7 @@ func runOllamaPull(taskID, addr, model string) {
 		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		globalPullTasks.update(taskID, func(t *PullTask) {

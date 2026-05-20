@@ -59,7 +59,7 @@ func (r *Router) guardrailLibrary() {
 	var sb strings.Builder
 	sb.WriteString("Guardrail library:\n")
 	for _, e := range entries {
-		sb.WriteString(fmt.Sprintf("  %-22s [%s] %s\n", e.Name, e.Type, e.Description))
+		fmt.Fprintf(&sb, "  %-22s [%s] %s\n", e.Name, e.Type, e.Description)
 	}
 	r.send(strings.TrimRight(sb.String(), "\n"))
 }

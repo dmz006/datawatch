@@ -352,7 +352,7 @@ func installCrashLog() {
 		return
 	}
 	// Tag the start of this process so multiple crashes are distinguishable.
-	fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
+	_, _ = fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
 		Version, os.Getpid(), time.Now().Format(time.RFC3339))
 	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
 	// and "fatal error:" messages directly to fd 2, bypassing log packages.
@@ -1741,7 +1741,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				kgAdapter = memoryPkg.NewPGKGAdapter(pgStore)
 			}
 			_ = kgUnified // used below for HTTP/MCP wiring
-			defer memRetriever.Close()
+			defer memRetriever.Close() //nolint:errcheck
 			fmt.Printf("[memory] enabled (backend=%s, embedder=%s, kg=active)\n", cfg.Memory.EffectiveBackend(), embedder.Name())
 		}
 	}
@@ -1857,7 +1857,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						escaped := strings.ReplaceAll(line, "'", "'\\''")
-						mgr.SendRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped))
+						_ = mgr.SendRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped))
 						time.Sleep(50 * time.Millisecond)
 					}
 					fmt.Printf("[memory] injected %d context lines for session %s\n", len(lines), sess.ID)
@@ -1967,7 +1967,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if err != nil {
 					return fmt.Sprintf("Error: %v", err), true
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				var result struct { Responses []string `json:"responses"` }
 				json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
 				if len(result.Responses) > 0 {
@@ -2275,7 +2275,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil { return fmt.Errorf("API call failed: %w", err) }
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
 			return nil
 		})
@@ -3414,7 +3414,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			resp, err := http.DefaultClient.Do(httpReq)
 			if err != nil { return "", fmt.Errorf("decompose call failed (model may be cold-loading or compute node unreachable): %w", err) }
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			b, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
@@ -3486,7 +3486,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if err != nil {
 					return autonomouspkg.SpawnResult{}, err
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				rb, _ := io.ReadAll(resp.Body)
 				if resp.StatusCode/100 != 2 {
 					return autonomouspkg.SpawnResult{}, fmt.Errorf("agent spawn: %s — %s", resp.Status, string(rb))
@@ -3522,7 +3522,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if err != nil {
 				return autonomouspkg.SpawnResult{}, err
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
@@ -3570,7 +3570,7 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 			if err != nil {
 				return autonomouspkg.VerificationResult{}, err
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
 			var ask struct{ Answer string `json:"answer"` }
 			_ = json.Unmarshal(rb, &ask)
@@ -3626,7 +3626,7 @@ Reply with STRICT JSON:
 			if err != nil {
 				return autonomouspkg.GuardrailVerdict{}, err
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
 			var ask struct{ Answer string `json:"answer"` }
 			_ = json.Unmarshal(rb, &ask)
@@ -3689,7 +3689,7 @@ Reply with STRICT JSON:
 				if err != nil {
 					return "", err
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				b, _ := io.ReadAll(resp.Body)
 				if resp.StatusCode != http.StatusOK {
 					return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
@@ -3885,7 +3885,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				if err != nil {
 					return "", err
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				b, _ := io.ReadAll(resp.Body)
 				if resp.StatusCode != http.StatusOK {
 					return "", fmt.Errorf("autonomous run: %s — %s", resp.Status, string(b))
@@ -3965,7 +3965,7 @@ Return STRICT JSON:
 						Summary: "guardrail " + req.Guardrail + " unreachable: " + err.Error(),
 					}, nil
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				rb, _ := io.ReadAll(resp.Body)
 				var ask struct{ Answer string `json:"answer"` }
 				_ = json.Unmarshal(rb, &ask)
@@ -4185,7 +4185,7 @@ Return STRICT JSON:
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil { return fmt.Errorf("API call failed: %w", err) }
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
 			return nil
 		})
@@ -4401,21 +4401,21 @@ Return STRICT JSON:
 							parts := strings.Fields(string(statData))
 							if len(parts) >= 2 {
 								rssPages := uint64(0)
-								fmt.Sscanf(parts[1], "%d", &rssPages)
+								_, _ = fmt.Sscanf(parts[1], "%d", &rssPages)
 								st.RSSBytes = rssPages * 4096
 								// Sum child processes
 								children, _ := exec.Command("pgrep", "-P", fmt.Sprintf("%d", st.PanePID)).Output()
 								for _, cline := range strings.Split(strings.TrimSpace(string(children)), "\n") {
 									if cline == "" { continue }
 									cpid := 0
-									fmt.Sscanf(cline, "%d", &cpid)
+									_, _ = fmt.Sscanf(cline, "%d", &cpid)
 									if cpid > 0 {
 										cdata, _ := os.ReadFile(fmt.Sprintf("/proc/%d/statm", cpid))
 										if len(cdata) > 0 {
 											cparts := strings.Fields(string(cdata))
 											if len(cparts) >= 2 {
 												var cr uint64
-												fmt.Sscanf(cparts[1], "%d", &cr)
+												_, _ = fmt.Sscanf(cparts[1], "%d", &cr)
 												st.RSSBytes += cr * 4096
 											}
 										}
@@ -5174,7 +5174,7 @@ Return STRICT JSON:
 					fmt.Printf("[reconnect] ACP server %s not responding for %s\n", bs.ACPBaseURL, sess.FullID)
 					return
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				// Re-register ACP state and re-subscribe to SSE
 				opencode.ReconnectACP(sess.TmuxSession, sess.FullID, bs.ACPBaseURL, bs.ACPSessionID, sess.LogFile)
 				fmt.Printf("[reconnect] ACP session %s reconnected on %s\n", sess.FullID, bs.ACPBaseURL)
@@ -5320,7 +5320,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 func nextScheduledTime(schedule, timeOfDay string) time.Time {
 	now := time.Now()
 	var h, m int
-	fmt.Sscanf(timeOfDay, "%d:%d", &h, &m)
+	_, _ = fmt.Sscanf(timeOfDay, "%d:%d", &h, &m)
 
 	switch schedule {
 	case "hourly":
@@ -5414,7 +5414,7 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	archivePath := filepath.Join(tmpDir, archiveName)
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
@@ -5424,7 +5424,7 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
@@ -5441,7 +5441,7 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
-				f.Close()
+				_ = f.Close()
 				return writeErr
 			}
 			downloaded += int64(n)
@@ -5462,11 +5462,11 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 			break
 		}
 		if readErr != nil {
-			f.Close()
+			_ = f.Close()
 			return readErr
 		}
 	}
-	f.Close()
+	_ = f.Close()
 	fmt.Printf("[update] Download complete (%d KB). Extracting...\n", downloaded/1024)
 
 	// Extract binary
@@ -5506,7 +5506,7 @@ func installBareBinary(url, version string, progress func(downloaded, total int6
 	if err != nil {
 		return fmt.Errorf("temp: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
 	fmt.Printf("[update] Downloading %s ...\n", url)
@@ -5514,7 +5514,7 @@ func installBareBinary(url, version string, progress func(downloaded, total int6
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
@@ -5532,7 +5532,7 @@ func installBareBinary(url, version string, progress func(downloaded, total int6
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
-				f.Close()
+				_ = f.Close()
 				return writeErr
 			}
 			downloaded += int64(n)
@@ -5552,11 +5552,11 @@ func installBareBinary(url, version string, progress func(downloaded, total int6
 			break
 		}
 		if readErr != nil {
-			f.Close()
+			_ = f.Close()
 			return readErr
 		}
 	}
-	f.Close()
+	_ = f.Close()
 
 	if err := os.Chmod(newBin, 0755); err != nil {
 		return err
@@ -5573,12 +5573,12 @@ func extractFromTarGz(archivePath, target, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	gr, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gr.Close()
+	defer gr.Close() //nolint:errcheck
 	tr := tar.NewReader(gr)
 	for {
 		hdr, err := tr.Next()
@@ -5594,7 +5594,7 @@ func extractFromTarGz(archivePath, target, dest string) error {
 				return err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+				_ = out.Close()
 				return err
 			}
 			return out.Close()
@@ -5608,7 +5608,7 @@ func extractFromZip(archivePath, target, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	for _, f := range r.File {
 		if f.Name == target || filepath.Base(f.Name) == target {
 			rc, err := f.Open()
@@ -5617,12 +5617,12 @@ func extractFromZip(archivePath, target, dest string) error {
 			}
 			out, err := os.Create(dest)
 			if err != nil {
-				rc.Close()
+				_ = rc.Close()
 				return err
 			}
 			_, err = io.Copy(out, rc)
-			rc.Close()
-			out.Close()
+			_ = rc.Close()
+			_ = out.Close()
 			return err
 		}
 	}
@@ -5665,7 +5665,7 @@ func downloadChannelBinary(dataDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
@@ -5674,16 +5674,16 @@ func downloadChannelBinary(dataDir string) (string, error) {
 		return "", err
 	}
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return "", err
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return "", err
 	}
 	return dst, nil
@@ -5696,18 +5696,18 @@ func replaceExecutable(dest, src string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer in.Close() //nolint:errcheck
 	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
+		_ = out.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, dest)
@@ -5845,7 +5845,7 @@ func validateLoopback(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("loopback unreachable at %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("loopback %s returned HTTP %d", url, resp.StatusCode)
 	}
@@ -6092,7 +6092,7 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			var s map[string]interface{}
 			if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 				return fmt.Errorf("decode stats: %w", err)
@@ -6214,7 +6214,7 @@ func newAlertsCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("daemon not reachable: %w", err)
 				}
-				defer resp.Body.Close()
+				defer resp.Body.Close() //nolint:errcheck
 				if resp.StatusCode != 200 {
 					b, _ := io.ReadAll(resp.Body)
 					return fmt.Errorf("mark-read failed: %s", strings.TrimSpace(string(b)))
@@ -6235,7 +6235,7 @@ func newAlertsCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			var data struct {
 				Alerts []struct {
 					ID        string `json:"id"`
@@ -6321,7 +6321,7 @@ func runStatus(cfg *config.Config) error {
 		}
 		client := &http.Client{Timeout: 2 * time.Second}
 		if resp, err := client.Do(req); err == nil {
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			json.NewDecoder(resp.Body).Decode(&sessions) //nolint:errcheck
 		}
 	}
@@ -6359,7 +6359,7 @@ func runStatus(cfg *config.Config) error {
 
 	fmt.Printf("sessions: %d active\n\n", len(active))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
+	_, _ = fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
 	for _, s := range active {
 		display := s.Task
 		if s.Name != "" {
@@ -6377,11 +6377,11 @@ func runStatus(cfg *config.Config) error {
 				updatedAt = t.Format("Jan 02 15:04")
 			}
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			s.ID, stateDisplay, s.BackendFamily, updatedAt,
 			truncate(display, 55))
 	}
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 
@@ -6483,7 +6483,7 @@ func runLink(_ *cobra.Command, _ []string) error {
 			fmt.Printf("Warning: could not start signal-cli to create group: %v\n", err)
 			fmt.Println("Create a group manually and run: datawatch config init")
 		} else {
-			defer backend.Close()
+			defer backend.Close() //nolint:errcheck
 			groupID, err := backend.CreateGroup(groupName)
 			if err != nil {
 				fmt.Printf("Warning: could not create group: %v\n", err)
@@ -6761,7 +6761,7 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if err != nil {
 		return fmt.Errorf("daemon not reachable on port %d: %w", cfg.Server.Port, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("config get: HTTP %d", resp.StatusCode)
 	}
@@ -6793,7 +6793,7 @@ func putConfig(url, token, body string) error {
 	if err != nil {
 		return fmt.Errorf("daemon not reachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
@@ -7549,7 +7549,7 @@ func tryDaemonRequest(cfg *config.Config, url string, body []byte) (bool, error)
 	if err != nil {
 		return false, nil
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return true, nil
 }
 
@@ -7571,13 +7571,13 @@ func runSessionList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
+	_, _ = fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
 	for _, s := range sessions {
 		display := s.Task
 		if s.Name != "" {
 			display = s.Name + ": " + s.Task
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04:05"),
 			truncate(display, 60))
 	}
@@ -7599,7 +7599,7 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		"application/json", bytes.NewReader(body))
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		fmt.Printf("Session started. Task: %s\n", task)
 		if name != "" {
 			fmt.Printf("Name: %s\n", name)
@@ -7824,7 +7824,7 @@ func runSessionRename(cfg *config.Config, id, name string) error {
 		fmt.Sprintf("http://localhost:%d/api/sessions/rename", cfg.Server.Port),
 		"application/json", bytes.NewReader(body))
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		fmt.Printf("Session %s renamed to %q\n", id, name)
 		return nil
 	}
@@ -7857,7 +7857,7 @@ func runSessionBind(cfg *config.Config, sessionID, agentID string) error {
 	if err != nil {
 		return fmt.Errorf("daemon unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		msg, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("bind: HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
@@ -7874,7 +7874,7 @@ func runSessionTimeline(cfg *config.Config, id string) error {
 	// Try HTTP API first
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/sessions/timeline?id=%s", cfg.Server.Port, id))
 	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		var result struct {
 			SessionID string   `json:"session_id"`
 			Lines     []string `json:"lines"`
@@ -7921,7 +7921,7 @@ func runSessionTelemetry(cfg *config.Config, id string) error {
 	if err != nil {
 		return fmt.Errorf("daemon unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(body))
@@ -8021,7 +8021,7 @@ func runSessionGuardrail(cfg *config.Config, id, name string) error {
 	if err != nil {
 		return fmt.Errorf("daemon unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(respBody))
@@ -8201,13 +8201,13 @@ func runScheduleList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSESSION\tSTATE\tWHEN\tCOMMAND")
+	_, _ = fmt.Fprintln(w, "ID\tSESSION\tSTATE\tWHEN\tCOMMAND")
 	for _, sc := range entries {
 		when := "on input"
 		if !sc.RunAt.IsZero() {
 			when = sc.RunAt.Format("15:04")
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sc.ID, sc.SessionID, sc.State, when, truncate(sc.Command, 40))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sc.ID, sc.SessionID, sc.State, when, truncate(sc.Command, 40))
 	}
 	return w.Flush()
 }
@@ -8450,7 +8450,7 @@ func runCommCommand(cfg *config.Config, text string) error {
 	if err != nil {
 		return fmt.Errorf("daemon not running or not reachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var result struct {
 		Responses []string `json:"responses"`
 	}
@@ -8566,7 +8566,7 @@ func mcpResourcesList(_ *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
 	return nil
@@ -8584,7 +8584,7 @@ func mcpResourcesTemplates(_ *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources/templates: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
 	return nil
@@ -8602,7 +8602,7 @@ func mcpResourcesRead(_ *cobra.Command, uri string) error {
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/resources/read: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
 	return nil
@@ -8714,7 +8714,7 @@ func mcpSampleRun(args []string) error {
 	if err != nil {
 		return fmt.Errorf("POST /api/mcp/sample: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	out, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(out))
 	return nil
@@ -8754,7 +8754,7 @@ func mcpElicitRun(schema, message string, options []string) error {
 	if err != nil {
 		return fmt.Errorf("POST /api/mcp/elicit: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	out, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(out))
 	return nil
@@ -8805,7 +8805,7 @@ func mcpPromptsList() error {
 	if err != nil {
 		return fmt.Errorf("GET /api/mcp/prompts: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	// Pretty-print the JSON table.
 	var env struct {
@@ -8856,7 +8856,7 @@ func mcpPromptsGet(name string, args map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("POST /api/mcp/prompts/get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	out, _ := io.ReadAll(resp.Body)
 	// Pretty-print messages.
 	var env struct {
@@ -8971,7 +8971,7 @@ func newHealthCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				os.Exit(0)
 			}
@@ -9155,7 +9155,7 @@ func fetchLatestVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
@@ -9216,7 +9216,7 @@ func newBackendCmd() *cobra.Command {
 			active := cfg.Session.LLMBackend
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "BACKEND\tACTIVE\tVERSION")
+			_, _ = fmt.Fprintln(w, "BACKEND\tACTIVE\tVERSION")
 			for _, name := range names {
 				b, _ := llm.Get(name)
 				marker := ""
@@ -9227,7 +9227,7 @@ func newBackendCmd() *cobra.Command {
 				if b != nil {
 					version = b.Version()
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", name, marker, version)
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", name, marker, version)
 			}
 			return w.Flush()
 		},
@@ -9436,7 +9436,7 @@ func selectTelegramChat(reader *bufio.Reader, bot interface {
 	if len(seen) == 0 {
 		fmt.Println("No recent chats found. Add the bot to a group, send a message, then enter the chat ID:")
 		var id int64
-		fmt.Sscanf(cliPrompt(reader, "Chat ID", fmt.Sprintf("%d", current)), "%d", &id)
+		_, _ = fmt.Sscanf(cliPrompt(reader, "Chat ID", fmt.Sprintf("%d", current)), "%d", &id)
 		return id
 	}
 
@@ -9451,12 +9451,12 @@ func selectTelegramChat(reader *bufio.Reader, bot interface {
 	fmt.Print("Select number (or 0 to enter manually): ")
 	line, _ := reader.ReadString('\n')
 	var sel int
-	fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
+	_, _ = fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
 	if sel >= 1 && sel <= len(chats) {
 		return chats[sel-1].id
 	}
 	var id int64
-	fmt.Sscanf(cliPrompt(reader, "Chat ID", fmt.Sprintf("%d", current)), "%d", &id)
+	_, _ = fmt.Sscanf(cliPrompt(reader, "Chat ID", fmt.Sprintf("%d", current)), "%d", &id)
 	return id
 }
 
@@ -9524,7 +9524,7 @@ func runSetupDiscord(_ *cobra.Command, _ []string) error {
 			fmt.Print("Select number (or 0 to enter manually): ")
 			line, _ := reader.ReadString('\n')
 			var sel int
-			fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
+			_, _ = fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
 			if sel >= 1 && sel <= len(chans) {
 				channelID = chans[sel-1].id
 			}
@@ -9598,7 +9598,7 @@ func runSetupSlack(_ *cobra.Command, _ []string) error {
 		fmt.Print("Select number (or 0 to enter manually): ")
 		line, _ := reader.ReadString('\n')
 		var sel int
-		fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
+		_, _ = fmt.Sscanf(strings.TrimSpace(line), "%d", &sel)
 		if sel >= 1 && sel <= len(chans) {
 			channelID = chans[sel-1].id
 		}
@@ -9773,7 +9773,7 @@ func runSetupEmail(_ *cobra.Command, _ []string) error {
 		}
 		return "587"
 	}())
-	fmt.Sscanf(portStr, "%d", &cfg.Email.Port)
+	_, _ = fmt.Sscanf(portStr, "%d", &cfg.Email.Port)
 	cfg.Email.Username = cliPrompt(reader, "SMTP username", cfg.Email.Username)
 
 	fmt.Print("SMTP password (or App Password): ")
@@ -9928,7 +9928,7 @@ func runSetupWeb(_ *cobra.Command, _ []string) error {
 		}
 		return "8080"
 	}())
-	fmt.Sscanf(portStr, "%d", &cfg.Server.Port)
+	_, _ = fmt.Sscanf(portStr, "%d", &cfg.Server.Port)
 	cfg.Server.Token = cliPrompt(reader, "Bearer token for authentication (press Enter to skip)", cfg.Server.Token)
 
 	tlsChoice := cliPrompt(reader, "Enable TLS with auto-generated cert? (y/n)", "y")
@@ -10010,7 +10010,7 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		fmt.Printf("Warning: could not reach server (%v). Saving anyway.\n", err)
 	} else {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			fmt.Println("Connection successful.")
 		} else {
@@ -10731,15 +10731,15 @@ func newCmdCmd() *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "NAME\tCOMMAND\tSEEDED")
+			_, _ = fmt.Fprintln(tw, "NAME\tCOMMAND\tSEEDED")
 			for _, c := range cmds {
 				seeded := ""
 				if c.Seeded {
 					seeded = "yes"
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, c.Command, seeded)
+				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, c.Command, seeded)
 			}
-			tw.Flush()
+			_ = tw.Flush()
 			return nil
 		},
 	}
@@ -11063,7 +11063,7 @@ func installRTKBinary() error {
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 	}
@@ -11072,13 +11072,13 @@ func installRTKBinary() error {
 	if err != nil {
 		return fmt.Errorf("tempfile: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write: %w", err)
 	}
-	tmp.Close()
+	_ = tmp.Close()
 
 	if err := os.Chmod(tmp.Name(), 0755); err != nil {
 		return fmt.Errorf("chmod: %w", err)
@@ -12012,7 +12012,7 @@ func diagTelegram(cfg *config.Config, sendTest bool) error {
 		diagFail(fmt.Sprintf("Telegram API unreachable: %v", err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
 		var result struct {
@@ -12041,7 +12041,7 @@ func diagTelegram(cfg *config.Config, sendTest bool) error {
 			diagFail(fmt.Sprintf("send failed: %v", err2))
 		} else {
 			diagOK("Test message sent to Telegram")
-			r2.Body.Close()
+			_ = r2.Body.Close()
 		}
 	}
 	return nil
@@ -12072,7 +12072,7 @@ func diagDiscord(cfg *config.Config, _ bool) error {
 		diagFail(fmt.Sprintf("Discord API unreachable: %v", err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode == 200 {
 		var result struct {
 			Username string `json:"username"`
@@ -12114,7 +12114,7 @@ func diagSlack(cfg *config.Config, _ bool) error {
 		diagFail(fmt.Sprintf("Slack API unreachable: %v", err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var result struct {
 		OK   bool   `json:"ok"`
 		User string `json:"user"`
@@ -12274,7 +12274,7 @@ func tailEncryptedLog(path string, key []byte, n int, follow bool) error {
 	if err != nil {
 		return fmt.Errorf("open encrypted log: %w", err)
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	data, err := r.ReadAll()
 	if err != nil {
 		return fmt.Errorf("decrypt log: %w", err)
@@ -12382,7 +12382,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 					continue
 				}
 				logData, err = r.ReadAll()
-				r.Close()
+				_ = r.Close()
 				if err != nil {
 					fmt.Printf("[warn] %s: decrypt failed: %v\n", encPath, err)
 					continue

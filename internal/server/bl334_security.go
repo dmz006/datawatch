@@ -78,7 +78,7 @@ func (s *Server) handleSecurityEncryptionStatus(w http.ResponseWriter, r *http.R
 		if ferr == nil {
 			hdr := make([]byte, 6)
 			n, _ := f.Read(hdr)
-			f.Close()
+			_ = f.Close()
 			files = append(files, encryptionFileStatus{
 				Path:      appLog,
 				Exists:    true,
@@ -331,14 +331,14 @@ func secureWipe(path string) error {
 		}
 		data := gen(size)
 		if _, err := f.Write(data); err != nil {
-			f.Close()
+			_ = f.Close()
 			return fmt.Errorf("write pass: %w", err)
 		}
 		if err := f.Sync(); err != nil {
-			f.Close()
+			_ = f.Close()
 			return err
 		}
-		f.Close()
+		_ = f.Close()
 	}
 	return os.Remove(path)
 }

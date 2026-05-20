@@ -882,7 +882,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 			fmt.Printf("[%s] [%s] Voice message received, transcribing…\n", r.hostname, msg.Backend)
 			text, err := r.transcriber.Transcribe(context.Background(), att.FilePath)
 			// Clean up temp file after transcription
-			os.Remove(att.FilePath)
+			_ = os.Remove(att.FilePath)
 			if err != nil {
 				fmt.Printf("[%s] [%s] Transcription failed: %v\n", r.hostname, msg.Backend, err)
 				r.send(fmt.Sprintf("[%s] Voice transcription failed: %v", r.hostname, err))
@@ -1135,17 +1135,17 @@ func (r *Router) handleAlerts(cmd Command) {
 		n = len(all)
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s] Last %d alert(s):\n", r.hostname, n))
+	fmt.Fprintf(&sb, "[%s] Last %d alert(s):\n", r.hostname, n)
 	for i, a := range all[:n] {
 		sessLabel := ""
 		if a.SessionID != "" {
 			parts := strings.Split(a.SessionID, "-")
 			sessLabel = fmt.Sprintf("[%s] ", parts[len(parts)-1])
 		}
-		sb.WriteString(fmt.Sprintf("  %s%s %s — %s\n",
-			sessLabel, a.CreatedAt.Format("15:04:05"), strings.ToUpper(string(a.Level)), a.Title))
+		fmt.Fprintf(&sb, "  %s%s %s — %s\n",
+			sessLabel, a.CreatedAt.Format("15:04:05"), strings.ToUpper(string(a.Level)), a.Title)
 		if a.Body != "" {
-			sb.WriteString(fmt.Sprintf("    %s\n", truncate(a.Body, 100)))
+			fmt.Fprintf(&sb, "    %s\n", truncate(a.Body, 100))
 		}
 		if i < n-1 {
 			sb.WriteString("  ────\n")
@@ -1469,13 +1469,13 @@ func (r *Router) handleList(filter string) {
 
 	// Local sessions
 	if len(mine) > 0 {
-		sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", r.hostname, len(mine)))
+		fmt.Fprintf(&sb, "[%s] Sessions (%d):\n", r.hostname, len(mine))
 		for i, s := range mine {
 			name := s.Name
 			if name == "" { name = truncate(s.Task, 40) }
 			if name == "" { name = "(no task)" }
-			sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
-				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name))
+			fmt.Fprintf(&sb, "  [%s] %s | %s | %s | %s",
+				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 			if s.State == session.StateWaitingInput {
 				sb.WriteString(" ⚠ INPUT")
 			}
@@ -1483,7 +1483,7 @@ func (r *Router) handleList(filter string) {
 			// schedule store is wired.
 			if r.schedStore != nil {
 				if n := r.schedStore.CountForSession(s.FullID); n > 0 {
-					sb.WriteString(fmt.Sprintf(" 📅 %d scheduled", n))
+					fmt.Fprintf(&sb, " 📅 %d scheduled", n)
 				}
 			}
 			sb.WriteByte('\n')
@@ -1504,16 +1504,16 @@ func (r *Router) handleList(filter string) {
 				}
 			}
 			if len(filtered) == 0 {
-				sb.WriteString(fmt.Sprintf("[%s] Sessions (0): idle\n", serverName))
+				fmt.Fprintf(&sb, "[%s] Sessions (0): idle\n", serverName)
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", serverName, len(filtered)))
+			fmt.Fprintf(&sb, "[%s] Sessions (%d):\n", serverName, len(filtered))
 			for i, s := range filtered {
 				name := s.Name
 				if name == "" { name = truncate(s.Task, 40) }
 				if name == "" { name = "(no task)" }
-				sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
-					s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name))
+				fmt.Fprintf(&sb, "  [%s] %s | %s | %s | %s",
+					s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 				if s.State == session.StateWaitingInput {
 					sb.WriteString(" ⚠ INPUT")
 				}

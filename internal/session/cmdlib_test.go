@@ -38,7 +38,7 @@ func TestCmdLibrary_AddAndList(t *testing.T) {
 
 func TestCmdLibrary_Get(t *testing.T) {
 	lib := tempCmdLib(t)
-	lib.Add("find-me", "ls -la")
+	lib.Add("find-me", "ls -la") //nolint:errcheck
 
 	cmd, ok := lib.Get("find-me")
 	if !ok {
@@ -56,7 +56,7 @@ func TestCmdLibrary_Get(t *testing.T) {
 
 func TestCmdLibrary_Delete(t *testing.T) {
 	lib := tempCmdLib(t)
-	lib.Add("del-me", "rm -rf")
+	lib.Add("del-me", "rm -rf") //nolint:errcheck
 
 	if err := lib.Delete("del-me"); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestCmdLibrary_Delete_NotFound(t *testing.T) {
 
 func TestCmdLibrary_Update(t *testing.T) {
 	lib := tempCmdLib(t)
-	lib.Add("upd", "old command")
+	lib.Add("upd", "old command") //nolint:errcheck
 
 	_, err := lib.Update("upd", "upd-new", "new command")
 	if err != nil {
@@ -95,7 +95,7 @@ func TestCmdLibrary_Persistence(t *testing.T) {
 	path := filepath.Join(dir, "cmds.json")
 
 	lib1, _ := NewCmdLibrary(path)
-	lib1.Add("persist", "echo saved")
+	lib1.Add("persist", "echo saved") //nolint:errcheck
 
 	lib2, _ := NewCmdLibrary(path)
 	cmds := lib2.List()
@@ -110,7 +110,7 @@ func TestCmdLibrary_Seed(t *testing.T) {
 		{Name: "approve", Command: "yes"},
 		{Name: "reject", Command: "no"},
 	}
-	lib.Seed(defaults)
+	lib.Seed(defaults) //nolint:errcheck
 	if len(lib.List()) < 2 {
 		t.Errorf("expected at least 2 after seed, got %d", len(lib.List()))
 	}

@@ -79,7 +79,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing audio field", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	sessionID := r.FormValue("session_id")
 	autoExec := r.FormValue("auto_exec") == "true" || r.FormValue("auto_exec") == "1"
@@ -98,7 +98,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "temp: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	ext := filepath.Ext(header.Filename)
 	if ext == "" {
@@ -111,11 +111,11 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := io.Copy(tmpFile, file); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
@@ -185,7 +185,7 @@ func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "temp: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 	tmpPath := filepath.Join(tmpDir, "silence.wav")
 	if err := os.WriteFile(tmpPath, silentWAV1Sec(), 0o644); err != nil {
 		http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)

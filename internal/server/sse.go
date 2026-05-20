@@ -130,7 +130,7 @@ func (h *SSEHub) Subscribe(topic string, w http.ResponseWriter, r *http.Request)
 
 	// Send a hello event so clients know the connection is live before
 	// the first real publish. id=0 reserved for hellos.
-	fmt.Fprintf(w, "event: hello\ndata: {}\nid: 0\n\n")
+	_, _ = fmt.Fprintf(w, "event: hello\ndata: {}\nid: 0\n\n")
 	flusher.Flush()
 
 	written := 0
@@ -142,7 +142,7 @@ func (h *SSEHub) Subscribe(topic string, w http.ResponseWriter, r *http.Request)
 		case evt, ok := <-c.ch:
 			if !ok {
 				// Topic closed by publisher.
-				fmt.Fprintf(w, "event: close\ndata: {}\nid: 0\n\n")
+				_, _ = fmt.Fprintf(w, "event: close\ndata: {}\nid: 0\n\n")
 				flusher.Flush()
 				return written, nil
 			}
@@ -150,7 +150,7 @@ func (h *SSEHub) Subscribe(topic string, w http.ResponseWriter, r *http.Request)
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "event: %s\ndata: %s\nid: %d\n\n", evt.Type, payloadJSON, evt.ID)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\nid: %d\n\n", evt.Type, payloadJSON, evt.ID)
 			flusher.Flush()
 			written++
 		}

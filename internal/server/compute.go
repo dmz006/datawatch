@@ -399,7 +399,7 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		http.Error(w, fmt.Sprintf("stub unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // cap at 1MB
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, fmt.Sprintf("stub HTTP %d: %s", resp.StatusCode, string(body)), http.StatusBadGateway)
@@ -444,7 +444,7 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 		},
 	}
 	var probeURL string
-	parser := func([]byte) []string { return nil }
+	var parser func([]byte) []string
 	switch strings.ToLower(kind) {
 	case "ollama", "opencode":
 		// Ollama protocol — GET /api/tags returns {"models":[{"name":"llama3:70b",...}]}.
@@ -499,7 +499,7 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 		http.Error(w, fmt.Sprintf("probe %s failed: %v", probeURL, perr), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, fmt.Sprintf("probe %s returned HTTP %d", probeURL, resp.StatusCode), http.StatusBadGateway)
 		return

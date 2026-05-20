@@ -25,7 +25,7 @@ func freeUDPPort(t *testing.T) int {
 		t.Fatalf("listen: %v", err)
 	}
 	port := conn.LocalAddr().(*net.UDPAddr).Port
-	conn.Close()
+	conn.Close() //nolint:errcheck
 	return port
 }
 
@@ -53,7 +53,7 @@ func TestServerIntegration(t *testing.T) {
 		serverErr <- backend.Subscribe(ctx, func(msg messaging.Message) {
 			// Echo handler — respond with the command received
 			response := fmt.Sprintf("echo: %s", msg.Text)
-			backend.Send(msg.GroupID, response)
+			backend.Send(msg.GroupID, response) //nolint:errcheck
 		})
 	}()
 
@@ -216,8 +216,8 @@ func TestClientExecute(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go backend.Subscribe(ctx, func(msg messaging.Message) {
-		backend.Send(msg.GroupID, "response: "+msg.Text)
+	go backend.Subscribe(ctx, func(msg messaging.Message) { //nolint:errcheck
+		backend.Send(msg.GroupID, "response: "+msg.Text) //nolint:errcheck
 	})
 	time.Sleep(500 * time.Millisecond)
 

@@ -220,7 +220,7 @@ func (p *Pool) checkServer(sv config.RemoteServerConfig) {
 		p.RecordFailure(sv.Name, err)
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		wasDown := !p.IsHealthy(sv.Name)

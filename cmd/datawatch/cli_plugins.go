@@ -140,7 +140,7 @@ func newPluginRunCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("HTTP %d fetching plugin %q", resp.StatusCode, pluginName)
 			}
@@ -201,7 +201,7 @@ func newPluginMobileIssueCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("HTTP %d fetching plugin %q", resp.StatusCode, args[0])
 			}

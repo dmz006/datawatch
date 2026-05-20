@@ -45,7 +45,7 @@ func (p *ProxyRouter) Infer(ctx context.Context, remoteLLM string, req Request) 
 	if err != nil {
 		return Response{}, &ErrTransient{Err: fmt.Errorf("proxy router: %w", err)}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode == http.StatusNotFound {
 		return Response{}, fmt.Errorf("proxy router: LLM %q not found on peer", remoteLLM)
 	}

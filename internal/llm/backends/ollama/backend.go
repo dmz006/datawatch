@@ -50,7 +50,7 @@ func (b *Backend) Version() string {
 		if err != nil || resp.StatusCode != http.StatusOK {
 			return ""
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return "remote:" + b.host
 	}
 	out, err := exec.Command(b.binary, "--version").Output()
@@ -109,7 +109,7 @@ func ListModels(host string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", host, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var result struct {
 		Models []struct {
 			Name string `json:"name"`

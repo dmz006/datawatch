@@ -304,7 +304,7 @@ func (s *Server) profileCall(method, kind, pathSuffix string, body io.Reader) (*
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	bb := &bytes.Buffer{}
 	_, _ = io.Copy(bb, resp.Body)
 	return resp, bb.String(), nil

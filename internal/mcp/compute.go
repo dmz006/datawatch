@@ -308,18 +308,18 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "scheduling_priority"); v != "" {
 		var n int
-		fmt.Sscanf(v, "%d", &n)
+		_, _ = fmt.Sscanf(v, "%d", &n)
 		body["scheduling_priority"] = n
 	}
 	cap := map[string]any{}
 	if v := optString(req, "max_concurrent_models"); v != "" {
 		var n int
-		fmt.Sscanf(v, "%d", &n)
+		_, _ = fmt.Sscanf(v, "%d", &n)
 		cap["max_concurrent_models"] = n
 	}
 	if v := optString(req, "gpu_mem_gb"); v != "" {
 		var n int
-		fmt.Sscanf(v, "%d", &n)
+		_, _ = fmt.Sscanf(v, "%d", &n)
 		cap["gpu_mem_gb"] = n
 	}
 	if len(cap) > 0 {

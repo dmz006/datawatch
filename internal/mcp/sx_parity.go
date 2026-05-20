@@ -54,7 +54,7 @@ func (s *Server) proxyGet(path string, q url.Values) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
@@ -90,7 +90,7 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))

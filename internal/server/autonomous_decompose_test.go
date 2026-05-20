@@ -194,7 +194,7 @@ func TestTS646_GET_Decompose_Stream_Events(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET stream: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.Header.Get("Content-Type") != "text/event-stream" {
 		t.Errorf("content-type: want text/event-stream, got %q", resp.Header.Get("Content-Type"))
@@ -307,7 +307,7 @@ func TestTS648_GET_Decompose_Stream_LastEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET with Last-Event-ID: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 
 	var dataLines []string
 	scanner := bufio.NewScanner(resp2.Body)

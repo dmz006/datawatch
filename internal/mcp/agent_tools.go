@@ -203,7 +203,7 @@ func (s *Server) sessionsCall(method, action string, body interface{}) (*http.Re
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	buf := &bytes.Buffer{}
 	_, _ = io.Copy(buf, resp.Body)
 	return resp, buf.String(), nil
@@ -244,7 +244,7 @@ func (s *Server) agentCall(method, pathSuffix string, body interface{}) (*http.R
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	buf := &bytes.Buffer{}
 	_, _ = io.Copy(buf, resp.Body)
 	return resp, buf.String(), nil

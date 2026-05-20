@@ -10,7 +10,7 @@ import (
 
 func TestDeduplication(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id1, err := s.Save("/proj", "unique content", "", "manual", "", nil)
 	if err != nil {
@@ -44,9 +44,9 @@ func TestDeduplication(t *testing.T) {
 
 func TestFindDuplicate(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "test content", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "test content", "", "manual", "", nil)
 
 	// Case-insensitive dedup via normalization
 	id := s.FindDuplicate("/proj", "  Test Content  ")
@@ -65,9 +65,9 @@ func TestFindDuplicate(t *testing.T) {
 
 func TestWAL_LogsOnSave(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "wal test", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "wal test", "", "manual", "", nil)
 
 	entries := s.WALRecent(10)
 	if len(entries) != 1 {
@@ -80,10 +80,10 @@ func TestWAL_LogsOnSave(t *testing.T) {
 
 func TestWAL_LogsOnDelete(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, _ := s.Save("/proj", "to delete", "", "manual", "", nil)
-	s.Delete(id)
+	_ = s.Delete(id)
 
 	entries := s.WALRecent(10)
 	if len(entries) != 2 {
@@ -112,19 +112,19 @@ func TestCachedEmbedder_HitsMiss(t *testing.T) {
 	cached := NewCachedEmbedder(inner, 100)
 
 	// First call = miss
-	cached.Embed(context.Background(), "hello")
+	_, _ = cached.Embed(context.Background(), "hello")
 	if inner.callCount != 1 {
 		t.Errorf("expected 1 inner call, got %d", inner.callCount)
 	}
 
 	// Second call = hit (no inner call)
-	cached.Embed(context.Background(), "hello")
+	_, _ = cached.Embed(context.Background(), "hello")
 	if inner.callCount != 1 {
 		t.Errorf("expected still 1 inner call (cache hit), got %d", inner.callCount)
 	}
 
 	// Different text = miss
-	cached.Embed(context.Background(), "world")
+	_, _ = cached.Embed(context.Background(), "world")
 	if inner.callCount != 2 {
 		t.Errorf("expected 2 inner calls, got %d", inner.callCount)
 	}
@@ -144,9 +144,9 @@ func TestCachedEmbedder_Eviction(t *testing.T) {
 	inner := &mockEmbedder{}
 	cached := NewCachedEmbedder(inner, 2) // max 2 entries
 
-	cached.Embed(context.Background(), "a")
-	cached.Embed(context.Background(), "b")
-	cached.Embed(context.Background(), "c") // evicts "a"
+	_, _ = cached.Embed(context.Background(), "a")
+	_, _ = cached.Embed(context.Background(), "b")
+	_, _ = cached.Embed(context.Background(), "c") // evicts "a"
 
 	if cached.CacheSize() != 2 {
 		t.Errorf("cache size = %d, want 2 after eviction", cached.CacheSize())
@@ -154,7 +154,7 @@ func TestCachedEmbedder_Eviction(t *testing.T) {
 
 	// "a" should be evicted — this should be a miss
 	inner.callCount = 0
-	cached.Embed(context.Background(), "a")
+	_, _ = cached.Embed(context.Background(), "a")
 	if inner.callCount != 1 {
 		t.Error("expected cache miss for evicted entry 'a'")
 	}
@@ -164,10 +164,10 @@ func TestCachedEmbedder_Eviction(t *testing.T) {
 
 func TestExportImport_Roundtrip(t *testing.T) {
 	s1, _ := tempDB(t)
-	defer s1.Close()
+	defer s1.Close() //nolint:errcheck
 
-	s1.Save("/proj", "memory one", "sum1", "manual", "", nil)
-	s1.Save("/proj", "memory two", "", "session", "s1", nil)
+	_, _ = s1.Save("/proj", "memory one", "sum1", "manual", "", nil)
+	_, _ = s1.Save("/proj", "memory two", "", "session", "s1", nil)
 
 	var buf bytes.Buffer
 	if err := s1.Export(&buf); err != nil {
@@ -176,7 +176,7 @@ func TestExportImport_Roundtrip(t *testing.T) {
 
 	// Import into a fresh store
 	s2, _ := tempDB(t)
-	defer s2.Close()
+	defer s2.Close() //nolint:errcheck
 
 	n, err := s2.Import(&buf)
 	if err != nil {
@@ -194,9 +194,9 @@ func TestExportImport_Roundtrip(t *testing.T) {
 
 func TestImport_SkipsDuplicates(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "existing", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "existing", "", "manual", "", nil)
 
 	// Import with a duplicate
 	data := `[{"id":1,"session_id":"","project_dir":"/proj","content":"existing","summary":"","role":"manual","created_at":"2026-01-01T00:00:00Z"},{"id":2,"session_id":"","project_dir":"/proj","content":"new one","summary":"","role":"manual","created_at":"2026-01-01T00:00:00Z"}]`
@@ -213,12 +213,12 @@ func TestImport_SkipsDuplicates(t *testing.T) {
 
 func TestListFiltered(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "manual note", "", "manual", "", nil)
-	s.Save("/proj", "session sum", "", "session", "s1", nil)
-	s.Save("/proj", "a learning", "", "learning", "s1", nil)
-	s.Save("/other", "other proj", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "manual note", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "session sum", "", "session", "s1", nil)
+	_, _ = s.Save("/proj", "a learning", "", "learning", "s1", nil)
+	_, _ = s.Save("/other", "other proj", "", "manual", "", nil)
 
 	// Filter by role
 	results, err := s.ListFiltered("/proj", "manual", "", 10)
@@ -250,11 +250,11 @@ func TestListFiltered(t *testing.T) {
 
 func TestDistinctProjects(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj-a", "a", "", "manual", "", nil)
-	s.Save("/proj-b", "b", "", "manual", "", nil)
-	s.Save("/proj-a", "c", "", "manual", "", nil)
+	_, _ = s.Save("/proj-a", "a", "", "manual", "", nil)
+	_, _ = s.Save("/proj-b", "b", "", "manual", "", nil)
+	_, _ = s.Save("/proj-a", "c", "", "manual", "", nil)
 
 	projects, err := s.DistinctProjects()
 	if err != nil {

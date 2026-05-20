@@ -209,7 +209,7 @@ func (c *Client) Register(ctx context.Context, version string, hostInfo map[stri
 		c.debugReq("register", http.MethodPost, c.parentURL+"/api/observer/peers", 0, nil, err)
 		return fmt.Errorf("register POST: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		buf, _ := io.ReadAll(resp.Body)
 		c.debugReq("register", http.MethodPost, c.parentURL+"/api/observer/peers", resp.StatusCode, buf, nil)
@@ -292,13 +292,13 @@ func (c *Client) pushOnce(ctx context.Context, snap *observer.StatsResponse, cha
 		c.debugReq("push", http.MethodPost, url, 0, nil, err)
 		return fmt.Errorf("push POST: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	// Read a small buffer when debug is on so we can include any error body.
 	var respBody []byte
 	if c.debug && resp.StatusCode >= 400 {
 		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, 1024))
 	} else {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 	}
 	c.debugReq("push", http.MethodPost, url, resp.StatusCode, respBody, nil)
 	if resp.StatusCode == http.StatusUnauthorized {

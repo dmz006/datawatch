@@ -213,6 +213,20 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for /receive sub-path — peer-to-peer WAL sync (fix #79).
+	if idx := strings.Index(rest, "/receive"); idx >= 0 && rest[idx:] == "/receive" {
+		id := rest[:idx]
+		if id == "" {
+			http.Error(w, "discussion id required", http.StatusBadRequest)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapCommWrite) {
+			return
+		}
+		s.handleDiscussionReceive(w, r, id)
+		return
+	}
+
 	// Check for /participants sub-path (T42b).
 	if idx := strings.Index(rest, "/participants"); idx >= 0 && rest[idx:] == "/participants" {
 		id := rest[:idx]
@@ -436,7 +450,7 @@ func discussionAppendWALEntry(id, content, role, originPeer string, encKey []byt
 		for sc.Scan() {
 			seq++
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	entry := discussionWALEntry{
@@ -465,7 +479,7 @@ func discussionAppendWALEntry(id, content, role, originPeer string, encKey []byt
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	if _, err = fmt.Fprintf(f, "%s\n", lineStr); err != nil {
 		return nil, err
 	}
@@ -485,7 +499,7 @@ func discussionReadWAL(id string, n int, encKey []byte) ([]discussionWALEntry, e
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	var all []discussionWALEntry
 	sc := bufio.NewScanner(f)

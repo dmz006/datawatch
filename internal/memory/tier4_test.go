@@ -10,15 +10,15 @@ import (
 
 func TestPruneByRole(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "old session", "", "session", "", nil)
-	s.Save("/proj", "old chunk", "", "output_chunk", "", nil)
-	s.Save("/proj", "keep manual", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "old session", "", "session", "", nil)
+	_, _ = s.Save("/proj", "old chunk", "", "output_chunk", "", nil)
+	_, _ = s.Save("/proj", "keep manual", "", "manual", "", nil)
 
 	// Backdate session and chunk
-	s.db.Exec("UPDATE memories SET created_at = ? WHERE role = 'session'", time.Now().Add(-100*24*time.Hour))
-	s.db.Exec("UPDATE memories SET created_at = ? WHERE role = 'output_chunk'", time.Now().Add(-40*24*time.Hour))
+	_, _ = s.db.Exec("UPDATE memories SET created_at = ? WHERE role = 'session'", time.Now().Add(-100*24*time.Hour))
+	_, _ = s.db.Exec("UPDATE memories SET created_at = ? WHERE role = 'output_chunk'", time.Now().Add(-40*24*time.Hour))
 
 	// Prune sessions older than 90 days
 	n, err := s.PruneByRole("session", 90*24*time.Hour)
@@ -44,15 +44,15 @@ func TestPruneByRole(t *testing.T) {
 
 func TestApplyRetention(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "s1", "", "session", "", nil)
-	s.Save("/proj", "c1", "", "output_chunk", "", nil)
-	s.Save("/proj", "m1", "", "manual", "", nil)
-	s.Save("/proj", "l1", "", "learning", "", nil)
+	_, _ = s.Save("/proj", "s1", "", "session", "", nil)
+	_, _ = s.Save("/proj", "c1", "", "output_chunk", "", nil)
+	_, _ = s.Save("/proj", "m1", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "l1", "", "learning", "", nil)
 
 	// Backdate all
-	s.db.Exec("UPDATE memories SET created_at = ?", time.Now().Add(-100*24*time.Hour))
+	_, _ = s.db.Exec("UPDATE memories SET created_at = ?", time.Now().Add(-100*24*time.Hour))
 
 	total := s.ApplyRetention(RetentionPolicy{
 		SessionDays: 90, ChunkDays: 30, ManualDays: 0, LearningDays: 0,
@@ -72,10 +72,10 @@ func TestApplyRetention(t *testing.T) {
 
 func TestListForReindex(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "mem1", "", "manual", "", nil)
-	s.Save("/proj", "mem2", "", "session", "", nil)
+	_, _ = s.Save("/proj", "mem1", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "mem2", "", "session", "", nil)
 
 	items, err := s.ListForReindex()
 	if err != nil {
@@ -88,7 +88,7 @@ func TestListForReindex(t *testing.T) {
 
 func TestUpdateEmbedding(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, _ := s.Save("/proj", "test", "", "manual", "", nil)
 	vec := []float32{1.0, 0.0, 0.0}
@@ -110,13 +110,13 @@ func TestUpdateEmbedding(t *testing.T) {
 
 func TestFindTunnels(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	// Same room "auth" in two different wings
-	s.SaveWithMeta("/projA", "auth in A", "", "manual", "", "projA", "auth", "", nil)
-	s.SaveWithMeta("/projB", "auth in B", "", "manual", "", "projB", "auth", "", nil)
+	_, _ = s.SaveWithMeta("/projA", "auth in A", "", "manual", "", "projA", "auth", "", nil)
+	_, _ = s.SaveWithMeta("/projB", "auth in B", "", "manual", "", "projB", "auth", "", nil)
 	// Unique room
-	s.SaveWithMeta("/projA", "deploy in A", "", "manual", "", "projA", "deploy", "", nil)
+	_, _ = s.SaveWithMeta("/projA", "deploy in A", "", "manual", "", "projA", "deploy", "", nil)
 
 	tunnels, err := s.FindTunnels()
 	if err != nil {
@@ -165,7 +165,7 @@ func TestParseClaudeTranscript(t *testing.T) {
 
 func TestMineConversation(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	r := NewRetriever(s, nil, 5)
 
 	data := `[{"role":"user","content":"write tests"},{"role":"assistant","content":"here are the tests"}]`

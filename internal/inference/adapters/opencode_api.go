@@ -51,7 +51,7 @@ func (a *OpenCodeAPI) Infer(ctx context.Context, node *compute.Node, llm *infere
 	if err != nil {
 		return inference.Response{}, &inference.ErrTransient{Err: fmt.Errorf("opencode-api: %w", err)}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return inference.Response{}, &inference.ErrTransient{Err: fmt.Errorf("opencode-api HTTP %d: %s", resp.StatusCode, string(buf))}

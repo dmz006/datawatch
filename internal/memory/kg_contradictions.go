@@ -90,7 +90,7 @@ func (kg *KnowledgeGraph) FindContradictions() ([]Contradiction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan active triples: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	bucket := map[string][]KGTriple{} // key = subject|predicate
 	for rows.Next() {

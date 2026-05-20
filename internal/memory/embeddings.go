@@ -55,7 +55,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if err != nil {
 		return nil, fmt.Errorf("ollama embed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
@@ -118,7 +118,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if err != nil {
 		return nil, fmt.Errorf("openai embed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)

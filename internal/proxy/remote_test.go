@@ -44,7 +44,7 @@ func TestFetchSessions(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/sessions" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(sessions)
+			json.NewEncoder(w).Encode(sessions) //nolint:errcheck
 			return
 		}
 		http.Error(w, "not found", 404)
@@ -70,7 +70,7 @@ func TestFindSession(t *testing.T) {
 	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(sessions)
+		json.NewEncoder(w).Encode(sessions) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -101,9 +101,9 @@ func TestForwardCommand(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/test/message" {
 			var req struct{ Text string }
-			json.NewDecoder(r.Body).Decode(&req)
+			json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 				"responses": []string{"[remote] response to: " + req.Text},
 				"count":     1,
 			})
@@ -140,11 +140,11 @@ func TestListAllSessions(t *testing.T) {
 	sessions2 := []*session.Session{{ID: "b2", FullID: "s2-b2"}, {ID: "c3", FullID: "s2-c3"}}
 
 	ts1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(sessions1)
+		_ = json.NewEncoder(w).Encode(sessions1)
 	}))
 	defer ts1.Close()
 	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(sessions2)
+		_ = json.NewEncoder(w).Encode(sessions2)
 	}))
 	defer ts2.Close()
 
@@ -166,7 +166,7 @@ func TestAuthToken(t *testing.T) {
 	var gotAuth string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		json.NewEncoder(w).Encode([]*session.Session{})
+		_ = json.NewEncoder(w).Encode([]*session.Session{})
 	}))
 	defer ts.Close()
 

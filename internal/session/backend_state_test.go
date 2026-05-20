@@ -60,7 +60,7 @@ func TestLoadBackendState_EmptyDir(t *testing.T) {
 
 func TestRemoveBackendState(t *testing.T) {
 	dir := t.TempDir()
-	SaveBackendState(dir, &BackendState{Backend: "test"})
+	SaveBackendState(dir, &BackendState{Backend: "test"}) //nolint:errcheck
 
 	RemoveBackendState(dir)
 
@@ -78,7 +78,7 @@ func TestSaveBackendState_ACPFields(t *testing.T) {
 		ACPSessionID: "sess-abc123",
 		ACPPort:      54321,
 	}
-	SaveBackendState(dir, state)
+	SaveBackendState(dir, state) //nolint:errcheck
 	loaded, _ := LoadBackendState(dir)
 	if loaded.ACPBaseURL != "http://localhost:54321" {
 		t.Errorf("expected ACP URL, got %q", loaded.ACPBaseURL)
@@ -96,7 +96,7 @@ func TestSaveBackendState_OpenWebUIFields(t *testing.T) {
 		OpenWebUIModel:   "llama3",
 		OpenWebUIAPIKey:  "sk-test",
 	}
-	SaveBackendState(dir, state)
+	SaveBackendState(dir, state) //nolint:errcheck
 	loaded, _ := LoadBackendState(dir)
 	if loaded.OpenWebUIBaseURL != "http://localhost:3000" {
 		t.Errorf("expected URL, got %q", loaded.OpenWebUIBaseURL)
@@ -105,7 +105,7 @@ func TestSaveBackendState_OpenWebUIFields(t *testing.T) {
 
 func TestBackendStateFile(t *testing.T) {
 	dir := t.TempDir()
-	SaveBackendState(dir, &BackendState{Backend: "test"})
+	SaveBackendState(dir, &BackendState{Backend: "test"}) //nolint:errcheck
 	path := filepath.Join(dir, backendStateFile)
 	if backendStateFile != "backend_state.json" {
 		t.Errorf("expected 'backend_state.json', got %q", backendStateFile)

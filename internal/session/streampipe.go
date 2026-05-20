@@ -33,7 +33,7 @@ func NewStreamingPipe(logPath string) (*StreamingPipe, error) {
 	fifoPath := logPath + ".pipe"
 
 	// Remove stale FIFO
-	os.Remove(fifoPath)
+	_ = os.Remove(fifoPath)
 
 	if err := syscall.Mkfifo(fifoPath, 0600); err != nil {
 		return nil, fmt.Errorf("mkfifo %s: %w", fifoPath, err)
@@ -41,7 +41,7 @@ func NewStreamingPipe(logPath string) (*StreamingPipe, error) {
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
-		os.Remove(fifoPath)
+		_ = os.Remove(fifoPath)
 		return nil, fmt.Errorf("open log %s: %w", logPath, err)
 	}
 
@@ -67,11 +67,11 @@ func (sp *StreamingPipe) Close() {
 	// Unblock the FIFO open by writing to it
 	f, err := os.OpenFile(sp.fifoPath, os.O_WRONLY|syscall.O_NONBLOCK, 0)
 	if err == nil {
-		f.Close()
+		_ = f.Close()
 	}
 	<-sp.doneCh
-	sp.logFile.Close()
-	os.Remove(sp.fifoPath)
+	_ = sp.logFile.Close()
+	_ = os.Remove(sp.fifoPath)
 }
 
 func (sp *StreamingPipe) readLoop() {
@@ -101,7 +101,7 @@ func (sp *StreamingPipe) readLoop() {
 		for {
 			select {
 			case <-sp.stopCh:
-				file.Close()
+				_ = file.Close()
 				return
 			default:
 			}
@@ -146,6 +146,6 @@ func (sp *StreamingPipe) readLoop() {
 				break
 			}
 		}
-		file.Close()
+		_ = file.Close()
 	}
 }

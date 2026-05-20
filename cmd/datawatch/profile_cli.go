@@ -180,7 +180,7 @@ func newProfileDeleteCmd(kind string) *cobra.Command {
 			if _, err := profileCLIDelete("/api/profiles/" + pluralize(kind) + "/" + args[0]); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stdout, "Deleted %s profile %q\n", kind, args[0])
+			_, _ = fmt.Fprintf(os.Stdout, "Deleted %s profile %q\n", kind, args[0])
 			return nil
 		},
 	}
@@ -303,7 +303,7 @@ func profileCLIDo(method, path string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("contact daemon at %s: %w (is it running?)", addr, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	buf := &bytes.Buffer{}
 	_, _ = io.Copy(buf, resp.Body)
 	if resp.StatusCode >= 400 {

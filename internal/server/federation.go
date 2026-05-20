@@ -124,7 +124,7 @@ func fetchRemoteSessions(baseURL, token string) ([]*session.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("transport: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, fmt.Errorf("auth_failed")

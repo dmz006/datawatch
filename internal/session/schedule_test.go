@@ -8,8 +8,8 @@ import (
 
 func TestCancelBySession(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) // Remove so NewScheduleStore creates fresh
-	defer os.Remove(tmp.Name())
+	os.Remove(tmp.Name()) //nolint:errcheck // Remove so NewScheduleStore creates fresh
+	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, err := NewScheduleStore(tmp.Name())
 	if err != nil {
@@ -17,9 +17,9 @@ func TestCancelBySession(t *testing.T) {
 	}
 
 	// Add commands for two sessions
-	store.Add("host-abc1", "cmd1", time.Time{}, "")
-	store.Add("host-abc1", "cmd2", time.Now().Add(time.Hour), "")
-	store.Add("host-def2", "cmd3", time.Time{}, "")
+	store.Add("host-abc1", "cmd1", time.Time{}, "") //nolint:errcheck
+	store.Add("host-abc1", "cmd2", time.Now().Add(time.Hour), "") //nolint:errcheck
+	store.Add("host-def2", "cmd3", time.Time{}, "") //nolint:errcheck
 
 	// Cancel by full ID
 	n := store.CancelBySession("host-abc1")
@@ -42,11 +42,11 @@ func TestCancelBySession(t *testing.T) {
 
 func TestCancelBySessionShortID(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())
-	defer os.Remove(tmp.Name())
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
-	store.Add("abc1", "cmd1", time.Time{}, "")
+	store.Add("abc1", "cmd1", time.Time{}, "") //nolint:errcheck
 
 	// Cancel using full ID that contains the short ID
 	n := store.CancelBySession("hostname-abc1")
@@ -57,14 +57,14 @@ func TestCancelBySessionShortID(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())
-	defer os.Remove(tmp.Name())
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
 	sc, _ := store.Add("sess1", "cmd1", time.Time{}, "")
 
 	// Cancel it first (simulates done/cancelled state)
-	store.Cancel(sc.ID)
+	store.Cancel(sc.ID) //nolint:errcheck
 
 	// Delete should remove it entirely
 	err := store.Delete(sc.ID)

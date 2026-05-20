@@ -125,7 +125,7 @@ func publishToEndpoint(r pushRegistration, ev PushEvent) {
 	if err != nil {
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // handlePushTopic — GET (SSE subscribe) or POST (publish) to /api/push/<topic>
@@ -185,7 +185,7 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, top
 	// Send an initial "open" event so clients confirm the stream is live.
 	openEv := PushEvent{ID: "open-" + clientID, Time: time.Now().Unix(), Event: "open", Topic: topic, Message: "stream open"}
 	if data, err := json.Marshal(openEv); err == nil {
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
 
@@ -199,13 +199,13 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, top
 			return
 		case ev := <-client.ch:
 			if data, err := json.Marshal(ev); err == nil {
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				flusher.Flush()
 			}
 		case <-keep.C:
 			ka := PushEvent{ID: fmt.Sprintf("ka-%d", time.Now().UnixNano()), Time: time.Now().Unix(), Event: "keepalive", Topic: topic}
 			if data, err := json.Marshal(ka); err == nil {
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				flusher.Flush()
 			}
 		}

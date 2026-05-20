@@ -24,7 +24,7 @@ func TestBL9_Audit_NotEnabled(t *testing.T) {
 func TestBL9_Audit_RejectsPost(t *testing.T) {
 	s := bl90Server(t)
 	l, _ := audit.New(t.TempDir())
-	defer l.Close()
+	defer l.Close() //nolint:errcheck
 	s.SetAuditLog(l)
 	req := httptest.NewRequest(http.MethodPost, "/api/audit", nil)
 	rr := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestBL9_Audit_RejectsPost(t *testing.T) {
 func TestBL9_Audit_ReturnsEntries(t *testing.T) {
 	s := bl90Server(t)
 	l, _ := audit.New(t.TempDir())
-	defer l.Close()
+	defer l.Close() //nolint:errcheck
 	_ = l.Write(audit.Entry{Actor: "operator", Action: "start", SessionID: "aa"})
 	_ = l.Write(audit.Entry{Actor: "channel:signal", Action: "send_input", SessionID: "aa"})
 	s.SetAuditLog(l)
@@ -61,7 +61,7 @@ func TestBL9_Audit_ReturnsEntries(t *testing.T) {
 func TestBL9_Audit_ActorFilter(t *testing.T) {
 	s := bl90Server(t)
 	l, _ := audit.New(t.TempDir())
-	defer l.Close()
+	defer l.Close() //nolint:errcheck
 	_ = l.Write(audit.Entry{Actor: "operator", Action: "start"})
 	_ = l.Write(audit.Entry{Actor: "channel:signal", Action: "send_input"})
 	s.SetAuditLog(l)

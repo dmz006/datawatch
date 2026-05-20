@@ -36,12 +36,8 @@ func TestHandleChannelInfo_ShapeOK(t *testing.T) {
 	if info.Kind != "go" && info.Kind != "js" {
 		t.Errorf("kind = %q, want go|js", info.Kind)
 	}
-	// stale_mcp_json must always be a slice (omitempty would surprise UI).
-	if info.StaleMCPJSON == nil {
-		// JSON omitempty drops the field when empty; that's fine. Just
-		// assert the slice is properly addressable when present (via
-		// the Go zero-value path).
-	}
+	// stale_mcp_json: JSON omitempty drops the field when empty; that's fine.
+	_ = info.StaleMCPJSON
 }
 
 func TestHandleChannelInfo_MCPModeStatus(t *testing.T) {

@@ -135,7 +135,7 @@ func (c *HTTPClient) Search(ctx context.Context, query string) ([]map[string]int
 	if err != nil {
 		return nil, fmt.Errorf("memory search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("memory search: HTTP %d: %s", resp.StatusCode, body)
@@ -203,7 +203,7 @@ func (c *HTTPClient) postSave(ctx context.Context, content, projectDir string) e
 	if err != nil {
 		return fmt.Errorf("memory save: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("memory save: HTTP %d: %s", resp.StatusCode, raw)

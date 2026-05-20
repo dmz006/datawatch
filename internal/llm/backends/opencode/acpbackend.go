@@ -303,7 +303,7 @@ func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) e
 		}
 		resp, err := http.Get(baseURL + "/session")
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -325,7 +325,7 @@ func createSession(ctx context.Context, baseURL, projectDir string) (string, err
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var result struct {
 		ID string `json:"id"`
 	}
@@ -354,7 +354,7 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return nil
 }
 
@@ -374,7 +374,7 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE connect error: %v", err))
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	writeLogLine(logFile, "[opencode-acp] SSE stream connected")
 	var pendingText strings.Builder // accumulates streaming deltas until step-finish
 

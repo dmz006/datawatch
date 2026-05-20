@@ -181,7 +181,7 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 		emitChat(tmuxSession, "system", fmt.Sprintf("Error: %v", err), false)
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		emitChat(tmuxSession, "system", fmt.Sprintf("Ollama error: HTTP %d", resp.StatusCode), false)

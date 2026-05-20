@@ -29,7 +29,7 @@ func runFakeSignalCLI(mode string) int {
 		time.Sleep(20 * time.Millisecond) // simulate waiting for scan
 		return 0
 	case "ok_stdout":
-		fmt.Fprintln(os.Stdout, "sgnl://linkinguri?uuid=test&pub_key=abc123")
+		_, _ = fmt.Fprintln(os.Stdout, "sgnl://linkinguri?uuid=test&pub_key=abc123")
 		return 0
 	case "fail":
 		fmt.Fprintln(os.Stderr, "java.lang.RuntimeException: Failed to link device: already registered")

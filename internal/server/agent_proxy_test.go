@@ -197,7 +197,7 @@ func TestAgentProxy_WebSocket_Bidirectional(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer c.Close()
+		defer c.Close() //nolint:errcheck
 		// Echo with prefix so we can tell it's the worker, not the client.
 		for {
 			_, msg, err := c.ReadMessage()
@@ -222,7 +222,7 @@ func TestAgentProxy_WebSocket_Bidirectional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ws dial: %v", err)
 	}
-	defer clientConn.Close()
+	defer clientConn.Close() //nolint:errcheck
 
 	if err := clientConn.WriteMessage(websocket.TextMessage, []byte("hi")); err != nil {
 		t.Fatalf("write: %v", err)

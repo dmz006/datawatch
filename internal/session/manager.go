@@ -48,7 +48,7 @@ func StripANSI(s string) string {
 			return ""
 		}
 		var n int
-		fmt.Sscanf(sub[1], "%d", &n)
+		_, _ = fmt.Sscanf(sub[1], "%d", &n)
 		if n > 80 {
 			n = 80 // cap to avoid runaway padding
 		}
@@ -1429,7 +1429,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		// tmux pipes to the FIFO; encrypted output goes to .enc file
 		if err := m.tmux.PipeOutput(tmuxSession, fifo.FIFOPath()); err != nil {
-			fifo.Close()
+			_ = fifo.Close()
 			_ = m.tmux.KillSession(tmuxSession)
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
@@ -1833,7 +1833,7 @@ func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 			return
 		}
 	}
-	m.tmux.ResizePane(sess.TmuxSession, cols, rows)
+	_ = m.tmux.ResizePane(sess.TmuxSession, cols, rows)
 }
 
 // channelCompletionPatterns — natural-language phrases that signal task
@@ -2266,7 +2266,7 @@ func (m *Manager) Kill(fullID string) error {
 		delete(m.monitors, fullID)
 	}
 	if fifo, ok := m.encFIFOs[fullID]; ok {
-		fifo.Close()
+		_ = fifo.Close()
 		delete(m.encFIFOs, fullID)
 	}
 	if sp, ok := m.streamPipes[fullID]; ok {
@@ -2345,7 +2345,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		delete(m.monitors, sess.FullID)
 	}
 	if fifo, ok := m.encFIFOs[sess.FullID]; ok {
-		fifo.Close()
+		_ = fifo.Close()
 		delete(m.encFIFOs, sess.FullID)
 	}
 	if sp, ok := m.streamPipes[sess.FullID]; ok {
@@ -2405,7 +2405,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		if err := m.tmux.PipeOutput(sess.TmuxSession, fifo.FIFOPath()); err != nil {
-			fifo.Close()
+			_ = fifo.Close()
 			_ = m.tmux.KillSession(sess.TmuxSession)
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
@@ -2584,7 +2584,7 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 			return "", fmt.Errorf("open encrypted log: %w", err)
 		}
 		data, err = r.ReadAll()
-		r.Close()
+		_ = r.Close()
 		if err != nil {
 			return "", fmt.Errorf("read encrypted log: %w", err)
 		}
@@ -2599,7 +2599,7 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 			}
 			return "", fmt.Errorf("read log: %w", err)
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 		const tailBytes = 64 * 1024
 		fi, _ := f.Stat()
 		offset := fi.Size() - tailBytes
@@ -3857,7 +3857,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	// For ACP sessions, scan existing content for status lines (may have been
 	// written before monitor started due to race with ACP goroutine).
@@ -3896,12 +3896,12 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	watcher, watchErr := fsnotify.NewWatcher()
 	var fileEvents <-chan fsnotify.Event
 	if watchErr == nil {
-		defer watcher.Close()
+		defer watcher.Close() //nolint:errcheck
 		// Watch the directory containing the log file (fsnotify requires dir-level watch)
 		if err := watcher.Add(filepath.Dir(sess.LogFile)); err == nil {
 			fileEvents = watcher.Events
 		} else {
-			watcher.Close()
+			_ = watcher.Close()
 			watcher = nil
 		}
 	}

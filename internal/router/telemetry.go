@@ -50,12 +50,12 @@ func (r *Router) handleTelemetryGet(id string) {
 		return
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Telemetry: %s\n", id))
+	fmt.Fprintf(&sb, "Telemetry: %s\n", id)
 	if tel.CurrentTask != "" {
-		sb.WriteString(fmt.Sprintf("  Task: %s\n", tel.CurrentTask))
+		fmt.Fprintf(&sb, "  Task: %s\n", tel.CurrentTask)
 	}
 	if tel.Progress > 0 {
-		sb.WriteString(fmt.Sprintf("  Progress: %.0f%%\n", tel.Progress))
+		fmt.Fprintf(&sb, "  Progress: %.0f%%\n", tel.Progress)
 	}
 	done, total := 0, len(tel.Tasks)
 	for _, t := range tel.Tasks {
@@ -64,7 +64,7 @@ func (r *Router) handleTelemetryGet(id string) {
 		}
 	}
 	if total > 0 {
-		sb.WriteString(fmt.Sprintf("  Tasks: %d/%d done\n", done, total))
+		fmt.Fprintf(&sb, "  Tasks: %d/%d done\n", done, total)
 		for _, t := range tel.Tasks {
 			icon := "·"
 			switch t.Status {
@@ -90,9 +90,9 @@ func (r *Router) handleTelemetryGet(id string) {
 		case "block":
 			icon = "✗"
 		}
-		sb.WriteString(fmt.Sprintf("  %s %s: %s\n", icon, v.Guardrail, v.Outcome))
+		fmt.Fprintf(&sb, "  %s %s: %s\n", icon, v.Guardrail, v.Outcome)
 	}
-	sb.WriteString(fmt.Sprintf("  Updated: %s", tel.UpdatedAt))
+	fmt.Fprintf(&sb, "  Updated: %s", tel.UpdatedAt)
 	r.send(sb.String())
 }
 
@@ -107,7 +107,7 @@ func (r *Router) handleTelemetryList() {
 	for _, sess := range sessions {
 		body, err := r.commGet(fmt.Sprintf("/api/sessions/%s/telemetry", sess.ID), nil)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("  %s: error\n", sess.ID))
+			fmt.Fprintf(&sb, "  %s: error\n", sess.ID)
 			continue
 		}
 		var tel struct {

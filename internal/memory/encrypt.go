@@ -138,7 +138,7 @@ func RotateKey(store *Store, oldKey, newKey []byte) (int, error) {
 		rows.Scan(&r.id, &r.content, &r.summary) //nolint:errcheck
 		toUpdate = append(toUpdate, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Temporarily set old key for decryption
 	origKey := store.encKey
@@ -203,7 +203,7 @@ func MigrateToEncrypted(store *Store, key []byte) (int, error) {
 		rows.Scan(&r.id, &r.content, &r.summary) //nolint:errcheck
 		toEncrypt = append(toEncrypt, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	count := 0
 	for _, r := range toEncrypt {

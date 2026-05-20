@@ -70,7 +70,7 @@ func (a *Claude) Infer(ctx context.Context, node *compute.Node, llm *inference.L
 	if err != nil {
 		return inference.Response{}, &inference.ErrTransient{Err: fmt.Errorf("claude: %w", err)}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return inference.Response{}, &inference.ErrTransient{Err: fmt.Errorf("claude HTTP %d: %s", resp.StatusCode, string(buf))}

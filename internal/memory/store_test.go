@@ -22,7 +22,7 @@ func tempDB(t *testing.T) (*Store, string) {
 
 func TestNewStore(t *testing.T) {
 	s, path := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("DB file not created: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestNewStore(t *testing.T) {
 
 func TestStore_SaveAndListRecent(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id1, err := s.Save("/proj", "first memory", "summary1", "manual", "", nil)
 	if err != nil {
@@ -61,12 +61,12 @@ func TestStore_SaveAndListRecent(t *testing.T) {
 
 func TestStore_ListByRole(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "manual note", "", "manual", "", nil)
-	s.Save("/proj", "session summary", "", "session", "s1", nil)
-	s.Save("/proj", "a learning", "", "learning", "s1", nil)
-	s.Save("/proj", "another learning", "", "learning", "s2", nil)
+	_, _ = s.Save("/proj", "manual note", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "session summary", "", "session", "s1", nil)
+	_, _ = s.Save("/proj", "a learning", "", "learning", "s1", nil)
+	_, _ = s.Save("/proj", "another learning", "", "learning", "s2", nil)
 
 	learnings, err := s.ListByRole("/proj", "learning", 10)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestStore_ListByRole(t *testing.T) {
 
 func TestStore_Delete(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	id, _ := s.Save("/proj", "to delete", "", "manual", "", nil)
 	if err := s.Delete(id); err != nil {
@@ -93,11 +93,11 @@ func TestStore_Delete(t *testing.T) {
 
 func TestStore_Count(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "one", "", "manual", "", nil)
-	s.Save("/proj", "two", "", "manual", "", nil)
-	s.Save("/other", "three", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "one", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "two", "", "manual", "", nil)
+	_, _ = s.Save("/other", "three", "", "manual", "", nil)
 
 	count, err := s.Count("/proj")
 	if err != nil {
@@ -118,16 +118,16 @@ func TestStore_Count(t *testing.T) {
 
 func TestStore_SearchWithEmbeddings(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	// Create some memories with embeddings
 	vec1 := []float32{1.0, 0.0, 0.0}
 	vec2 := []float32{0.0, 1.0, 0.0}
 	vec3 := []float32{0.9, 0.1, 0.0} // similar to vec1
 
-	s.Save("/proj", "about dogs", "", "manual", "", vec1)
-	s.Save("/proj", "about cats", "", "manual", "", vec2)
-	s.Save("/proj", "about puppies", "", "manual", "", vec3)
+	_, _ = s.Save("/proj", "about dogs", "", "manual", "", vec1)
+	_, _ = s.Save("/proj", "about cats", "", "manual", "", vec2)
+	_, _ = s.Save("/proj", "about puppies", "", "manual", "", vec3)
 
 	// Search with query similar to vec1
 	query := []float32{1.0, 0.0, 0.0}
@@ -153,14 +153,14 @@ func TestStore_SearchWithEmbeddings(t *testing.T) {
 
 func TestStore_Prune(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
-	s.Save("/proj", "old", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "old", "", "manual", "", nil)
 	// Manually backdate
-	s.db.Exec("UPDATE memories SET created_at = ? WHERE content = 'old'",
+	_, _ = s.db.Exec("UPDATE memories SET created_at = ? WHERE content = 'old'",
 		time.Now().Add(-48*time.Hour))
 
-	s.Save("/proj", "new", "", "manual", "", nil)
+	_, _ = s.Save("/proj", "new", "", "manual", "", nil)
 
 	pruned, err := s.Prune(24 * time.Hour)
 	if err != nil {
@@ -200,7 +200,7 @@ func TestEncodeDecodeVector(t *testing.T) {
 // applies when empty. SearchInNamespaces respects the filter.
 func TestStore_NamespaceIsolation(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 
 	emb := []float32{1, 0, 0}
 
@@ -250,7 +250,7 @@ func TestStore_NamespaceIsolation(t *testing.T) {
 // callers don't lose visibility after the migration.
 func TestStore_LegacySaveDefaultsToGlobal(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	emb := []float32{1, 0, 0}
 
 	if _, err := s.SaveWithMeta("/proj", "legacy doc", "", "manual", "", "", "", "", emb); err != nil {
@@ -271,7 +271,7 @@ func TestStore_LegacySaveDefaultsToGlobal(t *testing.T) {
 // worker on session-end to package "what I learned this session".
 func TestStore_ExportSince_TimeFilter(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	emb := []float32{1, 0, 0}
 
 	// Old row.
@@ -313,7 +313,7 @@ func TestStore_ExportSince_TimeFilter(t *testing.T) {
 // ExportSince filters by namespace when one is supplied.
 func TestStore_ExportSince_NamespaceFilter(t *testing.T) {
 	s, _ := tempDB(t)
-	defer s.Close()
+	defer s.Close() //nolint:errcheck
 	emb := []float32{1, 0, 0}
 	old := time.Now().UTC().Add(-time.Hour)
 
@@ -334,9 +334,9 @@ func TestStore_ExportSince_NamespaceFilter(t *testing.T) {
 // into a "parent" Store with namespace + spatial metadata intact.
 func TestStore_ExportImport_PreservesNamespaceAndSpatial(t *testing.T) {
 	worker, _ := tempDB(t)
-	defer worker.Close()
+	defer worker.Close() //nolint:errcheck
 	parent, _ := tempDB(t)
-	defer parent.Close()
+	defer parent.Close() //nolint:errcheck
 	emb := []float32{1, 0, 0}
 	old := time.Now().UTC().Add(-time.Hour)
 

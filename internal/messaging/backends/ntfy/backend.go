@@ -47,7 +47,7 @@ func (b *Backend) Send(recipient, message string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("ntfy: HTTP %d", resp.StatusCode)
 	}

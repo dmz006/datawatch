@@ -152,7 +152,7 @@ func guardrailAPIGet(path string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(body))
 	return nil
@@ -175,7 +175,7 @@ func guardrailAPIDelete(path string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
@@ -195,7 +195,7 @@ func guardrailBodyRequest(method, path string, body any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	rb, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(rb))
 	return nil

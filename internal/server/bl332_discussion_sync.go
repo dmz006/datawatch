@@ -246,7 +246,7 @@ func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntr
 			if !ok || peerURL == "" {
 				return
 			}
-			endpoint := strings.TrimRight(peerURL, "/") + "/api/push/" + id
+			endpoint := strings.TrimRight(peerURL, "/") + "/api/memory/discussion/" + id + "/receive"
 			req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 			if err != nil {
 				return
@@ -260,7 +260,7 @@ func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntr
 			if err != nil {
 				return
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}()
 	}
 }
@@ -438,4 +438,36 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 		"resolved":      resolved,
 		"ok":            true,
 	})
+}
+
+// handleDiscussionReceive handles POST /api/memory/discussion/{id}/receive.
+// This is the peer-to-peer WAL sync endpoint — the correct destination for
+// discussionSyncToParticipants (fixes #79: was wrongly posting to /api/push/{id}
+// which routed to the UnifiedPush handler and never wrote to the WAL).
+//
+// The body is a syncWritePayload where Message is a JSON-encoded discussionWALEntry.
+// This handler appends the entry to the local WAL and does NOT fan-out further
+// (loop prevention: the original sender already broadcast to all participants).
+func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload syncWritePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var entry discussionWALEntry
+	if err := json.Unmarshal([]byte(payload.Message), &entry); err != nil {
+		http.Error(w, "bad entry json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mu := discussionLock(id)
+	mu.Lock()
+	defer mu.Unlock()
+
+	_, _ = discussionAppendWALEntry(id, entry.Content, entry.Role, entry.OriginPeer, s.encKey)
+	writeJSONOK(w, map[string]any{"discussion_id": id, "ok": true})
 }

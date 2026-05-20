@@ -97,10 +97,6 @@ func classify(recs []ProcRecord, cfg EnvelopesCfg) ([]Envelope, map[int]string) 
 			if _, ok := byPID[sr.RootPID]; !ok {
 				continue
 			}
-			label := sr.Label
-			if label == "" {
-				label = sr.FullID
-			}
 			envID := "session:" + sr.FullID
 			walkSubtree(sr.RootPID, children, func(pid int) {
 				if _, claimed := assignment[pid]; !claimed {

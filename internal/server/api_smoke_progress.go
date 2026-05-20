@@ -53,7 +53,7 @@ func (s *Server) smokeForward(body []byte) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 

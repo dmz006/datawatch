@@ -137,7 +137,7 @@ func newAgentKillCmd() *cobra.Command {
 			if _, err := profileCLIDelete("/api/agents/" + args[0]); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stdout, "Terminated agent %s\n", args[0])
+			_, _ = fmt.Fprintf(os.Stdout, "Terminated agent %s\n", args[0])
 			return nil
 		},
 	}

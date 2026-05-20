@@ -126,7 +126,7 @@ func TestPinnedTLSConfig_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		body, _ := io.ReadAll(resp.Body)
 		if string(body) != "ok" {
 			t.Errorf("body=%q want ok", body)
@@ -167,7 +167,7 @@ func TestPinnedTLSConfig_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("colon-format: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	})
 }
 

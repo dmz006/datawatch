@@ -1300,21 +1300,21 @@ func (s *Server) handleListSessions(_ context.Context, _ mcpsdk.CallToolRequest)
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Sessions on %s:\n\n", s.hostname))
+	fmt.Fprintf(&sb, "Sessions on %s:\n\n", s.hostname)
 	for _, sess := range sessions {
 		if sess.Hostname != s.hostname {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("ID:      %s\n", sess.ID))
+		fmt.Fprintf(&sb, "ID:      %s\n", sess.ID)
 		if sess.Name != "" {
-			sb.WriteString(fmt.Sprintf("Name:    %s\n", sess.Name))
+			fmt.Fprintf(&sb, "Name:    %s\n", sess.Name)
 		}
-		sb.WriteString(fmt.Sprintf("State:   %s\n", sess.State))
-		sb.WriteString(fmt.Sprintf("Task:    %s\n", sess.Task))
-		sb.WriteString(fmt.Sprintf("Dir:     %s\n", sess.ProjectDir))
-		sb.WriteString(fmt.Sprintf("Updated: %s\n", sess.UpdatedAt.Format(time.RFC3339)))
+		fmt.Fprintf(&sb, "State:   %s\n", sess.State)
+		fmt.Fprintf(&sb, "Task:    %s\n", sess.Task)
+		fmt.Fprintf(&sb, "Dir:     %s\n", sess.ProjectDir)
+		fmt.Fprintf(&sb, "Updated: %s\n", sess.UpdatedAt.Format(time.RFC3339))
 		if sess.State == session.StateWaitingInput && sess.LastPrompt != "" {
-			sb.WriteString(fmt.Sprintf("Prompt:  %s\n", sess.LastPrompt))
+			fmt.Fprintf(&sb, "Prompt:  %s\n", sess.LastPrompt)
 		}
 		sb.WriteString("\n")
 	}
@@ -1353,7 +1353,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		if err != nil {
 			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		raw, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode >= 400 {
 			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session (%d): %s", resp.StatusCode, string(raw))), nil
@@ -1443,7 +1443,7 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s] Timeline (format: timestamp | event | details):\n\n", sess.ID))
+	fmt.Fprintf(&sb, "[%s] Timeline (format: timestamp | event | details):\n\n", sess.ID)
 	for _, l := range lines {
 		sb.WriteString(l)
 		sb.WriteByte('\n')
@@ -1481,7 +1481,7 @@ func (s *Server) handleTelemetryGet(_ context.Context, req mcpsdk.CallToolReques
 	if err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	return mcpsdk.NewToolResultText(string(body)), nil
 }
@@ -1496,8 +1496,8 @@ func (s *Server) handleTelemetryList(_ context.Context, _ mcpsdk.CallToolRequest
 	sb.WriteString("─────────────────────────────────────────\n")
 	for _, sess := range sessions {
 		board := dwserver.HookBoardFor(sess.ID)
-		sb.WriteString(fmt.Sprintf("%-20s  health:%-8s  state:%-10s",
-			sess.ID, board.HookHealth, board.State))
+		fmt.Fprintf(&sb, "%-20s  health:%-8s  state:%-10s",
+			sess.ID, board.HookHealth, board.State)
 		if board.Telemetry != nil {
 			t := board.Telemetry
 			done, total := 0, len(t.Tasks)
@@ -1507,17 +1507,17 @@ func (s *Server) handleTelemetryList(_ context.Context, _ mcpsdk.CallToolRequest
 				}
 			}
 			if total > 0 {
-				sb.WriteString(fmt.Sprintf("  tasks:%d/%d", done, total))
+				fmt.Fprintf(&sb, "  tasks:%d/%d", done, total)
 			}
 			if t.Progress > 0 {
-				sb.WriteString(fmt.Sprintf("  progress:%.0f%%", t.Progress))
+				fmt.Fprintf(&sb, "  progress:%.0f%%", t.Progress)
 			}
 			if t.CurrentTask != "" {
 				task := t.CurrentTask
 				if len(task) > 40 {
 					task = task[:37] + "..."
 				}
-				sb.WriteString(fmt.Sprintf("  task:%q", task))
+				fmt.Fprintf(&sb, "  task:%q", task)
 			}
 		}
 		sb.WriteByte('\n')
@@ -1650,7 +1650,7 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 		if a.SessionID != "" {
 			sessLabel = fmt.Sprintf(" [%s]", a.SessionID)
 		}
-		sb.WriteString(fmt.Sprintf("[%s] %s %s%s%s%s — %s\n  %s\n\n",
+		fmt.Fprintf(&sb, "[%s] %s %s%s%s%s — %s\n  %s\n\n",
 			a.ID,
 			a.CreatedAt.Format("15:04:05"),
 			strings.ToUpper(string(a.Level)),
@@ -1659,7 +1659,7 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 			readMark,
 			a.Title,
 			a.Body,
-		))
+		)
 		count++
 	}
 	if count == 0 {
@@ -1703,17 +1703,17 @@ func (s *Server) handleGetVersion(_ context.Context, _ mcpsdk.CallToolRequest) (
 	if current == "" {
 		current = "(unknown)"
 	}
-	sb.WriteString(fmt.Sprintf("Current version: %s\n", current))
+	fmt.Fprintf(&sb, "Current version: %s\n", current)
 
 	if s.latestVersion != nil {
 		latest, err := s.latestVersion()
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("Latest version:  (check failed: %v)\n", err))
+			fmt.Fprintf(&sb, "Latest version:  (check failed: %v)\n", err)
 		} else if latest != "" {
 			if latest == current {
-				sb.WriteString(fmt.Sprintf("Latest version:  %s (up to date)\n", latest))
+				fmt.Fprintf(&sb, "Latest version:  %s (up to date)\n", latest)
 			} else {
-				sb.WriteString(fmt.Sprintf("Latest version:  %s  ← UPDATE AVAILABLE\n", latest))
+				fmt.Fprintf(&sb, "Latest version:  %s  ← UPDATE AVAILABLE\n", latest)
 				sb.WriteString("Use `datawatch update` or POST /api/update to install.\n")
 			}
 		}
@@ -1735,7 +1735,7 @@ func (s *Server) handleListSavedCommands(_ context.Context, _ mcpsdk.CallToolReq
 		if c.Seeded {
 			seeded = " (seeded)"
 		}
-		sb.WriteString(fmt.Sprintf("%-16s  %s%s\n", c.Name, c.Command, seeded))
+		fmt.Fprintf(&sb, "%-16s  %s%s\n", c.Name, c.Command, seeded)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }
@@ -1820,7 +1820,7 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 		if !sc.RunAt.IsZero() {
 			runDesc = "at " + sc.RunAt.Format("15:04:05")
 		}
-		sb.WriteString(fmt.Sprintf("[%s] session:%s %s — %q\n", sc.ID, sc.SessionID, runDesc, sc.Command))
+		fmt.Fprintf(&sb, "[%s] session:%s %s — %q\n", sc.ID, sc.SessionID, runDesc, sc.Command)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }

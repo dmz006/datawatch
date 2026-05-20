@@ -74,7 +74,7 @@ func (b *InteractiveBackend) Version() string {
 	if err != nil || resp.StatusCode != 200 {
 		return ""
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return b.baseURL
 }
 
@@ -198,7 +198,7 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 		exec.Command("tmux", "send-keys", "-t", tmuxSession, errMsg, "Enter").Run() //nolint:errcheck
 		return fmt.Errorf("API request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)

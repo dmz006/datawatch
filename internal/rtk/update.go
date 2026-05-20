@@ -63,7 +63,7 @@ func CheckLatestVersion() VersionStatus {
 		versionStatusMu.Unlock()
 		return vs
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		vs.Error = fmt.Sprintf("GitHub API: HTTP %d", resp.StatusCode)
@@ -108,7 +108,7 @@ func CheckLatestVersion() VersionStatus {
 		binaryPath, _ := exec_LookPath(getBinary())
 		if binaryPath != "" && vs.DownloadURL != "" {
 			if f, err := os.OpenFile(binaryPath, os.O_WRONLY, 0); err == nil {
-				f.Close()
+				_ = f.Close()
 				vs.AutoUpdatable = true
 			}
 		}
@@ -160,7 +160,7 @@ func UpdateBinary() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("download: HTTP %d", resp.StatusCode)
@@ -171,13 +171,13 @@ func UpdateBinary() (string, error) {
 		return "", fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) // clean up on failure
+	defer os.Remove(tmpPath) //nolint:errcheck // clean up on failure
 
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return "", fmt.Errorf("write: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0755); err != nil {

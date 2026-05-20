@@ -97,15 +97,15 @@ func (s *PGStore) migrate() error {
 	}
 
 	// KG tables
-	s.pool.Exec(ctx, `
+	_, _ = s.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS kg_entities (
 			id BIGSERIAL PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
 			type TEXT DEFAULT 'unknown',
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		)
-	`) //nolint:errcheck
-	s.pool.Exec(ctx, `
+	`)
+	_, _ = s.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS kg_triples (
 			id BIGSERIAL PRIMARY KEY,
 			subject TEXT NOT NULL,
@@ -116,7 +116,7 @@ func (s *PGStore) migrate() error {
 			source TEXT DEFAULT '',
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		)
-	`) //nolint:errcheck
+	`)
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_kg_subject ON kg_triples(subject)`) //nolint:errcheck
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_kg_object ON kg_triples(object)`)   //nolint:errcheck
 
@@ -140,10 +140,10 @@ func (s *PGStore) migrate() error {
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_source ON memories(source)`)           //nolint:errcheck
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_last_hit ON memories(last_hit_at)`)    //nolint:errcheck
 	// schema_version table — closes migrate.py audit partial.
-	s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+	_, _ = s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
 		version    TEXT PRIMARY KEY,
 		applied_at BIGINT NOT NULL DEFAULT 0
-	)`) //nolint:errcheck
+	)`)
 	s.pool.Exec(ctx, `INSERT INTO schema_version(version, applied_at) VALUES('v5.27.0', EXTRACT(EPOCH FROM NOW())::BIGINT) ON CONFLICT (version) DO NOTHING`) //nolint:errcheck
 
 	return nil

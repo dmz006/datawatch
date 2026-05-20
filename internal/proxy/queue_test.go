@@ -42,9 +42,9 @@ func TestOfflineQueue_PendingAll(t *testing.T) {
 	p := NewPool(servers, DefaultPoolConfig())
 	q := NewOfflineQueue(p, 100, nil, nil)
 
-	q.Enqueue("a", "x")
-	q.Enqueue("a", "y")
-	q.Enqueue("b", "z")
+	q.Enqueue("a", "x") //nolint:errcheck
+	q.Enqueue("a", "y") //nolint:errcheck
+	q.Enqueue("b", "z") //nolint:errcheck
 
 	all := q.PendingAll()
 	if all["a"] != 2 {
@@ -80,8 +80,8 @@ func TestOfflineQueue_Replay(t *testing.T) {
 	q := NewOfflineQueue(p, 100, dispatch, onReplay)
 
 	// Enqueue while server is down
-	q.Enqueue("s1", "cmd1")
-	q.Enqueue("s1", "cmd2")
+	_ = q.Enqueue("s1", "cmd1")
+	_ = q.Enqueue("s1", "cmd2")
 
 	// Server recovers
 	time.Sleep(60 * time.Millisecond)

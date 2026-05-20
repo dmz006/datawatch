@@ -15,7 +15,7 @@ func writeAuditFixture(t *testing.T, dir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer a.Close() //nolint:errcheck
 	a.Append(AuditEvent{At: time.Now(), Event: "spawn", AgentID: "a1", Project: "alpha"})
 	a.Append(AuditEvent{At: time.Now(), Event: "spawn_fail", AgentID: "a1", Project: "alpha", Note: "image pull"})
 	a.Append(AuditEvent{At: time.Now(), Event: "spawn", AgentID: "a2", Project: "beta"})

@@ -119,7 +119,7 @@ func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"ok"}` + "\n"))
+	_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
 }
 
 // handleTailscaleACLGenerate — POST /api/tailscale/acl/generate

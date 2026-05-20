@@ -188,7 +188,7 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 				ch <- fetchResult{server: sv.Name}
 				return
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			body, _ := io.ReadAll(resp.Body)
 			var sessions []*session.Session
 			if err := json.Unmarshal(body, &sessions); err != nil {
@@ -269,7 +269,7 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("remote PWA error: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	// Copy response headers
 	for k, vals := range resp.Header {

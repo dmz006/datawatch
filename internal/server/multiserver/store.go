@@ -241,7 +241,7 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 	if err != nil {
 		return latencyMs, "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
 	// Best-effort parse of {"version":"..."}.

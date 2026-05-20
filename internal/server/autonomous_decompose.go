@@ -235,7 +235,7 @@ func (s *Server) handleDecomposeStream(w http.ResponseWriter, r *http.Request, p
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	// Hint the client to reconnect after 1s on disconnect.
-	fmt.Fprintf(w, "retry: 1000\n\n")
+	_, _ = fmt.Fprintf(w, "retry: 1000\n\n")
 	flusher.Flush()
 
 	ctx := r.Context()
@@ -255,7 +255,7 @@ func (s *Server) handleDecomposeStream(w http.ResponseWriter, r *http.Request, p
 
 		for sent < len(eventsSnap) {
 			ev := eventsSnap[sent]
-			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", ev.id, ev.data)
+			_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", ev.id, ev.data)
 			flusher.Flush()
 			sent++
 		}
@@ -271,7 +271,7 @@ func (s *Server) handleDecomposeStream(w http.ResponseWriter, r *http.Request, p
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case <-notifyCh:
 			// New events or terminal state — loop back to drain.

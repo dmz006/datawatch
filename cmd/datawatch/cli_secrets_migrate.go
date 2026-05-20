@@ -288,7 +288,7 @@ func runSecretsMigrate(dryRun, yes bool) error {
 			continue
 		}
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			failed = append(failed, fmt.Sprintf("%s: HTTP %d %s", e.field.secretName, resp.StatusCode, string(body)))
 			continue

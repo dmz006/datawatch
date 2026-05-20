@@ -96,7 +96,7 @@ func (t *OllamaTap) poll(ctx context.Context) {
 		t.setErr(err)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		t.setErr(fmt.Errorf("ollama /api/ps: HTTP %d", resp.StatusCode))
 		return

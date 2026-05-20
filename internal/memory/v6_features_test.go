@@ -104,13 +104,13 @@ func TestSweepStale_DryRunReportsCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	defer store.Close()
+	defer store.Close() //nolint:errcheck
 	// Write 3 rows; rewind 2 to simulate "old + never hit".
 	id, _ := store.Save("/proj", "session output here", "", "session", "s1", nil)
 	store.db.Exec(`UPDATE memories SET created_at = datetime('now', '-100 days'), last_hit_at = 0 WHERE id = ?`, id) //nolint:errcheck
 	id2, _ := store.Save("/proj", "another old session", "", "session", "s2", nil)
 	store.db.Exec(`UPDATE memories SET created_at = datetime('now', '-100 days'), last_hit_at = 0 WHERE id = ?`, id2) //nolint:errcheck
-	store.Save("/proj", "fresh", "", "session", "s3", nil)
+	_, _ = store.Save("/proj", "fresh", "", "session", "s3", nil)
 
 	res, err := store.SweepStale(30*24*time.Hour, true)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestStitchSessionWindow_ReturnsNeighbours(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	defer store.Close()
+	defer store.Close() //nolint:errcheck
 	var hitID int64
 	for i := 0; i < 5; i++ {
 		id, _ := store.Save("/proj", "chunk-content-"+string(rune('A'+i)), "", "output_chunk", "sess-1", nil)

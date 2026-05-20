@@ -96,7 +96,7 @@ func (s *Server) handleAgentProxy(w http.ResponseWriter, r *http.Request, agentI
 		http.Error(w, fmt.Sprintf("worker unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	for k, vals := range resp.Header {
 		for _, v := range vals {
@@ -139,15 +139,15 @@ func (s *Server) handleAgentProxyWS(w http.ResponseWriter, r *http.Request, cont
 
 	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		remoteConn.Close()
+		_ = remoteConn.Close()
 		return
 	}
 
 	var once sync.Once
 	closeBoth := func() {
 		once.Do(func() {
-			clientConn.Close()
-			remoteConn.Close()
+			_ = clientConn.Close()
+			_ = remoteConn.Close()
 		})
 	}
 

@@ -25,7 +25,7 @@ func fetchOllamaStatsHTTP(host string) map[string]interface{} {
 		result["error"] = err.Error()
 		return result
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	var tags map[string]interface{}
 	json.Unmarshal(body, &tags) //nolint:errcheck
@@ -47,7 +47,7 @@ func fetchOllamaStatsHTTP(host string) map[string]interface{} {
 	// Fetch running
 	psResp, err := client.Get(host + "/api/ps")
 	if err == nil {
-		defer psResp.Body.Close()
+		defer psResp.Body.Close() //nolint:errcheck
 		psBody, _ := io.ReadAll(psResp.Body)
 		var ps map[string]interface{}
 		json.Unmarshal(psBody, &ps) //nolint:errcheck
@@ -443,7 +443,7 @@ func (s *Server) handleGetConfig(_ context.Context, req mcpsdk.CallToolRequest) 
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if section != "" {
 		var full map[string]interface{}
@@ -507,7 +507,7 @@ func (s *Server) handleGetStats(_ context.Context, _ mcpsdk.CallToolRequest) (*m
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("stats error: %v", err)), nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	return mcpsdk.NewToolResultText(string(body)), nil
 }
@@ -789,7 +789,7 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 			return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: HTTP %d", resp.StatusCode)), nil
 	}
@@ -824,13 +824,13 @@ func (s *Server) handleMemoryLearnings(_ context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText("No learnings found."), nil
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Learnings (%d):\n\n", len(results)))
+	fmt.Fprintf(&sb, "Learnings (%d):\n\n", len(results))
 	for _, m := range results {
 		content := fmt.Sprintf("%v", m["content"])
 		if len(content) > 150 {
 			content = content[:147] + "..."
 		}
-		sb.WriteString(fmt.Sprintf("#%v: %s\n", m["id"], content))
+		fmt.Fprintf(&sb, "#%v: %s\n", m["id"], content)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }

@@ -110,7 +110,7 @@ func TestStore_GetByShortID(t *testing.T) {
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
 	sess := makeTestSession("cd34", "myhost", StateWaitingInput)
-	s.Save(sess)
+	s.Save(sess) //nolint:errcheck
 
 	got, ok := s.GetByShortID("cd34")
 	if !ok {
@@ -124,7 +124,7 @@ func TestStore_GetByShortID(t *testing.T) {
 func TestStore_GetByShortID_CaseInsensitive(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
-	s.Save(makeTestSession("ef56", "myhost", StateRunning))
+	s.Save(makeTestSession("ef56", "myhost", StateRunning)) //nolint:errcheck
 
 	_, ok := s.GetByShortID("EF56")
 	if !ok {
@@ -150,9 +150,9 @@ func TestStore_List(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
-	s.Save(makeTestSession("aa11", "host1", StateRunning))
-	s.Save(makeTestSession("bb22", "host1", StateComplete))
-	s.Save(makeTestSession("cc33", "host2", StateKilled))
+	s.Save(makeTestSession("aa11", "host1", StateRunning)) //nolint:errcheck
+	s.Save(makeTestSession("bb22", "host1", StateComplete)) //nolint:errcheck
+	s.Save(makeTestSession("cc33", "host2", StateKilled)) //nolint:errcheck
 
 	list := s.List()
 	if len(list) != 3 {
@@ -178,11 +178,11 @@ func TestStore_Update(t *testing.T) {
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
 	sess := makeTestSession("dd44", "myhost", StateRunning)
-	s.Save(sess)
+	s.Save(sess) //nolint:errcheck
 
 	sess.State = StateComplete
 	sess.UpdatedAt = time.Now()
-	s.Save(sess)
+	s.Save(sess) //nolint:errcheck
 
 	got, _ := s.Get("myhost-dd44")
 	if got.State != StateComplete {
@@ -197,8 +197,8 @@ func TestStore_Delete(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
-	s.Save(makeTestSession("ee55", "myhost", StateComplete))
-	s.Save(makeTestSession("ff66", "myhost", StateRunning))
+	s.Save(makeTestSession("ee55", "myhost", StateComplete)) //nolint:errcheck
+	s.Save(makeTestSession("ff66", "myhost", StateRunning)) //nolint:errcheck
 
 	if err := s.Delete("myhost-ee55"); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -231,8 +231,8 @@ func TestStore_Persistence(t *testing.T) {
 
 	// Write two sessions
 	s1, _ := NewStore(path)
-	s1.Save(makeTestSession("gg77", "myhost", StateRunning))
-	s1.Save(makeTestSession("hh88", "myhost", StateWaitingInput))
+	s1.Save(makeTestSession("gg77", "myhost", StateRunning)) //nolint:errcheck
+	s1.Save(makeTestSession("hh88", "myhost", StateWaitingInput)) //nolint:errcheck
 
 	// Reload from disk
 	s2, err := NewStore(path)
@@ -265,9 +265,9 @@ func TestStore_PersistAfterDelete(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 
 	s1, _ := NewStore(path)
-	s1.Save(makeTestSession("ii99", "myhost", StateComplete))
-	s1.Save(makeTestSession("jj00", "myhost", StateKilled))
-	s1.Delete("myhost-ii99")
+	s1.Save(makeTestSession("ii99", "myhost", StateComplete)) //nolint:errcheck
+	s1.Save(makeTestSession("jj00", "myhost", StateKilled)) //nolint:errcheck
+	s1.Delete("myhost-ii99") //nolint:errcheck
 
 	s2, _ := NewStore(path)
 	if len(s2.List()) != 1 {
@@ -283,9 +283,9 @@ func TestStore_MultipleSavesSameID(t *testing.T) {
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
 	sess := makeTestSession("kk11", "myhost", StateRunning)
-	s.Save(sess)
-	s.Save(sess)
-	s.Save(sess)
+	s.Save(sess) //nolint:errcheck
+	s.Save(sess) //nolint:errcheck
+	s.Save(sess) //nolint:errcheck
 
 	if len(s.List()) != 1 {
 		t.Errorf("multiple saves of same session: got %d, want 1", len(s.List()))

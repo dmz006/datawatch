@@ -52,7 +52,7 @@ func newSecurityEncryptionStatusCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("request failed: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			var out map[string]any
 			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 				return fmt.Errorf("parse response: %w", err)
@@ -90,7 +90,7 @@ func newSecurityEncryptionMigrateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("request failed: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			var out map[string]any
 			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 				return fmt.Errorf("parse response: %w", err)
@@ -129,7 +129,7 @@ You must pass --confirm to proceed.`,
 			if err != nil {
 				return fmt.Errorf("request failed: %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			var out map[string]any
 			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 				return fmt.Errorf("parse response: %w", err)

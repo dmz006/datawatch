@@ -163,13 +163,13 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 			// 4xx is terminal — token bad / agent state wrong; no point retrying.
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 				msg, _ := io.ReadAll(resp.Body)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, fmt.Errorf("bootstrap rejected (%d): %s", resp.StatusCode, bytes.TrimSpace(msg))
 			}
 			if resp.StatusCode == http.StatusOK {
 				var out BootstrapResponse
 				err := json.NewDecoder(resp.Body).Decode(&out)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if err != nil {
 					return nil, fmt.Errorf("decode bootstrap response: %w", err)
 				}
@@ -177,7 +177,7 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 			}
 			// 5xx — retry
 			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("bootstrap server error (%d): %s", resp.StatusCode, bytes.TrimSpace(body))
 		}
 
@@ -274,7 +274,7 @@ func fetchSecretFrom(ctx context.Context, baseURL, token, name string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("fetch secret %q: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	switch resp.StatusCode {
 	case http.StatusOK:

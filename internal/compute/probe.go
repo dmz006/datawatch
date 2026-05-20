@@ -224,7 +224,7 @@ func probeHTTP(ctx context.Context, n *Node, bearerToken string) error {
 	if err != nil {
 		return fmt.Errorf("http probe: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	// Any HTTP response means reachable. Even 401/403/404/405 confirm
 	// the host is up.
 	return nil

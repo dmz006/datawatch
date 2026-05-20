@@ -84,7 +84,7 @@ func (s *Store) RunRepair(ctx context.Context, opts RepairOpts) (*RepairReport, 
 				rep.MissingEmbedding = append(rep.MissingEmbedding, p.id)
 			}
 		}
-		rows.Close()
+		_ = rows.Close()
 		if !opts.DryRun && opts.Embedder != nil {
 			for _, p := range todo {
 				if p.content == "" {
@@ -121,7 +121,7 @@ func (s *Store) RunRepair(ctx context.Context, opts RepairOpts) (*RepairReport, 
 				rep.EmptyContent = append(rep.EmptyContent, id)
 			}
 		}
-		er.Close()
+		_ = er.Close()
 	}
 
 	// 3. Detached closets — drawer_id pointing at a missing row.
@@ -141,7 +141,7 @@ func (s *Store) RunRepair(ctx context.Context, opts RepairOpts) (*RepairReport, 
 				rep.DetachedClosets = append(rep.DetachedClosets, id)
 			}
 		}
-		cr.Close()
+		_ = cr.Close()
 	}
 
 	// 4. Duplicates by content SHA within a project_dir. The Store
@@ -174,7 +174,7 @@ func (s *Store) RunRepair(ctx context.Context, opts RepairOpts) (*RepairReport, 
 				seen[key] = id
 			}
 		}
-		dr.Close()
+		_ = dr.Close()
 	}
 
 	return rep, nil

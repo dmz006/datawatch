@@ -112,7 +112,7 @@ func (d *RemoteDispatcher) fetchSessions(sv config.RemoteServerConfig) []*sessio
 		log.Printf("[proxy] %s: fetch sessions: %v", sv.Name, err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	var sessions []*session.Session
 	json.Unmarshal(body, &sessions) //nolint:errcheck
@@ -148,7 +148,7 @@ func (d *RemoteDispatcher) ForwardCommand(serverName, text string) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("proxy to %s: %w", serverName, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 
 	var result struct {
@@ -186,7 +186,7 @@ func (d *RemoteDispatcher) ForwardHTTP(serverName, method, path string, body io.
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	return respBody, resp.StatusCode, nil
 }

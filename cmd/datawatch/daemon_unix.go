@@ -56,10 +56,10 @@ func daemonize() error {
 	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err := child.Start(); err != nil {
-		logFile.Close()
+		_ = logFile.Close()
 		return fmt.Errorf("start daemon: %w", err)
 	}
-	logFile.Close()
+	_ = logFile.Close()
 
 	if err := os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", child.Process.Pid)), 0644); err != nil {
 		fmt.Printf("[warn] could not write PID file: %v\n", err)

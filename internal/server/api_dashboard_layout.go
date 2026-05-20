@@ -23,11 +23,11 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile(s.dashLayoutPath())
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte("{}"))
+			_, _ = w.Write([]byte("{}"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		_, _ = w.Write(data)
 	case http.MethodPut:
 		if !s.fedCap(w, r, federation.CapDashboardWrite) {
 			return
@@ -48,7 +48,7 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

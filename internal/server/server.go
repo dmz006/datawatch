@@ -173,8 +173,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		defer f.Close()
-		io.Copy(w, f) //nolint:errcheck
+		defer f.Close() //nolint:errcheck
+		io.Copy(w, f)  //nolint:errcheck
 	})
 
 	// Authenticated API routes
@@ -521,7 +521,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 		page := lines[start:end]
 		for i, j := 0, len(page)-1; i < j; i, j = i+1, j-1 { page[i], page[j] = page[j], page[i] }
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"lines": page, "total": total, "offset": offset})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"lines": page, "total": total, "offset": offset})
 	})
 
 	// Apply auth middleware to API routes

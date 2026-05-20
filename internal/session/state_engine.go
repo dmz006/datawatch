@@ -31,7 +31,6 @@ package session
 
 import (
 	"context"
-	"strings"
 	"time"
 )
 
@@ -255,12 +254,3 @@ func (m *Manager) MarkACPEvent(fullID, eventType, statusType string) {
 	m.MarkChannelEvent(fullID, kind)
 }
 
-// classifyMCPMarker checks a tmux/log line for the explicit
-// DATAWATCH_COMPLETE: marker which datawatch's claude-code MCP injects on
-// task completion. Authoritative — same standing as ACP session.completed.
-func classifyMCPMarker(line string) (ChannelEventKind, bool) {
-	if strings.Contains(line, "DATAWATCH_COMPLETE:") {
-		return EventComplete, true
-	}
-	return 0, false
-}
