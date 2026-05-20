@@ -6043,7 +6043,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); loadMatrixPanel(); }
+  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -6874,14 +6874,6 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL241 — Matrix status card (Settings → Comms) -->
-        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
-          ${settingsSectionHeader('matrix_status', t('comm_matrix_title')||'Matrix', 'messaging-backends.md#matrix')}
-          <div id="settings-sec-matrix_status" style="${secContent('matrix_status')}">
-            <div id="matrixStatusPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
-          </div>
-        </div>
-
         <!-- BL247 — Orchestrator moved from standalone tab to card in Automata tab -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('orchestrator_graphs', 'Automata Orchestrator', 'architecture.md')}
@@ -6975,7 +6967,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); loadMatrixPanel(); } // BL312 S2 / BL316 S2 / BL330 / BL241
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); } // BL312 S2 / BL316 S2 / BL330
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -12307,6 +12299,7 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
     </div>
     <div class="backend-config-footer">
       ${hasModelFields ? `<button class="btn-secondary" style="font-size:11px;margin-right:auto;" onclick="testBackendConnection('${escHtml(service)}')">Test &amp; Load Models</button>` : ''}
+      ${service === 'matrix' ? `<button class="btn-secondary" style="font-size:11px;margin-right:auto;" onclick="matrixSendTest()">Send test message</button>` : ''}
       <button class="btn-primary" onclick="saveBackendConfig('${escHtml(service)}')">Save &amp; Enable</button>
       <button class="btn-secondary" onclick="closeBackendConfigPopup()">Cancel</button>
     </div>
@@ -19745,6 +19738,11 @@ function renderObserverView() {
             </div>
             <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
+          <!-- BL241 — Communication backends live status -->
+          <div id="commBackendsBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Communication backends</div>
+            <div id="commBackendsStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
         </div>
       </div>
 
@@ -19881,9 +19879,60 @@ function renderObserverView() {
   loadAuditPanel();
   loadKgPanel();
   renderObserverPeersCard();
+  loadCommBackendsStatus(); // BL241
   _injectServerPickerBar(view, renderObserverView); // BL312 S6
 }
 window.renderObserverView = renderObserverView;
+
+// BL241 — Communication backends live status block (Observer → System Statistics)
+function loadCommBackendsStatus() {
+  const el = document.getElementById('commBackendsStatus');
+  if (!el) return;
+  const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      if (!cfg) { el.textContent = 'Config unavailable'; return; }
+      const enabled = services.filter(s => cfg[s] && cfg[s].enabled);
+      if (!enabled.length) { el.textContent = 'No communication backends enabled.'; return; }
+      const matrixCfg = cfg.matrix || {};
+      // For Matrix, also fetch live status
+      const matrixEnabled = matrixCfg.enabled;
+      const base = enabled.map(s => {
+        const label = s.replace(/_/g, ' ');
+        const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:4px;"></span>`;
+        if (s === 'matrix') {
+          return `<div style="padding:4px 0;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;">${dot}<span style="text-transform:capitalize;">${escHtml(label)}</span>
+              <span id="matrixLiveStatus" style="margin-left:6px;font-size:10px;color:var(--text2);">checking…</span>
+            </div>
+            <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="matrixSendTest()">Test</button>
+          </div>`;
+        }
+        return `<div style="padding:4px 0;display:flex;align-items:center;">${dot}<span style="text-transform:capitalize;">${escHtml(label)}</span></div>`;
+      }).join('');
+      el.innerHTML = `<div style="padding:0 12px;">${base}</div>`;
+      if (matrixEnabled) {
+        apiFetch('/api/matrix/status').then(d => {
+          const sp = document.getElementById('matrixLiveStatus');
+          if (!sp) return;
+          if (d && d.connected) sp.innerHTML = `<span style="color:var(--success,#10b981);">● ${escHtml(d.user_id || 'connected')}</span>`;
+          else sp.innerHTML = `<span style="color:var(--error,#ef4444);">● disconnected</span>`;
+        }).catch(() => {
+          const sp = document.getElementById('matrixLiveStatus');
+          if (sp) sp.innerHTML = `<span style="color:var(--text2);">unavailable</span>`;
+        });
+      }
+    })
+    .catch(() => { el.textContent = 'Unavailable'; });
+}
+window.loadCommBackendsStatus = loadCommBackendsStatus;
+
+window.matrixSendTest = function() {
+  apiFetch('/api/matrix/test', { method: 'POST', body: JSON.stringify({}) })
+    .then(() => showToast(t('comm_matrix_test_success') || 'Matrix test message sent', 'success', 2000))
+    .catch(e => showToast(t('comm_matrix_test_error') || String(e.message || e), 'error'));
+};
 
 // BL316 S2 — Federation Peers panel (Settings → Comms, order 35 — after Remote Servers).
 function loadFederationPeersPanel() {
@@ -20806,51 +20855,6 @@ window.pushSendTest = function() {
   apiFetch('/api/push/notify', { method: 'POST', body: JSON.stringify({ title: 'Datawatch test', message: 'Push notification test from Settings' }) })
     .then(() => showToast('Test notification sent', 'success', 2000))
     .catch(e => showToast(String(e.message||e), 'error'));
-};
-
-// ── BL241 Matrix status panel ────────────────────────────────────────────────
-
-function loadMatrixPanel() {
-  const el = document.getElementById('matrixStatusPanel');
-  if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
-  apiFetch('/api/matrix/status').then(data => {
-    const panel = document.getElementById('matrixStatusPanel');
-    if (!panel) return;
-    if (!data || !data.enabled) {
-      panel.innerHTML = `<div style="color:var(--text2);font-size:13px;padding:4px 0;">${t('comm_matrix_setup_hint')||'Matrix not configured. See Communication Configuration above.'}</div>`;
-      return;
-    }
-    const connected = data.connected;
-    const statusLabel = connected ? (t('comm_matrix_status_connected')||'Connected') : (t('comm_matrix_status_disconnected')||'Disconnected');
-    const statusColor = connected ? 'var(--success,#10b981)' : 'var(--error,#ef4444)';
-    panel.innerHTML = `
-      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};flex-shrink:0;"></span>
-        <span style="font-size:13px;color:${statusColor};">${escHtml(statusLabel)}</span>
-      </div>
-      ${data.homeserver ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('comm_matrix_homeserver')||'Homeserver')}: <span style="color:var(--text);">${escHtml(data.homeserver)}</span></div>` : ''}
-      ${data.user_id ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('comm_matrix_user_id')||'User ID')}: <span style="color:var(--text);">${escHtml(data.user_id)}</span></div>` : ''}
-      ${data.room_id ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(t('comm_matrix_room_id')||'Room')}: <span style="color:var(--text);">${escHtml(data.room_id)}</span></div>` : ''}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="matrixSendTest()">
-          ${t('comm_matrix_test_button')||'Send test message'}
-        </button>
-        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="loadMatrixPanel()">
-          ${t('refresh')||'Refresh'}
-        </button>
-      </div>`;
-  }).catch(err => {
-    const panel = document.getElementById('matrixStatusPanel');
-    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
-  });
-}
-window.loadMatrixPanel = loadMatrixPanel;
-
-window.matrixSendTest = function() {
-  apiFetch('/api/matrix/test', { method: 'POST', body: JSON.stringify({}) })
-    .then(() => showToast(t('comm_matrix_test_success')||'Test message sent', 'success', 2000))
-    .catch(e => showToast(t('comm_matrix_test_error')||String(e.message||e), 'error'));
 };
 
 // ── BL220-G15 Orchestrator panel ──────────────────────────────────────────────
