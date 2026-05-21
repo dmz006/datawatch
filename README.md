@@ -17,6 +17,22 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ---
 
+## 📱 Android app 1.0.0 released — alpha testers wanted!
+
+**datawatch for Android, Android Auto, and Wear OS** is now available at **v1.0.0**. Full 7-surface parity: sessions, PRDs, discussions, files, push notifications, channel routing, and identity management — all built on Compose Multiplatform.
+
+**We're looking for alpha testers.** If you want to help shape the mobile experience, reach out to **dmz006** on Signal, GitHub, or via the datawatch PWA comms.
+
+**What's in 1.0:**
+- Full session and automata queue on Wear (voice + gesture controls)
+- Push notifications with bidirectional replies
+- Discussion scopes + discussion message history
+- File uploads/downloads from the mobile device
+- Full Settings page parity
+- Offline queue + auto-sync on reconnect
+
+---
+
 ## 🎉 Community skills + plugins registry is live!
 
 **[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** — the official community hub for datawatch Skills and Plugins is now open.
