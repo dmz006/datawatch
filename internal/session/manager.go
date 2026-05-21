@@ -1623,13 +1623,6 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture //nolint:staticcheck
-					// BL266 / v6.11.24 — pane content changed counts as
-					// "running" activity for the channel-state watcher.
-					// Lets backends with no structural idle signal
-					// (claude-code MCP) avoid spurious 15s WaitingInput
-					// flips during long tool calls that DO update the
-					// pane (most do).
-					m.MarkChannelEvent(sess.FullID, EventRunning)
 					// Send clean lines via pane_capture for terminal display
 					if m.onScreenCapture != nil {
 						lines := strings.Split(capture, "\n")
@@ -1639,11 +1632,22 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// Skip state detection on the first tick — this is the
 					// initial baseline capture when a client connects/reconnects.
 					// Running detection here would generate spurious alerts for
-					// prompts that are already visible on screen.
+					// prompts that are already visible on screen. Also skip
+					// activity marking (MarkChannelEvent) on first tick to avoid
+					// spurious waiting_input → running → waiting_input cycles
+					// when a client subscribes to a waiting session.
 					if firstTick {
 						firstTick = false
 						continue
 					}
+
+					// BL266 / v6.11.24 — pane content changed counts as
+					// "running" activity for the channel-state watcher.
+					// Lets backends with no structural idle signal
+					// (claude-code MCP) avoid spurious 15s WaitingInput
+					// flips during long tool calls that DO update the
+					// pane (most do).
+					m.MarkChannelEvent(sess.FullID, EventRunning)
 
 					// State detection from captured screen content.
 					// v5.27.6 (BL211) — uses stateCapture (live tail) NOT
