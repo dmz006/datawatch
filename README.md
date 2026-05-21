@@ -17,19 +17,32 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ---
 
-## 📱 Android app 1.0.0 released — alpha testers wanted!
+## 📱 Android 1.0.0 — phone, auto, and wearables unified
 
-**datawatch for Android, Android Auto, and Wear OS** is now available at **v1.0.0**. Full 7-surface parity: sessions, PRDs, discussions, files, push notifications, channel routing, and identity management — all built on Compose Multiplatform.
+**datawatch is now on your wrist, dashboard, and pocket.** v1.0.0 ships Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
 
-**We're looking for alpha testers.** If you want to help shape the mobile experience, reach out to **dmz006** on Signal, GitHub, or via the datawatch PWA comms.
+**Android Auto** (steering wheel safe):
+- **Automata queue with voice control** — voice-to-text for Automata prompts, hands-free. Navigation drawer voice shortcuts.
+- **Passive Automata status** — view live task execution, ETA, failure notices. Haptic feedback on completion.
+- **Session replies** — accept/reject decisions without taking eyes off the road. Haptic micro-interactions.
+- **Push notifications** — urgent alerts (P0/P1) routed to the infotainment display.
 
-**What's in 1.0:**
-- Full session and automata queue on Wear (voice + gesture controls)
-- Push notifications with bidirectional replies
-- Discussion scopes + discussion message history
-- File uploads/downloads from the mobile device
-- Full Settings page parity
-- Offline queue + auto-sync on reconnect
+**Wear OS** (on your wrist):
+- **Automata queue dashboard** — compact tile view + full-screen detail on tap. Complications for running/queued count.
+- **Voice launch** "Hey Google, send to datawatch: <prompt>" → full text capture + context + send.
+- **Tile shortcuts** — favorite Automata templates, discussion scopes, session quick-access.
+- **Ambient mode** — running Automata task progress (tap to wake detail).
+- **Health integration** — Automata task timing cross-referenced with wear activity + sleep.
+
+**Android phone** (full workstation):
+- Full session and Automata orchestration parity with desktop (REST, MCP, CLI surfaces).
+- Discussion scopes + full message history + WAL replay.
+- File uploads/downloads from device storage.
+- Settings page (identity, federation peer config, comms routing).
+- Offline queue + automatic sync on reconnect.
+- Push notifications with bidirectional replies.
+
+**We're actively recruiting alpha testers.** If you want early access and have feedback on the mobile UX, reach out to **dmz006**.
 
 ---
 
