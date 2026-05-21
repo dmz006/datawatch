@@ -3,6 +3,14 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.6.2 — Critical fix: session state stability on WebSocket subscribe (2026-05-21)
+
+### Fixed
+
+- **Session state cycling on subscribe**: Fixed a critical bug where WebSocket subscriptions to waiting sessions would trigger spurious state transitions (`waiting_input` → `running` → `waiting_input` every ~15 seconds). The screen capture handler's `firstTick` guard was incomplete — it skipped state detection but not activity marking. Activity marking is now also skipped on first capture to prevent spurious channel events. Resolves Android v1.0.0 and Wear OS state instability when viewing waiting sessions.
+
+---
+
 ## v8.6.1 — BL241 patch: Matrix backend + instance-scoped Claude config (2026-05-20)
 
 ### Added
