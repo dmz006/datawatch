@@ -42,7 +42,7 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 - Offline queue + automatic sync on reconnect.
 - Push notifications with bidirectional replies.
 
-**We're actively recruiting alpha testers.** If you want early access and have feedback on the mobile UX, reach out to **dmz006**.
+**We're actively recruiting alpha testers.** If you want early access and have feedback on the mobile UX, reach out to **dmz006**. Full source and installation guide at **[datawatch-app](https://github.com/dmz006/datawatch-app)**.
 
 ---
 
