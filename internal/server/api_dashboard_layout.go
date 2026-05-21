@@ -9,6 +9,7 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
+
 func (s *Server) dashLayoutPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".datawatch", "dashboard-layout.json")
@@ -20,30 +21,24 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapDashboardRead) {
 			return
 		}
-		data, err := os.ReadFile(s.dashLayoutPath())
+		layout, err := s.readDashLayout()
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("{}"))
+			http.Error(w, "read layout: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
+		writeJSONOK(w, layout)
 	case http.MethodPut:
 		if !s.fedCap(w, r, federation.CapDashboardWrite) {
 			return
 		}
-		var body json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		var incoming dashLayout
+		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-		path := s.dashLayoutPath()
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			http.Error(w, "mkdir failed", http.StatusInternalServerError)
-			return
-		}
-		out, _ := json.MarshalIndent(body, "", "  ")
-		if err := os.WriteFile(path, out, 0o600); err != nil {
+		// Merge system cards back in so a bulk PUT can never wipe them.
+		incoming.Cards = mergeSystemCards(incoming.Cards)
+		if err := s.writeDashLayout(incoming); err != nil {
 			http.Error(w, "write failed", http.StatusInternalServerError)
 			return
 		}
