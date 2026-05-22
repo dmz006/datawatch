@@ -44,14 +44,15 @@ Single-binary daemon that:
 │   ├── federation/         Cross-instance routing, proxy, Tailscale
 │   ├── memory/             Episodic memory (embeddings, semantic search, WAL)
 │   └── mcp/                MCP server (tools that sessions can call)
-├── templates/              session-CLAUDE.md (auto-injected guardrails at session start)
+├── templates/              session-CLAUDE.md (auto-injected rules at session start)
 ├── docs/                   Architecture, setup, operations, release notes, plans
 ├── deploy/                 Kubernetes, systemd manifests
 ├── docker/                 Container images
 ├── scripts/                Build, release, validation, smoke tests
 ├── Makefile                Build targets: build, install, test, fmt, lint, cross
 ├── AGENT.md                **Read before any code changes** — all guardrails
-└── CLAUDE.md               AI session instructions + RTK + memory rules
+├── AGENT.md                All guardrails and rules (session rules at line 714, memory at end)
+└── CLAUDE.md               RTK instructions only (auto-managed, overwritten on session exit)
 ```
 
 ---
@@ -222,7 +223,8 @@ See AGENT.md § Versioning (line 67) and § Release vs Patch Discipline (line 20
 
 ### Configuration & Templates
 - **`AGENT.md`** — Guardrails for THIS repository (code changes, testing, versioning)
-- **`CLAUDE.md`** — AI session instructions (RTK, memory, MCP access)
+- **`AGENT.md`** — All guardrails, Memory & Intelligence rules, and AI-APP-SEED context loading
+- **`CLAUDE.md`** — RTK instructions only (auto-managed)
 - **`templates/session-CLAUDE.md`** — Injected into sessions launched by daemon
 - **`.env.build`** — Build environment (golang version, etc.)
 
@@ -332,10 +334,10 @@ research_sessions "session state issues"     # Cross-session research
 ## How to Load This Context Automatically
 
 **For AI Sessions Launched by Datawatch:**
-This file is referenced in `CLAUDE.md` with an auto-load rule. Every claude-code/aider/opencode session launched from the daemon will:
-1. Load this file automatically before starting work
-2. Query memory for recent changes with standard queries
-3. Have access to all MCP tools listed above
+This file is referenced in `AGENT.md`. Every claude-code/aider/opencode session launched from the daemon will:
+1. Have access to `AI-APP-SEED.md` in the project root
+2. Automatically query memory for recent changes at session start
+3. Have full MCP access to memory tools (memory_recall, memory_remember, kg_query, etc.)
 
 **For Manual Sessions:**
 When starting work manually:
@@ -359,8 +361,8 @@ RTK automatically excludes `AI-APP-SEED.md` from token optimization (it's metada
 | Resource | Purpose |
 |----------|---------|
 | [README.md](README.md) | Feature showcase, quick start, platforms |
-| [AGENT.md](AGENT.md) | Codebase guardrails (read before big changes) |
-| [CLAUDE.md](CLAUDE.md) | AI session instructions + RTK + Memory |
+| [AGENT.md](AGENT.md) | All guardrails (read before any code changes); Memory & Intelligence rules at end |
+| [CLAUDE.md](CLAUDE.md) | RTK instructions only (auto-managed, ephemeral) |
 | [docs/architecture.md](docs/architecture.md) | Component overview & data flow |
 | [docs/operations.md](docs/operations.md) | Deployment, config, security |
 | [CHANGELOG.md](CHANGELOG.md) | User-facing change history |
