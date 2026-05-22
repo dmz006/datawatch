@@ -1349,3 +1349,64 @@ rtk git log
 **Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
 Run `rtk gain` to view token savings statistics.
 <!-- /rtk-instructions -->
+
+## Memory & Intelligence
+
+This project has datawatch episodic memory enabled. Use it proactively.
+
+### Before starting work
+
+- Use `memory_recall` to check if similar work has been done
+- Use `kg_query` to understand relationships (people, projects, tools)
+- Use `research_sessions` for deep cross-session research
+
+### During work
+
+- Use `memory_remember` to save key decisions and patterns
+- Use `kg_add` to record relationships
+- Memory commands also work in OpenWebUI chat sessions
+
+### Available MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| `memory_recall` | Semantic search across project memories |
+| `memory_remember` | Save decisions, patterns, important context |
+| `kg_query` | Entity relationship queries |
+| `kg_add` | Record new relationships |
+| `research_sessions` | Deep cross-session research |
+| `copy_response` | Last LLM response from any session |
+| `get_prompt` | Last user prompt from any session |
+
+### When asked about project history
+
+Always check memory first with `memory_recall` before answering from training data.
+
+## Loading AI-APP-SEED.md Context
+
+**For sessions launched by the datawatch daemon:**
+
+Every claude-code/aider/opencode session launched from the daemon will:
+1. Have access to `AI-APP-SEED.md` in the project root (comprehensive context loader)
+2. Automatically query memory for recent changes at session start
+3. Have full MCP access to memory tools listed above
+
+**For manual sessions:**
+
+When starting work manually:
+```bash
+# Read the comprehensive context file
+cat AI-APP-SEED.md
+
+# Query memory
+memory_recall "recent work this codebase"
+
+# Start your session knowing the context
+```
+
+**Content of AI-APP-SEED.md:**
+- Project identity (what is datawatch, platforms, architecture)
+- This file (AGENT.md) with specific line references for guardrails
+- Build, test, and release procedures
+- Known patterns and gotchas to avoid
+- Directory structure and key files
