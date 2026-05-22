@@ -50,8 +50,7 @@ Single-binary daemon that:
 ├── docker/                 Container images
 ├── scripts/                Build, release, validation, smoke tests
 ├── Makefile                Build targets: build, install, test, fmt, lint, cross
-├── AGENT.md                **Read before any code changes** — all guardrails
-├── AGENT.md                All guardrails and rules (session rules at line 714, memory at end)
+├── AGENT.md                **Read before any code changes** — all guardrails, memory, AI-APP-SEED rules
 └── CLAUDE.md               RTK instructions only (auto-managed, overwritten on session exit)
 ```
 
@@ -222,7 +221,6 @@ See AGENT.md § Versioning (line 67) and § Release vs Patch Discipline (line 20
 - **`cmd/datawatch/main.go`** — CLI entry, daemon startup, version string
 
 ### Configuration & Templates
-- **`AGENT.md`** — Guardrails for THIS repository (code changes, testing, versioning)
 - **`AGENT.md`** — All guardrails, Memory & Intelligence rules, and AI-APP-SEED context loading
 - **`CLAUDE.md`** — RTK instructions only (auto-managed)
 - **`templates/session-CLAUDE.md`** — Injected into sessions launched by daemon
