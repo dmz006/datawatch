@@ -234,19 +234,43 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 			return
 		}
 
-		st := &acpSessionState{baseURL: baseURL, sessionID: resumeID}
+		sessID, err := createSession(bgCtx, baseURL, projectDir)
+		if err != nil {
+			writeLogLine(logFile, fmt.Sprintf("[opencode-acp] create session failed: %v", err))
+			return
+		}
+		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] session %s created (resumed from %s)", sessID, resumeID))
+
+		// Store ACP state so SendInput can route HTTP POSTs.
+		// Absorb any full_id that was registered via SetACPFullID before we were ready.
+		st := &acpSessionState{baseURL: baseURL, sessionID: sessID}
 		if v, ok := acpFullIDs.LoadAndDelete(tmuxSession); ok {
 			st.fullID = v.(string)
 		}
 		acpStateMap.Store(tmuxSession, st)
 		defer acpStateMap.Delete(tmuxSession)
 
+		// Persist ACP state for daemon restart reconnect
+		if SaveACPStateFn != nil {
+			SaveACPStateFn(tmuxSession, baseURL, sessID)
+		}
+
+		// Subscribe to SSE events and write to logFile.
 		go streamEvents(bgCtx, baseURL, logFile, tmuxSession, st)
 
+		// Send the initial task (non-blocking: events arrive via SSE stream).
+		emitACPChat(tmuxSession, "system", fmt.Sprintf("ACP mode resumed — opencode serve on %s", baseURL), false)
 		if task != "" {
-			if err := sendMessage(bgCtx, baseURL, resumeID, task); err != nil {
-				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] send task failed: %v", err))
+			writeLogLine(logFile, task)
+			emitACPChat(tmuxSession, "user", task, false)
+			if err := sendMessage(bgCtx, baseURL, sessID, task); err != nil {
+				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] send initial task failed: %v", err))
+				emitACPChat(tmuxSession, "system", "Error sending task: "+err.Error(), false)
 			}
+		} else {
+			writeLogLine(logFile, "[opencode-acp] ready")
+			writeLogLine(logFile, "[opencode-acp] awaiting input")
+			emitACPChat(tmuxSession, "system", "Ready — send a message to continue", false)
 		}
 
 		ticker := time.NewTicker(b.healthInterval)
