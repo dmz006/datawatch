@@ -1,7 +1,7 @@
 # AI-APP-SEED.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-05-22  
-**Version**: v8.6.2  
+**Version**: v8.6.3  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -311,8 +311,8 @@ research_sessions "session state issues"     # Cross-session research
 
 ## Recent Context (as of 2026-05-22)
 
-**Version:** v8.6.2  
-**Last change:** OpenCode LaunchResume session ID fix (May 21)
+**Version:** v8.6.3  
+**Last change:** OpenCode LaunchResume session ID fix + docs refactor (May 22)
 
 ### Known Good Patterns (from memory)
 1. **Session state machine** — FirstTick guard must skip both detection AND activity marking

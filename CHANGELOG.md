@@ -3,6 +3,20 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.6.3 — Patch: OpenCode LaunchResume session fix + docs refactor (2026-05-22)
+
+### Fixed
+
+- **OpenCode LaunchResume session ID fix**: When resuming an OpenCode ACP session, the backend now creates a fresh session instead of reusing the datawatch session ID. OpenCode auto-generates its own "ses-..." IDs and does not accept custom IDs via POST /session, so the backend now aligns with this behavior.
+
+### Changed
+
+- **AGENT.md**: Moved Memory & Intelligence rules and AI-APP-SEED guidance from CLAUDE.md to AGENT.md for consolidated rule management. Added AI-APP-SEED.md as a context-load reference.
+- **CLAUDE.md**: Reverted to RTK-only instructions after accidental rule additions.
+- **AI-APP-SEED.md**: New comprehensive context seed file with architecture overview, rules, memory workflows, MCP access, build/release instructions, and quick links. Updated to fix CLAUDE.md references and point to AGENT.md for all guardrails.
+
+---
+
 ## v8.6.2 — Critical fix: session state stability on WebSocket subscribe (2026-05-21)
 
 ### Fixed

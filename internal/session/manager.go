@@ -2436,8 +2436,9 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		nb.SetSessionName(sess.Name)
 	}
 
-	// Launch with resume support — use the session's fullID as resumeID
-	// since Launch() now sets --session-id from the same derivation.
+	// Launch with resume support — pass the datawatch session ID as resumeID.
+	// Backends that support full resumption (e.g. claude-code) can derive their
+	// own session ID from this; backends that don't (e.g. opencode TUI) ignore it.
 	resumeID := sess.FullID
 	var launchErr error
 	if rb, ok := backendObj.(llm.Resumable); ok {

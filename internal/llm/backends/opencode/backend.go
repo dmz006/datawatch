@@ -101,18 +101,19 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
-// LaunchResume resumes a prior opencode session using -s SESSION_ID.
+// LaunchResume resumes a prior opencode session.
+// Opencode session IDs use a "ses_" prefix; datawatch session IDs (e.g.
+// "johnnyjohnny-c905") are not valid opencode session IDs, so we fall
+// back to a fresh launch (no -s flag).
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	resumeEsc := strings.ReplaceAll(resumeID, "'", `'\''`)
 	var cmd string
 	if task == "" {
-		// Interactive resume — just open the session in TUI
-		cmd = fmt.Sprintf("cd '%s' && %s -s '%s'", escapedDir, b.binary, resumeEsc)
+		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
 	} else {
 		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s -s '%s' -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-			escapedDir, b.binary, resumeEsc, escaped)
+		cmd = fmt.Sprintf("cd '%s' && %s -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, escaped)
 	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }

@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.6.2-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.2)
+[![Release](https://img.shields.io/badge/release-v8.6.3-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.3)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -77,9 +77,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.6.2](https://github.com/dmz006/datawatch/releases/tag/v8.6.2) (2026-05-21)** — Patch release. Critical fix: session state cycling on WebSocket subscribe. Android v1.0.0 and Wear OS now show stable state for waiting sessions.
+**[v8.6.3](https://github.com/dmz006/datawatch/releases/tag/v8.6.3) (2026-05-22)** — Patch release. OpenCode LaunchResume session ID fix — backend now creates fresh sessions instead of reusing datawatch session IDs. Docs refactor: AGENT.md now consolidates all rules, AI-APP-SEED.md added as context seed, CLAUDE.md reverted to RTK-only.
 
-See the [v8.6.2 release notes](docs/RELEASE_NOTES_v8.6.2.md), [v8.6.1 release notes](docs/RELEASE_NOTES_v8.6.1.md), [v8.6.0 release notes](docs/RELEASE_NOTES_v8.6.0.md), and [CHANGELOG.md](CHANGELOG.md) for the full history.
+See the [v8.6.3 release notes](docs/RELEASE_NOTES_v8.6.3.md), [v8.6.2 release notes](docs/RELEASE_NOTES_v8.6.2.md), and [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ### v8.6 highlights
 
