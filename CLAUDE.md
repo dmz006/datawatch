@@ -1,3 +1,25 @@
+# ⚡ LOAD AI-APP-SEED.md FIRST
+
+**CRITICAL**: Before starting ANY work on this repository, read `/home/dmz/workspace/datawatch/AI-APP-SEED.md`. It contains:
+- What datawatch is and the core architecture
+- Where all guardrails live (AGENT.md, this file, session-CLAUDE.md)
+- How to query memory for context before work
+- All available MCP tools (memory, session, security, config)
+- Build, test, release procedures
+- Recent changes, patterns that worked, and gotchas to avoid
+
+**RTK supports this file** — it will not be token-optimized when loaded, allowing it to serve as proper context initialization.
+
+After reading AI-APP-SEED.md, check memory:
+```
+memory_recall "recent changes session state bugs opencode fixes"
+memory_recall "working patterns design decisions successful approaches"
+```
+
+Then start your work knowing the full context.
+
+---
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
