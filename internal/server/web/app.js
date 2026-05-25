@@ -11154,6 +11154,9 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
     { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },
   ]},
+  { id: 'opencode', section: 'OpenCode', docs: 'howto/chat-and-llm-quickstart.md', fields: [
+    { key: 'opencode.default_model', label: 'Default model (e.g. opencode/big-pickle)', type: 'text', placeholder: 'opencode/big-pickle' },
+  ]},
   { id: 'rtk', section: 'RTK (Token Savings)', docs: 'rtk-integration.md', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
     { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },

@@ -3945,12 +3945,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Ollama.InputMode,
 		},
 		"opencode": map[string]interface{}{
-			"enabled":      s.cfg.OpenCode.Enabled,
-			"binary":       s.cfg.OpenCode.Binary,
-			"console_cols": s.cfg.OpenCode.ConsoleCols,
-			"console_rows": s.cfg.OpenCode.ConsoleRows,
-			"output_mode":  s.cfg.OpenCode.OutputMode,
-			"input_mode":   s.cfg.OpenCode.InputMode,
+			"enabled":       s.cfg.OpenCode.Enabled,
+			"binary":        s.cfg.OpenCode.Binary,
+			"default_model": s.cfg.OpenCode.DefaultModel,
+			"console_cols":  s.cfg.OpenCode.ConsoleCols,
+			"console_rows":  s.cfg.OpenCode.ConsoleRows,
+			"output_mode":   s.cfg.OpenCode.OutputMode,
+			"input_mode":    s.cfg.OpenCode.InputMode,
 		},
 		"opencode_acp": map[string]interface{}{
 			"enabled":             s.cfg.OpenCodeACP.Enabled,
@@ -4631,6 +4632,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.OpenCode.Enabled = toBool(v)
 		case "opencode.binary":
 			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
+		case "opencode.default_model":
+			cfg.OpenCode.DefaultModel = toString(v)
 		case "opencode_acp.enabled":
 			cfg.OpenCodeACP.Enabled = toBool(v)
 		case "opencode_acp.binary":

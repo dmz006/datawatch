@@ -306,6 +306,10 @@ opencode:
   enabled: false
   # Path to opencode binary
   binary: opencode
+  # Default model written to opencode.json at session start (e.g. "opencode/big-pickle").
+  # Free built-in models are always available; cloud provider models appear after
+  # running `opencode providers login <provider>`.
+  default_model: opencode/big-pickle
   # Enable ACP (Analysis Code Plugin) mode
   acp_enabled: false
   # Enable opencode-prompt mode

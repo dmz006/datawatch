@@ -325,6 +325,8 @@ _(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog tabl
 
 > **BL317** — Multi-server PWA GH#63 (v7.4.0). Server picker in all nav views, fan-out to multiple profiles, all-servers mode sentinel, per-row server attribution. Mirrors Android client v0.121.0+ multi-server implementation. See T26 stories TS-387–TS-396. Depends on BL316.
 
+> **BL318** — OpenCode provider API key management GH#95. Add `opencode.providers` config section (anthropic/openai/google api_key fields). At session start, write credentials so `opencode models <provider>` returns cloud models. Optional UI settings panel for key entry. When configured, cloud models appear automatically in the model dropdowns; no operator shell access needed. Tracked in GitHub issue #95.
+
 _Historical refactor notes archived — see Recently Closed and Completed Backlog for v5.27–v6.2 items._
 
 ---
