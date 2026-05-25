@@ -1,7 +1,7 @@
 # AI-APP-SEED.md — Datawatch Context & Quick Start
 
-**Last Updated**: 2026-05-22  
-**Version**: v8.6.3  
+**Last Updated**: 2026-05-25  
+**Version**: v8.6.4  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---

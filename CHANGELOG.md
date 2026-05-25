@@ -3,6 +3,21 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.6.4 — Patch: MCP channel config isolation + docs search (2026-05-25)
+
+### Fixed
+
+- **MCP channel "waiting" fix**: Per-session MCP servers registered in `~/.datawatch/.claude/` were invisible to launched Claude Code sessions because `CLAUDE_CONFIG_DIR` was never injected into the tmux environment. Sessions now receive `CLAUDE_CONFIG_DIR=<dataDir>/.claude` alongside `DATAWATCH_SESSION_ID` and `DATAWATCH_BASE_URL`, matching where `RegisterSessionMCP` writes registrations.
+- **Claude config settings.json**: The datawatch-scoped `CLAUDE_CONFIG_DIR` now gets a `settings.json` written at daemon startup with `skipDangerousModePermissionPrompt`, `skipAutoPermissionPrompt`, `enableAllProjectMcpServers`, and `enabledMcpjsonServers`. Previously the file was absent, causing sessions to potentially block on permission prompts.
+- **Data-dir path expansion**: `NewManager` now receives the tilde-expanded data directory path, eliminating a latent divergence between the path used by `SetClaudeConfigDir` and the path stored in `m.dataDir` for `CLAUDE_CONFIG_DIR` construction.
+- **openapi.yaml indentation**: `internal/server/web/openapi.yaml` was re-synced from the canonical `docs/api/openapi.yaml`. 161 `summary:` lines had 1-space indent instead of 6/16-space, causing a YAML parse failure on the API docs page.
+
+### Added
+
+- **Docs content search on /diagrams.html**: The file-filter input box now doubles as a content search field. Queries of 3+ characters call `/api/docs/search` (vector + BM25) with 280 ms debounce and render ranked results inline. Shorter queries fall back to the existing filename filter. Enables Android docs WebView search with no client-side change required.
+
+---
+
 ## v8.6.3 — Patch: OpenCode LaunchResume session fix + docs refactor (2026-05-22)
 
 ### Fixed
