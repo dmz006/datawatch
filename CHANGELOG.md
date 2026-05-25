@@ -3,6 +3,23 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.7.3 — Patch: Live OpenCode model list + default model pre-selection (2026-05-25)
+
+### Changed
+
+- **`GET /api/opencode/models` now queries the `opencode` binary live**: Replaced the hardcoded cloud model list with a runtime `opencode models` command. Free built-in models (`opencode/*`) always appear; paid provider models (Anthropic, OpenAI, Google) appear automatically after `opencode providers login` — no code changes needed. Each entry now includes a `provider_label` field (e.g. `"Free (Built-in)"`, `"Ollama (Local / Compute)"`) for grouped display.
+- **Default model config field**: `OpenCodeConfig.DefaultModel` (yaml: `default_model`) defaults to `"opencode/big-pickle"`. Used as fallback in preLaunch hook and API response.
+
+### Fixed
+
+- **OpenCode sessions always write `opencode.json`**: The preLaunch condition previously only wrote the config when `model`, `lsp`, or `ollamaURL` was set. Now always writes for `opencode`/`opencode-acp` backends so the default model is always applied.
+- **Default model pre-selected in session start dropdown**: When the operator opens the OpenCode model picker, the default model (`opencode/big-pickle`) is selected automatically rather than requiring manual selection.
+- **Default model pre-selected in PRD/Automata task LLM modal**: `refreshLLMModelField()` now pre-selects the server-declared `default_model` for OpenCode backends when no current model is set.
+- **Optgroup labels use human-friendly provider names**: Session start and PRD model dropdowns now show `"Free (Built-in)"` and `"Ollama (Local / Compute)"` instead of raw provider strings.
+- **Duplicate `resolveBinary` build error**: `models.go` redeclared `resolveBinary` already defined in `backend.go`. Removed the duplicate; both files now share the one in `backend.go`.
+
+---
+
 ## v8.7.2 — Patch: OpenCode wiring completion (2026-05-25)
 
 ### Fixed

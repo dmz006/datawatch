@@ -33,6 +33,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
+	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
@@ -172,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.7.2"
+var Version = "8.7.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1061,30 +1062,51 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOpenCodeModels returns models available for OpenCode sessions.
-// Response combines hardcoded cloud model entries with Ollama models
-// fetched from local Ollama (or ?node=<cn> for a compute node).
-// Each entry: {id, label, provider, kind ("cloud"|"ollama")}.
+// Response: {models: [...], default_model: "..."}.
+// Order: free built-ins from `opencode models` first, then Ollama from
+// local or ?node=<cn> compute node. Cloud provider models (Anthropic,
+// OpenAI, Google) appear when the operator has run `opencode providers
+// login` — they come from the binary's own model list, not hardcoded here.
+// Each entry: {id, label, provider, kind ("builtin"|"ollama"|"cloud")}.
 func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 	type modelEntry struct {
-		ID       string `json:"id"`
-		Label    string `json:"label"`
-		Provider string `json:"provider"`
-		Kind     string `json:"kind"`
-	}
-	models := []modelEntry{
-		{ID: "anthropic/claude-opus-4-7", Label: "Claude Opus 4.7 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
-		{ID: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
-		{ID: "anthropic/claude-haiku-4-5-20251001", Label: "Claude Haiku 4.5 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
-		{ID: "openai/gpt-4o", Label: "GPT-4o (OpenAI)", Provider: "openai", Kind: "cloud"},
-		{ID: "openai/gpt-4o-mini", Label: "GPT-4o Mini (OpenAI)", Provider: "openai", Kind: "cloud"},
-		{ID: "openai/o4-mini", Label: "o4-mini (OpenAI)", Provider: "openai", Kind: "cloud"},
-		{ID: "openai/o3", Label: "o3 (OpenAI)", Provider: "openai", Kind: "cloud"},
-		{ID: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (Google)", Provider: "google", Kind: "cloud"},
-		{ID: "google/gemini-2.0-flash", Label: "Gemini 2.0 Flash (Google)", Provider: "google", Kind: "cloud"},
+		ID            string `json:"id"`
+		Label         string `json:"label"`
+		Provider      string `json:"provider"`
+		ProviderLabel string `json:"provider_label"`
+		Kind          string `json:"kind"`
+		Default       bool   `json:"default,omitempty"`
 	}
 
-	// Append Ollama models, prefixed as "ollama/<model>".
-	// Optional ?node=<cn> fetches from that compute node's Ollama instead.
+	// Query the OpenCode binary for all currently available models.
+	// This returns free built-ins always, plus any provider models for
+	// which the operator has configured credentials.
+	binary := ""
+	if s.cfg != nil {
+		binary = s.cfg.OpenCode.Binary
+	}
+	builtins := opencode.ListBuiltinModels(binary)
+	var models []modelEntry
+	for _, id := range builtins {
+		parts := strings.SplitN(id, "/", 2)
+		provider := id
+		if len(parts) == 2 {
+			provider = parts[0]
+		}
+		kind := "builtin"
+		if provider != "opencode" {
+			kind = "cloud"
+		}
+		models = append(models, modelEntry{
+			ID:            id,
+			Label:         opencode.ModelLabel(id),
+			Provider:      provider,
+			ProviderLabel: opencode.ProviderLabel(provider),
+			Kind:          kind,
+		})
+	}
+
+	// Append Ollama models. Optional ?node=<cn> uses that compute node.
 	host := ""
 	if s.cfg != nil {
 		host = s.cfg.Ollama.Host
@@ -1097,16 +1119,35 @@ func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 	if ollamaModels, err := ollama.ListModels(host); err == nil {
 		for _, name := range ollamaModels {
 			models = append(models, modelEntry{
-				ID:       "ollama/" + name,
-				Label:    name + " (Ollama)",
-				Provider: "ollama",
-				Kind:     "ollama",
+				ID:            "ollama/" + name,
+				Label:         name + " (Ollama)",
+				Provider:      "ollama",
+				ProviderLabel: opencode.ProviderLabel("ollama"),
+				Kind:          "ollama",
 			})
 		}
 	}
 
+	// Determine default model: configured default or first in list.
+	defaultModel := ""
+	if s.cfg != nil && s.cfg.OpenCode.DefaultModel != "" {
+		defaultModel = s.cfg.OpenCode.DefaultModel
+	}
+	if defaultModel == "" && len(models) > 0 {
+		defaultModel = models[0].ID
+	}
+	for i := range models {
+		if models[i].ID == defaultModel {
+			models[i].Default = true
+			break
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"models": models}) //nolint:errcheck
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"models":        models,
+		"default_model": defaultModel,
+	})
 }
 
 // handleLSPServers returns the operator-configured LSP server presets.

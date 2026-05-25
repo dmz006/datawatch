@@ -658,10 +658,16 @@ type LSPConfig struct {
 type OpenCodeConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	Binary      string `yaml:"binary"`
-	ConsoleCols int    `yaml:"console_cols,omitempty"`
-	ConsoleRows int    `yaml:"console_rows,omitempty"`
-	OutputMode  string `yaml:"output_mode,omitempty"`
-	InputMode   string `yaml:"input_mode,omitempty"`
+	// DefaultModel is the model written to opencode.json when a session is
+	// started without an explicit model selection. Defaults to the first
+	// free built-in model ("opencode/big-pickle"). Override with any model
+	// ID returned by `opencode models` (or a paid provider model once
+	// credentials are configured via `opencode providers login`).
+	DefaultModel string `yaml:"default_model,omitempty"`
+	ConsoleCols  int    `yaml:"console_cols,omitempty"`
+	ConsoleRows  int    `yaml:"console_rows,omitempty"`
+	OutputMode   string `yaml:"output_mode,omitempty"`
+	InputMode    string `yaml:"input_mode,omitempty"`
 }
 
 // OpenCodeACPConfig holds opencode ACP (headless server) backend configuration.
@@ -1729,6 +1735,9 @@ func DefaultConfig() *Config {
 		// Backend addresses and binaries are intentionally empty in the default
 		// config so fresh installs don't trigger spurious v6→v7 migration toasts.
 		// Operators configure them explicitly via `datawatch setup llm <name>`.
+		OpenCode: OpenCodeConfig{
+			DefaultModel: "opencode/big-pickle",
+		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},

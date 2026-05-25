@@ -5353,12 +5353,13 @@ function onSessLLMChange() {
   if (isOpenCode && ocModelSel && ocModelSel.options.length <= 1) {
     apiFetch('/api/opencode/models').then(res => {
       const models = (res && Array.isArray(res.models)) ? res.models : [];
+      const defaultModel = res && res.default_model;
       while (ocModelSel.options.length > 1) ocModelSel.remove(1);
       let lastProvider = '';
       models.forEach(m => {
         if (m.provider !== lastProvider) {
           const og = document.createElement('optgroup');
-          og.label = m.provider.charAt(0).toUpperCase() + m.provider.slice(1);
+          og.label = m.provider_label || (m.provider.charAt(0).toUpperCase() + m.provider.slice(1));
           ocModelSel.appendChild(og);
           lastProvider = m.provider;
         }
@@ -5367,6 +5368,7 @@ function onSessLLMChange() {
         opt.textContent = m.label;
         ocModelSel.appendChild(opt);
       });
+      if (defaultModel && !ocModelSel.value) ocModelSel.value = defaultModel;
     }).catch(() => {});
   }
   if (isOpenCode && ocLSPSel && ocLSPSel.options.length <= 1) {
@@ -10541,6 +10543,10 @@ window.refreshLLMModelField = function(wrapId, innerId, backendId, currentValue)
     return;
   }
   wrap.style.display = '';
+  // For OpenCode backends, fall back to the server-declared default model
+  // when the operator hasn't picked one yet.
+  const isOC = backend === 'opencode' || backend === 'opencode-acp' || backend === 'opencode-prompt';
+  if (!currentValue && isOC && state._openCodeDefaultModel) currentValue = state._openCodeDefaultModel;
   // Preserve a model that the operator already had set when toggling
   // backends — surface as "(custom: <name>)" if it isn't in the list.
   let foundCurrent = false;
@@ -10582,6 +10588,7 @@ window.ensureLLMModelLists = function() {
       state._availableModels['opencode'] = ocModels;
       state._availableModels['opencode-acp'] = ocModels;
       state._availableModels['opencode-prompt'] = ocModels;
+      if (oc.default_model) state._openCodeDefaultModel = oc.default_model;
     }
   });
 };
