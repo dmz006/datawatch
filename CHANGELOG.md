@@ -3,6 +3,23 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.7.0 — Minor: Production OpenCode — LSP + model/Ollama multi-compute (2026-05-25)
+
+### Added
+
+- **LSP server selection for OpenCode sessions**: Choose a programming language (Go, TypeScript, Python, Rust, C++) in the session-creation UI when using `opencode` or `opencode-acp`. The daemon writes the corresponding language server config to `<projectDir>/opencode.json` at session start. LSP gives OpenCode real-time type errors, completions, and diagnostics from the locally installed language server — especially useful when working with LLMs whose training data predates the current library version. Operator-configurable via `lsp.servers` in daemon config with defaults for all five languages.
+- **OpenCode model selection**: New `model` field in the session-start API and UI. A grouped dropdown lists cloud models (Anthropic, OpenAI, Google) and local Ollama models. The selected model is written to `<projectDir>/opencode.json` as `"model": "provider/model"`. Populated via new `GET /api/opencode/models` endpoint.
+- **Ollama multi-compute for OpenCode**: When an `ollama/<model>` is selected alongside a compute node, `provider.ollama.apiUrl` is written to `opencode.json` to route the model request to that node's Ollama instance. Compute-node Ollama models are fetched via `GET /api/opencode/models?node=<name>`.
+- **`GET /api/lsp`**: Returns the operator-configured LSP server presets (`{servers: {lang: {command, extensions}}}`). Used to populate the session-creation language dropdown.
+- **`GET /api/opencode/models`**: Returns available models for OpenCode sessions — hardcoded cloud entries plus live Ollama model list from local or compute-node Ollama.
+- **`LSPLanguage` and `Model` session fields**: Both are now persisted on the `Session` struct for audit and re-launch. `lsp_language` and `model` are accepted in `POST /api/sessions/start`.
+
+### Changed
+
+- **`opencode.json` in artifact cleanup**: `tooling.BackendArtifacts["opencode"]` now includes `opencode.json` alongside `.mcp.json` and `.opencode/`, ensuring datawatch-written project configs are removed when `cleanup_artifacts_on_end` is enabled.
+
+---
+
 ## v8.6.4 — Patch: MCP channel config isolation + docs search (2026-05-25)
 
 ### Fixed

@@ -1,7 +1,7 @@
 # AI-APP-SEED.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-05-25  
-**Version**: v8.6.4  
+**Version**: v8.7.0  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -307,10 +307,47 @@ research_sessions "session state issues"     # Cross-session research
 
 ---
 
-## Recent Context (as of 2026-05-22)
+## OpenCode — Production Configuration (v8.7.0)
 
-**Version:** v8.6.3  
-**Last change:** OpenCode LaunchResume session ID fix + docs refactor (May 22)
+OpenCode is a first-class backend alongside claude-code. Key production details:
+
+### LSP (Language Server Protocol)
+- **What**: Real-time language intelligence (type errors, completions, diagnostics) from an installed language server binary
+- **How**: Operator **selects** the language in the session-creation UI — no auto-detection
+- **Config**: `lsp.servers` in daemon config defines available presets (go, typescript, python, rust, cpp)
+- **Wire**: Daemon writes `<projectDir>/opencode.json` with `{"lsp": {"<lang>": {"command": [...]}}}` at session start
+- **Claude Code**: Does NOT support native LSP — use shell diagnostics (`gopls check`, `tsc --noEmit`) instead
+- **API**: `GET /api/lsp` → `{servers: {lang: {command, extensions}}}` populates the UI dropdown
+
+### Model Selection (OpenCode)
+- **Format**: `provider/model` — e.g. `anthropic/claude-sonnet-4-6`, `ollama/llama3`
+- **API**: `GET /api/opencode/models?node=<cn>` → returns cloud + Ollama models for the given compute node
+- **Wire**: Daemon writes `model` field to `<projectDir>/opencode.json` at session start
+- **Ollama + multi-compute**: When an `ollama/` model is selected with a compute node, `provider.ollama.apiUrl` is set to that node's Ollama endpoint in opencode.json
+
+### Per-Session opencode.json
+Datawatch manages `<projectDir>/opencode.json` (project-scope override, merged with global `~/.config/opencode/opencode.jsonc`):
+```json
+{
+  "model": "anthropic/claude-sonnet-4-6",
+  "lsp": {
+    "go": { "command": ["gopls"], "extensions": [".go"] }
+  }
+}
+```
+File is written at session start and cleaned up at session end (`tooling.BackendArtifacts["opencode"]` includes `opencode.json`).
+
+### OpenCode Config Pattern
+- Global: `~/.config/opencode/opencode.jsonc` — provider keys, permission, MCP
+- Project: `<projectDir>/opencode.json` — model + LSP (written by datawatch per-session)
+- Datawatch also writes `<projectDir>/.mcp.json` for the datawatch MCP channel
+
+---
+
+## Recent Context (as of 2026-05-25)
+
+**Version:** v8.7.0  
+**Last change:** Production OpenCode — LSP server selection + model/Ollama multi-compute (May 25)
 
 ### Known Good Patterns (from memory)
 1. **Session state machine** — FirstTick guard must skip both detection AND activity marking
@@ -318,6 +355,8 @@ research_sessions "session state issues"     # Cross-session research
 3. **Opencode specifics** — Auto-generates "ses..." IDs, does not accept custom IDs via POST /session
 4. **Testing requirement** — E2E tests needing live sessions/hooks must create them inline; never skip
 5. **Memory-driven development** — Always query memory before work; save patterns after discovering them
+6. **LSP selection** — Operator selects language at session creation; daemon writes opencode.json. Never auto-detect
+7. **CLAUDE_CONFIG_DIR** — Must be in tmux session env for claude-code sessions; set via hookEnv in manager.go. Sessions started before v8.6.3 won't have it — restart to fix
 
 ### Gotchas to Avoid (from AGENT.md)
 - ❌ **No version bump without ask** — User must explicitly request release; implementation != release

@@ -311,6 +311,14 @@ type Config struct {
 	OpenCodePrompt OpenCodePromptConfig `yaml:"opencode_prompt"`
 	Shell     ShellBackendConfig `yaml:"shell_backend"`
 
+	// LSP holds the operator-defined Language Server Protocol server registry.
+	// Each key is the language name shown in the session-creation UI ("go",
+	// "typescript", "python", …). OpenCode sessions write the selected entry
+	// to <projectDir>/opencode.json at launch time. Claude Code does not
+	// support native LSP — use shell diagnostics (gopls check, tsc --noEmit)
+	// as an alternative.
+	LSP LSPConfig `yaml:"lsp"`
+
 	// DNSChannel holds DNS tunneling communication channel configuration.
 	DNSChannel DNSChannelConfig `yaml:"dns_channel"`
 
@@ -622,6 +630,28 @@ type GeminiConfig struct {
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
 	OutputMode  string `yaml:"output_mode,omitempty"`
 	InputMode   string `yaml:"input_mode,omitempty"`
+}
+
+// LSPServerConfig describes a language server for OpenCode sessions.
+// Fields map directly to the entries inside opencode.json's "lsp" object.
+type LSPServerConfig struct {
+	// Command is the executable + arguments to start the language server.
+	Command []string `yaml:"command" json:"command"`
+	// Extensions limits the server to files with these suffixes (e.g. ".go").
+	// Omit to let OpenCode apply its own heuristic.
+	Extensions []string `yaml:"extensions,omitempty" json:"extensions,omitempty"`
+	// Env injects extra environment variables into the server process.
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// LSPConfig is the top-level registry of Language Server Protocol presets.
+// Operators add/remove entries freely; each key becomes one option in the
+// session-creation "Language (LSP)" dropdown.
+type LSPConfig struct {
+	// Servers maps language name → LSP server definition.
+	// Defaults seed common servers; none are enabled unless the operator
+	// picks one in the session-creation form (or sets it per-session via API).
+	Servers map[string]LSPServerConfig `yaml:"servers"`
 }
 
 // OpenCodeConfig holds opencode TUI backend configuration.
@@ -1708,6 +1738,30 @@ func DefaultConfig() *Config {
 			Model:    "base",
 			Language: "en",
 			VenvPath: ".venv",
+		},
+		LSP: LSPConfig{
+			Servers: map[string]LSPServerConfig{
+				"go": {
+					Command:    []string{"gopls"},
+					Extensions: []string{".go"},
+				},
+				"typescript": {
+					Command:    []string{"typescript-language-server", "--stdio"},
+					Extensions: []string{".ts", ".tsx", ".js", ".jsx"},
+				},
+				"python": {
+					Command:    []string{"pyright-langserver", "--stdio"},
+					Extensions: []string{".py"},
+				},
+				"rust": {
+					Command:    []string{"rust-analyzer"},
+					Extensions: []string{".rs"},
+				},
+				"cpp": {
+					Command:    []string{"clangd"},
+					Extensions: []string{".cpp", ".cc", ".c", ".h", ".hpp"},
+				},
+			},
 		},
 	}
 }

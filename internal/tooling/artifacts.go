@@ -16,7 +16,7 @@ import (
 // HTTP-only backends (ollama, openwebui) leave no project-dir artifacts.
 var BackendArtifacts = map[string][]string{
 	"claude-code": {".mcp.json"},
-	"opencode":    {".mcp.json", ".opencode/"},
+	"opencode":    {".mcp.json", ".opencode/", "opencode.json"},
 	"aider": {
 		".aider.conf.yml",
 		".aider.chat.history.md",

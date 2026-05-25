@@ -1206,6 +1206,12 @@ type StartOptions struct {
 	// pane output terminates the session (StateComplete). Default false
 	// (interactive — DATAWATCH_COMPLETE: → StateWaitingInput).
 	OneShot bool
+
+	// LSPLanguage (v8.7.0) — key from cfg.LSP.Servers to activate for
+	// OpenCode backends ("go", "typescript", "python", …). Persisted on
+	// the Session and written to <projectDir>/opencode.json at launch.
+	// Empty = no LSP for this session.
+	LSPLanguage string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1352,6 +1358,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.OneShot {
 		sess.OneShot = true
+	}
+	if opt != nil && opt.LSPLanguage != "" {
+		sess.LSPLanguage = opt.LSPLanguage
+	}
+	if opt != nil && opt.Model != "" {
+		sess.Model = opt.Model
 	}
 
 	// Create the session tracker (git-tracked folder)

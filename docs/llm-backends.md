@@ -373,6 +373,63 @@ opencode stores conversation history by session ID. To resume a prior conversati
 set the **Resume session ID** field in the New Session form. The session is launched
 with `-s <ID>`. The **Restart** button pre-fills this automatically.
 
+### Model Selection (v8.7.0)
+
+OpenCode supports multiple AI providers. Select the model in the **New Session** form when using an OpenCode backend. Format: `provider/model`.
+
+**Cloud models** (provider API key required):
+- `anthropic/claude-sonnet-4-6`, `anthropic/claude-opus-4-5`, `anthropic/claude-haiku-4-5-20251001`
+- `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o3-mini`
+- `google/gemini-2.0-flash`, `google/gemini-1.5-pro`
+
+**Local models via Ollama** (`ollama/<model-name>`): any model pulled on your Ollama instance. Select a compute node in the session form to route to a different Ollama host.
+
+The selected model is written to `<projectDir>/opencode.json` at session start:
+```json
+{ "model": "anthropic/claude-sonnet-4-6" }
+```
+
+### Language Server Protocol — LSP (v8.7.0)
+
+LSP gives OpenCode real-time language intelligence: type errors, completions, and diagnostics from the language server installed on your host. This is especially valuable when working with LLMs whose training data predates the current version of a library or language.
+
+**How it works:**
+1. Select the programming language in the **New Session** form (Go, TypeScript, Python, Rust, C++)
+2. Datawatch writes `<projectDir>/opencode.json` with the server config at session start
+3. OpenCode launches the configured LSP binary and uses its output during the session
+
+**Prerequisites:** The language server binary must be installed:
+```bash
+go install golang.org/x/tools/gopls@latest          # Go
+npm install -g typescript-language-server typescript  # TypeScript/JS
+pip install pyright                                  # Python
+rustup component add rust-analyzer                   # Rust
+# clangd ships with clang-tools on most distros      # C/C++
+```
+
+**Daemon config** (`~/.datawatch/config.yaml`) — customize server commands:
+```yaml
+lsp:
+  servers:
+    go:
+      command: ["gopls"]
+      extensions: [".go"]
+    typescript:
+      command: ["typescript-language-server", "--stdio"]
+      extensions: [".ts", ".tsx", ".js", ".jsx"]
+    python:
+      command: ["pyright-langserver", "--stdio"]
+      extensions: [".py"]
+    rust:
+      command: ["rust-analyzer"]
+      extensions: [".rs"]
+    cpp:
+      command: ["clangd"]
+      extensions: [".cpp", ".cc", ".c", ".h", ".hpp"]
+```
+
+**Note:** Claude Code does not support native LSP. For claude-code sessions, use shell commands for diagnostics: `gopls check ./...`, `tsc --noEmit`, `pyright .`.
+
 ### Notes
 
 - Uses the `-p`/`--print` flag for non-interactive execution

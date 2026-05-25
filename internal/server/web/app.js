@@ -5144,6 +5144,20 @@ function renderNewSessionView() {
             <option value="">${t('new_session_effort_default')||'Effort: (config default)'}</option>
           </select>
         </div>
+        <!-- v8.7.0 — OpenCode-specific options: model + LSP language.
+             Shown only when an opencode/opencode-acp LLM is selected. -->
+        <div class="form-group" id="sessOpenCodeRow" style="display:none;">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <span>OpenCode options</span>
+            <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for global opencode.jsonc defaults)</span>
+          </label>
+          <select id="sessOpenCodeModel" class="form-select" style="margin-top:6px;" title="Model (provider/model format)">
+            <option value="">Model: (opencode.jsonc default)</option>
+          </select>
+          <select id="sessOpenCodeLSP" class="form-select" style="margin-top:6px;" title="Language Server Protocol">
+            <option value="">Language (LSP): none</option>
+          </select>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
@@ -5326,6 +5340,45 @@ function onSessLLMChange() {
       }
     }
   }
+  // v8.7.0 — show OpenCode-specific options (model + LSP) when an
+  // opencode or opencode-acp backend is selected; populate both dropdowns.
+  const ocRow = document.getElementById('sessOpenCodeRow');
+  const ocModelSel = document.getElementById('sessOpenCodeModel');
+  const ocLSPSel = document.getElementById('sessOpenCodeLSP');
+  const isOpenCode = kind === 'opencode' || kind === 'opencode-acp';
+  if (ocRow) ocRow.style.display = isOpenCode ? '' : 'none';
+  if (isOpenCode && ocModelSel && ocModelSel.options.length <= 1) {
+    apiFetch('/api/opencode/models').then(res => {
+      const models = (res && Array.isArray(res.models)) ? res.models : [];
+      while (ocModelSel.options.length > 1) ocModelSel.remove(1);
+      let lastProvider = '';
+      models.forEach(m => {
+        if (m.provider !== lastProvider) {
+          const og = document.createElement('optgroup');
+          og.label = m.provider.charAt(0).toUpperCase() + m.provider.slice(1);
+          ocModelSel.appendChild(og);
+          lastProvider = m.provider;
+        }
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.label;
+        ocModelSel.appendChild(opt);
+      });
+    }).catch(() => {});
+  }
+  if (isOpenCode && ocLSPSel && ocLSPSel.options.length <= 1) {
+    apiFetch('/api/lsp').then(res => {
+      const servers = (res && res.servers) ? res.servers : {};
+      while (ocLSPSel.options.length > 1) ocLSPSel.remove(1);
+      Object.entries(servers).sort(([a],[b]) => a.localeCompare(b)).forEach(([lang]) => {
+        const opt = document.createElement('option');
+        opt.value = lang;
+        opt.textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
+        ocLSPSel.appendChild(opt);
+      });
+    }).catch(() => {});
+  }
+
   // GATE alpha.36 (operator 2026-05-10): hide the Compute Node row
   // entirely unless the selected LLM has 2+ pinned compute nodes —
   // when there's only one (or none / not picked), the daemon picks
@@ -5841,6 +5894,9 @@ function submitNewSession() {
     // Daemon overrides backend with LLM.Kind when llm is set.
     llm: v7LLMSel ? v7LLMSel.value : '',
     compute_node: (v7LLMSel && v7LLMSel.value && v7CompSel) ? v7CompSel.value : '',
+    // v8.7.0 — OpenCode-specific options.
+    model: document.getElementById('sessOpenCodeModel')?.value || '',
+    lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
 
   // Use REST so we get the full session object back and can navigate directly to it.

@@ -410,6 +410,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/mcp/prompts", api.handleMCPPromptsList)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
+	apiMux.HandleFunc("/api/opencode/models", api.handleOpenCodeModels)
+	apiMux.HandleFunc("/api/lsp", api.handleLSPServers)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
 	apiMux.HandleFunc("/api/stats", api.handleStats)

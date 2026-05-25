@@ -77,9 +77,12 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.6.3](https://github.com/dmz006/datawatch/releases/tag/v8.6.3) (2026-05-22)** — Patch release. OpenCode LaunchResume session ID fix — backend now creates fresh sessions instead of reusing datawatch session IDs. Docs refactor: AGENT.md now consolidates all rules, AI-APP-SEED.md added as context seed, CLAUDE.md reverted to RTK-only.
+**[v8.7.0](CHANGELOG.md) (2026-05-25)** — Production OpenCode: LSP + model/Ollama multi-compute support.
 
-See the [v8.6.3 release notes](docs/RELEASE_NOTES_v8.6.3.md), [v8.6.2 release notes](docs/RELEASE_NOTES_v8.6.2.md), and [CHANGELOG.md](CHANGELOG.md) for the full history.
+- **Language Server Protocol (LSP) for OpenCode** — Select a programming language when starting an OpenCode session; the daemon writes the LSP server config to `<projectDir>/opencode.json`. Supports Go (gopls), TypeScript, Python (pyright), Rust (rust-analyzer), and C++ (clangd) out of the box. Operator-configurable via `lsp.servers` in daemon config. Real-time type errors and completions from the installed language server help LLMs with older training data produce correct code against current library versions.
+- **OpenCode model selection** — Choose any provider/model (`anthropic/claude-sonnet-4-6`, `ollama/llama3`, `openai/gpt-4o`, …) in the session-creation UI. Cloud and local Ollama models are presented in a grouped dropdown populated from `/api/opencode/models`.
+- **OpenCode + Ollama multi-compute** — Point OpenCode at any compute node's Ollama instance. When an `ollama/<model>` is selected with a compute node, the daemon writes `provider.ollama.apiUrl` to `opencode.json` automatically.
+- **MCP channel config isolation fixes** — `CLAUDE_CONFIG_DIR` now correctly injected into every claude-code tmux session; `settings.json` auto-created with required permission bypass flags.
 
 ### v8.6 highlights
 

@@ -150,6 +150,19 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// LSPLanguage (v8.7.0) — language server preset selected at session
+	// creation. Keys match cfg.LSP.Servers entries ("go", "typescript", …).
+	// Written to <projectDir>/opencode.json at launch for OpenCode backends.
+	// Empty = no LSP configured. Claude Code does not use this field.
+	LSPLanguage string `json:"lsp_language,omitempty"`
+
+	// Model (v8.7.0) — LLM model selected at session creation, stored for
+	// audit and re-launch. For claude-code: passed as --model flag.
+	// For OpenCode: written to <projectDir>/opencode.json as "model".
+	// Format: "provider/model" for OpenCode (e.g. "anthropic/claude-sonnet-4-6",
+	// "ollama/llama3") or a bare model name for claude-code.
+	Model string `json:"model,omitempty"`
+
 	// BL331 — federation peer that owns or originated this session via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
 }

@@ -103,7 +103,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.6.4"
+var Version = "8.7.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1197,6 +1197,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				debugf("BL109 .mcp.json: %v", err)
 			} else {
 				debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
+			}
+
+			// v8.7.0 — write per-session opencode.json for OpenCode backends
+			// when the operator selected a language (LSP) or a model at session
+			// creation. Idempotent; operator-added entries are preserved.
+			if (sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-acp") &&
+				(sess.LSPLanguage != "" || sess.Model != "") {
+				ocOpts := opencode.ProjectConfigOpts{Model: sess.Model}
+				if sess.LSPLanguage != "" {
+					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {
+						ocOpts.LSPServers = map[string]opencode.LSPServer{
+							sess.LSPLanguage: {
+								Command:    srv.Command,
+								Extensions: srv.Extensions,
+								Env:        srv.Env,
+							},
+						}
+					}
+				}
+				if err := opencode.WriteProjectConfig(sess.ProjectDir, ocOpts); err != nil {
+					debugf("opencode config write: %v", err)
+				} else {
+					fmt.Printf("[opencode] wrote project config (model=%s lsp=%s) for %s\n",
+						sess.Model, sess.LSPLanguage, sess.ID)
+				}
 			}
 
 			if sess.BackendFamily != "claude-code" {
