@@ -37,7 +37,7 @@ security:
 paths:
   /api/sessions:
     get:
- summary: List all sessions
+      summary: List all sessions
       description: Returns all sessions managed by this host, including completed ones.
       operationId: listSessions
       tags: [Sessions]
@@ -55,7 +55,7 @@ paths:
 
   /api/output:
     get:
- summary: Get session output
+      summary: Get session output
       description: Returns the last N lines of a session's log output.
       operationId: getSessionOutput
       tags: [Sessions]
@@ -90,7 +90,7 @@ paths:
 
   /api/command:
     post:
- summary: Execute a command
+      summary: Execute a command
       description: |
         Execute any command using the same syntax as the Signal interface.
 
@@ -113,15 +113,15 @@ paths:
               $ref: "#/components/schemas/CommandRequest"
             examples:
               new_session:
- summary: Start a new session
+                summary: Start a new session
                 value:
                   text: "new: write a fibonacci function in Go"
               list_sessions:
- summary: List sessions
+                summary: List sessions
                 value:
                   text: "list"
               send_input:
- summary: Send input to waiting session
+                summary: Send input to waiting session
                 value:
                   text: "send a3f2: yes, proceed"
       responses:
@@ -138,7 +138,7 @@ paths:
 
   /api/link/start:
     post:
- summary: Start Signal device linking
+      summary: Start Signal device linking
       description: |
         Starts the signal-cli device linking process. Returns a stream ID.
         Use `/api/link/stream?id=<stream_id>` to receive the QR URI via SSE.
@@ -175,7 +175,7 @@ paths:
 
   /api/link/stream:
     get:
- summary: Stream linking status via SSE
+      summary: Stream linking status via SSE
       description: |
         Server-Sent Events stream for the linking process.
         Events:
@@ -204,7 +204,7 @@ paths:
 
   /api/link/status:
     get:
- summary: Check linking status
+      summary: Check linking status
       operationId: getLinkStatus
       tags: [Setup]
       responses:
@@ -226,7 +226,7 @@ paths:
 
   /api/backends:
     get:
- summary: List LLM backends
+      summary: List LLM backends
       description: Returns the list of registered LLM backends and which one is active.
       operationId: listBackends
       tags: [System]
@@ -253,7 +253,7 @@ paths:
 
   /api/files:
     get:
- summary: Browse directory
+      summary: Browse directory
       description: |
         Returns the contents of a directory for use in the PWA directory picker.
         Entries are sorted: directories first, then files, both alphabetically.
@@ -297,7 +297,7 @@ paths:
 
   /api/sessions/start:
     post:
- summary: Start a new session
+      summary: Start a new session
       description: |
         Start a new AI coding session with optional name, project directory, and backend override.
         This endpoint provides more control than the command-based `/api/command` endpoint.
@@ -311,11 +311,11 @@ paths:
               $ref: "#/components/schemas/StartSessionRequest"
             examples:
               basic:
- summary: Basic session
+                summary: Basic session
                 value:
                   task: "refactor the auth module"
               named:
- summary: Named session with backend
+                summary: Named session with backend
                 value:
                   task: "refactor the auth module"
                   name: "auth refactor"
@@ -335,7 +335,7 @@ paths:
 
   /api/sessions/restart:
     post:
- summary: Restart a session in-place
+      summary: Restart a session in-place
       description: |
         Restart a completed, failed, or killed session using the same session ID,
         tmux session, and tracking directory. If the backend supports resume, the
@@ -370,7 +370,7 @@ paths:
 
   /api/sessions/rename:
     post:
- summary: Rename a session
+      summary: Rename a session
       description: Set or update the human-readable name for a session.
       operationId: renameSession
       tags: [Sessions]
@@ -400,7 +400,7 @@ paths:
 
   /api/config:
     get:
- summary: Get configuration
+      summary: Get configuration
       description: |
         Returns the current daemon configuration with sensitive fields masked.
         Token, password, and secret fields are replaced with `"***"` when non-empty.
@@ -416,7 +416,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     put:
- summary: Update configuration
+      summary: Update configuration
       description: |
         Apply one or more configuration changes using dot-path keys.
         Changes are written to the config file immediately.
@@ -455,7 +455,7 @@ paths:
 
   /api/health:
     get:
- summary: Health check
+      summary: Health check
       description: Returns 200 if the daemon is running. No auth required.
       operationId: healthCheck
       tags: [System]
@@ -470,7 +470,7 @@ paths:
 
   /api/info:
     get:
- summary: System information
+      summary: System information
       operationId: getInfo
       tags: [System]
       responses:
@@ -485,7 +485,7 @@ paths:
 
   /api/schedule:
     get:
- summary: List scheduled commands
+      summary: List scheduled commands
       description: Returns all scheduled (recurring/one-shot) commands for this host.
       operationId: listSchedule
       tags: [Schedule]
@@ -501,7 +501,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
- summary: Add a scheduled command
+      summary: Add a scheduled command
       description: Schedule a new recurring or one-shot command.
       operationId: addScheduledCommand
       tags: [Schedule]
@@ -523,7 +523,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
- summary: Cancel a scheduled command
+      summary: Cancel a scheduled command
       description: Remove a scheduled command by ID.
       operationId: deleteScheduledCommand
       tags: [Schedule]
@@ -559,129 +559,10 @@ paths:
                   $ref: "#/components/schemas/RemoteServer"
         "401":
           $ref: "#/components/responses/Unauthorized"
-    post:
-      summary: Add a remote server
-      description: Register a new remote datawatch server connection. Returns 409 if name already exists.
-      operationId: addServer
-      tags: [System]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RemoteServer"
-            example:
-              name: "nas"
-              url: "http://192.168.1.100:8080"
-              token: "my-bearer-token"
-              enabled: true
-      responses:
-        "200":
-          description: Server created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RemoteServer"
-        "400":
-          description: Missing name or url
-        "409":
-          description: Server name already exists
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/servers/{name}:
-    parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Server short name
-        example: "nas"
-    get:
-      summary: Get a remote server by name
-      operationId: getServer
-      tags: [System]
-      responses:
-        "200":
-          description: Server entry
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RemoteServer"
-        "404":
-          description: Not found
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    put:
-      summary: Update a remote server
-      description: Update URL, token, or enabled flag for an existing server entry.
-      operationId: updateServer
-      tags: [System]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RemoteServer"
-      responses:
-        "200":
-          description: Updated server entry
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RemoteServer"
-        "404":
-          description: Not found
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      summary: Remove a remote server
-      operationId: deleteServer
-      tags: [System]
-      responses:
-        "200":
-          description: Deleted
-        "404":
-          description: Not found
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/servers/{name}/test:
-    parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Server short name
-    post:
-      summary: Test connectivity to a remote server
-      description: Sends a GET /api/health probe to the named server. Returns {ok:true,version:"..."} on success.
-      operationId: testServer
-      tags: [System]
-      responses:
-        "200":
-          description: Probe result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  version:
-                    type: string
-                  error:
-                    type: string
-        "404":
-          description: Server not found
-        "401":
-          $ref: "#/components/responses/Unauthorized"
 
   /api/commands:
     get:
- summary: List saved commands
+      summary: List saved commands
       description: Returns all named commands in the command library.
       operationId: listCommands
       tags: [Commands]
@@ -697,7 +578,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
- summary: Add a saved command
+      summary: Add a saved command
       description: Save a new named command to the command library.
       operationId: addCommand
       tags: [Commands]
@@ -722,7 +603,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
- summary: Delete a saved command
+      summary: Delete a saved command
       description: Remove a named command from the command library by name.
       operationId: deleteCommand
       tags: [Commands]
@@ -744,7 +625,7 @@ paths:
 
   /api/filters:
     get:
- summary: List output filters
+      summary: List output filters
       description: Returns all configured output filter patterns.
       operationId: listFilters
       tags: [Filters]
@@ -760,7 +641,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
- summary: Add an output filter
+      summary: Add an output filter
       description: Add a new regex-based output filter pattern.
       operationId: addFilter
       tags: [Filters]
@@ -782,7 +663,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     patch:
- summary: Enable or disable a filter
+      summary: Enable or disable a filter
       description: Toggle a filter pattern on or off by ID.
       operationId: patchFilter
       tags: [Filters]
@@ -811,7 +692,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
- summary: Delete an output filter
+      summary: Delete an output filter
       description: Remove a filter pattern by ID.
       operationId: deleteFilter
       tags: [Filters]
@@ -830,34 +711,9 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/alerts/aggregated:
-    get:
-      summary: Aggregated alerts across all runtime servers
-      description: Fans out to all runtime-registered servers and merges alerts into a flat array. Each alert is tagged with a server field identifying its origin. Local alerts are tagged with "local".
-      operationId: alertsAggregated
-      tags: [Alerts]
-      responses:
-        "200":
-          description: Flat array of alerts from all servers
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  allOf:
-                    - $ref: "#/components/schemas/Alert"
-                    - type: object
-                      properties:
-                        server:
-                          type: string
-                          description: Source server name ("local" for the local instance)
-                          example: "nas"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
   /api/alerts:
     get:
- summary: List alerts
+      summary: List alerts
       description: Returns all system alerts and the count of unread alerts.
       operationId: listAlerts
       tags: [Alerts]
@@ -879,7 +735,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
- summary: Mark alerts as read
+      summary: Mark alerts as read
       description: Mark one or all alerts as read.
       operationId: markAlertsRead
       tags: [Alerts]
@@ -906,7 +762,7 @@ paths:
 
   /ws:
     get:
- summary: WebSocket connection
+      summary: WebSocket connection
       description: |
         Upgrade to WebSocket for real-time bidirectional communication.
 
@@ -938,21 +794,21 @@ paths:
         "101":
           description: Switching Protocols
 
-  # ─── Autonomous PRD planning (BL24+BL25, v3.10.0; BL304 rename) ──
+  # ─── Autonomous PRD decomposition (BL24+BL25, v3.10.0) ─────────
   /api/autonomous/status:
     get:
- summary: Loop status snapshot
+      summary: Loop status snapshot
       operationId: autonomousStatus
       tags: [Autonomous]
       responses: {"200": {description: OK}}
   /api/autonomous/config:
     get:
- summary: Read autonomous config
+      summary: Read autonomous config
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
     put:
- summary: Replace autonomous config
+      summary: Replace autonomous config
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -961,36 +817,14 @@ paths:
           application/json:
             schema: {type: object}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
-  /api/autonomous/prds/aggregated:
-    get:
-      summary: Aggregated Automata (PRDs) across all runtime servers
-      description: Fans out to all runtime-registered servers and merges Automata lists into a flat array. Each entry is tagged with a server field. Local automata are tagged with "local".
-      operationId: autonomousPRDsAggregated
-      tags: [Autonomous]
-      responses:
-        "200":
-          description: Flat array of Automata from all servers
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    server:
-                      type: string
-                      description: Source server name ("local" for the local instance)
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
   /api/autonomous/prds:
     get:
- summary: List PRDs (newest first)
+      summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
       responses: {"200": {description: OK}}
     post:
- summary: Create a draft PRD
+      summary: Create a draft PRD
       operationId: autonomousPRDCreate
       tags: [Autonomous]
       requestBody:
@@ -1009,66 +843,32 @@ paths:
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
- summary: Fetch one PRD with story+task tree
+      summary: Fetch one PRD with story+task tree
       operationId: autonomousPRDGet
       tags: [Autonomous]
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
- summary: Cancel a PRD (status→cancelled), or hard-delete with ?hard=true (v5.19.0)
+      summary: Cancel + archive a PRD
       operationId: autonomousPRDCancel
       tags: [Autonomous]
-      parameters:
-        - name: hard
-          in: query
-          required: false
-          schema: {type: string, enum: [true]}
-          description: When "true", permanently removes the PRD + descendants spawned via SpawnPRD instead of flipping status (v5.19.0)
-      responses: {"200": {description: OK}}
-    patch:
- summary: Edit PRD title + spec on a non-running PRD (v5.19.0)
-      operationId: autonomousPRDEdit
-      tags: [Autonomous]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: {type: string}
-                spec: {type: string}
-                actor: {type: string}
-      responses: {"200": {description: OK}, "400": {description: Running or not found}}
-  /api/autonomous/prds/{id}/children:
-    get:
- summary: List child PRDs spawned via SpawnPRD
-      operationId: autonomousPRDChildren
-      tags: [Autonomous]
-      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
-      responses: {"200": {description: "{children: [PRD, ...]}"}}
-  /api/autonomous/prds/{id}/plan:
-    post:
- summary: Run LLM planning phase for a PRD
-      operationId: autonomousPRDPlan
-      tags: [Autonomous]
-      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}/decompose:
     post:
- summary: Run LLM planning phase for a PRD (back-compat alias for /plan)
+      summary: Run LLM decomposition for a PRD
       operationId: autonomousPRDDecompose
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}/run:
     post:
- summary: Kick the executor for a PRD
+      summary: Kick the executor for a PRD
       operationId: autonomousPRDRun
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/autonomous/learnings:
     get:
- summary: List extracted post-task learnings
+      summary: List extracted post-task learnings
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1076,40 +876,40 @@ paths:
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
     get:
- summary: List discovered plugins
+      summary: List discovered plugins
       operationId: pluginsList
       tags: [Plugins]
       responses: {"200": {description: OK}}
   /api/plugins/reload:
     post:
- summary: Rescan the plugins directory
+      summary: Rescan the plugins directory
       operationId: pluginsReload
       tags: [Plugins]
       responses: {"200": {description: OK}}
   /api/plugins/{name}:
     parameters: [{name: name, in: path, required: true, schema: {type: string}}]
     get:
- summary: Fetch plugin manifest + invocation stats
+      summary: Fetch plugin manifest + invocation stats
       operationId: pluginGet
       tags: [Plugins]
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/plugins/{name}/enable:
     post:
- summary: Enable a plugin
+      summary: Enable a plugin
       operationId: pluginEnable
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/plugins/{name}/disable:
     post:
- summary: Disable a plugin
+      summary: Disable a plugin
       operationId: pluginDisable
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/plugins/{name}/test:
     post:
- summary: Synthetic hook invocation for debugging
+      summary: Synthetic hook invocation for debugging
       operationId: pluginTest
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
@@ -1128,12 +928,12 @@ paths:
   # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
   /api/orchestrator/config:
     get:
- summary: Read orchestrator config
+      summary: Read orchestrator config
       operationId: orchestratorConfigGet
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     put:
- summary: Replace orchestrator config
+      summary: Replace orchestrator config
       operationId: orchestratorConfigSet
       tags: [Orchestrator]
       requestBody:
@@ -1144,12 +944,12 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/orchestrator/graphs:
     get:
- summary: List all PRD-DAG graphs
+      summary: List all PRD-DAG graphs
       operationId: orchestratorGraphList
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
- summary: Create a graph from a set of PRD IDs
+      summary: Create a graph from a set of BL24 PRD IDs
       operationId: orchestratorGraphCreate
       tags: [Orchestrator]
       requestBody:
@@ -1174,18 +974,18 @@ paths:
   /api/orchestrator/graphs/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
- summary: Fetch one graph with node tree + verdicts
+      summary: Fetch one graph with node tree + verdicts
       operationId: orchestratorGraphGet
       tags: [Orchestrator]
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
- summary: Cancel + archive a graph
+      summary: Cancel + archive a graph
       operationId: orchestratorGraphCancel
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
   /api/orchestrator/graphs/{id}/plan:
     post:
- summary: (Re)build the node tree for a graph
+      summary: (Re)build the node tree for a graph
       operationId: orchestratorGraphPlan
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -1203,14 +1003,14 @@ paths:
       responses: {"200": {description: OK}}
   /api/orchestrator/graphs/{id}/run:
     post:
- summary: Fire-and-forget runner kick
+      summary: Fire-and-forget runner kick
       operationId: orchestratorGraphRun
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/orchestrator/verdicts:
     get:
- summary: List guardrail verdicts across all graphs
+      summary: List guardrail verdicts across all graphs
       operationId: orchestratorVerdicts
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
@@ -1218,7 +1018,7 @@ paths:
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
     post:
- summary: Switch the default LLM backend for new sessions
+      summary: Switch the default LLM backend for new sessions
       operationId: backendsActive
       tags: [Backends]
       requestBody:
@@ -1235,19 +1035,19 @@ paths:
         "400": {description: unknown backend}
   /api/channels:
     get:
- summary: List messaging channel backends with enabled state
+      summary: List messaging channel backends with enabled state
       operationId: channelsList
       tags: [Channels]
       responses: {"200": {description: OK}}
     post:
- summary: Create a new channel (deferred; returns 501 in v4.0.3)
+      summary: Create a new channel (deferred; returns 501 in v4.0.3)
       operationId: channelsCreate
       tags: [Channels]
       responses: {"501": {description: Use PUT /api/config with the matching backend block}}
   /api/channels/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     patch:
- summary: Toggle channel enabled state
+      summary: Toggle channel enabled state
       operationId: channelsPatch
       tags: [Channels]
       requestBody:
@@ -1261,13 +1061,13 @@ paths:
                 enabled: {type: boolean}
       responses: {"200": {description: OK}, "404": {description: unknown channel}}
     delete:
- summary: Disable a channel (config retained for re-enable)
+      summary: Disable a channel (config retained for re-enable)
       operationId: channelsDelete
       tags: [Channels]
       responses: {"200": {description: OK}, "404": {description: unknown channel}}
   /api/channel/send:
     post:
- summary: Send a test message through a named channel
+      summary: Send a test message through a named channel
       operationId: channelSend
       tags: [Channels]
       requestBody:
@@ -1282,7 +1082,7 @@ paths:
       responses: {"200": {description: OK}, "502": {description: provider rejected}}
   /api/sessions/delete:
     post:
- summary: "Delete a session (single or bulk). Accepts {id} or {ids: [...]}"
+      summary: "Delete a session (single or bulk). Accepts {id} or {ids: [...]}"
       operationId: sessionsDelete
       tags: [Sessions]
       requestBody:
@@ -1299,7 +1099,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/sessions/timeline:
     get:
- summary: Session event timeline (state transitions + key events)
+      summary: Session event timeline (state transitions + key events)
       operationId: sessionsTimeline
       tags: [Sessions]
       parameters:
@@ -1309,7 +1109,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cert:
     get:
- summary: Download the server CA certificate PEM
+      summary: Download the server CA certificate PEM
       operationId: cert
       tags: [Security]
       responses:
@@ -1320,13 +1120,13 @@ paths:
         "404": {description: TLS not enabled}
   /api/interfaces:
     get:
- summary: List network interfaces the daemon sees
+      summary: List network interfaces the daemon sees
       operationId: interfaces
       tags: [Diagnostics]
       responses: {"200": {description: OK}}
   /api/logs:
     get:
- summary: Paged daemon log tail
+      summary: Paged daemon log tail
       operationId: logs
       tags: [Diagnostics]
       parameters:
@@ -1336,19 +1136,19 @@ paths:
       responses: {"200": {description: OK}}
   /api/restart:
     post:
- summary: Restart the daemon (re-exec). Returns before the old process exits.
+      summary: Restart the daemon (re-exec). Returns before the old process exits.
       operationId: restart
       tags: [Operations]
       responses: {"200": {description: "{status: restarting}"}}
   /api/ollama/models:
     get:
- summary: List installed Ollama models (name, size, modified)
+      summary: List installed Ollama models (name, size, modified)
       operationId: ollamaModels
       tags: [Backends]
       responses: {"200": {description: OK}}
   /api/openwebui/models:
     get:
- summary: List OpenWebUI models
+      summary: List OpenWebUI models
       operationId: openwebuiModels
       tags: [Backends]
       responses: {"200": {description: OK}}
@@ -1359,30 +1159,19 @@ paths:
   # exposes the envelope + tree drill-downs that mobile + PWA use.
   /api/observer/stats:
     get:
- summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes)
+      summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes)
       operationId: observerStats
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
   /api/observer/envelopes:
     get:
- summary: Envelope rollup only — per-session + per-LLM-backend CPU / mem / net / GPU totals
+      summary: Envelope rollup only — per-session + per-LLM-backend CPU / mem / net / GPU totals
       operationId: observerEnvelopes
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
-  /api/observer/envelopes/all-peers:
-    get:
- summary: Federation-aware envelope view — local + every peer with cross-host caller attribution
-      description: |
-        Collects local envelopes plus the last-pushed snapshot from every registered Shape A/B/C peer, runs `CorrelateAcrossPeers` to surface cross-peer caller attributions (a session on host A talking to ollama on host B shows up as `<peer-A>:session:<id>` in the Callers list on host B's ollama envelope). Operator-facing: the PWA Settings → Monitor → "↔ Cross-host view" button calls this.
-      operationId: observerEnvelopesAllPeers
-      tags: [Observer]
-      responses:
-        "200":
-          description: "{by_peer: {peer-name: [Envelope, ...], ...}}"
-        "503": {description: observer disabled}
   /api/observer/envelope:
     get:
- summary: Drill-down — process sub-tree for one envelope by id
+      summary: Drill-down — process sub-tree for one envelope by id
       operationId: observerEnvelope
       tags: [Observer]
       parameters:
@@ -1391,12 +1180,12 @@ paths:
       responses: {"200": {description: OK}, "404": {description: envelope not found}, "503": {description: observer disabled}}
   /api/observer/config:
     get:
- summary: Read observer config
+      summary: Read observer config
       operationId: observerConfigGet
       tags: [Observer]
       responses: {"200": {description: OK}}
     put:
- summary: Replace observer config (full body)
+      summary: Replace observer config (full body)
       operationId: observerConfigSet
       tags: [Observer]
       requestBody:
@@ -1408,12 +1197,12 @@ paths:
   # registry. 503 when observer.peers.allow_register is false.
   /api/observer/peers:
     get:
- summary: List registered Shape B / C peers (TokenHash redacted)
+      summary: List registered Shape B / C peers (TokenHash redacted)
       operationId: observerPeersList
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: Peer registry disabled}}
     post:
- summary: Register a Shape B / C peer; returns the minted bearer token (only opportunity)
+      summary: Register a Shape B / C peer; returns the minted bearer token (only opportunity)
       operationId: observerPeersRegister
       tags: [Observer]
       requestBody:
@@ -1445,12 +1234,12 @@ paths:
     parameters:
       - {name: name, in: path, required: true, schema: {type: string}}
     get:
- summary: Peer detail (TokenHash redacted)
+      summary: Peer detail (TokenHash redacted)
       operationId: observerPeerGet
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
     delete:
- summary: De-register a peer (rotates the token — peer auto-re-registers on next push)
+      summary: De-register a peer (rotates the token — peer auto-re-registers on next push)
       operationId: observerPeerDelete
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
@@ -1458,12 +1247,12 @@ paths:
     parameters:
       - {name: name, in: path, required: true, schema: {type: string}}
     get:
- summary: Last-known StatsResponse v2 snapshot for the peer
+      summary: Last-known StatsResponse v2 snapshot for the peer
       operationId: observerPeerLastStats
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: No snapshot or unknown peer}, "503": {description: Peer registry disabled}}
     post:
- summary: Push a StatsResponse v2 snapshot (Bearer auth from `register`)
+      summary: Push a StatsResponse v2 snapshot (Bearer auth from `register`)
       description: |
         Push body wraps the StatsResponse v2 with `shape` and
         `peer_name` fields so the parent can roll up envelopes
@@ -1493,13 +1282,13 @@ paths:
   # profile namespaces). All endpoints 503 when memory is not enabled.
   /api/memory/stats:
     get:
- summary: Memory backend status (provider, embedder, counts, last write)
+      summary: Memory backend status (provider, embedder, counts, last write)
       operationId: memoryStats
       tags: [Memory]
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/list:
     get:
- summary: List recent memories (most recent first)
+      summary: List recent memories (most recent first)
       operationId: memoryList
       tags: [Memory]
       parameters:
@@ -1508,7 +1297,7 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/search:
     get:
- summary: Semantic recall over the episodic store
+      summary: Semantic recall over the episodic store
       description: |
         Vector search across stored memories. Pass `q` for the query
         string. Optional `profile` (or `agent_id`) expands the
@@ -1525,7 +1314,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/save:
     post:
- summary: Store a new memory (decision, pattern, finding)
+      summary: Store a new memory (decision, pattern, finding)
       operationId: memorySave
       tags: [Memory]
       requestBody:
@@ -1544,7 +1333,7 @@ paths:
       responses: {"200": {description: Saved}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
   /api/memory/delete:
     post:
- summary: Forget a memory by id
+      summary: Forget a memory by id
       operationId: memoryDelete
       tags: [Memory]
       requestBody:
@@ -1553,7 +1342,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
   /api/memory/reindex:
     post:
- summary: Rebuild the vector index for a namespace (or all namespaces)
+      summary: Rebuild the vector index for a namespace (or all namespaces)
       operationId: memoryReindex
       tags: [Memory]
       requestBody:
@@ -1562,7 +1351,7 @@ paths:
       responses: {"200": {description: Reindex started}, "503": {description: Memory not enabled}}
   /api/memory/learnings:
     get:
- summary: Recent learnings (decisions + verifier results) feeding the autonomous loop
+      summary: Recent learnings (decisions + verifier results) feeding the autonomous loop
       operationId: memoryLearnings
       tags: [Memory]
       parameters:
@@ -1571,7 +1360,7 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/research:
     get:
- summary: Cross-session research aggregator (deep search with KG context)
+      summary: Cross-session research aggregator (deep search with KG context)
       operationId: memoryResearch
       tags: [Memory]
       parameters:
@@ -1580,7 +1369,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/export:
     get:
- summary: Export the entire memory store as a portable JSON bundle
+      summary: Export the entire memory store as a portable JSON bundle
       operationId: memoryExport
       tags: [Memory]
       responses:
@@ -1590,7 +1379,7 @@ paths:
         "503": {description: Memory not enabled}
   /api/memory/import:
     post:
- summary: Import a memory bundle (idempotent — existing ids are skipped)
+      summary: Import a memory bundle (idempotent — existing ids are skipped)
       operationId: memoryImport
       tags: [Memory]
       requestBody:
@@ -1599,7 +1388,7 @@ paths:
       responses: {"200": {description: Imported}, "400": {description: Bad bundle}, "503": {description: Memory not enabled}}
   /api/memory/wal:
     get:
- summary: Tail of the memory write-ahead audit log
+      summary: Tail of the memory write-ahead audit log
       operationId: memoryWAL
       tags: [Memory]
       parameters:
@@ -1607,14 +1396,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/test:
     get:
- summary: Probe the configured backend before flipping the enable flag
+      summary: Probe the configured backend before flipping the enable flag
       description: PWA Settings toggle uses this to validate Postgres + embedder reachability.
       operationId: memoryTest
       tags: [Memory]
       responses: {"200": {description: Reachable}, "502": {description: Backend unreachable}}
   /api/memory/kg/query:
     get:
- summary: Knowledge-graph query (entities + relationships)
+      summary: Knowledge-graph query (entities + relationships)
       operationId: kgQuery
       tags: [Memory]
       parameters:
@@ -1623,7 +1412,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/kg/add:
     post:
- summary: Add an entity / relationship to the knowledge graph
+      summary: Add an entity / relationship to the knowledge graph
       operationId: kgAdd
       tags: [Memory]
       requestBody:
@@ -1640,7 +1429,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
   /api/memory/kg/invalidate:
     post:
- summary: Invalidate (soft-delete) a KG triple by id
+      summary: Invalidate (soft-delete) a KG triple by id
       operationId: kgInvalidate
       tags: [Memory]
       requestBody:
@@ -1649,7 +1438,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
   /api/memory/kg/timeline:
     get:
- summary: Timeline view of KG changes for an entity
+      summary: Timeline view of KG changes for an entity
       operationId: kgTimeline
       tags: [Memory]
       parameters:
@@ -1658,7 +1447,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing entity}, "503": {description: Memory not enabled}}
   /api/memory/kg/stats:
     get:
- summary: KG counts (entities, triples, namespaces)
+      summary: KG counts (entities, triples, namespaces)
       operationId: kgStats
       tags: [Memory]
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
@@ -1668,7 +1457,7 @@ paths:
   # action. Used by the PWA mic button (#21, v4.2.0) and by mobile.
   /api/voice/transcribe:
     post:
- summary: Transcribe an audio blob with Whisper (returns transcript + optional action dispatch)
+      summary: Transcribe an audio blob with Whisper (returns transcript + optional action dispatch)
       description: |
         Accepts multipart/form-data with an `audio` blob (opus/ogg/webm/mp4
         preferred). When `session_id` is set the result auto-replies into
@@ -1720,7 +1509,7 @@ paths:
   # and trigger an update from the PWA / Signal.
   /api/rtk/version:
     get:
- summary: Currently-installed rtk version + last-known available release
+      summary: Currently-installed rtk version + last-known available release
       operationId: rtkVersion
       tags: [RTK]
       responses:
@@ -1737,23 +1526,25 @@ paths:
                   checked_at: {type: string, format: date-time}
   /api/rtk/check:
     post:
- summary: Force a check against the rtk-ai/rtk releases endpoint now
+      summary: Force a check against the rtk-ai/rtk releases endpoint now
       operationId: rtkCheck
       tags: [RTK]
       responses: {"200": {description: Check completed}, "502": {description: GitHub releases unreachable}}
   /api/rtk/update:
     post:
- summary: Download + install the available rtk binary (atomic replace + chmod)
+      summary: Download + install the available rtk binary (atomic replace + chmod)
       description: |
         Operator-triggered update. The PWA Settings → Monitor card
-        surfaces the resulting `rtk update` shell command so the
-        operator can copy-paste alternatively.
+        surfaces the upstream install one-liner
+        (`curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`)
+        as a click-to-copy chip when an upgrade is available, so the
+        operator can run it manually if they prefer.
       operationId: rtkUpdate
       tags: [RTK]
       responses: {"200": {description: Updated}, "409": {description: Already up to date}, "502": {description: Download failed}}
   /api/rtk/discover:
     get:
- summary: Walk recent Claude Code sessions and report missed RTK opportunities
+      summary: Walk recent Claude Code sessions and report missed RTK opportunities
       operationId: rtkDiscover
       tags: [RTK]
       responses: {"200": {description: Discovery report}}
@@ -1762,7 +1553,7 @@ paths:
   # backends. Mobile + PWA Settings card both consume.
   /api/cost:
     get:
- summary: Token + USD cost rollup across all sessions
+      summary: Token + USD cost rollup across all sessions
       operationId: costSummary
       tags: [Cost]
       parameters:
@@ -1771,7 +1562,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cost/usage:
     get:
- summary: Per-session usage + cost detail
+      summary: Per-session usage + cost detail
       operationId: costUsage
       tags: [Cost]
       parameters:
@@ -1780,12 +1571,12 @@ paths:
       responses: {"200": {description: OK}}
   /api/cost/rates:
     get:
- summary: Current per-model price-per-token rates
+      summary: Current per-model price-per-token rates
       operationId: costRatesGet
       tags: [Cost]
       responses: {"200": {description: OK}}
     put:
- summary: Operator override for per-model rates
+      summary: Operator override for per-model rates
       operationId: costRatesSet
       tags: [Cost]
       requestBody:
@@ -1796,7 +1587,7 @@ paths:
   # ─── Schedules — plural path the server actually serves (v4.0.7 fix for issue #16)
   /api/schedules:
     get:
- summary: List scheduled commands (plural alias of /api/schedule)
+      summary: List scheduled commands (plural alias of /api/schedule)
       description: |
         Returns scheduled commands. Optional query params filter
         the result set; the PWA uses both `session_id` and `state`.
@@ -1823,7 +1614,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/ScheduledCommand"
     post:
- summary: Add a scheduled command (plural alias of /api/schedule)
+      summary: Add a scheduled command (plural alias of /api/schedule)
       operationId: addSchedule
       tags: [Schedule]
       requestBody:
@@ -1840,7 +1631,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScheduledCommand"
     delete:
- summary: Cancel a scheduled command by id (plural alias of /api/schedule)
+      summary: Cancel a scheduled command by id (plural alias of /api/schedule)
       operationId: deleteSchedule
       tags: [Schedule]
       parameters:
@@ -1855,7 +1646,7 @@ paths:
   # ─── Profiles — backend + project + cluster profile enumeration (issue #16)
   /api/profiles:
     get:
- summary: List all registered profiles (backend / project / cluster)
+      summary: List all registered profiles (backend / project / cluster)
       description: |
         Returns a unified list of agent profiles used by the New
         Session form. The server splits the detailed CRUD across
@@ -1880,24 +1671,24 @@ paths:
                     default_backend: {type: string}
   /api/profiles/projects:
     get:
- summary: List project profiles
+      summary: List project profiles
       operationId: listProjectProfiles
       tags: [Profiles]
       responses: {"200": {description: OK}}
     post:
- summary: Create or update a project profile
+      summary: Create or update a project profile
       operationId: upsertProjectProfile
       tags: [Profiles]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/profiles/clusters:
     get:
- summary: List cluster profiles
+      summary: List cluster profiles
       operationId: listClusterProfiles
       tags: [Profiles]
       responses: {"200": {description: OK}}
     post:
- summary: Create or update a cluster profile
+      summary: Create or update a cluster profile
       operationId: upsertClusterProfile
       tags: [Profiles]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
@@ -1912,34 +1703,34 @@ paths:
   # Sessions sub-routes
   /api/sessions/aggregated:
     get:
- summary: Aggregated session view across federated peers
+      summary: Aggregated session view across federated peers
       operationId: sessionsAggregated
       tags: [Sessions]
       responses: {"200": {description: OK}}
   /api/sessions/bind:
     post:
- summary: Bind a session to an agent worker (proxies session reads through /api/proxy/agent/...)
+      summary: Bind a session to an agent worker (proxies session reads through /api/proxy/agent/...)
       operationId: sessionBind
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, agent_id], properties: {session_id: {type: string}, agent_id: {type: string}}}}}}
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
- summary: Import a single orphan session from disk
+      summary: Import a single orphan session from disk (BL94)
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
       responses: {"200": {description: Imported}, "404": {description: Session dir not found}}
   /api/sessions/kill:
     post:
- summary: Terminate a session (sends SIGTERM to the tmux process)
+      summary: Terminate a session (sends SIGTERM to the tmux process)
       operationId: sessionKill
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id], properties: {id: {type: string}}}}}}
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/prompt:
     get:
- summary: Inspect the captured prompt waiting for input (when state=waiting_input)
+      summary: Inspect the captured prompt waiting for input (when state=waiting_input)
       operationId: sessionPromptGet
       tags: [Sessions]
       parameters:
@@ -1947,13 +1738,13 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
- summary: List orphan session directories on disk that are missing from the registry
+      summary: List orphan session directories on disk that are missing from the registry (BL93)
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
   /api/sessions/response:
     get:
- summary: Last LLM response for a session (final assistant message, parsed)
+      summary: Last LLM response for a session (final assistant message, parsed)
       operationId: sessionResponse
       tags: [Sessions]
       parameters:
@@ -1961,7 +1752,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
- summary: List running sessions stuck longer than session.stale_timeout_seconds
+      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -1969,7 +1760,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/sessions/state:
     post:
- summary: Manual state override (operator only — bypasses idle-detection)
+      summary: Manual state override (operator only — bypasses idle-detection)
       operationId: sessionStateOverride
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id, state], properties: {id: {type: string}, state: {type: string, enum: [running, waiting_input, complete, killed, rate_limited]}}}}}}
@@ -1978,19 +1769,19 @@ paths:
   # Agents
   /api/agents:
     get:
- summary: List ephemeral agent workers
+      summary: List ephemeral agent workers (F10 sprint 3+)
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
     post:
- summary: Spawn a new agent worker
+      summary: Spawn a new agent worker
       operationId: agentSpawn
       tags: [Agents]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
- summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
+      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -2001,7 +1792,7 @@ paths:
   # Channel
   /api/channel/reply:
     post:
- summary: Inbound MCP-bridge reply from Claude (used by channel.js)
+      summary: Inbound MCP-bridge reply from Claude (used by channel.js)
       operationId: channelReply
       tags: [Channel]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, text], properties: {session_id: {type: string}, text: {type: string}}}}}}
@@ -2010,31 +1801,31 @@ paths:
   # Devices
   /api/devices:
     get:
- summary: List registered devices
+      summary: List registered devices (F17 mobile registry)
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
   /api/devices/register:
     post:
- summary: Register a new device for push notifications
+      summary: Register a new device for push notifications
       operationId: deviceRegister
       tags: [Devices]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
- summary: "List device aliases for `new: @<alias>:` routing"
+      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
     post:
- summary: Upsert a device alias
+      summary: Upsert a device alias
       operationId: deviceAliasUpsert
       tags: [Devices]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [alias, target], properties: {alias: {type: string}, target: {type: string}}}}}}
       responses: {"200": {description: OK}}
     delete:
- summary: Delete a device alias
+      summary: Delete a device alias
       operationId: deviceAliasDelete
       tags: [Devices]
       parameters:
@@ -2044,19 +1835,19 @@ paths:
   # Routing rules (BL20)
   /api/routing-rules:
     get:
- summary: List backend auto-selection routing rules
+      summary: List backend auto-selection routing rules
       operationId: routingRulesList
       tags: [Routing]
       responses: {"200": {description: OK}}
     put:
- summary: Replace the routing rules set
+      summary: Replace the routing rules set
       operationId: routingRulesSet
       tags: [Routing]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/routing-rules/test:
     post:
- summary: Test which backend a given task string would route to
+      summary: Test which backend a given task string would route to
       operationId: routingRulesTest
       tags: [Routing]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [task], properties: {task: {type: string}, project_dir: {type: string}}}}}}
@@ -2065,7 +1856,7 @@ paths:
   # Federation (F19)
   /api/federation/sessions:
     get:
- summary: Aggregated session list across all federated peers
+      summary: Aggregated session list across all federated peers
       operationId: federationSessions
       tags: [Federation]
       responses: {"200": {description: OK}}
@@ -2073,13 +1864,13 @@ paths:
   # Splash (BL69)
   /api/splash/info:
     get:
- summary: Render context for splash (logo, tagline, version)
+      summary: Render context for splash (logo, tagline, version)
       operationId: splashInfo
       tags: [Splash]
       responses: {"200": {description: OK}}
   /api/splash/logo:
     get:
- summary: Splash logo image
+      summary: Splash logo image
       operationId: splashLogo
       tags: [Splash]
       responses: {"200": {description: OK, content: {image/svg+xml: {}, image/png: {}}}}
@@ -2087,7 +1878,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
- summary: Single-shot LLM ask — no session, no tmux
+      summary: Single-shot LLM ask — no session, no tmux (BL34)
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -2104,14 +1895,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
- summary: Quick-response assistant — uses the configured assistant backend
+      summary: Quick-response assistant (BL42) — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
- summary: Query the operator-action audit log
+      summary: Query the operator-action audit log (BL9)
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -2124,37 +1915,37 @@ paths:
       responses: {"200": {description: OK}}
   /api/cooldown:
     get:
- summary: Current global rate-limit cooldown state
+      summary: Current global rate-limit cooldown state (BL30)
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
     put:
- summary: Set or clear the global cooldown
+      summary: Set or clear the global cooldown
       operationId: cooldownSet
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
   /api/diagnose:
     get:
- summary: Diagnostic snapshot — backend reachability, config validity, recent errors
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
- summary: Aggregate analytics — session counts, backend distribution, cost summary
+      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
- summary: Hot config reload — equivalent to SIGHUP
+      summary: Hot config reload (BL17) — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
- summary: Project overview — git status + sessions + stats
+      summary: Project overview — git status + sessions + stats (BL35)
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -2162,30 +1953,30 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing dir}}
   /api/projects:
     get:
- summary: List project aliases
+      summary: List project aliases (BL27)
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
- summary: Upsert a project alias
+      summary: Upsert a project alias
       operationId: projectsUpsert
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
   /api/templates:
     get:
- summary: List session-start templates
+      summary: List session-start templates (BL5)
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
- summary: Upsert a template
+      summary: Upsert a template
       operationId: templatesUpsert
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
     delete:
- summary: Delete a template
+      summary: Delete a template
       operationId: templatesDelete
       tags: [Singletons]
       parameters:
@@ -2193,13 +1984,13 @@ paths:
       responses: {"200": {description: OK}}
   /api/servers/health:
     get:
- summary: Health of every configured remote datawatch server (proxy pool)
+      summary: Health of every configured remote datawatch server (proxy pool)
       operationId: serversHealth
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/stats:
     get:
- summary: Legacy v1 stats (host + cpu + mem + disk). Pass ?v=2 for the structured StatsResponse v2 (Observer)
+      summary: Legacy v1 stats (host + cpu + mem + disk). Pass ?v=2 for the structured StatsResponse v2 (Observer)
       operationId: stats
       tags: [Singletons]
       parameters:
@@ -2211,956 +2002,6 @@ paths:
       operationId: ollamaStats
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
-
-  # ─── Push notifications (v7.0.0-alpha.35) ───────────────────────────────────
-
-  /api/push/{topic}:
-    parameters:
-      - {name: topic, in: path, required: true, schema: {type: string}, description: "Topic name (e.g. alerts, session-abc1)"}
-    get:
-      summary: Subscribe to SSE push stream (ntfy-compat)
-      description: Returns a Server-Sent Events stream. Emits an open event on connect, message events on publish, and a keepalive comment every 25s.
-      operationId: pushSubscribe
-      tags: [Push]
-      responses:
-        "200":
-          description: SSE stream
-          content:
-            text/event-stream:
-              schema: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    post:
-      summary: Publish an event to a push topic
-      description: Fans out to all SSE subscribers + every registered UnifiedPush mobile endpoint.
-      operationId: pushPublish
-      tags: [Push]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: {type: string}
-                message: {type: string}
-                priority: {type: integer, minimum: 1, maximum: 5, description: "1=min, 3=default, 5=max"}
-                tags: {type: array, items: {type: string}}
-                click: {type: string, description: "URL to open on tap"}
-                extras: {type: object}
-      responses:
-        "200": {description: Published}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/push/register:
-    post:
-      summary: Register a UnifiedPush mobile endpoint
-      description: Idempotent on client_id.
-      operationId: pushRegister
-      tags: [Push]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [endpoint, client_id]
-              properties:
-                endpoint: {type: string, description: UnifiedPush endpoint URL}
-                client_id: {type: string, description: Stable client identifier}
-                token: {type: string, description: Optional token for endpoint auth}
-      responses:
-        "200": {description: Registered}
-        "400": {description: Missing endpoint or client_id}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /.well-known/unifiedpush:
-    get:
-      summary: UnifiedPush discovery document
-      description: Returns the UnifiedPush spec v1 discovery document so clients can auto-discover the push URL.
-      operationId: unifiedPushDiscovery
-      tags: [Push]
-      security: []
-      responses:
-        "200":
-          description: Discovery document
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  version: {type: integer, example: 1}
-                  unifiedpush: {type: object}
-
-  # ─── LLM Registry (v7.0.0) ──────────────────────────────────────────────────
-
-  /api/llms:
-    get:
-      summary: List named LLMs in the inference registry
-      operationId: llmList
-      tags: [LLM]
-      responses:
-        "200":
-          description: LLM list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  llms:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/LLMEntry"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    post:
-      summary: Add a named LLM to the registry
-      operationId: llmAdd
-      tags: [LLM]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LLMEntry"
-      responses:
-        "200": {description: Created}
-        "409": {description: Name already exists}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    get:
-      summary: Get a named LLM by name
-      operationId: llmGet
-      tags: [LLM]
-      responses:
-        "200":
-          description: LLM entry
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LLMEntry"
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    put:
-      summary: Replace a named LLM entry
-      operationId: llmUpdate
-      tags: [LLM]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LLMEntry"
-      responses:
-        "200": {description: Updated}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      summary: Delete a named LLM (409 if active bindings exist)
-      operationId: llmDelete
-      tags: [LLM]
-      responses:
-        "200": {description: Deleted}
-        "404": {description: Not found}
-        "409": {description: Active bindings exist — use reassign or force_delete}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}/enabled:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    patch:
-      summary: Enable or disable a named LLM
-      operationId: llmSetEnabled
-      tags: [LLM]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [enabled]
-              properties:
-                enabled: {type: boolean}
-                pretest: {type: boolean, description: "Run connectivity probe before enabling"}
-      responses:
-        "200": {description: Updated}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}/in_use:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    get:
-      summary: List active bindings for a named LLM
-      operationId: llmInUse
-      tags: [LLM]
-      parameters:
-        - {name: filter, in: query, required: false, schema: {type: string}}
-        - {name: page, in: query, required: false, schema: {type: integer}}
-        - {name: size, in: query, required: false, schema: {type: integer}}
-      responses:
-        "200":
-          description: Bindings list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  bindings: {type: array, items: {type: object}}
-                  total: {type: integer}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}/refresh_models:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    post:
-      summary: Trigger model list refresh from compute nodes
-      operationId: llmRefreshModels
-      tags: [LLM]
-      responses:
-        "200": {description: Refresh triggered}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}/reassign:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    post:
-      summary: Reassign all active bindings to another LLM then delete this one
-      operationId: llmReassign
-      tags: [LLM]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [to_llm]
-              properties:
-                to_llm: {type: string}
-                to_model: {type: string}
-      responses:
-        "200": {description: Reassigned and deleted}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/llms/{name}/force_delete:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    post:
-      summary: Cancel all active bindings then delete this LLM
-      operationId: llmForceDelete
-      tags: [LLM]
-      responses:
-        "200": {description: Deleted}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/sessions/set_llm_ref:
-    post:
-      summary: Surgically update a running session's LLM registry binding
-      operationId: sessionSetLLMRef
-      tags: [Sessions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [id, llm_ref]
-              properties:
-                id: {type: string}
-                llm_ref: {type: string}
-      responses:
-        "200": {description: Updated}
-        "404": {description: Session not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Compute Nodes (v7.0.0) ─────────────────────────────────────────────────
-
-  /api/compute/nodes:
-    get:
-      summary: List compute nodes
-      operationId: computeNodeList
-      tags: [Compute]
-      responses:
-        "200":
-          description: Node list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ComputeNode"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    post:
-      summary: Add a compute node (runs save-time probe unless ?probe=skip)
-      operationId: computeNodeAdd
-      tags: [Compute]
-      parameters:
-        - {name: probe, in: query, required: false, schema: {type: string, enum: [skip]}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ComputeNode"
-      responses:
-        "200": {description: Created}
-        "400": {description: Validation error}
-        "502": {description: Probe failed — node unreachable}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    get:
-      summary: Get a compute node by name
-      operationId: computeNodeGet
-      tags: [Compute]
-      responses:
-        "200":
-          description: Node detail
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ComputeNode"
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    put:
-      summary: Update a compute node
-      operationId: computeNodeUpdate
-      tags: [Compute]
-      parameters:
-        - {name: probe, in: query, required: false, schema: {type: string, enum: [skip]}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ComputeNode"
-      responses:
-        "200": {description: Updated}
-        "404": {description: Not found}
-        "502": {description: Probe failed}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      summary: Delete a compute node
-      operationId: computeNodeDelete
-      tags: [Compute]
-      responses:
-        "200": {description: Deleted}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}/enabled:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    patch:
-      summary: Enable or disable a compute node
-      operationId: computeNodeSetEnabled
-      tags: [Compute]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [enabled]
-              properties:
-                enabled: {type: boolean}
-      responses:
-        "200": {description: Updated}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}/models:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    get:
-      summary: Kind-aware model list from this compute node
-      operationId: computeNodeModels
-      tags: [Compute]
-      parameters:
-        - {name: kind, in: query, required: false, schema: {type: string}, description: "ollama | openai-compat"}
-      responses:
-        "200":
-          description: Model list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  models: {type: array, items: {type: string}}
-                  kind: {type: string}
-                  node: {type: string}
-        "404": {description: Not found}
-        "502": {description: Probe to node failed}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}/models/pull:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    post:
-      summary: Pull a model to this compute node in the background
-      operationId: computeNodePullModel
-      tags: [Compute]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [model]
-              properties:
-                model: {type: string, example: "llama3.1:8b"}
-      responses:
-        "200":
-          description: Task descriptor
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  task_id: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}/models/{model}:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-      - {name: model, in: path, required: true, schema: {type: string}}
-    delete:
-      summary: Remove a model from this compute node
-      operationId: computeNodeRemoveModel
-      tags: [Compute]
-      responses:
-        "200": {description: Removed}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/compute/nodes/{name}/observer-peer:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    put:
-      summary: Bind a compute node to an observer peer
-      operationId: computeNodeAttachObserver
-      tags: [Compute]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [peer]
-              properties:
-                peer: {type: string, description: "Observer peer name from /api/observer/peers"}
-      responses:
-        "200": {description: Bound}
-        "404": {description: Node or peer not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      summary: Remove observer peer binding from a compute node
-      operationId: computeNodeDetachObserver
-      tags: [Compute]
-      responses:
-        "200": {description: Cleared}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/observer/peers/free:
-    get:
-      summary: List observer peers with no bound compute node
-      operationId: observerPeersFree
-      tags: [Observer]
-      responses:
-        "200":
-          description: Free peer list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/observer/peers/by-node:
-    get:
-      summary: Observer peers grouped by bound compute node
-      operationId: observerPeersByNode
-      tags: [Observer]
-      responses:
-        "200":
-          description: Grouped peers
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  by_node: {type: object, additionalProperties: {type: array, items: {type: object}}}
-                  unbound: {type: array, items: {type: object}}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/federation/meta-peers:
-    get:
-      summary: Federation meta-peers aggregator (peers grouped per compute node across all primaries)
-      operationId: federationMetaPeers
-      tags: [Observer]
-      responses:
-        "200": {description: Meta-peer map}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Marketplace (v7.0.0-alpha.33) ──────────────────────────────────────────
-
-  /api/marketplace/ollama/catalog:
-    get:
-      summary: Embedded Ollama model catalog with size and RAM estimates
-      operationId: marketplaceOllamaCatalog
-      tags: [Marketplace]
-      responses:
-        "200":
-          description: Catalog array
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name: {type: string}
-                    description: {type: string}
-                    tags: {type: array, items: {type: object}}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/marketplace/ollama/tasks/{task_id}:
-    parameters:
-      - {name: task_id, in: path, required: true, schema: {type: string}}
-    get:
-      summary: Poll background model pull progress
-      operationId: marketplacePullTask
-      tags: [Marketplace]
-      responses:
-        "200":
-          description: Task status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: {type: string, enum: [running, done, error]}
-                  progress: {type: number}
-                  error: {type: string}
-        "404": {description: Task not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Migration (v7.0.0-alpha.23) ────────────────────────────────────────────
-
-  /api/migration/compute-kinds:
-    get:
-      summary: List compute nodes with deprecated kinds needing migration
-      operationId: migrationComputeKindsCheck
-      tags: [Migration]
-      responses:
-        "200":
-          description: Migration status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  nodes: {type: array, items: {type: object}}
-                  supported: {type: array, items: {type: string}}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/migration/compute-kinds/{name}:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    put:
-      summary: Update a compute node's kind to a supported value
-      operationId: migrationComputeKindUpdate
-      tags: [Migration]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [kind]
-              properties:
-                kind: {type: string, enum: [ollama, openai-compat]}
-      responses:
-        "200": {description: Updated}
-        "400": {description: Unsupported kind}
-        "404": {description: Not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Dashboard (BL303 v7.0.0) ───────────────────────────────────────────────
-
-  /api/dashboard/layout:
-    get:
-      summary: Get the saved dashboard card layout
-      operationId: dashboardLayoutGet
-      tags: [Dashboard]
-      responses:
-        "200":
-          description: Layout JSON
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  cards: {type: array, items: {type: object}}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    put:
-      summary: Save the dashboard card layout
-      operationId: dashboardLayoutPut
-      tags: [Dashboard]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [cards]
-              properties:
-                cards: {type: array, items: {type: object}}
-      responses:
-        "200": {description: Saved}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Session hook events + status board (v7.0.0-alpha.34) ───────────────────
-
-  /api/sessions/{id}/hook-event:
-    parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
-    post:
-      summary: Ingest a hook event for a session (called by hook scripts)
-      operationId: sessionHookEvent
-      tags: [Sessions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                event: {type: string, enum: [Stop, PostToolUse, UserPromptSubmit, SubagentStop, Activity, Start]}
-                current_focus: {type: string}
-                sprint: {type: object}
-                tests: {type: object}
-                git: {type: object}
-      responses:
-        "200": {description: Ingested}
-        "404": {description: Session not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/sessions/{id}/status:
-    parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
-    get:
-      summary: Get the derived session status board (hook health, sprint, tests, git)
-      operationId: sessionStatus
-      tags: [Sessions]
-      responses:
-        "200":
-          description: Status board
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  state: {type: string}
-                  last_event: {type: string}
-                  idle_since: {type: string, format: date-time}
-                  hook_health: {type: string, enum: [alive, stale, missing]}
-                  sprint: {type: object}
-                  tests: {type: object}
-                  git: {type: object}
-                  current_focus: {type: string}
-        "404": {description: Session not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── MCP Resources + Prompts + Sampling + Elicitation (BL302 v7.1.0) ────────
-
-  /api/mcp/resources:
-    get:
-      summary: List all MCP resources (static + live + templates)
-      operationId: mcpResourcesList
-      tags: [MCP]
-      responses:
-        "200":
-          description: Resource list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    uri: {type: string}
-                    name: {type: string}
-                    description: {type: string}
-                    mimeType: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/mcp/resources/read:
-    get:
-      summary: Read the content of an MCP resource by URI
-      operationId: mcpResourcesRead
-      tags: [MCP]
-      parameters:
-        - {name: uri, in: query, required: true, schema: {type: string}, description: "datawatch:// URI"}
-      responses:
-        "200":
-          description: Resource content
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  contents: {type: array, items: {type: object}}
-        "404": {description: URI not found}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/mcp/resources/templates:
-    get:
-      summary: List MCP URI templates (parameterised resources)
-      operationId: mcpResourcesTemplates
-      tags: [MCP]
-      responses:
-        "200":
-          description: Template list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    uriTemplate: {type: string}
-                    name: {type: string}
-                    description: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/mcp/sample:
-    post:
-      summary: Fire an MCP sampling request through the connected MCP host
-      description: Blocks until the host returns a completion or the timeout expires. Returns {error} when no host is connected.
-      operationId: mcpSample
-      tags: [MCP]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                trigger: {type: string, description: "Built-in trigger name (e.g. alert_triage)"}
-                prompt: {type: string, description: "Custom prompt (used when trigger is omitted)"}
-                context: {type: object, description: "Extra context passed to the trigger template"}
-                max_tokens: {type: integer}
-      responses:
-        "200":
-          description: Sampling result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: {type: boolean}
-                  response: {type: string}
-                  error: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/mcp/sampling-log:
-    get:
-      summary: Browse the last 50 sampling results
-      operationId: mcpSamplingLog
-      tags: [MCP]
-      responses:
-        "200":
-          description: Sampling log entries
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    trigger: {type: string}
-                    prompt_excerpt: {type: string}
-                    response_excerpt: {type: string}
-                    status: {type: string}
-                    timestamp: {type: string, format: date-time}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/mcp/elicit:
-    post:
-      summary: Prompt the operator for structured input via the connected MCP host
-      description: Blocks until the operator responds or the timeout expires.
-      operationId: mcpElicit
-      tags: [MCP]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [schema]
-              properties:
-                schema:
-                  type: string
-                  enum: [approval, text_input, choice]
-                prompt: {type: string}
-                options: {type: array, items: {type: string}, description: "Required for schema=choice"}
-                placeholder: {type: string, description: "Hint for schema=text_input"}
-                context: {type: object}
-      responses:
-        "200":
-          description: Elicitation response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  approved: {type: boolean, description: "schema=approval only"}
-                  value: {type: string, description: "schema=text_input only"}
-                  choice: {type: string, description: "schema=choice only"}
-                  index: {type: integer, description: "schema=choice only"}
-                  error: {type: string}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Smoke progress (v7.0.0) ────────────────────────────────────────────────
-
-  /api/smoke/progress:
-    get:
-      summary: Current smoke run progress (used by Dashboard smoke-run card)
-      operationId: smokeProgressGet
-      tags: [Singletons]
-      responses:
-        "200":
-          description: Progress JSON
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  version: {type: string}
-                  started_at: {type: string, format: date-time}
-                  active: {type: boolean}
-                  sections: {type: array, items: {type: object}}
-        "204": {description: No active smoke run}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      summary: Clear the smoke run progress file
-      operationId: smokeProgressDelete
-      tags: [Singletons]
-      responses:
-        "204": {description: Cleared}
-        "404": {description: No progress file}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  # ─── Evals (v7.0.0) ─────────────────────────────────────────────────────────
-
-  /api/evals:
-    get:
-      summary: List eval run history
-      operationId: evalListRuns
-      tags: [Evals]
-      responses:
-        "200":
-          description: Runs list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  runs:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: {type: string}
-                        name: {type: string}
-                        status: {type: string}
-                        score: {type: number}
-                        created_at: {type: string, format: date-time}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /api/evals/run:
-    post:
-      summary: Run an eval suite
-      operationId: evalRun
-      tags: [Evals]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [suite]
-              properties:
-                suite: {type: string, description: "Suite name from ~/.datawatch/evals/"}
-                session_id: {type: string, description: "Session to evaluate (optional)"}
-      responses:
-        "200":
-          description: Run result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: {type: string}
-                  status: {type: string}
-                  score: {type: number}
-        "401":
-          $ref: "#/components/responses/Unauthorized"
 
 components:
   securitySchemes:
@@ -3205,7 +2046,7 @@ components:
           type: string
           description: Original task description
           example: "write a fibonacci function in Go"
-        backend_family:
+        llm_backend:
           type: string
           description: LLM backend used for this session
           example: "claude-code"
@@ -3382,7 +2223,7 @@ components:
           type: string
         version:
           type: string
-        backend_family:
+        llm_backend:
           type: string
           example: "claude-code"
         messaging_backend:
@@ -3513,247 +2354,3 @@ components:
         created_at:
           type: string
           format: date-time
-
-    LLMEntry:
-      type: object
-      description: A named LLM registry entry
-      properties:
-        name:
-          type: string
-          description: Unique name for this LLM entry
-          example: "claude-sonnet"
-        kind:
-          type: string
-          description: LLM backend kind
-          enum: [claude-code, openwebui, ollama, session-backend]
-          example: "claude-code"
-        model:
-          type: string
-          description: Model identifier within the backend
-          example: "claude-sonnet-4-6"
-        compute_nodes:
-          type: array
-          items:
-            type: string
-          description: Compute node names this LLM can use
-          example: ["gpu-node-1"]
-        enabled_models:
-          type: array
-          items:
-            type: string
-          description: Models enabled for use (subset of available)
-        enabled:
-          type: boolean
-          description: Whether this LLM entry is active
-          default: true
-        llm_ref:
-          type: string
-          description: Reference alias for use in session start and automata config
-          example: "claude-sonnet"
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    ComputeNode:
-      type: object
-      description: A compute node that can run LLM inference
-      properties:
-        name:
-          type: string
-          description: Unique name for this compute node
-          example: "gpu-node-1"
-        kind:
-          type: string
-          description: Compute node kind
-          enum: [ollama, openai-compat]
-          example: "ollama"
-        endpoint:
-          type: string
-          description: Base URL for the compute node API
-          example: "http://gpu-box:11434"
-        enabled:
-          type: boolean
-          description: Whether this node is available for routing
-          default: true
-        models:
-          type: array
-          items:
-            type: string
-          description: Models currently available on this node
-        observer_peer:
-          type: string
-          description: Observer peer name bound to this node for metrics
-        health:
-          type: string
-          description: Last health check result
-          enum: [ok, degraded, unreachable, unknown]
-          example: "ok"
-        last_probe_ms:
-          type: integer
-          description: Last save-time probe latency in milliseconds
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    ServerEntry:
-      type: object
-      description: A remote datawatch server entry
-      properties:
-        name:
-          type: string
-          description: Unique name for this server
-          example: "prod-eu"
-        url:
-          type: string
-          description: Base URL of the remote datawatch server
-          example: "https://eu.example.com:8443"
-        token:
-          type: string
-          description: Bearer token for the remote server (write-only on create/update)
-          example: "***"
-        enabled:
-          type: boolean
-          description: Whether this server is included in aggregated queries
-          default: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    DashboardLayout:
-      type: object
-      description: Persisted dashboard card layout configuration
-      properties:
-        cards:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                description: Unique card identifier
-              type:
-                type: string
-                description: Card type
-                enum: [task_tree, orbital, ekg, gantt, heatmap, guardrails, smoke_run, event_feed, sparklines]
-              col:
-                type: integer
-                description: Column position (0-based)
-              row:
-                type: integer
-                description: Row position (0-based)
-              w:
-                type: integer
-                description: Card width in columns
-              h:
-                type: integer
-                description: Card height in rows
-              config:
-                type: object
-                description: Card-specific configuration
-                additionalProperties: true
-        updated_at:
-          type: string
-          format: date-time
-
-    SamplingRequest:
-      type: object
-      description: MCP sampling request
-      properties:
-        trigger:
-          type: string
-          description: Built-in trigger name
-          enum: [alert_triage, anomaly_analysis, morning_briefing, council_deliberation, automaton_decision]
-          example: "alert_triage"
-        prompt:
-          type: string
-          description: Custom prompt (used when trigger is omitted)
-          example: "Summarise my open sessions"
-        context:
-          type: object
-          description: Additional context passed to the trigger template
-          additionalProperties: true
-        max_tokens:
-          type: integer
-          description: Max tokens for the completion
-          example: 512
-
-    SamplingResult:
-      type: object
-      description: A sampling result entry from the ring buffer
-      properties:
-        id:
-          type: string
-          description: Unique result identifier
-        trigger:
-          type: string
-          description: Trigger name or "custom"
-        prompt_excerpt:
-          type: string
-          description: First 200 chars of the prompt
-        response_excerpt:
-          type: string
-          description: First 200 chars of the response
-        status:
-          type: string
-          enum: [ok, error, unsupported]
-        created_at:
-          type: string
-          format: date-time
-
-    ElicitationRequest:
-      type: object
-      description: MCP elicitation request
-      required: [schema, prompt]
-      properties:
-        schema:
-          type: string
-          description: Elicitation schema type
-          enum: [approval, text_input, choice]
-          example: "approval"
-        prompt:
-          type: string
-          description: Prompt shown to the operator
-          example: "Approve deletion of 12 stale sessions?"
-        context:
-          type: object
-          description: Additional context (shown alongside approval prompts)
-          additionalProperties: true
-        placeholder:
-          type: string
-          description: Placeholder text for text_input schema
-          example: "e.g. refactor-auth-module"
-        options:
-          type: array
-          items:
-            type: string
-          description: Choice options for choice schema
-          example: ["quick", "normal", "thorough"]
-
-    ElicitationResponse:
-      type: object
-      description: Operator response to an elicitation
-      properties:
-        approved:
-          type: boolean
-          description: Present for approval schema
-        reason:
-          type: string
-          description: Optional reason text (approval schema)
-        value:
-          type: string
-          description: Operator-entered text (text_input schema)
-        choice:
-          type: string
-          description: Selected option (choice schema)
-        index:
-          type: integer
-          description: Zero-based index of selected option (choice schema)

@@ -58,6 +58,18 @@
     border-radius: 4px;
     font-size: 13px;
   }
+  aside .filter input:focus { outline: none; border-color: var(--accent); }
+  .search-result {
+    display: block; width: 100%; text-align: left;
+    background: transparent; color: var(--text); border: none;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; line-height: 1.4;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-result:hover { background: var(--bg3); }
+  .search-result .sr-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-result .sr-path { font-size: 11px; color: var(--text2); margin-top: 1px; }
+  .search-result .sr-excerpt { font-size: 11px; color: var(--text2); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .search-empty { color: var(--text2); padding: 12px 14px; font-size: 13px; }
   aside .group {
     padding: 6px 12px 2px;
     font-size: 11px;
@@ -210,7 +222,7 @@
 </header>
 <div class="body" id="bodyEl">
   <aside>
-    <div class="filter"><input id="filter" placeholder="Filter files…" /></div>
+    <div class="filter"><input id="filter" placeholder="Search docs…" autocomplete="off" /></div>
     <div id="list"><div class="loading">Loading index…</div></div>
   </aside>
   <main id="main">
@@ -350,8 +362,60 @@
     }
   }
 
-  filterEl.addEventListener('input', e => renderIndex(e.target.value));
+  let searchTimer = null;
+  filterEl.addEventListener('input', e => {
+    const q = e.target.value.trim();
+    clearTimeout(searchTimer);
+    if (q.length === 0) {
+      renderIndex('');
+    } else if (q.length < 3) {
+      // Short queries: filename filter only (fast, no API call)
+      renderIndex(q);
+    } else {
+      // Debounce API search for longer queries
+      searchTimer = setTimeout(() => runSearch(q), 280);
+    }
+  });
   renderIndex('');
+
+  async function runSearch(q) {
+    listEl.innerHTML = '<div class="search-empty">Searching…</div>';
+    try {
+      const TOKEN = document.cookie.split(';').map(c => c.trim())
+        .find(c => c.startsWith('dw_token='))?.split('=')[1] || '';
+      const headers = TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {};
+      const resp = await fetch('/api/docs/search?q=' + encodeURIComponent(q) + '&limit=20', { headers });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const hits = data.hits || [];
+      listEl.innerHTML = '';
+      if (!hits.length) {
+        listEl.innerHTML = '<div class="search-empty">No results for &ldquo;' + q.replace(/</g, '&lt;') + '&rdquo;</div>';
+        return;
+      }
+      const g = document.createElement('div');
+      g.className = 'group';
+      g.textContent = hits.length + ' result' + (hits.length === 1 ? '' : 's');
+      listEl.appendChild(g);
+      for (const h of hits) {
+        const b = document.createElement('button');
+        b.className = 'search-result';
+        const titleText = h.heading || h.title || h.path.replace(/^docs\//, '');
+        const anchorFrag = h.anchor ? '#' + encodeURIComponent(h.anchor) : '';
+        b.innerHTML = `<div class="sr-title">${titleText.replace(/</g,'&lt;')}</div>
+          <div class="sr-path">${h.path.replace(/^docs\//, '').replace(/</g,'&lt;')}</div>
+          ${h.excerpt ? '<div class="sr-excerpt">' + h.excerpt.replace(/</g,'&lt;') + '</div>' : ''}`;
+        b.onclick = () => {
+          location.hash = h.path + anchorFrag;
+          openDoc(h.path);
+        };
+        listEl.appendChild(b);
+      }
+    } catch (err) {
+      // Fall back to filename filter on error
+      renderIndex(q);
+    }
+  }
 
   async function openDoc(path) {
     Array.from(document.querySelectorAll('aside button.doc')).forEach(b =>
