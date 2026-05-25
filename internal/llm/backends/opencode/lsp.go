@@ -78,11 +78,7 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 			existing.LSP = make(map[string]lspEntry)
 		}
 		for name, srv := range opts.LSPServers {
-			existing.LSP[name] = lspEntry{
-				Command:    srv.Command,
-				Extensions: srv.Extensions,
-				Env:        srv.Env,
-			}
+			existing.LSP[name] = lspEntry(srv)
 		}
 	}
 
