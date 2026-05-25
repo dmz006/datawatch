@@ -58,7 +58,7 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 	if projectDir == "" {
 		return nil
 	}
-	if opts.Model == "" && len(opts.LSPServers) == 0 {
+	if opts.Model == "" && len(opts.LSPServers) == 0 && opts.OllamaURL == "" {
 		return nil
 	}
 

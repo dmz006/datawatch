@@ -163,6 +163,11 @@ type Session struct {
 	// "ollama/llama3") or a bare model name for claude-code.
 	Model string `json:"model,omitempty"`
 
+	// OllamaURL (v8.7.1) — Ollama base URL for the session's compute node.
+	// Set when an ollama/* model is selected with a non-local ComputeNodeRef.
+	// Written to <projectDir>/opencode.json as provider.ollama.apiUrl at launch.
+	OllamaURL string `json:"ollama_url,omitempty"`
+
 	// BL331 — federation peer that owns or originated this session via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
 }

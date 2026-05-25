@@ -3,6 +3,22 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.7.2 — Patch: OpenCode wiring completion (2026-05-25)
+
+### Fixed
+
+- **Duplicate `model` key in session start payload**: `sessClaudeModel` was always overridden to `""` by a second `model:` key added for OpenCode in v8.7.0. Claude model selection was silently ignored. Fixed with a single `model:` using `sessOpenCodeModel || sessClaudeModel` fallback, plus resetting hidden dropdowns on backend switch so stale values can't leak.
+- **OllamaURL never written to opencode.json**: `ProjectConfigOpts.OllamaURL` existed but was never populated. Now resolved from the compute node's `Address` in `handleStartSession` when model starts with `"ollama/"`, persisted on `Session.OllamaURL`, and passed through the preLaunch hook to `WriteProjectConfig`. Also fixed the early-return guard in `WriteProjectConfig` that blocked OllamaURL-only writes.
+- **`_ = ollamaURL` dead code in `handleOpenCodeModels`**: The wrongly-constructed `"http://" + n.Address + ":11434"` variable was thrown away. Removed; `host = n.Address` is the correct assignment.
+
+### Added
+
+- **LSPLanguage in Automata/PRD**: `PRD` and `Task` now carry `lsp_language`. The executor resolves per-task → per-PRD and passes it through `SpawnRequest` → `SpawnFn` → `POST /api/sessions/start`. OpenCode-backed PRD tasks will write LSP config to `opencode.json` at launch.
+- **OpenCode models in PRD model dropdown**: `ensureLLMModelLists()` now fetches `/api/opencode/models` and populates `state._availableModels` for `opencode`, `opencode-acp`, and `opencode-prompt` backends. The PRD/task LLM modal's model dropdown now shows cloud + Ollama models when an OpenCode backend is selected.
+- **Updated cloud model list**: Replaced stale entries with current models — `claude-opus-4-7`, `o4-mini`, `o3`, `gemini-2.5-pro`; removed `claude-opus-4-5`, `o3-mini`, `gemini-1.5-pro`.
+
+---
+
 ## v8.7.1 — Patch: Search excerpt + definitions.md ranking fix (2026-05-25)
 
 ### Fixed

@@ -5347,6 +5347,9 @@ function onSessLLMChange() {
   const ocLSPSel = document.getElementById('sessOpenCodeLSP');
   const isOpenCode = kind === 'opencode' || kind === 'opencode-acp';
   if (ocRow) ocRow.style.display = isOpenCode ? '' : 'none';
+  if (!isOpenCode && ocModelSel) ocModelSel.value = '';
+  if (!isOpenCode && ocLSPSel) ocLSPSel.value = '';
+  if (isOpenCode && modelSel) modelSel.value = '';
   if (isOpenCode && ocModelSel && ocModelSel.options.length <= 1) {
     apiFetch('/api/opencode/models').then(res => {
       const models = (res && Array.isArray(res.models)) ? res.models : [];
@@ -5888,14 +5891,13 @@ function submitNewSession() {
     // v5.27.5 — claude-code per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
-    model: document.getElementById('sessClaudeModel')?.value || '',
     claude_effort: document.getElementById('sessClaudeEffort')?.value || '',
     // v7.0.0-alpha.21 (#259) — operator's v7 LLM + Compute pick.
     // Daemon overrides backend with LLM.Kind when llm is set.
     llm: v7LLMSel ? v7LLMSel.value : '',
     compute_node: (v7LLMSel && v7LLMSel.value && v7CompSel) ? v7CompSel.value : '',
-    // v8.7.0 — OpenCode-specific options.
-    model: document.getElementById('sessOpenCodeModel')?.value || '',
+    // v8.7.0 — OpenCode-specific options; falls back to sessClaudeModel for claude-code.
+    model: document.getElementById('sessOpenCodeModel')?.value || document.getElementById('sessClaudeModel')?.value || '',
     lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
 
@@ -10568,12 +10570,19 @@ window.ensureLLMModelLists = function() {
   return Promise.all([
     fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]).then(([oll, owui]) => {
+    fetch('/api/opencode/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([oll, owui, oc]) => {
     state._availableModels = {};
     if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
     else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
     if (owui && Array.isArray(owui.data)) state._availableModels.openwebui = owui.data.map(m => m.id || m.name || m).filter(Boolean);
     else if (Array.isArray(owui)) state._availableModels.openwebui = owui.map(m => m.id || m.name || m).filter(Boolean);
+    if (oc && Array.isArray(oc.models)) {
+      const ocModels = oc.models.map(m => m.id || m).filter(Boolean);
+      state._availableModels['opencode'] = ocModels;
+      state._availableModels['opencode-acp'] = ocModels;
+      state._availableModels['opencode-prompt'] = ocModels;
+    }
   });
 };
 

@@ -103,7 +103,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.7.1"
+var Version = "8.7.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1203,8 +1203,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// when the operator selected a language (LSP) or a model at session
 			// creation. Idempotent; operator-added entries are preserved.
 			if (sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-acp") &&
-				(sess.LSPLanguage != "" || sess.Model != "") {
-				ocOpts := opencode.ProjectConfigOpts{Model: sess.Model}
+				(sess.LSPLanguage != "" || sess.Model != "" || sess.OllamaURL != "") {
+				ocOpts := opencode.ProjectConfigOpts{Model: sess.Model, OllamaURL: sess.OllamaURL}
 				if sess.LSPLanguage != "" {
 					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {
 						ocOpts.LSPServers = map[string]opencode.LSPServer{
@@ -3562,14 +3562,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			body, _ := json.Marshal(map[string]any{
 				"task":            spec,
 				"project_dir":     req.ProjectDir,
-				"project_profile": req.ProjectProfile, // v5.26.19 — server may use this as a clone hint
+				"project_profile": req.ProjectProfile,
 				"backend":         req.Backend,
 				"name":            "autonomous:" + req.Title,
 				"effort":          mapEffortToSession(req.Effort),
-				// v5.27.5 — claude-code per-task overrides forwarded
-				// through. Empty values fall through to global config.
 				"permission_mode": req.PermissionMode,
 				"model":           req.Model,
+				"lsp_language":    req.LSPLanguage,
 				"one_shot":        true,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,

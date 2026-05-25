@@ -49,6 +49,9 @@ type SpawnRequest struct {
 	// session_injection for the PRD's type; prepended to the task spec
 	// by the SpawnFn so plugin context arrives in the worker session.
 	ContextPrepend string
+	// LSPLanguage (v8.7.1) — language server preset for OpenCode backends.
+	// Resolved per-task → per-PRD → empty (no LSP).
+	LSPLanguage string
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -203,6 +206,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if permMode == "" {
 			permMode = prd.PermissionMode
 		}
+		lspLang := t.LSPLanguage
+		if lspLang == "" {
+			lspLang = prd.LSPLanguage
+		}
 		var contextPrepend string
 		m.mu.Lock()
 		if m.contextFn != nil {
@@ -224,6 +231,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			ProjectProfile: prd.ProjectProfile, // v5.26.19
 			ClusterProfile: prd.ClusterProfile, // v5.26.19
 			ContextPrepend: contextPrepend,      // BL244
+			LSPLanguage:    lspLang,
 		})
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)

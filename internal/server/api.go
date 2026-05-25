@@ -172,7 +172,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.7.1"
+var Version = "8.7.2"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1072,28 +1072,26 @@ func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 		Kind     string `json:"kind"`
 	}
 	models := []modelEntry{
-		{ID: "anthropic/claude-opus-4-5", Label: "Claude Opus 4.5 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
+		{ID: "anthropic/claude-opus-4-7", Label: "Claude Opus 4.7 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
 		{ID: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
 		{ID: "anthropic/claude-haiku-4-5-20251001", Label: "Claude Haiku 4.5 (Anthropic)", Provider: "anthropic", Kind: "cloud"},
 		{ID: "openai/gpt-4o", Label: "GPT-4o (OpenAI)", Provider: "openai", Kind: "cloud"},
 		{ID: "openai/gpt-4o-mini", Label: "GPT-4o Mini (OpenAI)", Provider: "openai", Kind: "cloud"},
-		{ID: "openai/o3-mini", Label: "o3-mini (OpenAI)", Provider: "openai", Kind: "cloud"},
+		{ID: "openai/o4-mini", Label: "o4-mini (OpenAI)", Provider: "openai", Kind: "cloud"},
+		{ID: "openai/o3", Label: "o3 (OpenAI)", Provider: "openai", Kind: "cloud"},
+		{ID: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (Google)", Provider: "google", Kind: "cloud"},
 		{ID: "google/gemini-2.0-flash", Label: "Gemini 2.0 Flash (Google)", Provider: "google", Kind: "cloud"},
-		{ID: "google/gemini-1.5-pro", Label: "Gemini 1.5 Pro (Google)", Provider: "google", Kind: "cloud"},
 	}
 
 	// Append Ollama models, prefixed as "ollama/<model>".
 	// Optional ?node=<cn> fetches from that compute node's Ollama instead.
 	host := ""
-	ollamaURL := ""
 	if s.cfg != nil {
 		host = s.cfg.Ollama.Host
 	}
 	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
 		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
 			host = n.Address
-			ollamaURL = "http://" + n.Address + ":11434"
-			_ = ollamaURL
 		}
 	}
 	if ollamaModels, err := ollama.ListModels(host); err == nil {
@@ -3138,6 +3136,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
 		return
 	}
+	// v8.7.1 — resolve Ollama URL from compute node for ollama/* model sessions.
+	// Stored on the session so the preLaunch hook can write it to opencode.json.
+	var resolvedOllamaURL string
+	if resolvedComputeNodeRef != "" && s.computeReg != nil && strings.HasPrefix(req.Model, "ollama/") {
+		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Address != "" {
+			resolvedOllamaURL = n.Address
+		}
+	}
 	// BL5 — apply template defaults BEFORE per-request overrides.
 	if req.Template != "" {
 		tmpl, ok := s.cfg.Templates[req.Template]
@@ -3326,6 +3332,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ComputeNodeRef:     resolvedComputeNodeRef,
 		OneShot:            req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
 		LSPLanguage:        req.LSPLanguage,
+		OllamaURL:          resolvedOllamaURL,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

@@ -119,6 +119,9 @@ type PRD struct {
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
+	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
+	// Applies to all tasks unless overridden at the task level.
+	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code permission-mode flag
 	// applied to every task in this PRD that doesn't override it.
 	// Set to "plan" to make the whole PRD a design-only walk
@@ -321,6 +324,8 @@ type Task struct {
 	Backend       string     `json:"backend,omitempty"`
 	Effort        Effort     `json:"effort,omitempty"`
 	Model         string     `json:"model,omitempty"`
+	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
+	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for
 	// just this task. Inherits PRD.PermissionMode → session default
 	// when empty. Operators set "plan" on a single task to keep

@@ -1212,6 +1212,10 @@ type StartOptions struct {
 	// the Session and written to <projectDir>/opencode.json at launch.
 	// Empty = no LSP for this session.
 	LSPLanguage string
+
+	// OllamaURL (v8.7.1) — resolved Ollama base URL for ollama/* models on
+	// a compute node. Written to opencode.json at launch.
+	OllamaURL string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1364,6 +1368,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.Model != "" {
 		sess.Model = opt.Model
+	}
+	if opt != nil && opt.OllamaURL != "" {
+		sess.OllamaURL = opt.OllamaURL
 	}
 
 	// Create the session tracker (git-tracked folder)
