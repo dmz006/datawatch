@@ -77,12 +77,15 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.7.0](CHANGELOG.md) (2026-05-25)** — Production OpenCode: LSP + model/Ollama multi-compute support.
+**[v8.7.3](CHANGELOG.md) (2026-05-25)** — Production OpenCode: live model list, default model, search fixes, MCP channel isolation.
 
-- **Language Server Protocol (LSP) for OpenCode** — Select a programming language when starting an OpenCode session; the daemon writes the LSP server config to `<projectDir>/opencode.json`. Supports Go (gopls), TypeScript, Python (pyright), Rust (rust-analyzer), and C++ (clangd) out of the box. Operator-configurable via `lsp.servers` in daemon config. Real-time type errors and completions from the installed language server help LLMs with older training data produce correct code against current library versions.
-- **OpenCode model selection** — Choose any provider/model (`anthropic/claude-sonnet-4-6`, `ollama/llama3`, `openai/gpt-4o`, …) in the session-creation UI. Cloud and local Ollama models are presented in a grouped dropdown populated from `/api/opencode/models`.
-- **OpenCode + Ollama multi-compute** — Point OpenCode at any compute node's Ollama instance. When an `ollama/<model>` is selected with a compute node, the daemon writes `provider.ollama.apiUrl` to `opencode.json` automatically.
-- **MCP channel config isolation fixes** — `CLAUDE_CONFIG_DIR` now correctly injected into every claude-code tmux session; `settings.json` auto-created with required permission bypass flags.
+- **OpenCode live model list** — `GET /api/opencode/models` now queries the `opencode` binary at runtime. Free built-in models always appear; cloud provider models (Anthropic, OpenAI, Google) appear automatically after `opencode providers login` — no hardcoded list, no code changes needed.
+- **OpenCode default model** — `opencode.default_model` (default: `opencode/big-pickle`) pre-selected in session-start and PRD/automata dropdowns; always written to `opencode.json` at session launch. Full 6-surface config parity (YAML, REST, Settings UI, CLI, MCP, comm channel).
+- **Language Server Protocol (LSP) for OpenCode** — Select Go, TypeScript, Python, Rust, or C++ at session start; LSP config written to `opencode.json` automatically.
+- **OpenCode + Ollama multi-compute** — Compute node Ollama URL wired end-to-end through session → preLaunch hook → `opencode.json`.
+- **Search excerpt fix** (GH #93) — `SearchHit.Excerpt` now populated in all search paths; was always empty.
+- **Definitions doc ranking fix** (GH #94) — `datawatch-definitions.md` boosted 1.5× in BM25 and vector search so it ranks above howto files for content queries.
+- **MCP channel config isolation** — `CLAUDE_CONFIG_DIR` correctly injected into claude-code tmux sessions; eliminates "waiting for MCP channel" / "no MCP server configured" errors.
 
 ### v8.6 highlights
 
