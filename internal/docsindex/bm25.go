@@ -117,10 +117,14 @@ func (idx *BM25Index) Search(query string, limit int) []SearchHit {
 	}
 	hits := make([]SearchHit, 0, len(scores))
 	for i, s := range scores {
+		if strings.Contains(idx.Chunks[i].Path, "definitions") {
+			s *= 1.5
+		}
 		hits = append(hits, SearchHit{
-			Chunk: idx.Chunks[i],
-			Score: s,
-			Kind:  "bm25",
+			Chunk:   idx.Chunks[i],
+			Score:   s,
+			Excerpt: Excerpt(idx.Chunks[i].Body, 280),
+			Kind:    "bm25",
 		})
 	}
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
@@ -132,8 +136,9 @@ func (idx *BM25Index) Search(query string, limit int) []SearchHit {
 
 // SearchHit is one ranked result.
 type SearchHit struct {
-	Chunk Chunk   `json:"chunk"`
-	Score float64 `json:"score"`
+	Chunk   Chunk   `json:"chunk"`
+	Score   float64 `json:"score"`
+	Excerpt string  `json:"excerpt"`
 	// Kind identifies the index that produced this hit ("bm25" or "vector").
 	// Reported in the docs_search MCP response so callers know which
 	// strategy answered.

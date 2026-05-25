@@ -3,6 +3,15 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.7.1 — Patch: Search excerpt + definitions.md ranking fix (2026-05-25)
+
+### Fixed
+
+- **Search excerpt always empty (#93)**: `SearchHit.Excerpt` is now populated in both BM25 and vector search paths using the existing `Excerpt()` function (up to 280 chars, single-line whitespace-collapsed). Previously the field existed in `search.go` but was never written to the struct, so every hit returned `excerpt: ""`.
+- **`datawatch-definitions.md` ranking bias (#94)**: Content-type definition files are now boosted 1.5× in BM25 and vector scoring before sorting. Howto files were previously ranked higher than definition docs for content queries because they accumulate more body text and BM25 rewards term frequency. The path-based boost counteracts this for any chunk whose path contains "definitions".
+
+---
+
 ## v8.7.0 — Minor: Production OpenCode — LSP + model/Ollama multi-compute (2026-05-25)
 
 ### Added

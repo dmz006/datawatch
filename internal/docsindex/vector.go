@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -263,7 +264,11 @@ func (vi *VectorIndex) Search(query string, limit int) []SearchHit {
 	vi.mu.RLock()
 	hits := make([]scored, 0, len(vi.vecs))
 	for id, v := range vi.vecs {
-		hits = append(hits, scored{id, float64(cosine(qvec, v))})
+		s := float64(cosine(qvec, v))
+		if c, ok := vi.chunks[id]; ok && strings.Contains(c.Path, "definitions") {
+			s *= 1.5
+		}
+		hits = append(hits, scored{id, s})
 	}
 	vi.mu.RUnlock()
 	sort.Slice(hits, func(i, j int) bool { return hits[i].score > hits[j].score })
@@ -275,7 +280,7 @@ func (vi *VectorIndex) Search(query string, limit int) []SearchHit {
 	defer vi.mu.RUnlock()
 	for _, h := range hits {
 		c := vi.chunks[h.id]
-		out = append(out, SearchHit{Chunk: c, Score: h.score, Kind: "vector"})
+		out = append(out, SearchHit{Chunk: c, Score: h.score, Excerpt: Excerpt(c.Body, 280), Kind: "vector"})
 	}
 	return out
 }
