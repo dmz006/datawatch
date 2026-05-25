@@ -810,7 +810,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// BL318 — scope all `claude mcp add/remove` calls to the instance's own
 	// config directory. Prevents test daemons from corrupting the production
 	// operator's ~/.claude.json when multiple instances share a host.
-	channel.SetClaudeConfigDir(filepath.Join(expandHome(cfg.DataDir), ".claude"))
+	claudeConfigDir := filepath.Join(expandHome(cfg.DataDir), ".claude")
+	channel.SetClaudeConfigDir(claudeConfigDir)
+	// Ensure settings.json in the datawatch-scoped claude config dir has the
+	// required flags (skipDangerousModePermissionPrompt etc.) so sessions
+	// launched under CLAUDE_CONFIG_DIR don't block on interactive prompts.
+	if err := channel.EnsureClaudeSettings(claudeConfigDir); err != nil {
+		fmt.Printf("[warn] ensure claude settings: %v\n", err)
+	}
 
 	// Register LLM backends from config.
 	// Always register configured backends regardless of Enabled flag so they
@@ -834,7 +841,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Create session manager (passes encKey for encrypted session store when --secure)
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, claudeBin, idleTimeout, encKey)
+	mgr, err := session.NewManager(cfg.Hostname, expandHome(cfg.DataDir), claudeBin, idleTimeout, encKey)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
