@@ -288,6 +288,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSplashInfoCmd(),      // BL69
 		// Sprint S5 (v3.9.0).
 		newRoutingRulesCmd(),    // BL20
+		newChannelRoutingCmd(),  // BL331 parity
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.

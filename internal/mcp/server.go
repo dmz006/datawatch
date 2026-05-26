@@ -286,6 +286,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// v5.27.10 (BL216) — channel bridge introspection.
 	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
 
+	// BL331 parity — channel routing config.
+	mcpSrv.AddTool(s.toolChannelRoutingConfigGet(), tracked(s.handleChannelRoutingConfigGet))
+	mcpSrv.AddTool(s.toolChannelRoutingConfigSet(), tracked(s.handleChannelRoutingConfigSet))
+
 	// F10 sprint 2: Profile management tools.
 	// Each takes a `kind` arg ("project"|"cluster") so we share one
 	// set of 6 tools instead of 12 near-duplicates.

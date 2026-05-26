@@ -54,6 +54,8 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 open (PWA browser E2E, future sprint) | |
 
+v8.7.x (unreleased) — BL331 6-surface parity gap closure: Channel Routing (channel_pattern→peer_name routing) was missing PWA card, MCP tools, comm channel command, and CLI subcommand. All 4 surfaces added; 4 new locale keys in 5 bundles; unit tests for all new code.
+
 v8.6.0 shipped 2026-05-19 (committed; publish pending) — closes BL334 T43g (servers.json, skills.json, compute/nodes.json, inference/llms.json encryption) and T43h (daemon-app.log DWLOG1 encryption + `datawatch security logs` CLI). Append-mode fix for `daemon-app.log` (logs survive restarts). TS-065 E2E assertion loosened (skill_load returns markdown string, not dict).
 
 v8.5.0 shipped 2026-05-19 — closes BL334 T43a–T43f: channel_routing.json, discussion WAL (per-line ENC:), participants.json, startup migration, security REST endpoints + CLI + secure-wipe.

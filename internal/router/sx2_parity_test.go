@@ -2,7 +2,10 @@
 
 package router
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSx2_Parse_Cost_Empty(t *testing.T) {
 	c := Parse("cost")
@@ -136,5 +139,65 @@ func TestSx2_Router_LoopbackUnconfigured(t *testing.T) {
 	}
 	if _, err := r.commJSON("POST", "/api/cooldown", `{}`); err == nil {
 		t.Error("expected loopback-not-configured error")
+	}
+}
+
+// ── BL221 Phase 4 — autonomous type-register comm verb tests ─────────────────
+
+func TestBL221_Parse_Autonomous_TypeRegister(t *testing.T) {
+	c := Parse("autonomous type-register devops DevOps")
+	if c.Type != CmdAutonomous || c.Text != "type-register devops DevOps" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL221_Parse_Autonomous_TypeRegister_WithExtras(t *testing.T) {
+	c := Parse("autonomous type-register devops DevOps description=infra color=#ff0000")
+	if c.Type != CmdAutonomous || c.Text != "type-register devops DevOps description=infra color=#ff0000" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL221_Autonomous_TypeRegister_MissingArgs(t *testing.T) {
+	r := &Router{}
+	replies := r.HandleTestMessage("autonomous type-register")
+	if len(replies) == 0 {
+		t.Fatal("expected a reply")
+	}
+	combined := strings.Join(replies, " ")
+	if !strings.Contains(combined, "usage") && !strings.Contains(combined, "failed") {
+		t.Errorf("expected usage hint, got: %v", replies)
+	}
+}
+
+func TestBL221_Autonomous_TypeRegister_MissingLabel(t *testing.T) {
+	r := &Router{}
+	replies := r.HandleTestMessage("autonomous type-register myid")
+	combined := strings.Join(replies, " ")
+	if !strings.Contains(combined, "usage") && !strings.Contains(combined, "failed") {
+		t.Errorf("expected usage hint, got: %v", replies)
+	}
+}
+
+func TestBL221_Autonomous_TypeRegister_Loopback(t *testing.T) {
+	r := &Router{}
+	replies := r.HandleTestMessage("autonomous type-register devops DevOps")
+	combined := strings.Join(replies, " ")
+	if !strings.Contains(combined, "failed") && !strings.Contains(combined, "loopback") {
+		t.Errorf("expected loopback/failed error, got: %v", replies)
+	}
+}
+
+func TestBL221_Parse_Autonomous_TypeList(t *testing.T) {
+	c := Parse("autonomous types")
+	if c.Type != CmdAutonomous || c.Text != "types" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL221_Parse_Autonomous_TypeListAlias(t *testing.T) {
+	c := Parse("autonomous type-list")
+	if c.Type != CmdAutonomous || c.Text != "type-list" {
+		t.Errorf("got %+v", c)
 	}
 }

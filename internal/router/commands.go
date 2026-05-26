@@ -143,6 +143,13 @@ const (
 	//   "routing test <task>"        → test which backend a task routes to
 	CmdRouting CommandType = "routing"
 
+	// BL331 parity — channel routing config over chat.
+	//   "channel-routing"            → list rules
+	//   "channel-routing add <pattern> <peer> [automata=<type>] [dir=<path>]" → add rule
+	//   "channel-routing delete <n>" → delete rule at index n
+	//   "channel-routing clear"      → clear all rules
+	CmdChannelRouting CommandType = "channel-routing"
+
 	// BL220-G9 — device alias management over chat.
 	//   "device-alias"               → list aliases
 	//   "device-alias add <alias> <server>" → add alias
@@ -899,6 +906,14 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdRouting, Text: rest}
 
+	// BL331 parity — channel routing config.
+	case lower == "channel-routing" || strings.HasPrefix(lower, "channel-routing "):
+		rest := ""
+		if lower != "channel-routing" {
+			rest = strings.TrimSpace(text[len("channel-routing "):])
+		}
+		return Command{Type: CmdChannelRouting, Text: rest}
+
 	// BL220-G9 — device alias management.
 	case lower == "device-alias" || strings.HasPrefix(lower, "device-alias "):
 		rest := ""
@@ -1105,6 +1120,7 @@ orchestrator [config|verdicts|get <id>|create <title> <proj>|plan <id>|run <id>|
 plugins [get <name>|enable <name>|disable <name>|reload|test <name> <hook> [payload]]
 templates [get <name>|delete <name>]
 routing [test <task>]            list routing rules or test backend selection
+channel-routing [add <pattern> <peer>|delete <n>|clear]  channel→peer routing
 device-alias [add <alias> <server>|delete <alias>]
 observer [stats|config|envelopes [all-peers]|envelope <id>]
 detection                        eBPF / system health snapshot

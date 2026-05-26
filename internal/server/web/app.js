@@ -6926,6 +6926,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL331 parity — Channel Routing card (Settings → Comms) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('channel_routing', t('channel_routing_title')||'Channel Routing', 'architecture.md')}
+          <div id="settings-sec-channel_routing" style="${secContent('channel_routing')}">
+            <div id="channelRoutingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
         <!-- BL330 — Push Notifications card (Settings → Comms) -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('push_notifications', 'Push Notifications', 'howto/push-setup.md')}
@@ -6954,6 +6962,14 @@ function renderSettingsView() {
           ${settingsSectionHeader('automata_autonomous', 'Autonomous Config')}
           <div id="settings-sec-automata_autonomous" style="${secContent('automata_autonomous')}">
             <div id="automataSettingsAutonomousPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
+        <!-- BL221 parity — Type Registry card (Settings → Automata) -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_type_registry', t('automata_type_registry_title')||'Type Registry', 'architecture.md')}
+          <div id="settings-sec-automata_type_registry" style="${secContent('automata_type_registry')}">
+            <div id="automataTypeRegistryPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
@@ -7019,6 +7035,8 @@ function renderSettingsView() {
   loadAgentsConfig();
   loadPluginsPanel();
   loadRoutingPanel();
+  loadChannelRoutingPanel(); // BL331 parity
+  loadAutomataTypeRegistryPanel(); // BL221 parity
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
@@ -20834,6 +20852,67 @@ function loadRoutingPanel() {
 }
 window.loadRoutingPanel = loadRoutingPanel;
 
+// BL331 parity — Channel Routing panel in Settings → Comms.
+function loadChannelRoutingPanel() {
+  const el = document.getElementById('channelRoutingPanelBody');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  apiFetch('/api/channel/routing').then(data => {
+    const panel = document.getElementById('channelRoutingPanelBody');
+    if (!panel) return;
+    const rules = (data && data.rules) || [];
+    const inp = (id, ph) => `<input id="${id}" type="text" placeholder="${ph}" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">`;
+    panel.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(t('channel_routing_desc')||'Route incoming channel commands to federation peers')}</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">${escHtml(t('channel_routing_add')||'Add rule')}</div>
+        ${inp('crPattern', t('channel_routing_pattern')||'Channel pattern (regex)')}${inp('crPeer', t('channel_routing_peer')||'Route to peer')}${inp('crAutomata', t('channel_routing_automata_type')||'Automata type (optional)')}${inp('crDir', t('channel_routing_project_dir')||'Project dir (optional)')}
+        <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="channelRoutingAddRule()">${escHtml(t('channel_routing_add')||'Add')}</button>
+      </div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">${escHtml(t('channel_routing_title')||'Channel Routing')} (${rules.length})</div>
+      ${rules.length === 0
+        ? `<div style="opacity:0.7;padding:4px 0;">${escHtml(t('channel_routing_no_rules')||'No channel routing rules configured')}</div>`
+        : rules.map((r, i) => `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
+            <div style="flex:1;">
+              <code style="font-size:12px;">${escHtml(r.channel_pattern||'')}</code>
+              <span style="margin-left:6px;font-size:11px;background:rgba(96,165,250,0.18);color:var(--accent);padding:1px 6px;border-radius:4px;">${escHtml(r.peer_name||'')}</span>
+              ${r.automata_type ? `<span style="margin-left:4px;font-size:11px;background:rgba(167,139,250,0.18);color:var(--accent2,#a78bfa);padding:1px 6px;border-radius:4px;">${escHtml(r.automata_type)}</span>` : ''}
+              ${r.default_project_dir ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${escHtml(r.default_project_dir)}</div>` : ''}
+            </div>
+            <button class="btn-icon" style="font-size:13px;color:var(--error);" onclick="channelRoutingDeleteRule(${i})">&times;</button>
+          </div>`).join('')}`;
+    panel._rules = rules;
+  }).catch(err => {
+    const panel = document.getElementById('channelRoutingPanelBody');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadChannelRoutingPanel = loadChannelRoutingPanel;
+
+window.channelRoutingAddRule = function() {
+  const pattern = (document.getElementById('crPattern')||{}).value||'';
+  const peer = (document.getElementById('crPeer')||{}).value||'';
+  const automata = (document.getElementById('crAutomata')||{}).value||'';
+  const dir = (document.getElementById('crDir')||{}).value||'';
+  if (!pattern || !peer) { showToast('Pattern and peer are required', 'error'); return; }
+  const el = document.getElementById('channelRoutingPanelBody');
+  const existing = [...((el&&el._rules)||[])];
+  const rule = { channel_pattern: pattern, peer_name: peer };
+  if (automata) rule.automata_type = automata;
+  if (dir) rule.default_project_dir = dir;
+  existing.push(rule);
+  apiFetch('/api/channel/routing', { method: 'PUT', body: JSON.stringify({ rules: existing }) })
+    .then(() => { showToast('Rule added', 'success', 2000); loadChannelRoutingPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.channelRoutingDeleteRule = function(idx) {
+  const el = document.getElementById('channelRoutingPanelBody');
+  const rules = ((el&&el._rules)||[]).filter((_,i)=>i!==idx);
+  apiFetch('/api/channel/routing', { method: 'PUT', body: JSON.stringify({ rules }) })
+    .then(() => { showToast('Rule deleted', 'success', 2000); loadChannelRoutingPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
 // BL247 — renderRoutingView redirects to Settings → Comms tab (routing is now a card there).
 function renderRoutingView() {
   _settingsTab = 'comms';
@@ -21058,6 +21137,76 @@ function loadAutomataSettingsPanel() {
   }
 }
 window.loadAutomataSettingsPanel = loadAutomataSettingsPanel;
+
+// ── BL221 Phase 4 — Automata Type Registry panel (Settings → Automata) ──────
+
+const _BUILTIN_TYPE_IDS = new Set(['software', 'research', 'operational', 'personal']);
+
+function loadAutomataTypeRegistryPanel() {
+  const el = document.getElementById('automataTypeRegistryPanel');
+  if (!el) return;
+  el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  apiFetch('/api/autonomous/types').then(data => {
+    const panel = document.getElementById('automataTypeRegistryPanel');
+    if (!panel) return;
+    const types = (data && data.types) || [];
+    const builtins = types.filter(tp => _BUILTIN_TYPE_IDS.has(tp.id));
+    const custom   = types.filter(tp => !_BUILTIN_TYPE_IDS.has(tp.id));
+
+    const typeRow = (tp) => {
+      const dot = tp.color ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escHtml(tp.color)};margin-right:6px;flex-shrink:0;"></span>` : '';
+      const badge = _BUILTIN_TYPE_IDS.has(tp.id)
+        ? `<span style="font-size:10px;background:var(--accent2,#6366f1);color:#fff;border-radius:8px;padding:1px 6px;margin-left:6px;">${escHtml(t('automata_type_registry_builtin')||'built-in')}</span>`
+        : '';
+      return `<div style="display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);gap:8px;">
+        <div style="flex:0 0 auto;display:flex;align-items:center;">${dot}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${escHtml(tp.label||tp.id)}${badge}</div>
+          <div style="font-size:11px;opacity:0.7;">${escHtml(tp.id)}${tp.description?' — '+escHtml(tp.description):''}</div>
+        </div>
+      </div>`;
+    };
+
+    const sectionDesc = t('automata_type_registry_section_desc') || 'Register custom automaton types with labels and color badges.';
+    const emptyCustom = `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(t('automata_type_registry_empty')||'No custom types registered.')}</div>`;
+
+    panel.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(sectionDesc)}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">${escHtml(t('automata_type_registry_builtin')||'Built-in')}</div>
+      <div style="margin-bottom:14px;">${builtins.map(typeRow).join('')}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Custom</div>
+      <div id="automataTypeCustomList" style="margin-bottom:14px;">${custom.length ? custom.map(typeRow).join('') : emptyCustom}</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">${escHtml(t('automata_type_registry_register')||'Register type')}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+          <input id="atrID" type="text" placeholder="${escHtml(t('automata_type_registry_id')||'ID (e.g. devops)')}"
+            style="font-size:12px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+          <input id="atrLabel" type="text" placeholder="${escHtml(t('automata_type_registry_label')||'Label')}"
+            style="font-size:12px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+          <input id="atrDesc" type="text" placeholder="${escHtml(t('automata_type_registry_description')||'Description (optional)')}"
+            style="font-size:12px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+          <input id="atrColor" type="color" value="#6366f1" title="${escHtml(t('automata_type_registry_color')||'Color')}"
+            style="font-size:12px;padding:2px 4px;height:32px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;">
+        </div>
+        <button class="btn-primary" style="font-size:12px;padding:5px 16px;" onclick="automataTypeRegister()">${escHtml(t('automata_type_registry_register')||'Register')}</button>
+      </div>`;
+  }).catch(err => {
+    const panel = document.getElementById('automataTypeRegistryPanel');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadAutomataTypeRegistryPanel = loadAutomataTypeRegistryPanel;
+
+window.automataTypeRegister = function() {
+  const id    = (document.getElementById('atrID')||{}).value||'';
+  const label = (document.getElementById('atrLabel')||{}).value||'';
+  const desc  = (document.getElementById('atrDesc')||{}).value||'';
+  const color = (document.getElementById('atrColor')||{}).value||'';
+  if (!id || !label) { showToast(t('automata_type_registry_id')+' and '+t('automata_type_registry_label')+' required', 'error'); return; }
+  apiFetch('/api/autonomous/types', { method: 'POST', body: JSON.stringify({ id, label, description: desc, color }) })
+    .then(() => { showToast('Type registered', 'success', 2000); loadAutomataTypeRegistryPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
 
 // ── BL303 S2 — Guardrail Library + Profiles panel (Settings → Automata) ──
 

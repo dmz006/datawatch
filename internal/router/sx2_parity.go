@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -570,6 +570,30 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous types", prettyJSON(out))
+	case "type-register", "type_register":
+		// usage: autonomous type-register <id> <label> [description=...] [color=#hex]
+		if len(args) < 3 {
+			r.reply("autonomous type-register failed", "usage: autonomous type-register <id> <label> [description=...] [color=#hex]")
+			return
+		}
+		payload := map[string]string{"id": args[1], "label": args[2]}
+		for _, extra := range args[3:] {
+			if kv := strings.SplitN(extra, "=", 2); len(kv) == 2 {
+				switch strings.ToLower(kv[0]) {
+				case "description", "desc":
+					payload["description"] = kv[1]
+				case "color":
+					payload["color"] = kv[1]
+				}
+			}
+		}
+		body, _ := json.Marshal(payload)
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/types", string(body))
+		if err != nil {
+			r.reply("autonomous type-register failed", err.Error())
+			return
+		}
+		r.reply("autonomous type-register", prettyJSON(out))
 	case "set-type", "set_type":
 		if len(args) < 3 {
 			r.reply("autonomous set-type failed", "usage: autonomous set-type <prd-id> <type>")

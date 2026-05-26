@@ -1021,6 +1021,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTemplates(cmd)
 	case CmdRouting:
 		r.handleRouting(cmd)
+	case CmdChannelRouting:
+		r.handleChannelRoutingCmd(cmd)
 	case CmdDeviceAlias:
 		r.handleDeviceAlias(cmd)
 	case CmdSplash:

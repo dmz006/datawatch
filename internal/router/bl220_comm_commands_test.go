@@ -290,3 +290,71 @@ func TestBL220_Loopback_Analytics(t *testing.T) {
 		assertFailReply(t, r.HandleTestMessage(msg))
 	}
 }
+
+// ── BL331 parity — channel-routing parser tests ───────────────────────────────
+
+func TestBL331_Parse_ChannelRouting_Bare(t *testing.T) {
+	c := Parse("channel-routing")
+	if c.Type != CmdChannelRouting || c.Text != "" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL331_Parse_ChannelRouting_Add(t *testing.T) {
+	c := Parse("channel-routing add alerts-* peer-alpha automata=operational")
+	if c.Type != CmdChannelRouting || c.Text != "add alerts-* peer-alpha automata=operational" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL331_Parse_ChannelRouting_Delete(t *testing.T) {
+	c := Parse("channel-routing delete 2")
+	if c.Type != CmdChannelRouting || c.Text != "delete 2" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL331_Parse_ChannelRouting_Clear(t *testing.T) {
+	c := Parse("channel-routing clear")
+	if c.Type != CmdChannelRouting || c.Text != "clear" {
+		t.Errorf("got %+v", c)
+	}
+}
+
+func TestBL331_ChannelRouting_HandleUnknownVerb(t *testing.T) {
+	r := newBL220Router(t)
+	replies := r.HandleTestMessage("channel-routing bogus")
+	if len(replies) == 0 {
+		t.Fatal("expected a reply")
+	}
+	combined := strings.Join(replies, " ")
+	if !strings.Contains(combined, "unknown") && !strings.Contains(combined, "usage") {
+		t.Errorf("expected usage hint for unknown verb, got: %v", replies)
+	}
+}
+
+func TestBL331_ChannelRouting_HandleDeleteMissingIndex(t *testing.T) {
+	r := newBL220Router(t)
+	assertFailReply(t, r.HandleTestMessage("channel-routing delete"))
+}
+
+func TestBL331_Loopback_ChannelRouting(t *testing.T) {
+	for _, msg := range []string{"channel-routing", "channel-routing add x y", "channel-routing delete 0", "channel-routing clear"} {
+		r := newBL220Router(t)
+		replies := r.HandleTestMessage(msg)
+		if len(replies) == 0 {
+			t.Errorf("msg %q: expected at least one reply, got none", msg)
+			continue
+		}
+		combined := strings.Join(replies, " ")
+		// Commands that touch the API must fail with loopback/failed error.
+		// "add x y" with no args needs to parse, then fail on fetch.
+		// Unknown verb already tested above — skip.
+		if strings.Contains(msg, "add") || msg == "channel-routing" || strings.Contains(msg, "delete") || strings.Contains(msg, "clear") {
+			if !strings.Contains(combined, "failed") && !strings.Contains(combined, "loopback") &&
+				!strings.Contains(combined, "unknown") && !strings.Contains(combined, "usage") {
+				t.Errorf("msg %q: expected failure reply, got: %v", msg, replies)
+			}
+		}
+	}
+}

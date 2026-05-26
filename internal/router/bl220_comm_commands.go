@@ -298,6 +298,121 @@ func (r *Router) handleRouting(cmd Command) {
 	}
 }
 
+// handleChannelRoutingCmd — BL331 parity.
+//
+//	channel-routing                                   → list rules
+//	channel-routing add <pattern> <peer> [automata=<type>] [dir=<path>] → add rule
+//	channel-routing delete <n>                        → delete rule at index n (0-based)
+//	channel-routing clear                             → clear all rules
+func (r *Router) handleChannelRoutingCmd(cmd Command) {
+	const help = "usage: channel-routing [add <pattern> <peer> [automata=<type>] [dir=<path>] | delete <n> | clear]"
+	args := strings.Fields(strings.TrimSpace(cmd.Text))
+
+	// Helper: fetch current rules from the API.
+	fetchRules := func() ([]map[string]any, error) {
+		out, err := r.commGet("/api/channel/routing", nil)
+		if err != nil {
+			return nil, err
+		}
+		var cfg struct {
+			Rules []map[string]any `json:"rules"`
+		}
+		if err := json.Unmarshal([]byte(out), &cfg); err != nil {
+			return nil, err
+		}
+		if cfg.Rules == nil {
+			cfg.Rules = []map[string]any{}
+		}
+		return cfg.Rules, nil
+	}
+
+	// Helper: write rules back.
+	putRules := func(rules []map[string]any) error {
+		body, err := json.Marshal(map[string]any{"rules": rules})
+		if err != nil {
+			return err
+		}
+		_, err = r.commJSON(http.MethodPut, "/api/channel/routing", string(body))
+		return err
+	}
+
+	if len(args) == 0 {
+		out, err := r.commGet("/api/channel/routing", nil)
+		if err != nil {
+			r.reply("channel-routing failed", err.Error())
+			return
+		}
+		r.reply("channel-routing", prettyJSON(out))
+		return
+	}
+
+	verb := strings.ToLower(args[0])
+	switch verb {
+	case "add":
+		if len(args) < 3 {
+			r.reply("channel-routing add failed", help)
+			return
+		}
+		pattern := args[1]
+		peer := args[2]
+		rule := map[string]any{"channel_pattern": pattern, "peer_name": peer}
+		for _, kv := range args[3:] {
+			if strings.HasPrefix(kv, "automata=") {
+				rule["automata_type"] = strings.TrimPrefix(kv, "automata=")
+			} else if strings.HasPrefix(kv, "dir=") {
+				rule["default_project_dir"] = strings.TrimPrefix(kv, "dir=")
+			}
+		}
+		rules, err := fetchRules()
+		if err != nil {
+			r.reply("channel-routing add failed", err.Error())
+			return
+		}
+		rules = append(rules, rule)
+		if err := putRules(rules); err != nil {
+			r.reply("channel-routing add failed", err.Error())
+			return
+		}
+		r.reply("channel-routing", fmt.Sprintf("added rule: %s → %s (%d total)", pattern, peer, len(rules)))
+
+	case "delete":
+		if len(args) < 2 {
+			r.reply("channel-routing delete failed", help)
+			return
+		}
+		idx := 0
+		if _, err := fmt.Sscanf(args[1], "%d", &idx); err != nil {
+			r.reply("channel-routing delete failed", "index must be a number")
+			return
+		}
+		rules, err := fetchRules()
+		if err != nil {
+			r.reply("channel-routing delete failed", err.Error())
+			return
+		}
+		if idx < 0 || idx >= len(rules) {
+			r.reply("channel-routing delete failed", fmt.Sprintf("index %d out of range (0–%d)", idx, len(rules)-1))
+			return
+		}
+		rules = append(rules[:idx], rules[idx+1:]...)
+		if err := putRules(rules); err != nil {
+			r.reply("channel-routing delete failed", err.Error())
+			return
+		}
+		r.reply("channel-routing", fmt.Sprintf("deleted rule %d (%d remaining)", idx, len(rules)))
+
+	case "clear":
+		if err := putRules([]map[string]any{}); err != nil {
+			r.reply("channel-routing clear failed", err.Error())
+			return
+		}
+		r.reply("channel-routing", "all rules cleared")
+
+	default:
+		r.reply("channel-routing", "unknown verb "+verb+"\n"+help)
+	}
+}
+
 // handleDeviceAlias — BL220-G9.
 //
 //	device-alias                     → list aliases

@@ -3,6 +3,23 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Channel Routing — full 6-surface parity**: The channel-address routing feature (channel pattern → federation peer) was missing four of its six required configuration surfaces. Now complete:
+  - **PWA**: New "Channel Routing" card in Settings → Comms (after Routing Rules). Add/delete rules with fields for `channel_pattern`, `peer_name`, `automata_type`, and `default_project_dir`.
+  - **MCP**: `channel_routing_config_get` (list rules) and `channel_routing_config_set` (replace rules) tools.
+  - **Comm channel**: `channel-routing [add <pattern> <peer> [automata=<type>] [dir=<path>] | delete <n> | clear]` command.
+  - **CLI**: `datawatch channel-routing [list | add <pattern> <peer> | delete <n> | clear]` subcommand.
+- **Locale**: Added `channel_routing_automata_type`, `channel_routing_no_rules`, `channel_routing_pattern`, `channel_routing_project_dir` to all 5 locale bundles (EN/DE/ES/FR/JA).
+- **Automata Type Registry — full 6-surface parity**: The operator-extensible type registry (BL221 Phase 4) was missing three configuration surfaces. Now complete:
+  - **PWA**: New "Type Registry" card in Settings → Automata. Shows built-in types (software/research/operational/personal) with badges, lists custom types, and provides a register form with id, label, description, and color picker.
+  - **Comm channel**: `autonomous type-register <id> <label> [description=...] [color=#hex]` command added to the existing `autonomous` comm handler.
+  - **Locale**: Added `automata_type_registry_builtin`, `automata_type_registry_color`, `automata_type_registry_description`, `automata_type_registry_empty`, `automata_type_registry_id`, `automata_type_registry_label`, `automata_type_registry_register`, `automata_type_registry_section_desc`, `automata_type_registry_title` to all 5 locale bundles.
+
+---
+
 ## v8.7.3 — Patch: Live OpenCode model list + default model pre-selection (2026-05-25)
 
 ### Changed

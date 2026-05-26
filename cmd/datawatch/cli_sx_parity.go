@@ -595,6 +595,114 @@ func newRoutingRulesCmd() *cobra.Command {
 	return cmd
 }
 
+// newChannelRoutingCmd — BL331 parity CLI surface.
+//
+//	datawatch channel-routing list
+//	datawatch channel-routing add <pattern> <peer> [--automata=type] [--dir=path]
+//	datawatch channel-routing delete <n>
+//	datawatch channel-routing clear
+func newChannelRoutingCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "channel-routing",
+		Short: "Channel→peer routing rules (route inbound channel commands to federation peers)",
+	}
+
+	fetchRules := func() ([]map[string]any, error) {
+		req, err := http.NewRequest(http.MethodGet, daemonURL()+"/api/channel/routing", nil)
+		if err != nil {
+			return nil, err
+		}
+		if tok := daemonToken(); tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		resp, err := daemonClient().Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("daemon not reachable: %w", err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode/100 != 2 {
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		}
+		var out struct {
+			Rules []map[string]any `json:"rules"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			return nil, err
+		}
+		if out.Rules == nil {
+			out.Rules = []map[string]any{}
+		}
+		return out.Rules, nil
+	}
+
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List channel routing rules",
+			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/channel/routing") },
+		},
+		func() *cobra.Command {
+			c := &cobra.Command{
+				Use:   "add <pattern> <peer>",
+				Short: "Add a channel routing rule",
+				Args:  cobra.ExactArgs(2),
+				RunE: func(cmd *cobra.Command, args []string) error {
+					rules, err := fetchRules()
+					if err != nil {
+						return err
+					}
+					rule := map[string]any{
+						"channel_pattern": args[0],
+						"peer_name":       args[1],
+					}
+					if at, _ := cmd.Flags().GetString("automata"); at != "" {
+						rule["automata_type"] = at
+					}
+					if d, _ := cmd.Flags().GetString("dir"); d != "" {
+						rule["default_project_dir"] = d
+					}
+					rules = append(rules, rule)
+					return daemonJSON(http.MethodPut, "/api/channel/routing", map[string]any{"rules": rules})
+				},
+			}
+			c.Flags().String("automata", "", "Automata type for sessions started via this rule")
+			c.Flags().String("dir", "", "Default project directory for sessions started via this rule")
+			return c
+		}(),
+		func() *cobra.Command {
+			return &cobra.Command{
+				Use:   "delete <n>",
+				Short: "Delete rule at index n (0-based)",
+				Args:  cobra.ExactArgs(1),
+				RunE: func(_ *cobra.Command, args []string) error {
+					var idx int
+					if _, err := fmt.Sscanf(args[0], "%d", &idx); err != nil {
+						return fmt.Errorf("index must be a number: %w", err)
+					}
+					rules, err := fetchRules()
+					if err != nil {
+						return err
+					}
+					if idx < 0 || idx >= len(rules) {
+						return fmt.Errorf("index %d out of range (0–%d)", idx, len(rules)-1)
+					}
+					rules = append(rules[:idx], rules[idx+1:]...)
+					return daemonJSON(http.MethodPut, "/api/channel/routing", map[string]any{"rules": rules})
+				},
+			}
+		}(),
+		&cobra.Command{
+			Use:   "clear",
+			Short: "Remove all channel routing rules",
+			RunE: func(*cobra.Command, []string) error {
+				return daemonJSON(http.MethodPut, "/api/channel/routing", map[string]any{"rules": []any{}})
+			},
+		},
+	)
+	return cmd
+}
+
 // ----- helpers -------------------------------------------------------------
 
 func joinArgs(args []string) string {
