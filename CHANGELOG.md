@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.1 — Docs: Android beta testing program (2026-05-26)
+
+### Docs
+
+- **README**: Android app is now in testing on Google Play. Added beta join link, Google Play badge, and callout that 15 testers are needed to unlock production release.
+- **PWA Settings → About**: "Mobile app" row now shows a "Join Beta on Google Play" button linking to the internal testing track.
+
+---
+
 ## v8.8.0 — Dashboard responsiveness, security headers, parity & e2e reform (2026-05-26)
 
 ### Added
