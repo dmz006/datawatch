@@ -54,6 +54,8 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 Install the app, point it at your datawatch daemon over Tailscale, and put it through its paces. Bugs, UX rough edges, missing features — all feedback welcome. Open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app) or reach out to **dmz006** directly.
 
+**We need 15 testers to unlock production release on Google Play.** If you're using datawatch, this is the fastest way to get a polished native app — join now and help get us there.
+
 ---
 
 ## 🎉 Community skills + plugins registry is live!
