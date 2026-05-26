@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.7.3"
+var Version = "8.8.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1148,6 +1148,86 @@ func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 		"models":        models,
 		"default_model": defaultModel,
 	})
+}
+
+// handleOpenCodeProviders manages API keys for OpenCode cloud providers.
+//
+// GET  /api/opencode/providers — returns which providers have a key configured.
+//
+//	Response: {providers: {anthropic: {api_key_set: bool}, openai: {...}, google: {...}}}
+//	The actual key value is never returned.
+//
+// PUT  /api/opencode/providers — stores a provider API key in the secrets store.
+//
+//	Body: {provider: "anthropic"|"openai"|"google", api_key: "sk-..."}
+//
+// The secret name convention is "opencode_provider_<provider>".
+func (s *Server) handleOpenCodeProviders(w http.ResponseWriter, r *http.Request) {
+	const knownProviders = "anthropic openai google"
+	isKnown := func(p string) bool {
+		for _, kp := range strings.Fields(knownProviders) {
+			if kp == p {
+				return true
+			}
+		}
+		return false
+	}
+	secretName := func(provider string) string {
+		return "opencode_provider_" + provider
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		providers := map[string]map[string]bool{}
+		for _, p := range strings.Fields(knownProviders) {
+			set := false
+			if s.secretsStore != nil {
+				if ok, err := s.secretsStore.Exists(secretName(p)); err == nil {
+					set = ok
+				}
+			}
+			providers[p] = map[string]bool{"api_key_set": set}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"providers": providers})
+
+	case http.MethodPut:
+		var body struct {
+			Provider string `json:"provider"`
+			APIKey   string `json:"api_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if !isKnown(body.Provider) {
+			http.Error(w, "unknown provider; must be one of: anthropic, openai, google", http.StatusBadRequest)
+			return
+		}
+		if body.APIKey == "" {
+			http.Error(w, "api_key must not be empty", http.StatusBadRequest)
+			return
+		}
+		if s.secretsStore == nil {
+			http.Error(w, "secrets store not enabled", http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.secretsStore.Set(
+			secretName(body.Provider),
+			body.APIKey,
+			[]string{"opencode", "provider"},
+			"OpenCode "+body.Provider+" API key",
+			nil,
+		); err != nil {
+			http.Error(w, "failed to store key: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "provider": body.Provider})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleLSPServers returns the operator-configured LSP server presets.

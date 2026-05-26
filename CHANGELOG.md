@@ -5,20 +5,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## v8.8.0 — Dashboard responsiveness, security headers, parity & e2e reform (2026-05-26)
+
 ### Added
 
-- **Channel Routing — full 6-surface parity**: The channel-address routing feature (channel pattern → federation peer) was missing four of its six required configuration surfaces. Now complete:
-  - **PWA**: New "Channel Routing" card in Settings → Comms (after Routing Rules). Add/delete rules with fields for `channel_pattern`, `peer_name`, `automata_type`, and `default_project_dir`.
-  - **MCP**: `channel_routing_config_get` (list rules) and `channel_routing_config_set` (replace rules) tools.
-  - **Comm channel**: `channel-routing [add <pattern> <peer> [automata=<type>] [dir=<path>] | delete <n> | clear]` command.
-  - **CLI**: `datawatch channel-routing [list | add <pattern> <peer> | delete <n> | clear]` subcommand.
-- **Locale**: Added `channel_routing_automata_type`, `channel_routing_no_rules`, `channel_routing_pattern`, `channel_routing_project_dir` to all 5 locale bundles (EN/DE/ES/FR/JA).
-- **Automata Type Registry — full 6-surface parity**: The operator-extensible type registry (BL221 Phase 4) was missing three configuration surfaces. Now complete:
-  - **PWA**: New "Type Registry" card in Settings → Automata. Shows built-in types (software/research/operational/personal) with badges, lists custom types, and provides a register form with id, label, description, and color picker.
-  - **Comm channel**: `autonomous type-register <id> <label> [description=...] [color=#hex]` command added to the existing `autonomous` comm handler.
-  - **Locale**: Added `automata_type_registry_builtin`, `automata_type_registry_color`, `automata_type_registry_description`, `automata_type_registry_empty`, `automata_type_registry_id`, `automata_type_registry_label`, `automata_type_registry_register`, `automata_type_registry_section_desc`, `automata_type_registry_title` to all 5 locale bundles.
+- **Security headers** (#96): `securityHeadersMiddleware` added to the top-level HTTP server wrapping all routes. Sets `Content-Security-Policy`, `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cross-Origin-Opener-Policy: same-origin-allow-popups`. SRI `integrity=` + `crossorigin="anonymous"` attributes added to all 4 CDN assets (qrcode.js, mermaid, marked, swagger-ui-bundle + swagger-ui.css). Resolves OWASP ZAP alerts [10038][10020][90003][10017].
+- **Dashboard — heatmap narrow mode** (#101): When the heatmap card width < 300px or column-span ≤ 3, `_drawHeatmap()` auto-switches to a compact 7-bar vertical chart showing the last 7 days with error-rate coloring (green/amber/red).
+- **Dashboard — burn-rate stat strip** (#100): Session cost (`$X.XX today`), running session count, and active automata count are now always visible in the dashboard header stat strip, independent of whether the EKG card is in the layout. Updates on every dashboard refresh cycle.
+- **Dashboard — orbital/constellation narrow mode** (#98): When the orbital canvas width < 400px, renders a compact text session list (name · state badge · age) instead of the force graph. All card column-spans are clamped to full-width (cs=12) when viewport width < 600px.
+- **Dashboard — EKG + Smoke mobile layout** (#99): EKG card hides canvas and expands the burn-rate stat panel when card width < 280px. Smoke card filter pills and expanded detail pane gain `overflow-x: auto` + touch-scroll at widths < 480px.
+- **Observer — eBPF network traffic card** (#97): New "Network Traffic" section in the Observer view showing per-process inbound/outbound bytes/s from `/api/stats`. Falls back gracefully when eBPF data is unavailable. Locale keys added in all 5 bundles.
+- **Docs search** (#91): Full-text search box added to `/diagrams.html` sidebar, backed by `GET /api/docs/search`. 300ms debounced, shows ranked results with path and excerpt, clicking navigates directly to the doc.
+- **OpenCode provider key management** (#95): `GET/PUT /api/opencode/providers` endpoint for storing Anthropic/OpenAI/Google API keys in the secrets store. PWA Settings → LLM tab shows provider status badges (Configured / Not set) with password inputs. Keys never returned in GET responses. 7 unit tests.
+- **Channel Routing — full 6-surface parity** (BL331): PWA card (Settings → Comms), MCP tools, comm command, CLI subcommand.
+- **Automata Type Registry — full 6-surface parity** (BL221): PWA card (Settings → Automata), comm `type-register` verb.
+- **PWA e2e reform — Phase 0 + 1** (#78): 23 API-only stories reclassified from `surface:pwa` → `surface:api`. 10 new Playwright browser stories added (TS-637–TS-646) covering: sessions view, alerts view, settings tabs (General/LLM/Comms/Automata), observer, autonomous, dashboard stat strip, theme toggle.
+
+### Fixed
+
+- **openapi.yaml** (#92): Already resolved in a prior commit — confirmed valid YAML parse. Issue closed.
+
+### Security
+
+- Closed duplicate OWASP ZAP bot issues #85, #86, #87, #89, #90 (all identical to #96).
 
 ---
+
+## v8.7.3 — Patch: Live OpenCode model list + default model pre-selection (2026-05-25)
 
 ## v8.7.3 — Patch: Live OpenCode model list + default model pre-selection (2026-05-25)
 

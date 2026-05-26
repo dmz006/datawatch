@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-602 — PWA Automata All mode shows PRDs from federation peers
-# tags: surface:pwa feature:multiserver
+# tags: surface:api feature:multiserver
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-602"
-story_preflight "surface:pwa feature:multiserver" || return 0
+story_preflight "surface:api feature:multiserver" || return 0
 
 _story_ts_602() {
   local resp code body

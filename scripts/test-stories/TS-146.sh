@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-146 — PWA: Guardrail library list renders
-# tags: surface:pwa feature:pwa feature:automata conflict:pwa
+# tags: surface:api feature:pwa feature:automata
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-146"
-story_preflight "surface:pwa feature:pwa feature:automata conflict:pwa" || return 0
+story_preflight "surface:api feature:pwa feature:automata" || return 0
 
 _story_ts_146() {
   # Check the underlying guardrails API that the PWA panel renders

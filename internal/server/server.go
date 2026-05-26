@@ -411,6 +411,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
 	apiMux.HandleFunc("/api/opencode/models", api.handleOpenCodeModels)
+	apiMux.HandleFunc("/api/opencode/providers", api.handleOpenCodeProviders)
 	apiMux.HandleFunc("/api/lsp", api.handleLSPServers)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
@@ -574,7 +575,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      securityHeadersMiddleware(mux),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0, // 0 = no timeout for WebSocket
@@ -1162,6 +1163,34 @@ var daemonStartedAtETag = strconv.FormatInt(time.Now().UnixNano(), 36)
 // clear cache after every daemon restart. Folding daemonStartedAt
 // into the ETag makes every restart cache-bust automatically — same
 // effect as a Version bump but free.
+// securityHeadersMiddleware adds OWASP-recommended security response headers to every
+// HTTP response. Applied once at the top-level handler so all routes are covered.
+//
+// CSP allows:
+//   - Scripts from self + the three CDNs used by index.html / diagrams.html / api-docs.html
+//   - 'unsafe-inline' is required because index.html contains small inline <script> blocks
+//     (theme detection, version-check); a future nonce-based approach can remove this.
+//   - WebSocket connections (ws: / wss:) for the live session stream.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; " +
+		"script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; " +
+		"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
+		"connect-src 'self' ws: wss:; " +
+		"img-src 'self' data: blob:; " +
+		"font-src 'self' data:; " +
+		"worker-src 'self' blob:; " +
+		"frame-ancestors 'self'"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func cacheControlMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Read Version per-request — main.go assigns server.Version

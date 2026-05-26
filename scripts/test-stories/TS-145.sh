@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-145 — PWA: LLM edit panel shows session field toggles
-# tags: surface:pwa feature:pwa feature:config conflict:pwa
+# tags: surface:api feature:pwa feature:config
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-145"
-story_preflight "surface:pwa feature:pwa feature:config conflict:pwa" || return 0
+story_preflight "surface:api feature:pwa feature:config" || return 0
 
 _story_ts_145() {
   # Check the underlying APIs that the LLM edit panel uses

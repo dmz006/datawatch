@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-131 — Auth token accepted
-# tags: surface:pwa feature:bootstrap conflict:pwa
+# tags: surface:api feature:bootstrap
 # legacy fn: t11_ts131_auth_token
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-131"
-story_preflight "surface:pwa feature:bootstrap conflict:pwa" || return 0
+story_preflight "surface:api feature:bootstrap" || return 0
 
 _story_ts_131() {
   local resp

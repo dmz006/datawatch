@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-134 — Start new session from PWA
-# tags: surface:pwa feature:sessions conflict:pwa
+# tags: surface:api feature:sessions
 # legacy fn: t11_ts134_new_session
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-134"
-story_preflight "surface:pwa feature:sessions conflict:pwa" || return 0
+story_preflight "surface:api feature:sessions" || return 0
 
 _story_ts_134() {
   local resp

@@ -11411,9 +11411,80 @@ function loadLLMTabConfig() {
         }
       }
       el.innerHTML = html;
+      // #95 — OpenCode Providers sub-section: load key status from
+      // /api/opencode/providers and append the three provider rows.
+      if (sec.id === 'opencode') {
+        loadOpenCodeProvidersCard(el);
+      }
     }
   }).catch(() => {});
 }
+
+// loadOpenCodeProvidersCard fetches provider key status and appends the
+// Providers sub-section to the OpenCode settings card element.
+function loadOpenCodeProvidersCard(parentEl) {
+  const PROVIDERS = ['anthropic', 'openai', 'google'];
+  const labelKey = { anthropic: 'opencode_provider_anthropic', openai: 'opencode_provider_openai', google: 'opencode_provider_google' };
+
+  fetch('/api/opencode/providers', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null)
+    .then(data => {
+      const providerData = (data && data.providers) ? data.providers : {};
+      let html = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('opencode_providers')||'Providers')}</div>`;
+      for (const p of PROVIDERS) {
+        const info = providerData[p] || {};
+        const isSet = !!info.api_key_set;
+        const badgeStyle = isSet
+          ? 'background:var(--success,#22c55e);color:#fff;'
+          : 'background:var(--border);color:var(--text2);';
+        const badgeText = isSet
+          ? (t('opencode_provider_key_set')||'Configured')
+          : (t('opencode_provider_key_not_set')||'Not set');
+        const inputId = 'oc_provider_key_' + p;
+        const label = t(labelKey[p]) || p.charAt(0).toUpperCase() + p.slice(1);
+        html += `<div class="settings-row" style="align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="settings-label" style="min-width:80px;">${escHtml(label)}</div>
+          <span style="font-size:10px;padding:2px 6px;border-radius:3px;${badgeStyle}">${escHtml(badgeText)}</span>
+          <span style="display:flex;align-items:center;gap:4px;flex:1;justify-content:flex-end;">
+            <input id="${escHtml(inputId)}" type="password" class="form-input" placeholder="sk-…"
+              style="max-width:220px;" autocomplete="new-password" />
+            <button class="btn-secondary" style="font-size:11px;white-space:nowrap;"
+              onclick="saveOpenCodeProviderKey('${p}','${inputId}')">
+              ${escHtml(t('opencode_provider_save')||'Save key')}
+            </button>
+          </span>
+        </div>`;
+      }
+      html += '</div>';
+      parentEl.insertAdjacentHTML('beforeend', html);
+    });
+}
+window.loadOpenCodeProvidersCard = loadOpenCodeProvidersCard;
+
+// saveOpenCodeProviderKey PUTs the entered API key for a provider and
+// refreshes the card to show the updated badge.
+function saveOpenCodeProviderKey(provider, inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const key = input.value.trim();
+  if (!key) { showToast('Enter an API key first', 'error', 2000); return; }
+  fetch('/api/opencode/providers', {
+    method: 'PUT',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, tokenHeader()),
+    body: JSON.stringify({ provider, api_key: key }),
+  })
+  .then(r => {
+    if (!r.ok) return r.text().then(t => Promise.reject(t));
+    input.value = '';
+    showToast((t('opencode_provider_key_set')||'Configured') + ' — ' + provider, 'success', 2000);
+    // Refresh the compute tab config to update the badge.
+    loadLLMTabConfig();
+  })
+  .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+}
+window.saveOpenCodeProviderKey = saveOpenCodeProviderKey;
 
 function loadGeneralConfig() {
   Promise.all([
@@ -16853,6 +16924,8 @@ function loadStatsPanel() {
   loadPluginsStatus();
   // v4.1.1 — load eBPF status strip just above plugins.
   loadEBPFStatus();
+  // Issue #97 — eBPF network traffic card (Android parity).
+  loadEBPFNetworkTraffic();
   // BL172 (S11) — federated peers row.
   loadObserverPeers();
   // BL173 (S12) — cluster nodes (Shape C); shows itself only if non-empty.
@@ -16933,6 +17006,42 @@ function loadEBPFStatus() {
     line.innerHTML = head + msg;
   }).catch(() => {
     line.innerHTML = '<span style="opacity:0.7;">/api/stats?v=2 unavailable</span>';
+  });
+}
+
+// Issue #97 — eBPF network traffic card (Android parity).
+// Reads net.per_process from /api/stats?v=2 (same endpoint as loadEBPFStatus).
+// Shows per-process inbound/outbound bytes/s; falls back gracefully if
+// the endpoint is unavailable or per_process is absent (kprobes not loaded).
+function loadEBPFNetworkTraffic() {
+  const list = document.getElementById('ebpfNetworkList');
+  if (!list) return;
+  apiFetch('/api/stats?v=2').then(s => {
+    const procs = (s && s.net && Array.isArray(s.net.per_process) && s.net.per_process) || null;
+    if (!procs || !procs.length) {
+      list.innerHTML = `<span style="opacity:0.7;">${escHtml(t('ebpf_no_data')||'No eBPF data available')}</span>`;
+      return;
+    }
+    // Sort by total bytes/s desc (rx+tx), show top 10 at most.
+    const sorted = procs.slice().sort((a, b) => (b.rx_bps + b.tx_bps) - (a.rx_bps + a.tx_bps)).slice(0, 10);
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += '<tr style="color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:0.3px;">'
+      + '<th style="text-align:left;padding:2px 4px 4px 0;font-weight:500;">Process</th>'
+      + '<th style="text-align:right;padding:2px 4px 4px;font-weight:500;">In</th>'
+      + '<th style="text-align:right;padding:2px 0 4px 4px;font-weight:500;">Out</th>'
+      + '</tr>';
+    for (const p of sorted) {
+      const name = escHtml(p.comm || ('PID ' + p.pid));
+      html += `<tr style="border-top:1px solid var(--border);">
+        <td style="padding:3px 4px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;" title="${name}">${name}</td>
+        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${formatBytes(p.rx_bps || 0)}/s</td>
+        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${formatBytes(p.tx_bps || 0)}/s</td>
+      </tr>`;
+    }
+    html += '</table>';
+    list.innerHTML = html;
+  }).catch(() => {
+    list.innerHTML = `<span style="opacity:0.7;">${escHtml(t('ebpf_no_data')||'No eBPF data available')}</span>`;
   });
 }
 
@@ -18519,6 +18628,32 @@ function _drawConstellation() {
   const W = svgEl.clientWidth || 320, H = svgEl.clientHeight || 220;
   svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
+  // Issue #98 — narrow fallback: width < 400px → compact text list
+  if (W < 400) {
+    const sessions = state.sessions || [];
+    if (sessions.length === 0) {
+      svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
+      return;
+    }
+    const stateColors = { running: '#7c3aed', generating: '#7c3aed', waiting_input: '#f59e0b', completed: '#10b981', failed: '#ef4444', blocked: '#ef4444', idle: '#64748b' };
+    const stateBadges = { running: '▶', generating: '▶', waiting_input: '⏸', completed: '✓', failed: '✗', blocked: '!', idle: '○' };
+    let html = '';
+    const ROW_H = 20, PAD = 8;
+    for (let i = 0; i < sessions.length && i < Math.floor((H - PAD) / ROW_H); i++) {
+      const s = sessions[i];
+      const col = stateColors[s.state] || '#64748b';
+      const badge = stateBadges[s.state] || '·';
+      const name = (s.name || s.task || s.id || '').slice(0, 18);
+      const age = s.created_at ? timeAgo(s.created_at) : '';
+      const y = PAD + i * ROW_H + 13;
+      html += `<text x="${PAD}" y="${y}" font-size="11" fill="${col}" style="pointer-events:none">• ${escHtml(name)}</text>`;
+      html += `<text x="${W - PAD - (age ? 36 : 18)}" y="${y}" font-size="10" fill="${col}" font-weight="700" style="pointer-events:none">${escHtml(badge)}</text>`;
+      if (age) html += `<text x="${W - PAD}" y="${y}" font-size="9" fill="var(--text2)" text-anchor="end" style="pointer-events:none">${escHtml(age)}</text>`;
+    }
+    svgEl.innerHTML = html;
+    return;
+  }
+
   const ids = Object.keys(_dash.nodes);
   if (ids.length === 0) {
     svgEl.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="var(--text2)">${escHtml(t('dash_no_sessions') || 'No active sessions')}</text>`;
@@ -18586,6 +18721,25 @@ function _drawConstellation() {
 function _drawMultiEKG() {
   const canvas = document.getElementById('ekgCanvas');
   if (!canvas) return;
+
+  // Issue #99 — EKG narrow mode: hide canvas, show burn-rate panel only
+  const ekgCardW = canvas.closest('[data-card-id="ekg"]') ? (canvas.closest('[data-card-id="ekg"]').clientWidth || 0) : (canvas.clientWidth || 0);
+  const ekgNarrow = ekgCardW < 280 && ekgCardW > 0;
+  canvas.style.display = ekgNarrow ? 'none' : '';
+  const burnRateEl = document.getElementById('dashBurnRate');
+  if (burnRateEl) {
+    if (ekgNarrow) {
+      burnRateEl.style.width = '100%';
+      burnRateEl.style.borderLeft = 'none';
+      burnRateEl.style.alignItems = 'center';
+    } else {
+      burnRateEl.style.width = '';
+      burnRateEl.style.borderLeft = '';
+      burnRateEl.style.alignItems = '';
+    }
+  }
+  if (ekgNarrow) return;
+
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;
   if (canvas.width !== W) canvas.width = W;
@@ -18982,7 +19136,12 @@ window._dashCycleRows = function(cardId) {
 function _dashBuildGrid(layout) {
   const grid = document.getElementById('dashCardGrid');
   if (!grid) return;
-  grid.innerHTML = (layout || []).map(_dashCardHTML).join('');
+  // Issue #98 — at narrow viewports (<600px), override all cards to full width
+  const narrowViewport = window.innerWidth < 600;
+  const effectiveLayout = narrowViewport
+    ? (layout || []).map(entry => Object.assign({}, entry, { cs: 12 }))
+    : (layout || []);
+  grid.innerHTML = effectiveLayout.map(_dashCardHTML).join('');
   _dashUpdateStatBar();
   _dashRenderTree();
   _dashRenderEventFeed();
@@ -19117,6 +19276,52 @@ function _drawHeatmap() {
     ctx.fillText('Loading…', 10, H / 2 + 4);
     return;
   }
+
+  // Issue #101 — narrow mode: card width < 300px → 7-day bar chart
+  const cardEl = canvas.closest('[data-card-id="heatmap"]');
+  const cardCs = cardEl ? parseInt(cardEl.getAttribute('data-cs') || '3', 10) : 3;
+  const narrowMode = W < 300 || cardCs <= 3;
+
+  if (narrowMode) {
+    // 7-day vertical bar chart
+    const last7 = buckets.slice(-7);
+    const maxTotal = Math.max(1, ...last7.map(b => b.total || b.session_count || 0));
+    const PAD = 6;
+    const barCount = last7.length;
+    const barGap = 2;
+    const barW = Math.max(4, Math.floor((W - PAD * 2 - barGap * (barCount - 1)) / barCount));
+    for (let i = 0; i < barCount; i++) {
+      const b = last7[i];
+      const total = b.total || b.session_count || 0;
+      const errors = (b.failed || 0) + (b.killed || 0);
+      const errRate = total ? errors / total : 0;
+      let fill;
+      if (!total) {
+        fill = bdr;
+      } else if (errRate > 0.2) {
+        fill = 'rgba(239,68,68,0.8)';
+      } else if (errRate >= 0.05) {
+        fill = 'rgba(245,158,11,0.8)';
+      } else {
+        fill = 'rgba(16,185,129,0.8)';
+      }
+      const barH = Math.max(2, Math.round((total / maxTotal) * (H - PAD * 2)));
+      const x = PAD + i * (barW + barGap);
+      const y = H - PAD - barH;
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, 2);
+      else ctx.rect(x, y, barW, barH);
+      ctx.fill();
+    }
+    // "7d" label bottom-right
+    ctx.fillStyle = txt2; ctx.font = '8px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('7d', W - 3, H - 2);
+    ctx.textAlign = 'left';
+    return;
+  }
+
   const COLS = Math.min(buckets.length, 30);
   const PAD = 10, LBL_H = 14;
   const cellPad = 2;
@@ -19333,6 +19538,16 @@ function _dashRenderSmoke() {
         if (filt === 'all' && remaining > 0) rowsHtml += `<div style="padding:4px 8px;color:var(--text2);font-size:10px;font-style:italic;">⏳ ${remaining} pending</div>`;
       }
 
+      // Issue #99 — narrow smoke card mobile layout
+      const smokeCardW = el.clientWidth || 0;
+      const smokeNarrow = smokeCardW > 0 && smokeCardW < 480;
+      const pillsStyle = smokeNarrow
+        ? 'display:flex;gap:3px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;padding:3px 8px;border-bottom:1px solid var(--border);flex-shrink:0;-webkit-overflow-scrolling:touch;'
+        : 'display:flex;gap:3px;flex-wrap:wrap;padding:3px 8px;border-bottom:1px solid var(--border);flex-shrink:0;';
+      const detailPaneStyle = smokeNarrow
+        ? 'flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto;-webkit-overflow-scrolling:touch;'
+        : 'flex:1;min-height:0;display:flex;flex-direction:column;';
+
       detailHtml = `
         <div style="padding:5px 8px 3px;flex-shrink:0;border-bottom:1px solid var(--border);">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
@@ -19344,7 +19559,7 @@ function _dashRenderSmoke() {
             <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width 0.5s;"></div>
           </div>
         </div>
-        <div style="display:flex;gap:3px;flex-wrap:wrap;padding:3px 8px;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <div style="${pillsStyle}">
           ${pill('all','All '+(done+(d.active?1:0)))}
           ${d.active?pill('active','▶ Active'):''}
           ${pill('pass','✓ '+pass)}
@@ -19356,8 +19571,14 @@ function _dashRenderSmoke() {
     }
   }
 
+  // Issue #99 — smoke card mobile: narrow pane gets overflow-x:auto
+  const _smokeCardW = el.clientWidth || 0;
+  const _smokeNarrowOuter = _smokeCardW > 0 && _smokeCardW < 480;
+  const _smokePaneStyle = _smokeNarrowOuter
+    ? 'flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto;-webkit-overflow-scrolling:touch;'
+    : 'flex:1;min-height:0;display:flex;flex-direction:column;';
   el.innerHTML = envListHtml + (_dash._smokeExpandedId
-    ? `<div style="flex:1;min-height:0;display:flex;flex-direction:column;">${detailHtml}</div>`
+    ? `<div style="${_smokePaneStyle}">${detailHtml}</div>`
     : `<div style="padding:10px 8px;color:var(--text2);font-size:10px;">↑ Click a run to expand</div>`);
 }
 
@@ -19407,6 +19628,7 @@ function renderDashboardView() {
         <span id="dashStatSessions" style="color:var(--text2);">—</span>
         <span id="dashStatTasks" style="color:var(--text2);"></span>
         <span id="dashStatGuardrails" style="color:var(--text2);"></span>
+        <span id="dashStatBurnRate" style="display:none;color:var(--text2);font-size:10px;font-family:monospace;border-left:1px solid var(--border);padding-left:8px;margin-left:2px;"></span>
         <span style="flex:1;"></span>
         <span style="color:var(--text2);opacity:0.4;font-size:9px;font-family:monospace;">live · ws</span>
         <button id="dashAddCardBtn" onclick="window._dashShowAddPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:6px;">+ Card</button>
@@ -19487,6 +19709,30 @@ function _dashUpdateStatBar() {
   if (elG) elG.innerHTML = verdictBlock > 0
     ? `<span style="color:var(--error);font-weight:700;">⚠ ${verdictBlock} blk</span>${verdictWarn > 0 ? ` <span style="color:var(--warning);">${verdictWarn} warn</span>` : ''}`
     : verdictWarn > 0 ? `<span style="color:var(--warning);">${verdictWarn} warn</span>` : '';
+
+  // Issue #100 — burn-rate compact stats in header strip
+  const elBR = document.getElementById('dashStatBurnRate');
+  if (elBR) {
+    let brTot = 0;
+    if (_dash._costToday) {
+      const c = _dash._costToday;
+      brTot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
+        : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+    }
+    const runningCount = running.length;
+    const automataCount = (_dash._prds || []).length;
+    const hasData = brTot > 0 || runningCount > 0 || automataCount > 0;
+    if (hasData) {
+      let parts = [];
+      if (brTot > 0) parts.push(`<span style="color:var(--success,#10b981);font-weight:700;">$${brTot.toFixed(2)} today</span>`);
+      parts.push(`<span style="color:var(--accent);">${runningCount} running</span>`);
+      if (automataCount > 0) parts.push(`<span style="color:var(--text2);">${automataCount} automata</span>`);
+      elBR.innerHTML = parts.join(' · ');
+      elBR.style.display = '';
+    } else {
+      elBR.style.display = 'none';
+    }
+  }
 }
 
 function _dashRenderTree() {
@@ -19806,6 +20052,10 @@ function renderObserverView() {
           <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
             <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <div id="ebpfNetworkBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${t('ebpf_network_traffic')||'Network Traffic'}</div>
+            <div id="ebpfNetworkList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
           <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-137 — Settings panel config round-trip
-# tags: surface:pwa feature:config conflict:pwa
+# tags: surface:api feature:config
 # legacy fn: t11_ts137_settings_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-137"
-story_preflight "surface:pwa feature:config conflict:pwa" || return 0
+story_preflight "surface:api feature:config" || return 0
 
 _story_ts_137() {
   local resp

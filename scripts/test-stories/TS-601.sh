@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-601 — PWA input on remote session proxies through /api/sessions/{peer}/{id}/input
-# tags: surface:pwa feature:multiserver
+# tags: surface:api feature:multiserver
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-601"
-story_preflight "surface:pwa feature:multiserver" || return 0
+story_preflight "surface:api feature:multiserver" || return 0
 
 _story_ts_601() {
   local resp code body

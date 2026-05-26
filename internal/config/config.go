@@ -654,6 +654,12 @@ type LSPConfig struct {
 	Servers map[string]LSPServerConfig `yaml:"servers"`
 }
 
+// OpenCodeProvider holds the API key for a cloud provider accessible via opencode.
+// The key is stored in the daemon secrets store under "opencode_provider_<name>".
+type OpenCodeProvider struct {
+	APIKey string `json:"api_key,omitempty" yaml:"api_key,omitempty"`
+}
+
 // OpenCodeConfig holds opencode TUI backend configuration.
 type OpenCodeConfig struct {
 	Enabled     bool   `yaml:"enabled"`
@@ -668,6 +674,9 @@ type OpenCodeConfig struct {
 	ConsoleRows  int    `yaml:"console_rows,omitempty"`
 	OutputMode   string `yaml:"output_mode,omitempty"`
 	InputMode    string `yaml:"input_mode,omitempty"`
+	// Providers holds API keys for cloud providers (anthropic, openai, google).
+	// Keys are stored in the daemon secrets store and never returned in plain text.
+	Providers map[string]OpenCodeProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
 }
 
 // OpenCodeACPConfig holds opencode ACP (headless server) backend configuration.

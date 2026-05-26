@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-144 — PWA: Dashboard panel renders smoke cards
-# tags: surface:pwa feature:pwa feature:bootstrap conflict:pwa
+# tags: surface:api feature:pwa feature:bootstrap
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-144"
-story_preflight "surface:pwa feature:pwa feature:bootstrap conflict:pwa" || return 0
+story_preflight "surface:api feature:pwa feature:bootstrap" || return 0
 
 _story_ts_144() {
   # Check the underlying API that the dashboard smoke panel uses

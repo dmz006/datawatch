@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-136 — Alerts panel renders
-# tags: surface:pwa feature:bootstrap conflict:pwa
+# tags: surface:api feature:bootstrap
 # legacy fn: t11_ts136_alerts_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-136"
-story_preflight "surface:pwa feature:bootstrap conflict:pwa" || return 0
+story_preflight "surface:api feature:bootstrap" || return 0
 
 _story_ts_136() {
   local resp

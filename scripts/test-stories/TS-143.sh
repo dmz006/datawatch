@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-143 — No console errors after full load
-# tags: surface:pwa feature:bootstrap conflict:pwa
+# tags: surface:api feature:bootstrap
 # legacy fn: t11_ts143_console_errors
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-143"
-story_preflight "surface:pwa feature:bootstrap conflict:pwa" || return 0
+story_preflight "surface:api feature:bootstrap" || return 0
 
 _story_ts_143() {
   local syntax_check

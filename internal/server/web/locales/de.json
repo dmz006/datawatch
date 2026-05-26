@@ -1138,6 +1138,8 @@
   "stats_session_stats": "Sitzungsstatistiken",
   "stats_sessions_section": "Sitzungen",
   "stats_unavailable": "Statistiken nicht verfügbar.",
+  "ebpf_network_traffic": "Netzwerkverkehr",
+  "ebpf_no_data": "Keine eBPF-Daten verfügbar",
   "status_card_focus": "Aktueller Fokus",
   "status_card_git": "Git",
   "status_card_sprint": "Sprint / Automata",
@@ -1251,5 +1253,12 @@
   "comm_matrix_test_button": "Testnachricht senden",
   "comm_matrix_test_success": "Testnachricht gesendet",
   "comm_matrix_test_error": "Test fehlgeschlagen",
-  "comm_matrix_setup_hint": "Führen Sie 'datawatch setup matrix' aus"
+  "comm_matrix_setup_hint": "Führen Sie 'datawatch setup matrix' aus",
+  "opencode_providers": "Anbieter",
+  "opencode_provider_anthropic": "Anthropic",
+  "opencode_provider_openai": "OpenAI",
+  "opencode_provider_google": "Google",
+  "opencode_provider_key_set": "Konfiguriert",
+  "opencode_provider_key_not_set": "Nicht gesetzt",
+  "opencode_provider_save": "Schlüssel speichern"
 }

@@ -44,6 +44,37 @@
     overflow-y: auto;
     padding: 12px 0;
   }
+  aside .search-wrap {
+    position: relative;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  aside .search-wrap input#docSearchBox {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+  aside .search-wrap input#docSearchBox:focus { outline: none; border-color: var(--accent); }
+  #docSearchDropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% - 2px);
+    left: 12px; right: 12px;
+    background: var(--bg2, #1a1d27);
+    border: 1px solid #2d2f3e;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    z-index: 100;
+    max-height: 340px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  #docSearchDropdown.open { display: block; }
   aside .filter {
     padding: 0 12px 10px;
     border-bottom: 1px solid var(--border);
@@ -222,7 +253,11 @@
 </header>
 <div class="body" id="bodyEl">
   <aside>
-    <div class="filter"><input id="filter" placeholder="Search docs…" autocomplete="off" /></div>
+    <div class="search-wrap">
+      <input id="docSearchBox" type="search" placeholder="Search docs…" autocomplete="off" />
+      <div id="docSearchDropdown"></div>
+    </div>
+    <div class="filter"><input id="filter" placeholder="Filter files…" autocomplete="off" /></div>
     <div id="list"><div class="loading">Loading index…</div></div>
   </aside>
   <main id="main">
@@ -231,8 +266,12 @@
 </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+  integrity="sha384-qX9VvWkP79m/O121ZE6sOYp0nf/pldQgtvWDbkpzi+3mUo4Wn4Ix4cFzNPay3VaB"
+  crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"
+  integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
+  crossorigin="anonymous"></script>
 <script>
   mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', maxTextSize: 200000 });
 
@@ -377,6 +416,77 @@
     }
   });
   renderIndex('');
+
+  // ── docSearchBox — overlay dropdown backed by /api/docs/search ───────────
+  // Issue #91: dedicated search input with absolute-positioned dropdown above
+  // the file list. Auth via localStorage cs_token (same as the PWA auth layer).
+  const docSearchBoxEl = document.getElementById('docSearchBox');
+  const docSearchDropEl = document.getElementById('docSearchDropdown');
+  let _docSearchTimer = null;
+
+  function _getToken() {
+    try { return localStorage.getItem('cs_token') || ''; } catch(_) { return ''; }
+  }
+
+  function _closeDocDropdown() {
+    docSearchDropEl.innerHTML = '';
+    docSearchDropEl.classList.remove('open');
+  }
+
+  docSearchBoxEl.addEventListener('input', e => {
+    const q = e.target.value.trim();
+    clearTimeout(_docSearchTimer);
+    if (!q) { _closeDocDropdown(); return; }
+    _docSearchTimer = setTimeout(() => _runDocSearch(q), 300);
+  });
+
+  docSearchBoxEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { _closeDocDropdown(); docSearchBoxEl.value = ''; }
+  });
+
+  // Close dropdown when clicking outside the search area
+  document.addEventListener('click', e => {
+    if (!docSearchBoxEl.contains(e.target) && !docSearchDropEl.contains(e.target)) {
+      _closeDocDropdown();
+    }
+  });
+
+  async function _runDocSearch(q) {
+    docSearchDropEl.innerHTML = '<div class="search-empty">Searching…</div>';
+    docSearchDropEl.classList.add('open');
+    try {
+      const tok = _getToken();
+      const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      const resp = await fetch('/api/docs/search?q=' + encodeURIComponent(q) + '&limit=10', { headers });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const hits = (data && data.hits) || [];
+      if (!hits.length) {
+        docSearchDropEl.innerHTML = '<div class="search-empty">No results for &ldquo;' + q.replace(/</g, '&lt;') + '&rdquo;</div>';
+        return;
+      }
+      docSearchDropEl.innerHTML = '';
+      for (const h of hits) {
+        const b = document.createElement('button');
+        b.className = 'search-result';
+        const titleText = h.heading || h.title || h.path.replace(/^docs\//, '');
+        const anchorFrag = h.anchor ? '#' + encodeURIComponent(h.anchor) : '';
+        b.innerHTML = `<div class="sr-title">${titleText.replace(/</g,'&lt;')}</div>
+          <div class="sr-path">${h.path.replace(/^docs\//, '').replace(/</g,'&lt;')}</div>
+          ${h.excerpt ? '<div class="sr-excerpt">' + h.excerpt.replace(/</g,'&lt;') + '</div>' : ''}`;
+        b.onclick = () => {
+          _closeDocDropdown();
+          docSearchBoxEl.value = '';
+          location.hash = h.path + anchorFrag;
+          openDoc(h.path);
+        };
+        docSearchDropEl.appendChild(b);
+      }
+    } catch(_) {
+      _closeDocDropdown();
+    }
+  }
+  // ── end docSearchBox ─────────────────────────────────────────────────────
 
   async function runSearch(q) {
     listEl.innerHTML = '<div class="search-empty">Searching…</div>';

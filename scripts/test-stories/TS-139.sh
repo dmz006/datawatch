@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-139 — Council personas list in PWA
-# tags: surface:pwa feature:council conflict:pwa
+# tags: surface:api feature:council
 # legacy fn: t11_ts139_council_personas
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-139"
-story_preflight "surface:pwa feature:council conflict:pwa" || return 0
+story_preflight "surface:api feature:council" || return 0
 
 _story_ts_139() {
   local resp

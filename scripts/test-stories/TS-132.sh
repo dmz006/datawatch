@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-132 — Sessions list renders
-# tags: surface:pwa feature:sessions conflict:pwa
+# tags: surface:api feature:sessions
 # legacy fn: t11_ts132_sessions_list
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-132"
-story_preflight "surface:pwa feature:sessions conflict:pwa" || return 0
+story_preflight "surface:api feature:sessions" || return 0
 
 _story_ts_132() {
   local resp

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-141 — Secrets panel in PWA
-# tags: surface:pwa feature:secrets conflict:pwa
+# tags: surface:api feature:secrets
 # legacy fn: t11_ts141_secrets_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-141"
-story_preflight "surface:pwa feature:secrets conflict:pwa" || return 0
+story_preflight "surface:api feature:secrets" || return 0
 
 _story_ts_141() {
   local resp

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-133 — Stats panel shows live data
-# tags: surface:pwa feature:bootstrap conflict:pwa
+# tags: surface:api feature:bootstrap
 # legacy fn: t11_ts133_stats_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-133"
-story_preflight "surface:pwa feature:bootstrap conflict:pwa" || return 0
+story_preflight "surface:api feature:bootstrap" || return 0
 
 _story_ts_133() {
   local resp

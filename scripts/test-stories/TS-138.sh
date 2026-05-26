@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-138 — MCP panel tools list
-# tags: surface:pwa feature:mcp conflict:pwa
+# tags: surface:api feature:mcp
 # legacy fn: t11_ts138_mcp_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-138"
-story_preflight "surface:pwa feature:mcp conflict:pwa" || return 0
+story_preflight "surface:api feature:mcp" || return 0
 
 _story_ts_138() {
   local resp

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-140 — Automata list in PWA
-# tags: surface:pwa feature:automata conflict:pwa
+# tags: surface:api feature:automata
 # legacy fn: t11_ts140_automata_list
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-140"
-story_preflight "surface:pwa feature:automata conflict:pwa" || return 0
+story_preflight "surface:api feature:automata" || return 0
 
 _story_ts_140() {
   local resp

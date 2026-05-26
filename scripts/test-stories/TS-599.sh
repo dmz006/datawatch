@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TS-599 — PWA server picker shows federation peers
-# tags: surface:pwa feature:multiserver
+# tags: surface:api feature:multiserver
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-599"
-story_preflight "surface:pwa feature:multiserver" || return 0
+story_preflight "surface:api feature:multiserver" || return 0
 
 _story_ts_599() {
   local resp code body

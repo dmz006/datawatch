@@ -1138,6 +1138,8 @@
   "stats_session_stats": "セッション統計",
   "stats_sessions_section": "セッション",
   "stats_unavailable": "統計が利用できません。",
+  "ebpf_network_traffic": "ネットワークトラフィック",
+  "ebpf_no_data": "eBPFデータがありません",
   "status_card_focus": "現在のフォーカス",
   "status_card_git": "Git",
   "status_card_sprint": "Sprint / Automata",
@@ -1251,5 +1253,12 @@
   "comm_matrix_test_button": "テストメッセージを送信",
   "comm_matrix_test_success": "テストメッセージ送信済み",
   "comm_matrix_test_error": "テスト失敗",
-  "comm_matrix_setup_hint": "'datawatch setup matrix'で設定してください"
+  "comm_matrix_setup_hint": "'datawatch setup matrix'で設定してください",
+  "opencode_providers": "プロバイダー",
+  "opencode_provider_anthropic": "Anthropic",
+  "opencode_provider_openai": "OpenAI",
+  "opencode_provider_google": "Google",
+  "opencode_provider_key_set": "設定済み",
+  "opencode_provider_key_not_set": "未設定",
+  "opencode_provider_save": "キーを保存"
 }

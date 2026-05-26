@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # TS-142 — Plugins panel in PWA
-# tags: surface:pwa feature:plugins conflict:pwa
+# tags: surface:api feature:plugins
 # legacy fn: t11_ts142_plugins_panel
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-142"
-story_preflight "surface:pwa feature:plugins conflict:pwa" || return 0
+story_preflight "surface:api feature:plugins" || return 0
 
 _story_ts_142() {
   local resp
