@@ -17,9 +17,9 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ---
 
-## 📱 [Android 1.0.0 — phone, auto, and wearables unified](https://github.com/dmz006/datawatch-app)
+## 📱 [Android — phone, auto, and wearables unified](https://github.com/dmz006/datawatch-app)
 
-**datawatch is now on your wrist, dashboard, and pocket.** v1.0.0 ships Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
+**datawatch is now on your wrist, dashboard, and pocket.** Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
 
 **Android Auto** (steering wheel safe):
 - **Automata queue with voice control** — voice-to-text for Automata prompts, hands-free. Navigation drawer voice shortcuts.
@@ -42,7 +42,17 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 - Offline queue + automatic sync on reconnect.
 - Push notifications with bidirectional replies.
 
-**We're actively recruiting alpha testers.** If you want early access and have feedback on the mobile UX, reach out to **dmz006**.
+---
+
+### 🚀 We're looking for beta testers — the app is live!
+
+**The datawatch Android app is now in testing on Google Play. Try it now and help shape what ships.**
+
+> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/apps/internaltest/4701534579731858967)
+>
+> **[→ https://play.google.com/apps/internaltest/4701534579731858967](https://play.google.com/apps/internaltest/4701534579731858967)**
+
+Install the app, point it at your datawatch daemon over Tailscale, and put it through its paces. Bugs, UX rough edges, missing features — all feedback welcome. Open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app) or reach out to **dmz006** directly.
 
 ---
 
