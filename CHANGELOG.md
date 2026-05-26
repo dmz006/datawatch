@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.2 — Docs: correct Android Auto + Wear OS voice descriptions (2026-05-26)
+
+### Docs
+
+- **README Android Auto**: Corrected voice feature description. Auto uses Google Assistant (Car App Library) to capture spoken commands — "Hey Google, ask DataWatch for status" — which are parsed server-side and read back via vehicle TTS. Supported commands: status, report, what failed, cost report, server status. Removed incorrect "Automata queue with voice control" framing.
+- **README Wear OS**: Removed incorrect "Hey Google" voice launch claim. Wear voice goes entirely through the operator's own Whisper instance — the watch records audio locally and posts it to `POST /api/voice/transcribe` on the datawatch server. Nothing leaves the operator's infrastructure. Documented the three-tier fallback (phone relay → direct to server → on-watch STT).
+
+---
+
 ## v8.8.1 — Docs: Android beta testing program (2026-05-26)
 
 ### Docs

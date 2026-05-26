@@ -22,14 +22,14 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 **datawatch is now on your wrist, dashboard, and pocket.** Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
 
 **Android Auto** (steering wheel safe):
-- **Automata queue with voice control** — voice-to-text for Automata prompts, hands-free. Navigation drawer voice shortcuts.
-- **Passive Automata status** — view live task execution, ETA, failure notices. Haptic feedback on completion.
-- **Session replies** — accept/reject decisions without taking eyes off the road. Haptic micro-interactions.
+- **Hands-free voice commands** — say "Hey Google, ask DataWatch for status" and the car reads the response aloud via vehicle TTS. Supports: status, report, what failed, cost report, server status. Command parsing and response generation run server-side; Google only captures the spoken words.
+- **Live monitoring** — session counts, system vitals, and Automata status on the infotainment display. Three distraction-safe screens: Monitor, Sessions, Server picker.
+- **Quick decisions** — Yes / No / Continue / Stop buttons for session gating without touching your phone.
 - **Push notifications** — urgent alerts (P0/P1) routed to the infotainment display.
 
 **Wear OS** (on your wrist):
 - **Automata queue dashboard** — compact tile view + full-screen detail on tap. Complications for running/queued count.
-- **Voice launch** "Hey Google, send to datawatch: <prompt>" → full text capture + context + send.
+- **Private local voice — no Google, no cloud STT.** Tap to record on the watch; audio goes directly to your datawatch server and is transcribed by your own locally-running [Whisper](https://github.com/openai/whisper) instance. Nothing leaves your infrastructure. Three-tier fallback: phone relay → direct to server → on-watch STT.
 - **Tile shortcuts** — favorite Automata templates, discussion scopes, session quick-access.
 - **Ambient mode** — running Automata task progress (tap to wake detail).
 - **Health integration** — Automata task timing cross-referenced with wear activity + sleep.
