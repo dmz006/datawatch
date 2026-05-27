@@ -1140,6 +1140,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("compute_node",
 			mcpsdk.Description("v7 ComputeNode registry name. Requires llm; must appear in that LLM's compute_nodes list."),
 		),
+		mcpsdk.WithBoolean("chrome",
+			mcpsdk.Description("When true, passes --chrome to claude-code at launch (Chrome DevTools Protocol integration). Omit or false to use the default (no flag passed)."),
+		),
 	)
 }
 
@@ -1340,17 +1343,25 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	projectDir := req.GetString("project_dir", "")
 	llmRef := req.GetString("llm", "")
 	computeRef := req.GetString("compute_node", "")
+	chrome := req.GetBool("chrome", false)
 
 	// v7.0.0-alpha.21 (#259) — forward via REST when operator picked an LLM
 	// so handleStartSession runs the validation + cascade-resolve once,
 	// matching the PWA/CLI/comm paths.
-	if llmRef != "" && s.webPort > 0 {
-		body := map[string]any{"task": task, "llm": llmRef}
+	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
+	if (llmRef != "" || chrome) && s.webPort > 0 {
+		body := map[string]any{"task": task}
+		if llmRef != "" {
+			body["llm"] = llmRef
+		}
 		if computeRef != "" {
 			body["compute_node"] = computeRef
 		}
 		if projectDir != "" {
 			body["project_dir"] = projectDir
+		}
+		if chrome {
+			body["chrome"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,

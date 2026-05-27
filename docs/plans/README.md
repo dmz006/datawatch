@@ -52,7 +52,11 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
 | Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
-| GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 open (PWA browser E2E, future sprint) | |
+| GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.8.3 shipped 2026-05-26 — `--chrome` flag for Claude Chrome integration. Opt-in `*bool` pointer pattern across all 7 surfaces (REST, PWA checkbox, CLI, MCP `start_session`, comm `chrome=true`, claudecode.Backend.SetChrome, session.StartOptions.Chrome). `session_chrome` locale key in all 5 bundles. datawatch-app issue filed (Mobile-Parity + Localization Rule).
+
+v8.8.0–v8.8.2 shipped 2026-05-26 — security headers (CSP/X-Frame-Options/SRI), dashboard responsiveness (heatmap narrow mode, burn-rate strip, orbital fallback, EKG/Smoke mobile), Observer eBPF network card, docs search, OpenCode provider key management, Channel Routing 6-surface parity (BL331 gap closure), Automata Type Registry 6-surface parity, PWA e2e reform Phase 0+1. Docs: Android beta join link, Wear OS private local voice correction.
 
 v8.7.x (unreleased) — BL331 6-surface parity gap closure: Channel Routing (channel_pattern→peer_name routing) was missing PWA card, MCP tools, comm channel command, and CLI subcommand. All 4 surfaces added; 4 new locale keys in 5 bundles; unit tests for all new code.
 

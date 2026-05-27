@@ -89,14 +89,13 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.7.3](CHANGELOG.md) (2026-05-25)** — Production OpenCode: live model list, default model, search fixes, MCP channel isolation.
+**[v8.8.3](CHANGELOG.md) (2026-05-26)** — `--chrome` flag for Claude Chrome integration, security headers, dashboard responsiveness, Wear OS private local voice, Android beta.
 
-- **OpenCode live model list** — `GET /api/opencode/models` now queries the `opencode` binary at runtime. Free built-in models always appear; cloud provider models (Anthropic, OpenAI, Google) appear automatically after `opencode providers login` — no hardcoded list, no code changes needed.
-- **OpenCode default model** — `opencode.default_model` (default: `opencode/big-pickle`) pre-selected in session-start and PRD/automata dropdowns; always written to `opencode.json` at session launch. Full 6-surface config parity (YAML, REST, Settings UI, CLI, MCP, comm channel).
-- **Language Server Protocol (LSP) for OpenCode** — Select Go, TypeScript, Python, Rust, or C++ at session start; LSP config written to `opencode.json` automatically.
-- **OpenCode + Ollama multi-compute** — Compute node Ollama URL wired end-to-end through session → preLaunch hook → `opencode.json`.
-- **Search excerpt fix** (GH #93) — `SearchHit.Excerpt` now populated in all search paths; was always empty.
-- **Definitions doc ranking fix** (GH #94) — `datawatch-definitions.md` boosted 1.5× in BM25 and vector search so it ranks above howto files for content queries.
+- **`--chrome` session flag** — Opt-in flag to enable Chrome DevTools Protocol integration when starting a Claude Code session. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP `start_session`, and comm channel. Not a default; omitting the flag leaves Claude behavior unchanged.
+- **Security headers** — CSP, `X-Frame-Options`, `X-Content-Type-Options`, SRI on all CDN assets.
+- **Dashboard responsiveness** — Heatmap narrow mode, burn-rate stat strip, orbital list fallback, EKG/Smoke mobile layout.
+- **Wear OS private voice** — Audio goes directly to your datawatch server's Whisper instance. Nothing leaves your infrastructure.
+- **Android beta** — Join the Google Play beta at play.google.com/apps/internaltest/4701534579731858967 — 15 testers needed to unlock production release.
 - **MCP channel config isolation** — `CLAUDE_CONFIG_DIR` correctly injected into claude-code tmux sessions; eliminates "waiting for MCP channel" / "no MCP server configured" errors.
 
 ### v8.6 highlights
