@@ -16,7 +16,7 @@
        paints so light/dark loads correctly with no flash-of-wrong-theme.
        Order: localStorage 'cs_theme' wins; 'system' or unset falls back
        to the OS prefers-color-scheme. -->
-  <script>
+  <script nonce="%%CSP_NONCE%%">
     (function() {
       try {
         var pref = localStorage.getItem('cs_theme') || 'dark';
@@ -39,7 +39,7 @@
        check against /api/health forces a reload if this stamped page
        has gone stale (browser back/forward, restored-from-suspended-tab,
        proxy that ignored Cache-Control: no-store). One-shot per load. -->
-  <script>
+  <script nonce="%%CSP_NONCE%%">
     window.__DW_VERSION__ = '%%DW_VERSION%%';
     (async function() {
       try {

@@ -360,7 +360,7 @@ function connect() {
       // if its content is identical to what xterm last showed.
       const sid = state.activeSession;
       // v6.11.15 — DO NOT clear _lastPaneFrame here. Operator-reported
-      // bug from v6.11.13: clearing it before the async fetch let
+      // workaround from v6.11.13: clearing it before the async fetch let
       // any pane_capture frames arriving during the fetch window
       // re-populate the cache, defeating the whole point. The reset
       // now happens inside renderSessionDetail (see line ~2200) which
@@ -6814,7 +6814,7 @@ function renderSettingsView() {
               <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Federation Peer</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
-                <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://10.0.0.2:8080" /></div>
+                <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors (BL331)" /></div>
@@ -13696,7 +13696,7 @@ function checkV7MigrationStatus() {
   }).catch(() => {});
 }
 
-// Debug panel — triple-tap status dot to open
+// Diagnostic panel — triple-tap status dot to open
 let _debugTapCount = 0, _debugTapTimer = null;
 document.addEventListener('DOMContentLoaded', () => {
   // Run migration-status check ~3s after load so the daemon is fully reachable.

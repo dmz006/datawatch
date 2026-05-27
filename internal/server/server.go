@@ -3,8 +3,10 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -564,6 +566,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 					return
 				}
 				out := strings.ReplaceAll(string(body), "%%DW_VERSION%%", Version)
+				if nonce, ok := r.Context().Value(ctxKeyCSPNonce).(string); ok && nonce != "" {
+					out = strings.ReplaceAll(out, "%%CSP_NONCE%%", nonce)
+				}
 				w2.Header().Set("Content-Type", "text/html; charset=utf-8")
 				_, _ = w2.Write([]byte(out))
 			})).ServeHTTP(w, r)
@@ -1163,31 +1168,68 @@ var daemonStartedAtETag = strconv.FormatInt(time.Now().UnixNano(), 36)
 // clear cache after every daemon restart. Folding daemonStartedAt
 // into the ETag makes every restart cache-bust automatically — same
 // effect as a Version bump but free.
-// securityHeadersMiddleware adds OWASP-recommended security response headers to every
-// HTTP response. Applied once at the top-level handler so all routes are covered.
-//
-// CSP allows:
-//   - Scripts from self + the three CDNs used by index.html / diagrams.html / api-docs.html
-//   - 'unsafe-inline' is required because index.html contains small inline <script> blocks
-//     (theme detection, version-check); a future nonce-based approach can remove this.
-//   - WebSocket connections (ws: / wss:) for the live session stream.
-func securityHeadersMiddleware(next http.Handler) http.Handler {
-	const csp = "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; " +
+// ctxKey is a package-local type for context value keys to avoid collisions.
+type ctxKey int
+
+const ctxKeyCSPNonce ctxKey = 1
+
+// generateCSPNonce returns a cryptographically random base64url-encoded nonce
+// for use in Content-Security-Policy script-src directives.
+func generateCSPNonce() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "dw-static-nonce"
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// buildCSP constructs the Content-Security-Policy header value. When
+// scriptNonce is non-empty it is added to script-src so that index.html's
+// per-request inline scripts are allowed without 'unsafe-inline'.
+func buildCSP(scriptNonce string) string {
+	scriptSrc := "'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com"
+	if scriptNonce != "" {
+		scriptSrc += " 'nonce-" + scriptNonce + "'"
+	}
+	return "default-src 'self'; " +
+		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
-		"connect-src 'self' ws: wss:; " +
+		"connect-src 'self'; " +
 		"img-src 'self' data: blob:; " +
 		"font-src 'self' data:; " +
 		"worker-src 'self' blob:; " +
+		"base-uri 'self'; " +
+		"form-action 'self'; " +
+		"object-src 'none'; " +
 		"frame-ancestors 'self'"
+}
+
+// securityHeadersMiddleware adds OWASP-recommended security response headers to every
+// HTTP response. Applied once at the top-level handler so all routes are covered.
+//
+// For requests to / and /index.html a per-request CSP nonce is generated and
+// stored in the request context (ctxKeyCSPNonce) so the index handler can
+// substitute %%CSP_NONCE%% in the HTML template.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	baseCSP := buildCSP("") // no nonce for non-index routes
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		csp := baseCSP
+		ctx := r.Context()
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			nonce := generateCSPNonce()
+			csp = buildCSP(nonce)
+			ctx = context.WithValue(ctx, ctxKeyCSPNonce, nonce)
+		}
 		h := w.Header()
 		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-		next.ServeHTTP(w, r)
+		h.Set("Cross-Origin-Embedder-Policy", "unsafe-none")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=()")
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
