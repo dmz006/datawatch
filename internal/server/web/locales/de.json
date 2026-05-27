@@ -632,6 +632,7 @@
   "new_session_no_profile": "Standard (kein Profil)",
   "new_session_perm_default": "Berechtigungsmodus: (Konfigurationsstandard)",
   "new_session_permission_mode_label": "Berechtigungsmodus",
+  "session_chrome": "Chrome-Integration",
   "new_session_pick_server": "Server auswählen",
   "new_session_profile_label": "Profil",
   "new_session_recent_sessions": "Letzte Sitzungen",

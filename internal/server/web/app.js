@@ -5143,6 +5143,9 @@ function renderNewSessionView() {
           <select id="sessClaudeEffort" class="form-select" style="margin-top:6px;" title="Effort level">
             <option value="">${t('new_session_effort_default')||'Effort: (config default)'}</option>
           </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px;" title="Enables Claude's browser automation via Chrome DevTools Protocol">
+            <input type="checkbox" id="newSessionChrome" /> ${t('session_chrome')||'Chrome integration'}
+          </label>
         </div>
         <!-- v8.7.0 — OpenCode-specific options: model + LSP language.
              Shown only when an opencode/opencode-acp LLM is selected. -->
@@ -5902,6 +5905,9 @@ function submitNewSession() {
     model: document.getElementById('sessOpenCodeModel')?.value || document.getElementById('sessClaudeModel')?.value || '',
     lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
+  // v8.8.3 — Chrome integration: only send chrome:true when checked; omit field otherwise.
+  const chromeEl = document.getElementById('newSessionChrome');
+  if (chromeEl && chromeEl.checked) payload.chrome = true;
 
   // Use REST so we get the full session object back and can navigate directly to it.
   apiFetch('/api/sessions/start', { method: 'POST', body: JSON.stringify(payload) })

@@ -1403,14 +1403,18 @@ func (r *Router) handleNew(cmd Command) {
 	// v7.0.0-alpha.21 (#259) — when operator picked an LLM (and optional
 	// ComputeNode), forward through the REST API so handleStartSession
 	// runs the same validation + cascade-resolve as the PWA/CLI paths.
+	// v8.8.3 — also forward when chrome=true is set.
 	// Otherwise fall through to the direct manager.Start (legacy path).
-	if cmd.LLMRef != "" && r.webPort > 0 {
+	if (cmd.LLMRef != "" || cmd.Chrome) && r.webPort > 0 {
 		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
 		if cmd.ComputeNodeRef != "" {
 			body["compute_node"] = cmd.ComputeNodeRef
 		}
 		if cmd.ProjectDir != "" {
 			body["project_dir"] = cmd.ProjectDir
+		}
+		if cmd.Chrome {
+			body["chrome"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
@@ -1433,7 +1437,12 @@ func (r *Router) handleNew(cmd Command) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir)
+	startOpts := &session.StartOptions{}
+	if cmd.Chrome {
+		t := true
+		startOpts.Chrome = &t
+	}
+	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir, startOpts)
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
 		return

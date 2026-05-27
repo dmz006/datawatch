@@ -632,6 +632,7 @@
   "new_session_no_profile": "Predeterminado (sin perfil)",
   "new_session_perm_default": "Modo de permisos: (predeterminado de configuración)",
   "new_session_permission_mode_label": "Modo de permisos",
+  "session_chrome": "Integración con Chrome",
   "new_session_pick_server": "Selecciona un servidor",
   "new_session_profile_label": "Perfil",
   "new_session_recent_sessions": "Sesiones recientes",

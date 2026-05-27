@@ -37,6 +37,9 @@ type Backend struct {
 	// effort (v5.27.5) — passed to claude as `--effort <value>`.
 	// One of: low | medium | high | xhigh | max. Empty = default.
 	effort string
+	// chrome (v8.8.3) — when non-nil, passes --chrome (true) or
+	// --no-chrome (false) to claude at launch. Nil = omit flag.
+	chrome *bool
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -66,6 +69,10 @@ func (b *Backend) SetModel(model string) { b.model = model }
 
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
+
+// SetChrome (v8.8.3) — passes --chrome or --no-chrome to claude at launch.
+// Nil means neither flag is passed (let claude use its default).
+func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
 
 func (b *Backend) Name() string                  { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
@@ -141,6 +148,13 @@ func (b *Backend) postFlagsStr() string {
 	}
 	if b.sessionName != "" {
 		flags += " --name " + shellQuote(b.sessionName)
+	}
+	if b.chrome != nil {
+		if *b.chrome {
+			flags += " --chrome"
+		} else {
+			flags += " --no-chrome"
+		}
 	}
 	return flags
 }

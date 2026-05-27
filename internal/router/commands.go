@@ -333,6 +333,10 @@ type Command struct {
 	LLMRef         string
 	ComputeNodeRef string
 
+	// Chrome (v8.8.3) — parsed from "new: chrome=true: <task>".
+	// When true, --chrome is forwarded to claude-code at launch.
+	Chrome bool
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -405,14 +409,16 @@ func Parse(text string) Command {
 			}
 		}
 		// v7.0.0-alpha.21 (#259) — "new: llm=<name> [compute=<node>]: <task>"
+		// v8.8.3 — extended with chrome=true.
 		// Strip leading key=value tokens before the ": <task>" separator.
-		// Recognised keys: llm, compute. Unknown keys are left alone (the
-		// entire prefix becomes part of the task), preserving back-compat.
-		if (strings.HasPrefix(rest, "llm=") || strings.HasPrefix(rest, "compute=")) && strings.Contains(rest, ": ") {
+		// Recognised keys: llm, compute, chrome. Unknown keys are left alone
+		// (the entire prefix becomes part of the task), preserving back-compat.
+		if (strings.HasPrefix(rest, "llm=") || strings.HasPrefix(rest, "compute=") || strings.HasPrefix(rest, "chrome=")) && strings.Contains(rest, ": ") {
 			idx := strings.Index(rest, ": ")
 			prefix := rest[:idx]
 			tail := strings.TrimSpace(rest[idx+2:])
 			llmRef, computeRef := "", ""
+			chrome := false
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -420,16 +426,21 @@ func Parse(text string) Command {
 					llmRef = strings.TrimPrefix(tok, "llm=")
 				case strings.HasPrefix(tok, "compute="):
 					computeRef = strings.TrimPrefix(tok, "compute=")
+				case tok == "chrome=true":
+					chrome = true
+				case tok == "chrome=false":
+					// explicit false → leave chrome=false, still valid
 				default:
 					ok = false
 				}
 			}
-			if ok && llmRef != "" {
+			if ok && (llmRef != "" || chrome) {
 				return Command{
 					Type:           CmdNew,
 					Text:           tail,
 					LLMRef:         llmRef,
 					ComputeNodeRef: computeRef,
+					Chrome:         chrome,
 				}
 			}
 		}

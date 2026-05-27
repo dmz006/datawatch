@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.3 — feat: --chrome flag for Claude Chrome integration (2026-05-26)
+
+### Added
+
+- **`--chrome` flag for session start** (all 7 surfaces): Opt-in flag to launch a Claude Code session with Chrome integration enabled (`--chrome`) or explicitly disabled (`--no-chrome`). Defaults to omitting the flag entirely (nil pointer pattern) so operator deployments are unaffected. Surfaces: CLI (`datawatch session start --chrome`), REST API (`chrome: true` in JSON body), PWA (unchecked checkbox in session start advanced options), MCP (`chrome` param on `start_session` tool), comm channel (`chrome=true` key-value), YAML config, and router passthrough.
+
+---
+
 ## v8.8.2 — Docs: correct Android Auto + Wear OS voice descriptions (2026-05-26)
 
 ### Docs

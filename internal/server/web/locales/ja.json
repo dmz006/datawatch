@@ -632,6 +632,7 @@
   "new_session_no_profile": "デフォルト（プロファイルなし）",
   "new_session_perm_default": "権限モード: (設定デフォルト)",
   "new_session_permission_mode_label": "権限モード",
+  "session_chrome": "Chrome統合",
   "new_session_pick_server": "サーバーを選択",
   "new_session_profile_label": "プロファイル",
   "new_session_recent_sessions": "最近のセッション",

@@ -103,7 +103,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.8.2"
+var Version = "8.8.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7104,7 +7104,8 @@ func newSessionCmd() *cobra.Command {
 			backend, _ := cmd.Flags().GetString("backend")
 			llm, _ := cmd.Flags().GetString("llm")
 			compute, _ := cmd.Flags().GetString("compute")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute)
+			chrome, _ := cmd.Flags().GetBool("chrome")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -7112,6 +7113,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().String("backend", "", "LLM backend to use (overrides config; e.g. claude-code, aider) — legacy v6; v7 prefers --llm")
 	newCmd.Flags().String("llm", "", "v7 LLM registry name (e.g. ollama). Overrides --backend.")
 	newCmd.Flags().String("compute", "", "v7 ComputeNode registry name. Requires --llm; must be in that LLM's compute_nodes list.")
+	newCmd.Flags().Bool("chrome", false, "Enable Claude Chrome integration (--chrome flag)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -7651,7 +7653,7 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool) error {
 	// Try the structured HTTP API first
 	type startReq struct {
 		Task        string `json:"task"`
@@ -7660,8 +7662,14 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		Name        string `json:"name,omitempty"`
 		LLM         string `json:"llm,omitempty"`
 		ComputeNode string `json:"compute_node,omitempty"`
+		Chrome      *bool  `json:"chrome,omitempty"`
 	}
-	body, _ := json.Marshal(startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute})
+	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute}
+	if chrome {
+		t := true
+		req.Chrome = &t
+	}
+	body, _ := json.Marshal(req)
 	resp, err := http.Post(
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		"application/json", bytes.NewReader(body))

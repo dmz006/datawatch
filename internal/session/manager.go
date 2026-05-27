@@ -1216,6 +1216,10 @@ type StartOptions struct {
 	// OllamaURL (v8.7.1) — resolved Ollama base URL for ollama/* models on
 	// a compute node. Written to opencode.json at launch.
 	OllamaURL string
+
+	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
+	// to claude-code at launch. Nil = omit flag (use claude default).
+	Chrome *bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1497,6 +1501,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if opt.ClaudeEffort != "" {
 			if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
 				em.SetEffort(opt.ClaudeEffort)
+			}
+		}
+		if opt.Chrome != nil {
+			if cm, ok := backendObj.(interface{ SetChrome(bool) }); ok {
+				cm.SetChrome(*opt.Chrome)
 			}
 		}
 	}

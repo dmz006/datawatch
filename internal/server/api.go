@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.2"
+var Version = "8.8.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3190,6 +3190,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// LSPLanguage (v8.7.0) — language server preset for OpenCode sessions.
 		// Must match a key in cfg.LSP.Servers. Empty = no LSP.
 		LSPLanguage string `json:"lsp_language,omitempty"`
+		// Chrome (v8.8.3) — pass --chrome or --no-chrome to claude-code.
+		// Nil/absent = omit flag.
+		Chrome *bool `json:"chrome,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -3454,6 +3457,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		OneShot:            req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
 		LSPLanguage:        req.LSPLanguage,
 		OllamaURL:          resolvedOllamaURL,
+		Chrome:             req.Chrome,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
