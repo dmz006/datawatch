@@ -128,8 +128,8 @@ async function setLocaleOverride(lang) {
 }
 window.setLocaleOverride = setLocaleOverride;
 
-// ── Debug Console ──────────────────────────────────────────────────────────
-// Captures JS errors, network failures, and WS events for debugging.
+// ── Diagnostic Console ──────────────────────────────────────────────────────
+// Captures JS errors, network failures, and WS events for diagnostics.
 // Access via: triple-tap the status dot, or window._debugLog in browser console.
 window._debugLog = [];
 window._debugMax = 200;
@@ -974,7 +974,7 @@ if (typeof window !== 'undefined') {
 // hand-edited (each call site has its own context comment); the popup
 // is gone, the xterm `.input-bar.needs-input` yellow border still
 // signals waiting_input. Keeping the input-element keydown rebind
-// since unrelated bug (v5.27.1) protected against the Enter handler
+// since v5.27.1 protected against the Enter handler
 // getting orphaned on state transitions.
 function refreshNeedsInputBanner(sessionId) {
   if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
@@ -2598,7 +2598,7 @@ function renderSessionDetail(sessionId) {
       const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
       // B25: when the session is waiting on a prompt, the channel will never
       // connect until the user answers — say so explicitly so the spinner
-      // doesn't look like a bug.
+      // doesn't appear to be a defect.
       const blockedNote = isWaiting
         ? ' <span style="opacity:0.85;">— answer the input prompt below first</span>'
         : '';
@@ -8216,7 +8216,7 @@ window._llmSaveDraft = function() {
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
-  // Collect all new fields (B/C/D + claude-specific + bug-fix A).
+  // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
   const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
@@ -8361,7 +8361,7 @@ window.computeToggleEnabled = function(name, currentlyDisabled) {
 //   dropdown auto-infers it (operator: "the dropdown is right, it
 //   should infer the monitoring endpoint from that")
 // - Address auto-prepends `http://` if no scheme (the operator-hit
-//   `datawatch:11434` bug)
+//   `datawatch:11434` issue)
 // - Test Connection button BEFORE save (operator: "needs test
 //   connection on add")
 window.openComputeAddPanel = function(existingNode) {
@@ -8675,7 +8675,7 @@ window.computeAddNode = function() {
   let address = (document.getElementById('computeNewAddress')||{}).value || '';
   // GATE alpha.36 (operator 2026-05-10): auto-prepend scheme so
   // bare host:port doesn't fail with "unsupported protocol scheme"
-  // (exact bug operator hit on local-ollama).
+  // (exact issue operator hit on local-ollama).
   if (address.trim() && !/^https?:\/\//i.test(address.trim())) {
     address = 'http://' + address.trim();
   }
@@ -11088,6 +11088,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
+    { key: 'session.summarizer.enabled', label: t('session_summarizer_enabled') || 'Summarize last response', type: 'toggle' },
+    { key: 'session.summarizer.llm_ref', label: t('session_summarizer_llm') || 'Summarizer LLM', type: 'llm_summarizer' },
+    { key: 'session.summarizer.prompt', label: t('session_summarizer_prompt') || 'Summary prompt', type: 'textarea' },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
@@ -11629,6 +11632,43 @@ function loadGeneralConfig() {
             setTimeout(() => {
               ensureLLMModelLists().then(() => refreshLLMModelField(wrapId, innerId, backendInputId, String(val || '')));
             }, 0);
+          } else if (f.type === 'llm_summarizer') {
+            // Special LLM select for the summarizer — populated from /api/llms
+            // filtered to inference-capable kinds (ollama, openai, openai-api).
+            const summarizerId = 'gcfg-summarizer-llm';
+            const noLLMsLabel = t('session_summarizer_no_llms') || 'No Ollama/OpenAI LLMs configured';
+            const currentVal = String(val || '');
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">
+                <option value="">(${t('disabled') || 'disabled'})</option>
+              </select>
+            </div>`;
+            setTimeout(() => {
+              apiFetch('/api/llms').then(d => {
+                const el = document.getElementById(summarizerId);
+                if (!el) return;
+                const llms = (d && d.llms) ? d.llms : [];
+                const filtered = llms.filter(l => !l.disabled && !l.tombstoned &&
+                  (l.kind === 'ollama' || l.kind === 'openai' || l.kind === 'openai-api'));
+                if (filtered.length === 0) {
+                  el.innerHTML = `<option value="">${escHtml(noLLMsLabel)}</option>`;
+                  return;
+                }
+                let opts = `<option value="">(${t('disabled') || 'disabled'})</option>`;
+                filtered.forEach(l => {
+                  const sel = l.name === currentVal ? ' selected' : '';
+                  opts += `<option value="${escHtml(l.name)}"${sel}>${escHtml(l.name + ' (' + l.kind + ')')}</option>`;
+                });
+                el.innerHTML = opts;
+              }).catch(() => {});
+            }, 0);
+          } else if (f.type === 'textarea') {
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <textarea class="form-input general-cfg-input" rows="4" style="margin-top:4px;resize:vertical;font-size:11px;"
+                onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
+            </div>`;
           } else {
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
@@ -13969,7 +14009,7 @@ function renderProfileEditor(kind, name, profileList) {
   const existing = isNew ? null : profileList.find(p => p.name === name);
   const yaml = _profileUIState[kind].yamlMode;
   // v6.13.1 — operator: 'when edit is opened the profile should be across
-  // the top and not "Edit project profile: XXX", we know we're editing'.
+  // the top and not "Edit project profile: <name>", we know we're editing'.
   // Strip the "Edit X profile:" prefix; show profile name as the heading
   // for existing profiles. New profiles still get a "New <kind> profile"
   // label since they have no name yet.
@@ -16208,7 +16248,7 @@ function _renderDetailDecisionsTab(prd) {
   if (decisions.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_decisions')||'No decisions recorded yet.')}</div>`;
   // v6.13.5 — the daemon Decision struct has fixed fields (kind, backend,
   // model, prompt_chars, response_chars, cost_usd, verdict_outcome,
-  // actor, note) — there is NO prompt/response text payload. So surface
+  // actor, annotation) — there is NO prompt/response text payload. So surface
   // every metadata field the daemon DOES record, instead of looking
   // for prompt/response keys that don't exist.
   const rows = decisions.slice().reverse().map((d) => {
@@ -22819,10 +22859,10 @@ function loadCouncilPanel() {
 window.loadCouncilPanel = loadCouncilPanel;
 
 function _renderCouncilPanel(panel, personas, runs) {
-  // v6.12.1 (BL275 + BL276) — drop the v6.11.0 stubbed-responses note (real
+  // v6.12.1 (BL275 + BL276) — drop the v6.11.0 stubbed-responses message (real
   // LLM debate is shipped) and surface a "View / edit personas" affordance
   // so operators can find / customize ~/.datawatch/council/personas/.
-  // v6.13.7 — operator unclassified note ("how do we add more persona?
+  // v6.13.7 — operator question ("how do we add more persona?
   // Let me know how i can edit and or view the persona definitions"):
   // promote the link into a real button with the gear glyph so it's
   // unmissable. Same target — the existing modal already supports

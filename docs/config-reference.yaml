@@ -65,6 +65,18 @@ session:
   console_cols: 0
   # Default terminal height (rows) for new sessions (0 = 24)
   console_rows: 0
+  # Response summarizer — when enabled, the last captured session response
+  # is summarized via the referenced LLM after the session completes or
+  # transitions to waiting_input. The summary is available via
+  # GET /api/sessions/{id}/last-summary and the session_summarize MCP tool.
+  summarizer:
+    # Enable automatic summarization on session completion.
+    enabled: false
+    # LLM backend reference (must be an Ollama or OpenAI-compatible LLM).
+    # Leave empty to use the first available compatible LLM.
+    llm_ref: ""
+    # System/instruction prompt. Leave empty to use the built-in default.
+    prompt: ""
 
 # ── Web Server ──
 # HTTP/WebSocket server for the PWA, REST API, and browser access.

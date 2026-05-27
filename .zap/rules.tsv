@@ -1,0 +1,52 @@
+# ZAP scan rule overrides for datawatch
+# Format: <rule_id>\t<action>\t# justification
+# Actions: IGNORE (suppress), WARN (default), FAIL (hard fail)
+#
+# Reviewed 2026-05-27. Each IGNORE below is a documented accepted risk
+# or confirmed false positive — not a suppression of a real vulnerability.
+
+# [10049] Non-Storable Content
+# index.html is intentionally served with Cache-Control: no-store so the
+# version-check script always loads the latest release. API responses also
+# carry no-store to prevent stale authentication state. Intentional.
+10049	IGNORE	Non-Storable Content — intentional no-store for version-check freshness
+
+# [10055] CSP: style-src unsafe-inline
+# app.js generates HTML via template literals that include style="" attributes
+# (e.g. dynamic width/height/color on session cards, heatmap cells, EKG
+# canvas). Removing unsafe-inline requires converting ~200 inline-style sites
+# to CSS classes — tracked as a future hardening item. script-src unsafe-inline
+# has been eliminated via per-request nonces (v8.8.4). style-src is a lower
+# risk because CSS cannot execute code.
+10055	IGNORE	CSP style-src unsafe-inline — accepted; dynamic HTML templates use style="" attrs; script-src is nonce-protected
+
+# [10094] Base64 Disclosure
+# SRI integrity="" attributes on CDN <script> and <link> tags contain SHA-384
+# hashes encoded as base64. These are security features (subresource integrity),
+# not sensitive data. ZAP cannot distinguish SRI hashes from secret content.
+10094	IGNORE	Base64 Disclosure — false positive; values are SRI integrity hashes on CDN assets
+
+# [10109] Modern Web Application
+# Informational finding. ZAP detected that the PWA is a modern single-page
+# application. Not a vulnerability.
+10109	IGNORE	Modern Web Application — informational only; not a vulnerability
+
+# [10112] Session Management Response Identified
+# ZAP detected session-management behaviour in API responses (session IDs in
+# JSON). This is expected and intentional for the session management API.
+10112	IGNORE	Session Management Response — expected; datawatch API returns session IDs by design
+
+# [90004] Cross-Origin-Embedder-Policy on CDN resources
+# datawatch sets COEP: unsafe-none on all server responses (v8.8.4). ZAP also
+# scans the CDN domains (cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com)
+# which are third-party and outside operator control. The datawatch server
+# itself correctly sets COEP.
+90004	IGNORE	COEP on CDN resources — third-party CDNs outside operator control; datawatch server sets COEP: unsafe-none
+
+# [90005] Sec-Fetch-* Headers Missing
+# Sec-Fetch-Dest/Mode/Site are browser-sent request headers. ZAP's finding
+# means the server does not validate these headers to reject cross-origin
+# requests. The PWA operates same-origin; frame-ancestors 'self' in CSP
+# prevents cross-origin embedding. Adding Sec-Fetch validation is a future
+# hardening item (defence-in-depth, not a current exploit path).
+90005	IGNORE	Sec-Fetch-* Missing — server-side validation is defence-in-depth; CSP frame-ancestors guards embedding

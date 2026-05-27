@@ -313,6 +313,16 @@ type Manager struct {
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
+
+	// summaries stores the last generated summary per session ID.
+	// Access is protected by the summariesMu mutex.
+	summariesMu sync.Mutex
+	summaries   map[string]SessionSummary
+
+	// summarizeFn, when non-nil, is called asynchronously when a session
+	// transitions to completed or waiting_input to generate a short summary.
+	// Set via SetSummarizer.
+	summarizeFn func(ctx context.Context, text string) (string, error)
 }
 
 // NewManager creates a new session Manager.
@@ -359,6 +369,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
+		summaries:        make(map[string]SessionSummary),
 	}, nil
 }
 
@@ -366,6 +377,63 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 // with. Used by external packages (server REST handlers, CLI) to
 // resolve relative session paths under <dataDir>/sessions/.
 func (m *Manager) DataDir() string { return m.dataDir }
+
+// SessionSummary holds a generated summary for a session's last response.
+type SessionSummary struct {
+	SessionID   string    `json:"session_id"`
+	Summary     string    `json:"summary"`
+	GeneratedAt time.Time `json:"generated_at"`
+}
+
+// StoreSummary stores a summary for the given session ID.
+func (m *Manager) StoreSummary(id string, s SessionSummary) {
+	m.summariesMu.Lock()
+	defer m.summariesMu.Unlock()
+	m.summaries[id] = s
+}
+
+// GetSummary retrieves the stored summary for the given session ID.
+// Returns the summary and true if found, or zero value and false if not.
+func (m *Manager) GetSummary(id string) (SessionSummary, bool) {
+	m.summariesMu.Lock()
+	defer m.summariesMu.Unlock()
+	s, ok := m.summaries[id]
+	return s, ok
+}
+
+// SetSummarizer wires a function that will be called asynchronously to
+// summarize session output on completion or waiting_input transitions.
+// Pass nil to disable. The function follows the same signature as
+// summarizer.Service.Summarize so the caller can set it directly.
+func (m *Manager) SetSummarizer(fn func(ctx context.Context, text string) (string, error)) {
+	m.summarizeFn = fn
+}
+
+// triggerSummarize asynchronously generates a summary for the last N lines
+// of a session's output and stores it. Silently returns if no summarizer is
+// configured or the session output cannot be read.
+func (m *Manager) triggerSummarize(fullID string, lines int) {
+	if m.summarizeFn == nil {
+		return
+	}
+	go func() {
+		text, err := m.TailOutput(fullID, lines)
+		if err != nil || strings.TrimSpace(text) == "" {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		defer cancel()
+		summary, err := m.summarizeFn(ctx, text)
+		if err != nil || strings.TrimSpace(summary) == "" {
+			return
+		}
+		m.StoreSummary(fullID, SessionSummary{
+			SessionID:   fullID,
+			Summary:     summary,
+			GeneratedAt: time.Now(),
+		})
+	}()
+}
 
 // ReapOrphanWorkspaces removes <dataDir>/workspaces/ subdirectories
 // that no live session references. Daemon-side closure for the
@@ -1721,6 +1789,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 												m.onResponseCaptured(s, resp)
 											}
 										}
+										m.triggerSummarize(s.FullID, 200)
 									}(current)
 								}
 							}
@@ -1775,6 +1844,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								if m.onSessionEnd != nil {
 									m.onSessionEnd(current)
 								}
+								m.triggerSummarize(current.FullID, 200)
 								return
 							}
 						}
@@ -1819,6 +1889,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							if m.onSessionEnd != nil {
 								m.onSessionEnd(current)
 							}
+							m.triggerSummarize(current.FullID, 200)
 							return
 						}
 					}

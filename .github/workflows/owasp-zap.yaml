@@ -104,6 +104,8 @@ jobs:
         with:
           target: "http://${{ inputs.target_host || 'localhost:18080' }}/"
           cmd_options: '-a -j -m 5'
+          # .zap/rules.tsv documents accepted risks + confirmed false positives.
+          rules_file_name: '.zap/rules.tsv'
           fail_action: true
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — PWA baseline'
@@ -118,6 +120,7 @@ jobs:
           # checkout has the raw file. Pass the local path so ZAP
           # doesn't have to fetch it from the daemon.
           api_definition: 'docs/api/openapi.yaml'
+          rules_file_name: '.zap/rules.tsv'
           fail_action: true
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — API scan'
@@ -129,6 +132,7 @@ jobs:
         with:
           target: "http://${{ inputs.target_host || 'localhost:18080' }}/diagrams.html"
           cmd_options: '-a -j -m 3'
+          rules_file_name: '.zap/rules.tsv'
           fail_action: false  # diagrams is largely static; advisory
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — diagrams.html baseline'

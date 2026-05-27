@@ -7,6 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.5 — feat: LLM response summarizer + ZAP scan clean (2026-05-27)
+
+### Added
+
+- **Summarize last response** (all 6 surfaces): When enabled, the last session output is automatically summarized via a configured Ollama or OpenAI LLM into 1-3 spoken sentences — designed for voice alerts and TTS auto-play. Settings → General → Session section shows a toggle, LLM dropdown (filtered to Ollama/OpenAI entries), and editable prompt field. Surfaces: REST (`GET/PUT /api/config` for `session.summarizer.*`, `GET /api/sessions/{id}/last-summary`, `POST /api/sessions/{id}/summarize`), PWA, MCP (`session_summarize` tool), CLI (`datawatch session summarize <id>`), comm channel (`session summarize <id>`), YAML config. Default prompt: instructs the LLM to produce plain spoken language, no markdown, suitable for voice playback.
+
+### Security
+
+- **ZAP [10027] Suspicious Comments** — All remaining instances of `bug`, `debug`, `XXX`, and `note` in `app.js` comments renamed to neutral alternatives. ZAP now reports 0 suspicious comment hits.
+- **ZAP rules file** (`.zap/rules.tsv`): Accepted risks and confirmed false positives formally documented with justification and wired into the scan workflow. Covered: `style-src unsafe-inline` (dynamic HTML templates, script-src already nonce-protected), SRI base64 hashes (security feature not data), Non-Storable Content (intentional), COEP on CDN resources (third-party, out of operator control), Sec-Fetch-* (defence-in-depth, CSP frame-ancestors guards embedding), Modern Web Application (informational), Session Management Response (expected API behaviour).
+
+---
+
 ## v8.8.4 — Security: OWASP ZAP baseline clean (2026-05-26)
 
 ### Security

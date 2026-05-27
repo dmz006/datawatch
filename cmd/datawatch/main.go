@@ -94,6 +94,7 @@ import (
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
+	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
 	memoryPkg "github.com/dmz006/datawatch/internal/memory"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
@@ -103,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.8.4"
+var Version = "8.8.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2901,6 +2902,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+
+				// BL-summarizer — wire response summarizer when enabled.
+				if cfg.Session.Summarizer.Enabled {
+					sumSvc := summarizerPkg.New(cfg, llmReg)
+					mgr.SetSummarizer(func(ctx context.Context, text string) (string, error) {
+						return sumSvc.Summarize(ctx, text)
+					})
+					httpServer.SetSummarizerSvc(sumSvc)
+				}
+
 				// BL309 — pipeline executor resolves named LLMs (e.g. "ollama-datawatch")
 				// to their adapter kind via the inference registry.
 				if pipeManagerAdapter != nil {
@@ -7382,6 +7393,22 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session summarize <session-id> [--lines N]
+	summarizeCmd := &cobra.Command{
+		Use:   "summarize <session-id>",
+		Short: "Summarize the last session output using the configured LLM",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			lines, _ := cmd.Flags().GetInt("lines")
+			if lines <= 0 {
+				lines = 200
+			}
+			return runSessionSummarize(args[0], lines)
+		},
+	}
+	summarizeCmd.Flags().Int("lines", 200, "Number of output lines to summarize")
+	sessionCmd.AddCommand(summarizeCmd)
+
 	return sessionCmd
 }
 
@@ -8210,6 +8237,38 @@ func runSessionImport(cfg *config.Config, dirOrID string) error {
 	} else {
 		fmt.Printf("Already in registry: %s (state=%s)\n", sess.FullID, sess.State)
 	}
+	return nil
+}
+
+// runSessionSummarize calls POST /api/sessions/{id}/summarize on the running
+// daemon and prints the generated summary.
+func runSessionSummarize(id string, lines int) error {
+	body, _ := json.Marshal(map[string]int{"lines": lines})
+	req, err := http.NewRequest(http.MethodPost, daemonURL()+fmt.Sprintf("/api/sessions/%s/summarize", id), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := daemonToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := daemonClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	var v struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(respBody, &v); err != nil {
+		fmt.Println(string(respBody))
+		return nil
+	}
+	fmt.Println(v.Summary)
 	return nil
 }
 

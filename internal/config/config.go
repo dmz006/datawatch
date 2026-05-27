@@ -1318,6 +1318,15 @@ type SessionConfig struct {
 	// task runners override this to true per-session via the start API
 	// "one_shot" field regardless of this setting.
 	OneShotSessions bool `yaml:"one_shot_sessions,omitempty"`
+
+	// ResponseSummarizer — when Enabled, the last captured session
+	// response is summarized via the referenced LLM before use in
+	// alerts and TTS auto-play.
+	Summarizer struct {
+		Enabled bool   `yaml:"enabled" json:"enabled"`
+		LLMRef  string `yaml:"llm_ref" json:"llm_ref"`
+		Prompt  string `yaml:"prompt"  json:"prompt"`
+	} `yaml:"summarizer" json:"summarizer"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.

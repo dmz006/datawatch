@@ -205,6 +205,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/prompt", api.handleSessionPrompt)
 	apiMux.HandleFunc("/api/sessions/reconcile", api.handleSessionReconcile) // BL93
 	apiMux.HandleFunc("/api/sessions/import", api.handleSessionImport)       // BL94
+	// Response summarizer endpoints — path contains session ID as segment.
+	// Registered before the catch-all /api/sessions/ so the exact suffix wins.
+	apiMux.HandleFunc("/api/sessions/", api.handleSessionSubpath) // catch-all for /{id}/last-summary + /{id}/summarize
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	// v5.27.9 (BL213, datawatch#31) — mobile companion BL21 spec
@@ -732,6 +735,11 @@ func (s *HTTPServer) SetMemoryBackend(b memory.Backend) {
 
 func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
 	s.api.SetAgentManager(m)
+}
+
+// SetSummarizerSvc wires the response summarizer into the REST handler.
+func (s *HTTPServer) SetSummarizerSvc(svc SummarizerSvc) {
+	s.api.SetSummarizerSvc(svc)
 }
 
 // SetAgentAuditPath (BL107) wires the on-disk audit file path so the

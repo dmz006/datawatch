@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.4"
+var Version = "8.8.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -250,6 +250,10 @@ type Server struct {
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg  *inference.Registry
 	inferenceDisp *inference.Dispatcher
+
+	// summarizerSvc is the response summarizer (nil when disabled).
+	// Wired from main.go after daemon init via SetSummarizerSvc.
+	summarizerSvc SummarizerSvc
 
 	// v7.0.0 S4 — SSE hub for live-update streams (council events,
 	// future automata progress, observer peer state, etc.).
@@ -585,6 +589,15 @@ type AutonomousAPI interface {
 
 // SetAutonomousAPI is the wiring entry point used by main.go.
 func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
+
+// SummarizerSvc is the interface for the response summarizer.
+// The summarizer package implements this with Service.Summarize.
+type SummarizerSvc interface {
+	Summarize(ctx context.Context, text string) (string, error)
+}
+
+// SetSummarizerSvc wires the response summarizer into the server.
+func (s *Server) SetSummarizerSvc(svc SummarizerSvc) { s.summarizerSvc = svc }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
 	s := &Server{
@@ -2946,6 +2959,118 @@ func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"prompt": sess.LastInput, "session_id": id}) //nolint:errcheck
 }
 
+// handleSessionSubpath is a catch-all dispatcher for session sub-paths like
+// /api/sessions/{id}/last-summary and /api/sessions/{id}/summarize.
+func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	if strings.HasSuffix(path, "/last-summary") {
+		s.handleSessionLastSummary(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/summarize") {
+		s.handleSessionSummarize(w, r)
+		return
+	}
+	http.Error(w, "not found", http.StatusNotFound)
+}
+
+// handleSessionLastSummary returns the stored summary for a session.
+// GET /api/sessions/{id}/last-summary
+func (s *Server) handleSessionLastSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Parse session ID from path: /api/sessions/<id>/last-summary
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id := strings.TrimSuffix(path, "/last-summary")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	// Resolve short ID to full ID.
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	sum, ok := s.manager.GetSummary(sess.FullID)
+	if !ok {
+		http.Error(w, "no summary available", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sum) //nolint:errcheck
+}
+
+// handleSessionSummarize triggers on-demand summarization of a session's output.
+// POST /api/sessions/{id}/summarize
+// Body (optional): {"lines": 200}
+func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Parse session ID from path: /api/sessions/<id>/summarize
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id := strings.TrimSuffix(path, "/summarize")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	var reqBody struct {
+		Lines int `json:"lines"`
+	}
+	reqBody.Lines = 200
+	if r.Body != nil {
+		json.NewDecoder(r.Body).Decode(&reqBody) //nolint:errcheck
+	}
+	if reqBody.Lines <= 0 {
+		reqBody.Lines = 200
+	}
+
+	if s.summarizerSvc == nil {
+		http.Error(w, "summarizer not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	text, err := s.manager.TailOutput(sess.FullID, reqBody.Lines)
+	if err != nil {
+		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	summary, err := s.summarizerSvc.Summarize(ctx, text)
+	if err != nil {
+		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sum := session.SessionSummary{
+		SessionID:   sess.FullID,
+		Summary:     summary,
+		GeneratedAt: time.Now(),
+	}
+	s.manager.StoreSummary(sess.FullID, sum)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sum) //nolint:errcheck
+}
+
 func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
@@ -3969,6 +4094,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"console_cols":      s.cfg.Session.ConsoleCols,
 				"console_rows":      s.cfg.Session.ConsoleRows,
 				"log_level":         s.cfg.Session.LogLevel,
+				"summarizer.enabled": s.cfg.Session.Summarizer.Enabled,
+				"summarizer.llm_ref": s.cfg.Session.Summarizer.LLMRef,
+				"summarizer.prompt":  s.cfg.Session.Summarizer.Prompt,
 			}
 			// v7.0.0: claude-code settings moved to LLM registry.
 			// Read from registry when available for API back-compat.
@@ -4481,6 +4609,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }
 		case "session.console_rows":
 			if n, ok := toInt(v); ok { cfg.Session.ConsoleRows = n }
+		case "session.summarizer.enabled":
+			cfg.Session.Summarizer.Enabled = toBool(v)
+		case "session.summarizer.llm_ref":
+			cfg.Session.Summarizer.LLMRef = toString(v)
+		case "session.summarizer.prompt":
+			cfg.Session.Summarizer.Prompt = toString(v)
 		case "server.host":
 			if s := toString(v); s != "" {
 				cfg.Server.Host = s

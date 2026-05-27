@@ -353,8 +353,8 @@ type Command struct {
 	BindAgentID string // empty means unbind
 
 	// BL93/BL94 — CmdSession fields.
-	SessionVerb string // "reconcile" | "import"
-	SessionArg  string // for reconcile: "apply" | ""; for import: the dir/id
+	SessionVerb string // "reconcile" | "import" | "summarize"
+	SessionArg  string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id
 
 	// Sprint Sx2 — CmdRest fields.
 	//   Method:  GET | POST | PUT | DELETE
@@ -377,6 +377,7 @@ type Command struct {
 const (
 	SessionVerbReconcile = "reconcile"
 	SessionVerbImport    = "import"
+	SessionVerbSummarize = "summarize"
 )
 
 // Parse parses a Signal message text into a Command.
@@ -599,7 +600,7 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
 		parts := strings.Fields(rest)
 		if len(parts) < 1 {
-			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id>"}
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id>"}
 		}
 		verb := strings.ToLower(parts[0])
 		cmd := Command{Type: CmdSession, SessionVerb: verb}
@@ -612,6 +613,13 @@ func Parse(text string) Command {
 		case SessionVerbImport:
 			if len(parts) < 2 {
 				cmd.Text = "import requires a session dir or id"
+				return cmd
+			}
+			cmd.SessionArg = parts[1]
+			return cmd
+		case SessionVerbSummarize:
+			if len(parts) < 2 {
+				cmd.Text = "summarize requires a session id"
 				return cmd
 			}
 			cmd.SessionArg = parts[1]

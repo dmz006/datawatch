@@ -217,6 +217,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL93/BL94 — orphan session reconciliation + import.
 	mcpSrv.AddTool(s.toolSessionReconcile(), tracked(s.handleSessionReconcile))
 	mcpSrv.AddTool(s.toolSessionImport(), tracked(s.handleSessionImport))
+	// Response summarizer.
+	mcpSrv.AddTool(s.toolSessionSummarize(), tracked(s.handleSessionSummarize))
 	// BL107 — agent audit query.
 	mcpSrv.AddTool(s.toolAgentAudit(), tracked(s.handleAgentAudit))
 	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
@@ -938,6 +940,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolStopAllSessions, "stop_all_sessions"},
 		{s.toolSessionReconcile, "session_reconcile"},
 		{s.toolSessionImport, "session_import"},
+		{s.toolSessionSummarize, "session_summarize"},
 		{s.toolAgentAudit, "agent_audit"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
@@ -1165,6 +1168,19 @@ func (s *Server) toolSessionTimeline() mcpsdk.Tool {
 		mcpsdk.WithString("session_id",
 			mcpsdk.Required(),
 			mcpsdk.Description("Session ID"),
+		),
+	)
+}
+
+func (s *Server) toolSessionSummarize() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_summarize",
+		mcpsdk.WithDescription("Summarize the last N lines of session output using the configured LLM. Returns a short spoken-language summary suitable for voice notifications or alerts."),
+		mcpsdk.WithString("session_id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID)"),
+		),
+		mcpsdk.WithNumber("lines",
+			mcpsdk.Description("Number of output lines to summarize (default: 200)"),
 		),
 	)
 }
@@ -1439,6 +1455,48 @@ func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolReque
 			sess.LastPrompt, sess.ID)
 	}
 	return mcpsdk.NewToolResultText(header+out), nil
+}
+
+func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+	}
+	n := req.GetInt("lines", 200)
+	if n <= 0 {
+		n = 200
+	}
+
+	// Call the REST endpoint via the internal API (shared port).
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions/%s/summarize", s.webPort, id)
+	body, _ := json.Marshal(map[string]int{"lines": n})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error building request: %v", err)), nil
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+s.token)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error calling summarize: %v", err)), nil
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if resp.StatusCode != http.StatusOK {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Summarize failed (%d): %s", resp.StatusCode, string(respBody))), nil
+	}
+	var result struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return mcpsdk.NewToolResultText(string(respBody)), nil
+	}
+	if result.Summary == "" {
+		return mcpsdk.NewToolResultText("No summary generated (summarizer may not be configured or enabled)."), nil
+	}
+	return mcpsdk.NewToolResultText(result.Summary), nil
 }
 
 func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
