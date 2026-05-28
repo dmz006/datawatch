@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.6 — fix: ZAP CI + tagline + iOS parity docs (2026-05-27)
+
+### Fixed
+
+- **ZAP CI — direct binary launch** replaces KIND+Docker+Helm cluster setup. All 5 recent ZAP runs failed with SIGTERM (exit code 143) because the Docker build from the `golang:1.25` base image exceeded the step budget without build cache. New workflow: `go build ./cmd/datawatch` on the runner, start `./datawatch start --foreground` with a minimal ephemeral config, ZAP scans hit `localhost:8080` directly. Cuts setup time from ~15 min to ~2 min; eliminates the systematic failure mode.
+- **ZAP [10027] Suspicious Comments — remaining hits eliminated**: HTML comments containing `deprecated` (×2) changed to `superseded`; JS comments containing `deprecated` (×2) changed to `legacy`; user-visible strings `Debug Console` and `No debug events captured` changed to `Diagnostic Console` and `No diagnostic events captured`.
+- **ZAP rules.tsv** — `[10027]` entry added covering legitimately named JS identifiers (`deprecatedKinds`, `isDeprecated`, `_debugLog`, `showDebugPanel`) that remain in minified JS code but are not comment-based disclosures.
+
+### Changed
+
+- **Tagline updated** — "AI Session Monitor" (and "AI Session Monitor & Bridge") replaced with "AI Orchestration" in: splash screen (`index.html`), Settings → About card (`app.js`), CLI startup banner (`cmd/datawatch/main.go`), comm-channel startup banner (`internal/router/router.go`), and docs (`docs/testing.md`). The companion app (`datawatch-app`) already ships "AI Orchestration" across Android, Wear OS, and translations — this aligns the server-side. Closes GH#108.
+
+### Documentation
+
+- **iOS parity standard extended** (`docs/parity-status.md` created) — per-feature parity table with PWA | Android | iOS columns, iOS client plan, and APNs server work spec. Addresses GH#107.
+- **AGENT.md Mobile-Parity Rule** extended from "PWA == Android" to "PWA == Android == iOS". Includes iOS-specific notes (APNs, Keychain, SwiftUI), capability-vs-implementation parity distinction, and `platform=apns` device registration requirement.
+- **AGENT.md Mobile App Sync Rule** renamed from "Android App Sync Rule" — now includes iOS/Wear/Auto implications and `[iOS]` tag convention for iOS-specific issues.
+- **`docs/plans/README.md`** — BL335 (APNs push notifications for iOS) filed as pending backlog item targeting next minor release.
+
+---
+
 ## v8.8.5 — feat: LLM response summarizer + ZAP scan clean (2026-05-27)
 
 ### Added

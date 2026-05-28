@@ -73,7 +73,7 @@ When documenting a test, use this table format:
 |-------|-------|
 | Version | v0.14.5 |
 | Steps | Hard refresh (Ctrl+Shift+R), observe splash with eye logo, spinning ring, bouncing dots. Time it — 3+ seconds. |
-| Expected | Purple eye logo centered, "datawatch" title, "AI Session Monitor" subtitle, smooth fade to sessions view. |
+| Expected | Purple eye logo centered, "datawatch" title, "AI Orchestration" subtitle, smooth fade to sessions view. |
 | Result | **PASS** — 3 second minimum display, fades on connect |
 
 ## 2. Interface Binding Selector

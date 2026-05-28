@@ -446,7 +446,23 @@ through real-user UX feedback. Machine-translating ad hoc on the PWA side
 would diverge wording across clients. Mirror direction is parent ← mobile
 for translation values, parent → mobile for new key requests.
 
-## Mobile-Parity Rule (BL247-followup retrospective, 2026-05-05)
+## Mobile-Parity Rule (BL247-followup retrospective, 2026-05-05; iOS extended 2026-05-27)
+
+**Parity standard: PWA == Android == iOS.** As of v8.8.6 (issue #107), the native
+SwiftUI iOS client is under development and the parity standard extends from the
+previous PWA == Android to include iOS. See `docs/parity-status.md` for the
+per-feature parity table (PWA | Android | iOS columns).
+
+**iOS-specific notes:**
+- **Native patterns:** APNs (not FCM) for push, Keychain for credentials, WKWebView
+  for in-app browsing, SwiftUI navigation. Capability parity is required;
+  implementation parity is not — each platform uses idiomatic delivery.
+- **Push notifications:** the server supports both FCM (`platform=fcm`) and APNs
+  (`platform=apns`) device tokens via `POST /api/device/register`. APNs sending
+  is tracked as a minor-release feature (see `docs/plans/README.md` BL### APNs).
+- **API:** all REST + WebSocket endpoints are platform-neutral. No iOS-only paths.
+  If a new endpoint is added that only iOS needs, evaluate whether to expose it
+  to all clients or mark it iOS-only in the OpenAPI spec.
 
 The Localization Rule above triggers on **new strings**. Many operator-visible
 PWA changes ship without new strings (layout fixes, behavior changes, API
@@ -1220,18 +1236,19 @@ When an error, bug, or defect is found during any work (testing, auditing, revie
    - Note the issue number in the current plan doc
 4. Close the filed issue with the fix commit hash when resolved.
 
-## Android App Sync Rule
+## Mobile App Sync Rule (previously "Android App Sync Rule")
 
-**Operator-confirmed rule — 2026-05-17.**
+**Operator-confirmed rule — 2026-05-17. Extended to iOS 2026-05-27 (issue #107).**
 
 When any PWA feature, UI element, setting, or user-facing behavior is added or changed
-and it has NOT been filed as a datawatch-app issue for Android/Wear/Auto parity:
+and it has NOT been filed as a datawatch-app issue for Android/Wear/Auto/iOS parity:
 
 - File a `gh issue create` against `dmz006/datawatch-app` immediately.
 - Title format: `[sync] <feature name> — <brief description>`
-- Body: reference the daemon version, describe the PWA behavior, note any Wear/Auto implications.
+- Body: reference the daemon version, describe the PWA behavior, note any Wear/Auto/iOS implications.
+- For iOS-specific concerns (APNs, Keychain, SwiftUI navigation), add an `[iOS]` tag to the issue title.
 - This rule is in addition to the Mobile-Parity Rule (which triggers per new feature);
-  the Android Sync Rule triggers whenever *existing* features are updated in the PWA
+  the Mobile App Sync Rule triggers whenever *existing* features are updated in the PWA
   without a corresponding app issue being filed.
 
 ## Configuration Rules

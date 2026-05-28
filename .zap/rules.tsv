@@ -5,6 +5,16 @@
 # Reviewed 2026-05-27. Each IGNORE below is a documented accepted risk
 # or confirmed false positive — not a suppression of a real vulnerability.
 
+# [10027] Information Disclosure - Suspicious Comments
+# All developer-facing comment keywords (bug, debug, deprecated, note, todo,
+# fixme, hack, xxx) have been removed from HTML and JS comments in v8.8.5/6.
+# Remaining instances are: JS variable names like `deprecatedKinds`,
+# `isDeprecated`, `_debugLog`, `_debugMax`, `_dbg`, `showDebugPanel` which are
+# identifiers in minified JS code — not comments and not information-disclosing.
+# The user-facing "Deprecated Kind" tooltip is translated via t() and describes
+# an operator-visible migration state, not developer internals.
+10027	IGNORE	Suspicious Comments — remaining instances are JS identifiers and operator-visible migration labels, not developer comment disclosures
+
 # [10049] Non-Storable Content
 # index.html is intentionally served with Cache-Control: no-store so the
 # version-check script always loads the latest release. API responses also

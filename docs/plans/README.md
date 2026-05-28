@@ -47,12 +47,15 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
 | Active backlog | 0 | BL327–BL334 all delivered v8.2.0–v8.6.0 |
+| Pending backlog | 1 | BL335 — APNs push for iOS client (next minor, GH#107) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
 | Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.8.6 shipped 2026-05-27 — ZAP CI fix (direct binary launch replaces KIND+Docker+Helm), fix remaining [10027] suspicious comments (`deprecated`→`superseded`/`legacy`, `Debug Console`→`Diagnostic Console`), tagline updated "AI Session Monitor"→"AI Orchestration" across splash/About/CLI banners. iOS parity standard extended: AGENT.md Mobile-Parity Rule updated, `docs/parity-status.md` created with PWA|Android|iOS table, BL335 (APNs push) filed for next minor. GH#105/#106 (ZAP issues) closed; GH#107 (iOS parity) docs addressed; GH#108 (tagline) closed.
 
 v8.8.3 shipped 2026-05-26 — `--chrome` flag for Claude Chrome integration. Opt-in `*bool` pointer pattern across all 7 surfaces (REST, PWA checkbox, CLI, MCP `start_session`, comm `chrome=true`, claudecode.Backend.SetChrome, session.StartOptions.Chrome). `session_chrome` locale key in all 5 bundles. datawatch-app issue filed (Mobile-Parity + Localization Rule).
 
@@ -309,7 +312,14 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
-_(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog table.)_
+> **BL335** — APNs push notification support for iOS client (filed 2026-05-27, GH#107). The native SwiftUI iOS client uses APNs (Apple Push Notification service), not FCM. Server-side work required for next minor release:
+> 1. Accept `platform=apns` on `POST /api/device/register` (currently only `platform=fcm` handled)
+> 2. Store APNs device tokens alongside FCM tokens in the device registry
+> 3. On alert fire: send to all registered APNs tokens via APNs HTTP/2 API (JWT-based auth)
+> 4. Config fields: `push.apns.key_id`, `push.apns.team_id`, `push.apns.bundle_id`, `push.apns.key_path`
+> 5. APNs payload schema matches FCM schema (aps.alert, content-available, badge, sessionId, type)
+> 6. 7-surface parity: REST + MCP + CLI + comm + PWA + YAML
+> See `docs/parity-status.md` for the iOS parity tracking table. ETA: ~10 weeks from 2026-05-27.
 
 ## Open backlog (deferred / awaiting operator action)
 

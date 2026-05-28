@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.8.5"
+var Version = "8.8.6"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -9135,7 +9135,7 @@ func newAboutCmd() *cobra.Command {
     ║      │  ╚══╝  ╚══╝     │        ║
     ║      │    ◎  ◉  ◎  ◉   │        ║
     ║      └──────────────────┘        ║
-    ║   AI Session Monitor & Bridge    ║
+    ║         AI Orchestration         ║
     ╠═══════════════════════════════════╣
     ║  Version:  v%-22s ║
     ║  Host:     %-22s  ║

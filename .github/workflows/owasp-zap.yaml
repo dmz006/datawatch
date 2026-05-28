@@ -1,18 +1,10 @@
 # v5.26.58 — operator-asked CI parity with datawatch-app: OWASP ZAP
-# baseline scan. Runs against the daemon deployed in a kind cluster
-# (re-uses the kind-smoke pattern from v5.26.43). The "baseline"
-# scan is passive — no active attacks; just spider + analyse —
-# safe to run against any environment.
+# baseline scan. Runs against the daemon deployed directly as a Go
+# binary (no KIND/Docker/Helm). The "baseline" scan is passive — no
+# active attacks; just spider + analyse — safe to run against any
+# environment.
 #
-# Trigger: workflow_dispatch only (the daemon takes a bit to bring
-# up; not worth running on every PR). Operator runs ad-hoc before
-# minor/major cuts; results land as a PR-attached HTML report.
-
-name: owasp-zap
-
-# v5.26.59 — operator-asked: "Are zap audits customized to api, pwa
-# and other interfaces?" Now five passes target each interface
-# class with the appropriate ZAP scan type:
+# v5.26.59 — five passes target each interface class:
 #
 #   1. pwa-baseline    — passive spider against the PWA root
 #                         (zaproxy/action-baseline)
@@ -29,18 +21,20 @@ name: owasp-zap
 #                         spurious findings (v5.26.70)
 #
 # v5.26.70 — operator confirmed "zap didn't need auth" so passes 4+5
-# can hit the kind-deployed daemon directly. Active scans send real
-# attack payloads — only safe against an ephemeral test daemon, not
-# any shared environment.
+# can hit the daemon directly. Active scans send real attack payloads —
+# only safe against an ephemeral test daemon, not any shared environment.
 #
-# Per-job tear-up of kind would multiply runtime; instead we
-# share one kind setup and run all five scans against the same
-# port-forwarded daemon.
+# v8.8.6 — replaced KIND+Docker+Helm cluster setup with a direct Go
+# binary launch. Cuts setup from ~15 min to ~2 min, eliminates the
+# systematic SIGTERM failures that plagued KIND builds without cache.
+# The daemon starts at port 8080 with a minimal ephemeral config.
 
+name: owasp-zap
+
+# Trigger automatically after the Release workflow completes on a tag.
+# This way ZAP scans the freshly-released version and the HTML reports
+# are attached to the release page for user visibility.
 on:
-  # Trigger automatically after the Release workflow completes on a tag.
-  # This way ZAP scans the freshly-released version and the HTML reports
-  # are attached to the release page for user visibility.
   workflow_run:
     workflows: ["Release"]
     types: [completed]
@@ -48,9 +42,9 @@ on:
   workflow_dispatch:
     inputs:
       target_host:
-        description: 'Target host:port for in-cluster scans (default: localhost:18080 from port-forward)'
+        description: 'Target host:port for scans (default: localhost:8080 from binary)'
         required: false
-        default: 'localhost:18080'
+        default: 'localhost:8080'
 
 permissions:
   contents: write  # upload ZAP reports as release assets
@@ -59,50 +53,47 @@ permissions:
 jobs:
   zap-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
 
-      - name: Install kind + kubectl + helm
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build datawatch binary
+        run: go build -o ./datawatch ./cmd/datawatch
+
+      - name: Start datawatch daemon
         run: |
           set -euxo pipefail
-          curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          curl -fsSL -o ./kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/kubectl
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Spin up kind + deploy chart
-        run: |
-          set -euxo pipefail
-          kind create cluster --name dw-zap --wait 60s
-          docker build --build-arg VERSION=zap-baseline \
-            -f docker/dockerfiles/Dockerfile.agent-base \
-            -t datawatch-zap:test .
-          kind load docker-image datawatch-zap:test --name dw-zap
-          helm install dw-zap ./charts/datawatch \
-            --set image.registry=docker.io/library \
-            --set image.repository=datawatch-zap \
-            --set image.tag=test \
-            --set image.pullPolicy=Never \
-            --set persistence.enabled=false \
-            --wait --timeout=5m
-
-      - name: Port-forward to the daemon
-        run: |
-          kubectl port-forward svc/dw-zap-datawatch 18080:8080 >/tmp/pf.log 2>&1 &
-          echo "PF_PID=$!" >> "$GITHUB_ENV"
-          sleep 3
+          mkdir -p /tmp/dw-zap-data
+          # Minimal config — no messaging, no memory, default port 8080.
+          # ZAP confirmed to need no auth (operator decision v5.26.70).
+          cat > /tmp/dw-zap-config.yaml <<'DWTESTCFG'
+          data_dir: /tmp/dw-zap-data
+          server:
+            port: 8080
+          DWTESTCFG
+          ./datawatch start --foreground \
+            --config /tmp/dw-zap-config.yaml \
+            2>/tmp/dw-daemon.log &
+          echo "DW_PID=$!" >> "$GITHUB_ENV"
+          # Wait up to 60 s for the health endpoint to respond
           for i in $(seq 1 60); do
-            curl -sf http://localhost:18080/api/health >/dev/null && break
+            curl -sf "http://localhost:8080/api/health" >/dev/null && echo "Daemon ready after ${i}s" && break
             sleep 1
           done
+          # Fail early if daemon didn't start
+          curl -sf "http://localhost:8080/api/health" >/dev/null
 
       # ── Pass 1: PWA baseline (passive spider + analyse) ──────────
       - name: ZAP PWA baseline scan
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:18080' }}/"
+          target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 5'
           # .zap/rules.tsv documents accepted risks + confirmed false positives.
           rules_file_name: '.zap/rules.tsv'
@@ -114,7 +105,7 @@ jobs:
       - name: ZAP API scan (OpenAPI-driven)
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:18080' }}/api/"
+          target: "http://${{ inputs.target_host || 'localhost:8080' }}/api/"
           format: openapi
           # The daemon embeds the OpenAPI spec at docs/api/openapi.yaml;
           # checkout has the raw file. Pass the local path so ZAP
@@ -130,7 +121,7 @@ jobs:
       - name: ZAP diagrams.html baseline scan
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:18080' }}/diagrams.html"
+          target: "http://${{ inputs.target_host || 'localhost:8080' }}/diagrams.html"
           cmd_options: '-a -j -m 3'
           rules_file_name: '.zap/rules.tsv'
           fail_action: false  # diagrams is largely static; advisory
@@ -138,15 +129,15 @@ jobs:
           issue_title: 'OWASP ZAP — diagrams.html baseline'
 
       # ── Pass 4: PWA full active scan (v5.26.70) ─────────────────
-      # Operator-asked: zap didn't need auth. The kind-deployed
-      # daemon runs without a bearer token in this CI flow, so the
-      # active scanner can hit every endpoint directly. Active scans
-      # send real attack payloads (SQLi, XSS, command-injection
-      # probes) — only safe against an ephemeral test daemon.
+      # Operator-asked: zap didn't need auth. The daemon runs without a
+      # bearer token in this CI flow, so the active scanner can hit every
+      # endpoint directly. Active scans send real attack payloads
+      # (SQLi, XSS, command-injection probes) — only safe against an
+      # ephemeral test daemon.
       - name: ZAP PWA full active scan
         uses: zaproxy/action-full-scan@d479641f7e99facb91d7738171b3448e3f3c7bba  # v0.10.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:18080' }}/"
+          target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 10'
           fail_action: false  # advisory until the active baseline is set
           allow_issue_writing: true
@@ -159,7 +150,7 @@ jobs:
       - name: ZAP API full active scan
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:18080' }}/api/"
+          target: "http://${{ inputs.target_host || 'localhost:8080' }}/api/"
           format: openapi
           api_definition: 'docs/api/openapi.yaml'
           # -t turns active rules on (api-scan defaults to passive).
@@ -168,11 +159,11 @@ jobs:
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — API full active scan'
 
-      - name: Stop port-forward + tear down
+      - name: Stop daemon
         if: always()
         run: |
-          kill "${PF_PID:-0}" 2>/dev/null || true
-          kind delete cluster --name dw-zap
+          kill "${DW_PID:-0}" 2>/dev/null || true
+          cat /tmp/dw-daemon.log 2>/dev/null | tail -20 || true
 
       # ── Upload ZAP HTML reports as artifacts ─────────────────────
       # ZAP actions write reports to the workspace root. Collect and

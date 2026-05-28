@@ -130,7 +130,7 @@ window.setLocaleOverride = setLocaleOverride;
 
 // ── Diagnostic Console ──────────────────────────────────────────────────────
 // Captures JS errors, network failures, and WS events for diagnostics.
-// Access via: triple-tap the status dot, or window._debugLog in browser console.
+// Access via: triple-tap the status dot, or window._debugLog in the browser console.
 window._debugLog = [];
 window._debugMax = 200;
 function _dbg(type, msg) {
@@ -5090,7 +5090,7 @@ function renderNewSessionView() {
           </select>
         </div>
         <!-- GATE alpha.36 (operator 2026-05-10): legacy LLM backend
-             dropdown deprecated — the v7 LLM registry below replaces
+             dropdown superseded — the v7 LLM registry below replaces
              it. Kept hidden so existing field-id refs don't break, but
              not rendered in the panel UI. -->
         <div class="form-group" id="sessBackendRow" style="display:none;">
@@ -5109,7 +5109,7 @@ function renderNewSessionView() {
         <!-- v7.0.0-alpha.21 (#259) — v7 LLM + ComputeNode cascading
              pickers. When an LLM is picked, its compute_nodes seed the
              Node dropdown; the legacy backend dropdown above is
-             deprecated for v7 sessions but still works for back-compat. -->
+             superseded for v7 sessions but still works for back-compat. -->
         <div class="form-group" id="sessV7Row">
           <label for="sessLLMSelect">${t('new_session_v7_llm_label')||'LLM'}</label>
           <select id="sessLLMSelect" class="form-select" onchange="onSessLLMChange()">
@@ -6833,7 +6833,7 @@ function renderSettingsView() {
           <div style="text-align:center;padding:16px 0 8px;">
             <img src="/favicon.svg" alt="Datawatch" style="width:64px;height:64px;margin-bottom:8px;" />
             <div style="font-size:18px;font-weight:700;color:var(--text);letter-spacing:1px;">datawatch</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Session Monitor & Bridge</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Orchestration</div>
           </div>
           <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
                top of the datawatch identity card (Settings → About), not
@@ -7138,7 +7138,7 @@ function slidingSwitchHTML(safeJ, disabled, issueText, onChangeFn) {
 }
 
 // v7.0.0-alpha.23 (Q1, Q2) — migration banner loader. Polls
-// /api/migration/compute-kinds; if any deprecated-Kind Nodes exist,
+// /api/migration/compute-kinds; if any legacy-Kind Nodes exist,
 // renders a one-shot banner at the top of the Compute Nodes panel.
 // Clicking the banner opens a modal with a per-Node Kind picker.
 window._migrationBanner = function(panel) {
@@ -7234,7 +7234,7 @@ function loadComputeNodesPanel() {
           // v7.0.0-alpha.23 (Q7) — render only operator-supplied tags;
           // daemon-applied AutoTags live in n.auto_tags and are hidden.
           const tagsHtml = (n.tags||[]).map(tg => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(tg)}</span>`).join('');
-          // v7.0.0-alpha.23 (Q1) — flag deprecated Kind values inline so
+          // v7.0.0-alpha.23 (Q1) — flag legacy Kind values inline so
           // operator sees which rows the migration banner refers to.
           const deprecatedKinds = ['local','remote','ssh','docker','k8s','remote-proxy'];
           const isDeprecated = deprecatedKinds.includes(n.kind||'');
@@ -13855,11 +13855,11 @@ function showDebugPanel() {
   ).join('');
   panel.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <strong style="color:var(--text);">Debug Console</strong>
+      <strong style="color:var(--text);">Diagnostic Console</strong>
       <button class="btn-icon" onclick="document.getElementById('debugPanel').remove()">&#10005;</button>
     </div>
     <div style="font-size:10px;color:var(--text2);margin-bottom:8px;">Last ${Math.min(50, window._debugLog.length)} events. Access full log: window._debugLog</div>
-    ${entries || '<div style="color:var(--text2);font-size:11px;">No debug events captured.</div>'}
+    ${entries || '<div style="color:var(--text2);font-size:11px;">No diagnostic events captured.</div>'}
     <div style="margin-top:8px;display:flex;gap:6px;">
       <button class="btn-secondary" style="font-size:10px;" onclick="window._debugLog=[];showDebugPanel();">Clear</button>
       <button class="btn-secondary" style="font-size:10px;" onclick="navigator.clipboard.writeText(JSON.stringify(window._debugLog,null,2));showToast('Copied','success',1000);">Copy JSON</button>

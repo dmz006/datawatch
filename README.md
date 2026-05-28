@@ -89,14 +89,13 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.8.3](CHANGELOG.md) (2026-05-26)** — `--chrome` flag for Claude Chrome integration, security headers, dashboard responsiveness, Wear OS private local voice, Android beta.
+**[v8.8.6](CHANGELOG.md) (2026-05-27)** — ZAP CI fix (direct binary launch), tagline update "AI Orchestration", iOS parity docs.
 
-- **`--chrome` session flag** — Opt-in flag to enable Chrome DevTools Protocol integration when starting a Claude Code session. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP `start_session`, and comm channel. Not a default; omitting the flag leaves Claude behavior unchanged.
-- **Security headers** — CSP, `X-Frame-Options`, `X-Content-Type-Options`, SRI on all CDN assets.
-- **Dashboard responsiveness** — Heatmap narrow mode, burn-rate stat strip, orbital list fallback, EKG/Smoke mobile layout.
-- **Wear OS private voice** — Audio goes directly to your datawatch server's Whisper instance. Nothing leaves your infrastructure.
-- **Android beta** — Join the Google Play beta at play.google.com/apps/internaltest/4701534579731858967 — 15 testers needed to unlock production release.
-- **MCP channel config isolation** — `CLAUDE_CONFIG_DIR` correctly injected into claude-code tmux sessions; eliminates "waiting for MCP channel" / "no MCP server configured" errors.
+- **ZAP CI fixed** — OWASP ZAP scans now launch the daemon directly (`go build` + `./datawatch start`) instead of KIND+Docker+Helm. Eliminates the systematic SIGTERM failures from uncached Docker builds. All five scan passes (PWA baseline, API scan, diagrams, PWA active, API active) run in ~2 min vs ~15 min.
+- **Tagline** — Updated from "AI Session Monitor" to "AI Orchestration" across the PWA splash screen, Settings → About, and CLI banners — matching the companion app.
+- **iOS parity** — Parity standard extended to PWA == Android == iOS. `docs/parity-status.md` tracks per-feature status; AGENT.md rules updated; APNs push filed as BL335 for next minor.
+- **LLM response summarizer** (v8.8.5) — Summarize session output to 1-3 spoken sentences via Ollama/OpenAI. Settings → General → Session. Designed for voice alerts and TTS auto-play.
+- **`--chrome` session flag** (v8.8.3) — Opt-in flag to enable Chrome DevTools Protocol integration. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP, and comm channel.
 
 ### v8.6 highlights
 

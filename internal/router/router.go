@@ -1211,7 +1211,7 @@ func (r *Router) aboutText() string {
     ║      │  ╚══╝  ╚══╝     │        ║
     ║      │    ◎  ◉  ◎  ◉   │        ║
     ║      └──────────────────┘        ║
-    ║   AI Session Monitor & Bridge    ║
+    ║         AI Orchestration         ║
     ╠═══════════════════════════════════╣
     ║  Version:  v%-22s ║
     ║  Host:     %-22s  ║
