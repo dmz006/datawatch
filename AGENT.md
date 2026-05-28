@@ -665,6 +665,62 @@ If/when this lands, file as its own BL with a design note. Until then, local `ma
 - Never write code that sends data to external services not already in the design.
 - The `server.token` config value must never appear in logs.
 
+### Security-Fix Downstream-Review Rule (operator-filed 2026-05-28, v8.8.9)
+
+When applying a finding from a security scanner (OWASP ZAP, gosec, govulncheck,
+dependency CVE, Burp, etc.), **do not patch the finding in isolation**. The
+finding identifies *one* surface that must change; the code that interacts with
+that surface usually has dependencies you must also fix, or the app silently
+stops working for the operator.
+
+**Required before declaring a security fix done:**
+
+1. **Map the surface the finding touches** — header, route, CSP directive,
+   permission, cookie attribute, response field, dependency API. List every
+   call site that reads, sets, or depends on that surface.
+2. **Walk the dependent code** — for each call site, determine what behaviour
+   it expects from the now-changed surface. Examples:
+   - CSP tightened to remove `'unsafe-inline'` → every inline `<script>` and
+     every `onclick="…"` / `onload="…"` / `style="…"` attribute in
+     `index.html`, `*.html`, and string templates in `app.js` will break at
+     runtime. The fix is not just the header; it's also converting those to
+     `addEventListener` / external scripts / class-based styles.
+   - HSTS `includeSubDomains` added → every subdomain hosted under the parent
+     domain must serve TLS or it becomes unreachable. Audit subdomain inventory
+     before enabling.
+   - Cookie `SameSite=Strict` → cross-site OAuth/SSO callbacks break. Audit
+     redirect flows.
+   - Dependency upgrade (CVE patch) → check the changelog for renamed
+     functions, removed exports, changed defaults. Run the full test suite
+     AND the integration smoke, not just unit tests.
+   - Removing a permissive CORS origin → any frontend served from that origin
+     stops working. Confirm operator-deployed clients first.
+3. **Test the app end-to-end after the fix** — not just the scanner's re-run.
+   The scanner confirms the finding is gone; only an actual operator click-
+   through confirms the app still works. Run the relevant slice of
+   `release-smoke.sh` AND open the PWA in a browser AND tail
+   `~/.datawatch/daemon.log` for new errors.
+4. **If a downstream fix is too large for this commit**, ship the security
+   change WITH a compatibility shim (e.g. re-allow the narrowly-scoped
+   `'unsafe-inline'` for event handlers alongside the nonce) and file the
+   full migration as a backlog item with a target version. Do not ship the
+   security change alone if it breaks the app — that re-introduces the
+   pressure to revert under operator demand later.
+5. **Document the downstream items** in the security-fix commit message
+   AND the release notes — operator and reviewers should see the full
+   blast radius, not just the scanner alert ID that was closed.
+
+**Worked example (v8.8.9, the rule's origin):** v8.8.4 closed ZAP alert 10055
+by removing `'unsafe-inline'` from CSP `script-src`. The change passed ZAP
+re-scan. It also silently broke every inline event handler in the PWA
+(`index.html` × 11, `app.js` template literals × 509), so every navigation
+click logged a CSP violation and the operator's browser refused to fire the
+handler. The patch had no downstream review and no manual click-through —
+the ZAP scan was the only validation. v8.8.9 had to ship a hybrid CSP
+(nonce for `<script>`, `'unsafe-inline'` for event handlers) plus file a
+backlog item for the full `addEventListener` migration. The original v8.8.4
+commit would have caught this in step 2 if this rule had existed.
+
 ### Secrets-Store Rule (BL241 design discussion 2026-05-04, project-wide)
 
 All credential-bearing config fields (access tokens, API keys, passwords,

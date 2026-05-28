@@ -14389,7 +14389,8 @@ if (window.matchMedia) {
 }
 
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
+  if (!('serviceWorker' in navigator)) return;
+  {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
@@ -14421,6 +14422,19 @@ function registerServiceWorker() {
         });
       });
     }).catch(err => {
+      // Self-signed-cert origins (e.g. https://<hostname>:8443 with the
+      // auto-generated cert that the operator has merely click-throughs)
+      // are NOT a valid SW registration context even though the page
+      // loads. Chrome throws `SecurityError: An SSL certificate error
+      // occurred when fetching the script`. Demote to info — the PWA
+      // degrades gracefully (no offline cache, no push) and everything
+      // else works. Use https://localhost:8443 or install a trusted
+      // cert to enable SW.
+      const msg = String(err && err.message || err);
+      if (err && err.name === 'SecurityError' && /SSL certificate/i.test(msg)) {
+        console.info('SW disabled on this origin (untrusted TLS cert). Use https://localhost or install a trusted cert to enable PWA offline/push.');
+        return;
+      }
       console.warn('SW registration failed:', err);
     });
     let _reloadGuard = false;

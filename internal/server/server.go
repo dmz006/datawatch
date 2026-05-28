@@ -1196,9 +1196,20 @@ func generateCSPNonce() string {
 
 // buildCSP constructs the Content-Security-Policy header value. When
 // scriptNonce is non-empty it is added to script-src so that index.html's
-// per-request inline scripts are allowed without 'unsafe-inline'.
+// per-request inline scripts are allowed via nonce.
+//
+// 'unsafe-inline' is also present alongside the nonce. Per W3C CSP3
+// §6.6.2.2, modern user agents IGNORE 'unsafe-inline' for inline <script>
+// blocks when a nonce or hash is present — so the nonce remains the
+// effective gate for <script> elements. 'unsafe-inline' continues to apply
+// to inline event handlers (onclick, etc.), which app.js template literals
+// generate by the hundreds. Converting them all to addEventListener is a
+// separate backlog item; until then this preserves CSP-via-nonce for
+// scripts while keeping the operator UI clickable. Re-introduces ZAP
+// alert 10055 (CSP unsafe-inline), which is accepted until the
+// addEventListener migration lands.
 func buildCSP(scriptNonce string) string {
-	scriptSrc := "'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com"
+	scriptSrc := "'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com"
 	if scriptNonce != "" {
 		scriptSrc += " 'nonce-" + scriptNonce + "'"
 	}

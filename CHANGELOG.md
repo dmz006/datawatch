@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.9 — fix: PWA broken after v8.8.4 CSP tighten; OpenWebUI 502 spam; SW console error (2026-05-28)
+
+### Fixed
+
+- **CSP — inline event handlers re-allowed** (regression from v8.8.4). The v8.8.4 ZAP hardening removed `'unsafe-inline'` from `script-src` to close ZAP alert 10055. The change passed the re-scan but silently broke the PWA: `index.html` (×11) and `app.js` template literals (×509) generate inline `onclick=`/`onload=` attributes, all of which the browser blocked with `Executing inline event handler violates the following Content Security Policy directive`. Restored `'unsafe-inline'` to `script-src` alongside the nonce — per W3C CSP3 §6.6.2.2, modern browsers ignore `'unsafe-inline'` for `<script>` blocks when a nonce/hash is present, so the nonce remains the effective gate for inline `<script>`. `'unsafe-inline'` only applies to event handlers. ZAP alert 10055 re-opens until the full `addEventListener` migration ships.
+- **`/api/openwebui/models` 502 spam.** Handler now returns `[]` with HTTP 200 when `openwebui.enabled: false` and no `?node=` override is supplied, instead of dialing a dead URL and failing with 502. PWA dropdowns render an empty list gracefully.
+- **ServiceWorker registration warning on self-signed-cert origins.** Chrome refuses SW registration on origins with an untrusted TLS cert (even ones the operator has click-throughs in the browser warning) with `SecurityError: An SSL certificate error occurred when fetching the script`. The catch path now detects this specific error and demotes it from `console.warn` to `console.info` with a clear remediation hint (use `https://localhost:8443` or install a trusted cert). PWA degrades gracefully — no offline cache, no push, everything else works.
+
+### Added
+
+- **AGENT.md — Security-Fix Downstream-Review Rule.** Mandates that every security-scanner finding (ZAP, gosec, govulncheck, CVE, etc.) include a downstream code-walk before merge: map dependent call sites, fix or shim them in the same commit, end-to-end test the app (not just re-run the scanner), and document blast radius in the commit + release notes. Born from the v8.8.4 → v8.8.9 incident where the CSP fix broke the PWA in production.
+
+---
+
 ## v8.8.8 — fix: daemon-startup panic from duplicate /api/sessions/ route (2026-05-28)
 
 ### Fixed

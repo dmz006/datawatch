@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.8"
+var Version = "8.8.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -705,14 +705,27 @@ func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url, apiKey := "", ""
+	enabled := false
 	if s.cfg != nil {
 		url = s.cfg.OpenWebUI.URL
 		apiKey = s.cfg.OpenWebUI.APIKey
+		enabled = s.cfg.OpenWebUI.Enabled
 	}
+	nodeOverride := false
 	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
 		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
 			url = n.Address
+			nodeOverride = true
 		}
+	}
+	// When OpenWebUI is disabled in config and no explicit compute-node
+	// override is supplied, return an empty list with 200 instead of
+	// dialing a dead URL and emitting 502 to every PWA poll. The PWA
+	// dropdowns happily render an empty list.
+	if !enabled && !nodeOverride {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]any{})
+		return
 	}
 	models, err := openwebui.ListModels(url, apiKey)
 	if err != nil {
