@@ -1,4 +1,4 @@
-# AI-APP-SEED.md — Datawatch Context & Quick Start
+# DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-05-25  
 **Version**: v8.7.0  
@@ -50,7 +50,7 @@ Single-binary daemon that:
 ├── docker/                 Container images
 ├── scripts/                Build, release, validation, smoke tests
 ├── Makefile                Build targets: build, install, test, fmt, lint, cross
-├── AGENT.md                **Read before any code changes** — all guardrails, memory, AI-APP-SEED rules
+├── AGENT.md                **Read before any code changes** — all guardrails, memory, DATAWATCH-CONTEXT rules
 └── CLAUDE.md               RTK instructions only (auto-managed, overwritten on session exit)
 ```
 
@@ -221,7 +221,7 @@ See AGENT.md § Versioning (line 67) and § Release vs Patch Discipline (line 20
 - **`cmd/datawatch/main.go`** — CLI entry, daemon startup, version string
 
 ### Configuration & Templates
-- **`AGENT.md`** — All guardrails, Memory & Intelligence rules, and AI-APP-SEED context loading
+- **`AGENT.md`** — All guardrails, Memory & Intelligence rules, and DATAWATCH-CONTEXT context loading
 - **`CLAUDE.md`** — RTK instructions only (auto-managed)
 - **`templates/session-CLAUDE.md`** — Injected into sessions launched by daemon
 - **`.env.build`** — Build environment (golang version, etc.)
@@ -372,7 +372,7 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 **For AI Sessions Launched by Datawatch:**
 This file is referenced in `AGENT.md`. Every claude-code/aider/opencode session launched from the daemon will:
-1. Have access to `AI-APP-SEED.md` in the project root
+1. Have access to `DATAWATCH-CONTEXT.md` in the project root
 2. Automatically query memory for recent changes at session start
 3. Have full MCP access to memory tools (memory_recall, memory_remember, kg_query, etc.)
 
@@ -380,7 +380,7 @@ This file is referenced in `AGENT.md`. Every claude-code/aider/opencode session 
 When starting work manually:
 ```bash
 # Read this file
-cat AI-APP-SEED.md
+cat DATAWATCH-CONTEXT.md
 
 # Query memory
 mcp__datawatch__memory_recall "recent work this codebase"
@@ -389,7 +389,7 @@ mcp__datawatch__memory_recall "recent work this codebase"
 ```
 
 **For RTK Support:**
-RTK automatically excludes `AI-APP-SEED.md` from token optimization (it's metadata, not code). When you reference it in your work, RTK treats it as context-load and doesn't compress it.
+RTK automatically excludes `DATAWATCH-CONTEXT.md` from token optimization (it's metadata, not code). When you reference it in your work, RTK treats it as context-load and doesn't compress it.
 
 ---
 

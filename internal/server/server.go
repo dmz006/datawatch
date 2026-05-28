@@ -373,7 +373,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/push/register", api.handlePushRegister)                        // alpha.35 #38 — mobile-app endpoint registration (GET=list, POST=register)
 	apiMux.HandleFunc("/api/push/unregister", api.handlePushUnregister)                    // BL330 — DELETE to remove a registration
 	apiMux.HandleFunc("/api/push/notify", api.handlePushNotify)                            // BL330 — POST daemon-internal notify endpoint
-	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
+	// /api/sessions/ catch-all is registered at line ~210; it now dispatches
+	// to both handleSessionSubpath (last-summary/summarize) and
+	// handleSessionsSubpath (rollback/hook-event/status/telemetry/guardrail/input)
+	// to avoid the duplicate-pattern panic.
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)

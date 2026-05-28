@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.7"
+var Version = "8.8.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2959,8 +2959,10 @@ func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"prompt": sess.LastInput, "session_id": id}) //nolint:errcheck
 }
 
-// handleSessionSubpath is a catch-all dispatcher for session sub-paths like
-// /api/sessions/{id}/last-summary and /api/sessions/{id}/summarize.
+// handleSessionSubpath is the catch-all dispatcher for /api/sessions/{id}/<verb>
+// patterns not handled by the exact-match registrations. Covers the api.go set
+// (last-summary, summarize) and falls through to handleSessionsSubpath for the
+// rollback.go set (rollback, hook-event, status, telemetry, guardrail, input).
 func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 	if strings.HasSuffix(path, "/last-summary") {
@@ -2971,7 +2973,7 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionSummarize(w, r)
 		return
 	}
-	http.Error(w, "not found", http.StatusNotFound)
+	s.handleSessionsSubpath(w, r)
 }
 
 // handleSessionLastSummary returns the stored summary for a session.

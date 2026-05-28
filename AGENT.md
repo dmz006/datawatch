@@ -1399,12 +1399,12 @@ This project has datawatch episodic memory enabled. Use it proactively.
 
 Always check memory first with `memory_recall` before answering from training data.
 
-## Loading AI-APP-SEED.md Context
+## Loading DATAWATCH-CONTEXT.md Context
 
 **For sessions launched by the datawatch daemon:**
 
 Every claude-code/aider/opencode session launched from the daemon will:
-1. Have access to `AI-APP-SEED.md` in the project root (comprehensive context loader)
+1. Have access to `DATAWATCH-CONTEXT.md` in the project root (comprehensive context loader)
 2. Automatically query memory for recent changes at session start
 3. Have full MCP access to memory tools listed above
 
@@ -1413,7 +1413,7 @@ Every claude-code/aider/opencode session launched from the daemon will:
 When starting work manually:
 ```bash
 # Read the comprehensive context file
-cat AI-APP-SEED.md
+cat DATAWATCH-CONTEXT.md
 
 # Query memory
 memory_recall "recent work this codebase"
@@ -1421,7 +1421,7 @@ memory_recall "recent work this codebase"
 # Start your session knowing the context
 ```
 
-**Content of AI-APP-SEED.md:**
+**Content of DATAWATCH-CONTEXT.md:**
 - Project identity (what is datawatch, platforms, architecture)
 - This file (AGENT.md) with specific line references for guardrails
 - Build, test, and release procedures

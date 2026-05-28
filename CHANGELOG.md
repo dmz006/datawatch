@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.8 — fix: daemon-startup panic from duplicate /api/sessions/ route (2026-05-28)
+
+### Fixed
+
+- **Daemon crash on startup** — the HTTP server panicked with `pattern "/api/sessions/" conflicts with pattern "/api/sessions/"` because both `handleSessionSubpath` (api.go, registered at server.go:210) and `handleSessionsSubpath` (rollback.go, registered at server.go:376) bound the same prefix. The duplicate registration was introduced by the rollback / hook-event / status / telemetry / guardrail / input feature additions in rollback.go that re-registered the prefix instead of dispatching through the existing catch-all. `handleSessionSubpath` now falls through to `handleSessionsSubpath` for verbs it doesn't recognise, and the duplicate `apiMux.HandleFunc("/api/sessions/", …)` in server.go has been removed.
+
+### Changed
+
+- **AI-APP-SEED.md → DATAWATCH-CONTEXT.md** — renamed the comprehensive context-loader file; references updated in `AGENT.md`.
+
+---
+
 ## v8.8.7 — fix: ZAP build stub + APNs device kind + summarizer lint (2026-05-28)
 
 ### Fixed
