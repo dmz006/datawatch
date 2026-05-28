@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.7 — fix: ZAP build stub + APNs device kind + summarizer lint (2026-05-28)
+
+### Fixed
+
+- **ZAP CI build** — `go build` in the ZAP workflow now fails on a fresh CI checkout because `internal/docsindex/assets/docs-bm25-index.json` is gitignored but referenced by `//go:embed`. A pre-build step now seeds an empty `{}` stub if the file is absent, mirroring the existing `Dockerfile.agent-base` behaviour.
+- **`POST /api/devices/register`** now accepts `kind: "apns"` for iOS APNs push registration. Added `KindAPNS = "apns"` constant, updated `Kind.Valid()`, and updated the validation error message. No schema changes required — the existing `platform: "ios"` field already exists.
+- **summarizer lint (SA9003)** — removed a dead `if s.cfg != nil && llm.Host != "" { ... }` block in `callOpenAI`; the `LLM` struct has no `Host` field and the branch was always false.
+
+---
+
 ## v8.8.6 — fix: ZAP CI + tagline + iOS parity docs (2026-05-27)
 
 ### Fixed

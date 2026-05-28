@@ -63,6 +63,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Seed docs index stub for build
+        run: |
+          mkdir -p internal/docsindex/assets
+          [ -f internal/docsindex/assets/docs-bm25-index.json ] || echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+
       - name: Build datawatch binary
         run: go build -o ./datawatch ./cmd/datawatch
 

@@ -140,13 +140,7 @@ func (s *Service) callOllamaRaw(ctx context.Context, host, model, prompt string)
 
 // callOpenAI calls an OpenAI-compatible chat/completions endpoint.
 func (s *Service) callOpenAI(ctx context.Context, llm *inference.LLM, prompt string) (string, error) {
-	// Determine base URL and API key.
 	baseURL := "https://api.openai.com"
-	// Look for a compute node address override.
-	if s.cfg != nil {
-		// No direct base_url in LLM struct; use Ollama host as placeholder for
-		// custom openai-compatible endpoints. The standard case hits api.openai.com.
-	}
 	apiKey := strings.TrimSpace(llm.APIKeyRef)
 
 	model := llm.Model

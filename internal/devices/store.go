@@ -35,10 +35,11 @@ type Kind string
 const (
 	KindFCM  Kind = "fcm"
 	KindNTFY Kind = "ntfy"
+	KindAPNS Kind = "apns"
 )
 
 // Valid reports whether the kind string is a known value.
-func (k Kind) Valid() bool { return k == KindFCM || k == KindNTFY }
+func (k Kind) Valid() bool { return k == KindFCM || k == KindNTFY || k == KindAPNS }
 
 // Platform enumerates the client OS families.
 type Platform string
@@ -115,7 +116,7 @@ func (s *Store) Register(d Device) (Device, error) {
 		return Device{}, fmt.Errorf("devices: device_token required")
 	}
 	if !d.Kind.Valid() {
-		return Device{}, fmt.Errorf("devices: kind %q: must be fcm or ntfy", d.Kind)
+		return Device{}, fmt.Errorf("devices: kind %q: must be fcm, ntfy, or apns", d.Kind)
 	}
 	if d.Platform != "" && !d.Platform.Valid() {
 		return Device{}, fmt.Errorf("devices: platform %q: must be android or ios", d.Platform)

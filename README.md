@@ -89,11 +89,11 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.8.6](CHANGELOG.md) (2026-05-27)** — ZAP CI fix (direct binary launch), tagline update "AI Orchestration", iOS parity docs.
+**[v8.8.7](CHANGELOG.md) (2026-05-28)** — ZAP build stub fix, APNs device kind, summarizer lint fix.
 
-- **ZAP CI fixed** — OWASP ZAP scans now launch the daemon directly (`go build` + `./datawatch start`) instead of KIND+Docker+Helm. Eliminates the systematic SIGTERM failures from uncached Docker builds. All five scan passes (PWA baseline, API scan, diagrams, PWA active, API active) run in ~2 min vs ~15 min.
-- **Tagline** — Updated from "AI Session Monitor" to "AI Orchestration" across the PWA splash screen, Settings → About, and CLI banners — matching the companion app.
-- **iOS parity** — Parity standard extended to PWA == Android == iOS. `docs/parity-status.md` tracks per-feature status; AGENT.md rules updated; APNs push filed as BL335 for next minor.
+- **ZAP CI build fixed** — Pre-build step seeds a `{}` stub for the gitignored `docs-bm25-index.json` so `go build` succeeds on a fresh CI checkout.
+- **APNs device registration** — `POST /api/devices/register` now accepts `kind: "apns"` for iOS push token registration. `KindAPNS` added to the devices package.
+- **Summarizer lint** — Removed dead `if llm.Host != ""` branch in `callOpenAI`; `LLM` has no `Host` field.
 - **LLM response summarizer** (v8.8.5) — Summarize session output to 1-3 spoken sentences via Ollama/OpenAI. Settings → General → Session. Designed for voice alerts and TTS auto-play.
 - **`--chrome` session flag** (v8.8.3) — Opt-in flag to enable Chrome DevTools Protocol integration. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP, and comm channel.
 
