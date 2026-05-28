@@ -25,7 +25,7 @@ bearer token. Every action it takes is gated against the capabilities you grant.
 # Register a remote instance as a federation peer.
 # Default capabilities: ["federation-peer"] — safe read + session input.
 datawatch federation peer add peer-alpha \
-  --url http://10.0.0.2:8080 \
+  --url http://198.51.100.2:8080 \
   --token tok-peer-alpha \
   --capabilities federation-peer
 
@@ -35,7 +35,7 @@ datawatch federation peer list
 
 Via comm channel (Telegram, Signal, etc.):
 ```
-federation peer add peer-alpha http://10.0.0.2:8080 token=tok-peer-alpha
+federation peer add peer-alpha http://198.51.100.2:8080 token=tok-peer-alpha
 ```
 
 ### 2. Grant specific capabilities
@@ -147,7 +147,7 @@ Declare federation peers in your config file for automatic registration at start
 ```yaml
 servers:
   - name: peer-alpha
-    url: http://10.0.0.2:8080
+    url: http://198.51.100.2:8080
     token: tok-peer-alpha
     enabled: true
     federated: true

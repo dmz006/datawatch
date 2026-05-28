@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.11 — fix: pin CDN SRI versions exactly; finish RFC 5737 IP sweep (2026-05-28)
+
+Follow-ups from the v8.8.4 ZAP-baseline audit per the v8.8.9 Security-Fix
+Downstream-Review Rule.
+
+### Fixed
+
+- **SRI version-pin timebomb.** `index.html` / `diagrams.html` / `api-docs.html` were loading CDN scripts with semver-range tags (`mermaid@10`, `marked@12`, `swagger-ui-dist@5`) alongside fixed sha384 integrity hashes. The CDN resolves the range to whatever is "latest in major"; the next CDN rotation would silently 404 the script with an SRI mismatch and the Diagrams + API Docs pages would render blank. Pinned to the currently-resolved exact versions (`mermaid@10.9.6`, `marked@12.0.2`, `swagger-ui-dist@5.32.6`); hashes match unchanged. `qrcodejs/1.0.0` was already exact.
+- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `10.0.0.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
+
+---
+
 ## v8.8.10 — fix: v8.8.9 CSP still blocked inline handlers (nonce overrides unsafe-inline) (2026-05-28)
 
 ### Fixed
