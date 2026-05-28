@@ -1194,25 +1194,26 @@ func generateCSPNonce() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// buildCSP constructs the Content-Security-Policy header value. When
-// scriptNonce is non-empty it is added to script-src so that index.html's
-// per-request inline scripts are allowed via nonce.
+// buildCSP constructs the Content-Security-Policy header value.
 //
-// 'unsafe-inline' is also present alongside the nonce. Per W3C CSP3
-// §6.6.2.2, modern user agents IGNORE 'unsafe-inline' for inline <script>
-// blocks when a nonce or hash is present — so the nonce remains the
-// effective gate for <script> elements. 'unsafe-inline' continues to apply
-// to inline event handlers (onclick, etc.), which app.js template literals
-// generate by the hundreds. Converting them all to addEventListener is a
-// separate backlog item; until then this preserves CSP-via-nonce for
-// scripts while keeping the operator UI clickable. Re-introduces ZAP
-// alert 10055 (CSP unsafe-inline), which is accepted until the
-// addEventListener migration lands.
+// The scriptNonce parameter is preserved for future use (when the full
+// inline-event-handler → addEventListener migration completes the nonce
+// path becomes the gate again). For now it is intentionally NOT added to
+// script-src: per W3C CSP3 §6.6.2.2 and confirmed by Chrome's own console
+// message ("'unsafe-inline' is ignored if either a hash or nonce value is
+// present"), adding a nonce alongside 'unsafe-inline' DISABLES
+// 'unsafe-inline' for BOTH inline <script> blocks AND inline event
+// handlers. The v8.8.9 attempt to keep both was incorrect; the spec
+// override applies to all script-src inline contexts, not just <script>.
+//
+// Current trade-off (re-opens ZAP alert 10055): 'unsafe-inline' is the
+// only directive that allows the PWA's existing inline event handlers
+// (index.html × 11 + app.js template literals × 509) to fire. The proper
+// fix is a full addEventListener migration tracked as backlog. Until
+// then, 'unsafe-inline' is the documented, intentional regression.
 func buildCSP(scriptNonce string) string {
+	_ = scriptNonce // reserved for the post-migration nonce-only mode; see comment above
 	scriptSrc := "'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com"
-	if scriptNonce != "" {
-		scriptSrc += " 'nonce-" + scriptNonce + "'"
-	}
 	return "default-src 'self'; " +
 		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline' https://unpkg.com; " +

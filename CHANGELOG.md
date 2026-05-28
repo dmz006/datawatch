@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.10 — fix: v8.8.9 CSP still blocked inline handlers (nonce overrides unsafe-inline) (2026-05-28)
+
+### Fixed
+
+- **CSP — nonce removed from `script-src` so `'unsafe-inline'` actually applies.** v8.8.9 kept both `'unsafe-inline'` and the per-request `'nonce-…'`, intending nonce to gate `<script>` blocks while `'unsafe-inline'` re-enabled event handlers. That reading of W3C CSP3 was wrong: per the spec AND Chrome's own console message (*"`'unsafe-inline'` is ignored if either a hash or nonce value is present"*), the presence of any nonce disables `'unsafe-inline'` for ALL inline contexts — `<script>` blocks AND event handlers alike. v8.8.10 drops the nonce from `script-src`; `'unsafe-inline'` now actually applies and event handlers fire. The nonce-injection code path is kept dormant for the eventual full-migration mode (post-`addEventListener` sweep). ZAP alert 10055 stays open; full migration is backlog.
+
+---
+
 ## v8.8.9 — fix: PWA broken after v8.8.4 CSP tighten; OpenWebUI 502 spam; SW console error (2026-05-28)
 
 ### Fixed
