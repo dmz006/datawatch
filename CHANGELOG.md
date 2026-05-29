@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.12 — fix: auto-updater never downgrades (2026-05-29)
+
+### Fixed
+
+- **Auto-updater downgrade prevention** — `POST /api/update`, `GET /api/update/check`, and `datawatch update` CLI all previously compared latest against current with exact string equality. When GitHub's latest *release* was older than the locally installed version, the equality check was false and the "update" installed the older binary — a silent downgrade. All three code paths now use a semver `>` comparison so only a strictly newer version is ever installed.
+
+---
+
 ## v8.8.11 — fix: pin CDN SRI versions exactly; finish RFC 5737 IP sweep (2026-05-28)
 
 Follow-ups from the v8.8.4 ZAP-baseline audit per the v8.8.9 Security-Fix

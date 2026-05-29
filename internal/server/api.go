@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.11"
+var Version = "8.8.12"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1280,6 +1280,49 @@ func (s *Server) handleLSPServers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SetUpdateFuncs(installFn func(version string, progress func(downloaded, total int64)) error, latestFn func() (string, error)) {
 	s.installUpdate = installFn
 	s.latestVersion = latestFn
+}
+
+// semverIsNewer reports whether latest is strictly greater than current
+// using a major.minor.patch comparison. Pre-release suffixes are stripped.
+// Returns false on parse errors so callers never falsely upgrade.
+func semverIsNewer(latest, current string) bool {
+	parse := func(s string) ([]int, bool) {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		if i := strings.Index(s, "-"); i >= 0 {
+			s = s[:i]
+		}
+		if i := strings.Index(s, "+"); i >= 0 {
+			s = s[:i]
+		}
+		parts := strings.Split(s, ".")
+		out := make([]int, len(parts))
+		for i, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil, false
+			}
+			out[i] = n
+		}
+		return out, true
+	}
+	a, aok := parse(latest)
+	b, bok := parse(current)
+	if !aok || !bok {
+		return false
+	}
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }
 
 // handleSessions returns all sessions as JSON.
@@ -6611,7 +6654,7 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := "update_available"
-	if latest == "" || latest == Version {
+	if latest == "" || !semverIsNewer(latest, Version) {
 		status = "up_to_date"
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -6644,7 +6687,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if latest == Version {
+	if !semverIsNewer(latest, Version) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "up_to_date", "version": Version}) //nolint:errcheck
 		return

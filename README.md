@@ -89,11 +89,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.8.7](CHANGELOG.md) (2026-05-28)** — ZAP build stub fix, APNs device kind, summarizer lint fix.
+**[v8.8.12](CHANGELOG.md) (2026-05-29)** — Auto-updater downgrade prevention.
 
-- **ZAP CI build fixed** — Pre-build step seeds a `{}` stub for the gitignored `docs-bm25-index.json` so `go build` succeeds on a fresh CI checkout.
-- **APNs device registration** — `POST /api/devices/register` now accepts `kind: "apns"` for iOS push token registration. `KindAPNS` added to the devices package.
-- **Summarizer lint** — Removed dead `if llm.Host != ""` branch in `callOpenAI`; `LLM` has no `Host` field.
+- **Auto-updater** — `datawatch update`, `POST /api/update`, and `GET /api/update/check` now use a semver `>` comparison so a lower-versioned GitHub release can never overwrite a locally-built newer binary.
 - **LLM response summarizer** (v8.8.5) — Summarize session output to 1-3 spoken sentences via Ollama/OpenAI. Settings → General → Session. Designed for voice alerts and TTS auto-play.
 - **`--chrome` session flag** (v8.8.3) — Opt-in flag to enable Chrome DevTools Protocol integration. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP, and comm channel.
 

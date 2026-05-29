@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.8.11"
+var Version = "8.8.12"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -9168,7 +9168,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	fmt.Printf("Current version: v%s\n", Version)
 	fmt.Printf("Latest version:  v%s\n", latest)
 
-	if latest == Version {
+	if !isNewerVersion(latest, Version) {
 		fmt.Println("Already up to date.")
 		return nil
 	}
