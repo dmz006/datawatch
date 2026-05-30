@@ -1,7 +1,7 @@
 # Client Parity Status
 
 **Standard: PWA == Android == iOS**  
-**Last updated:** v8.8.6 (2026-05-27)
+**Last updated:** v8.9.4 (2026-05-30)
 
 This table tracks the parity state of operator-visible features across all three clients.
 iOS parity standard added in v8.8.6 (issue #107 in `dmz006/datawatch`).

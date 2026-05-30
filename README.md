@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.6.3-success)](https://github.com/dmz006/datawatch/releases/tag/v8.6.3)
+[![Release](https://img.shields.io/badge/release-v8.9.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.4)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,12 +89,12 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.8.13](CHANGELOG.md) (2026-05-29)** — Summarizer writes to last response; compact display prompt.
+**[v8.9.4](CHANGELOG.md) (2026-05-30)** — Dual-summary AI pipeline, summarizer model selector, robust parser fixes, and `last_response` spacing fix.
 
-- **Summarizer → last response** — when "Summarize last response" is enabled, the compressed summary now replaces `last_response` so push notifications, Android Auto, and mobile alerts all show the 3-sentence summary automatically.
-- **Auto-updater** (v8.8.12) — semver `>` comparison prevents downgrading to an older GitHub release.
-- **LLM response summarizer** (v8.8.5) — Summarize session output to 1-3 spoken sentences via Ollama/OpenAI. Settings → General → Session. Designed for voice alerts and TTS auto-play.
-- **`--chrome` session flag** (v8.8.3) — Opt-in flag to enable Chrome DevTools Protocol integration. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP, and comm channel.
+- **Dual-summary AI pipeline** (v8.9.0) — single LLM call produces a short push-safe summary (`last_response`) and a long narrative (`last_summary_long`) on every `running→waiting_input` transition. Model-aware context sizing, repetition avoidance, content gate, manual re-summarize button, and envelope expand on session cards.
+- **Summarizer model selector** (v8.9.1) — `session.summarizer.model` config field + PWA Settings dropdown with quality/speed hints (⚡ basic → ★★★ best). Pulls models from all compute nodes (local + GPU fleet).
+- **Robust dual-summary parser** (v8.9.2) — handles reasoning models (`<think>` blocks), small models with alternate marker formats, multi-format fallback chain, paragraph-split last resort.
+- **`last_response` spacing fix** (v8.9.3–v8.9.4) — ANSI cursor-positioning sequences now produce spaces instead of concatenating words. Live response capture switched to `tmux capture-pane -p` (rendered terminal, correct word spacing) with 200-line scrollback to reach content above the TUI viewport.
 
 ### v8.6 highlights
 
