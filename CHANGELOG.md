@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.6 — fix(#112): parseDualSummary sentence-split fallback — current_status_long always populated (2026-05-30)
+
+### Fixed
+
+- **#112 — `current_status_long` empty when LLM ignores format**: `GET /api/sessions/{id}/current-status` returned `current_status_long: ""` whenever the summarizer LLM output a single paragraph without `===SHORT===`/`===LONG===` markers and without a blank-line break. The entire response went into `current_status`, leaving `current_status_long` empty. Fixed by adding a sentence-split last resort in `parseDualSummary`: when all structural parsing fails, the first 3 sentences become `current_status` (short) and the full LLM response becomes `current_status_long` (long), ensuring the long field is always populated for non-empty LLM output.
+
+---
+
 ## v8.9.5 — feat: summarizer health check + session card age + /api/whisper/transcribe alias (2026-05-30)
 
 ### Added

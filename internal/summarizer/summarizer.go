@@ -301,13 +301,37 @@ func parseDualSummary(raw string) (short, long string) {
 		return s, l
 	}
 
-	// Last resort: split at first blank line so the first paragraph
-	// becomes short and the remainder becomes long.
+	// Blank-line paragraph split: first paragraph → short, remainder → long.
 	parts := strings.SplitN(strings.TrimSpace(raw), "\n\n", 2)
 	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
 		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 	}
-	return strings.TrimSpace(raw), ""
+
+	// Sentence-split last resort: model didn't use any structural format.
+	// Derive short from first 3 sentences; use full response as long so
+	// current_status_long is always populated even for unstructured output.
+	text := strings.TrimSpace(raw)
+	if s := extractFirstNSentences(text, 3); s != "" && s != text {
+		return s, text
+	}
+	return text, ""
+}
+
+// extractFirstNSentences returns the first n sentences from text by scanning
+// for sentence-ending punctuation (. ! ?) followed by whitespace or end of string.
+func extractFirstNSentences(text string, n int) string {
+	count := 0
+	runes := []rune(text)
+	for i, r := range runes {
+		if r == '.' || r == '!' || r == '?' {
+			count++
+			if count == n {
+				// Include the punctuation mark itself.
+				return strings.TrimSpace(string(runes[:i+1]))
+			}
+		}
+	}
+	return text
 }
 
 // stripThinkTags removes <think>...</think> blocks produced by reasoning
