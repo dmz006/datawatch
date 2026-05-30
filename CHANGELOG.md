@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.2 — fix(#112,#114): robust dual-summary parser + CLI send Enter (2026-05-30)
+
+### Fixed
+
+- **#112 — `current_status_long` always empty**: `parseDualSummary` was falling back to `(raw, "")` whenever the LLM did not produce the exact `===SHORT===`/`===LONG===` markers. Root causes: (a) small models (qwen3:1.7b) often emit alternate formats like `[SHORT]`, `**SHORT**`, or bare `SHORT:` headers; (b) reasoning models (qwen3, deepseek-r1) prepend `<think>...</think>` blocks that shifted marker positions. Fix:
+  - `<think>...</think>` blocks are stripped before parsing.
+  - Parser now tries `===SHORT===`/`===LONG===`, then `[SHORT]`/`[LONG]`, then `**SHORT**`/`**LONG**`.
+  - New `splitByLineHeaders` fallback recognises `SHORT` / `LONG` as section headings on their own lines, regardless of surrounding `===`, `[]`, `##`, `**`, `:` decoration.
+  - Final paragraph-split fallback: first double-newline-separated paragraph → short; remainder → long.
+  - Prompt updated to say "begin immediately with ===SHORT===" to improve compliance on first try.
+- **#114 — CLI `datawatch session send` missing Enter (daemon-offline path)**: The direct-tmux fallback used the old single-call `tmux send-keys -t session text Enter` without `-l` (literal flag), causing special characters to be misinterpreted and the settle race with bracketed-paste TUIs (claude-code, ink, opencode) to fire the wrong Enter. Fixed to match the daemon's `SendKeysWithSettle` pattern: strip trailing newlines → send `-l` literal text → 120 ms settle → send `Enter` separately.
+
+---
+
 ## v8.9.1 — feat: summarizer model selector with quality hints (2026-05-30)
 
 ### Added

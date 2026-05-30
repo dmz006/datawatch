@@ -7800,9 +7800,17 @@ func runSessionSend(cfg *config.Config, id, text string) error {
 		return fmt.Errorf("session not found: %s", id)
 	}
 
-	cmd := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, text, "Enter")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux send-keys: %w\n%s", err, out)
+	// Two-step send: literal text first (-l preserves special chars), then Enter
+	// after a 120ms settle so bracketed-paste TUIs (claude-code, ink, opencode)
+	// register the Enter as "submit" rather than folding it into the paste event.
+	// Matches the daemon's SendKeysWithSettle pattern (bug B34 / v4.0.4).
+	text = strings.TrimRight(text, "\r\n")
+	if out, err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "-l", text).CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys literal: %w\n%s", err, out)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if out, err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys Enter: %w\n%s", err, out)
 	}
 	fmt.Printf("Input sent to session %s (tmux: %s)\n", id, sess.TmuxSession)
 	return nil

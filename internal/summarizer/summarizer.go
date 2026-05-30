@@ -25,15 +25,15 @@ import (
 // with whatever the service uses.
 const DefaultSummarizerPrompt = "Compress the following AI coding assistant output into exactly 3 short sentences (under 15 words each) suitable for a car dashboard or phone notification. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next. No code, no markdown, no bullet points."
 
-const dualSummaryPrompt = `Analyze the following AI session terminal output and produce two summaries.
+const dualSummaryPrompt = `Analyze the following AI session terminal output. Your response must contain ONLY the two sections below, beginning immediately with the ===SHORT=== marker:
 
 ===SHORT===
-Exactly 3 sentences, each under 15 words. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next or what was asked. No code, no markdown, no lists.
+Exactly 3 sentences, each under 15 words. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next or what the user last asked. No code, no markdown, no lists.
 
 ===LONG===
-A clear narrative of 3-5 sentences (under 60 words each). Cover: what the session worked on, key decisions or findings, current status, any errors or blockers, and what was last asked of the user. Plain English only.
+A narrative of 3-5 sentences (under 60 words each) covering: what was worked on, key decisions or findings, current status, any errors or blockers, and the last user request. Plain English only.
 
-Output ONLY the two sections with their markers. No preamble, no closing.
+Do not add any text before ===SHORT=== or after the long summary.
 
 Terminal output:
 `
@@ -275,25 +275,96 @@ func contextLinesToHistoryLines(contextLen int) int {
 	}
 }
 
-// parseDualSummary splits an LLM response containing ===SHORT=== and
-// ===LONG=== markers into the two summary strings.
-// If either marker is missing, the entire raw string is returned as short
-// and long is empty.
+// parseDualSummary splits an LLM response into short and long summaries.
+// It strips <think>...</think> blocks (from reasoning models), then tries
+// the primary ===SHORT===/ ===LONG=== markers, several common alternate
+// formats, and finally falls back to a paragraph split so that even models
+// that ignore the format still populate current_status_long.
 func parseDualSummary(raw string) (short, long string) {
-	const markerShort = "===SHORT==="
-	const markerLong = "===LONG==="
+	raw = stripThinkTags(raw)
 
-	shortIdx := strings.Index(raw, markerShort)
-	longIdx := strings.Index(raw, markerLong)
-
-	if shortIdx == -1 || longIdx == -1 {
-		return strings.TrimSpace(raw), ""
+	// Primary and common alternate explicit-marker formats.
+	markerPairs := [][2]string{
+		{"===SHORT===", "===LONG==="},
+		{"[SHORT]", "[LONG]"},
+		{"**SHORT**", "**LONG**"},
+	}
+	for _, pair := range markerPairs {
+		if s, l, ok := splitByMarkers(raw, pair[0], pair[1]); ok {
+			return s, l
+		}
 	}
 
+	// Line-header fallback: look for "SHORT" / "LONG" on their own lines
+	// (strips surrounding whitespace, punctuation, markdown, ===, [], *).
+	if s, l, ok := splitByLineHeaders(raw); ok {
+		return s, l
+	}
+
+	// Last resort: split at first blank line so the first paragraph
+	// becomes short and the remainder becomes long.
+	parts := strings.SplitN(strings.TrimSpace(raw), "\n\n", 2)
+	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	}
+	return strings.TrimSpace(raw), ""
+}
+
+// stripThinkTags removes <think>...</think> blocks produced by reasoning
+// models (qwen3, deepseek-r1, etc.) before parsing the dual-summary response.
+func stripThinkTags(s string) string {
+	for {
+		start := strings.Index(s, "<think>")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(s[start:], "</think>")
+		if end == -1 {
+			// Unclosed tag — drop everything from it onward.
+			s = strings.TrimSpace(s[:start])
+			break
+		}
+		s = s[:start] + s[start+end+len("</think>"):]
+	}
+	return strings.TrimSpace(s)
+}
+
+// splitByMarkers tries to split raw on an exact markerShort then markerLong pair.
+func splitByMarkers(raw, markerShort, markerLong string) (short, long string, ok bool) {
+	shortIdx := strings.Index(raw, markerShort)
+	longIdx := strings.Index(raw, markerLong)
+	if shortIdx == -1 || longIdx == -1 || longIdx <= shortIdx {
+		return "", "", false
+	}
 	shortContent := raw[shortIdx+len(markerShort) : longIdx]
 	longContent := raw[longIdx+len(markerLong):]
+	return strings.TrimSpace(shortContent), strings.TrimSpace(longContent), true
+}
 
-	return strings.TrimSpace(shortContent), strings.TrimSpace(longContent)
+// splitByLineHeaders looks for "SHORT" and "LONG" as sole content on a line
+// (after stripping surrounding whitespace, = [ ] * # : characters).
+// Handles formats like "## SHORT", "[SHORT]", "===SHORT===", "SHORT:", etc.
+func splitByLineHeaders(raw string) (short, long string, ok bool) {
+	lines := strings.Split(raw, "\n")
+	shortStart, longStart := -1, -1
+	trimChars := " \t=-*#[]():."
+	for i, line := range lines {
+		trimmed := strings.ToLower(strings.Trim(line, trimChars))
+		if trimmed == "short" && shortStart == -1 {
+			shortStart = i
+		} else if trimmed == "long" && longStart == -1 {
+			longStart = i
+		}
+	}
+	if shortStart == -1 || longStart == -1 || longStart <= shortStart {
+		return "", "", false
+	}
+	shortContent := strings.Join(lines[shortStart+1:longStart], "\n")
+	longContent := strings.Join(lines[longStart+1:], "\n")
+	if strings.TrimSpace(shortContent) == "" || strings.TrimSpace(longContent) == "" {
+		return "", "", false
+	}
+	return strings.TrimSpace(shortContent), strings.TrimSpace(longContent), true
 }
 
 // callOllama calls the Ollama API using the LLM registry entry.
