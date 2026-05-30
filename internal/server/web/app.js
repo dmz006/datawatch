@@ -11090,7 +11090,6 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
     { key: 'session.summarizer.enabled', label: t('session_summarizer_enabled') || 'Summarize last response', type: 'toggle' },
     { key: 'session.summarizer.llm_ref', label: t('session_summarizer_llm') || 'Summarizer LLM', type: 'llm_summarizer' },
-    { key: 'session.summarizer.prompt', label: t('session_summarizer_prompt') || 'Summary prompt', type: 'textarea' },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval

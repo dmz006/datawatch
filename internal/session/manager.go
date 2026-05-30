@@ -432,6 +432,12 @@ func (m *Manager) triggerSummarize(fullID string, lines int) {
 			Summary:     summary,
 			GeneratedAt: time.Now(),
 		})
+		// Replace LastResponse so push alerts, mobile notifications, and
+		// Android Auto all show the compressed summary instead of raw output.
+		if sess, ok := m.store.Get(fullID); ok {
+			sess.LastResponse = summary
+			_ = m.store.Save(sess)
+		}
 	}()
 }
 

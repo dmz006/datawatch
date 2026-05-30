@@ -22,7 +22,7 @@ import (
 // DefaultSummarizerPrompt is the default system prompt for the summarizer.
 // Tests reference this constant directly so the expected prompt stays in sync
 // with whatever the service uses.
-const DefaultSummarizerPrompt = "Summarize the following AI coding session output in 1-3 plain spoken sentences suitable for a voice notification or alert. State what was done, whether it succeeded or failed, and any critical next step. Do not use markdown, code blocks, bullet points, or file paths. Write as if speaking aloud to someone who cannot see the screen."
+const DefaultSummarizerPrompt = "Compress the following AI coding assistant output into exactly 3 short sentences (under 15 words each) suitable for a car dashboard or phone notification. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next. No code, no markdown, no bullet points."
 
 // Service calls a configured LLM (Ollama or openai-compatible) to produce
 // a short spoken-language summary of session output for alerts and TTS.

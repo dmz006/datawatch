@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.8.13 — fix: summarizer replaces last response; compact prompt (2026-05-29)
+
+### Changed
+
+- **Summarizer now replaces `last_response`** — when the session summarizer (Settings → General → Session → "Summarize last response") runs, the compressed summary now overwrites `sess.LastResponse` in addition to being stored in the summary endpoint. This means push notifications, mobile alerts, Android Auto, and any surface that reads `last_response` automatically show the compressed 3-sentence version instead of raw session output.
+- **Default prompt updated** — the built-in summarization prompt is now optimized for constrained-screen display rather than TTS voice playback: produces exactly 3 short sentences (what was done / success or failure / what's next), no markdown, no code, suitable for a car dashboard or phone lock screen.
+- **Prompt field removed from Settings UI** — the editable prompt textarea has been removed from the summarizer settings card. The default prompt is now fixed. (The `session.summarizer.prompt` config field still works via YAML or REST API for power users.)
+
+---
+
 ## v8.8.12 — fix: auto-updater never downgrades (2026-05-29)
 
 ### Fixed

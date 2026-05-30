@@ -89,9 +89,10 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.8.12](CHANGELOG.md) (2026-05-29)** — Auto-updater downgrade prevention.
+**[v8.8.13](CHANGELOG.md) (2026-05-29)** — Summarizer writes to last response; compact display prompt.
 
-- **Auto-updater** — `datawatch update`, `POST /api/update`, and `GET /api/update/check` now use a semver `>` comparison so a lower-versioned GitHub release can never overwrite a locally-built newer binary.
+- **Summarizer → last response** — when "Summarize last response" is enabled, the compressed summary now replaces `last_response` so push notifications, Android Auto, and mobile alerts all show the 3-sentence summary automatically.
+- **Auto-updater** (v8.8.12) — semver `>` comparison prevents downgrading to an older GitHub release.
 - **LLM response summarizer** (v8.8.5) — Summarize session output to 1-3 spoken sentences via Ollama/OpenAI. Settings → General → Session. Designed for voice alerts and TTS auto-play.
 - **`--chrome` session flag** (v8.8.3) — Opt-in flag to enable Chrome DevTools Protocol integration. Available on all surfaces: CLI (`--chrome`), REST API, PWA checkbox, MCP, and comm channel.
 
