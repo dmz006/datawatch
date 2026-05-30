@@ -39,10 +39,26 @@ var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b
 // TUI applications (e.g. claude-code) use these instead of literal space characters.
 var cursorForwardRe = regexp.MustCompile(`\x1b\[(\d+)C`)
 
+// cursorColumnRe matches ANSI cursor-column-absolute sequences: \x1b[G or \x1b[NG.
+// Claude Code / ink TUIs use these to reposition within a line when rewriting
+// progress text. Stripping them to "" concatenates the surrounding words; replace
+// with a single space so "restart\x1b[Gthe daemon" becomes "restart the daemon".
+var cursorColumnRe = regexp.MustCompile(`\x1b\[(\d*)G`)
+
+// cursorPosRe matches cursor-absolute-position: \x1b[row;colH or \x1b[row;colf.
+// Same word-concatenation risk as cursor-column — replace with a space.
+var cursorPosRe = regexp.MustCompile(`\x1b\[(\d*);(\d*)[Hf]`)
+
+// cursorBackRe matches cursor-backward sequences: \x1b[D or \x1b[ND.
+// These can appear between overwritten words and cause concatenation.
+var cursorBackRe = regexp.MustCompile(`\x1b\[(\d*)D`)
+
 // StripANSI removes ANSI escape sequences from s, expanding cursor-forward
-// sequences (\x1b[NC) into N literal space characters so word spacing is preserved.
+// sequences (\x1b[NC) into N literal space characters and replacing cursor-
+// positioning sequences (column-absolute, position, backward) with a single
+// space to preserve word boundaries in raw pipe-pane terminal logs.
 func StripANSI(s string) string {
-	// Replace cursor-forward with equivalent spaces before stripping other escapes.
+	// 1. Expand cursor-forward into equivalent spaces.
 	s = cursorForwardRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := cursorForwardRe.FindStringSubmatch(m)
 		if len(sub) < 2 {
@@ -59,6 +75,13 @@ func StripANSI(s string) string {
 		}
 		return string(result)
 	})
+	// 2. Replace cursor-positioning sequences with a space so that adjacent
+	// words on the same visual line (separated only by a repositioning code)
+	// are not concatenated when the sequence is stripped.
+	s = cursorColumnRe.ReplaceAllString(s, " ")
+	s = cursorPosRe.ReplaceAllString(s, " ")
+	s = cursorBackRe.ReplaceAllString(s, " ")
+	// 3. Strip all remaining ANSI escape sequences.
 	return ansiEscapeRe.ReplaceAllString(s, "")
 }
 

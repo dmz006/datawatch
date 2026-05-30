@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.3 — fix(#111): StripANSI preserves spaces + summarizer model list from all nodes (2026-05-30)
+
+### Fixed
+
+- **#111 — `last_response` has no spaces** (e.g. "restartthedaemon"): ANSI cursor-positioning sequences (`\x1b[G` cursor-column-absolute, `\x1b[row;colH` cursor-position, `\x1b[D` cursor-backward) were being stripped to `""` by the catch-all ANSI regex, concatenating adjacent words. `StripANSI` now replaces each of these movement sequences with a single space before the catch-all strip, preserving word boundaries in terminal output.
+
+### Changed
+
+- **Summarizer model selector lists models from all compute nodes** — previously only the local Ollama instance (`/api/ollama/models`) was queried. The PWA Settings dropdown now also queries `/api/compute/nodes` and fetches per-node model lists from every `ollama`-kind compute node (e.g. the `datawatch` GPU node), deduplicates, and presents the merged list. Custom model names can still be typed freely (datalist input pattern).
+
+---
+
 ## v8.9.2 — fix(#112,#114): robust dual-summary parser + CLI send Enter (2026-05-30)
 
 ### Fixed

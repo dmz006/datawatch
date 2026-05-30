@@ -11775,46 +11775,72 @@ function loadGeneralConfig() {
             }, 0);
           } else if (f.type === 'summarizer_model') {
             // Model override for the summarizer. Hidden until an LLM ref is selected.
-            // Fetches model list from Ollama and annotates each with a quality/speed hint.
+            // Uses a text input + datalist so operators can type any model name (including
+            // compute-node models not in the local Ollama list) while still getting
+            // discovery hints for locally-available models.
             const wrapId = 'sum-model-wrap';
-            const innerId = 'sum-model-inner';
+            const listId = 'sum-model-datalist';
+            const inputId = 'sum-model-input';
             const savedModel = String(val || '');
             html += `<div id="${wrapId}" class="settings-row" style="justify-content:space-between;display:none;">
               <div class="settings-label">${escHtml(f.label)}</div>
-              <div id="${innerId}" style="flex:0 0 200px;"></div>
+              <div style="flex:0 0 200px;display:flex;flex-direction:column;gap:2px;">
+                <input id="${inputId}" list="${listId}" class="form-input" style="font-size:12px;width:100%;"
+                  value="${escHtml(savedModel)}" placeholder="(backend default)"
+                  onchange="saveGeneralField('${f.key}', this.value)" />
+                <datalist id="${listId}"></datalist>
+                <div id="sum-model-hint" style="font-size:10px;color:var(--text2);"></div>
+              </div>
             </div>`;
             setTimeout(() => {
               window._refreshSummarizerModelSelect = function() {
                 const wrap = document.getElementById(wrapId);
-                const inner = document.getElementById(innerId);
-                if (!wrap || !inner) return;
+                if (!wrap) return;
                 const llmSel = document.getElementById('gcfg-summarizer-llm');
                 const llmRef = llmSel ? llmSel.value : '';
                 if (!llmRef) { wrap.style.display = 'none'; return; }
                 wrap.style.display = '';
-                const curVal = (inner.querySelector('select,input') || {}).value || savedModel;
-                fetch('/api/ollama/models', { headers: tokenHeader() })
-                  .then(r => r.ok ? r.json() : null).catch(() => null)
-                  .then(data => {
-                    const models = data && Array.isArray(data.models)
-                      ? data.models.map(m => m.name || m).filter(Boolean)
-                      : Array.isArray(data) ? data.map(m => m.name || m).filter(Boolean) : [];
-                    if (models.length === 0) {
-                      inner.innerHTML = `<input class="form-input" style="font-size:12px;width:100%;" value="${escHtml(curVal)}"
-                        onchange="saveGeneralField('${f.key}', this.value)" placeholder="(backend default)" />`;
-                    } else {
-                      let opts = `<option value="">(backend default)</option>`;
-                      models.forEach(m => {
+                // Fetch from local Ollama AND all registered compute nodes, then merge.
+                const fetchAllOllamaModels = () => {
+                  const toNames = d => {
+                    const arr = d && Array.isArray(d.models) ? d.models : Array.isArray(d) ? d : [];
+                    return arr.map(m => m.name || m).filter(Boolean);
+                  };
+                  return Promise.all([
+                    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/compute/nodes', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                  ]).then(([local, cnResp]) => {
+                    const seen = new Set();
+                    const merged = [];
+                    const add = names => names.forEach(n => { if (!seen.has(n)) { seen.add(n); merged.push(n); } });
+                    add(toNames(local));
+                    const nodes = cnResp && Array.isArray(cnResp.nodes) ? cnResp.nodes : [];
+                    return Promise.all(
+                      nodes.filter(n => n.kind === 'ollama' && n.name).map(n =>
+                        fetch(`/api/ollama/models?node=${encodeURIComponent(n.name)}`, { headers: tokenHeader() })
+                          .then(r => r.ok ? r.json() : null).catch(() => null).then(toNames)
+                      )
+                    ).then(nodeModels => { nodeModels.forEach(add); return merged; });
+                  });
+                };
+                fetchAllOllamaModels()
+                  .then(models => {
+                    const dl = document.getElementById(listId);
+                    if (dl) {
+                      dl.innerHTML = models.map(m => {
                         const hint = summarizerModelHint(m);
-                        const label = hint ? m + ' — ' + hint : m;
-                        const sel = m === curVal ? ' selected' : '';
-                        opts += `<option value="${escHtml(m)}"${sel}>${escHtml(label)}</option>`;
-                      });
-                      if (curVal && !models.includes(curVal)) {
-                        opts += `<option value="${escHtml(curVal)}" selected>(custom) ${escHtml(curVal)}</option>`;
-                      }
-                      inner.innerHTML = `<select class="form-select" style="font-size:12px;width:100%;"
-                        onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>`;
+                        return `<option value="${escHtml(m)}">${escHtml(hint ? m + ' — ' + hint : m)}</option>`;
+                      }).join('');
+                    }
+                    // Update hint label for the currently typed/saved value.
+                    const inp = document.getElementById(inputId);
+                    const hintEl = document.getElementById('sum-model-hint');
+                    if (inp && hintEl) {
+                      const h = summarizerModelHint(inp.value);
+                      hintEl.textContent = h || (inp.value ? '' : 'Type a model name or pick from suggestions');
+                      inp.addEventListener('input', () => {
+                        hintEl.textContent = summarizerModelHint(inp.value) || '';
+                      }, { once: false });
                     }
                   });
               };
