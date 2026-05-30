@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.7 — fix(ui): ✕ close button on expanded envelope panels in session cards (2026-05-30)
+
+### Fixed
+
+- **Expanded long-summary panels now closeable** — the `▲` toggle button to collapse the long-summary envelope was easy to miss once the expanded block pushed content down the session card. Added an `✕` button in the top-right corner (using `position:absolute`) on both expanded panels: `current_status_long` for running sessions and `last_summary_long` for waiting-input sessions. The `▲` toggle in the header row still works; the `✕` gives a second always-visible close affordance.
+
+---
+
 ## v8.9.6 — fix(#112): parseDualSummary sentence-split fallback — current_status_long always populated (2026-05-30)
 
 ### Fixed
