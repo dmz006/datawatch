@@ -193,6 +193,7 @@ const state = {
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
   termFitAddon: null,      // xterm.js FitAddon instance
+  currentStatus: {},       // fullId -> {text, generatedAt, loading} for live running-session summaries
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -475,6 +476,10 @@ function handleMessage(msg) {
       // Initialize channel_ready state from session data
       for (const s of state.sessions) {
         if (s.channel_ready) state.channelReady[s.full_id] = true;
+        // Clear stale currentStatus when session is no longer running
+        if (s.state !== 'running' && s.state !== 'rate_limited' && state.currentStatus[s.full_id]) {
+          delete state.currentStatus[s.full_id];
+        }
       }
       // Auto-reload browser if daemon version changed (new build deployed)
       if (msg.data && msg.data.version) {
@@ -2353,7 +2358,7 @@ function sessionCard(sess, idx, total) {
   // time, not with action buttons. Different action (view what session
   // said) tied to the session, not lifecycle. Built separately below.
 
-  // Waiting-input prompt and expandable commands
+  // Waiting-input prompt and expandable commands; running-session live status
   let waitingRow = '';
   if (isWaiting) {
     // Prefer the full prompt_context (multi-line) over just the last line —
@@ -2366,10 +2371,32 @@ function sessionCard(sess, idx, total) {
     const promptHtml = ctxLines.length > 0
       ? ctxLines.slice(-4).map(l => `<div>${escHtml(l.length > 100 ? l.slice(0,100) + '…' : l)}</div>`).join('')
       : '<div>Input needed</div>';
+    // Inline last_response preview so the operator can see the question at a glance
+    const lrSnippet = sess.last_response
+      ? sess.last_response.slice(0, 180) + (sess.last_response.length > 180 ? '…' : '')
+      : '';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
       <span class="card-waiting-label">${promptHtml}</span>
+      ${lrSnippet ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;font-style:italic;">${escHtml(lrSnippet)}</div>` : ''}
     </div>
     <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
+  } else if (isActive) {
+    // Running / rate_limited — show live status if fetched, otherwise a fetch button
+    const cs = state.currentStatus[fullId];
+    const csSmall = 'font-size:10px;color:var(--text2);';
+    if (cs && cs.loading) {
+      waitingRow = `<div class="card-waiting-row"><span style="${csSmall}">Summarizing…</span></div>`;
+    } else if (cs && cs.text) {
+      const csAgo = cs.generatedAt ? timeAgo(cs.generatedAt) : '';
+      waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
+        <span style="${csSmall}">${escHtml(cs.text)}</span>
+        <button onclick="event.stopPropagation();fetchCurrentStatus('${escHtml(fullId)}')" title="Refresh" style="border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:10px;margin-left:6px;">&#8635; ${escHtml(csAgo)}</button>
+      </div>`;
+    } else {
+      waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
+        <button onclick="event.stopPropagation();fetchCurrentStatus('${escHtml(fullId)}')" title="Summarize current activity" style="border:1px solid var(--border);background:var(--bg2);color:var(--text2);border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;">&#9654; What's it doing?</button>
+      </div>`;
+    }
   }
 
   const showCheckbox = state.selectMode && !isActive;
@@ -2407,6 +2434,21 @@ function sessionCard(sess, idx, total) {
       ${waitingRow}
     </div>`;
 }
+
+function fetchCurrentStatus(fullId) {
+  state.currentStatus[fullId] = Object.assign({}, state.currentStatus[fullId], { loading: true });
+  renderSessionsView();
+  apiFetch('/api/sessions/' + encodeURIComponent(fullId) + '/current-status')
+    .then(data => {
+      state.currentStatus[fullId] = { text: data.current_status || '', generatedAt: data.generated_at || new Date().toISOString(), loading: false };
+      renderSessionsView();
+    })
+    .catch(err => {
+      state.currentStatus[fullId] = { text: '(' + (err.message || 'unavailable') + ')', generatedAt: new Date().toISOString(), loading: false };
+      renderSessionsView();
+    });
+}
+window.fetchCurrentStatus = fetchCurrentStatus;
 
 function showCardCmds(fullId) {
   const sess = state.sessions.find(s => s.full_id === fullId);

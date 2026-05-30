@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.14"
+var Version = "8.8.15"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3017,8 +3017,8 @@ func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 
 // handleSessionSubpath is the catch-all dispatcher for /api/sessions/{id}/<verb>
 // patterns not handled by the exact-match registrations. Covers the api.go set
-// (last-summary, summarize) and falls through to handleSessionsSubpath for the
-// rollback.go set (rollback, hook-event, status, telemetry, guardrail, input).
+// (last-summary, summarize, current-status) and falls through to handleSessionsSubpath
+// for the rollback.go set (rollback, hook-event, status, telemetry, guardrail, input).
 func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 	if strings.HasSuffix(path, "/last-summary") {
@@ -3027,6 +3027,10 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/summarize") {
 		s.handleSessionSummarize(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/current-status") {
+		s.handleSessionCurrentStatus(w, r)
 		return
 	}
 	s.handleSessionsSubpath(w, r)
@@ -3127,6 +3131,58 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sum) //nolint:errcheck
+}
+
+// handleSessionCurrentStatus returns a live LLM summary of what a running session is doing.
+// GET /api/sessions/{id}/current-status
+//
+// Returns {"current_status":"...","generated_at":"..."} for running sessions.
+// Returns 409 if the session is not running (caller should show last_response instead).
+// Returns 503 if no summarizer is configured.
+func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id := strings.TrimSuffix(path, "/current-status")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if sess.State != session.StateRunning && sess.State != session.StateRateLimited {
+		http.Error(w, "session is not running", http.StatusConflict)
+		return
+	}
+	if s.summarizerSvc == nil {
+		http.Error(w, "summarizer not configured", http.StatusServiceUnavailable)
+		return
+	}
+	text, err := s.manager.TailOutput(sess.FullID, 200)
+	if err != nil {
+		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	summary, err := s.summarizerSvc.Summarize(ctx, text)
+	if err != nil {
+		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"current_status": summary,
+		"generated_at":   time.Now(),
+	})
 }
 
 func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
