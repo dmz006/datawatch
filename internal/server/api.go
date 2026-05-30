@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.7"
+var Version = "8.9.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3143,7 +3143,7 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	text, err := s.manager.TailOutput(sess.FullID, reqBody.Lines)
+	text, newOffset, err := s.manager.OutputSince(sess.FullID, sess.SummaryLogOffset)
 	if err != nil {
 		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -3168,6 +3168,7 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 		GeneratedAt: time.Now(),
 	}
 	s.manager.StoreSummary(sess.FullID, sum)
+	s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sum) //nolint:errcheck
@@ -3206,16 +3207,18 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "summarizer not configured", http.StatusServiceUnavailable)
 		return
 	}
-	lines := s.summarizerSvc.ContextLines()
-	if lines <= 0 {
-		lines = 200
-	}
-	text, err := s.manager.TailOutput(sess.FullID, lines)
+	// Read only output written since the last summary so the LLM sees the
+	// current prompt's work, not the entire session history.
+	text, newOffset, err := s.manager.OutputSince(sess.FullID, sess.SummaryLogOffset)
 	if err != nil {
 		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Pass previous summary as context so the LLM avoids repetition.
+	if strings.TrimSpace(text) == "" {
+		http.Error(w, "no new output since last summary", http.StatusNoContent)
+		return
+	}
+	// Pass previous short summary as context so the LLM doesn't repeat it.
 	prevShort := ""
 	if prev, ok := s.manager.GetSummary(sess.FullID); ok {
 		prevShort = prev.Summary
@@ -3227,6 +3230,8 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Advance the watermark so the next call is also a delta.
+	s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"current_status":      short,

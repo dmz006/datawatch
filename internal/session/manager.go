@@ -439,36 +439,35 @@ func (m *Manager) SetDualSummarizer(fn func(ctx context.Context, text string, pr
 	m.summaryLinesFor = linesFn
 }
 
-// triggerSummarize asynchronously generates a dual summary for the last N lines
-// of a session's output and stores it. Used for completion/opencode-exit
-// transitions where there is no push-notification timing constraint.
-func (m *Manager) triggerSummarize(fullID string, lines int) {
+// triggerSummarize asynchronously generates a dual summary for output written
+// since the last summary (using SummaryLogOffset) and stores it. Used for
+// completion/opencode-exit transitions where there is no push-notification
+// timing constraint.
+func (m *Manager) triggerSummarize(fullID string, _ int) {
 	if m.dualSummarizeFn == nil {
 		return
 	}
-	if m.summaryLinesFor != nil {
-		if n := m.summaryLinesFor(); n > 0 {
-			lines = n
-		}
-	}
 	go func() {
 		log.Printf("[summarizer] starting async for session %s", fullID)
-		text, err := m.TailOutput(fullID, lines)
+		prevOffset := int64(0)
+		if sess, ok := m.store.Get(fullID); ok {
+			prevOffset = sess.SummaryLogOffset
+		}
+		text, newOffset, err := m.OutputSince(fullID, prevOffset)
 		if err != nil {
-			log.Printf("[summarizer] TailOutput error for session %s: %v", fullID, err)
+			log.Printf("[summarizer] OutputSince error for session %s: %v", fullID, err)
 			return
 		}
 		if strings.TrimSpace(text) == "" {
-			log.Printf("[summarizer] TailOutput empty for session %s", fullID)
+			log.Printf("[summarizer] no new output for session %s since last summary", fullID)
 			return
 		}
-		// Skip summarization when output is too thin — likely a start/stop
-		// with no meaningful work done (< 8 non-empty lines).
+		// Skip summarization when delta is too thin (< 8 non-empty lines).
 		if strings.Count(strings.TrimSpace(text), "\n") < 7 {
-			log.Printf("[summarizer] skipping session %s — output too short to summarize", fullID)
+			log.Printf("[summarizer] skipping session %s — delta too short to summarize", fullID)
 			return
 		}
-		// Retrieve previous summary to give the LLM context and avoid repetition.
+		// Pass previous short summary as context so the LLM doesn't repeat it.
 		prevShort := ""
 		if prev, ok := m.GetSummary(fullID); ok {
 			prevShort = prev.Summary
@@ -484,7 +483,8 @@ func (m *Manager) triggerSummarize(fullID string, lines int) {
 			log.Printf("[summarizer] empty result for session %s", fullID)
 			return
 		}
-		log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars)", fullID, len(short), len(long))
+		log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars, offset %d→%d)",
+			fullID, len(short), len(long), prevOffset, newOffset)
 		m.StoreSummary(fullID, SessionSummary{
 			SessionID:   fullID,
 			Summary:     short,
@@ -495,6 +495,7 @@ func (m *Manager) triggerSummarize(fullID string, lines int) {
 			sess.LastResponse = short
 			sess.LastSummaryLong = long
 			sess.SummaryGeneratedAt = time.Now()
+			sess.SummaryLogOffset = newOffset
 			_ = m.store.Save(sess)
 		}
 	}()
@@ -1873,19 +1874,14 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 											// firing the push so the notification body already
 											// contains the compressed summary.
 											if m.dualSummarizeFn != nil {
-												histLines := 200
-												if m.summaryLinesFor != nil {
-													if n := m.summaryLinesFor(); n > 0 {
-														histLines = n
-													}
-												}
-												text, terr := m.TailOutput(s.FullID, histLines)
+												prevOffset := s.SummaryLogOffset
+												text, newOffset, terr := m.OutputSince(s.FullID, prevOffset)
 												if terr != nil {
-													log.Printf("[summarizer] TailOutput error for session %s: %v", s.FullID, terr)
+													log.Printf("[summarizer] OutputSince error for session %s: %v", s.FullID, terr)
 												} else if strings.TrimSpace(text) == "" || strings.Count(strings.TrimSpace(text), "\n") < 7 {
-													log.Printf("[summarizer] skipping session %s — output too short to summarize", s.FullID)
+													log.Printf("[summarizer] skipping session %s — delta too short to summarize", s.FullID)
 												} else {
-													log.Printf("[summarizer] starting for session %s (pre-push)", s.FullID)
+													log.Printf("[summarizer] starting for session %s (pre-push, offset %d)", s.FullID, prevOffset)
 													prevShort := ""
 													if prev, ok := m.GetSummary(s.FullID); ok {
 														prevShort = prev.Summary
@@ -1896,10 +1892,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 													if serr != nil {
 														log.Printf("[summarizer] LLM error for session %s: %v", s.FullID, serr)
 													} else if strings.TrimSpace(short) != "" {
-														log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars)", s.FullID, len(short), len(long))
+														log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars, offset %d→%d)",
+															s.FullID, len(short), len(long), prevOffset, newOffset)
 														s.LastResponse = short
 														s.LastSummaryLong = long
 														s.SummaryGeneratedAt = time.Now()
+														s.SummaryLogOffset = newOffset
 														_ = m.store.Save(s)
 														m.StoreSummary(s.FullID, SessionSummary{
 															SessionID:   s.FullID,
@@ -2875,6 +2873,84 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// UpdateSummaryOffset advances the SummaryLogOffset watermark for a session
+// after a successful current-status call so the next call is also a delta.
+func (m *Manager) UpdateSummaryOffset(fullID string, offset int64) {
+	if sess, ok := m.store.Get(fullID); ok {
+		sess.SummaryLogOffset = offset
+		_ = m.store.Save(sess)
+	}
+}
+
+// OutputSince reads session output starting at byteOffset (raw file bytes),
+// strips ANSI codes, and returns the cleaned text plus the new end offset.
+// Pass 0 to read from the beginning. The returned newOffset should be saved
+// to SummaryLogOffset so the next call receives only the incremental delta.
+func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, newOffset int64, err error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", byteOffset, fmt.Errorf("session %s not found", fullID)
+		}
+	}
+
+	var data []byte
+	encPath := sess.LogFile + ".enc"
+	if _, statErr := os.Stat(encPath); statErr == nil && m.encKey != nil {
+		r, readErr := secfile.NewEncryptedLogReader(encPath, m.encKey)
+		if readErr != nil {
+			return "", byteOffset, fmt.Errorf("open encrypted log: %w", readErr)
+		}
+		all, readErr := r.ReadAll()
+		_ = r.Close()
+		if readErr != nil {
+			return "", byteOffset, fmt.Errorf("read encrypted log: %w", readErr)
+		}
+		newOffset = int64(len(all))
+		if byteOffset > 0 && byteOffset < newOffset {
+			data = all[byteOffset:]
+		} else {
+			data = all
+		}
+	} else {
+		f, openErr := os.Open(sess.LogFile)
+		if openErr != nil {
+			if os.IsNotExist(openErr) {
+				return "(no output yet)", 0, nil
+			}
+			return "", byteOffset, fmt.Errorf("read log: %w", openErr)
+		}
+		defer f.Close() //nolint:errcheck
+		fi, _ := f.Stat()
+		newOffset = fi.Size()
+		if byteOffset > 0 && byteOffset < newOffset {
+			f.Seek(byteOffset, 0) //nolint:errcheck
+		}
+		data, err = io.ReadAll(f)
+		if err != nil {
+			return "", byteOffset, fmt.Errorf("read log delta: %w", err)
+		}
+		// If we seeked mid-file, drop first partial line.
+		if byteOffset > 0 {
+			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+				data = data[idx+1:]
+			}
+		}
+	}
+
+	clean := StripANSI(string(data))
+	clean = strings.ReplaceAll(clean, "\r\n", "\n")
+	clean = strings.ReplaceAll(clean, "\r", "\n")
+	var lines []string
+	for _, l := range strings.Split(clean, "\n") {
+		if strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
+	}
+	return strings.Join(lines, "\n"), newOffset, nil
 }
 
 // TailRawOutput returns the last n bytes/lines of output WITH ANSI preserved.

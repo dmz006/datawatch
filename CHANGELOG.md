@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.8 — fix: deduplicate summarizer input — delta-only output since last summary (2026-05-30)
+
+### Fixed
+
+- **Summarizer no longer replays entire session history** — all three summarizer paths (`triggerSummarize`, state-transition pre-push, and `GET /api/sessions/{id}/current-status`) previously passed the full tail of the output log to the LLM. Each call now passes only the output written *since the last summary* by tracking a `SummaryLogOffset` byte offset on the Session struct. The LLM receives the current prompt's work, not a replay of everything the session has ever done.
+- **`SummaryLogOffset int64`** — new field on Session (persisted to `sessions.json`). Set to the raw log file end-position after every successful summary. Starts at 0 (read-all) for sessions without a prior summary, so existing sessions degrade gracefully.
+- **`OutputSince(fullID, offset)`** — new Manager method replacing the `TailOutput(n lines)` call in all summarizer paths. Seeks the plaintext log to `offset` and reads forward; handles encrypted logs by slicing the decrypted buffer.
+- **`UpdateSummaryOffset(fullID, offset)`** — lightweight Manager method called by `handleSessionCurrentStatus` and `handleSummarize` after a successful LLM call to advance the watermark without a full persist cycle.
+- **204 on no new output** — `GET /api/sessions/{id}/current-status` now returns `204 No Content` when there is no new output since the last summary, instead of summarizing an empty string.
+
+---
+
 ## v8.9.7 — fix(ui): ✕ close button on expanded envelope panels in session cards (2026-05-30)
 
 ### Fixed

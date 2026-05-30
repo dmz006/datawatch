@@ -97,6 +97,11 @@ type Session struct {
 	// successfully writes LastResponse/LastSummaryLong. Used by the PWA to
 	// display "AI summary Xm ago" on session cards and detect stale/missing runs.
 	SummaryGeneratedAt time.Time `json:"summary_generated_at,omitempty"`
+	// SummaryLogOffset is the byte offset in the raw log file at the time
+	// the last summary was generated. OutputSince uses it so each new
+	// summary only processes output written after the previous one — not
+	// the entire session history.
+	SummaryLogOffset int64 `json:"summary_log_offset,omitempty"`
 	// AgentID is set when this session lives inside a parent-spawned
 	// worker container (F10 sprint 3.6). The session API forwards
 	// reads/writes for these sessions through /api/proxy/agent/{id}/...
