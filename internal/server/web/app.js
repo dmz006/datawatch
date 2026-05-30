@@ -193,7 +193,8 @@ const state = {
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
   termFitAddon: null,      // xterm.js FitAddon instance
-  currentStatus: {},       // fullId -> {text, generatedAt, loading} for live running-session summaries
+  currentStatus: {},          // fullId -> {text, longText, generatedAt, loading, longExpanded}
+  summaryLongExpanded: {},    // fullId -> bool — envelope expand state for waiting_input long summary
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -2351,6 +2352,11 @@ function sessionCard(sess, idx, total) {
     actions += `<button onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart" style="${btnStyle}">&#8635; Restart</button>`;
     actions += `<button onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete" style="${btnStyle}border-color:var(--error);color:var(--error);">&#128465;</button>`;
   }
+  // Manual summarize button — visible on waiting_input and done sessions when summarizer is likely configured
+  // (we can't cheaply check config here so always show it; server returns 503 if not configured)
+  if (!isActive || isWaiting) {
+    actions += `<button onclick="event.stopPropagation();manualSummarize('${escHtml(fullId)}')" title="Re-summarize with AI" style="${btnStyle}font-size:10px;">&#129302; Summary</button>`;
+  }
   // BL303 S4 T10 — maximize button opens session in dashboard expand mode.
   actions += `<button class="sess-maximize-btn" onclick="event.stopPropagation();window.openDashExpand('${escHtml(fullId)}')" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
 
@@ -2359,6 +2365,7 @@ function sessionCard(sess, idx, total) {
   // said) tied to the session, not lifecycle. Built separately below.
 
   // Waiting-input prompt and expandable commands; running-session live status
+  const envelopeBtnStyle = 'border:none;background:transparent;cursor:pointer;font-size:11px;color:var(--text2);padding:0 2px;line-height:1;vertical-align:middle;';
   let waitingRow = '';
   if (isWaiting) {
     // Prefer the full prompt_context (multi-line) over just the last line —
@@ -2371,13 +2378,17 @@ function sessionCard(sess, idx, total) {
     const promptHtml = ctxLines.length > 0
       ? ctxLines.slice(-4).map(l => `<div>${escHtml(l.length > 100 ? l.slice(0,100) + '…' : l)}</div>`).join('')
       : '<div>Input needed</div>';
-    // Inline last_response preview so the operator can see the question at a glance
-    const lrSnippet = sess.last_response
-      ? sess.last_response.slice(0, 180) + (sess.last_response.length > 180 ? '…' : '')
-      : '';
+    // Short summary (last_response) with optional envelope expand for long summary
+    const longExpanded = state.summaryLongExpanded && state.summaryLongExpanded[fullId];
+    const hasLong = !!sess.last_summary_long;
+    const lrText = sess.last_response || '';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
       <span class="card-waiting-label">${promptHtml}</span>
-      ${lrSnippet ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;font-style:italic;">${escHtml(lrSnippet)}</div>` : ''}
+      ${lrText ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">
+        <span style="font-style:italic;">${escHtml(lrText.slice(0, 180) + (lrText.length > 180 ? '…' : ''))}</span>
+        ${hasLong ? `<button onclick="event.stopPropagation();toggleSummaryLong('${escHtml(fullId)}')" title="${longExpanded ? 'Collapse details' : 'Show details'}" style="${envelopeBtnStyle}">${longExpanded ? '▲' : '▼'}</button>` : ''}
+      </div>` : ''}
+      ${hasLong && longExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;">${escHtml(sess.last_summary_long)}</div>` : ''}
     </div>
     <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
   } else if (isActive) {
@@ -2388,9 +2399,15 @@ function sessionCard(sess, idx, total) {
       waitingRow = `<div class="card-waiting-row"><span style="${csSmall}">Summarizing…</span></div>`;
     } else if (cs && cs.text) {
       const csAgo = cs.generatedAt ? timeAgo(cs.generatedAt) : '';
+      const csLongExpanded = cs.longExpanded;
+      const csHasLong = !!cs.longText;
       waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
-        <span style="${csSmall}">${escHtml(cs.text)}</span>
-        <button onclick="event.stopPropagation();fetchCurrentStatus('${escHtml(fullId)}')" title="Refresh" style="border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:10px;margin-left:6px;">&#8635; ${escHtml(csAgo)}</button>
+        <div style="${csSmall}">
+          <span>${escHtml(cs.text)}</span>
+          ${csHasLong ? `<button onclick="event.stopPropagation();toggleCurrentStatusLong('${escHtml(fullId)}')" title="${csLongExpanded ? 'Collapse details' : 'Show details'}" style="${envelopeBtnStyle}">${csLongExpanded ? '▲' : '▼'}</button>` : ''}
+          <button onclick="event.stopPropagation();fetchCurrentStatus('${escHtml(fullId)}')" title="Refresh" style="border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:10px;margin-left:4px;">&#8635; ${escHtml(csAgo)}</button>
+        </div>
+        ${csHasLong && csLongExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;">${escHtml(cs.longText)}</div>` : ''}
       </div>`;
     } else {
       waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
@@ -2440,15 +2457,65 @@ function fetchCurrentStatus(fullId) {
   renderSessionsView();
   apiFetch('/api/sessions/' + encodeURIComponent(fullId) + '/current-status')
     .then(data => {
-      state.currentStatus[fullId] = { text: data.current_status || '', generatedAt: data.generated_at || new Date().toISOString(), loading: false };
+      state.currentStatus[fullId] = {
+        text: data.current_status || '',
+        longText: data.current_status_long || '',
+        generatedAt: data.generated_at || new Date().toISOString(),
+        loading: false,
+        longExpanded: false,
+      };
       renderSessionsView();
     })
     .catch(err => {
-      state.currentStatus[fullId] = { text: '(' + (err.message || 'unavailable') + ')', generatedAt: new Date().toISOString(), loading: false };
+      state.currentStatus[fullId] = { text: '(' + (err.message || 'unavailable') + ')', longText: '', generatedAt: new Date().toISOString(), loading: false, longExpanded: false };
       renderSessionsView();
     });
 }
 window.fetchCurrentStatus = fetchCurrentStatus;
+
+function toggleCurrentStatusLong(fullId) {
+  if (state.currentStatus[fullId]) {
+    state.currentStatus[fullId].longExpanded = !state.currentStatus[fullId].longExpanded;
+    renderSessionsView();
+  }
+}
+window.toggleCurrentStatusLong = toggleCurrentStatusLong;
+
+function toggleSummaryLong(fullId) {
+  state.summaryLongExpanded = state.summaryLongExpanded || {};
+  state.summaryLongExpanded[fullId] = !state.summaryLongExpanded[fullId];
+  renderSessionsView();
+}
+window.toggleSummaryLong = toggleSummaryLong;
+
+// manualSummarize POSTs to /summarize for on-demand re-summarization of
+// waiting_input or completed sessions. Updates last_response and long summary
+// on the session object after a short poll delay.
+function manualSummarize(fullId) {
+  const sess = state.sessions.find(s => s.full_id === fullId);
+  if (!sess) return;
+  // For running sessions, use the current-status path instead
+  if (sess.state === 'running' || sess.state === 'rate_limited') {
+    fetchCurrentStatus(fullId);
+    return;
+  }
+  apiFetch('/api/sessions/' + encodeURIComponent(fullId) + '/summarize', { method: 'POST', body: '{}' })
+    .then(data => {
+      // Patch session in state so the card re-renders with the new summaries
+      const idx = state.sessions.findIndex(s => s.full_id === fullId);
+      if (idx >= 0) {
+        state.sessions[idx] = Object.assign({}, state.sessions[idx], {
+          last_response: data.summary || state.sessions[idx].last_response,
+          last_summary_long: data.long_summary || '',
+        });
+      }
+      renderSessionsView();
+    })
+    .catch(err => {
+      console.warn('[summarize] error for', fullId, err.message);
+    });
+}
+window.manualSummarize = manualSummarize;
 
 function showCardCmds(fullId) {
   const sess = state.sessions.find(s => s.full_id === fullId);

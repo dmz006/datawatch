@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.8.15"
+var Version = "8.9.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -594,6 +594,8 @@ func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
 // The summarizer package implements this with Service.Summarize.
 type SummarizerSvc interface {
 	Summarize(ctx context.Context, text string) (string, error)
+	SummarizeDual(ctx context.Context, text string, prevShort string) (string, string, error)
+	ContextLines() int
 }
 
 // SetSummarizerSvc wires the response summarizer into the server.
@@ -3114,9 +3116,13 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	prevShort := ""
+	if prev, ok := s.manager.GetSummary(sess.FullID); ok {
+		prevShort = prev.Summary
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
-	summary, err := s.summarizerSvc.Summarize(ctx, text)
+	short, long, err := s.summarizerSvc.SummarizeDual(ctx, text, prevShort)
 	if err != nil {
 		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -3124,7 +3130,8 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 
 	sum := session.SessionSummary{
 		SessionID:   sess.FullID,
-		Summary:     summary,
+		Summary:     short,
+		LongSummary: long,
 		GeneratedAt: time.Now(),
 	}
 	s.manager.StoreSummary(sess.FullID, sum)
@@ -3166,22 +3173,32 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "summarizer not configured", http.StatusServiceUnavailable)
 		return
 	}
-	text, err := s.manager.TailOutput(sess.FullID, 200)
+	lines := s.summarizerSvc.ContextLines()
+	if lines <= 0 {
+		lines = 200
+	}
+	text, err := s.manager.TailOutput(sess.FullID, lines)
 	if err != nil {
 		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Pass previous summary as context so the LLM avoids repetition.
+	prevShort := ""
+	if prev, ok := s.manager.GetSummary(sess.FullID); ok {
+		prevShort = prev.Summary
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
-	summary, err := s.summarizerSvc.Summarize(ctx, text)
+	short, long, err := s.summarizerSvc.SummarizeDual(ctx, text, prevShort)
 	if err != nil {
 		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"current_status": summary,
-		"generated_at":   time.Now(),
+		"current_status":      short,
+		"current_status_long": long,
+		"generated_at":        time.Now(),
 	})
 }
 

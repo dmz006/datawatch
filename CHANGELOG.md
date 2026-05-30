@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.0 — feat: dual-summary AI pipeline — short + long, model-aware, envelope expand (2026-05-30)
+
+### Added
+
+- **Dual-summary LLM pipeline** — when the session summarizer is configured, a single LLM call now produces two outputs in response to every `running→waiting_input` and completion transition:
+  - **Short summary** (`last_response`) — 3 sentences, ≤15 words each, suitable for push notifications, Android Auto, and lock-screen alerts.
+  - **Long summary** (`last_summary_long`) — 3–5 sentence narrative covering what the session worked on, key decisions, current status, and any blockers.
+- **Model-aware history sizing** — the summarizer queries Ollama's `/api/show` endpoint to determine the configured model's context window, then automatically sets the tmux capture depth: ≤8K tokens → 100 lines, 8–32K → 200, 32–128K → 400, 128K+ → 600. Non-Ollama LLMs default to 200.
+- **Repetition avoidance** — the previous short summary for the session is passed as context so the LLM avoids repeating information already shown to the operator.
+- **Content gate** — sessions with fewer than 8 lines of terminal output are skipped; prevents meaningless summaries from brief start/stop flips.
+- **Envelope expand in PWA session cards** — short summary is always visible; a ▼ button expands the long narrative inline. Collapse with ▲. Works for both waiting-input and running sessions.
+- **"↻ Summary" manual button** — waiting-input and completed session cards gain a robot button to trigger on-demand re-summarization from the UI without restarting the session.
+- **`GET /api/sessions/{id}/current-status`** — now returns `current_status` (short) and `current_status_long` (long) in the JSON response.
+- **`POST /api/sessions/{id}/summarize`** — now returns `summary` and `long_summary` fields.
+- **`GET /api/sessions/{id}/last-summary`** — `SessionSummary` now includes `long_summary` field.
+
+### Changed
+
+- `session.last_summary_long` is a new field on the session object (JSON: `last_summary_long`, omitted when empty). No migration required — existing sessions will populate it on the next summarization trigger.
+- `SummarizerSvc` interface extended with `SummarizeDual(ctx, text, prevShort)` and `ContextLines()`.
+- `Manager.SetSummarizer` replaced by `Manager.SetDualSummarizer(fn, linesFn)` — callers must update to the new signature.
+
+---
+
+## v8.8.15 — feat(#110): current-status endpoint + PWA session card live summary (2026-05-30)
+
+### Added
+
+- **`GET /api/sessions/{id}/current-status`** — on-demand LLM summary of what a running session is currently doing. Returns 409 for non-running sessions, 503 if summarizer not configured.
+- **PWA session cards** — running sessions show a "▶ What's it doing?" button; waiting-input sessions show an inline `last_response` preview (first 180 chars) below the prompt text.
+
+---
+
+## v8.8.14 — feat(summarizer): delay push until summarizer completes, add logging (2026-05-30)
+
+### Fixed
+
+- **Push notification timing** — push notifications for `waiting_input` transitions now wait for the summarizer (8s timeout) before firing, so the notification body contains the AI summary rather than raw output.
+- **Silent summarizer failures** — all code paths in `triggerSummarize` and the inline pre-push path now emit `[summarizer]` log lines for start, empty output, LLM errors, and success.
+
+---
+
 ## v8.8.13 — fix: summarizer replaces last response; compact prompt (2026-05-29)
 
 ### Changed

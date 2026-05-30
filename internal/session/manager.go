@@ -320,10 +320,14 @@ type Manager struct {
 	summariesMu sync.Mutex
 	summaries   map[string]SessionSummary
 
-	// summarizeFn, when non-nil, is called asynchronously when a session
-	// transitions to completed or waiting_input to generate a short summary.
-	// Set via SetSummarizer.
-	summarizeFn func(ctx context.Context, text string) (string, error)
+	// dualSummarizeFn, when non-nil, generates both a short and long summary
+	// from session output. prevShort is the previous short summary (used to
+	// avoid repeating information). Replaces the old single-string summarizeFn.
+	// Set via SetDualSummarizer.
+	dualSummarizeFn func(ctx context.Context, text string, prevShort string) (string, string, error)
+	// summaryLinesFor returns the recommended history line count for the
+	// configured model's context window. nil = use default 200.
+	summaryLinesFor func() int
 }
 
 // NewManager creates a new session Manager.
@@ -383,6 +387,7 @@ func (m *Manager) DataDir() string { return m.dataDir }
 type SessionSummary struct {
 	SessionID   string    `json:"session_id"`
 	Summary     string    `json:"summary"`
+	LongSummary string    `json:"long_summary,omitempty"`
 	GeneratedAt time.Time `json:"generated_at"`
 }
 
@@ -402,20 +407,26 @@ func (m *Manager) GetSummary(id string) (SessionSummary, bool) {
 	return s, ok
 }
 
-// SetSummarizer wires a function that will be called asynchronously to
-// summarize session output on completion or waiting_input transitions.
-// Pass nil to disable. The function follows the same signature as
-// summarizer.Service.Summarize so the caller can set it directly.
-func (m *Manager) SetSummarizer(fn func(ctx context.Context, text string) (string, error)) {
-	m.summarizeFn = fn
+// SetDualSummarizer wires the dual-summary function and optional context-lines
+// getter. fn must return (short, long, error) where prevShort is the previous
+// summary for context; linesFn returns the model-aware line count for TailOutput
+// (nil = default 200). Pass nil fn to disable.
+func (m *Manager) SetDualSummarizer(fn func(ctx context.Context, text string, prevShort string) (string, string, error), linesFn func() int) {
+	m.dualSummarizeFn = fn
+	m.summaryLinesFor = linesFn
 }
 
-// triggerSummarize asynchronously generates a summary for the last N lines
+// triggerSummarize asynchronously generates a dual summary for the last N lines
 // of a session's output and stores it. Used for completion/opencode-exit
 // transitions where there is no push-notification timing constraint.
 func (m *Manager) triggerSummarize(fullID string, lines int) {
-	if m.summarizeFn == nil {
+	if m.dualSummarizeFn == nil {
 		return
+	}
+	if m.summaryLinesFor != nil {
+		if n := m.summaryLinesFor(); n > 0 {
+			lines = n
+		}
 	}
 	go func() {
 		log.Printf("[summarizer] starting async for session %s", fullID)
@@ -428,25 +439,38 @@ func (m *Manager) triggerSummarize(fullID string, lines int) {
 			log.Printf("[summarizer] TailOutput empty for session %s", fullID)
 			return
 		}
+		// Skip summarization when output is too thin — likely a start/stop
+		// with no meaningful work done (< 8 non-empty lines).
+		if strings.Count(strings.TrimSpace(text), "\n") < 7 {
+			log.Printf("[summarizer] skipping session %s — output too short to summarize", fullID)
+			return
+		}
+		// Retrieve previous summary to give the LLM context and avoid repetition.
+		prevShort := ""
+		if prev, ok := m.GetSummary(fullID); ok {
+			prevShort = prev.Summary
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		summary, err := m.summarizeFn(ctx, text)
+		short, long, err := m.dualSummarizeFn(ctx, text, prevShort)
 		if err != nil {
 			log.Printf("[summarizer] LLM error for session %s: %v", fullID, err)
 			return
 		}
-		if strings.TrimSpace(summary) == "" {
+		if strings.TrimSpace(short) == "" {
 			log.Printf("[summarizer] empty result for session %s", fullID)
 			return
 		}
-		log.Printf("[summarizer] updated LastResponse for session %s (%d chars)", fullID, len(summary))
+		log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars)", fullID, len(short), len(long))
 		m.StoreSummary(fullID, SessionSummary{
 			SessionID:   fullID,
-			Summary:     summary,
+			Summary:     short,
+			LongSummary: long,
 			GeneratedAt: time.Now(),
 		})
 		if sess, ok := m.store.Get(fullID); ok {
-			sess.LastResponse = summary
+			sess.LastResponse = short
+			sess.LastSummaryLong = long
 			_ = m.store.Save(sess)
 		}
 	}()
@@ -1803,29 +1827,41 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 											s.LastResponse = resp
 											_ = m.store.Save(s)
 
-											// Run summarizer synchronously (8s timeout) before
+											// Run dual summarizer synchronously (8s timeout) before
 											// firing the push so the notification body already
 											// contains the compressed summary.
-											if m.summarizeFn != nil {
-												text, terr := m.TailOutput(s.FullID, 200)
+											if m.dualSummarizeFn != nil {
+												histLines := 200
+												if m.summaryLinesFor != nil {
+													if n := m.summaryLinesFor(); n > 0 {
+														histLines = n
+													}
+												}
+												text, terr := m.TailOutput(s.FullID, histLines)
 												if terr != nil {
 													log.Printf("[summarizer] TailOutput error for session %s: %v", s.FullID, terr)
-												} else if strings.TrimSpace(text) == "" {
-													log.Printf("[summarizer] TailOutput empty for session %s", s.FullID)
+												} else if strings.TrimSpace(text) == "" || strings.Count(strings.TrimSpace(text), "\n") < 7 {
+													log.Printf("[summarizer] skipping session %s — output too short to summarize", s.FullID)
 												} else {
 													log.Printf("[summarizer] starting for session %s (pre-push)", s.FullID)
+													prevShort := ""
+													if prev, ok := m.GetSummary(s.FullID); ok {
+														prevShort = prev.Summary
+													}
 													sctx, scancel := context.WithTimeout(context.Background(), 8*time.Second)
-													summary, serr := m.summarizeFn(sctx, text)
+													short, long, serr := m.dualSummarizeFn(sctx, text, prevShort)
 													scancel()
 													if serr != nil {
 														log.Printf("[summarizer] LLM error for session %s: %v", s.FullID, serr)
-													} else if strings.TrimSpace(summary) != "" {
-														log.Printf("[summarizer] updated LastResponse for session %s (%d chars)", s.FullID, len(summary))
-														s.LastResponse = summary
+													} else if strings.TrimSpace(short) != "" {
+														log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars)", s.FullID, len(short), len(long))
+														s.LastResponse = short
+														s.LastSummaryLong = long
 														_ = m.store.Save(s)
 														m.StoreSummary(s.FullID, SessionSummary{
 															SessionID:   s.FullID,
-															Summary:     summary,
+															Summary:     short,
+															LongSummary: long,
 															GeneratedAt: time.Now(),
 														})
 													} else {
