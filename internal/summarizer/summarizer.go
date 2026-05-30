@@ -186,8 +186,12 @@ func (s *Service) ContextLines() int {
 			if host == "" {
 				host = "http://localhost:11434"
 			}
-			model := llm.Model
-			if model == "" {
+			model := ""
+			if s.cfg.Session.Summarizer.Model != "" {
+				model = s.cfg.Session.Summarizer.Model
+			} else if llm.Model != "" {
+				model = llm.Model
+			} else {
 				model = s.cfg.Ollama.Model
 			}
 			contextLen := s.queryOllamaContextLen(host, model)
@@ -293,22 +297,19 @@ func parseDualSummary(raw string) (short, long string) {
 }
 
 // callOllama calls the Ollama API using the LLM registry entry.
+// If session.summarizer.model is set it takes priority over llm.Model.
 func (s *Service) callOllama(ctx context.Context, llm *inference.LLM, prompt string) (string, error) {
-	// Resolve address from the first compute node in the registry, or fall
-	// back to cfg.Ollama.Host.
-	host := ""
-	if len(llm.ComputeNodes) > 0 {
-		// The registry compute node resolution is deep — for now use Ollama host.
-		host = s.cfg.Ollama.Host
-	}
-	if host == "" {
-		host = s.cfg.Ollama.Host
-	}
+	host := s.cfg.Ollama.Host
 	if host == "" {
 		host = "http://localhost:11434"
 	}
-	model := llm.Model
-	if model == "" {
+	// Model priority: explicit summarizer override > LLM entry default > global Ollama default.
+	model := ""
+	if s.cfg.Session.Summarizer.Model != "" {
+		model = s.cfg.Session.Summarizer.Model
+	} else if llm.Model != "" {
+		model = llm.Model
+	} else {
 		model = s.cfg.Ollama.Model
 	}
 	return s.callOllamaRaw(ctx, host, model, prompt)

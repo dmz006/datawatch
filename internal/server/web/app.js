@@ -11199,6 +11199,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
     { key: 'session.summarizer.enabled', label: t('session_summarizer_enabled') || 'Summarize last response', type: 'toggle' },
     { key: 'session.summarizer.llm_ref', label: t('session_summarizer_llm') || 'Summarizer LLM', type: 'llm_summarizer' },
+    { key: 'session.summarizer.model', label: 'Summarizer model', type: 'summarizer_model' },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
@@ -11748,7 +11749,7 @@ function loadGeneralConfig() {
             const currentVal = String(val || '');
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
-              <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">
+              <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value); if(window._refreshSummarizerModelSelect) window._refreshSummarizerModelSelect();">
                 <option value="">(${t('disabled') || 'disabled'})</option>
               </select>
             </div>`;
@@ -11769,7 +11770,55 @@ function loadGeneralConfig() {
                   opts += `<option value="${escHtml(l.name)}"${sel}>${escHtml(l.name + ' (' + l.kind + ')')}</option>`;
                 });
                 el.innerHTML = opts;
+                if (window._refreshSummarizerModelSelect) window._refreshSummarizerModelSelect();
               }).catch(() => {});
+            }, 0);
+          } else if (f.type === 'summarizer_model') {
+            // Model override for the summarizer. Hidden until an LLM ref is selected.
+            // Fetches model list from Ollama and annotates each with a quality/speed hint.
+            const wrapId = 'sum-model-wrap';
+            const innerId = 'sum-model-inner';
+            const savedModel = String(val || '');
+            html += `<div id="${wrapId}" class="settings-row" style="justify-content:space-between;display:none;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <div id="${innerId}" style="flex:0 0 200px;"></div>
+            </div>`;
+            setTimeout(() => {
+              window._refreshSummarizerModelSelect = function() {
+                const wrap = document.getElementById(wrapId);
+                const inner = document.getElementById(innerId);
+                if (!wrap || !inner) return;
+                const llmSel = document.getElementById('gcfg-summarizer-llm');
+                const llmRef = llmSel ? llmSel.value : '';
+                if (!llmRef) { wrap.style.display = 'none'; return; }
+                wrap.style.display = '';
+                const curVal = (inner.querySelector('select,input') || {}).value || savedModel;
+                fetch('/api/ollama/models', { headers: tokenHeader() })
+                  .then(r => r.ok ? r.json() : null).catch(() => null)
+                  .then(data => {
+                    const models = data && Array.isArray(data.models)
+                      ? data.models.map(m => m.name || m).filter(Boolean)
+                      : Array.isArray(data) ? data.map(m => m.name || m).filter(Boolean) : [];
+                    if (models.length === 0) {
+                      inner.innerHTML = `<input class="form-input" style="font-size:12px;width:100%;" value="${escHtml(curVal)}"
+                        onchange="saveGeneralField('${f.key}', this.value)" placeholder="(backend default)" />`;
+                    } else {
+                      let opts = `<option value="">(backend default)</option>`;
+                      models.forEach(m => {
+                        const hint = summarizerModelHint(m);
+                        const label = hint ? m + ' — ' + hint : m;
+                        const sel = m === curVal ? ' selected' : '';
+                        opts += `<option value="${escHtml(m)}"${sel}>${escHtml(label)}</option>`;
+                      });
+                      if (curVal && !models.includes(curVal)) {
+                        opts += `<option value="${escHtml(curVal)}" selected>(custom) ${escHtml(curVal)}</option>`;
+                      }
+                      inner.innerHTML = `<select class="form-select" style="font-size:12px;width:100%;"
+                        onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>`;
+                    }
+                  });
+              };
+              window._refreshSummarizerModelSelect();
             }, 0);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
@@ -11896,6 +11945,19 @@ function saveInterfaceField(key, listEl, changedEl) {
       showToast('Save failed', 'error');
     }
   }).catch(e => { _dbg('IFACE', `save error: ${e}`); showToast('Save failed', 'error'); });
+}
+
+// Returns a quality/speed hint string for a model name based on parameter count.
+// Used in the summarizer model dropdown to help operators pick the right model.
+function summarizerModelHint(modelName) {
+  const m = (modelName || '').toLowerCase();
+  if (/[:\-_]1(\.[0-9])?b/.test(m))                return '⚡ basic / very fast';
+  if (/[:\-_]3b/.test(m))                           return '⚡ light / fast';
+  if (/[:\-_](7b|8b)/.test(m))                      return '★ good / fast';
+  if (/[:\-_](10b|11b|12b|13b|14b)/.test(m))        return '★★ very good / medium';
+  if (/[:\-_](20b|24b|27b|30b|32b)/.test(m))        return '★★★ excellent / slower';
+  if (/[:\-_](70b|72b|90b)/.test(m))                return '★★★ best / slow';
+  return '';
 }
 
 // Fields that require a daemon restart to take effect

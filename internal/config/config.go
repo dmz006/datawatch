@@ -1325,6 +1325,7 @@ type SessionConfig struct {
 	Summarizer struct {
 		Enabled bool   `yaml:"enabled" json:"enabled"`
 		LLMRef  string `yaml:"llm_ref" json:"llm_ref"`
+		Model   string `yaml:"model"   json:"model,omitempty"`
 		Prompt  string `yaml:"prompt"  json:"prompt"`
 	} `yaml:"summarizer" json:"summarizer"`
 }

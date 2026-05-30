@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.1 — feat: summarizer model selector with quality hints (2026-05-30)
+
+### Added
+
+- **`session.summarizer.model`** config field — operators can now pin a specific model for summarization instead of using the LLM entry's default. Set via YAML, REST PUT `/api/config`, or the new PWA Settings dropdown.
+- **Summarizer model dropdown in PWA Settings** — appears below the "Summarizer LLM" field when an LLM ref is selected. Populated from the available Ollama model list and annotated with quality/speed hints:
+  - `1–1.7B` → ⚡ basic / very fast
+  - `3B` → ⚡ light / fast
+  - `7–8B` → ★ good / fast
+  - `10–14B` → ★★ very good / medium
+  - `20–32B` → ★★★ excellent / slower
+  - `70–90B` → ★★★ best / slow
+- Model selection defaults to `(backend default)` (i.e., whatever model the LLM entry specifies); selecting a specific model writes `session.summarizer.model` and takes effect immediately on the next summary trigger.
+
+### Changed
+
+- `callOllama` and `ContextLines` in the summarizer now respect `session.summarizer.model` with priority: explicit model override > LLM entry default > global Ollama default.
+
+---
+
 ## v8.9.0 — feat: dual-summary AI pipeline — short + long, model-aware, envelope expand (2026-05-30)
 
 ### Added
