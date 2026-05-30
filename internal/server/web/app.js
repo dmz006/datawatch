@@ -2390,7 +2390,7 @@ function sessionCard(sess, idx, total) {
         ${hasLong ? `<button onclick="event.stopPropagation();toggleSummaryLong('${escHtml(fullId)}')" title="${longExpanded ? 'Collapse details' : 'Show details'}" style="${envelopeBtnStyle}">${longExpanded ? '▲' : '▼'}</button>` : ''}
         ${summaryAge ? `<span style="font-size:9px;color:var(--text2);opacity:0.7;margin-left:4px;">AI ${escHtml(summaryAge)}</span>` : ''}
       </div>` : ''}
-      ${hasLong && longExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;">${escHtml(sess.last_summary_long)}</div>` : ''}
+      ${hasLong && longExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px 6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;position:relative;padding-right:22px;">${escHtml(sess.last_summary_long)}<button onclick="event.stopPropagation();toggleSummaryLong('${escHtml(fullId)}')" title="Collapse" style="position:absolute;top:3px;right:4px;border:none;background:transparent;cursor:pointer;color:var(--text2);font-size:12px;line-height:1;padding:1px 3px;opacity:0.7;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">✕</button></div>` : ''}
     </div>
     <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
   } else if (isActive) {
@@ -2409,7 +2409,7 @@ function sessionCard(sess, idx, total) {
           ${csHasLong ? `<button onclick="event.stopPropagation();toggleCurrentStatusLong('${escHtml(fullId)}')" title="${csLongExpanded ? 'Collapse details' : 'Show details'}" style="${envelopeBtnStyle}">${csLongExpanded ? '▲' : '▼'}</button>` : ''}
           <button onclick="event.stopPropagation();fetchCurrentStatus('${escHtml(fullId)}')" title="Refresh" style="border:none;background:transparent;color:var(--text2);cursor:pointer;font-size:10px;margin-left:4px;">&#8635; ${escHtml(csAgo)}</button>
         </div>
-        ${csHasLong && csLongExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;">${escHtml(cs.longText)}</div>` : ''}
+        ${csHasLong && csLongExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px 6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;position:relative;padding-right:22px;">${escHtml(cs.longText)}<button onclick="event.stopPropagation();toggleCurrentStatusLong('${escHtml(fullId)}')" title="Collapse" style="position:absolute;top:3px;right:4px;border:none;background:transparent;cursor:pointer;color:var(--text2);font-size:12px;line-height:1;padding:1px 3px;opacity:0.7;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">✕</button></div>` : ''}
       </div>`;
     } else {
       waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
