@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.4 — fix(#111): tmux capture-pane for last_response + suppress stale garbled values (2026-05-30)
+
+### Fixed
+
+- **#111 follow-up — `last_response` still garbled for active TUI sessions**: The v8.9.3 StripANSI fix did not help sessions where the TUI spinner writes thousands of animation frames per minute. The last 30 log lines were always TUI noise; `stripResponseNoise` filtered them all to `""`, causing `GetLastResponse` to fall back to the old pre-fix stored value (concatenated words, no spaces).
+  - `CaptureResponse` now uses `tmux capture-pane -p -S -200` as its primary source. tmux renders the virtual terminal internally — cursor movements are honoured, words are correctly spaced, and 200 scrollback lines capture content above the current TUI viewport.
+  - `GetLastResponse` no longer falls back to a stale stored value when the fresh capture is empty and the stored value is clearly garbled (>20 chars, no spaces). Returns `""` instead of concatenated noise.
+
+---
+
 ## v8.9.3 — fix(#111): StripANSI preserves spaces + summarizer model list from all nodes (2026-05-30)
 
 ### Fixed

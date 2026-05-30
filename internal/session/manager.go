@@ -776,13 +776,21 @@ func (m *Manager) CaptureResponse(sess *Session) string {
 	if data, err := os.ReadFile("/tmp/claude/response.md"); err == nil && len(data) > 0 {
 		return strings.TrimSpace(string(data))
 	}
-	// Fallback: capture last 30 lines from tmux. v5.26.15 — operator-
-	// reported: response capture should filter out animation spinners
-	// and TUI status footers so the 📄 Response viewer shows useful
-	// text only. stripResponseNoise drops single-glyph spinner lines,
-	// status timers (e.g. "(7s · timeout 1m)"), and the standard
-	// claude-code footer hints ("esc to interrupt", "shift+tab to
-	// cycle", etc).
+	// BL338 — use tmux capture-pane -p (rendered terminal) instead of
+	// the raw pipe-pane log. The TUI spinner writes thousands of
+	// animation frames per minute; the last 30 log lines are almost
+	// always pure noise. tmux renders the virtual terminal internally
+	// so cursor-movement sequences are honoured — words have correct
+	// spacing. -S -200 scrolls back 200 lines to capture content above
+	// the current TUI viewport.
+	if sess.TmuxSession != "" {
+		if out, err := exec.Command("tmux", "capture-pane", "-p", "-S", "-200", "-t", sess.TmuxSession).Output(); err == nil {
+			if clean := stripResponseNoise(strings.TrimSpace(string(out))); clean != "" {
+				return clean
+			}
+		}
+	}
+	// Final fallback: raw log file with StripANSI.
 	tail, err := m.TailOutput(sess.FullID, 30)
 	if err == nil && tail != "" {
 		return stripResponseNoise(tail)
@@ -1259,6 +1267,16 @@ func (m *Manager) GetLastResponse(fullID string) string {
 				_ = m.store.Save(sess)
 			}
 			return fresh
+		}
+		// BL338 — fresh capture returned empty (tmux pane is all noise
+		// or unavailable). Don't return a stale stored value that may
+		// have been captured with the old pre-fix StripANSI (recognisable
+		// because it contains no ASCII spaces despite being longer than
+		// 20 chars — concatenated TUI tokens). Return "" so callers show
+		// nothing rather than garbled text.
+		stored := sess.LastResponse
+		if len(stored) > 20 && !strings.Contains(stored, " ") {
+			return ""
 		}
 	}
 	return sess.LastResponse
