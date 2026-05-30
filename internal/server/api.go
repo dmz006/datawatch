@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.4"
+var Version = "8.9.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3068,6 +3068,39 @@ func (s *Server) handleSessionLastSummary(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sum) //nolint:errcheck
+}
+
+// handleSummarizerTest fires a minimal test prompt through the configured
+// summarizer LLM and reports whether it responded.
+// POST /api/summarizer/test
+// Body (optional): {"llm_ref": "my-ollama", "model": "qwen3:8b"}
+// Response: {"ok": true, "latency_ms": 234} or {"ok": false, "error": "..."}
+func (s *Server) handleSummarizerTest(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.summarizerSvc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "summarizer not configured"}) //nolint:errcheck
+		return
+	}
+	start := time.Now()
+	const testPrompt = "Say: OK"
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	result, err := s.summarizerSvc.Summarize(ctx, testPrompt)
+	latency := time.Since(start).Milliseconds()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error(), "latency_ms": latency}) //nolint:errcheck
+		return
+	}
+	_ = result
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "latency_ms": latency}) //nolint:errcheck
 }
 
 // handleSessionSummarize triggers on-demand summarization of a session's output.

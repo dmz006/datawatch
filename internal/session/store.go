@@ -93,6 +93,10 @@ type Session struct {
 	// dual-summary pipeline when a summarizer LLM is configured. Empty when
 	// the summarizer is disabled or the model did not return a LONG section.
 	LastSummaryLong string `json:"last_summary_long,omitempty"`
+	// SummaryGeneratedAt is stamped each time the dual-summary LLM pipeline
+	// successfully writes LastResponse/LastSummaryLong. Used by the PWA to
+	// display "AI summary Xm ago" on session cards and detect stale/missing runs.
+	SummaryGeneratedAt time.Time `json:"summary_generated_at,omitempty"`
 	// AgentID is set when this session lives inside a parent-spawned
 	// worker container (F10 sprint 3.6). The session API forwards
 	// reads/writes for these sessions through /api/proxy/agent/{id}/...

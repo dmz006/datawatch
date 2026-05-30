@@ -2382,11 +2382,13 @@ function sessionCard(sess, idx, total) {
     const longExpanded = state.summaryLongExpanded && state.summaryLongExpanded[fullId];
     const hasLong = !!sess.last_summary_long;
     const lrText = sess.last_response || '';
+    const summaryAge = sess.summary_generated_at ? timeAgo(sess.summary_generated_at) : '';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
       <span class="card-waiting-label">${promptHtml}</span>
       ${lrText ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">
         <span style="font-style:italic;">${escHtml(lrText.slice(0, 180) + (lrText.length > 180 ? '…' : ''))}</span>
         ${hasLong ? `<button onclick="event.stopPropagation();toggleSummaryLong('${escHtml(fullId)}')" title="${longExpanded ? 'Collapse details' : 'Show details'}" style="${envelopeBtnStyle}">${longExpanded ? '▲' : '▼'}</button>` : ''}
+        ${summaryAge ? `<span style="font-size:9px;color:var(--text2);opacity:0.7;margin-left:4px;">AI ${escHtml(summaryAge)}</span>` : ''}
       </div>` : ''}
       ${hasLong && longExpanded ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3,#1f2937);border-radius:4px;border-left:2px solid var(--accent2,#60a5fa);line-height:1.5;">${escHtml(sess.last_summary_long)}</div>` : ''}
     </div>
@@ -11749,10 +11751,11 @@ function loadGeneralConfig() {
             const currentVal = String(val || '');
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
-              <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value); if(window._refreshSummarizerModelSelect) window._refreshSummarizerModelSelect();">
+              <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value); if(window._refreshSummarizerModelSelect) window._refreshSummarizerModelSelect(); if(window._testSummarizerLLM) window._testSummarizerLLM();">
                 <option value="">(${t('disabled') || 'disabled'})</option>
               </select>
-            </div>`;
+            </div>
+            <div id="sum-test-status" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:4px;"></div>`;
             setTimeout(() => {
               apiFetch('/api/llms').then(d => {
                 const el = document.getElementById(summarizerId);
@@ -11787,7 +11790,7 @@ function loadGeneralConfig() {
               <div style="flex:0 0 200px;display:flex;flex-direction:column;gap:2px;">
                 <input id="${inputId}" list="${listId}" class="form-input" style="font-size:12px;width:100%;"
                   value="${escHtml(savedModel)}" placeholder="(backend default)"
-                  onchange="saveGeneralField('${f.key}', this.value)" />
+                  onchange="saveGeneralField('${f.key}', this.value); if(window._testSummarizerLLM) window._testSummarizerLLM();" />
                 <datalist id="${listId}"></datalist>
                 <div id="sum-model-hint" style="font-size:10px;color:var(--text2);"></div>
               </div>
@@ -11845,6 +11848,34 @@ function loadGeneralConfig() {
                   });
               };
               window._refreshSummarizerModelSelect();
+              // Health-check function: POST /api/summarizer/test and show ✓/✗ status.
+              window._testSummarizerLLM = function() {
+                const llmSel = document.getElementById('gcfg-summarizer-llm');
+                if (!llmSel || !llmSel.value) return; // disabled — no test needed
+                const statusEl = document.getElementById('sum-test-status');
+                if (!statusEl) return;
+                statusEl.style.display = '';
+                statusEl.style.background = 'var(--bg3,#1f2937)';
+                statusEl.style.color = 'var(--text2)';
+                statusEl.textContent = '⏳ Testing LLM…';
+                apiFetch('/api/summarizer/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                  .then(d => {
+                    if (d && d.ok) {
+                      statusEl.style.background = 'rgba(34,197,94,0.12)';
+                      statusEl.style.color = '#22c55e';
+                      statusEl.textContent = `✓ LLM responding (${d.latency_ms} ms)`;
+                    } else {
+                      statusEl.style.background = 'rgba(239,68,68,0.12)';
+                      statusEl.style.color = '#ef4444';
+                      statusEl.textContent = `✗ ${(d && d.error) || 'LLM not responding'}`;
+                    }
+                  })
+                  .catch(e => {
+                    statusEl.style.background = 'rgba(239,68,68,0.12)';
+                    statusEl.style.color = '#ef4444';
+                    statusEl.textContent = `✗ ${e.message || 'request failed'}`;
+                  });
+              };
             }, 0);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">

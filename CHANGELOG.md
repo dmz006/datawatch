@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.5 — feat: summarizer health check + session card age + /api/whisper/transcribe alias (2026-05-30)
+
+### Added
+
+- **Summarizer LLM health check in Settings** — when you select or change the summarizer LLM ref or model, a `POST /api/summarizer/test` call fires immediately and shows an inline status: ✓ LLM responding (Nms) in green, or ✗ error message in red. Clears misconfiguration before the first real summary run.
+- **`POST /api/summarizer/test`** — new endpoint; sends a minimal test prompt through the configured summarizer LLM, returns `{ok, latency_ms}` or `{ok: false, error}`. Returns 503 when summarizer is disabled.
+- **"AI Xm ago" badge on session cards** — waiting-input cards with an LLM summary now show the age of the last successful summarization (e.g., "AI 4m ago") next to the summary text. Powered by `summary_generated_at` stamped on the `Session` struct whenever the dual-summary pipeline successfully writes `last_response`/`last_summary_long`.
+- **`POST /api/whisper/transcribe`** — alias for the existing `/api/voice/transcribe` endpoint. Closes #113 — mobile clients can POST `multipart/form-data` with `audio` (webm/ogg/m4a/wav) + optional `session_id` and receive `{transcript, confidence, action, latency_ms}`.
+- **`summary_generated_at`** field on `Session` struct — `time.Time`, serialized as `summary_generated_at` in JSON. Set in both summarizer update paths (state-transition callback and manual trigger).
+
+---
+
 ## v8.9.4 — fix(#111): tmux capture-pane for last_response + suppress stale garbled values (2026-05-30)
 
 ### Fixed

@@ -494,6 +494,7 @@ func (m *Manager) triggerSummarize(fullID string, lines int) {
 		if sess, ok := m.store.Get(fullID); ok {
 			sess.LastResponse = short
 			sess.LastSummaryLong = long
+			sess.SummaryGeneratedAt = time.Now()
 			_ = m.store.Save(sess)
 		}
 	}()
@@ -1898,6 +1899,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 														log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars)", s.FullID, len(short), len(long))
 														s.LastResponse = short
 														s.LastSummaryLong = long
+														s.SummaryGeneratedAt = time.Now()
 														_ = m.store.Save(s)
 														m.StoreSummary(s.FullID, SessionSummary{
 															SessionID:   s.FullID,

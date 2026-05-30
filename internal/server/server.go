@@ -249,8 +249,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister) // issue #1
 	apiMux.HandleFunc("/api/devices", api.handleDevicesList)              // issue #1 (list)
 	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)             // issue #1 (delete by id)
-	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe) // issue #2
-	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)             // BL289 — Settings test button
+	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)   // issue #2
+	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe) // issue #113 alias
+	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)               // BL289 — Settings test button
+	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)     // v8.9.5 — settings health check
 	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)  // issue #3
 	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)        // BL316 S1
 	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)       // BL316 S1
