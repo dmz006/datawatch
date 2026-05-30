@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -410,30 +411,40 @@ func (m *Manager) SetSummarizer(fn func(ctx context.Context, text string) (strin
 }
 
 // triggerSummarize asynchronously generates a summary for the last N lines
-// of a session's output and stores it. Silently returns if no summarizer is
-// configured or the session output cannot be read.
+// of a session's output and stores it. Used for completion/opencode-exit
+// transitions where there is no push-notification timing constraint.
 func (m *Manager) triggerSummarize(fullID string, lines int) {
 	if m.summarizeFn == nil {
 		return
 	}
 	go func() {
+		log.Printf("[summarizer] starting async for session %s", fullID)
 		text, err := m.TailOutput(fullID, lines)
-		if err != nil || strings.TrimSpace(text) == "" {
+		if err != nil {
+			log.Printf("[summarizer] TailOutput error for session %s: %v", fullID, err)
+			return
+		}
+		if strings.TrimSpace(text) == "" {
+			log.Printf("[summarizer] TailOutput empty for session %s", fullID)
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
 		summary, err := m.summarizeFn(ctx, text)
-		if err != nil || strings.TrimSpace(summary) == "" {
+		if err != nil {
+			log.Printf("[summarizer] LLM error for session %s: %v", fullID, err)
 			return
 		}
+		if strings.TrimSpace(summary) == "" {
+			log.Printf("[summarizer] empty result for session %s", fullID)
+			return
+		}
+		log.Printf("[summarizer] updated LastResponse for session %s (%d chars)", fullID, len(summary))
 		m.StoreSummary(fullID, SessionSummary{
 			SessionID:   fullID,
 			Summary:     summary,
 			GeneratedAt: time.Now(),
 		})
-		// Replace LastResponse so push alerts, mobile notifications, and
-		// Android Auto all show the compressed summary instead of raw output.
 		if sess, ok := m.store.Get(fullID); ok {
 			sess.LastResponse = summary
 			_ = m.store.Save(sess)
@@ -1791,11 +1802,45 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 										if resp != "" {
 											s.LastResponse = resp
 											_ = m.store.Save(s)
-											if m.onResponseCaptured != nil {
-												m.onResponseCaptured(s, resp)
+
+											// Run summarizer synchronously (8s timeout) before
+											// firing the push so the notification body already
+											// contains the compressed summary.
+											if m.summarizeFn != nil {
+												text, terr := m.TailOutput(s.FullID, 200)
+												if terr != nil {
+													log.Printf("[summarizer] TailOutput error for session %s: %v", s.FullID, terr)
+												} else if strings.TrimSpace(text) == "" {
+													log.Printf("[summarizer] TailOutput empty for session %s", s.FullID)
+												} else {
+													log.Printf("[summarizer] starting for session %s (pre-push)", s.FullID)
+													sctx, scancel := context.WithTimeout(context.Background(), 8*time.Second)
+													summary, serr := m.summarizeFn(sctx, text)
+													scancel()
+													if serr != nil {
+														log.Printf("[summarizer] LLM error for session %s: %v", s.FullID, serr)
+													} else if strings.TrimSpace(summary) != "" {
+														log.Printf("[summarizer] updated LastResponse for session %s (%d chars)", s.FullID, len(summary))
+														s.LastResponse = summary
+														_ = m.store.Save(s)
+														m.StoreSummary(s.FullID, SessionSummary{
+															SessionID:   s.FullID,
+															Summary:     summary,
+															GeneratedAt: time.Now(),
+														})
+													} else {
+														log.Printf("[summarizer] empty result for session %s", s.FullID)
+													}
+												}
 											}
+
+											if m.onResponseCaptured != nil {
+												m.onResponseCaptured(s, s.LastResponse)
+											}
+										} else {
+											// No captured response — async summarize for last-summary endpoint only.
+											m.triggerSummarize(s.FullID, 200)
 										}
-										m.triggerSummarize(s.FullID, 200)
 									}(current)
 								}
 							}
