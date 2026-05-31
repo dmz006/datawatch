@@ -345,6 +345,8 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 > **BL318** — OpenCode provider API key management GH#95. Add `opencode.providers` config section (anthropic/openai/google api_key fields). At session start, write credentials so `opencode models <provider>` returns cloud models. Optional UI settings panel for key entry. When configured, cloud models appear automatically in the model dropdowns; no operator shell access needed. Tracked in GitHub issue #95.
 
+> **BL319** — `extra_mcp_servers` config — inject additional MCP servers into every spawned session GH#118. New `session.extra_mcp_servers` list field (entries: name, command, args, env). `WriteProjectMCPConfig` merges these entries into every `.mcp.json` alongside the datawatch entry on each spawn; removals sweep stale entries. Supports `${ENV_VAR}` expansion in env values. Full 6-surface config parity (YAML/REST/MCP/comm/CLI/PWA). Requested by imap-mcp companion tool operators who currently hand-edit `.mcp.json`.
+
 _Historical refactor notes archived — see Recently Closed and Completed Backlog for v5.27–v6.2 items._
 
 ---
