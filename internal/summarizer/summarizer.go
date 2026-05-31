@@ -368,27 +368,83 @@ func splitByMarkers(raw, markerShort, markerLong string) (short, long string, ok
 // splitByLineHeaders looks for "SHORT" and "LONG" as sole content on a line
 // (after stripping surrounding whitespace, = [ ] * # : characters).
 // Handles formats like "## SHORT", "[SHORT]", "===SHORT===", "SHORT:", etc.
+// Also handles inline forms where the label and content share a line:
+// "SHORT: sentence one. ..." / "LONG: narrative ..." — content after the
+// colon is extracted directly instead of from subsequent lines.
 func splitByLineHeaders(raw string) (short, long string, ok bool) {
 	lines := strings.Split(raw, "\n")
 	shortStart, longStart := -1, -1
+	shortInline, longInline := "", ""
 	trimChars := " \t=-*#[]():."
 	for i, line := range lines {
 		trimmed := strings.ToLower(strings.Trim(line, trimChars))
-		if trimmed == "short" && shortStart == -1 {
-			shortStart = i
-		} else if trimmed == "long" && longStart == -1 {
-			longStart = i
+		if shortStart == -1 {
+			if trimmed == "short" {
+				shortStart = i
+			} else if s, found := extractInlineLabel(line, "short"); found {
+				shortStart = i
+				shortInline = s
+			}
+		} else if longStart == -1 {
+			if trimmed == "long" {
+				longStart = i
+			} else if s, found := extractInlineLabel(line, "long"); found {
+				longStart = i
+				longInline = s
+			}
 		}
 	}
 	if shortStart == -1 || longStart == -1 || longStart <= shortStart {
 		return "", "", false
 	}
-	shortContent := strings.Join(lines[shortStart+1:longStart], "\n")
-	longContent := strings.Join(lines[longStart+1:], "\n")
+
+	var shortContent, longContent string
+	if shortInline != "" {
+		// Inline label: content starts on the label line; collect subsequent
+		// lines up to the long marker and append them.
+		extra := strings.Join(lines[shortStart+1:longStart], "\n")
+		shortContent = shortInline
+		if t := strings.TrimSpace(extra); t != "" {
+			shortContent += "\n" + t
+		}
+	} else {
+		shortContent = strings.Join(lines[shortStart+1:longStart], "\n")
+	}
+	if longInline != "" {
+		extra := strings.Join(lines[longStart+1:], "\n")
+		longContent = longInline
+		if t := strings.TrimSpace(extra); t != "" {
+			longContent += "\n" + t
+		}
+	} else {
+		longContent = strings.Join(lines[longStart+1:], "\n")
+	}
+
 	if strings.TrimSpace(shortContent) == "" || strings.TrimSpace(longContent) == "" {
 		return "", "", false
 	}
 	return strings.TrimSpace(shortContent), strings.TrimSpace(longContent), true
+}
+
+// extractInlineLabel checks if line matches "LABEL: content" (case-insensitive,
+// with optional surrounding decoration stripped). Returns the content after the
+// colon and true when matched.
+func extractInlineLabel(line, label string) (content string, ok bool) {
+	// Strip leading decoration characters before the label word.
+	stripped := strings.TrimLeft(line, " \t=-*#[]()")
+	// Check for "LABEL:" or "LABEL :" prefix, case-insensitive.
+	upper := strings.ToUpper(label)
+	lower := strings.ToLower(label)
+	var rest string
+	for _, prefix := range []string{upper + ":", lower + ":", strings.Title(lower) + ":"} { //nolint:staticcheck
+		if strings.HasPrefix(stripped, prefix) {
+			rest = strings.TrimSpace(stripped[len(prefix):])
+			if rest != "" {
+				return rest, true
+			}
+		}
+	}
+	return "", false
 }
 
 // callOllama calls the Ollama API using the LLM registry entry.

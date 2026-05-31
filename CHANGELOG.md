@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.9 — fix(summarizer): inline SHORT:/LONG: label support + comprehensive parser tests (2026-05-31)
+
+### Fixed
+
+- **`parseDualSummary` now handles inline labels** — `SHORT: content` and `LONG: content` on the same line (with optional decoration like `## SHORT:`) are now extracted correctly. Previously this format fell all the way through to the sentence-split last resort, causing "SHORT:" to appear in the short summary and the long to be empty.
+- **`extractInlineLabel` helper** added to `splitByLineHeaders` to detect and strip `LABEL:` prefixes, handling uppercase, lowercase, and title-case variants.
+
+### Tests
+
+- Added 35 new test cases covering the full `parseDualSummary` fallback chain: primary markers, preamble before markers, alternate markers (`[SHORT]`, `**SHORT**`), line-headers (`SHORT:`, `## SHORT`), blank-line paragraph split, sentence-split last resort, `<think>` tag stripping (including unclosed tags), empty/whitespace input, inverted marker order, inline `SHORT:` labels, decorated inline labels.
+- `TestExtractFirstNSentences` — 8 cases for the sentence-boundary scanner.
+- `TestStripThinkTags` — 6 cases including multiple and nested-like tags.
+- `TestSummarizeDual_OllamaRoundTrip` — end-to-end `SummarizeDual` with well-formed LLM response.
+- `TestSummarizeDual_UnstructuredResponse` — verifies sentence-split fallback still populates `long` when model ignores format.
+- `TestSummarizeDual_PrevShortIncludedInPrompt` — verifies `prevShort` injects "Previously reported" prefix.
+
+---
+
 ## v8.9.8 — fix: deduplicate summarizer input — delta-only output since last summary (2026-05-30)
 
 ### Fixed
