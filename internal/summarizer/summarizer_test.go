@@ -12,6 +12,46 @@ import (
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
+// newOllamaMockServer creates an httptest.Server that handles both
+// /api/chat (preferred by callOllamaRaw) and /api/generate (fallback).
+// Both endpoints return the provided llmResponse string.
+// capturePrompt is an optional function called with the prompt/message text.
+func newOllamaMockServer(t *testing.T, llmResponse string, capturePrompt func(string)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/chat":
+			var body struct {
+				Messages []struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			if capturePrompt != nil {
+				for _, m := range body.Messages {
+					if m.Role == "user" {
+						capturePrompt(m.Content)
+					}
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+				"message": map[string]string{"content": llmResponse},
+			})
+		case "/api/generate":
+			var body struct{ Prompt string `json:"prompt"` }
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			if capturePrompt != nil {
+				capturePrompt(body.Prompt)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"response": llmResponse}) //nolint:errcheck
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+}
+
 // TestSummarize_Disabled verifies that a disabled summarizer returns empty
 // string without error.
 func TestSummarize_Disabled(t *testing.T) {
@@ -234,7 +274,8 @@ func TestParseDualSummary(t *testing.T) {
 		{
 			name:      "markers present but long before short (invalid) falls through to paragraph",
 			raw:       "===LONG===\n" + longText + "\n\n===SHORT===\n" + shortText,
-			wantShort: "===LONG===\n" + longText,
+			// cleanShort now drops ===LONG=== marker line, leaving just the longText content.
+			wantShort: longText,
 			wantLong:  "===SHORT===\n" + shortText,
 		},
 		{
@@ -338,10 +379,7 @@ func TestSummarizeDual_OllamaRoundTrip(t *testing.T) {
 	const wantLong = "The session focused on OAuth2 PKCE implementation. Integration tests ran clean."
 	llmResp := "===SHORT===\n" + wantShort + "\n===LONG===\n" + wantLong
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"response": llmResp}) //nolint:errcheck
-	}))
+	srv := newOllamaMockServer(t, llmResp, nil)
 	defer srv.Close()
 
 	cfg := &config.Config{}
@@ -375,10 +413,7 @@ func TestSummarizeDual_UnstructuredResponse(t *testing.T) {
 	// LLM ignores the format and returns one big paragraph of 4 sentences.
 	llmResp := "The agent refactored the auth module. Tests are passing. The PR is open. It needs one more approval before merge."
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"response": llmResp}) //nolint:errcheck
-	}))
+	srv := newOllamaMockServer(t, llmResp, nil)
 	defer srv.Close()
 
 	cfg := &config.Config{}
@@ -409,17 +444,103 @@ func TestSummarizeDual_UnstructuredResponse(t *testing.T) {
 	}
 }
 
+// TestCleanShort verifies that cleanShort strips markdown decorations while
+// preserving actual summary content.
+func TestCleanShort(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain text unchanged", "Auth fixed. Tests passed. PR open.", "Auth fixed. Tests passed. PR open."},
+		{"leading bullets stripped", "- Auth fixed.\n- Tests passed.\n- PR open.", "Auth fixed. Tests passed. PR open."},
+		{"asterisk bullets stripped", "* Auth fixed.\n* Tests passed.", "Auth fixed. Tests passed."},
+		{"plus bullets stripped", "+ Auth fixed.\n+ Tests passed.", "Auth fixed. Tests passed."},
+		{"markdown headers stripped", "## Auth fixed.\nTests passed.", "Auth fixed. Tests passed."},
+		{"blockquote stripped", "> Auth fixed.\n> Tests passed.", "Auth fixed. Tests passed."},
+		{"horizontal rule line dropped", "Auth fixed.\n---\nTests passed.", "Auth fixed. Tests passed."},
+		{"=== separator dropped", "Auth fixed.\n===\nTests passed.", "Auth fixed. Tests passed."},
+		{"pure separator line dropped", "---", ""},
+		{"mixed separator dropped", "* * *", ""},
+		{"empty string unchanged", "", ""},
+		{"multi-line joined with space", "Sentence one.\nSentence two.", "Sentence one. Sentence two."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cleanShort(tc.in)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIsSeparatorLine checks that only lines of decoration chars are flagged.
+func TestIsSeparatorLine(t *testing.T) {
+	tests := []struct {
+		s    string
+		want bool
+	}{
+		{"---", true},
+		{"===", true},
+		{"***", true},
+		{"___", true},
+		{"~~~", true},
+		{"- - -", true},
+		{"= = =", true},
+		{"", false},           // empty is not a separator
+		{"text", false},
+		{"===SHORT===", false}, // contains letters
+		{"--- title ---", false},
+		{"* bullet item", false}, // contains letters after space
+	}
+	for _, tc := range tests {
+		t.Run(tc.s, func(t *testing.T) {
+			got := isSeparatorLine(tc.s)
+			if got != tc.want {
+				t.Errorf("isSeparatorLine(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseDualSummary_ParagraphSplitCaps3Sentences verifies that when the LLM
+// writes a long multi-sentence first paragraph instead of using markers, the
+// short is trimmed to 3 sentences rather than returning the whole paragraph.
+func TestParseDualSummary_ParagraphSplitCaps3Sentences(t *testing.T) {
+	// 5 sentences in the first paragraph, then a blank line, then more content.
+	raw := "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence.\n\nThis is the long part of the response with more context."
+	short, long := parseDualSummary(raw)
+	wantShort := "First sentence. Second sentence. Third sentence."
+	if short != wantShort {
+		t.Errorf("short: got %q, want %q", short, wantShort)
+	}
+	if !strings.Contains(long, "long part") {
+		t.Errorf("long should contain remainder, got %q", long)
+	}
+}
+
+// TestParseDualSummary_MarkdownBulletsInShortCleaned verifies that bullet
+// lists in the short section are collapsed to plain sentences.
+func TestParseDualSummary_MarkdownBulletsInShortCleaned(t *testing.T) {
+	raw := "===SHORT===\n- Auth fixed.\n- Tests passed.\n- PR is open.\n===LONG===\nFull narrative here."
+	short, long := parseDualSummary(raw)
+	wantShort := "Auth fixed. Tests passed. PR is open."
+	if short != wantShort {
+		t.Errorf("short: got %q, want %q", short, wantShort)
+	}
+	if long != "Full narrative here." {
+		t.Errorf("long: got %q", long)
+	}
+}
+
 // TestSummarizeDual_PrevShortIncludedInPrompt verifies that prevShort is
-// injected as "Previously reported" before the dual-summary prompt.
+// injected as "Previously summarized" before the dual-summary prompt.
 func TestSummarizeDual_PrevShortIncludedInPrompt(t *testing.T) {
 	var gotPrompt string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Prompt string `json:"prompt"` }
-		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-		gotPrompt = body.Prompt
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"response": "===SHORT===\nA. B. C.\n===LONG===\nFull narrative."}) //nolint:errcheck
-	}))
+	srv := newOllamaMockServer(t, "===SHORT===\nA. B. C.\n===LONG===\nFull narrative.", func(p string) {
+		gotPrompt = p
+	})
 	defer srv.Close()
 
 	cfg := &config.Config{}
@@ -439,8 +560,8 @@ func TestSummarizeDual_PrevShortIncludedInPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SummarizeDual error: %v", err)
 	}
-	if !strings.Contains(gotPrompt, "Previously reported") {
-		t.Errorf("prompt should contain 'Previously reported', got: %q", gotPrompt)
+	if !strings.Contains(gotPrompt, "Previously summarized") {
+		t.Errorf("prompt should contain 'Previously summarized', got: %q", gotPrompt)
 	}
 	if !strings.Contains(gotPrompt, "previous summary here") {
 		t.Errorf("prompt should contain prevShort text, got: %q", gotPrompt)
@@ -452,15 +573,7 @@ func TestSummarize_CustomPrompt(t *testing.T) {
 	const customPrompt = "One sentence summary only."
 	var gotPrompt string
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Prompt string `json:"prompt"`
-		}
-		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-		gotPrompt = body.Prompt
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"response": "done"}) //nolint:errcheck
-	}))
+	srv := newOllamaMockServer(t, "done", func(p string) { gotPrompt = p })
 	defer srv.Close()
 
 	cfg := &config.Config{}

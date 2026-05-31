@@ -2910,9 +2910,14 @@ func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, new
 			return "", byteOffset, fmt.Errorf("read encrypted log: %w", readErr)
 		}
 		newOffset = int64(len(all))
-		if byteOffset > 0 && byteOffset < newOffset {
+		switch {
+		case byteOffset > 0 && byteOffset == newOffset:
+			// No new output since last summary.
+			return "", newOffset, nil
+		case byteOffset > 0 && byteOffset < newOffset:
 			data = all[byteOffset:]
-		} else {
+		default:
+			// byteOffset == 0 (first call) or > newOffset (log rotated): full read.
 			data = all
 		}
 	} else {
@@ -2926,17 +2931,37 @@ func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, new
 		defer f.Close() //nolint:errcheck
 		fi, _ := f.Stat()
 		newOffset = fi.Size()
-		if byteOffset > 0 && byteOffset < newOffset {
+		switch {
+		case byteOffset > 0 && byteOffset == newOffset:
+			// No new output since last summary.
+			return "", newOffset, nil
+		case byteOffset > 0 && byteOffset < newOffset:
+			// Peek the byte immediately before our offset to detect whether we
+			// are landing mid-line. Log writers flush whole lines so the offset
+			// is virtually always at a '\n' boundary, but be defensive.
+			var prevBuf [1]byte
+			midLine := false
+			if byteOffset > 0 {
+				if _, peekErr := f.ReadAt(prevBuf[:], byteOffset-1); peekErr == nil {
+					midLine = prevBuf[0] != '\n'
+				}
+			}
 			f.Seek(byteOffset, 0) //nolint:errcheck
-		}
-		data, err = io.ReadAll(f)
-		if err != nil {
-			return "", byteOffset, fmt.Errorf("read log delta: %w", err)
-		}
-		// If we seeked mid-file, drop first partial line.
-		if byteOffset > 0 {
-			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
-				data = data[idx+1:]
+			data, err = io.ReadAll(f)
+			if err != nil {
+				return "", byteOffset, fmt.Errorf("read log delta: %w", err)
+			}
+			// Only discard the first (partial) line when we confirmed mid-line.
+			if midLine {
+				if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+					data = data[idx+1:]
+				}
+			}
+		default:
+			// byteOffset == 0 (first call) or > newOffset (log rotated): read from start.
+			data, err = io.ReadAll(f)
+			if err != nil {
+				return "", byteOffset, fmt.Errorf("read log delta: %w", err)
 			}
 		}
 	}

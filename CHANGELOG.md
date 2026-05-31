@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.10 — fix(summarizer): robust dual-summary parsing, prompt hardening, and input capping (2026-05-31)
+
+### Fixed
+
+- **Short summary capped to 3 sentences in all parse paths** — `extractFirstNSentences(s, 3)` is now applied after both `splitByMarkers` and `splitByLineHeaders` succeed, not only in the paragraph-split fallback. Previously the marker path returned the model's full SHORT section verbatim, allowing 6+ sentence outputs.
+- **Empty `current_status_long` no longer returned** — when the model emits `===LONG===` with nothing after it, `parseDualSummary` now falls back to using the short text as the long so `current_status_long` is always populated.
+- **`===SHORT===` / `===LONG===` marker lines stripped from output** — `cleanShort` now drops any line matching `===WORD===` pattern so marker echo by the model doesn't pollute the notification text.
+- **Outer `[...]` bracket wrapping stripped** — some models treat `[placeholder]` system-prompt format as a template to fill and return `[What happened: ...]`. `cleanShort` now unwraps these.
+- **Common template label prefixes stripped** — "What happened:", "Did it succeed or fail:", "What comes next:", "Sentence N:" are stripped from the front of the short text.
+- **System prompt reworded to avoid label copying** — both `ollamaChatSystemPrompt` and `dualSummaryPrompt` replaced `[3 sentences, each under 15 words: ...]` bracket-notation format specs with plain imperative prose so small models stop copying the spec literally.
+- **Input capped at 6 000 characters (most-recent tail)** — `SummarizeDual` now trims the session output delta to the last 6 000 chars at a line boundary before passing to the LLM. Prevents 88 KB+ inputs from overwhelming small models like `qwen3:1.7b`.
+- **prevShort feedback loop broken** — the previous short summary is only prepended to the prompt when it does not already appear in the new input delta, preventing the model from copying the previous summary indefinitely.
+- **`OutputSince` no-new-data early return** — `byteOffset == newOffset` now returns `("", offset, nil)` immediately instead of re-reading the entire file from position 0.
+- **Partial-line boundary fix** — `OutputSince` now peeks the byte before the seek position to detect mid-line starts; it only skips the partial line when the preceding character is not `\n`.
+- **Offset advance guarded by non-empty short** — `handleSessionCurrentStatus` and `handleSummarize` only advance `SummaryLogOffset` when the LLM returned a non-empty short, so failed or empty LLM calls don't skip output.
+- **Ollama `/api/chat` preferred over `/api/generate`** — `callOllamaRaw` now tries the chat endpoint first (with a system message for better instruction following), falling back to `/api/generate`. `think: false` is set for `qwen3` and `deepseek-r` models to suppress chain-of-thought overhead.
+
+### Tests
+
+- `TestOutputSince_FromZero`, `TestOutputSince_Delta`, `TestOutputSince_NoNewOutput`, `TestOutputSince_RepeatedPolling`, `TestOutputSince_LogRotated`, `TestOutputSince_ANSIStripped` — full coverage of `OutputSince` byte-offset edge cases.
+- `newOllamaMockServer` helper handles both `/api/chat` and `/api/generate` endpoints so mock tests work with the updated `callOllamaRaw`.
+- `TestSummarizeDual_PrevShortIncludedInPrompt` updated to match "Previously summarized" prefix wording.
+- `TestParseDualSummary` case for inverted-marker fallback updated to reflect that `===LONG===` marker lines are now correctly stripped by `cleanShort`.
+
+---
+
 ## v8.9.9 — fix(summarizer): inline SHORT:/LONG: label support + comprehensive parser tests (2026-05-31)
 
 ### Fixed

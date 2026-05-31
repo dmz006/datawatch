@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,15 +26,9 @@ import (
 // with whatever the service uses.
 const DefaultSummarizerPrompt = "Compress the following AI coding assistant output into exactly 3 short sentences (under 15 words each) suitable for a car dashboard or phone notification. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next. No code, no markdown, no bullet points."
 
-const dualSummaryPrompt = `Analyze the following AI session terminal output. Your response must contain ONLY the two sections below, beginning immediately with the ===SHORT=== marker:
+const dualSummaryPrompt = `Read the terminal output below and write a two-part summary.
 
-===SHORT===
-Exactly 3 sentences, each under 15 words. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next or what the user last asked. No code, no markdown, no lists.
-
-===LONG===
-A narrative of 3-5 sentences (under 60 words each) covering: what was worked on, key decisions or findings, current status, any errors or blockers, and the last user request. Plain English only.
-
-Do not add any text before ===SHORT=== or after the long summary.
+Begin with ===SHORT=== on its own line, then write 3 plain sentences (each under 15 words): say what happened, say whether it succeeded or failed, say what comes next. Then write ===LONG=== on its own line, then write 3 to 5 plain English sentences with more detail. No labels, no markdown, no code, no lists, no headings, no brackets.
 
 Terminal output:
 `
@@ -111,11 +106,28 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 		return "", "", nil
 	}
 
-	prefix := dualSummaryPrompt
-	if strings.TrimSpace(prevShort) != "" {
-		prefix = "Previously reported (do not repeat this):\n" + prevShort + "\n\n" + dualSummaryPrompt
+	// Cap input to the most recent 6000 characters so small models don't
+	// get overwhelmed by long session logs; the tail is most relevant.
+	const maxInputChars = 6000
+	inputText := text
+	if len(inputText) > maxInputChars {
+		// Trim to the most recent portion, starting at a line boundary.
+		trimmed := inputText[len(inputText)-maxInputChars:]
+		if idx := strings.IndexByte(trimmed, '\n'); idx >= 0 {
+			trimmed = trimmed[idx+1:]
+		}
+		inputText = trimmed
 	}
-	fullPrompt := prefix + text
+
+	// Only include prevShort when it differs significantly from the text the
+	// model will see — prevents the feedback loop where the model copies prevShort
+	// verbatim and it becomes the next prevShort, repeating indefinitely.
+	prev := strings.TrimSpace(prevShort)
+	prefix := dualSummaryPrompt
+	if prev != "" && !strings.Contains(strings.ToLower(inputText), strings.ToLower(prev[:min(len(prev), 40)])) {
+		prefix = "Previously summarized (do not repeat):\n" + prev + "\n\n" + dualSummaryPrompt
+	}
+	fullPrompt := prefix + inputText
 
 	// Apply 30-second timeout.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -140,6 +152,8 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 				return "", "", err
 			}
 			short, long = parseDualSummary(raw)
+			log.Printf("[summarizer] dual input_len=%d raw=%q short=%q long_len=%d",
+				len(text), truncateLog(raw, 120), truncateLog(short, 80), len(long))
 			return short, long, nil
 		}
 	}
@@ -151,6 +165,8 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 			return "", "", err
 		}
 		short, long = parseDualSummary(raw)
+		log.Printf("[summarizer] dual input_len=%d raw=%q short=%q long_len=%d",
+			len(text), truncateLog(raw, 120), truncateLog(short, 80), len(long))
 		return short, long, nil
 	}
 
@@ -275,6 +291,15 @@ func contextLinesToHistoryLines(contextLen int) int {
 	}
 }
 
+// truncateLog returns s truncated to maxLen runes with "…" appended if cut.
+func truncateLog(s string, maxLen int) string {
+	r := []rune(s)
+	if len(r) <= maxLen {
+		return s
+	}
+	return string(r[:maxLen]) + "…"
+}
+
 // parseDualSummary splits an LLM response into short and long summaries.
 // It strips <think>...</think> blocks (from reasoning models), then tries
 // the primary ===SHORT===/ ===LONG=== markers, several common alternate
@@ -291,20 +316,38 @@ func parseDualSummary(raw string) (short, long string) {
 	}
 	for _, pair := range markerPairs {
 		if s, l, ok := splitByMarkers(raw, pair[0], pair[1]); ok {
-			return s, l
+			if capped := extractFirstNSentences(s, 3); capped != "" {
+				s = capped
+			}
+			// When LONG section is empty (model wrote nothing after the marker),
+			// fall back to using the short text as the long so current_status_long
+			// is always populated.
+			if l == "" {
+				l = strings.TrimSpace(s)
+			}
+			return cleanShort(s), l
 		}
 	}
 
 	// Line-header fallback: look for "SHORT" / "LONG" on their own lines
 	// (strips surrounding whitespace, punctuation, markdown, ===, [], *).
 	if s, l, ok := splitByLineHeaders(raw); ok {
-		return s, l
+		if capped := extractFirstNSentences(s, 3); capped != "" {
+			s = capped
+		}
+		return cleanShort(s), l
 	}
 
 	// Blank-line paragraph split: first paragraph → short, remainder → long.
+	// The short is capped at 3 sentences in case the model wrote a long
+	// single-paragraph intro instead of using the marker format.
 	parts := strings.SplitN(strings.TrimSpace(raw), "\n\n", 2)
 	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
-		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		shortPart := strings.TrimSpace(parts[0])
+		if s := extractFirstNSentences(shortPart, 3); s != "" && s != shortPart {
+			shortPart = s
+		}
+		return cleanShort(shortPart), strings.TrimSpace(parts[1])
 	}
 
 	// Sentence-split last resort: model didn't use any structural format.
@@ -312,9 +355,67 @@ func parseDualSummary(raw string) (short, long string) {
 	// current_status_long is always populated even for unstructured output.
 	text := strings.TrimSpace(raw)
 	if s := extractFirstNSentences(text, 3); s != "" && s != text {
-		return s, text
+		return cleanShort(s), text
 	}
-	return text, ""
+	return cleanShort(text), ""
+}
+
+// cleanShort strips markdown artifacts and template labels from a short summary.
+func cleanShort(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	var kept []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Drop pure horizontal-rule / separator lines ("---", "===", "***", etc.).
+		if isSeparatorLine(trimmed) {
+			continue
+		}
+		// Drop section-marker lines like "===SHORT===", "===LONG===".
+		if strings.HasPrefix(trimmed, "===") && strings.HasSuffix(trimmed, "===") {
+			continue
+		}
+		// Strip leading markdown heading (#), blockquote (>), and bullet (- * +) chars.
+		stripped := strings.TrimLeft(line, " \t")
+		stripped = strings.TrimLeft(stripped, "#>")
+		stripped = strings.TrimSpace(stripped)
+		// Strip single leading bullet character followed by a space.
+		if len(stripped) >= 2 && (stripped[0] == '-' || stripped[0] == '*' || stripped[0] == '+') && stripped[1] == ' ' {
+			stripped = stripped[2:]
+		}
+		kept = append(kept, strings.TrimSpace(stripped))
+	}
+	result := strings.TrimSpace(strings.Join(kept, " "))
+
+	// Strip outer [...] wrapping — models that treat [placeholder] as a template
+	// to fill in sometimes wrap the entire short in brackets.
+	if len(result) > 2 && result[0] == '[' && result[len(result)-1] == ']' {
+		result = strings.TrimSpace(result[1 : len(result)-1])
+	}
+	// Strip common template labels that models copy from prompt format specs.
+	for _, label := range []string{
+		"What happened: ", "What happened:",
+		"Did it succeed or fail: ", "Did it succeed or fail:",
+		"What comes next: ", "What comes next:",
+		"Sentence 1: ", "Sentence 2: ", "Sentence 3: ",
+	} {
+		result = strings.TrimPrefix(result, label)
+	}
+
+	return result
+}
+
+// isSeparatorLine reports whether a line consists only of decoration characters
+// (horizontal rule, marker fence, etc.) with no actual content.
+func isSeparatorLine(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r != '-' && r != '=' && r != '*' && r != '_' && r != '~' && r != ' ' && r != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // extractFirstNSentences returns the first n sentences from text by scanning
@@ -466,38 +567,103 @@ func (s *Service) callOllama(ctx context.Context, llm *inference.LLM, prompt str
 	return s.callOllamaRaw(ctx, host, model, prompt)
 }
 
-// callOllamaRaw sends a POST to {host}/api/generate and parses .response.
+// ollamaChatSystemPrompt is the system message injected when using the chat
+// endpoint. A system message is more forceful than a user prompt for small
+// models — they're trained to follow system instructions strictly.
+const ollamaChatSystemPrompt = `You are a session summarizer. When given terminal output, respond with ONLY the following format and nothing else:
+
+===SHORT===
+Three plain sentences, each under 15 words. Say what happened. Say whether it succeeded or failed. Say what comes next.
+===LONG===
+Three to five plain English sentences with full context, key decisions, current status, and any blockers.
+
+Start your response immediately with ===SHORT===. No labels, no preamble, no markdown, no code blocks, no bullet points, no brackets.`
+
+// callOllamaRaw sends to {host}/api/chat (preferred) with a strict system
+// message, falling back to /api/generate if chat is unavailable.
+// For qwen3 and deepseek-r reasoning models, think:false suppresses
+// chain-of-thought so the model replies directly without <think> blocks.
 func (s *Service) callOllamaRaw(ctx context.Context, host, model, prompt string) (string, error) {
 	if model == "" {
 		return "", fmt.Errorf("summarizer: no model configured for Ollama")
 	}
-	body, _ := json.Marshal(map[string]interface{}{
-		"model":  model,
-		"prompt": prompt,
+	isThinkingModel := strings.Contains(strings.ToLower(model), "qwen3") ||
+		strings.Contains(strings.ToLower(model), "deepseek-r")
+
+	// Use chat endpoint with a system message — gives much better instruction
+	// following on small models compared to /api/generate single-turn prompts.
+	type chatMessage struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	chatPayload := map[string]interface{}{
+		"model": model,
+		"messages": []chatMessage{
+			{Role: "system", Content: ollamaChatSystemPrompt},
+			{Role: "user", Content: prompt},
+		},
 		"stream": false,
-	})
-	url := strings.TrimRight(host, "/") + "/api/generate"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	}
+	if isThinkingModel {
+		// think:false disables chain-of-thought for qwen3/deepseek-r, reducing
+		// latency and preventing <think> blocks from polluting the output.
+		chatPayload["think"] = false
+	}
+	body, _ := json.Marshal(chatPayload)
+	chatURL := strings.TrimRight(host, "/") + "/api/chat"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatURL, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("summarizer: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close() //nolint:errcheck
+		var out struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		}
+		if decErr := json.NewDecoder(resp.Body).Decode(&out); decErr == nil {
+			return strings.TrimSpace(out.Message.Content), nil
+		}
+		resp.Body.Close() //nolint:errcheck
+	} else if resp != nil {
+		resp.Body.Close() //nolint:errcheck
+	}
+
+	// Fallback: /api/generate (older Ollama or chat unavailable).
+	genPayload := map[string]interface{}{
+		"model":  model,
+		"prompt": ollamaChatSystemPrompt + "\n\n" + prompt,
+		"stream": false,
+	}
+	if isThinkingModel {
+		genPayload["think"] = false
+	}
+	body, _ = json.Marshal(genPayload)
+	genURL := strings.TrimRight(host, "/") + "/api/generate"
+	req2, err := http.NewRequestWithContext(ctx, http.MethodPost, genURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("summarizer: build request: %w", err)
+	}
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		return "", fmt.Errorf("summarizer: ollama request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != http.StatusOK {
-		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("summarizer: ollama HTTP %d: %s", resp.StatusCode, string(buf))
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != http.StatusOK {
+		buf, _ := io.ReadAll(io.LimitReader(resp2.Body, 512))
+		return "", fmt.Errorf("summarizer: ollama HTTP %d: %s", resp2.StatusCode, string(buf))
 	}
-	var out struct {
+	var out2 struct {
 		Response string `json:"response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(resp2.Body).Decode(&out2); err != nil {
 		return "", fmt.Errorf("summarizer: ollama decode: %w", err)
 	}
-	return strings.TrimSpace(out.Response), nil
+	return strings.TrimSpace(out2.Response), nil
 }
 
 // callOpenAI calls an OpenAI-compatible chat/completions endpoint.

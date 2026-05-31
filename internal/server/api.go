@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.9"
+var Version = "8.9.10"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3168,7 +3168,10 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 		GeneratedAt: time.Now(),
 	}
 	s.manager.StoreSummary(sess.FullID, sum)
-	s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
+	// Only advance the watermark when we got a real summary.
+	if strings.TrimSpace(short) != "" {
+		s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sum) //nolint:errcheck
@@ -3218,6 +3221,13 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "no new output since last summary", http.StatusNoContent)
 		return
 	}
+	// Skip summarization when the delta is too thin; the LLM has nothing
+	// meaningful to work with and tends to generate inaccurate boilerplate.
+	// Require at least 5 non-empty lines of new output.
+	if strings.Count(strings.TrimSpace(text), "\n") < 4 {
+		http.Error(w, "insufficient new output to summarize", http.StatusNoContent)
+		return
+	}
 	// Pass previous short summary as context so the LLM doesn't repeat it.
 	prevShort := ""
 	if prev, ok := s.manager.GetSummary(sess.FullID); ok {
@@ -3230,8 +3240,12 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "summarizer error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Advance the watermark so the next call is also a delta.
-	s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
+	// Only advance the watermark when we got a real summary; if the LLM
+	// returned empty (disabled, unconfigured, or model misbehaved) keep the
+	// offset where it is so the output is included in the next call.
+	if strings.TrimSpace(short) != "" {
+		s.manager.UpdateSummaryOffset(sess.FullID, newOffset)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"current_status":      short,
