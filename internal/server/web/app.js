@@ -18604,13 +18604,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="btn-primary" onclick="window.splashSaveToken()" style="font-size:12px;">Connect</button>
               </div>
             </div>`;
+            splash.style.visibility = 'visible';
             setTimeout(() => document.getElementById('splashTokenInput')?.focus(), 50);
           }
         } else {
+          const splash = document.getElementById('splash');
+          if (splash) splash.style.visibility = 'visible';
           connect();
         }
-      }).catch(() => { connect(); });
+      }).catch(() => {
+        const splash = document.getElementById('splash');
+        if (splash) splash.style.visibility = 'visible';
+        connect();
+      });
     } else {
+      const splash = document.getElementById('splash');
+      if (splash) splash.style.visibility = 'visible';
       connect();
     }
     let _initView = localStorage.getItem('cs_active_view');
