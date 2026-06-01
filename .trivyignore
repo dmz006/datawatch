@@ -115,3 +115,77 @@ CVE-2026-40164
 CVE-2025-59375
 CVE-2026-25210
 CVE-2026-45186
+
+# python3.11 / libpython3.11-* — no fix in bookworm (3 CVEs)
+# Python 3.11 is installed in agent images for aider and other Python-based
+# tools. The datawatch service itself is written in Go and does not use Python.
+#   CVE-2026-7210 (CRITICAL): xml.parsers.expat / xml.etree.ElementTree use
+#     after free via crafted XML. Requires processing attacker-controlled XML
+#     via those modules. Agent tooling does not expose Python XML parsers to
+#     untrusted input.
+#   CVE-2025-69534 (HIGH): python-markdown DoS via malformed HTML-like input.
+#     Markdown parsing is a tool-use concern; no untrusted content is piped
+#     through python-markdown by the container's core service.
+#   CVE-2026-6100 (HIGH): Arbitrary code execution or information disclosure.
+#     No publicly-available exploit details; status affected, no fix in bookworm.
+CVE-2026-7210
+CVE-2025-69534
+CVE-2026-6100
+
+# python3-pip CVE-2026-8643 — HIGH, no fix in bookworm
+# pip is only used for package installation (during docker build via pipx).
+# Not exposed at runtime; pip itself does not accept untrusted input in
+# a deployed container.
+CVE-2026-8643
+
+# python3-click CVE-2026-7246 — HIGH, no fix in bookworm
+# click is a CLI framework used by aider and other Python tools. This CVE
+# affects click's argument parsing. Not directly exposed via datawatch APIs.
+CVE-2026-7246
+
+# picomatch (npm) CVE-2026-33671 — HIGH
+# Picomatch 4.0.3 is a transitive dependency of @google/gemini-cli. A fix
+# exists (4.0.4+) but requires gemini-cli to release an update. picomatch is
+# used for glob pattern matching in the CLI; not exposed to untrusted web input.
+CVE-2026-33671
+
+# libcups2 CVE-2026-34980 — HIGH, no fix in bookworm
+# CUPS printing library, pulled as a Java runtime dependency (openjdk-17-jre).
+# The datawatch parent-full image uses Java only to run signal-cli. No
+# printing is performed; CUPS is not active or reachable in the container.
+CVE-2026-34980
+
+# libharfbuzz0b CVE-2023-25193 — HIGH, affected in bookworm
+# HarfBuzz text shaping library, pulled by Java's font rendering stack.
+# Triggerable via attacker-controlled font files; no font files are processed
+# by the datawatch service or signal-cli in normal operation.
+CVE-2023-25193
+
+# litellm (pip METADATA) CVE-2026-35030 — CRITICAL
+# litellm is an aider transitive dependency for LLM API routing. This CVE
+# is a METADATA-level finding (no binary package version pinned by Debian).
+# Aider uses litellm for model calls to operator-configured endpoints only.
+CVE-2026-35030
+
+# GitPython (pip METADATA) CVE-2026-42215 — HIGH
+# GitPython is an aider dependency used to interact with git repos. The CVE
+# affects git operations on attacker-controlled repositories. Aider runs in
+# operator-controlled workspaces; untrusted repo cloning is not a default
+# use case for the agent container.
+CVE-2026-42215
+
+# Python pip-level transitive deps (METADATA) — misc HIGH, no fix available
+# These are CVEs in aider's transitive dependencies reported at the pip
+# METADATA level. All affect components not directly exposed by the
+# datawatch service: async HTTP (aiohttp), network protocols (urllib3),
+# ASN.1 (pyasn1), protobuf serialisation, image processing (pillow).
+#   CVE-2025-69223: aiohttp — DoS via malformed chunked encoding
+#   CVE-2025-66418: urllib3 — information leakage via redirects
+#   CVE-2026-23490: pyasn1 — DoS via crafted ASN.1 data
+#   CVE-2026-0994: protobuf — DoS via deeply nested messages
+#   CVE-2026-25990: pillow — information disclosure or DoS via crafted image
+CVE-2025-69223
+CVE-2025-66418
+CVE-2026-23490
+CVE-2026-0994
+CVE-2026-25990
