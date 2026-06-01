@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.12 — fix(pwa): hide splash when token required but not stored (2026-06-01)
+
+### Fixed
+
+- **Splash screen no longer shown to unauthenticated visitors when `server.token` is set** — previously, a user with no stored token would see the "datawatch / AI Orchestration" splash spinning indefinitely while the WebSocket connection kept failing. Now, on page load with no stored token, the PWA probes `/api/health` first. If `auth_required: true`, the splash is immediately replaced with a minimal "Access token required" prompt (password input + Connect button, Enter-key submit). Once the token is entered it is saved to `localStorage` and the normal WS connection begins.
+- **`GET /api/health` now returns `auth_required: bool`** — true when `server.token` is configured, false otherwise. This is the only field added; hostname/version are still returned (health is a public endpoint by design).
+
+---
+
 ## v8.9.11 — fix(session): FQDN hostname tmux crash + quiet channel download (2026-06-01)
 
 ### Fixed

@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.11"
+var Version = "8.9.12"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1882,6 +1882,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_seconds":   uptime,
 		"encrypted":        encrypted,
 		"has_env_password":  hasEnvPassword,
+		"auth_required":    s.token != "",
 	})
 }
 

@@ -13461,6 +13461,20 @@ function saveToken() {
   setTimeout(connect, 500);
 }
 
+// Saves the token entered on the splash auth prompt (shown when auth_required
+// but no token is stored). Removes the prompt and starts the WS connection.
+window.splashSaveToken = function() {
+  const input = document.getElementById('splashTokenInput');
+  if (!input) return;
+  const tok = input.value.trim();
+  if (!tok) return;
+  state.token = tok;
+  localStorage.setItem('cs_token', tok);
+  const splash = document.getElementById('splash');
+  if (splash) splash.remove();
+  connect();
+};
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 function requestNotificationPermission() {
   if (!('Notification' in window)) {
@@ -18570,7 +18584,35 @@ document.addEventListener('DOMContentLoaded', () => {
   // first render. Falls through to English on fetch failure.
   initI18n().finally(() => {
     document.documentElement.setAttribute('lang', window._i18n.current);
-    connect();
+    // If no token is stored, probe health to see if auth is required before
+    // spinning up the WS. When it is, replace the splash with a token-entry
+    // prompt so visitors without credentials don't see an endless loading
+    // animation that reveals what's running.
+    const _storedTok = localStorage.getItem('cs_token') || '';
+    if (!_storedTok) {
+      fetch('/api/health').then(r => r.ok ? r.json() : null).then(h => {
+        if (h && h.auth_required) {
+          const splash = document.getElementById('splash');
+          if (splash) {
+            splash.innerHTML = `<div class="splash-content" style="gap:20px;">
+              <div class="splash-title" style="font-size:15px;">Access token required</div>
+              <div style="display:flex;flex-direction:column;gap:8px;width:240px;">
+                <input id="splashTokenInput" type="password" class="form-input"
+                  placeholder="Paste your access token"
+                  style="font-size:12px;"
+                  onkeydown="if(event.key==='Enter')window.splashSaveToken()" />
+                <button class="btn-primary" onclick="window.splashSaveToken()" style="font-size:12px;">Connect</button>
+              </div>
+            </div>`;
+            setTimeout(() => document.getElementById('splashTokenInput')?.focus(), 50);
+          }
+        } else {
+          connect();
+        }
+      }).catch(() => { connect(); });
+    } else {
+      connect();
+    }
     let _initView = localStorage.getItem('cs_active_view');
     const _initSession = localStorage.getItem('cs_active_session');
     // BL247-followup v6.7.3 — Monitor sub-tab dropped; its content + a
