@@ -21,7 +21,8 @@ RUN install_packages \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install aider-chat==${AIDER_VERSION} && \
     # Upgrade vulnerable transitive deps within aider's venv to their patched versions.
     # Aider pins these conservatively; force minimums that clear all Trivy HIGH/CRITICAL.
-    /opt/pipx/venvs/aider-chat/bin/pip install --quiet --no-cache-dir \
+    # Use python -m pip (not the pip symlink) — Debian venvs omit the bare pip binary.
+    /opt/pipx/venvs/aider-chat/bin/python -m pip install --quiet --no-cache-dir \
         "gitpython>=3.1.50" \
         "litellm>=1.83.7" \
         "urllib3>=2.7.0" \
