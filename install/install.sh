@@ -324,7 +324,7 @@ install_binary() {
     local TMPARCHIVE; TMPARCHIVE=$(mktemp -d)
     local INSTALLED=false
 
-    # a) Try GoReleaser tar.gz archive first
+    # a) Try GoReleaser tar.gz archive first (contains both datawatch and datawatch-channel)
     local ARCHIVE_NAME="${BINARY_NAME}_${VERSION}_linux_${GOARCH}.tar.gz"
     local ARCHIVE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}"
     info "Trying GoReleaser archive: ${ARCHIVE_URL} ..."
@@ -335,11 +335,23 @@ install_binary() {
       if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
         FOUND_BIN="${TMPARCHIVE}/${BINARY_NAME}"
       else
-        FOUND_BIN=$(find "${TMPARCHIVE}" -maxdepth 2 -name "${BINARY_NAME}*" -not -name "*.tar.gz" -not -name "*.zip" | head -1)
+        FOUND_BIN=$(find "${TMPARCHIVE}" -maxdepth 2 -name "${BINARY_NAME}" -not -name "*.tar.gz" -not -name "*.zip" | head -1)
       fi
       if [[ -n "${FOUND_BIN}" && -f "${FOUND_BIN}" ]]; then
         install -m 755 "${FOUND_BIN}" "${INSTALL_DIR}/${BINARY_NAME}"
         INSTALLED=true
+        # datawatch-channel ships in the same tarball — extract it now while we have it.
+        local CHAN_NAME="datawatch-channel"
+        local FOUND_CHAN=""
+        if [[ -f "${TMPARCHIVE}/${CHAN_NAME}" ]]; then
+          FOUND_CHAN="${TMPARCHIVE}/${CHAN_NAME}"
+        else
+          FOUND_CHAN=$(find "${TMPARCHIVE}" -maxdepth 2 -name "${CHAN_NAME}" | head -1)
+        fi
+        if [[ -n "${FOUND_CHAN}" && -f "${FOUND_CHAN}" ]]; then
+          install -m 755 "${FOUND_CHAN}" "${INSTALL_DIR}/${CHAN_NAME}"
+          success "MCP channel bridge installed to ${INSTALL_DIR}/${CHAN_NAME}."
+        fi
       fi
     fi
 
@@ -373,21 +385,9 @@ install_binary() {
     rm -rf "${TMPARCHIVE}"
     if $INSTALLED; then
       success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
-      # Also install the datawatch-channel Go MCP bridge (non-fatal fallback to JS if missing).
-      local CHAN_NAME="datawatch-channel"
-      local CHAN_RAW="${CHAN_NAME}-linux-${GOARCH}"
-      local CHAN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${CHAN_RAW}"
-      local CHAN_TMP; CHAN_TMP=$(mktemp -d)
-      if wget -q -O "${CHAN_TMP}/${CHAN_RAW}" "${CHAN_URL}" 2>/dev/null || \
-         curl -fsSL -o "${CHAN_TMP}/${CHAN_RAW}" "${CHAN_URL}" 2>/dev/null; then
-        if [[ -s "${CHAN_TMP}/${CHAN_RAW}" ]]; then
-          install -m 755 "${CHAN_TMP}/${CHAN_RAW}" "${INSTALL_DIR}/${CHAN_NAME}"
-          success "MCP channel bridge installed to ${INSTALL_DIR}/${CHAN_NAME}."
-        fi
-      else
-        info "No prebuilt datawatch-channel for this version — JS bridge will be used (install Node.js if sessions fail)."
+      if [[ ! -f "${INSTALL_DIR}/datawatch-channel" ]]; then
+        info "datawatch-channel not found in archive — JS bridge will be used (install Node.js if sessions fail)."
       fi
-      rm -rf "${CHAN_TMP}"
       return
     fi
     warn "Prebuilt binary not available for v${VERSION} (${GOARCH}). Falling back to build from source."

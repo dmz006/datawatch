@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.13 — fix(install): channel binary from tarball + installer fallback + splash timing (2026-06-01)
+
+### Fixed
+
+- **`datawatch-channel` now correctly installed from the GoReleaser tarball** — the channel binary ships inside `datawatch_VERSION_linux_ARCH.tar.gz` alongside the main binary. The installer was ignoring it and trying to download a non-existent standalone `datawatch-channel-linux-amd64` asset, always falling back to the JS bridge. It now extracts `datawatch-channel` from the same tarball it already downloaded.
+- **Installer fallback version updated** — stale `0.5.0` fallback (used when GitHub API is rate-limited) replaced with `8.9.13`. Added regex sanity check on fetched version and `--max-time 10` to prevent hung API calls.
+- **PWA splash hidden until auth check resolves** — `#splash` now starts `visibility:hidden` in HTML and is revealed only after the `/api/health` `auth_required` probe completes, preventing the "datawatch / AI Orchestration" branding from flashing before the token-entry prompt appears.
+
+---
+
 ## v8.9.12 — fix(pwa): hide splash when token required but not stored (2026-06-01)
 
 ### Fixed
