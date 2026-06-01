@@ -19,6 +19,14 @@ RUN install_packages \
         python3 python3-pip python3-venv pipx \
         build-essential pkg-config libffi-dev libssl-dev && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install aider-chat==${AIDER_VERSION} && \
+    # Upgrade vulnerable transitive deps within aider's venv to their patched versions.
+    # Aider pins these conservatively; force minimums that clear all Trivy HIGH/CRITICAL.
+    /opt/pipx/venvs/aider-chat/bin/pip install --quiet --no-cache-dir \
+        "gitpython>=3.1.50" \
+        "litellm>=1.83.7" \
+        "urllib3>=2.7.0" \
+        "pyasn1>=0.6.3" \
+        "pillow>=12.2.0" && \
     # linux-libc-dev (kernel headers) is pulled by build-essential for C compilation
     # of Python native extensions during pip install. All compilation is now done;
     # purge it to eliminate 100+ unfixable kernel CVEs from the Trivy scan.
