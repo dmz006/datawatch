@@ -1,5 +1,5 @@
 # Container image CVE exceptions — v8.0.0
-# Reviewed: 2026-05-19  |  Re-review: each release cycle
+# Reviewed: 2026-05-31  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
 # "affected" or "will_not_fix" for each.
@@ -70,3 +70,48 @@ CVE-2026-7598
 # package signature verification during apt installs (build-time only).
 # Not present in the runtime attack surface of a deployed container.
 CVE-2026-41989
+
+# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (5 CVEs)
+# Perl is installed as a transitive dependency (git and gnupg pull it in).
+# The datawatch service does not execute Perl scripts or call Archive::Tar.
+#   CVE-2026-42496 (CRITICAL): Archive::Tar symlink traversal during extraction.
+#     Only exploitable if Archive::Tar is called to extract a malicious tar.
+#     datawatch does not extract tar archives at runtime.
+#   CVE-2026-42497 (HIGH): Archive::Tar hardlink traversal. Same surface.
+#   CVE-2026-48962 (HIGH): perl-IO-Compress arbitrary code execution via
+#     crafted compressed input. datawatch does not decompress via IO::Compress.
+#   CVE-2026-8376 (HIGH): heap buffer overflow in Perl interpreter. Requires
+#     running attacker-supplied Perl code; no Perl execution in container.
+#   CVE-2026-9538 (HIGH): Archive::Tar memory corruption. Same as CVE-2026-42496.
+CVE-2026-42496
+CVE-2026-42497
+CVE-2026-48962
+CVE-2026-8376
+CVE-2026-9538
+
+# git-lfs CVE-2025-26625 — HIGH, no fix available
+# git-lfs may write to arbitrary files via crafted LFS pointer refs returned
+# by a malicious LFS server. Only exploitable when cloning/pulling from an
+# attacker-controlled git remote. All git remotes in this image are
+# operator-configured; no untrusted LFS servers are contacted.
+CVE-2025-26625
+
+# jq / libjq1 — no fix in bookworm (2 HIGH)
+# jq is installed as a general-purpose JSON tool for agent shell use.
+#   CVE-2026-32316 (HIGH): DoS or potential code execution via crafted JSON.
+#     jq processes JSON from operator-controlled sources (API responses, config).
+#   CVE-2026-40164 (HIGH): DoS via crafted JSON object causing excessive memory.
+#     Same surface; no untrusted JSON piped through jq by the datawatch service.
+CVE-2026-32316
+CVE-2026-40164
+
+# libexpat1 — no fix in bookworm (3 CVEs, 2 HIGH + 1 will_not_fix)
+# expat is pulled transitively by Python, dbus, and other system libs.
+# datawatch does not parse XML directly; Go uses encoding/xml from stdlib.
+#   CVE-2025-59375: Debian will_not_fix — mitigated by OS-level constraints.
+#   CVE-2026-25210 (HIGH): information disclosure via crafted XML. No untrusted
+#     XML is parsed inside the container by the datawatch service.
+#   CVE-2026-45186 (HIGH): DoS via crafted XML input. Same surface.
+CVE-2025-59375
+CVE-2026-25210
+CVE-2026-45186
