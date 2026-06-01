@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.11 — fix(session): FQDN hostname tmux crash + quiet channel download (2026-06-01)
+
+### Fixed
+
+- **FQDN hostname breaks tmux session start** — tmux interprets `.` as a pane separator and `:` as a window separator in target strings. A hostname like `box.local` produced session name `cs-box.local-<id>`, causing `pipe-pane` to fail with exit status 1 immediately after `new-session` succeeded. The tmux session name now replaces `.` and `:` with `-` (e.g. `cs-box-local-<id>`); `fullID` and `sess.Hostname` retain the original value for federation and session tracking.
+- **Channel binary auto-download skipped when `update.enabled: false`** — on every daemon restart with the Go bridge missing, datawatch attempted to download it from GitHub, printing noisy `[channel]` log lines even in "quiet" deployments. The download now only runs when `cfg.Update.Enabled` is true; systems with updates off fall through silently to the Node.js bridge.
+- **`pipe-pane` error includes tmux stderr** — `PipeOutput` and `RepipeOutput` now capture tmux's combined output and append it to the returned error so diagnostics show the actual tmux complaint rather than just "exit status 1".
+- **Log file path quoted in pipe-pane shell command** — `cat >> '/path'` now uses single quotes so paths containing spaces don't cause the shell redirect to mis-parse.
+
+---
+
 ## v8.9.10 — fix(summarizer): robust dual-summary parsing, prompt hardening, and input capping (2026-05-31)
 
 ### Fixed

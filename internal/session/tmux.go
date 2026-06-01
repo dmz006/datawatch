@@ -207,8 +207,15 @@ func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 // Uses tmux pipe-pane to append to the file. Uses -o (toggle): only opens
 // a pipe if no pipe is in effect, which is correct for the create path.
 func (t *TmuxManager) PipeOutput(session, logFile string) error {
-	cmd := fmt.Sprintf("cat >> %s", logFile)
-	return exec.Command("tmux", "pipe-pane", "-o", "-t", session, cmd).Run()
+	cmd := fmt.Sprintf("cat >> '%s'", logFile)
+	out, err := exec.Command("tmux", "pipe-pane", "-o", "-t", session, cmd).CombinedOutput()
+	if err != nil {
+		if len(out) > 0 {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return err
+	}
+	return nil
 }
 
 // RepipeOutput re-establishes the pipe-pane bridge for a session whose
@@ -230,8 +237,15 @@ func (t *TmuxManager) RepipeOutput(session, logFile string) error {
 	// Close any existing pipe-pane (no-op if none in effect).
 	_ = exec.Command("tmux", "pipe-pane", "-t", session).Run()
 	// Start a fresh pipe.
-	cmd := fmt.Sprintf("cat >> %s", logFile)
-	return exec.Command("tmux", "pipe-pane", "-t", session, cmd).Run()
+	cmd := fmt.Sprintf("cat >> '%s'", logFile)
+	out, err := exec.Command("tmux", "pipe-pane", "-t", session, cmd).CombinedOutput()
+	if err != nil {
+		if len(out) > 0 {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return err
+	}
+	return nil
 }
 
 // KillSession terminates a tmux session by name.

@@ -1449,7 +1449,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("generate session ID: %w", err)
 	}
 	fullID := fmt.Sprintf("%s-%s", m.hostname, id)
-	tmuxSession := fmt.Sprintf("cs-%s-%s", m.hostname, id)
+	// Tmux interprets '.' as a pane separator and ':' as a window separator in
+	// target strings, so a FQDN hostname like "box.local" would break pipe-pane.
+	// Sanitize for the tmux name only; fullID and sess.Hostname keep the real value.
+	tmuxHostname := strings.NewReplacer(".", "-", ":", "-").Replace(m.hostname)
+	tmuxSession := fmt.Sprintf("cs-%s-%s", tmuxHostname, id)
 
 	backendName := m.llmBackend
 	launchFn := m.launchFn

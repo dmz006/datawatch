@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.10"
+var Version = "8.9.11"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -874,9 +874,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		dataDirExpanded := expandHome(cfg.DataDir)
 		usingGoBridge := false
 		bridgeBin := channel.BinaryPath(dataDirExpanded)
-		if bridgeBin == "" {
+		if bridgeBin == "" && cfg.Update.Enabled {
 			// Go bridge absent — try to self-heal by downloading from the
-			// current release. Runs silently; falls back to Node on failure.
+			// current release. Skipped when update.enabled=false (quiet mode).
 			fmt.Printf("[channel] Go bridge not found — downloading from v%s release...\n", Version)
 			if downloaded, dlErr := downloadChannelBinary(dataDirExpanded); dlErr == nil {
 				bridgeBin = downloaded
