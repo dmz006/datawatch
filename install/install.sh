@@ -11,20 +11,22 @@ BINARY_NAME="datawatch"
 # Fetch the latest published release version from GitHub API.
 # Falls back to a hardcoded minimum version if the API is unavailable.
 fetch_latest_version() {
-  local fallback="0.5.0"
+  local fallback="8.9.12"
   local api_url="https://api.github.com/repos/${REPO}/releases/latest"
   local ver=""
   if command -v curl &>/dev/null; then
-    ver=$(curl -fsSL "${api_url}" 2>/dev/null \
+    ver=$(curl -fsSL --max-time 10 "${api_url}" 2>/dev/null \
           | grep '"tag_name"' | head -1 \
           | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
   elif command -v wget &>/dev/null; then
-    ver=$(wget -qO- "${api_url}" 2>/dev/null \
+    ver=$(wget -qO- --timeout=10 "${api_url}" 2>/dev/null \
           | grep '"tag_name"' | head -1 \
           | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
   fi
-  if [[ -z "${ver}" ]]; then
-    warn "Could not fetch latest version from GitHub; defaulting to v${fallback}"
+  # Sanity-check: must look like a version number (digits and dots)
+  if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
+    warn "Could not fetch latest version from GitHub (API may be rate-limited); defaulting to v${fallback}"
+    warn "Use --version X.Y.Z to install a specific version."
     ver="${fallback}"
   fi
   echo "${ver}"
