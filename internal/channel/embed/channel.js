@@ -44,7 +44,7 @@ When you have a response, use the reply tool to send it back.
 When you need permission for a tool and permission relay is active,
 the request will be forwarded to the user automatically.`,
 });
-// --- Tools: reply + interrupt -----------------------------------------------
+// --- Tools: reply + memory --------------------------------------------------
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
         {
@@ -65,6 +65,58 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ['text'],
             },
         },
+        {
+            name: 'memory_remember',
+            description: 'Save information to the datawatch memory system',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    content: { type: 'string', description: 'The text to remember' },
+                    project_dir: { type: 'string', description: 'Optional project directory for scoping' },
+                },
+                required: ['content'],
+            },
+        },
+        {
+            name: 'memory_recall',
+            description: 'Search the datawatch memory system for relevant information',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Search query' },
+                },
+                required: ['query'],
+            },
+        },
+        {
+            name: 'memory_list',
+            description: 'List recent memories from the datawatch memory system',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    n: { type: 'number', description: 'Number of memories to return (default 50)' },
+                },
+            },
+        },
+        {
+            name: 'memory_forget',
+            description: 'Delete a memory from the datawatch memory system by ID',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    id: { type: 'number', description: 'Memory ID to delete' },
+                },
+                required: ['id'],
+            },
+        },
+        {
+            name: 'memory_stats',
+            description: 'Get statistics about the datawatch memory system',
+            inputSchema: {
+                type: 'object',
+                properties: {},
+            },
+        },
     ],
 }));
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -75,6 +127,30 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
             session_id: session_id ?? SESSION_ID,
         });
         return { content: [{ type: 'text', text: 'Reply sent.' }] };
+    }
+    if (req.params.name === 'memory_remember') {
+        const { content, project_dir } = req.params.arguments;
+        const result = await callParent('/api/memory/save', 'POST', { content, project_dir });
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (req.params.name === 'memory_recall') {
+        const { query } = req.params.arguments;
+        const result = await callParent('/api/memory/search?q=' + encodeURIComponent(query), 'GET');
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (req.params.name === 'memory_list') {
+        const { n } = req.params.arguments;
+        const result = await callParent('/api/memory/list?n=' + (n || 50), 'GET');
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (req.params.name === 'memory_forget') {
+        const { id } = req.params.arguments;
+        const result = await callParent('/api/memory/delete', 'POST', { id });
+        return { content: [{ type: 'text', text: result }] };
+    }
+    if (req.params.name === 'memory_stats') {
+        const result = await callParent('/api/memory/stats', 'GET');
+        return { content: [{ type: 'text', text: result }] };
     }
     return { content: [{ type: 'text', text: 'Unknown tool.' }] };
 });
@@ -156,6 +232,32 @@ catch (_) {
     // Best-effort; datawatch may not be running or may not support this endpoint yet.
 }
 // --- Helpers ----------------------------------------------------------------
+// callParent makes an HTTP request to the daemon and returns the response body.
+// Used by memory tools that need to return data back to the model.
+async function callParent(path, method, body) {
+    return new Promise((resolve, reject) => {
+        const data = body ? JSON.stringify(body) : null;
+        const url = new URL(DW_API_URL + path);
+        const opts = {
+            hostname: url.hostname,
+            port: url.port || '80',
+            path: url.pathname + url.search,
+            method: method || 'GET',
+            headers: {
+                ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+                ...(DW_TOKEN ? { Authorization: `Bearer ${DW_TOKEN}` } : {}),
+            },
+        };
+        const req = http.request(opts, (res) => {
+            let chunks = '';
+            res.on('data', (c) => { chunks += c.toString(); });
+            res.on('end', () => resolve(chunks));
+        });
+        req.on('error', reject);
+        if (data) req.write(data);
+        req.end();
+    });
+}
 async function postToDatawatch(path, body) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify(body);
