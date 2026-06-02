@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.15 — fix(channel): duplicate bridge on port 7433 breaks multi-session (2026-06-02)
+
+### Fixed
+
+- **Second claude-code session fails with "MCP server failed" / "failed to connect"** — for every claude-code session start, the daemon wrote a static `"datawatch"` entry to the project's `.mcp.json` (BL109) *and* registered a session-scoped `"datawatch-{id}"` entry via `RegisterSessionMCP` (which correctly uses `DATAWATCH_CHANNEL_PORT=0`). Claude Code loaded both, spawning two bridge processes. The `.mcp.json` entry lacked `DATAWATCH_CHANNEL_PORT`, so it always defaulted to 7433. When a second session started in the same project, its bridge failed to bind port 7433 (already in use), and Claude Code surfaced "MCP server failed". Fixed by skipping `WriteProjectMCPConfig` for claude-code backends — `RegisterSessionMCP` handles the registration correctly with all required env vars.
+
+---
+
 ## v8.9.14 — fix(channel): JS bridge reports port 0 to daemon when using random port (2026-06-02)
 
 ### Fixed

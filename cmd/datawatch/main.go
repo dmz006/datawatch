@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.14"
+var Version = "8.9.15"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1192,13 +1192,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 
 			// BL109 — write a per-session .mcp.json into the project
-			// dir for every backend (the standard discovery file
-			// non-claude-code backends honour). Idempotent + merges
-			// with existing entries the operator may have hand-added.
-			if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv); err != nil {
-				debugf("BL109 .mcp.json: %v", err)
-			} else {
-				debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
+			// dir for non-claude-code backends (the standard discovery
+			// file those backends honour). claude-code gets its bridge
+			// registered via RegisterSessionMCP below (with CHANNEL_PORT=0
+			// and CLAUDE_SESSION_ID), so writing a static "datawatch" entry
+			// here would spawn a second bridge on the default port 7433,
+			// breaking multi-session setups when that port is already taken.
+			if sess.BackendFamily != "claude-code" {
+				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv); err != nil {
+					debugf("BL109 .mcp.json: %v", err)
+				} else {
+					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
+				}
 			}
 
 			// v8.7.0 — write per-session opencode.json for OpenCode backends.
