@@ -162,9 +162,16 @@ const httpServer = http.createServer((req, res) => {
   })
 })
 
-httpServer.listen(CHANNEL_PORT, '127.0.0.1', () => {
-  process.stderr.write(`[datawatch-channel] HTTP listener on 127.0.0.1:${CHANNEL_PORT}\n`)
+// When CHANNEL_PORT=0 the OS assigns a free port. Wrap listen in a Promise so
+// we can read the actual bound port before notifying the daemon.
+const actualPort = await new Promise<number>((resolve, reject) => {
+  httpServer.listen(CHANNEL_PORT, '127.0.0.1', () => {
+    const addr = httpServer.address() as { port: number } | null
+    resolve(addr?.port ?? CHANNEL_PORT)
+  })
+  httpServer.once('error', reject)
 })
+process.stderr.write(`[datawatch-channel] HTTP listener on 127.0.0.1:${actualPort}\n`)
 
 // --- Connect to Claude Code over stdio --------------------------------------
 
@@ -175,7 +182,7 @@ process.stderr.write('[datawatch-channel] MCP channel connected to Claude Code\n
 // Notify datawatch that the channel is ready. datawatch uses this to send the
 // session's initial task (if any) as the first channel message.
 try {
-  await postToDatawatch('/api/channel/ready', { session_id: SESSION_ID, port: CHANNEL_PORT })
+  await postToDatawatch('/api/channel/ready', { session_id: SESSION_ID, port: actualPort })
 } catch (_) {
   // Best-effort; datawatch may not be running or may not support this endpoint yet.
 }

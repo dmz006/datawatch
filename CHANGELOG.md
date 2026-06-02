@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.14 — fix(channel): JS bridge reports port 0 to daemon when using random port (2026-06-02)
+
+### Fixed
+
+- **JS channel bridge sends actual bound port in ready notification** — when `DATAWATCH_CHANNEL_PORT=0` is set (per-session random port mode), the JS bridge bound to a random OS-assigned port but then reported port 0 back to the daemon via `/api/channel/ready`. The daemon stored port 0 and all subsequent daemon→session pushes failed silently. Fixed by wrapping `httpServer.listen` in a Promise and reading `httpServer.address().port` after binding. The Go bridge already handled this correctly via `listener.Addr().(*net.TCPAddr).Port`.
+- Updated embedded `channel.js` to match fixed TypeScript source.
+
+---
+
 ## v8.9.13 — fix(install): channel binary from tarball + installer fallback + splash timing (2026-06-01)
 
 ### Fixed
