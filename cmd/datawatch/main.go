@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.15"
+var Version = "8.9.16"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1203,6 +1203,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					debugf("BL109 .mcp.json: %v", err)
 				} else {
 					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
+				}
+			} else if sess.ProjectDir != "" {
+				// Remove any legacy "datawatch" global entry left by older daemon
+				// versions — it would otherwise spawn a second bridge on port 7433.
+				if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, "datawatch"); err != nil {
+					debugf("BL109 remove stale .mcp.json datawatch entry: %v", err)
 				}
 			}
 

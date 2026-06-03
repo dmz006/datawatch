@@ -182,6 +182,34 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 	return true, nil
 }
 
+// RemoveProjectMCPEntry removes a named server from <projectDir>/.mcp.json.
+// Used to purge the legacy "datawatch" global entry that was written before
+// per-session MCP registration replaced it. Idempotent; no-op when the file
+// or the key doesn't exist.
+func RemoveProjectMCPEntry(projectDir, name string) error {
+	if projectDir == "" {
+		return nil
+	}
+	path := filepath.Join(projectDir, ".mcp.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil // file doesn't exist — nothing to remove
+	}
+	var cfg MCPProjectConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
+		return nil
+	}
+	if _, ok := cfg.MCPServers[name]; !ok {
+		return nil // key not present — already clean
+	}
+	delete(cfg.MCPServers, name)
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
 // IsStaleProjectMCPConfig reads <path> as a `.mcp.json` and reports
 // whether its `datawatch` entry points at a JS bridge whose channel.js
 // file no longer exists on disk. Used by `/api/channel/info` to flag

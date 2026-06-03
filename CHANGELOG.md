@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.16 — fix(channel): clean up stale "datawatch" .mcp.json entry on session start (2026-06-03)
+
+### Fixed
+
+- **Stale `"datawatch"` entry in project `.mcp.json` still causes port 7433 conflict after v8.9.15 upgrade** — v8.9.15 stopped writing the global `"datawatch"` entry for claude-code sessions, but projects that had already been used with an older daemon retained the entry on disk. When a new session started, Claude Code still loaded it and spawned a bridge on port 7433 alongside the correct per-session bridge. Fixed by actively removing the `"datawatch"` key from `<projectDir>/.mcp.json` at session start for claude-code backends. Idempotent — no-op if the entry was already absent or the file doesn't exist.
+
+---
+
 ## v8.9.15 — fix(channel): duplicate bridge on port 7433 breaks multi-session (2026-06-02)
 
 ### Fixed
