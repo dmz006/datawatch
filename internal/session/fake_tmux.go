@@ -166,6 +166,9 @@ func (f *FakeTmux) SetEnvironment(session string, env map[string]string) error {
 	return f.record("set-env", session, keys...)
 }
 
+// PaneTTY returns "" so WaitTypingIdle is a no-op in tests.
+func (f *FakeTmux) PaneTTY(session string) string { return "" }
+
 // WithFakeTmux swaps in a FakeTmux on the given Manager and returns it.
 // The Manager MUST NOT have running sessions at the time of swap.
 // Intended for use in tests only.

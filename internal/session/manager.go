@@ -2041,6 +2041,46 @@ func (m *Manager) KillTmuxSession(fullID string) {
 	_ = m.tmux.KillSession(sess.TmuxSession)
 }
 
+// WaitTypingIdle blocks until the operator has stopped typing in the session's
+// tmux pane for at least idleFor, or until deadline is reached. It works by
+// watching the TTY device's atime: every keystroke the operator sends updates
+// atime, so if atime hasn't changed for idleFor we know the terminal is quiet.
+//
+// Returns true if the idle window was observed; false if deadline expired first
+// (caller should send anyway — never drop a message). Safe to call when tmux
+// is not in use (sess.TmuxSession=="") — returns true immediately in that case.
+func (m *Manager) WaitTypingIdle(fullID string, idleFor, deadline time.Duration) bool {
+	sess, ok := m.GetSession(fullID)
+	if !ok || sess.TmuxSession == "" || m.tmux == nil {
+		return true
+	}
+	tty := m.tmux.PaneTTY(sess.TmuxSession)
+	if tty == "" {
+		return true
+	}
+
+	giveUp := time.Now().Add(deadline)
+	poll := 300 * time.Millisecond
+	for {
+		info, err := os.Stat(tty)
+		if err != nil {
+			return true // can't read TTY — don't block
+		}
+		idle := time.Since(info.ModTime())
+		if idle >= idleFor {
+			return true
+		}
+		remaining := time.Until(giveUp)
+		if remaining <= 0 {
+			return false
+		}
+		if poll > remaining {
+			poll = remaining
+		}
+		time.Sleep(poll)
+	}
+}
+
 // SetState manually overrides a session's state. Used for fixing stuck sessions.
 func (m *Manager) SetState(fullID string, newState State) error {
 	sess, ok := m.store.Get(fullID)

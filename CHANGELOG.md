@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.17 — feat(session): hold agent messages while operator is typing in xterm (2026-06-05)
+
+### Added
+
+- **Anti-clobber typing detection** — when an incoming agent message targets an active session, the daemon now polls the session's tmux pane TTY `mtime` before injecting the message. If the operator has typed within the last 2 seconds, the send is held until a 2-second idle gap is detected (max wait: 12 seconds, then sends anyway so no message is ever lost). This prevents agent messages from clobbering mid-keystroke operator input in xterm when multiple sessions are running in parallel.
+  - `TmuxAPI` gains `PaneTTY(session string) string` — returns the TTY device path for the pane (`tmux list-panes -F #{pane_tty}`).
+  - `Manager.WaitTypingIdle(fullID, idleFor, deadline)` polls `os.Stat(tty).ModTime()` at 300 ms intervals and returns true when idle ≥ `idleFor` or false after `deadline`.
+  - `handleChannelSend` calls `WaitTypingIdle` before posting to the bridge; no-op when TTY is unavailable (virtual sessions, tests).
+
+---
+
 ## v8.9.16 — fix(channel): clean up stale "datawatch" .mcp.json entry on session start (2026-06-03)
 
 ### Fixed

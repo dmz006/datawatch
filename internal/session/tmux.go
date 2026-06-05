@@ -25,6 +25,7 @@ type TmuxAPI interface {
 	RepipeOutput(session, logFile string) error // BL263 / v6.11.9 — re-establish after daemon restart
 	KillSession(name string) error
 	SetEnvironment(session string, env map[string]string) error
+	PaneTTY(session string) string
 }
 
 // TmuxManager wraps tmux operations used by the session manager.
@@ -313,4 +314,18 @@ func (t *TmuxManager) SetEnvironment(session string, env map[string]string) erro
 // AttachCommand returns the shell command a user should run to attach to the session.
 func (t *TmuxManager) AttachCommand(session string) string {
 	return fmt.Sprintf("tmux attach -t %s", session)
+}
+
+// PaneTTY returns the TTY device path for the first pane of the given tmux
+// session (e.g. "/dev/pts/7"). Returns "" on any error.
+func (t *TmuxManager) PaneTTY(session string) string {
+	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_tty}").Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lines[0])
 }

@@ -1,3 +1,22 @@
+## Command Timing Rule
+
+**Always wrap every shell command with start and end timestamps** so execution time is visible.
+
+```bash
+# Single command:
+echo "[$(date '+%H:%M:%S')] start" && <command>; echo "[$(date '+%H:%M:%S')] done"
+
+# Chain of commands (use ; before the final timestamp so it always prints):
+echo "[$(date '+%H:%M:%S')] start" && rtk go build ./... && rtk go test ./...; echo "[$(date '+%H:%M:%S')] done"
+
+# Long-running (also show elapsed):
+T=$(date +%s); echo "[$(date '+%H:%M:%S')] start" && <command>; echo "[$(date '+%H:%M:%S')] done ($(( $(date +%s) - T ))s)"
+```
+
+This applies to **all** commands: builds, tests, git, gh, docker — everything. No exceptions.
+
+---
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 

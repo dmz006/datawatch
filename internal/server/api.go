@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.16"
+var Version = "8.9.17"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6541,6 +6541,13 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	if channelPort == 0 {
 		channelPort = 7433
 	}
+	// Wait until the operator is not actively typing in the session's tmux pane
+	// before injecting the message, so we don't clobber mid-keystroke input.
+	// Idle threshold: 2 s of no TTY activity. Max wait: 12 s then send anyway.
+	if body.SessionID != "" {
+		s.manager.WaitTypingIdle(body.SessionID, 2*time.Second, 12*time.Second)
+	}
+
 	url := fmt.Sprintf("http://127.0.0.1:%d/send", channelPort)
 	payload, _ := json.Marshal(map[string]string{
 		"text":       body.Text,
