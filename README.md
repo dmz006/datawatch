@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.9.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.4)
+[![Release](https://img.shields.io/badge/release-v8.9.17-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.17)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,12 +89,12 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.9.4](CHANGELOG.md) (2026-05-30)** — Dual-summary AI pipeline, summarizer model selector, robust parser fixes, and `last_response` spacing fix.
+**[v8.9.17](CHANGELOG.md) (2026-06-05)** — Anti-clobber typing detection, MCP bridge stability fixes, JS bridge memory parity, and Go 1.25.11 CVE fix.
 
-- **Dual-summary AI pipeline** (v8.9.0) — single LLM call produces a short push-safe summary (`last_response`) and a long narrative (`last_summary_long`) on every `running→waiting_input` transition. Model-aware context sizing, repetition avoidance, content gate, manual re-summarize button, and envelope expand on session cards.
-- **Summarizer model selector** (v8.9.1) — `session.summarizer.model` config field + PWA Settings dropdown with quality/speed hints (⚡ basic → ★★★ best). Pulls models from all compute nodes (local + GPU fleet).
-- **Robust dual-summary parser** (v8.9.2) — handles reasoning models (`<think>` blocks), small models with alternate marker formats, multi-format fallback chain, paragraph-split last resort.
-- **`last_response` spacing fix** (v8.9.3–v8.9.4) — ANSI cursor-positioning sequences now produce spaces instead of concatenating words. Live response capture switched to `tmux capture-pane -p` (rendered terminal, correct word spacing) with 200-line scrollback to reach content above the TUI viewport.
+- **Anti-clobber typing detection** (v8.9.17) — agent messages injected into an active session now wait for a 2-second idle gap in the operator's TTY activity before sending (max hold: 12 s, then sends anyway). Prevents incoming agent pushes from clobbering mid-keystroke operator input in xterm when multiple sessions run in parallel.
+- **MCP bridge stability** (v8.9.15–v8.9.16) — fixed duplicate bridge spawning on port 7433 that caused "MCP server failed" on second claude-code session in same project. Stale `.mcp.json` entries from older daemon versions are now actively removed on session start.
+- **JS bridge memory parity** (v8.9.13–v8.9.14) — `channel.js` now exposes the same 5 memory tools as the Go bridge (`memory_remember`, `memory_recall`, `memory_list`, `memory_forget`, `memory_stats`) plus a `callParent` helper with response-body return.
+- **Go 1.25.11** (v8.9.15) — fixes two stdlib CVEs (`net/textproto` GO-2026-5039, `crypto/x509` GO-2026-5037).
 
 ### v8.6 highlights
 

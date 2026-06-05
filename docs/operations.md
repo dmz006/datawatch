@@ -1157,6 +1157,8 @@ The terminal auto-fits to the container width and supports 5000-line scrollback.
 
 **Click-to-type:** You can click directly on the terminal area and type — keystrokes are sent to the tmux session in real time. This works for interactive prompts, shell commands, and any input the running process expects. The input bar below the terminal also sends text, but direct typing in the terminal is often faster for short responses.
 
+**Anti-clobber typing hold (v8.9.17):** When an agent or automation sends a message into an active session, the daemon checks whether you are actively typing in the xterm terminal. If TTY activity was detected within the last 2 seconds, the message is held until you pause (up to 12 seconds, then it sends anyway so no message is ever lost). This prevents agent pushes from clobbering mid-keystroke operator input when multiple sessions are running in parallel.
+
 **Known issue:** The web terminal display occasionally gets out of sync with the actual tmux pane content (blank screen, frozen output, or garbled rendering). If this happens, navigate back to the session list and re-enter the session, or refresh the browser page. This resets the screen capture and xterm.js state. Pull requests to improve terminal sync reliability are welcome.
 
 ### Scheduled Prompts
