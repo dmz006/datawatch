@@ -55,6 +55,8 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
 
+v8.9.18 shipped 2026-06-06 — BL336 (anti-clobber typing detection + queue, v8.9.17–v8.9.18): agent messages to active sessions wait for 30 s of TTY idle before injecting; multiple messages queue in arrival order, first waits for idle, remainder flush immediately after. Go bridge port-7433 duplicate bridge fix (v8.9.15–v8.9.16): `WriteProjectMCPConfig` skipped for claude-code backends; stale `.mcp.json` `"datawatch"` entries removed on session start. JS bridge memory parity (v8.9.13–v8.9.14): `memory_remember/recall/list/forget/stats` + `callParent` helper. Go 1.25.11 (CVE fix: `net/textproto` GO-2026-5039, `crypto/x509` GO-2026-5037).
+
 v8.9.4 shipped 2026-05-30 — dual-summary AI pipeline (v8.9.0): single LLM call → short (`last_response`) + long (`last_summary_long`) summaries, model-aware context, envelope expand on session cards. Summarizer model selector with quality hints (v8.9.1): `session.summarizer.model` config + PWA datalist from all compute nodes. Robust dual-summary parser (v8.9.2): `<think>` tag stripping, multi-format marker fallback, paragraph-split last resort; CLI `session send` Enter fix (SendKeysWithSettle). `last_response` spacing fix (v8.9.3–v8.9.4): ANSI cursor sequences → space; `CaptureResponse` switched to `tmux capture-pane -p -S -200` (rendered terminal, correct word spacing). GH#111, #112, #114 closed. All five v8.9.x tags pushed.
 
 v8.8.6 shipped 2026-05-27 — ZAP CI fix (direct binary launch replaces KIND+Docker+Helm), fix remaining [10027] suspicious comments (`deprecated`→`superseded`/`legacy`, `Debug Console`→`Diagnostic Console`), tagline updated "AI Session Monitor"→"AI Orchestration" across splash/About/CLI banners. iOS parity standard extended: AGENT.md Mobile-Parity Rule updated, `docs/parity-status.md` created with PWA|Android|iOS table, BL335 (APNs push) filed for next minor. GH#105/#106 (ZAP issues) closed; GH#107 (iOS parity) docs addressed; GH#108 (tagline) closed.
@@ -451,6 +453,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v8.9.17–v8.9.18 (2026-06-05–2026-06-06):** BL336 — Anti-clobber typing detection + queue. Agent channel sends to an active session now wait for 30 s of TTY idle (`os.Stat(tty).ModTime()` polled at 300 ms) before injecting, so agent messages don't clobber mid-keystroke operator input in xterm. Multiple messages that arrive while the operator is typing queue up (per-session buffered channel, cap 256, single drain goroutine); first message in each burst waits for idle, remainder flush immediately after in arrival order. Queue closes cleanly on session delete. `TmuxAPI.PaneTTY`, `Manager.WaitTypingIdle`, `Manager.QueueChannelSend` added. Also in this window: Go bridge port-7433 duplicate-bridge fix (v8.9.15–v8.9.16), JS bridge memory parity (v8.9.13–v8.9.14), Go 1.25.11 CVE fix.
 
 **v7.2.3 (2026-05-18):** BL315 — Fullscreen PWA mode. Header gains a ⛶ toggle button (Fullscreen API, works in any browser) and a ⬇ Install button that appears when the browser fires `beforeinstallprompt` and disappears after install. pwa-setup.md updated. TS-149 added to T11.
 
@@ -1026,6 +1030,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL291 | Observer settings findable in PWA — Federated Observer card in Settings → General | v6.20.0 |
 | BL297 | Council "Add Persona" wizard — SQLite drafts, LLM one-shot + edit + re-interview, 7-surface | v6.22.3 |
 | BL298 | Toast / error UX — showError() helper, no auto-dismiss, ✕ button; ~15 app paths converted | v6.22.3 |
+| BL336 | Anti-clobber typing detection + queue — 30 s TTY idle wait, per-session send queue, arrival-order drain | v8.9.18 |
 
 ### Promoted to Features
 
