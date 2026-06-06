@@ -343,6 +343,11 @@ type Manager struct {
 	summariesMu sync.Mutex
 	summaries   map[string]SessionSummary
 
+	// sendQueues serializes channel sends per session so agent messages
+	// queue up and drain in order when typing idle is detected.
+	sendQueuesMu sync.Mutex
+	sendQueues   map[string]*sessionSendQueue
+
 	// dualSummarizeFn, when non-nil, generates both a short and long summary
 	// from session output. prevShort is the previous short summary (used to
 	// avoid repeating information). Replaces the old single-string summarizeFn.
@@ -398,6 +403,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 		summaries:        make(map[string]SessionSummary),
+		sendQueues:       make(map[string]*sessionSendQueue),
 	}, nil
 }
 
@@ -2041,6 +2047,60 @@ func (m *Manager) KillTmuxSession(fullID string) {
 	_ = m.tmux.KillSession(sess.TmuxSession)
 }
 
+// sessionSendQueue serializes channel sends for one session.
+type sessionSendQueue struct {
+	ch chan sessionSendItem
+}
+
+type sessionSendItem struct {
+	doSend func() error
+	result chan error
+}
+
+// getOrCreateSendQueue returns the send queue for fullID, starting its drain
+// goroutine on first use.
+func (m *Manager) getOrCreateSendQueue(fullID string) *sessionSendQueue {
+	m.sendQueuesMu.Lock()
+	defer m.sendQueuesMu.Unlock()
+	if q, ok := m.sendQueues[fullID]; ok {
+		return q
+	}
+	q := &sessionSendQueue{ch: make(chan sessionSendItem, 256)}
+	m.sendQueues[fullID] = q
+	go m.drainSessionSendQueue(fullID, q)
+	return q
+}
+
+// drainSessionSendQueue is the per-session goroutine that serializes sends.
+// For each batch: wait for typing idle before the first message, then flush
+// any additional items that queued up during the wait without re-waiting.
+func (m *Manager) drainSessionSendQueue(fullID string, q *sessionSendQueue) {
+	for item := range q.ch {
+		m.WaitTypingIdle(fullID, 30*time.Second, 90*time.Second)
+		item.result <- item.doSend()
+	drain:
+		for {
+			select {
+			case next := <-q.ch:
+				next.result <- next.doSend()
+			default:
+				break drain
+			}
+		}
+	}
+}
+
+// QueueChannelSend enqueues a channel send for fullID and blocks until it
+// completes. The first message in each burst waits for 30 s of typing idle
+// (max 90 s); messages that arrive while waiting are batched and sent
+// immediately after idle is confirmed, in arrival order.
+func (m *Manager) QueueChannelSend(fullID string, doSend func() error) error {
+	q := m.getOrCreateSendQueue(fullID)
+	result := make(chan error, 1)
+	q.ch <- sessionSendItem{doSend: doSend, result: result}
+	return <-result
+}
+
 // WaitTypingIdle blocks until the operator has stopped typing in the session's
 // tmux pane for at least idleFor, or until deadline is reached. It works by
 // watching the TTY device's atime: every keystroke the operator sends updates
@@ -2795,6 +2855,14 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	}
 	m.mu.Unlock()
 	lastResponseCache.Delete(fullID)
+
+	// Close the session's send queue so its drain goroutine exits.
+	m.sendQueuesMu.Lock()
+	if q, ok := m.sendQueues[fullID]; ok {
+		close(q.ch)
+		delete(m.sendQueues, fullID)
+	}
+	m.sendQueuesMu.Unlock()
 
 	// Cancel any pending scheduled commands for this session
 	if m.schedStore != nil {

@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.18 — feat(session): queue multiple agent messages while operator is typing (2026-06-06)
+
+### Changed
+
+- **Anti-clobber idle threshold raised to 30 seconds** — the previous 2-second gap was too short for operators who pause to think mid-sentence. Now waits for 30 seconds of no TTY activity (max hold: 90 seconds, then sends anyway).
+- **Per-session send queue** — multiple agent messages that arrive while the operator is typing now queue up and drain in order. The first message in each burst waits for the 30-second idle gap; subsequent messages that accumulated during the wait are flushed immediately after, preserving arrival order and never clobbering each other. Previous behaviour sent all waiting messages simultaneously the moment idle was detected.
+  - `Manager.QueueChannelSend` replaces the inline `WaitTypingIdle` call in `handleChannelSend`.
+  - Each session gets a buffered channel (capacity 256) with a single drain goroutine; the goroutine exits cleanly when the session is deleted.
+
+---
+
 ## v8.9.17 — feat(session): hold agent messages while operator is typing in xterm (2026-06-05)
 
 ### Added

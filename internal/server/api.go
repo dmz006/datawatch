@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.17"
+var Version = "8.9.18"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6541,25 +6541,35 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	if channelPort == 0 {
 		channelPort = 7433
 	}
-	// Wait until the operator is not actively typing in the session's tmux pane
-	// before injecting the message, so we don't clobber mid-keystroke input.
-	// Idle threshold: 2 s of no TTY activity. Max wait: 12 s then send anyway.
-	if body.SessionID != "" {
-		s.manager.WaitTypingIdle(body.SessionID, 2*time.Second, 12*time.Second)
+	// Serialize sends per session: queue the message and wait for typing idle
+	// (30 s gap, 90 s deadline) before injecting. Multiple messages that arrive
+	// while the operator is typing are batched and sent in arrival order once
+	// idle is confirmed; messages after the first in a batch skip the idle wait.
+	doSend := func() error {
+		url := fmt.Sprintf("http://127.0.0.1:%d/send", channelPort)
+		payload, _ := json.Marshal(map[string]string{
+			"text":       body.Text,
+			"source":     "datawatch",
+			"session_id": body.SessionID,
+		})
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(url, "application/json", strings.NewReader(string(payload)))
+		if err != nil {
+			return err
+		}
+		resp.Body.Close() //nolint:errcheck
+		return nil
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/send", channelPort)
-	payload, _ := json.Marshal(map[string]string{
-		"text":       body.Text,
-		"source":     "datawatch",
-		"session_id": body.SessionID,
-	})
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(url, "application/json", strings.NewReader(string(payload)))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("channel server unreachable: %v", err), http.StatusBadGateway)
+	var sendErr error
+	if body.SessionID != "" {
+		sendErr = s.manager.QueueChannelSend(body.SessionID, doSend)
+	} else {
+		sendErr = doSend()
+	}
+	if sendErr != nil {
+		http.Error(w, fmt.Sprintf("channel server unreachable: %v", sendErr), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close() //nolint:errcheck
 
 	// Broadcast the outgoing send to WS clients so the channel tab shows it
 	s.recordChannelHistory(body.SessionID, body.Text, "outgoing")
