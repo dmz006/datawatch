@@ -51,9 +51,13 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
-| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.9.20 shipped 2026-06-07 — Line-printing renderer lock: `ensureClaudeTUISetting` writes `"tui":"default"` into `<dataDir>/.claude/settings.json` at `NewManager` startup, pinning claude-code to line-printing mode against Anthropic's `tengu_pewter_brook` alt-screen server-side flag.
+
+v8.9.19 shipped 2026-06-06 — BL336 regression fix: `WaitTypingIdle` switched from TTY `mtime` (updated by AI output) to `lastRawInputAt` (updated only by operator xterm keystrokes via `SendRawKeys`); session-to-session MCP sends now pass through immediately. 4 unit tests added.
 
 v8.9.18 shipped 2026-06-06 — BL336 (anti-clobber typing detection + queue, v8.9.17–v8.9.18): agent messages to active sessions wait for 30 s of TTY idle before injecting; multiple messages queue in arrival order, first waits for idle, remainder flush immediately after. Go bridge port-7433 duplicate bridge fix (v8.9.15–v8.9.16): `WriteProjectMCPConfig` skipped for claude-code backends; stale `.mcp.json` `"datawatch"` entries removed on session start. JS bridge memory parity (v8.9.13–v8.9.14): `memory_remember/recall/list/forget/stats` + `callParent` helper. Go 1.25.11 (CVE fix: `net/textproto` GO-2026-5039, `crypto/x509` GO-2026-5037).
 
@@ -454,7 +458,9 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 
 ### Recently closed (sticky for one release cycle, then archived)
 
-**v8.9.17–v8.9.18 (2026-06-05–2026-06-06):** BL336 — Anti-clobber typing detection + queue. Agent channel sends to an active session now wait for 30 s of TTY idle (`os.Stat(tty).ModTime()` polled at 300 ms) before injecting, so agent messages don't clobber mid-keystroke operator input in xterm. Multiple messages that arrive while the operator is typing queue up (per-session buffered channel, cap 256, single drain goroutine); first message in each burst waits for idle, remainder flush immediately after in arrival order. Queue closes cleanly on session delete. `TmuxAPI.PaneTTY`, `Manager.WaitTypingIdle`, `Manager.QueueChannelSend` added. Also in this window: Go bridge port-7433 duplicate-bridge fix (v8.9.15–v8.9.16), JS bridge memory parity (v8.9.13–v8.9.14), Go 1.25.11 CVE fix.
+**v8.9.20 (2026-06-07):** BL337 — Line-printing renderer lock. `ensureClaudeTUISetting` writes `"tui":"default"` into the datawatch-scoped `settings.json` (`<dataDir>/.claude/settings.json`) at `NewManager` startup, merging with existing settings, idempotent. Pins claude-code to the pre-flag line-printing renderer so tmux scrollback and `pipe-pane` capture are not disrupted by Anthropic's server-side `tengu_pewter_brook` flag (~Jun 2–6 2026) which flips claude to alternate-screen mode (`\e[?1049h`).
+
+**v8.9.17–v8.9.19 (2026-06-05–2026-06-06):** BL336 — Anti-clobber typing detection + queue. Agent channel sends to an active session now wait for 30 s of operator keystroke idle (`lastRawInputAt` from `SendRawKeys`, polled at 300 ms) before injecting, so agent messages don't clobber mid-keystroke operator input in xterm. Multiple messages that arrive while the operator is typing queue up (per-session buffered channel, cap 256, single drain goroutine); first message in each burst waits for idle, remainder flush immediately after in arrival order. Queue closes cleanly on session delete. v8.9.19 fixed regression where session-to-session sends were also held (TTY mtime watches AI output, not user keystrokes; switched to `lastRawInputAt`). `TmuxAPI.PaneTTY`, `Manager.WaitTypingIdle`, `Manager.QueueChannelSend` added. Also in this window: Go bridge port-7433 duplicate-bridge fix (v8.9.15–v8.9.16), JS bridge memory parity (v8.9.13–v8.9.14), Go 1.25.11 CVE fix.
 
 **v7.2.3 (2026-05-18):** BL315 — Fullscreen PWA mode. Header gains a ⛶ toggle button (Fullscreen API, works in any browser) and a ⬇ Install button that appears when the browser fires `beforeinstallprompt` and disappears after install. pwa-setup.md updated. TS-149 added to T11.
 

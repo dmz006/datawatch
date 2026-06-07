@@ -1159,6 +1159,8 @@ The terminal auto-fits to the container width and supports 5000-line scrollback.
 
 **Anti-clobber typing hold (v8.9.17+):** When an agent or automation sends a message into an active session, the daemon checks whether you are actively typing in the xterm terminal. If TTY activity was detected within the last 30 seconds, the message is held until you pause (up to 90 seconds, then it sends anyway so no message is ever lost). Multiple messages that arrive while you are typing queue up in order — the first message waits for the idle gap, subsequent queued messages flush immediately after without re-waiting. This prevents agent pushes from clobbering mid-keystroke operator input when multiple sessions are running in parallel.
 
+**Line-printing renderer lock (v8.9.20+):** datawatch writes `"tui": "default"` into its scoped claude settings at startup (`<dataDir>/.claude/settings.json`). This pins the claude-code renderer to line-printing mode so tmux scrollback and `pipe-pane` capture continue to work correctly. Without this, Anthropic's server-side `tengu_pewter_brook` flag can switch claude-code sessions into an alternate-screen mode (`\e[?1049h`) that bypasses the tmux scrollback buffer and breaks `pipe-pane` capture.
+
 **Known issue:** The web terminal display occasionally gets out of sync with the actual tmux pane content (blank screen, frozen output, or garbled rendering). If this happens, navigate back to the session list and re-enter the session, or refresh the browser page. This resets the screen capture and xterm.js state. Pull requests to improve terminal sync reliability are welcome.
 
 ### Scheduled Prompts

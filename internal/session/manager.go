@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -389,6 +390,13 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 	// Ensure the sessions directory exists (for tracking folders)
 	if err := os.MkdirAll(filepath.Join(dataDir, "sessions"), 0755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
+	}
+
+	// Pin claude-code to line-printing renderer so tmux scrollback and
+	// pipe-pane capture work correctly (guards against server-side flag
+	// tengu_pewter_brook which flips claude to an alt-screen renderer).
+	if err := ensureClaudeTUISetting(filepath.Join(dataDir, ".claude")); err != nil {
+		fmt.Printf("[warn] ensureClaudeTUISetting: %v\n", err)
 	}
 
 	return &Manager{
@@ -5088,4 +5096,28 @@ func generateID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// ensureClaudeTUISetting writes {"tui":"default"} into <claudeDir>/settings.json,
+// merging with any existing settings. This pins claude-code to the line-printing
+// renderer so tmux scrollback and pipe-pane capture are not disrupted by the
+// server-side tengu_pewter_brook alt-screen flag.
+func ensureClaudeTUISetting(claudeDir string) error {
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return err
+	}
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	settings := map[string]interface{}{}
+	if data, err := os.ReadFile(settingsPath); err == nil {
+		_ = json.Unmarshal(data, &settings)
+	}
+	if v, ok := settings["tui"]; ok && v == "default" {
+		return nil // already set, nothing to do
+	}
+	settings["tui"] = "default"
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(settingsPath, append(data, '\n'), 0600)
 }

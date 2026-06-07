@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.20 — feat(session): pin claude-code to line-printing renderer via settings.json (2026-06-07)
+
+### Added
+
+- **Line-printing renderer lock** — `NewManager` now calls `ensureClaudeTUISetting` at startup, which writes `"tui": "default"` into the datawatch-scoped `settings.json` (at `<dataDir>/.claude/settings.json`). This merges with any existing settings and is idempotent. The setting pins claude-code to the pre-flag line-printing renderer, preventing Anthropic's server-side `tengu_pewter_brook` flag (~Jun 2–6 2026) from switching sessions into an alternate-screen (`\e[?1049h`) mode that bypasses tmux scrollback and `pipe-pane` capture.
+
+---
+
 ## v8.9.19 — fix(session): typing hold blocked session-to-session MCP sends (2026-06-06)
 
 ### Fixed
