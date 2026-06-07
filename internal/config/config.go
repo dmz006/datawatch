@@ -399,6 +399,7 @@ type Config struct {
 	Twilio        TwilioConfig        `yaml:"twilio"`
 	Ntfy          NtfyConfig          `yaml:"ntfy"`
 	Email         EmailConfig         `yaml:"email"`
+	ImapMcp       ImapMcpConfig       `yaml:"imap_mcp"`
 	GitHubWebhook GitHubWebhookConfig `yaml:"github_webhook"`
 	Webhook       WebhookConfig       `yaml:"webhook"`
 
@@ -934,6 +935,15 @@ type EmailConfig struct {
 	Password string `yaml:"password"`
 	From     string `yaml:"from"`
 	To       string `yaml:"to"`
+}
+
+// ImapMcpConfig holds imap-mcp backend configuration for the email command channel.
+// Operator must run imap-mcp serve independently; datawatch connects to it via HTTP.
+type ImapMcpConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	URL           string `yaml:"url"`            // imap-mcp API base URL (e.g. http://localhost:8765)
+	Account       string `yaml:"account"`        // imap-mcp account name; empty = use default
+	SubjectPrefix string `yaml:"subject_prefix"` // prefix for outbound reply subjects; default "datawatch"
 }
 
 // GitHubWebhookConfig holds GitHub webhook listener configuration.
@@ -1759,6 +1769,7 @@ func DefaultConfig() *Config {
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
+		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},
 		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},
 		Webhook:       WebhookConfig{Addr: "127.0.0.1:9002"},
 		Twilio:        TwilioConfig{WebhookAddr: "127.0.0.1:9003"},

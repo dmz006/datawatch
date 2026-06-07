@@ -76,6 +76,7 @@ import (
 	"github.com/dmz006/datawatch/internal/mcp"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
 	emailmsg "github.com/dmz006/datawatch/internal/messaging/backends/email"
+	"github.com/dmz006/datawatch/internal/messaging/backends/imapmcp"
 	ghwebhook "github.com/dmz006/datawatch/internal/messaging/backends/github"
 	"github.com/dmz006/datawatch/internal/messaging/backends/matrix"
 	ntfymsg "github.com/dmz006/datawatch/internal/messaging/backends/ntfy"
@@ -104,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.22"
+var Version = "8.9.23"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2560,6 +2561,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
+	// imap-mcp email command channel
+	if cfg.ImapMcp.Enabled && cfg.ImapMcp.URL != "" {
+		imapMcpB := imapmcp.New(cfg.ImapMcp.URL, cfg.ImapMcp.Account, cfg.ImapMcp.SubjectPrefix)
+		r := newRouter(cfg.Hostname, "imap_mcp", imapMcpB)
+		routers = append(routers, r)
+		fmt.Printf("[%s] imap-mcp email channel enabled (%s)\n", cfg.Hostname, cfg.ImapMcp.URL)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] imap-mcp router error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
+
 	// Generic webhook
 	if cfg.Webhook.Enabled {
 		wbB := webhook.New(cfg.Webhook.Addr, cfg.Webhook.Token)
@@ -4367,6 +4388,7 @@ Return STRICT JSON:
 				{"Twilio", cfg.Twilio.Enabled, cfg.Twilio.FromNumber + " → " + cfg.Twilio.ToNumber, "twilio"},
 				{"ntfy", cfg.Ntfy.Enabled, cfg.Ntfy.Topic, "ntfy"},
 				{"Email", cfg.Email.Enabled, cfg.Email.From + " → " + cfg.Email.To, "email"},
+				{"imap-mcp", cfg.ImapMcp.Enabled, cfg.ImapMcp.URL, "imap_mcp"},
 				{"GitHub WH", cfg.GitHubWebhook.Enabled, cfg.GitHubWebhook.Addr, "github"},
 				{"Webhook", cfg.Webhook.Enabled, cfg.Webhook.Addr, "webhook"},
 				{"DNS", cfg.DNSChannel.Enabled, cfg.DNSChannel.Domain, "dns"},

@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.9.22-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.22)
+[![Release](https://img.shields.io/badge/release-v8.9.23-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.23)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,8 +89,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.9.22](CHANGELOG.md) (2026-06-07)** — Container CVE fix, update reliability, line-printing renderer lock, anti-clobber typing detection, MCP bridge stability.
+**[v8.9.23](CHANGELOG.md) (2026-06-07)** — imap-mcp email command channel, container CVE fix, update reliability, line-printing renderer lock.
 
+- **imap-mcp email command channel** (v8.9.23) — new `imap_mcp` messaging backend bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance. Subscribes to imap-mcp's SSE event stream and acts only on `inbound.command` events that already passed imap-mcp's composable trust gates (allowlist, DKIM/DMARC, HMAC, replay-nonce). Sends replies via imap-mcp's new REST send endpoint. Enable with `imap_mcp.enabled: true` and `url: http://localhost:8765` in config.
 - **Container builder pinned to Go 1.25.11** (v8.9.22) — agent-base Dockerfile was using floating `golang:1.25` tag (resolving to 1.26.3) plus `GOTOOLCHAIN=auto` which allowed toolchain auto-upgrade, resulting in binaries compiled with an unfixed stdlib. Pinned to `golang:1.25.11-bookworm` and set `GOTOOLCHAIN=local` — fixes `CVE-2026-42504` (HIGH, MIME header DoS) in all container images. Agent container images are now published.
 - **Self-update reliability** (v8.9.21) — `datawatch update` and the auto-updater now download the goreleaser archive first (not a bare binary that never existed), extract both `datawatch` and `datawatch-channel` from the same archive, and update both on every `datawatch update` run. The channel binary (`datawatch-channel`) was never updated on self-update before this fix.
 - **Line-printing renderer lock** (v8.9.20) — datawatch writes `"tui":"default"` into its scoped `settings.json` at startup, pinning claude-code to the line-printing renderer so tmux scrollback and `pipe-pane` capture keep working against Anthropic's server-side `tengu_pewter_brook` alt-screen flag.

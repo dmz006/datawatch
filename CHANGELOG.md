@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.23 — feat(comm): imap-mcp email command channel backend (2026-06-07)
+
+### Added
+
+- **`imap_mcp` messaging backend** — bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance. The email command channel is fully operator opt-in via `imap_mcp.enabled: true` in config. Transport:
+  - **Receive**: subscribes to `GET /api/events` SSE stream (new in imap-mcp v0.2.0); acts only on verified `inbound.command` events — the trust boundary (allowlist, DKIM/DMARC, HMAC, replay-nonce) lives in imap-mcp, datawatch never re-validates.
+  - **Send**: `POST /api/accounts/{account}/messages/send` (new REST endpoint in imap-mcp v0.2.0) via the account's own SMTP config.
+  - Reconnects with exponential backoff (2s → 60s cap) on SSE stream drops.
+  - `inbound.rejected` events are silently ignored (audit concern only).
+
+- **imap-mcp v0.2.0: SSE event stream** — `GET /api/events` is now a real SSE stream that fans out all bus events to connected clients. Each event is one `data: {json}\n\n` line; heartbeat comments every 15 s keep proxies from timing out.
+
+- **imap-mcp v0.2.0: REST send endpoint** — `POST /api/accounts/{account}/messages/send` (body: `{to, subject, body, cc}`). Resolves SMTP credentials from the account's config exactly as the MCP `send_message` tool does. Returns `{status: "sent", from, account}`.
+
+- **Config** (`imap_mcp:` block):
+  ```yaml
+  imap_mcp:
+    enabled: true
+    url: "http://localhost:8765"   # imap-mcp HTTP server
+    account: ""                    # empty = use imap-mcp default account
+    subject_prefix: "datawatch"    # prefix for outbound reply subjects
+  ```
+
+- **`GET /api/channels`** now includes `imap_mcp` alongside the existing channel list.
+
+### Closes
+
+- Issue #127
+
+---
+
 ## v8.9.22 — fix(containers): pin Go builder to 1.25.11 + GOTOOLCHAIN=local (CVE-2026-42504) (2026-06-07)
 
 ### Fixed

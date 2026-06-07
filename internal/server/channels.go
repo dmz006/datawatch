@@ -115,6 +115,7 @@ func enumerateChannels(cfg *config.Config) []channelInfo {
 		{ID: "twilio", Name: "Twilio", Type: "twilio", Enabled: cfg.Twilio.Enabled},
 		{ID: "ntfy", Name: "ntfy", Type: "ntfy", Enabled: cfg.Ntfy.Enabled},
 		{ID: "email", Name: "Email", Type: "email", Enabled: cfg.Email.Enabled},
+		{ID: "imap_mcp", Name: "imap-mcp", Type: "imap_mcp", Enabled: cfg.ImapMcp.Enabled},
 		{ID: "webhook", Name: "Webhook", Type: "webhook", Enabled: cfg.Webhook.Enabled},
 		{ID: "github_webhook", Name: "GitHub Webhook", Type: "github_webhook", Enabled: cfg.GitHubWebhook.Enabled},
 	}
@@ -138,6 +139,8 @@ func setChannelEnabled(cfg *config.Config, id string, on bool) bool {
 		cfg.Ntfy.Enabled = on
 	case "email":
 		cfg.Email.Enabled = on
+	case "imap_mcp":
+		cfg.ImapMcp.Enabled = on
 	case "webhook":
 		cfg.Webhook.Enabled = on
 	case "github_webhook":

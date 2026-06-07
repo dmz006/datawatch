@@ -51,9 +51,11 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
-| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.9.23 shipped 2026-06-07 — BL340: imap-mcp email command channel. New `imap_mcp` messaging backend connects to a running imap-mcp instance via SSE event stream (receive) and REST send endpoint. Acts only on `inbound.command` events that passed imap-mcp's trust gates. imap-mcp v0.2.0 adds `GET /api/events` SSE and `POST /api/accounts/{account}/messages/send`. Closes GH#127.
 
 v8.9.22 shipped 2026-06-07 — Container CVE fix: agent-base Dockerfile pinned to `golang:1.25.11-bookworm` + `GOTOOLCHAIN=local`, resolving CVE-2026-42504 (HIGH, stdlib MIME header DoS) that blocked all agent container image builds since v8.9.17.
 
@@ -461,6 +463,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v8.9.23 (2026-06-07):** BL340 — imap-mcp email command channel. New `imap_mcp` messaging.Backend (`internal/messaging/backends/imapmcp/`) connects datawatch to a running imap-mcp server. Receive: subscribes to `GET /api/events` SSE stream, acts only on `inbound.command` events (trust boundary in imap-mcp — allowlist/DKIM/DMARC/HMAC/replay-nonce already evaluated). Send: `POST /api/accounts/{account}/messages/send`. imap-mcp v0.2.0 delivers both endpoints (SSE fan-out from in-process bus, SMTP send via existing smtp package). Config: `imap_mcp.enabled`, `url`, `account`, `subject_prefix`. Wired into `GET /api/channels`, comm status table, config defaults. 9 unit tests. Closes GH#127.
 
 **v8.9.22 (2026-06-07):** BL339 — Container builder CVE fix. `Dockerfile.agent-base` `ARG GO_VERSION` pinned from floating `1.25` (resolved to `1.26.3`) to exact `1.25.11`; `ENV GOTOOLCHAIN=local` added to builder stage. Resolves `CVE-2026-42504` (HIGH, stdlib MIME header DoS) that blocked agent-base Trivy scan and skipped all agent container builds (agent-claude, agent-opencode, agent-aider, agent-gemini, agent-goose, parent-full, stats-cluster tarball) since v8.9.17. `.trivyignore` review date updated.
 
