@@ -1,5 +1,5 @@
-# Container image CVE exceptions — v8.0.0
-# Reviewed: 2026-05-31  |  Re-review: each release cycle
+# Container image CVE exceptions — v8.9.21
+# Reviewed: 2026-06-07  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
 # "affected" or "will_not_fix" for each.

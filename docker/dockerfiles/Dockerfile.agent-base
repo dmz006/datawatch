@@ -21,7 +21,7 @@
 #
 # Target size: ~250-300MB.
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.25.11
 ARG MINIDEB_TAG=bookworm
 ARG RTK_VERSION=0.37.0
 
@@ -30,6 +30,11 @@ FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS dwbuilder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
+# Pin toolchain to the image's Go version — prevents GOTOOLCHAIN=auto from
+# downloading a newer (potentially vulnerable) toolchain from go.dev at
+# build time. The exact patch pinned in GO_VERSION already contains the
+# fix for CVE-2026-42504 (net/textproto MIME header DoS).
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \

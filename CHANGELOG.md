@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.22 — fix(containers): pin Go builder to 1.25.11 + GOTOOLCHAIN=local (CVE-2026-42504) (2026-06-07)
+
+### Fixed
+
+- **Container images: CVE-2026-42504 (HIGH)** — `Dockerfile.agent-base` was using `ARG GO_VERSION=1.25` (floating tag, resolved to `golang:1.26.3-bookworm` at build time) with default `GOTOOLCHAIN=auto`, which allowed further auto-upgrade. Trivy detected `stdlib v1.26.3` in the compiled binaries, triggering the unfixed CVE and blocking all container builds (agent-base, agent-claude, agent-opencode, agent-aider, agent-gemini, agent-goose, parent-full). Fixed by:
+  - Pinning `ARG GO_VERSION=1.25.11` (exact patch, contains the fix)
+  - Adding `ENV GOTOOLCHAIN=local` in the builder stage to prevent runtime toolchain auto-download
+
+  All agent container images now build and publish correctly.
+
+---
+
 ## v8.9.21 — fix(update): goreleaser archive priority + channel binary co-update (2026-06-07)
 
 ### Fixed
