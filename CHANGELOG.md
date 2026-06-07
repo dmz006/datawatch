@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.19 — fix(session): typing hold blocked session-to-session MCP sends (2026-06-06)
+
+### Fixed
+
+- **Session-to-session MCP communication: final command never executed** — `WaitTypingIdle` was watching the destination session's TTY `mtime`, but on Linux, `mtime` on a PTY slave is updated by **program output** (the AI writing to the terminal), not only by user keystrokes. Any active AI session had constantly-refreshing `mtime`, causing the queue to hold every incoming message for the full 90-second deadline. The "Enter" (or any final channel message) arrived after the caller had already timed out.
+
+  **Fix:** `WaitTypingIdle` now consults `lastRawInputAt` — a per-session timestamp updated exclusively by `SendRawKeys` (operator keystroke injection via xterm). When no operator has typed recently, the hold is zero (idle immediately). For session-to-session communication where no human is present, `lastRawInputAt` is never set, so messages pass through without delay. The anti-clobber hold only fires when the destination session has had recent xterm activity from the operator.
+
+  Added 4 unit tests covering: no-activity → immediate idle, recent typing → hold for gap, continuous typing → deadline fires, `SendRawKeys` → timestamp updated.
+
+---
+
 ## v8.9.18 — feat(session): queue multiple agent messages while operator is typing (2026-06-06)
 
 ### Changed

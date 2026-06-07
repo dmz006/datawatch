@@ -298,6 +298,13 @@ type Manager struct {
 	// Flushed to session.LastInput on Enter key.
 	rawInputBuf map[string]string
 
+	// lastRawInputAt records when the operator last sent raw keystrokes (via
+	// xterm) to each session. Updated by SendRawKeys. Used by WaitTypingIdle
+	// to detect whether a human is actively typing — this is the right signal
+	// because it tracks operator keystrokes specifically, whereas TTY mtime is
+	// updated by program output (AI writing to terminal) which is not typing.
+	lastRawInputAt map[string]time.Time
+
 	// detection holds the active detection patterns (from config or defaults).
 	detection config.DetectionConfig
 
@@ -404,6 +411,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		trackers:         make(map[string]*Tracker),
 		summaries:        make(map[string]SessionSummary),
 		sendQueues:       make(map[string]*sessionSendQueue),
+		lastRawInputAt:   make(map[string]time.Time),
 	}, nil
 }
 
@@ -2102,33 +2110,27 @@ func (m *Manager) QueueChannelSend(fullID string, doSend func() error) error {
 }
 
 // WaitTypingIdle blocks until the operator has stopped typing in the session's
-// tmux pane for at least idleFor, or until deadline is reached. It works by
-// watching the TTY device's atime: every keystroke the operator sends updates
-// atime, so if atime hasn't changed for idleFor we know the terminal is quiet.
+// xterm for at least idleFor, or until deadline is reached.
+//
+// It watches lastRawInputAt — the timestamp updated by SendRawKeys every time
+// the operator sends a raw keystroke via the PWA xterm. This is the correct
+// signal: TTY mtime is updated by program output (AI writing to the terminal),
+// not just by user keystrokes, so watching mtime would incorrectly treat any
+// active AI session as "typing" and hold messages for the full deadline.
 //
 // Returns true if the idle window was observed; false if deadline expired first
-// (caller should send anyway — never drop a message). Safe to call when tmux
-// is not in use (sess.TmuxSession=="") — returns true immediately in that case.
+// (caller should send anyway — never drop a message). Returns true immediately
+// when the session has had no recent xterm activity, which is the common case
+// for session-to-session communication where no operator is present.
 func (m *Manager) WaitTypingIdle(fullID string, idleFor, deadline time.Duration) bool {
-	sess, ok := m.GetSession(fullID)
-	if !ok || sess.TmuxSession == "" || m.tmux == nil {
-		return true
-	}
-	tty := m.tmux.PaneTTY(sess.TmuxSession)
-	if tty == "" {
-		return true
-	}
-
 	giveUp := time.Now().Add(deadline)
 	poll := 300 * time.Millisecond
 	for {
-		info, err := os.Stat(tty)
-		if err != nil {
-			return true // can't read TTY — don't block
-		}
-		idle := time.Since(info.ModTime())
-		if idle >= idleFor {
-			return true
+		m.mu.Lock()
+		last := m.lastRawInputAt[fullID]
+		m.mu.Unlock()
+		if time.Since(last) >= idleFor {
+			return true // no recent operator keystrokes — safe to send
 		}
 		remaining := time.Until(giveUp)
 		if remaining <= 0 {
@@ -2446,11 +2448,13 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 			return fmt.Errorf("session %s not found", fullID)
 		}
 	}
-	// Track typed input for alert logging — accumulate chars until Enter
+	// Track typed input for alert logging — accumulate chars until Enter.
+	// Also record last-raw-input timestamp for WaitTypingIdle.
 	m.mu.Lock()
 	if m.rawInputBuf == nil {
 		m.rawInputBuf = make(map[string]string)
 	}
+	m.lastRawInputAt[fullID] = time.Now()
 	for _, ch := range data {
 		if ch == '\r' || ch == '\n' {
 			// Enter pressed — store accumulated input as LastInput

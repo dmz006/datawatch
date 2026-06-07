@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.9.18-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.18)
+[![Release](https://img.shields.io/badge/release-v8.9.19-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.19)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.9.18](CHANGELOG.md) (2026-06-06)** — Queued anti-clobber typing detection, MCP bridge stability fixes, JS bridge memory parity, and Go 1.25.11 CVE fix.
+**[v8.9.19](CHANGELOG.md) (2026-06-06)** — Queued anti-clobber typing detection, MCP bridge stability fixes, JS bridge memory parity, and Go 1.25.11 CVE fix.
 
 - **Queued anti-clobber typing detection** (v8.9.17–v8.9.18) — agent messages targeting an active session wait for a 30-second idle gap in TTY activity before injecting (max hold: 90 s). Multiple messages that arrive while the operator is typing queue up and drain in arrival order once idle is detected — the first message waits for idle, subsequent queued messages flush immediately after.
 - **MCP bridge stability** (v8.9.15–v8.9.16) — fixed duplicate bridge spawning on port 7433 that caused "MCP server failed" on second claude-code session in same project. Stale `.mcp.json` entries from older daemon versions are now actively removed on session start.
