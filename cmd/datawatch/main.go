@@ -104,7 +104,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.20"
+var Version = "8.9.21"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5383,6 +5383,11 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 			if err := installPrebuiltBinary(latest, nil); err != nil {
 				fmt.Printf("[updater] install failed: %v\n", err)
 			} else {
+				// Also update the channel binary before restarting.
+				dataDirExpanded := expandHome(cfg.DataDir)
+				if _, chanErr := downloadChannelBinary(dataDirExpanded); chanErr != nil {
+					fmt.Printf("[updater] channel binary update failed: %v\n", chanErr)
+				}
 				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
 				time.Sleep(500 * time.Millisecond)
 				selfPath, execErr := os.Executable()
@@ -5430,73 +5435,36 @@ func nextScheduledTime(schedule, timeOfDay string) time.Time {
 	}
 }
 
-// installPrebuiltBinary downloads and installs a prebuilt binary from GitHub releases.
-//
-// B31 fix (2026-04-19): the releases have ALWAYS shipped bare
-// binaries named `datawatch-<os>-<arch>` (or `.exe` on Windows),
-// never goreleaser-style `datawatch_<ver>_<os>_<arch>.tar.gz`
-// archives. The previous implementation looked for the wrong
-// asset name and 404'd silently on every release. We now fetch
-// the bare binary directly — simpler and matches reality.
-//
-// Legacy tar.gz/zip fallback paths retained so older releases
-// packaged with goreleaser (hypothetical; none currently exist)
-// still install.
-// installPrebuiltBinary downloads the release asset for the current
-// platform and replaces the running binary. The progress callback
-// fires during the stream with (downloaded, total) byte counts; pass
-// nil when no progress reporting is wanted (e.g. the CLI self-update
-// path that prints its own text progress to stdout).
+// installPrebuiltBinary downloads the goreleaser archive for the current platform,
+// replaces the running binary with the new datawatch binary, and also updates the
+// datawatch-channel sibling binary if it exists alongside the executable.
+// The progress callback fires during the download stream; pass nil for no progress.
 func installPrebuiltBinary(version string, progress func(downloaded, total int64)) error {
 	updateMu.Lock()
 	defer updateMu.Unlock()
-	goos := func() string {
-		out, err := exec.Command("go", "env", "GOOS").Output()
-		if err != nil {
-			return "linux"
-		}
-		return strings.TrimSpace(string(out))
-	}()
-	goarch := func() string {
-		out, err := exec.Command("go", "env", "GOARCH").Output()
-		if err != nil {
-			return "amd64"
-		}
-		return strings.TrimSpace(string(out))
-	}()
 
-	// Primary: bare-binary naming used by every release to date.
-	bareName := fmt.Sprintf("datawatch-%s-%s", goos, goarch)
-	if goos == "windows" {
-		bareName += ".exe"
-	}
-	// Legacy fallback: goreleaser-style archive (none currently
-	// exist but retained so a future goreleaser-packaged release
-	// still works).
-	var archiveName, binaryInArchive string
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+
+	// Primary: goreleaser archive (both datawatch + datawatch-channel are inside).
+	var archiveName, mainBin, chanBin string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", version, goos, goarch)
-		binaryInArchive = "datawatch.exe"
+		mainBin = "datawatch.exe"
+		chanBin = "datawatch-channel.exe"
 	} else {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", version, goos, goarch)
-		binaryInArchive = "datawatch"
+		mainBin = "datawatch"
+		chanBin = "datawatch-channel"
 	}
 
-	// Try bare binary first.
-	bareURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, bareName)
-	if err := installBareBinary(bareURL, version, progress); err == nil {
-		return nil
-	} else {
-		fmt.Printf("[update] bare-binary path failed (%v); trying archive fallback...\n", err)
-	}
-
-	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, archiveName)
 	selfPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable path: %w", err)
 	}
 	selfPath, _ = filepath.EvalSymlinks(selfPath)
 
+	archiveURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, archiveName)
 	tmpDir, err := os.MkdirTemp("", "datawatch-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -5507,13 +5475,21 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
 
 	fmt.Printf("[update] Downloading %s ...\n", archiveName)
-	resp, err := httpClient.Get(url)
+	resp, err := httpClient.Get(archiveURL)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf("download %s: %w", archiveURL, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
+		// Legacy fallback: bare binary (pre-goreleaser releases).
+		resp.Body.Close() //nolint:errcheck
+		bareName := fmt.Sprintf("datawatch-%s-%s", goos, goarch)
+		if goos == "windows" {
+			bareName += ".exe"
+		}
+		bareURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, bareName)
+		fmt.Printf("[update] archive not found (HTTP %d); trying bare-binary fallback %s...\n", resp.StatusCode, bareName)
+		return installBareBinary(bareURL, version, progress)
 	}
 
 	f, err := os.Create(archivePath)
@@ -5556,27 +5532,43 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	_ = f.Close()
 	fmt.Printf("[update] Download complete (%d KB). Extracting...\n", downloaded/1024)
 
-	// Extract binary
-	newBin := filepath.Join(tmpDir, "datawatch-new")
+	// Extract main binary.
+	newMain := filepath.Join(tmpDir, "datawatch-new")
 	var extractErr error
 	if goos == "windows" {
-		extractErr = extractFromZip(archivePath, binaryInArchive, newBin)
+		extractErr = extractFromZip(archivePath, mainBin, newMain)
 	} else {
-		extractErr = extractFromTarGz(archivePath, binaryInArchive, newBin)
+		extractErr = extractFromTarGz(archivePath, mainBin, newMain)
 	}
 	if extractErr != nil {
-		return fmt.Errorf("extract binary: %w", extractErr)
+		return fmt.Errorf("extract %s: %w", mainBin, extractErr)
 	}
-
-	fmt.Println("[update] Installing new binary...")
-	// Replace current binary
-	if err := os.Chmod(newBin, 0755); err != nil {
+	if err := os.Chmod(newMain, 0755); err != nil {
 		return err
 	}
-	if err := replaceExecutable(selfPath, newBin); err != nil {
+	fmt.Println("[update] Installing new binary...")
+	if err := replaceExecutable(selfPath, newMain); err != nil {
 		return err
 	}
 	fmt.Printf("[update] Successfully updated to v%s.\n", version)
+
+	// Also update the datawatch-channel sibling binary if one exists alongside self.
+	siblingChan := filepath.Join(filepath.Dir(selfPath), chanBin)
+	if _, statErr := os.Stat(siblingChan); statErr == nil {
+		newChan := filepath.Join(tmpDir, "datawatch-channel-new")
+		var chanErr error
+		if goos == "windows" {
+			chanErr = extractFromZip(archivePath, chanBin, newChan)
+		} else {
+			chanErr = extractFromTarGz(archivePath, chanBin, newChan)
+		}
+		if chanErr == nil {
+			_ = os.Chmod(newChan, 0755)
+			if repErr := replaceExecutable(siblingChan, newChan); repErr == nil {
+				fmt.Printf("[update] Also updated %s.\n", siblingChan)
+			}
+		}
+	}
 	return nil
 }
 
@@ -5731,11 +5723,6 @@ func downloadChannelBinary(dataDir string) (string, error) {
 	}
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
-	assetName := fmt.Sprintf("datawatch-channel-%s-%s", goos, goarch)
-	if goos == "windows" {
-		assetName += ".exe"
-	}
-	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, assetName)
 
 	dir := filepath.Join(dataDir, "channel")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -5746,26 +5733,75 @@ func downloadChannelBinary(dataDir string) (string, error) {
 		dst += ".exe"
 	}
 
-	tmp := dst + ".tmp"
-	httpClient := &http.Client{Timeout: 2 * time.Minute}
-	resp, err := httpClient.Get(url)
+	// Primary: extract datawatch-channel from the goreleaser archive (both binaries live there).
+	var archiveName, chanBin string
+	if goos == "windows" {
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", Version, goos, goarch)
+		chanBin = "datawatch-channel.exe"
+	} else {
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", Version, goos, goarch)
+		chanBin = "datawatch-channel"
+	}
+	archiveURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, archiveName)
+
+	tmpDir, err := os.MkdirTemp("", "datawatch-channel-dl-*")
 	if err != nil {
-		return "", fmt.Errorf("download: %w", err)
+		return "", fmt.Errorf("create temp dir: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
+	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	archivePath := filepath.Join(tmpDir, archiveName)
+	resp, err := httpClient.Get(archiveURL)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		f, ferr := os.Create(archivePath)
+		if ferr == nil {
+			_, _ = io.Copy(f, resp.Body)
+			_ = f.Close()
+		}
+		resp.Body.Close() //nolint:errcheck
+		newBin := filepath.Join(tmpDir, "chan-new")
+		var extractErr error
+		if goos == "windows" {
+			extractErr = extractFromZip(archivePath, chanBin, newBin)
+		} else {
+			extractErr = extractFromTarGz(archivePath, chanBin, newBin)
+		}
+		if extractErr == nil {
+			_ = os.Chmod(newBin, 0o755)
+			if renErr := os.Rename(newBin, dst); renErr == nil {
+				return dst, nil
+			}
+		}
+	} else if resp != nil {
+		resp.Body.Close() //nolint:errcheck
 	}
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+
+	// Legacy fallback: bare binary (pre-goreleaser releases).
+	assetName := fmt.Sprintf("datawatch-channel-%s-%s", goos, goarch)
+	if goos == "windows" {
+		assetName += ".exe"
+	}
+	legacyURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, assetName)
+	resp2, err := httpClient.Get(legacyURL)
+	if err != nil {
+		return "", fmt.Errorf("download channel binary: %w", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("channel binary not found in release v%s (tried archive and bare binary)", Version)
+	}
+	tmp := dst + ".tmp"
+	f2, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		_ = f.Close()
+	if _, err := io.Copy(f2, resp2.Body); err != nil {
+		_ = f2.Close()
 		_ = os.Remove(tmp)
 		return "", err
 	}
-	if err := f.Close(); err != nil {
+	if err := f2.Close(); err != nil {
 		_ = os.Remove(tmp)
 		return "", err
 	}
@@ -9195,10 +9231,11 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Try prebuilt binary first; fall back to go install if not available
+	// Download and install prebuilt binaries; fall back to go install for main binary.
 	fmt.Printf("Downloading prebuilt binary for v%s...\n", latest)
-	if err := installPrebuiltBinary(latest, nil); err != nil {
-		fmt.Printf("[update] Prebuilt download failed (%v), falling back to go install...\n", err)
+	mainErr := installPrebuiltBinary(latest, nil)
+	if mainErr != nil {
+		fmt.Printf("[update] Prebuilt download failed (%v), falling back to go install...\n", mainErr)
 		goExe, goErr := exec.LookPath("go")
 		if goErr != nil {
 			return fmt.Errorf("go not found in PATH — install manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", latest)
@@ -9211,6 +9248,16 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		}
 		fmt.Printf("Updated to v%s. Restart the daemon with `datawatch stop && datawatch start`.\n", latest)
 	} else {
+		// Also update the channel binary in the configured data directory.
+		cfg, cfgErr := loadConfig()
+		if cfgErr == nil {
+			dataDir := expandHome(cfg.DataDir)
+			if chanPath, chanErr := downloadChannelBinary(dataDir); chanErr != nil {
+				fmt.Printf("[update] channel binary update failed: %v\n", chanErr)
+			} else {
+				fmt.Printf("[update] channel binary updated: %s\n", chanPath)
+			}
+		}
 		fmt.Printf("Restart the daemon with `datawatch stop && datawatch start` to apply.\n")
 	}
 	return nil

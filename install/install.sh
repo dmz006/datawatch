@@ -11,7 +11,7 @@ BINARY_NAME="datawatch"
 # Fetch the latest published release version from GitHub API.
 # Falls back to a hardcoded minimum version if the API is unavailable.
 fetch_latest_version() {
-  local fallback="8.9.20"
+  local fallback="8.9.21"
   local api_url="https://api.github.com/repos/${REPO}/releases/latest"
   local ver=""
   if command -v curl &>/dev/null; then

@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.21 — fix(update): goreleaser archive priority + channel binary co-update (2026-06-07)
+
+### Fixed
+
+- **Self-update now downloads from goreleaser archive (primary format)** — `installPrebuiltBinary` previously tried a non-existent bare `datawatch-linux-amd64` binary first, only falling back to the goreleaser archive. Order is now correct: archive first, bare binary as legacy fallback. Removed the stale `go env GOOS/GOARCH` calls in favour of `runtime.GOOS/GOARCH` (no Go toolchain required).
+
+- **`datawatch-channel` binary is now updated on every self-update** — `downloadChannelBinary` always tried `datawatch-channel-linux-amd64` (a bare binary that has never existed in goreleaser releases), so the channel binary was never updated. Fixed to extract `datawatch-channel` from the goreleaser archive. Legacy bare-binary fallback retained for pre-goreleaser releases. `installPrebuiltBinary` also updates any `datawatch-channel` sibling found alongside the running executable.
+
+- **`datawatch update` CLI and auto-updater both call `downloadChannelBinary`** after the main binary update so the channel binary in `<dataDir>/channel/datawatch-channel` is kept in sync with every release.
+
+---
+
 ## v8.9.20 — feat(session): pin claude-code to line-printing renderer via settings.json (2026-06-07)
 
 ### Added

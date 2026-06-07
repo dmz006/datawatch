@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.9.20-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.20)
+[![Release](https://img.shields.io/badge/release-v8.9.21-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.21)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,8 +89,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.9.20](CHANGELOG.md) (2026-06-07)** — Line-printing renderer lock, queued anti-clobber typing detection, MCP bridge stability fixes, JS bridge memory parity, and Go 1.25.11 CVE fix.
+**[v8.9.21](CHANGELOG.md) (2026-06-07)** — Update reliability: goreleaser archive priority, channel binary update on self-update, line-printing renderer lock, anti-clobber typing detection, MCP bridge stability.
 
+- **Self-update reliability** (v8.9.21) — `datawatch update` and the auto-updater now download the goreleaser archive first (not a bare binary that never existed), extract both `datawatch` and `datawatch-channel` from the same archive, and update both on every `datawatch update` run. The channel binary (`datawatch-channel`) was never updated on self-update before this fix.
 - **Line-printing renderer lock** (v8.9.20) — datawatch writes `"tui":"default"` into its scoped `settings.json` at startup, pinning claude-code to the line-printing renderer so tmux scrollback and `pipe-pane` capture keep working against Anthropic's server-side `tengu_pewter_brook` alt-screen flag.
 - **Queued anti-clobber typing detection** (v8.9.17–v8.9.19) — agent messages targeting an active session wait for a 30-second idle gap in TTY activity before injecting (max hold: 90 s). Multiple messages that arrive while the operator is typing queue up and drain in arrival order once idle is detected — the first message waits for idle, subsequent queued messages flush immediately after. Fixed regression where session-to-session MCP sends were also held (TTY mtime updated by AI output, not operator keystrokes).
 - **MCP bridge stability** (v8.9.15–v8.9.16) — fixed duplicate bridge spawning on port 7433 that caused "MCP server failed" on second claude-code session in same project. Stale `.mcp.json` entries from older daemon versions are now actively removed on session start.

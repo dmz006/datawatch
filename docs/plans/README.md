@@ -51,9 +51,11 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
-| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.9.21 shipped 2026-06-07 — Self-update reliability: `installPrebuiltBinary` now tries goreleaser archive first (not bare binary), uses `runtime.GOOS/GOARCH`, and updates `datawatch-channel` alongside self. `downloadChannelBinary` fixed to extract from goreleaser archive (was always trying non-existent bare binary). Both `datawatch update` CLI and auto-updater now call `downloadChannelBinary` after each update.
 
 v8.9.20 shipped 2026-06-07 — Line-printing renderer lock: `ensureClaudeTUISetting` writes `"tui":"default"` into `<dataDir>/.claude/settings.json` at `NewManager` startup, pinning claude-code to line-printing mode against Anthropic's `tengu_pewter_brook` alt-screen server-side flag.
 
@@ -457,6 +459,8 @@ _Historical refactor notes archived — see Recently Closed and Completed Backlo
 ---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v8.9.21 (2026-06-07):** BL338 — Self-update archive priority + channel binary co-update. `installPrebuiltBinary` now downloads the goreleaser archive first (correct primary format since v8.x), uses `runtime.GOOS/GOARCH` (no Go toolchain required), and updates `datawatch-channel` sibling alongside the main binary. `downloadChannelBinary` fixed to extract from goreleaser archive (was always trying non-existent bare binary `datawatch-channel-linux-amd64`). Both `datawatch update` CLI and auto-updater now call `downloadChannelBinary` after each successful main-binary update so `<dataDir>/channel/datawatch-channel` stays in sync. Legacy bare-binary fallback retained for pre-goreleaser releases.
 
 **v8.9.20 (2026-06-07):** BL337 — Line-printing renderer lock. `ensureClaudeTUISetting` writes `"tui":"default"` into the datawatch-scoped `settings.json` (`<dataDir>/.claude/settings.json`) at `NewManager` startup, merging with existing settings, idempotent. Pins claude-code to the pre-flag line-printing renderer so tmux scrollback and `pipe-pane` capture are not disrupted by Anthropic's server-side `tengu_pewter_brook` flag (~Jun 2–6 2026) which flips claude to alternate-screen mode (`\e[?1049h`).
 
