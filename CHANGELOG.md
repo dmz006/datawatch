@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.24 — fix(mcp): BL341 session name resolution + permission_mode for start_session (2026-06-09)
+
+### Added
+
+- **`send_input` name resolution (GAP 1)** — `send_input`, `kill_session`, `rename_session`, `session_output`, `session_timeline`, `send_saved_command`, and `schedule_add` now accept human-readable session names (set via `rename_session`) in addition to short IDs and full `hostname-hex` IDs. Tiebreak: active sessions preferred; if multiple active sessions share a name the call returns an error listing their IDs. All-done sessions resolve to most-recently-updated.
+
+- **`start_session` `permission_mode` parameter (GAP 2)** — `start_session` now accepts an optional `permission_mode` string (`default` | `plan` | `acceptEdits` | `auto` | `bypassPermissions` | `dontAsk`). Empty/omitted uses the daemon config default. Invalid values return an error immediately. Threaded through both the REST-forward path (for remote session starts) and the direct `manager.Start()` path via `session.StartOptions.PermissionMode`.
+
+### Internal
+
+- New `resolveSession(id string)` helper on MCP Server consolidates ID + name lookup for all session tools.
+- 12 new targeted tests in `internal/mcp/bl341_session_name_pm_test.go`.
+
+---
+
 ## v8.9.23 — feat(comm): imap-mcp email command channel backend (2026-06-07)
 
 ### Added

@@ -38,6 +38,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -1146,6 +1147,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithBoolean("chrome",
 			mcpsdk.Description("When true, passes --chrome to claude-code at launch (Chrome DevTools Protocol integration). Omit or false to use the default (no flag passed)."),
 		),
+		mcpsdk.WithString("permission_mode",
+			mcpsdk.Description("claude-code permission mode: default | plan | acceptEdits | auto | bypassPermissions | dontAsk. Omit to use config default."),
+		),
 	)
 }
 
@@ -1190,7 +1194,7 @@ func (s *Server) toolSendInput() mcpsdk.Tool {
 		mcpsdk.WithDescription("Send text input to a session that is waiting for a response."),
 		mcpsdk.WithString("session_id",
 			mcpsdk.Required(),
-			mcpsdk.Description("Session ID"),
+			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name set via rename_session)"),
 		),
 		mcpsdk.WithString("text",
 			mcpsdk.Required(),
@@ -1348,6 +1352,54 @@ func (s *Server) handleListSessions(_ context.Context, _ mcpsdk.CallToolRequest)
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }
 
+// resolveSession looks up a session by full ID, short ID, or human-readable
+// Name. When multiple sessions share a name, active sessions (running /
+// waiting_input) are preferred. Returns (nil, err) if the name is ambiguous
+// among active sessions. Returns (nil, nil) if nothing matches.
+func (s *Server) resolveSession(id string) (*session.Session, error) {
+	if sess, ok := s.manager.GetSession(id); ok {
+		return sess, nil
+	}
+	// Fall through to name lookup.
+	all := s.manager.ListSessions()
+	var named []*session.Session
+	for _, sess := range all {
+		if sess.Name == id {
+			named = append(named, sess)
+		}
+	}
+	switch len(named) {
+	case 0:
+		return nil, nil
+	case 1:
+		return named[0], nil
+	}
+	// Multiple — prefer active.
+	var active []*session.Session
+	for _, sess := range named {
+		if sess.State == session.StateRunning || sess.State == session.StateWaitingInput {
+			active = append(active, sess)
+		}
+	}
+	switch len(active) {
+	case 0:
+		// All done — return the most recently updated.
+		sort.Slice(named, func(i, j int) bool {
+			return named[i].UpdatedAt.After(named[j].UpdatedAt)
+		})
+		return named[0], nil
+	case 1:
+		return active[0], nil
+	default:
+		ids := make([]string, len(active))
+		for i, sess := range active {
+			ids[i] = sess.ID
+		}
+		return nil, fmt.Errorf("multiple active sessions named %q: %s — use session ID to disambiguate",
+			id, strings.Join(ids, ", "))
+	}
+}
+
 func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if deny := mcpFedCap(ctx, federation.CapSessionsWrite); deny != nil {
 		return deny, nil
@@ -1360,12 +1412,26 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	llmRef := req.GetString("llm", "")
 	computeRef := req.GetString("compute_node", "")
 	chrome := req.GetBool("chrome", false)
+	pm := req.GetString("permission_mode", "")
+
+	if pm != "" {
+		valid := map[string]bool{
+			"default": true, "plan": true, "acceptEdits": true,
+			"auto": true, "bypassPermissions": true, "dontAsk": true,
+		}
+		if !valid[pm] {
+			return mcpsdk.NewToolResultText(fmt.Sprintf(
+				"Error: invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", pm)), nil
+		}
+	}
 
 	// v7.0.0-alpha.21 (#259) — forward via REST when operator picked an LLM
 	// so handleStartSession runs the validation + cascade-resolve once,
 	// matching the PWA/CLI/comm paths.
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
-	if (llmRef != "" || chrome) && s.webPort > 0 {
+	// v8.9.24 — also forward when permission_mode is set so the flag reaches
+	// claudecode.Backend.SetPermissionMode via the REST handler.
+	if (llmRef != "" || chrome || pm != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -1378,6 +1444,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if chrome {
 			body["chrome"] = true
+		}
+		if pm != "" {
+			body["permission_mode"] = pm
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -1417,7 +1486,8 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir)
+	opts := &session.StartOptions{PermissionMode: pm}
+	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
 	}
@@ -1439,8 +1509,11 @@ func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolReque
 		n = 50
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1505,8 +1578,11 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1615,8 +1691,11 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		return mcpsdk.NewToolResultText("Error: text is required"), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1635,8 +1714,11 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1656,8 +1738,11 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText("Error: session_id and name are required"), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1832,8 +1917,11 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Saved command %q not found.", name)), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, resolveErr := s.resolveSession(id)
+	if resolveErr != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -1853,8 +1941,11 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 		return mcpsdk.NewToolResultText("Error: session_id and command are required"), nil
 	}
 
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, resolveErr := s.resolveSession(id)
+	if resolveErr != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+	}
+	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
