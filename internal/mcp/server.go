@@ -1449,8 +1449,9 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 
 // resolveSession looks up a session by full ID, short ID, or human-readable
 // Name. When multiple sessions share a name, active sessions (running /
-// waiting_input) are preferred. Returns (nil, err) if the name is ambiguous
-// among active sessions. Returns (nil, nil) if nothing matches.
+// waiting_input) are preferred. Among multiple active sessions with the same
+// name, the oldest (earliest CreatedAt) is returned — BL354 handoff tie-break.
+// Returns (nil, nil) if nothing matches.
 func (s *Server) resolveSession(id string) (*session.Session, error) {
 	if sess, ok := s.manager.GetSession(id); ok {
 		return sess, nil
