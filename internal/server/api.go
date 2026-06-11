@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.11"
+var Version = "8.10.12"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1356,11 +1356,21 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsList) {
 		return
 	}
-	sessions := s.manager.ListSessions()
+	q := r.URL.Query()
+
+	// BL361 — structured filter params.
+	filter := session.SessionFilter{
+		Name:    q.Get("name"),
+		State:   q.Get("state"),
+		Backend: q.Get("backend"),
+		Alive:   q.Get("alive"),
+	}
+	sessions := s.manager.ListSessionsFiltered(filter)
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
-	if r.URL.Query().Get("orphaned") == "1" {
+	if q.Get("orphaned") == "1" {
 		byFullID := make(map[string]bool, len(sessions))
 		for _, sess := range sessions {
 			byFullID[sess.FullID] = true
@@ -1376,7 +1386,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
-	if r.URL.Query().Get("tree") == "1" {
+	if q.Get("tree") == "1" {
 		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
 		return
 	}

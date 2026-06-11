@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.11"
+var Version = "8.10.12"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7322,6 +7322,37 @@ func newSessionCmd() *cobra.Command {
 			if allServers {
 				return daemonGet("/api/sessions/aggregated")
 			}
+
+			// BL361 — structured filters.
+			nameFilter, _ := cmd.Flags().GetString("name")
+			stateFilter, _ := cmd.Flags().GetString("state")
+			backendFilter, _ := cmd.Flags().GetString("backend")
+			aliveFilter, _ := cmd.Flags().GetString("alive")
+			jsonOutput, _ := cmd.Flags().GetBool("json")
+
+			// If any filter is set or json output requested, use API path.
+			hasFilter := nameFilter != "" || stateFilter != "" || backendFilter != "" || aliveFilter != ""
+			if hasFilter || jsonOutput {
+				apiURL := "/api/sessions"
+				params := []string{}
+				if nameFilter != "" {
+					params = append(params, "name="+nameFilter)
+				}
+				if stateFilter != "" {
+					params = append(params, "state="+stateFilter)
+				}
+				if backendFilter != "" {
+					params = append(params, "backend="+backendFilter)
+				}
+				if aliveFilter != "" {
+					params = append(params, "alive="+aliveFilter)
+				}
+				if len(params) > 0 {
+					apiURL += "?" + strings.Join(params, "&")
+				}
+				return daemonGet(apiURL)
+			}
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -7331,6 +7362,11 @@ func newSessionCmd() *cobra.Command {
 	}
 	sessionListCmd.Flags().Bool("all-servers", false, "include sessions from all federation peers via /api/sessions/aggregated")
 	sessionListCmd.Flags().Bool("orphaned", false, "list only sessions whose parent_id no longer exists (BL350)")
+	sessionListCmd.Flags().String("name", "", "BL361 — filter by name glob (e.g. worker-*, agent-?)")
+	sessionListCmd.Flags().String("state", "", "BL361 — filter by state: running, waiting_input, rate_limited, complete, failed, killed")
+	sessionListCmd.Flags().String("backend", "", "BL361 — filter by backend family (e.g. opencode, claudecode)")
+	sessionListCmd.Flags().String("alive", "", "BL361 — filter by claude_alive: true or false")
+	sessionListCmd.Flags().Bool("json", false, "BL361 — output structured JSON array")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
@@ -8006,6 +8042,49 @@ func runSessionList(cfg *config.Config) error {
 			truncate(display, 60), suffix)
 	}
 	return w.Flush()
+}
+
+// runSessionListJSON outputs sessions as structured JSON. BL361.
+func runSessionListJSON(cfg *config.Config) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sessions := store.List()
+	type sessionJSON struct {
+		ID           string     `json:"id"`
+		FullID       string     `json:"full_id"`
+		Name         string     `json:"name,omitempty"`
+		State        string     `json:"state"`
+		Task         string     `json:"task,omitempty"`
+		Backend      string     `json:"backend,omitempty"`
+		ClaudeAlive  *bool      `json:"claude_alive,omitempty"`
+		ParentID     string     `json:"parent_id,omitempty"`
+		CreatedAt    time.Time  `json:"created_at"`
+		UpdatedAt    time.Time  `json:"updated_at"`
+		ShortSummary string     `json:"short_summary,omitempty"`
+		LastResponse string     `json:"last_response,omitempty"`
+	}
+	out := make([]sessionJSON, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, sessionJSON{
+			ID:           s.ID,
+			FullID:       s.FullID,
+			Name:         s.Name,
+			State:        string(s.State),
+			Task:         s.Task,
+			Backend:      s.BackendFamily,
+			ClaudeAlive:  s.ClaudeAlive,
+			ParentID:     s.ParentID,
+			CreatedAt:    s.CreatedAt,
+			UpdatedAt:    s.UpdatedAt,
+			ShortSummary: s.LastSummaryLong,
+			LastResponse: s.LastResponse,
+		})
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool) error {

@@ -1185,6 +1185,21 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithBoolean("orphaned",
 			mcpsdk.Description("BL350 — when true, return only sessions whose parent_id points to a session that no longer exists (orphaned by parent death or eviction)."),
 		),
+		mcpsdk.WithString("name",
+			mcpsdk.Description("BL361 — glob pattern to filter sessions by name (e.g. worker-*, agent-?). Empty = all."),
+		),
+		mcpsdk.WithString("state",
+			mcpsdk.Description("BL361 — filter by exact state: running, waiting_input, rate_limited, complete, failed, killed. Empty = all."),
+		),
+		mcpsdk.WithString("backend",
+			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all."),
+		),
+		mcpsdk.WithString("alive",
+			mcpsdk.Description("BL361 — filter by claude_alive field: true, false, or any (default). Empty = any."),
+		),
+		mcpsdk.WithString("format",
+			mcpsdk.Description("BL361 — output format: text (default) or json. json returns a structured JSON array."),
+		),
 	)
 }
 
@@ -1443,7 +1458,14 @@ func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 // ---- handlers ---------------------------------------------------------------
 
 func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	sessions := s.manager.ListSessions()
+	// BL361 — structured filter params.
+	filter := session.SessionFilter{
+		Name:    req.GetString("name", ""),
+		State:   req.GetString("state", ""),
+		Backend: req.GetString("backend", ""),
+		Alive:   req.GetString("alive", ""),
+	}
+	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL350 — orphaned=true filter.
 	if req.GetBool("orphaned", false) {
@@ -1465,6 +1487,46 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 			return mcpsdk.NewToolResultText("No orphaned sessions found."), nil
 		}
 		return mcpsdk.NewToolResultText("No active sessions."), nil
+	}
+
+	// BL361 — json format returns structured array.
+	if req.GetString("format", "text") == "json" {
+		type sessionJSON struct {
+			ID           string     `json:"id"`
+			FullID       string     `json:"full_id"`
+			Name         string     `json:"name,omitempty"`
+			State        string     `json:"state"`
+			Task         string     `json:"task,omitempty"`
+			Backend      string     `json:"backend,omitempty"`
+			ClaudeAlive  *bool      `json:"claude_alive,omitempty"`
+			ParentID     string     `json:"parent_id,omitempty"`
+			CreatedAt    time.Time  `json:"created_at"`
+			UpdatedAt    time.Time  `json:"updated_at"`
+			ShortSummary string     `json:"short_summary,omitempty"`
+			LastResponse string     `json:"last_response,omitempty"`
+		}
+		out := make([]sessionJSON, 0, len(sessions))
+		for _, sess := range sessions {
+			out = append(out, sessionJSON{
+				ID:           sess.ID,
+				FullID:       sess.FullID,
+				Name:         sess.Name,
+				State:        string(sess.State),
+				Task:         sess.Task,
+				Backend:      sess.BackendFamily,
+				ClaudeAlive:  sess.ClaudeAlive,
+				ParentID:     sess.ParentID,
+				CreatedAt:    sess.CreatedAt,
+				UpdatedAt:    sess.UpdatedAt,
+				ShortSummary: sess.LastSummaryLong,
+				LastResponse: sess.LastResponse,
+			})
+		}
+		raw, err := json.Marshal(out)
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error marshaling JSON: %v", err)), nil
+		}
+		return mcpsdk.NewToolResultText(string(raw)), nil
 	}
 
 	var sb strings.Builder

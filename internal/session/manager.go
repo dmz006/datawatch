@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -3549,6 +3550,51 @@ func (m *Manager) KillAll() error {
 // ListSessions returns all sessions.
 func (m *Manager) ListSessions() []*Session {
 	return m.store.List()
+}
+
+// SessionFilter holds optional filter criteria for BL361 structured session listing.
+// All non-empty fields are ANDed together. Empty/zero values mean "no filter on
+// this field". Alive is a tri-state: "true", "false", or "" / "any" = no filter.
+type SessionFilter struct {
+	Name    string // glob pattern (path.Match), empty = all
+	State   string // exact State match, empty = all
+	Backend string // exact BackendFamily match, empty = all
+	Alive   string // "true", "false", "" or "any" = no filter
+}
+
+// ListSessionsFiltered returns sessions that match all non-empty fields in f.
+// BL361 — structured session listing with filter support.
+func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
+	all := m.store.List()
+	if f.Name == "" && f.State == "" && f.Backend == "" && (f.Alive == "" || f.Alive == "any") {
+		return all
+	}
+	out := make([]*Session, 0, len(all))
+	for _, sess := range all {
+		if f.Name != "" {
+			matched, err := path.Match(f.Name, sess.Name)
+			if err != nil || !matched {
+				continue
+			}
+		}
+		if f.State != "" && string(sess.State) != f.State {
+			continue
+		}
+		if f.Backend != "" && sess.BackendFamily != f.Backend {
+			continue
+		}
+		if f.Alive == "true" {
+			if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
+				continue
+			}
+		} else if f.Alive == "false" {
+			if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
+				continue
+			}
+		}
+		out = append(out, sess)
+	}
+	return out
 }
 
 // ResumeRateLimitedSession resumes a session that was paused due to rate limiting.
