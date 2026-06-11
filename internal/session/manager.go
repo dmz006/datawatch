@@ -293,6 +293,13 @@ type Manager struct {
 	// is configured. The callback should start a new session with the next profile.
 	onRateLimitFallback func(sess *Session)
 
+	// onClaudeAliveChange (BL355) — called when claude_alive transitions from true to false
+	// (AI process died but session still appears active — zombie).
+	onClaudeAliveChange func(sess *Session)
+
+	// probeClaudeAliveFunc (BL355) — test injection point; overrides probeClaudeAlive.
+	probeClaudeAliveFunc func(sess *Session) bool
+
 	// cfg holds the full config reference for per-LLM settings lookup.
 	cfg *config.Config
 
@@ -765,6 +772,12 @@ func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetClaudeAliveChangeHandler (BL355) sets the callback invoked when claude_alive
+// transitions from true → false (AI process died, session is a zombie).
+func (m *Manager) SetClaudeAliveChangeHandler(fn func(sess *Session)) {
+	m.onClaudeAliveChange = fn
 }
 
 // SetOnChatMessage sets the callback for structured chat messages from chat-mode backends.
@@ -4119,6 +4132,36 @@ func (m *Manager) StartReconciler(ctx context.Context) {
 	}()
 }
 
+// probeClaudeAlive (BL355) — returns true when the AI process is alive in the
+// tmux pane. Uses `tmux display-message -p -t <session> '#{pane_current_command}'`
+// to read the foreground command. If it is a shell (bash/sh/zsh/fish/dash/ksh/tcsh),
+// Claude has exited and the session is a zombie. Virtual sessions (no TmuxSession)
+// are always considered alive.
+func (m *Manager) probeClaudeAlive(sess *Session) bool {
+	if m.probeClaudeAliveFunc != nil {
+		return m.probeClaudeAliveFunc(sess)
+	}
+	if sess.TmuxSession == "" {
+		return true // virtual sessions (council, agent, etc.) have no pane
+	}
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", sess.TmuxSession, "#{pane_current_command}").Output()
+	if err != nil {
+		return false
+	}
+	paneCmd := strings.TrimSpace(string(out))
+	if paneCmd == "" {
+		return false
+	}
+	// If the foreground command is a shell, Claude has exited
+	shells := []string{"bash", "sh", "zsh", "fish", "dash", "ksh", "tcsh"}
+	for _, shell := range shells {
+		if paneCmd == shell {
+			return false
+		}
+	}
+	return true
+}
+
 func (m *Manager) reconcileSessions(ctx context.Context) {
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
@@ -4136,6 +4179,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			m.debugf("reconcile: session %s marked running but tmux gone — marking complete", sess.FullID)
 			oldState := sess.State
 			sess.State = StateComplete
+			sess.ClaudeAlive = nil // BL355: clear stale probe when session terminates
 			sess.UpdatedAt = time.Now()
 			_ = m.store.Save(sess)
 			if m.onStateChange != nil {
@@ -4187,6 +4231,28 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				m.monitors[sess.FullID] = cancel
 				m.mu.Unlock()
 				go m.monitorOutput(monCtx, sess, projGit)
+			}
+		}
+
+		// BL355: probe whether Claude process is alive in the pane.
+		if isActive && tmuxAlive {
+			alive := m.probeClaudeAlive(sess)
+			prevAlive := sess.ClaudeAlive
+			if sess.ClaudeAlive == nil || *sess.ClaudeAlive != alive {
+				sess.ClaudeAlive = &alive
+				_ = m.store.Save(sess)
+				// Fire alive→dead transition as a push notification
+				if prevAlive != nil && *prevAlive && !alive {
+					if m.onClaudeAliveChange != nil {
+						m.onClaudeAliveChange(sess)
+					}
+				}
+			}
+		} else if !isActive {
+			// Clear probe for inactive sessions (no longer meaningful)
+			if sess.ClaudeAlive != nil {
+				sess.ClaudeAlive = nil
+				_ = m.store.Save(sess)
 			}
 		}
 	}

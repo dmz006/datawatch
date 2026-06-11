@@ -3,6 +3,7 @@
 package session
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -134,12 +135,13 @@ func TestBL355_ClaudeAlive_NilForInactive(t *testing.T) {
 	}
 }
 
-// TestBL355_ReconcileZombieDetection verifies that the reconciler fires
+// TestBL355_ReconcileZombieDetection verifies that reconcileSessions fires
 // onClaudeAliveChange when a session transitions from alive→dead.
+// Uses probeClaudeAliveFunc injection so the test runs without a real tmux.
 func TestBL355_ReconcileZombieDetection(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
 
-	// Create a running session in the fake tmux
+	// Register a tmux session so SessionExists returns true for this session.
 	tmuxName := "cs-e001"
 	_ = fake.NewSessionWithSize(tmuxName, 80, 24)
 
@@ -148,18 +150,18 @@ func TestBL355_ReconcileZombieDetection(t *testing.T) {
 		ID:          "e001",
 		FullID:      "testhost-e001",
 		Hostname:    "testhost",
-		TmuxSession: "", // empty TmuxSession so probeClaudeAlive returns true (virtual)
+		TmuxSession: tmuxName,
 		State:       StateRunning,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		ClaudeAlive: &aliveTrue, // previously alive
+		ClaudeAlive: &aliveTrue, // previously probed as alive
 	}
 
 	if err := mgr.store.Save(sess); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// Wire callback to detect the alive→dead flip
+	// Wire callback to detect the alive→dead flip.
 	var zombieFired bool
 	var zombieSessID string
 	mgr.SetClaudeAliveChangeHandler(func(s *Session) {
@@ -167,25 +169,69 @@ func TestBL355_ReconcileZombieDetection(t *testing.T) {
 		zombieSessID = s.FullID
 	})
 
-	// Force ClaudeAlive to false (simulating a dead Claude process)
-	// by using a session with empty TmuxSession (probeClaudeAlive returns true for those)
-	// For this test, we directly set false and call the callback path
-	falseval := false
-	sess.ClaudeAlive = &falseval
-	_ = mgr.store.Save(sess)
+	// Inject probe that returns false (simulates Claude process having exited).
+	mgr.probeClaudeAliveFunc = func(s *Session) bool { return false }
 
-	// Simulate the reconciler's transition detection logic
-	prevAlive := &aliveTrue
-	if prevAlive != nil && *prevAlive && !*sess.ClaudeAlive {
-		if mgr.onClaudeAliveChange != nil {
-			mgr.onClaudeAliveChange(sess)
-		}
-	}
+	// Call the real reconcileSessions — the BL355 block should detect the
+	// alive(true)→dead(false) flip and fire onClaudeAliveChange.
+	mgr.reconcileSessions(context.Background())
 
 	if !zombieFired {
 		t.Error("expected onClaudeAliveChange to fire on alive→dead transition")
 	}
 	if zombieSessID != "testhost-e001" {
 		t.Errorf("zombieSessID = %q, want testhost-e001", zombieSessID)
+	}
+
+	// Verify ClaudeAlive was updated to false in the store.
+	reloaded, ok := mgr.store.Get("testhost-e001")
+	if !ok {
+		t.Fatal("session not found after reconcile")
+	}
+	if reloaded.ClaudeAlive == nil {
+		t.Fatal("ClaudeAlive is nil after reconcile — should be false")
+	}
+	if *reloaded.ClaudeAlive {
+		t.Errorf("ClaudeAlive = true after probe returned false — reconciler didn't update")
+	}
+}
+
+// TestBL355_ReconcileClearsAliveOnTermination verifies that ClaudeAlive is
+// cleared (nil) when the reconciler marks a session StateComplete due to tmux gone.
+func TestBL355_ReconcileClearsAliveOnTermination(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t) // no fake tmux session registered → SessionExists returns false
+
+	aliveTrue := true
+	sess := &Session{
+		ID:          "f001",
+		FullID:      "testhost-f001",
+		Hostname:    "testhost",
+		TmuxSession: "cs-f001", // fake tmux does NOT have this → SessionExists = false
+		State:       StateRunning,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		ClaudeAlive: &aliveTrue,
+	}
+
+	if err := mgr.store.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Inject probe to prevent real tmux calls (tmux not alive anyway, so branch won't reach probe).
+	mgr.probeClaudeAliveFunc = func(s *Session) bool { return true }
+
+	// reconcileSessions: tmux not alive → isActive && !tmuxAlive → StateComplete.
+	// BL355 fix: ClaudeAlive must be cleared before saving.
+	mgr.reconcileSessions(context.Background())
+
+	reloaded, ok := mgr.store.Get("testhost-f001")
+	if !ok {
+		t.Fatal("session not found after reconcile")
+	}
+	if reloaded.State != StateComplete {
+		t.Errorf("state = %v, want StateComplete", reloaded.State)
+	}
+	if reloaded.ClaudeAlive != nil {
+		t.Errorf("ClaudeAlive should be nil after StateComplete, got %v", *reloaded.ClaudeAlive)
 	}
 }
