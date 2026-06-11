@@ -12388,13 +12388,23 @@ window.testWhisperBackendQuick = function() {
     });
 };
 
+// localFetch always targets the local daemon regardless of which remote
+// server is selected in the server picker. Used for update/restart operations
+// that must act on the local node only.
+function localFetch(path, opts = {}) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(path, Object.assign({}, opts, { headers }))
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))));
+}
+
 function checkForUpdate() {
   const el = document.getElementById('aboutUpdate');
   if (el) el.innerHTML = `<span style="color:var(--text2);font-size:12px;">${t('settings_checking')||'Checking…'}</span>`;
-  // v5.27.4 (datawatch#25) — use the daemon's read-only check endpoint
-  // instead of hitting api.github.com directly. One source of truth +
-  // no CORS issues + goes through the daemon's auth.
-  apiFetch('/api/update/check')
+  // Always check the LOCAL daemon — update/restart ops must not route through
+  // the remote-server proxy even when a remote node is selected in the picker.
+  localFetch('/api/update/check')
     .then(data => {
       if (!data) { if (el) el.innerHTML = `<span style="color:var(--error);">${t('settings_check_failed')||'Check failed'}</span>`; return; }
       const current = data.current_version || '';
@@ -12413,7 +12423,7 @@ function checkForUpdate() {
 function runUpdate() {
   const el = document.getElementById('aboutUpdate');
   if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Downloading update… daemon will restart automatically.</span>';
-  apiFetch('/api/update', { method: 'POST' })
+  localFetch('/api/update', { method: 'POST' })
     .then(data => {
       if (data.status === 'up_to_date') {
         if (el) el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Already up to date (v' + (data.version || '') + ')</span>';
@@ -13029,7 +13039,7 @@ function saveBackendConfig(service) {
 }
 
 function restartDaemon() {
-  apiFetch('/api/restart', { method: 'POST' })
+  localFetch('/api/restart', { method: 'POST' })
     .then(() => showToast('Daemon restarting… reconnecting in a moment.', 'info', 6000))
     .catch(err => showError('Restart failed', err.message));
 }

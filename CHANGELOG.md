@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.13 — fix: update/restart always target local daemon (2026-06-11)
+
+### Fixed
+
+- **Update check and daemon restart bypass remote-server proxy** — `checkForUpdate()`, `runUpdate()`, and `restartDaemon()` in the PWA now use a new `localFetch()` helper that always calls the local daemon directly, ignoring the active remote-server selection. Previously, when a remote server was selected in the server picker, these operations routed through `/api/proxy/{server}`, causing "Check failed" errors because the remote daemon either returns 501 (update not configured) or is unreachable. These operations are always local-node actions.
+
+---
+
 ## v8.10.12 — feat: list_sessions structured filters (BL361) (2026-06-11)
 
 ### Added
