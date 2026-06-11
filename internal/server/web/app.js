@@ -6719,7 +6719,7 @@ function renderSettingsView() {
 
         <!-- BL356 — Session crash/exit hooks. -->
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
-          ${settingsSectionHeader('exit_hooks', 'Exit Hooks (BL356)')}
+          ${settingsSectionHeader('exit_hooks', 'Exit Hooks')}
           <div id="settings-sec-exit_hooks" style="${secContent('exit_hooks')}">
             <div style="font-size:11px;color:var(--text2);line-height:1.4;padding:4px 16px 8px;">
               Exit hooks fire when a named session goes zombie (Claude process exits) or enters failed/killed state.
@@ -6748,7 +6748,7 @@ function renderSettingsView() {
 
         <!-- BL357 — durable role-based work queue panel. -->
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
-          ${settingsSectionHeader('work_queue', 'Work Queue (BL357)')}
+          ${settingsSectionHeader('work_queue', 'Work Queue')}
           <div id="settings-sec-work_queue" style="${secContent('work_queue')}">
             <div style="font-size:11px;color:var(--text2);line-height:1.4;padding:4px 16px 8px;">
               WAL-backed durable queue. Sessions holding a role claim items atomically.

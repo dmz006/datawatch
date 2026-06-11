@@ -180,6 +180,173 @@ This sends the text as input to the parent session so it can act on the result.
 
 ---
 
+### Recurring named schedules
+
+Schedule a command to fire on a cron schedule, targeting a session by name rather than by ID — so the schedule survives session restarts.
+
+**Creating a recurring schedule:**
+
+- **MCP:** `schedule_add(cron_expr="*/5 * * * *", session_name="worker", command="summarize")`
+- **REST:** `POST /api/schedule` body: `{"cron_expr": "*/5 * * * *", "session_name": "worker", "command": "summarize", "schedule_name": "periodic-summary"}`
+- **CLI:** `datawatch schedule add --cron "*/5 * * * *" --session-name worker --schedule-name periodic-summary "summarize"`
+- **Channel:** `schedule session_name=worker cron=*/5 * * * * command=summarize`
+
+**Cancelling by schedule name:**
+
+- **MCP:** `schedule_cancel(name="periodic-summary")`
+- **REST:** `DELETE /api/schedules?name=periodic-summary`
+- **CLI:** `datawatch schedule cancel name=periodic-summary`
+- **Channel:** `schedule cancel name=periodic-summary`
+
+**Cron format:** standard 5-field (`minute hour day month weekday`). Supports `*`, `*/n`, `n`, `n-m`, `n,m,...`.
+
+If the named session is absent when the schedule fires, the item is skipped (not failed) and will try again on the next tick.
+
+---
+
+### Session zombie detection
+
+Detects when Claude has exited but the shell is still running inside the tmux pane.
+
+**How it works:** A periodic reconciler probes each active session by running `tmux display-message #{pane_current_command}`. If the foreground process is a shell (bash/sh/zsh/fish/dash/ksh/tcsh), `claude_alive` is set to `false` (zombie). Otherwise it stays `true`.
+
+**`claude_alive` field:**
+
+| Value | Meaning |
+|-------|---------|
+| `true` | Claude process is in the foreground |
+| `false` | Shell is in the foreground — Claude has exited |
+| absent/null | Session is not active (terminal state) |
+
+**Accessing alive status:**
+
+- **REST:** included in every session JSON object as `claude_alive`
+- **MCP:** `list_sessions(format=json)` includes `claude_alive`; text format shows `Alive: yes/no`
+- **CLI:** `datawatch session list` shows an ALIVE column
+- **Channel:** `session list` shows `[ZOMBIE]` tag for dead sessions
+- **PWA:** amber `⚠ zombie` badge on session card
+
+**On zombie detection:** a `LevelWarn` alert is created and a `session_zombie` push event fires.
+
+---
+
+### Session exit hooks
+
+Automatically restart or notify when a session goes zombie or terminates abnormally.
+
+**Hook configuration (YAML):**
+
+```yaml
+session:
+  exit_hooks:
+    - name: "worker"
+      action: restart        # restart | notify
+      cooldown_seconds: 300
+    - name: "coordinator"
+      action: notify
+      notify_session: "ops-monitor"
+      notify_message: "coordinator crashed"
+      cooldown_seconds: 60
+```
+
+**Trigger conditions:** `claude_alive` flip to false (zombie), or session entering `failed` / `killed` state.
+
+**Actions:**
+
+| Action | Behavior |
+|--------|----------|
+| `restart` | Kills session and relaunches with same task/name |
+| `notify` | Sends `notify_message` to the named `notify_session` via `send_input` |
+
+**Managing hooks at runtime:**
+
+- **MCP:** `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable`
+- **REST:** `GET/POST/PUT/DELETE /api/exit-hooks`
+- **CLI:** `datawatch exit-hook list/add/delete/enable/disable`
+- **Channel:** `exit_hook list/add/delete/enable/disable`
+- **PWA:** Exit Hooks section in Settings → Compute
+
+---
+
+### Session restart from any state
+
+Restart a session regardless of its current state — running, waiting for input, failed, or killed.
+
+- **MCP:** `restart_session(session_id="pp01")` or `restart_session(session_name="worker", task="new task")`
+- **REST:** `POST /api/sessions/{id}/restart` body: `{"task": "optional new task"}`
+- **CLI:** `datawatch session restart worker --task "new task"`
+- **Channel:** `session restart name=worker task=new task`
+- **PWA:** Restart button on session cards in all states
+
+The session ID and name are preserved. An optional `task` parameter overrides the stored task for the new run.
+
+---
+
+### Work queue
+
+A durable role-based queue for coordinating work across multiple agent sessions.
+
+**Typical flow:**
+
+1. **Push:** `queue_push(role="analyzer", payload={"file": "main.go"})` — any session creates a work item.
+2. **Claim:** `queue_claim(role="analyzer", claimed_by="agent-01", lease_seconds=300)` — an agent claims the oldest pending item. Returns nil if none available.
+3. **Complete:** `queue_complete(id="q-abc", result={"lines": 450})` — mark done with optional result.
+4. **Fail:** `queue_fail(id="q-abc", error="parse error on line 42")` — mark failed.
+
+Unclaimed items whose lease expires are automatically returned to `pending` state (checked every 30 s).
+
+**Surfaces:**
+
+- **MCP:** `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list`
+- **REST:** `GET /api/queue?role=&state=`, `POST /api/queue/push|claim|complete|fail`, `DELETE /api/queue/{id}`
+- **CLI:** `datawatch queue push/claim/complete/fail/list`
+- **Channel:** `queue push/claim/complete/fail/list`
+
+---
+
+### Discussion push / subscribe
+
+Subscribe an agent session to a discussion so new entries are delivered as live input.
+
+- **MCP:** `discussion_subscribe(discussion_id="proj-alpha", session_name="summarizer")`
+- **REST:** `POST /api/discussion-subs` body: `{"discussion_id": "proj-alpha", "session_name": "summarizer"}`
+- **CLI:** `datawatch discussion-sub subscribe --discussion proj-alpha --session summarizer`
+
+When a new entry is written to the discussion WAL, datawatch sends it to the subscribing session via `send_input`.
+
+**Long-polling:** `memory_discussion_wal(discussion_id="proj-alpha", after_seq=12, block=true, timeout=60)` — blocks until a new entry arrives or the timeout expires.
+
+**Unsubscribe:** `discussion_unsubscribe(discussion_id="proj-alpha", session_name="summarizer")`
+
+---
+
+### Agent result store
+
+A named key-value store for passing structured results between agents.
+
+- **MCP:** `result_put(name="analysis-result", payload={"score": 0.92}, ttl_seconds=3600)`
+- **MCP:** `result_get(name="analysis-result")` — returns the stored entry or "Not found".
+- **MCP:** `result_list(prefix="analysis-")` — lists all entries with the given prefix.
+- **MCP:** `result_delete(name="analysis-result")`
+- **REST:** `GET/POST/DELETE /api/result-store`, `GET /api/result-store/{name}`
+- **CLI:** `datawatch result put/get/list/delete`
+
+Entries with a TTL are automatically expired. Data survives daemon restarts.
+
+---
+
+### Structured session filters
+
+Filter `list_sessions` by name, state, backend, or alive status.
+
+- **MCP:** `list_sessions(name="worker-*", state="running", alive="true", format="json")`
+- **REST:** `GET /api/sessions?name=worker-*&state=running&alive=true`
+- **CLI:** `datawatch session list --name "worker-*" --state running --alive true --json`
+
+`name` supports glob patterns (`*`, `?`). `alive` accepts `true`, `false`, or `any` (default). `format=json` returns a structured JSON array including `claude_alive`.
+
+---
+
 ### Session AI summarizer
 
 Each session maintains a live AI-generated summary of its most recent output. A background pipeline triggers after each significant channel event, runs a single LLM call against recent terminal output, and produces two complementary summary forms.
@@ -992,6 +1159,15 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Federation peer health alerts | [`howto/federated-observer.md`](howto/federated-observer.md) | v8.9.25 | background peer-health goroutine, system alerts on state transitions |
 | Self-update pipeline | [`howto/daemon-operations.md`](howto/daemon-operations.md) | v8.9.21 | goreleaser archive priority, `datawatch-channel` co-update, `GET /api/update/check` |
 | Session lineage | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.0 | parent_id, kill_children, session_children MCP, reply_to_parent, REST tree |
+| Recurring named schedules | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.4 | cron_expr, session_name, schedule_name; CronNext parser; cancel-by-name |
+| Name-addressed session ops | [`howto/mcp-tools.md`](howto/mcp-tools.md) | v8.10.5 | session_name on 9 MCP tools; resolveSession oldest-wins tiebreak |
+| Session zombie detection | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.6 | claude_alive *bool, tmux pane probe, reconciler integration |
+| Session exit hooks | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.7 | ExitHookStore, restart/notify actions, cooldown, session.exit_hooks[] config |
+| Work queue | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.8 | QueueStore, atomic Claim, ExpireLeases, role-based dispatch |
+| Discussion push/subscribe | [`howto/discussion-scopes.md`](howto/discussion-scopes.md) | v8.10.9 | DiscussionSubStore, dispatchDiscussionEntry, WAL long-poll after_seq |
+| Session restart from any state | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.10 | RestartSession kills live tmux + relaunches, preserves ID/name/lineage |
+| Agent result store | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.11 | ResultStore KV, optional TTL, file-backed |
+| Structured session filters | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.12 | SessionFilter glob/state/backend/alive, ListSessionsFiltered, format=json |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 

@@ -134,6 +134,10 @@ Selected core tools:
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
 | `orchestrator_graph_run` / `orchestrator_verdicts` | PRD-DAG orchestrator |
 | `pipeline_start` / `pipeline_status` | Session chaining |
+| `exit_hook_list` / `exit_hook_add` / `exit_hook_delete` / `exit_hook_enable` / `exit_hook_disable` | Session exit hooks (BL356) |
+| `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |
+| `discussion_subscribe` / `discussion_unsubscribe` / `discussion_subscriptions` | Discussion subscriptions (BL358) |
+| `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
 
 ## Example Usage in Cursor
 

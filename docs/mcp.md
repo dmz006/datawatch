@@ -220,8 +220,8 @@ See the operations guide for device-specific cert install instructions.
 
 ## Available Tools
 
-The MCP server exposes **132 tools** across the surfaces below
-(v5.26.3 count). The authoritative live list is served at
+The MCP server exposes **149 tools** across the surfaces below
+(v8.7.3 count — includes BL356–BL361 additions). The authoritative live list is served at
 `GET /api/mcp/docs` (HTML) or `GET /api/mcp/docs?format=json` (JSON)
 — `claude mcp list` queries this on connect, and the PWA Settings →
 About → "MCP tools" link opens it. The selected tools below are
@@ -233,6 +233,10 @@ shape.
 | Family | Tools |
 |--------|-------|
 | Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
+| Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
+| Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
+| Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
+| Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/children`, `autonomous_learnings` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -265,14 +269,29 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`session_children`** (v8.10.0) — list child sessions of a parent session. Returns ID, state, backend, and task for each child.
 - **`reply_to_parent`** (v8.10.0) — send a message to the parent session that spawned this one. Sub-agents use this to report completion back to their orchestrator.
 - **`start_session` extended** (v8.10.0) — added `caller_session_id` (records parent lineage), `kill_children` (cascade kill opt-in), `permission_mode` (v8.9.24), and `name` parameters.
+- **`list_sessions` extended** (BL361) — added `name` (glob filter), `state`, `backend`, `alive`, and `format` parameters.
+- **`restart_session`** — restarts a session from any terminal state; accepts `session_id` or `session_name` (BL354 name resolution) and optional `task` override.
+- **`exit_hook_list/add/delete/enable/disable`** (BL356) — session crash/exit hooks: fire `restart` or `notify` actions when a named session goes zombie or enters failed/killed state.
+- **`queue_push/claim/complete/fail/list`** (BL357) — durable role-based work queue for multi-agent coordination.
+- **`discussion_subscribe/unsubscribe/subscriptions`** (BL358) — subscribe sessions to discussions so new entries are forwarded via `send_input`.
+- **`result_put/get/list/delete`** (BL360) — structured named-result store for agents to share outputs without out-of-band coordination.
 
 
 
 ### `list_sessions`
 
-List all active AI coding sessions on this host.
+List all AI coding sessions on this host, including their state and task description.
 
-**Parameters:** none
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | No | BL361 — glob pattern to filter sessions by name (e.g. `worker-*`, `agent-?`). Empty = all. |
+| `state` | string | No | BL361 — filter by exact state: `running`, `waiting_input`, `rate_limited`, `complete`, `failed`, `killed`. Empty = all. |
+| `backend` | string | No | BL361 — filter by backend family name (e.g. `opencode`, `claudecode`). Empty = all. |
+| `alive` | string | No | BL361 — filter by `claude_alive` field: `true`, `false`, or `any` (default). Empty = any. |
+| `format` | string | No | BL361 — output format: `text` (default) or `json`. `json` returns a structured JSON array. |
+| `orphaned` | boolean | No | BL350 — when `true`, return only sessions whose `parent_id` points to a session that no longer exists (orphaned by parent death or eviction). |
 
 **Example response:**
 ```
@@ -427,6 +446,391 @@ start_session(task="...", caller_session_id="host-abc123")
 
 # When the sub-agent finishes, it calls:
 reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")
+```
+
+---
+
+### `restart_session`
+
+Restart a session from any state (running, waiting_input, complete, failed, or killed). Kills the session if still alive, then relaunches with the same task. Session ID and name are preserved.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | No | Session ID to restart (required if `session_name` not provided) |
+| `session_name` | string | No | Session name as alternative to `session_id`; resolves to the oldest active session with this name (BL354 name resolution) |
+| `task` | string | No | Optional new task string. If omitted, the session's existing task is reused. |
+
+**Example response:**
+```
+Restarted session myhost-a3f2 (state: running)
+```
+
+---
+
+## Exit Hooks (BL356)
+
+Exit hooks fire when a named session exits unexpectedly — either its `claude_alive` flag flips to false (zombie detection) or the session enters `failed`/`killed` state. Two actions are supported: `restart` (relaunch the session with the same task) and `notify` (send a message to another session).
+
+### `exit_hook_list`
+
+List all configured session crash/exit hooks.
+
+**Parameters:** none
+
+**Example response:**
+```
+Exit hooks (1):
+
+ID:       eh-abc123
+Name:     worker-main
+Action:   restart
+Enabled:  true
+Cooldown: 300s
+Created:  2026-06-01T10:00:00Z
+```
+
+---
+
+### `exit_hook_add`
+
+Add a session crash/exit hook.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Session name to watch (exact match) |
+| `action` | string | Yes | Action to take: `restart` or `notify` |
+| `notify_session` | string | No | For `action=notify`: name of the session to send a message to |
+| `notify_message` | string | No | For `action=notify`: message text to send (default: auto-generated) |
+| `cooldown_seconds` | number | No | Minimum seconds between firings. Default: 300. |
+
+**Example response:**
+```json
+{
+  "id": "eh-abc123",
+  "name": "worker-main",
+  "action": "restart",
+  "enabled": true,
+  "cooldown_seconds": 300,
+  "created_at": "2026-06-01T10:00:00Z"
+}
+```
+
+---
+
+### `exit_hook_delete`
+
+Delete a session crash/exit hook by ID.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Exit hook ID to delete |
+
+**Example response:**
+```
+Exit hook eh-abc123 deleted.
+```
+
+---
+
+### `exit_hook_enable`
+
+Enable a previously disabled session crash/exit hook.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Exit hook ID to enable |
+
+**Example response:**
+```
+Exit hook eh-abc123 enabled.
+```
+
+---
+
+### `exit_hook_disable`
+
+Disable a session crash/exit hook without deleting it.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Exit hook ID to disable |
+
+**Example response:**
+```
+Exit hook eh-abc123 disabled.
+```
+
+---
+
+## Work Queue (BL357)
+
+A durable, role-based work queue for coordinating multi-agent pipelines. Agents push items for a named role; worker agents atomically claim the oldest pending item, then mark it complete or failed. Items persist across daemon restarts.
+
+### `queue_push`
+
+Push a new work item onto the role-based work queue.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `role` | string | Yes | Role that worker agents claim items from (e.g. `"coder"`, `"reviewer"`) |
+| `payload` | string | No | Optional JSON object payload for the work item. Example: `{"key":"value"}` |
+
+**Example response:**
+```json
+{
+  "id": "qi-abc123",
+  "role": "coder",
+  "state": "pending",
+  "payload": {"key": "value"},
+  "created_at": "2026-06-01T10:00:00Z"
+}
+```
+
+---
+
+### `queue_claim`
+
+Atomically claim the oldest pending work item for a given role. Returns the item and sets a lease timer; if the item is not completed or failed within `lease_seconds`, it reverts to `pending`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `role` | string | Yes | Role to claim a work item for |
+| `claimed_by` | string | Yes | Session FullID or identifier of the claiming worker |
+| `lease_seconds` | number | No | How long (seconds) to hold the claim before it auto-expires back to pending. Default: 300. |
+
+**Example response:**
+```json
+{
+  "id": "qi-abc123",
+  "role": "coder",
+  "state": "claimed",
+  "claimed_by": "myhost-a3f2",
+  "payload": {"key": "value"}
+}
+```
+Returns `"No pending items available for role: <role>"` when the queue is empty.
+
+---
+
+### `queue_complete`
+
+Mark a claimed work item as complete.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | ID of the queue item to complete |
+| `result` | string | No | Optional JSON object result payload. Example: `{"output":"done"}` |
+
+**Example response:**
+```
+Queue item qi-abc123 marked complete.
+```
+
+---
+
+### `queue_fail`
+
+Mark a claimed work item as failed.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | ID of the queue item to fail |
+| `error` | string | Yes | Error message describing why the item failed |
+
+**Example response:**
+```
+Queue item qi-abc123 marked failed.
+```
+
+---
+
+### `queue_list`
+
+List work queue items, optionally filtered by role and/or state.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `role` | string | No | Filter by role. Empty = all roles. |
+| `state` | string | No | Filter by state: `pending`, `claimed`, `complete`, or `failed`. Empty = all states. |
+
+**Example response:**
+```json
+[
+  {
+    "id": "qi-abc123",
+    "role": "coder",
+    "state": "pending",
+    "created_at": "2026-06-01T10:00:00Z"
+  }
+]
+```
+
+---
+
+## Discussion Subscribe (BL358)
+
+These tools let sessions subscribe to discussions so that new entries written to a discussion are automatically delivered to the session via `send_input`.
+
+### `discussion_subscribe`
+
+Subscribe a session to a discussion. New entries written to the discussion are delivered to the session via `send_input`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `discussion_id` | string | Yes | Discussion scope ID to subscribe to |
+| `session_name` | string | Yes | Name of the session to deliver discussion entries to |
+
+**Example response:**
+```json
+{"ok":true,"discussion_id":"proj-alpha","session_name":"monitor","status":"subscribed"}
+```
+
+---
+
+### `discussion_unsubscribe`
+
+Unsubscribe a session from a discussion. The session will no longer receive new entries from the discussion.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `discussion_id` | string | Yes | Discussion scope ID |
+| `session_name` | string | Yes | Session name to remove from the discussion |
+
+**Example response:**
+```json
+{"ok":true,"discussion_id":"proj-alpha","session_name":"monitor","status":"unsubscribed"}
+```
+
+---
+
+### `discussion_subscriptions`
+
+List all active discussion subscriptions.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `discussion_id` | string | No | Filter by discussion ID. Empty = all subscriptions. |
+
+**Example response:**
+```json
+[
+  {"discussion_id": "proj-alpha", "session_name": "monitor"},
+  {"discussion_id": "proj-alpha", "session_name": "logger"}
+]
+```
+
+---
+
+## Result Store (BL360)
+
+A structured named-result store for agents to exchange data without out-of-band coordination. Results are keyed by name and support optional TTL-based expiry.
+
+### `result_put`
+
+Store a named result payload in the agent result store. Upserts by name.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Unique name / key for this result entry |
+| `payload` | string | Yes | JSON object payload to store. Example: `{"output":"done","count":3}` |
+| `ttl_seconds` | number | No | Time-to-live in seconds. `0` (default) = no expiry. |
+
+**Example response:**
+```json
+{
+  "name": "build-result",
+  "payload": {"output": "done", "count": 3},
+  "stored_at": "2026-06-01T10:00:00Z",
+  "expires_at": null
+}
+```
+
+---
+
+### `result_get`
+
+Retrieve a named result from the agent result store.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Name / key of the result to retrieve |
+
+**Example response:**
+```json
+{
+  "name": "build-result",
+  "payload": {"output": "done", "count": 3},
+  "stored_at": "2026-06-01T10:00:00Z",
+  "expires_at": null
+}
+```
+Returns `"Not found: <name>"` when the key does not exist or has expired.
+
+---
+
+### `result_list`
+
+List results in the agent result store. Optionally filter by name prefix.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `prefix` | string | No | Filter results whose name starts with this prefix. Empty = all. |
+
+**Example response:**
+```json
+[
+  {"name": "build-result", "stored_at": "2026-06-01T10:00:00Z"},
+  {"name": "build-logs",   "stored_at": "2026-06-01T10:01:00Z"}
+]
+```
+
+---
+
+### `result_delete`
+
+Delete a named result from the agent result store.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Name / key of the result to delete |
+
+**Example response:**
+```
+Deleted: build-result
 ```
 
 ---

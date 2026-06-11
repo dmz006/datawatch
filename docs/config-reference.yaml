@@ -42,6 +42,14 @@ session:
   # 0 = legacy single send-keys (triggers 2nd-Enter bug on some TUIs).
   # 200 (default) fixes claude-code and other ink-based TUIs.
   schedule_settle_ms: 200
+  # BL353: new fields available on scheduled command entries (managed via
+  # GET/POST/DELETE /api/schedules). These are set per-entry, not globally:
+  #
+  #   session_name: ""    # Resolve target by session name at fire time
+  #                       # (survives session restarts unlike session_id).
+  #   cron_expr: ""       # 5-field cron expression for recurrence
+  #                       # (e.g. "*/5 * * * *"). Alias for the `cron` field.
+  #   schedule_name: ""   # Human-readable label for lookup/cancel by name.
   # BL41: per-session effort hint applied when caller doesn't supply one.
   # One of: quick / normal / thorough. Default: normal.
   default_effort: "normal"
@@ -65,6 +73,18 @@ session:
   console_cols: 0
   # Default terminal height (rows) for new sessions (0 = 24)
   console_rows: 0
+  # BL356: Exit hooks — fire when a matching session crashes (claude_alive→false)
+  # or enters failed/killed state. action: restart → re-starts the session
+  # automatically; action: notify → sends a message to notify_session.
+  exit_hooks:
+    # Array of exit hook definitions. Each hook fires when a matching session
+    # crashes (claude_alive→false) or enters failed/killed state.
+    - name: "worker"          # Session name to monitor
+      action: restart          # restart | notify
+      notify_session: ""       # (notify only) session name to send message to
+      notify_message: ""       # (notify only) message text
+      cooldown_seconds: 300    # minimum seconds between firings (default: 300)
+
   # Response summarizer — when enabled, the last captured session response
   # is summarized via the referenced LLM after the session completes or
   # transitions to waiting_input. The summary is available via

@@ -41,6 +41,32 @@ paths:
       description: Returns all sessions managed by this host, including completed ones.
       operationId: listSessions
       tags: [Sessions]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          description: Glob filter by session name
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          description: Filter by session state
+          schema:
+            type: string
+        - name: backend
+          in: query
+          required: false
+          description: Filter by LLM backend
+          schema:
+            type: string
+        - name: alive
+          in: query
+          required: false
+          description: Filter by claude_alive status
+          schema:
+            type: string
+            enum: ["true", "false"]
       responses:
         "200":
           description: Array of sessions
@@ -1107,6 +1133,37 @@ paths:
         - {name: since, in: query, schema: {type: integer, description: "epoch ms"}}
         - {name: limit, in: query, schema: {type: integer}}
       responses: {"200": {description: OK}}
+
+  # BL359 — restart session by ID (path-based)
+  /api/sessions/{id}/restart:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Restart a session by path ID
+      description: |
+        Restart a completed, failed, or killed session. Optionally supply
+        a new task or session name; otherwise the original values are reused.
+      operationId: sessionRestartById
+      tags: [Sessions]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task: {type: string, description: "Override the task for the restarted session"}
+                session_name: {type: string, description: "Override the session name"}
+      responses:
+        "200":
+          description: Session restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400": {description: Bad Request}
+        "404": {description: Session not found}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+
   /api/cert:
     get:
       summary: Download the server CA certificate PEM
@@ -1140,6 +1197,71 @@ paths:
       operationId: restart
       tags: [Operations]
       responses: {"200": {description: "{status: restarting}"}}
+
+  # Result store (BL360)
+  /api/result-store:
+    get:
+      summary: List result store entries
+      operationId: resultStoreList
+      tags: [ResultStore]
+      parameters:
+        - {name: prefix, in: query, required: false, description: "Optional name prefix filter", schema: {type: string}}
+      responses:
+        "200":
+          description: Array of result entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ResultEntry"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Put a result store entry
+      operationId: resultStorePut
+      tags: [ResultStore]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, payload]
+              properties:
+                name: {type: string}
+                payload: {type: object}
+                ttl_seconds: {type: integer}
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultEntry"
+        "400": {description: Bad Request}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/result-store/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get a result store entry by name
+      operationId: resultStoreGet
+      tags: [ResultStore]
+      responses:
+        "200":
+          description: Result entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultEntry"
+        "404": {description: Not found}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    delete:
+      summary: Delete a result store entry
+      operationId: resultStoreDelete
+      tags: [ResultStore]
+      responses: {"200": {description: Deleted}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+
   /api/ollama/models:
     get:
       summary: List installed Ollama models (name, size, modified)
@@ -1832,6 +1954,129 @@ paths:
         - {name: alias, in: query, required: true, schema: {type: string}}
       responses: {"200": {description: OK}, "404": {description: Not found}}
 
+  # Discussion subscriptions (BL358)
+  /api/discussion-subs:
+    get:
+      summary: List discussion subscriptions
+      operationId: discussionSubsList
+      tags: [Sessions]
+      parameters:
+        - name: discussion_id
+          in: query
+          required: false
+          description: Optional filter by discussion ID
+          schema: {type: string}
+      responses: {"200": {description: OK}, "401": {$ref: "#/components/responses/Unauthorized"}}
+    post:
+      summary: Subscribe a session to a discussion
+      operationId: discussionSubsCreate
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [discussion_id, session_name]
+              properties:
+                discussion_id: {type: string}
+                session_name: {type: string}
+      responses: {"200": {description: Subscribed}, "400": {description: Bad Request}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/discussion-subs/{discussion_id}/{session_name}:
+    parameters:
+      - {name: discussion_id, in: path, required: true, schema: {type: string}}
+      - {name: session_name, in: path, required: true, schema: {type: string}}
+    delete:
+      summary: Unsubscribe a session from a discussion
+      operationId: discussionSubsDelete
+      tags: [Sessions]
+      responses: {"200": {description: Unsubscribed}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+
+  # Exit hooks (BL356)
+  /api/exit-hooks:
+    get:
+      summary: List all exit hooks
+      operationId: exitHooksList
+      tags: [Sessions]
+      responses:
+        "200":
+          description: Array of exit hook entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExitHookEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create an exit hook
+      operationId: exitHooksCreate
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, action]
+              properties:
+                name: {type: string, description: "Session name to monitor"}
+                action: {type: string, enum: [restart, notify]}
+                notify_session: {type: string}
+                notify_message: {type: string}
+                cooldown_seconds: {type: integer}
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExitHookEntry"
+        "400": {description: Bad Request}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/exit-hooks/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      summary: Update an exit hook
+      operationId: exitHooksUpdate
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                action: {type: string, enum: [restart, notify]}
+                notify_session: {type: string}
+                notify_message: {type: string}
+                cooldown_seconds: {type: integer}
+      responses: {"200": {description: Updated}, "400": {description: Bad Request}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+    delete:
+      summary: Delete an exit hook
+      operationId: exitHooksDelete
+      tags: [Sessions]
+      responses: {"200": {description: Deleted}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/exit-hooks/{id}/disable:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Disable an exit hook
+      operationId: exitHooksDisable
+      tags: [Sessions]
+      responses: {"200": {description: Disabled}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/exit-hooks/{id}/enable:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: Enable an exit hook
+      operationId: exitHooksEnable
+      tags: [Sessions]
+      responses: {"200": {description: Enabled}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+
   # Routing rules (BL20)
   /api/routing-rules:
     get:
@@ -1951,6 +2196,116 @@ paths:
       parameters:
         - {name: dir, in: query, required: true, schema: {type: string}}
       responses: {"200": {description: OK}, "400": {description: Missing dir}}
+
+  # Work Queue (BL357)
+  /api/queue:
+    get:
+      summary: List work queue items
+      operationId: queueList
+      tags: [Queue]
+      parameters:
+        - {name: role, in: query, required: false, schema: {type: string}}
+        - {name: state, in: query, required: false, schema: {type: string, enum: [pending, claimed, complete, failed]}}
+      responses:
+        "200":
+          description: Array of queue items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QueueItem"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/queue/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    delete:
+      summary: Delete a queue item
+      operationId: queueDelete
+      tags: [Queue]
+      responses: {"200": {description: Deleted}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/queue/claim:
+    post:
+      summary: Claim a queue item for processing
+      operationId: queueClaim
+      tags: [Queue]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, claimed_by]
+              properties:
+                role: {type: string}
+                claimed_by: {type: string}
+                lease_seconds: {type: integer}
+      responses:
+        "200":
+          description: Claimed item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueItem"
+        "404": {description: No pending item for this role}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/queue/complete:
+    post:
+      summary: Mark a queue item as complete
+      operationId: queueComplete
+      tags: [Queue]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+                result: {type: object}
+      responses: {"200": {description: Completed}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/queue/fail:
+    post:
+      summary: Mark a queue item as failed
+      operationId: queueFail
+      tags: [Queue]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, error]
+              properties:
+                id: {type: string}
+                error: {type: string}
+      responses: {"200": {description: Marked failed}, "404": {description: Not found}, "401": {$ref: "#/components/responses/Unauthorized"}}
+  /api/queue/push:
+    post:
+      summary: Push a new item onto the work queue
+      operationId: queuePush
+      tags: [Queue]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: {type: string}
+                payload: {type: object}
+      responses:
+        "200":
+          description: Item enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueItem"
+        "400": {description: Bad Request}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+
   /api/projects:
     get:
       summary: List project aliases (BL27)
@@ -2270,6 +2625,16 @@ components:
           type: string
           format: date-time
           description: RFC3339 timestamp for one-shot schedules — omit for recurring
+        session_name:
+          type: string
+          description: "BL353: Resolve target by session name at fire time (survives session restarts)"
+        cron_expr:
+          type: string
+          description: "BL353: 5-field cron expression (alias for `cron`; preferred in new entries)"
+          example: "*/5 * * * *"
+        schedule_name:
+          type: string
+          description: "BL353: Human-readable label for lookup/cancel by name"
         state:
           type: string
           description: Lifecycle state
@@ -2352,5 +2717,93 @@ components:
           type: boolean
           default: false
         created_at:
+          type: string
+          format: date-time
+
+    ExitHookEntry:
+      type: object
+      description: A hook that fires when a monitored session exits or enters a failed/killed state.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Session name to monitor
+        action:
+          type: string
+          enum: [restart, notify]
+        notify_session:
+          type: string
+          description: "(notify only) session name to send the message to"
+        notify_message:
+          type: string
+          description: "(notify only) message text"
+        cooldown_seconds:
+          type: integer
+          description: Minimum seconds between firings (default 300)
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_fired_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    QueueItem:
+      type: object
+      description: A single item in the work queue.
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+        payload:
+          type: object
+          nullable: true
+        state:
+          type: string
+          enum: [pending, claimed, complete, failed]
+        claimed_by:
+          type: string
+          nullable: true
+        lease_expiry:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        result:
+          type: object
+          nullable: true
+
+    ResultEntry:
+      type: object
+      description: A named key/value entry in the result store.
+      properties:
+        name:
+          type: string
+        payload:
+          type: object
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
           type: string
           format: date-time

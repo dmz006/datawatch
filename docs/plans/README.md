@@ -38,16 +38,16 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-19
+## Current state — 2026-06-11
 
-Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full operational data encryption — every file that can be encrypted with the `--secure` Argon2id key now is. `daemon-app.log` append-mode fix. E2E green (1 pre-existing TS-065 assertion fixed).
+Latest release: **v8.10.12** (2026-06-11). Fleet coordination suite: recurring schedules, zombie detection, exit hooks, work queue, discussion subscribe, session restart, result store, and structured session filters (BL353–BL361).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 0 | BL327–BL334 all delivered v8.2.0–v8.6.0 |
-| Pending backlog | 1 | BL335 — APNs push for iOS client (next minor, GH#107) |
+| Active backlog | 0 | BL353–BL361 all delivered v8.10.4–v8.10.12 |
+| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |

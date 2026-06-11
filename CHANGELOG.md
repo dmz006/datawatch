@@ -7,6 +7,162 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.12 — feat: list_sessions structured filters (BL361) (2026-06-11)
+
+### Added
+
+- **`SessionFilter` struct** — AND-logic session filter with `Name` (glob via `path.Match`), `State` (exact), `Backend` (exact), `Alive` ("true"/"false"/"any"). Fast-path when all fields empty.
+- **`ListSessionsFiltered`** — new method on Manager; called by REST and MCP instead of `ListSessions` when filters present.
+- **REST `GET /api/sessions`** — gains `?name=`, `?state=`, `?backend=`, `?alive=` query params. Backward-compatible: empty params return all sessions as before.
+- **MCP `list_sessions`** — gains `name`, `state`, `backend`, `alive`, `format` params. `format=json` returns a structured JSON array with `claude_alive` field included.
+- **CLI `datawatch session list`** — gains `--name`, `--state`, `--backend`, `--alive`, `--json` flags.
+- **6 new tests** — name glob, state filter, backend filter, alive filter (nil vs false distinction), combined AND logic, no-filter returns all.
+
+---
+
+## v8.10.11 — feat: structured agent result store (BL360) (2026-06-11)
+
+### Added
+
+- **`ResultStore`** — file-backed JSON key-value store for agent result payloads. `Put` (upsert, optional TTL), `Get` (skips expired), `List` (prefix filter, sorted), `Delete`, `ExpireEntries`. Background goroutine expires entries every 60 s.
+- **REST `/api/result-store`** — `GET ?prefix=` (list), `GET /{name}` (get one), `POST` (put), `DELETE /{name}`.
+- **MCP tools** — `result_put`, `result_get`, `result_list`, `result_delete`.
+- **CLI** — `datawatch result put/get/list/delete`.
+- **Comm channel** — `result put/get/list/delete` router commands.
+- **6 new tests** — put, upsert, get-expired, prefix list, delete, persistence.
+
+---
+
+## v8.10.10 — feat: restart_session from any state (BL359) (2026-06-11)
+
+### Added
+
+- **`RestartSession(ctx, id, task)`** on Manager — kills live tmux session when state is `running`, `waiting_input`, or `rate_limited`, then relaunches. Optional `task` param overrides the stored task; empty string preserves existing task. Session ID, name, and lineage fields are preserved.
+- **REST `POST /api/sessions/{id}/restart`** — body `{task?, session_name?}`. Also handles `POST /api/sessions/restart` with `{id, task, session_name}` for CLI loopback.
+- **MCP `restart_session`** — new `session_name` and `task` params alongside existing `session_id`.
+- **CLI `datawatch session restart <id-or-name> [--task <task>]`**.
+- **Comm channel `session restart id=<id>|name=<n> [task=<t>]`**.
+- **PWA** — Restart button visible on session cards in all states.
+- **5 new tests** — restart running, restart failed, restart with new task, unknown ID error, name/ID preserved.
+
+---
+
+## v8.10.9 — feat: discussion push / subscribe (BL358) (2026-06-11)
+
+### Added
+
+- **`DiscussionSubStore`** — file-backed subscription registry. `Subscribe` (idempotent), `Unsubscribe`, `GetSubscribers`, `List`.
+- **Discussion dispatch** — `handleDiscussionWrite` fires `go dispatchDiscussionEntry` after each WAL write; dispatcher calls `FindSessionByName` → `SendInput` for each subscriber.
+- **`memory_discussion_wal` long-poll** — new `after_seq` (integer), `block` (bool), `timeout` (integer seconds) params. `filterWALAfterSeq` helper filters returned entries by sequence number.
+- **REST `/api/discussion-subs`** — `GET` (list), `POST` (subscribe), `DELETE /{discussion_id}/{session_name}` (unsubscribe).
+- **MCP tools** — `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions`.
+- **CLI** — `datawatch discussion-sub subscribe/unsubscribe/list`.
+- **Comm channel** — `discussion-sub subscribe/unsubscribe/list` router commands.
+- **5 new tests** — subscribe, idempotent subscribe, unsubscribe, persistence, list.
+
+### Fixed
+
+- **MCP `discussion_subscriptions` filtered path** — `make([]interface{}, 0)` ensures filtered empty result marshals as `[]` not `null`.
+
+---
+
+## v8.10.8 — feat: durable role-based work queue (BL357) (2026-06-11)
+
+### Added
+
+- **`QueueStore`** — file-backed JSON work queue. `Push` (creates pending item), `Claim` (atomic mutex-protected, oldest-first, configurable lease), `Complete`, `Fail`, `ExpireLeases` (returns expired claimed items to pending), `List`, `Delete`. Background goroutine expires leases every 30 s.
+- **REST** — `GET /api/queue?role=&state=`, `POST /api/queue/push|claim|complete|fail`, `DELETE /api/queue/{id}`.
+- **MCP tools** — `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list`. Server-side guard on empty `claimed_by`.
+- **CLI** — `datawatch queue push/claim/complete/fail/list`.
+- **Comm channel** — `queue push/claim/complete/fail/list` router commands.
+- **PWA** — Work Queue panel in Settings → Compute with item list, push form, and delete.
+- **8 new tests** — push, claim, claim-none-available, complete, fail, expire lease, list filter, persistence.
+
+---
+
+## v8.10.7 — feat: session exit hooks (BL356) (2026-06-11)
+
+### Added
+
+- **`ExitHookStore`** — CRUD store for `ExitHookEntry` (id, name, action, notify_session, notify_message, cooldown_seconds, enabled, last_fired_at). Config seeded from `session.exit_hooks[]` YAML on startup.
+- **Actions** — `restart` (kill + relaunch session with same task/name) or `notify` (send message to another named session). Cooldown prevents thrash.
+- **Trigger conditions** — `claude_alive` flip to false (zombie), or session entering `failed`/`killed` state.
+- **REST `/api/exit-hooks`** — `GET` (list), `POST` (add), `PUT`/`PATCH /{id}` (update), `DELETE /{id}`, `POST /{id}/enable`, `POST /{id}/disable`.
+- **MCP tools** — `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable`.
+- **CLI** — `datawatch exit-hook list/add/delete/enable/disable`.
+- **Comm channel** — `exit_hook list/add/delete/enable/disable` router commands.
+- **PWA** — Exit Hooks section in Settings with add/list/delete UI.
+- **7 new tests** — add and list, delete, mark-fired cooldown, set-enabled, get-by-session-name, default cooldown, store file.
+
+### Fixed
+
+- Config seeding uses `List()` (all hooks) rather than `GetBySessionName` (enabled only) to avoid re-seeding disabled hooks on daemon restart.
+- `PATCH` method handled alongside `PUT` on the update endpoint.
+
+---
+
+## v8.10.6 — feat: claude_alive session zombie detection (BL355) (2026-06-11)
+
+### Added
+
+- **`ClaudeAlive *bool`** on `Session` struct (`json:"claude_alive,omitempty"`). Nil for inactive sessions; true/false for active sessions after first probe.
+- **tmux pane probe** — `tmux display-message #{pane_current_command}` checks whether the foreground process is a shell (bash/sh/zsh/fish/dash/ksh/tcsh → alive=false) or a non-shell (alive=true). Virtual sessions (empty TmuxSession) always return true.
+- **Reconciler integration** — sets/clears `ClaudeAlive` each cycle; fires `onClaudeAliveChange` callback on alive→dead flip; clears field when session terminates.
+- **`SetClaudeAliveChangeHandler`** — wired in `main.go` to create a `LevelWarn` alert and fire a `session_zombie` push event.
+- **CLI** — `session list` shows ALIVE column.
+- **MCP** — `list_sessions` shows `Alive: yes/no`; `format=json` includes `claude_alive` field.
+- **Comm** — `session list` shows `[ZOMBIE]` tag for dead sessions.
+- **PWA** — amber `⚠ zombie` badge on session card when `claude_alive === false`.
+- **`probeClaudeAliveFunc` injection point** for tests.
+- **7 new tests** — probe-no-tmux, field-persists, false-field-persists, nil-for-inactive, reconcile-zombie-detection, reconcile-clears-alive-on-termination.
+
+### Fixed
+
+- Stale `ClaudeAlive` value on termination: cleared to `nil` before saving `StateComplete`.
+
+---
+
+## v8.10.5 — feat: name-addressed session operations (BL354) (2026-06-11)
+
+### Added
+
+- **`resolveSession` tie-breaking** — when multiple active sessions share a name (e.g. during handoff), the oldest (earliest `CreatedAt`) is returned. Previously returned an ambiguity error.
+- **`session_name` param on 9 MCP tools** — `send_input`, `kill_session`, `session_output`, `session_children`, `session_timeline`, `session_summarize`, `rename_session`, `send_saved_command`, `telemetry_get`. `session_id` is now optional when `session_name` is provided.
+- **`resolveSessionAny` REST helper** — tries `GetSession(idOrPath)` then `FindSessionByName(nameParam)`; used by `handleSessionInput`, `handleKillSession`, `handleRenameSession`, `handleSessionTimeline`.
+- **`FindSessionByName` ordering** — active sessions preferred over done; oldest among equals (BL354 handoff tiebreak).
+
+---
+
+## v8.10.4 — feat: recurring named schedules (BL353) (2026-06-11)
+
+### Added
+
+- **Zero-dependency cron parser** (`internal/session/cron.go`) — `CronNext(expr, from)` and `ValidateCron(expr)`. Standard 5-field format; supports `*`, `*/n`, `n`, `n-m`, `n,m,...`.
+- **`ScheduledCommand` new fields** — `SessionName` (resolve target by session name at fire time), `CronExpr` (5-field cron for recurrence), `ScheduleName` (human label).
+- **`ScheduleStore` new methods** — `AddFull(AddOptions)`, `GetByScheduleName`, `CancelByScheduleName`.
+- **`MarkDone` recurrence** — if `CronExpr` is set, reschedules item for next cron tick instead of removing it.
+- **REST** — `POST /api/schedule` and `POST /api/schedules` accept `session_name`, `cron_expr`, `schedule_name`. `DELETE /api/schedules?name=<n>` cancels by schedule name.
+- **MCP** — `schedule_add` gains `session_name`, `cron_expr`, `schedule_name` params; `session_id` optional. `schedule_cancel` gains `name` param for cancel-by-name.
+- **CLI** — `--session-name`, `--cron`, `--schedule-name` flags on `schedule add` and `session schedule add`.
+- **Comm** — `schedule cancel name=<n>` (sessionless), `schedule session_name=<n> command=<cmd> cron=<expr>`.
+- **PWA** — schedule form gains cron expression, session name, and schedule name fields.
+
+---
+
+## v8.10.3 — feat: alert navigation, push lifecycle events, session tree view, session self-ID, orphan listing, recursive cascade kill, federation lineage (BL344/346/348-352) (2026-06-11)
+
+### Added
+
+- **Alert click → session detail** (BL344) — "Go to session →" button on alert cards when `session_id` present.
+- **`session_state_changed` push events** (BL346) — `PublishToTopic` on every non-oscillation state transition; payload includes `old_state`, `new_state`, `task`, `short_summary`.
+- **PWA session tree view** (BL348) — "Tree" toggle in Sessions toolbar groups by `parent_id`; orphaned sessions flagged with ⚠; persisted in `localStorage`.
+- **`get_my_session_id` MCP tool + REST + CLI + comm** (BL349) — `GET /api/sessions/self`; optional `hint` param.
+- **Orphan lineage listing** (BL350) — `GET /api/sessions/orphaned`, `?orphaned=1`; MCP `list_orphaned_sessions` + `orphaned=true` on `list_sessions`; CLI `session orphaned` + `--orphaned`.
+- **Kill-children recursive cascade** (BL351) — `kill_children_recursive` field; `Kill()` descends full subtree. REST, MCP, CLI, comm, PWA.
+- **Federation lineage parity** (BL352) — `GET /api/sessions/aggregated?parent_id=<id>`; CLI `session children <id> --all-servers`.
+
+---
+
 ## v8.10.2 — docs: definitions audit — backlog BL344/346/348-352 filed, 8 missing features documented (2026-06-10)
 
 ### Added

@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.10.3-success)](https://github.com/dmz006/datawatch/releases/tag/v8.10.3)
+[![Release](https://img.shields.io/badge/release-v8.10.12-success)](https://github.com/dmz006/datawatch/releases/tag/v8.10.12)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,26 +89,28 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.10.0](CHANGELOG.md) (2026-06-10)** — Session lineage: parent-child tracking, cascade kill, `reply_to_parent`, tree view (BL347).
+**[v8.10.12](CHANGELOG.md) (2026-06-11)** — Fleet coordination suite: recurring schedules, session name resolution, zombie detection, exit hooks, work queue, discussion subscribe, session restart, result store, and structured session filters.
 
-- **Session lineage** (v8.10.0) — every session records its spawning parent via `parent_id`. Agents pass `caller_session_id` on `start_session` to link themselves to the parent. The `list` / `sessions` channel command shows `↳ child of [<id>]` for child sessions.
-- **Cascade kill** (v8.10.0, opt-in) — set `kill_children=true` when creating a parent session; killing the parent then recursively kills all running/waiting children. Default is `false` — sub-agents are independent by default.
-- **`session_children` MCP tool** (v8.10.0) — lists child sessions of a given parent by ID or name.
-- **`reply_to_parent` MCP tool** (v8.10.0) — agent sends a message to its spawning parent's input prompt, enabling parent-child dialog without out-of-band coordination.
-- **`GET /api/sessions?tree=1`** (v8.10.0) — session forest as a nested tree; orphaned children shown with actual state.
-- **Channel `new:` parity** (v8.10.0) — `new: parent=<id> kill_children=true: task` now works via all channels.
-- **`datawatch compute migrate` CLI command** (v8.9.25) — headless installs can now complete LLM setup without the web UI. `compute node add` also now rejects deprecated kinds at the CLI boundary with a clear error pointing to `compute migrate`.
-- **Federation peer health alerts** (v8.9.25) — background probe fires a system alert when a federated peer goes unreachable, with a Tailscale MagicDNS tip to prevent DHCP churn. Recovery alert fires when the peer comes back.
-- **MCP session name resolution** (v8.9.24) — `send_input`, `kill_session`, `rename_session`, `session_output`, `session_timeline`, `send_saved_command`, and `schedule_add` now accept human-readable session names (not just hex IDs). Tiebreak: active sessions preferred; multiple-active returns an error with the ID list. Enables autonomous session self-handoff without ID bookkeeping.
-- **`start_session` permission_mode** (v8.9.24) — `start_session` MCP tool now accepts `permission_mode` (`default` | `plan` | `acceptEdits` | `auto` | `bypassPermissions` | `dontAsk`). Allows agents to launch subagents at any permission level without operator intervention.
-- **imap-mcp email command channel** (v8.9.23) — new `imap_mcp` messaging backend bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance. Subscribes to imap-mcp's SSE event stream and acts only on `inbound.command` events that already passed imap-mcp's composable trust gates (allowlist, DKIM/DMARC, HMAC, replay-nonce). Sends replies via imap-mcp's new REST send endpoint. Enable with `imap_mcp.enabled: true` and `url: http://localhost:8765` in config.
-- **Container builder pinned to Go 1.25.11** (v8.9.22) — agent-base Dockerfile was using floating `golang:1.25` tag (resolving to 1.26.3) plus `GOTOOLCHAIN=auto` which allowed toolchain auto-upgrade, resulting in binaries compiled with an unfixed stdlib. Pinned to `golang:1.25.11-bookworm` and set `GOTOOLCHAIN=local` — fixes `CVE-2026-42504` (HIGH, MIME header DoS) in all container images. Agent container images are now published.
-- **Self-update reliability** (v8.9.21) — `datawatch update` and the auto-updater now download the goreleaser archive first (not a bare binary that never existed), extract both `datawatch` and `datawatch-channel` from the same archive, and update both on every `datawatch update` run. The channel binary (`datawatch-channel`) was never updated on self-update before this fix.
-- **Line-printing renderer lock** (v8.9.20) — datawatch writes `"tui":"default"` into its scoped `settings.json` at startup, pinning claude-code to the line-printing renderer so tmux scrollback and `pipe-pane` capture keep working against Anthropic's server-side `tengu_pewter_brook` alt-screen flag.
-- **Queued anti-clobber typing detection** (v8.9.17–v8.9.19) — agent messages targeting an active session wait for a 30-second idle gap in TTY activity before injecting (max hold: 90 s). Multiple messages that arrive while the operator is typing queue up and drain in arrival order once idle is detected — the first message waits for idle, subsequent queued messages flush immediately after. Fixed regression where session-to-session MCP sends were also held (TTY mtime updated by AI output, not operator keystrokes).
-- **MCP bridge stability** (v8.9.15–v8.9.16) — fixed duplicate bridge spawning on port 7433 that caused "MCP server failed" on second claude-code session in same project. Stale `.mcp.json` entries from older daemon versions are now actively removed on session start.
-- **JS bridge memory parity** (v8.9.13–v8.9.14) — `channel.js` now exposes the same 5 memory tools as the Go bridge (`memory_remember`, `memory_recall`, `memory_list`, `memory_forget`, `memory_stats`) plus a `callParent` helper with response-body return.
-- **Go 1.25.11** (v8.9.15) — fixes two stdlib CVEs (`net/textproto` GO-2026-5039, `crypto/x509` GO-2026-5037).
+- **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
+- **Name-addressed session operations** (v8.10.5) — `send_input`, `kill_session`, `session_output`, `rename_session`, and 5 more MCP tools now accept `session_name` instead of requiring a hex session ID. Oldest-active tiebreak when multiple sessions share a name.
+- **Session zombie detection** (v8.10.6) — `claude_alive` field on sessions; periodic tmux pane probe detects when Claude exits and the shell remains. Fires a warning alert and `session_zombie` push event. PWA shows amber `⚠ zombie` badge.
+- **Session exit hooks** (v8.10.7) — configure `session.exit_hooks[]` in YAML (or via API/MCP/CLI) to auto-restart or notify another session when a session goes zombie or enters `failed`/`killed` state. Cooldown prevents thrash.
+- **Durable role-based work queue** (v8.10.8) — `queue_push/claim/complete/fail/list` MCP tools + REST + CLI + comm. Atomic claim with configurable lease; background lease expiry returns unclaimed items to pending.
+- **Discussion push / subscribe** (v8.10.9) — `discussion_subscribe session_name=<n> discussion_id=<id>` delivers new WAL entries to the named session as live input. `memory_discussion_wal` gains `after_seq`/`block`/`timeout` long-poll params.
+- **Restart session from any state** (v8.10.10) — `restart_session` now works when session is running, waiting, failed, or killed. Kills the live process, relaunches with the same (or new) task, preserves session ID and name.
+- **Structured agent result store** (v8.10.11) — `result_put/get/list/delete` MCP tools + REST + CLI + comm. Named JSON payloads with optional TTL; file-backed, survives daemon restart.
+- **Structured session filters** (v8.10.12) — `list_sessions` gains `name` (glob), `state`, `backend`, `alive` filter params on REST, MCP, and CLI. `format=json` returns a structured array with `claude_alive` included.
+
+### v8.10.0 highlights
+
+- **Session lineage** — every session records its spawning parent via `parent_id`. Agents pass `caller_session_id` on `start_session` to link themselves to the parent.
+- **Cascade kill** (opt-in) — set `kill_children=true` when creating a parent session; killing the parent recursively kills all running/waiting children.
+- **`session_children` / `reply_to_parent` MCP tools** — list child sessions; send a message to the spawning parent's input prompt.
+- **`GET /api/sessions?tree=1`** — session forest as a nested tree.
+- **`datawatch compute migrate` CLI** (v8.9.25) — headless LLM setup without the web UI.
+- **Federation peer health alerts** (v8.9.25) — alerts on peer unreachable / recovered.
+- **imap-mcp email command channel** (v8.9.23) — bridge to imap-mcp SSE + REST send; acts only on `inbound.command` events.
+- **Queued anti-clobber typing detection** (v8.9.17–v8.9.19) — 30 s TTY idle wait before injecting agent messages; multi-message queue drains in order.
 
 ### v8.6 highlights
 
