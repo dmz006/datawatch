@@ -201,6 +201,10 @@ type Session struct {
 
 	// BL331 — federation peer that owns or originated this session via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
+
+	// ClaudeAlive (BL355) — true when the AI process is alive in the tmux pane.
+	// nil means not yet probed. False for a running/waiting-input session means zombie.
+	ClaudeAlive *bool `json:"claude_alive,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name

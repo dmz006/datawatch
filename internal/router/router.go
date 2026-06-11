@@ -37,8 +37,9 @@ type Router struct {
 	manager     *session.Manager
 	tailLines   int
 	wizardMgr   *wizard.Manager
-	schedStore  *session.ScheduleStore
-	alertStore  *alerts.Store
+	schedStore    *session.ScheduleStore
+	exitHookStore *session.ExitHookStore // BL356
+	alertStore    *alerts.Store
 	cmdLib      *session.CmdLibrary
 	// F10 sprint 2: read-only profile access over chat channels.
 	projectStore *profile.ProjectStore
@@ -99,6 +100,9 @@ func NewRouter(hostname, groupID string, backend messaging.Backend, manager *ses
 
 // SetScheduleStore wires a schedule store into the router for the schedule command.
 func (r *Router) SetScheduleStore(s *session.ScheduleStore) { r.schedStore = s }
+
+// SetExitHookStore wires an exit hook store into the router for exit_hook commands (BL356).
+func (r *Router) SetExitHookStore(s *session.ExitHookStore) { r.exitHookStore = s }
 
 // SetAlertStore wires an alert store into the router for the alerts command and SendAlert.
 func (r *Router) SetAlertStore(s *alerts.Store) { r.alertStore = s }
@@ -1067,6 +1071,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleServerCmd(cmd)
 	case CmdFederation: // BL316 S2
 		r.handleFederationCmd(cmd)
+	case CmdExitHook: // BL356
+		r.handleExitHookCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
@@ -1536,6 +1542,10 @@ func (r *Router) handleList(filter string) {
 				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 			if s.State == session.StateWaitingInput {
 				sb.WriteString(" ⚠ INPUT")
+			}
+			// BL355: zombie indicator — Claude process dead in active session
+			if s.ClaudeAlive != nil && !*s.ClaudeAlive {
+				sb.WriteString(" [ZOMBIE]")
 			}
 			if s.ParentID != "" {
 				// Show short parent ID (first segment before "-")

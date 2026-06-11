@@ -293,6 +293,15 @@ const (
 	//   "federation groups"                             → list groups
 	CmdFederation CommandType = "federation"
 
+	// BL356 — session crash/exit hooks over chat.
+	//   "exit_hook list"                              → list all hooks
+	//   "exit_hook add name=<n> action=restart [cooldown=300]"
+	//   "exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]"
+	//   "exit_hook delete id=<id>"                   → delete a hook
+	//   "exit_hook enable id=<id>"                   → enable a hook
+	//   "exit_hook disable id=<id>"                  → disable a hook
+	CmdExitHook CommandType = "exit_hook"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -384,6 +393,15 @@ type Command struct {
 	SessionName  string // for schedule: resolve session by name at fire time
 	CronExpr     string // for schedule: 5-field cron expression
 	ScheduleName string // for schedule: human-readable label for the entry
+
+	// BL356 — CmdExitHook fields.
+	ExitHookVerb          string // "list" | "add" | "delete" | "enable" | "disable"
+	ExitHookID            string // for delete/enable/disable
+	ExitHookName          string // for add: session name to watch
+	ExitHookAction        string // for add: "restart" or "notify"
+	ExitHookNotifySession string // for add/notify: target session name
+	ExitHookMessage       string // for add/notify: message text
+	ExitHookCooldown      int    // for add: cooldown seconds
 }
 
 // SessionVerb values.
@@ -1176,9 +1194,58 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdFederation, Text: rest}
 
+	case lower == "exit_hook" || lower == "exit_hook list" || strings.HasPrefix(lower, "exit_hook "):
+		return parseExitHookCommand(text)
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
+}
+
+// parseExitHookCommand parses an exit_hook command.
+// Formats:
+//   exit_hook list
+//   exit_hook add name=<n> action=restart [cooldown=<sec>]
+//   exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
+//   exit_hook delete id=<id>
+//   exit_hook enable id=<id>
+//   exit_hook disable id=<id>
+func parseExitHookCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdExitHook, ExitHookVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	cmd := Command{Type: CmdExitHook, ExitHookVerb: verb}
+
+	// Parse key=value pairs from remaining args
+	params := make(map[string]string)
+	for _, p := range parts[2:] {
+		if idx := strings.Index(p, "="); idx > 0 {
+			params[p[:idx]] = p[idx+1:]
+		}
+	}
+	// For "message=" which may be multi-word, scan the original text
+	if idx := strings.Index(text, "message="); idx >= 0 {
+		val := text[idx+8:]
+		for _, key := range []string{" name=", " action=", " notify_session=", " cooldown=", " id="} {
+			if ki := strings.Index(val, key); ki >= 0 {
+				val = val[:ki]
+			}
+		}
+		params["message"] = strings.TrimSpace(val)
+	}
+
+	cmd.ExitHookID = params["id"]
+	cmd.ExitHookName = params["name"]
+	cmd.ExitHookAction = params["action"]
+	cmd.ExitHookNotifySession = params["notify_session"]
+	cmd.ExitHookMessage = params["message"]
+	if cs, ok := params["cooldown"]; ok {
+		n, _ := strconv.Atoi(cs)
+		cmd.ExitHookCooldown = n
+	}
+	return cmd
 }
 
 // HelpText returns the help message sent back to the messaging backend.
@@ -1260,5 +1327,13 @@ detection                        eBPF / system health snapshot
 analytics [<range>]              session analytics (range: 7d|14d|30d|90d)
 splash                           branding info (tagline, version, logo)
 secrets [list|get <name>|set <name> <value>|delete <name>]
-tailscale [status|nodes]         Tailscale k8s sidecar mesh status`, hostname)
+tailscale [status|nodes]         Tailscale k8s sidecar mesh status
+
+— BL356 exit hooks —
+exit_hook list                   list all crash/exit hooks
+exit_hook add name=<n> action=restart [cooldown=<sec>]
+exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
+exit_hook delete id=<id>         delete a hook
+exit_hook enable id=<id>         enable a hook
+exit_hook disable id=<id>        disable a hook`, hostname)
 }

@@ -474,6 +474,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL241 — Matrix backend status + test.
 	apiMux.HandleFunc("/api/matrix/status", api.handleMatrixStatus)
 	apiMux.HandleFunc("/api/matrix/test", api.handleMatrixTest)
+
+	// BL356 — session crash/exit hooks (restart, notify, cooldown).
+	apiMux.HandleFunc("/api/exit-hooks", api.handleExitHooks)
+	apiMux.HandleFunc("/api/exit-hooks/", api.handleExitHooks)
 	// Serve TLS certificate for easy install on mobile devices.
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.
@@ -610,6 +614,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 // SetScheduleStore wires a schedule store into the server for /api/schedule.
 func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 	s.api.SetScheduleStore(store)
+}
+
+// SetExitHookStore wires an exit hook store into the server for /api/exit-hooks (BL356).
+func (s *HTTPServer) SetExitHookStore(store *session.ExitHookStore) {
+	s.api.SetExitHookStore(store)
 }
 
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers

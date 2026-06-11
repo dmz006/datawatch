@@ -2485,6 +2485,7 @@ function sessionCard(sess, idx, total) {
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
+            ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
               ${sess.last_response ? `<button onclick="event.stopPropagation();showResponseViewer('${escHtml(fullId)}')" title="View last response" style="border:1px solid var(--border);background:var(--bg2);color:var(--text);border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;line-height:1;">&#128196; Response</button>` : ''}
               <span class="time">${escHtml(ago)}</span>
@@ -6247,9 +6248,10 @@ const _cardOrder = {
     // Detection Filters belongs between Saved Commands and Output
     // Filters (chronologically: cmds you send → detection on what
     // comes back → output filtering of the rendered result).
-    'cmds':      200,
-    'detection': 205,
-    'filters':   210,
+    'cmds':       200,
+    'detection':  205,
+    'filters':    210,
+    'exit_hooks': 215,
   },
   automata: {
     // Settings (configuration knobs)
@@ -6702,6 +6704,35 @@ function renderSettingsView() {
                 </select>
                 <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
                 <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <!-- BL356 — Session crash/exit hooks. -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
+          ${settingsSectionHeader('exit_hooks', 'Exit Hooks (BL356)')}
+          <div id="settings-sec-exit_hooks" style="${secContent('exit_hooks')}">
+            <div style="font-size:11px;color:var(--text2);line-height:1.4;padding:4px 16px 8px;">
+              Exit hooks fire when a named session goes zombie (Claude process exits) or enters failed/killed state.
+              Action <b>restart</b> relaunches the session with the same task.
+              Action <b>notify</b> sends a message to another named session.
+            </div>
+            <div id="exitHooksList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">Loading…</div></div>
+            <details class="create-form-details" style="padding:0 16px;">
+              <summary class="create-form-summary">+ Add Exit Hook</summary>
+              <div class="create-form">
+                <input id="newExitHookName" class="form-input" type="text" placeholder="Session name to watch (exact)" autocomplete="off" />
+                <select id="newExitHookAction" class="form-select" onchange="exitHookActionChange()">
+                  <option value="restart">restart — relaunch with same task</option>
+                  <option value="notify">notify — send message to another session</option>
+                </select>
+                <div id="exitHookNotifyFields" style="display:none;">
+                  <input id="newExitHookNotifySession" class="form-input" type="text" placeholder="Target session name (for notify)" autocomplete="off" />
+                  <input id="newExitHookNotifyMessage" class="form-input" type="text" placeholder="Message (optional)" autocomplete="off" />
+                </div>
+                <input id="newExitHookCooldown" class="form-input" type="number" placeholder="Cooldown seconds (default 300)" value="300" autocomplete="off" />
+                <button class="btn-primary" style="margin-top:6px;" onclick="createExitHook()">Add Exit Hook</button>
               </div>
             </details>
           </div>
@@ -7212,6 +7243,7 @@ function renderSettingsView() {
   }).catch(() => {});
   loadSavedCommands();
   loadAlertRules();
+  loadExitHooks(); // BL356
   // BL247-followup v6.7.3 — Monitor-card loaders (loadStatsPanel, listMemories,
   // loadSchedulesList, loadCooldownStatus, loadAnalyticsPanel, loadAuditPanel,
   // loadKgPanel, renderObserverPeersCard) moved to renderObserverView() since
@@ -18625,6 +18657,99 @@ function createAlertRule() {
       }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── BL356 Exit Hooks ─────────────────────────────────────────────────────────
+function loadExitHooks() {
+  const el = document.getElementById('exitHooksList');
+  if (!el) return;
+  fetch('/api/exit-hooks', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : [])
+    .then(hooks => {
+      if (!hooks || hooks.length === 0) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:0 16px;">No exit hooks configured.</div>';
+        return;
+      }
+      el.innerHTML = '<div>' + hooks.map(h => {
+        const hid = 'eh-' + h.id;
+        const lastFired = h.last_fired_at && h.last_fired_at !== '0001-01-01T00:00:00Z'
+          ? new Date(h.last_fired_at).toLocaleString() : 'never';
+        const detail = h.action === 'notify' && h.notify_session ? ` → ${escHtml(h.notify_session)}` : '';
+        return `<div class="settings-list-row">
+          <div class="settings-list-view" id="${hid}-view">
+            <div class="settings-list-info">
+              <span class="state state-${h.enabled ? 'running' : 'failed'}" style="font-size:10px;margin-right:6px;">${h.enabled ? 'on' : 'off'}</span>
+              <strong>${escHtml(h.name)}</strong>
+              <span class="settings-list-detail">${escHtml(h.action)}${detail}  cooldown:${h.cooldown_seconds}s</span>
+              <span class="settings-list-tag">last: ${escHtml(lastFired)}</span>
+            </div>
+            <div class="settings-list-actions">
+              <button class="btn-icon" title="${h.enabled ? 'Disable' : 'Enable'}" onclick="toggleExitHook('${escHtml(h.id)}',${!h.enabled})">${h.enabled ? '⏸' : '▶'}</button>
+              <button class="btn-icon btn-icon-del" title="Delete" onclick="deleteExitHook('${escHtml(h.id)}')">✕</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+    })
+    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;padding:0 16px;">Failed to load exit hooks.</div>'; });
+}
+
+function exitHookActionChange() {
+  const action = (document.getElementById('newExitHookAction') || {}).value || 'restart';
+  const notifyFields = document.getElementById('exitHookNotifyFields');
+  if (notifyFields) notifyFields.style.display = action === 'notify' ? '' : 'none';
+}
+
+function createExitHook() {
+  const name = (document.getElementById('newExitHookName') || {}).value || '';
+  const action = (document.getElementById('newExitHookAction') || {}).value || 'restart';
+  const notifySession = (document.getElementById('newExitHookNotifySession') || {}).value || '';
+  const notifyMessage = (document.getElementById('newExitHookNotifyMessage') || {}).value || '';
+  const cooldown = parseInt((document.getElementById('newExitHookCooldown') || {}).value || '300', 10);
+  if (!name) { showToast('Session name required', 'error'); return; }
+  const body = { name, action, cooldown_seconds: cooldown };
+  if (action === 'notify' && notifySession) {
+    body.notify_session = notifySession;
+    if (notifyMessage) body.notify_message = notifyMessage;
+  }
+  fetch('/api/exit-hooks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(body),
+  })
+    .then(r => {
+      if (r.ok) {
+        if (document.getElementById('newExitHookName')) document.getElementById('newExitHookName').value = '';
+        if (document.getElementById('newExitHookNotifySession')) document.getElementById('newExitHookNotifySession').value = '';
+        if (document.getElementById('newExitHookNotifyMessage')) document.getElementById('newExitHookNotifyMessage').value = '';
+        if (document.getElementById('newExitHookCooldown')) document.getElementById('newExitHookCooldown').value = '300';
+        loadExitHooks();
+        showToast('Exit hook added', 'success', 2000);
+      } else {
+        r.text().then(t => showToast(t || 'Save failed', 'error'));
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
+function toggleExitHook(id, enable) {
+  const updates = { enabled: enable };
+  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(updates),
+  })
+    .then(r => r.ok ? loadExitHooks() : showToast('Toggle failed', 'error'))
+    .catch(() => showToast('Toggle failed', 'error'));
+}
+
+function deleteExitHook(id) {
+  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: tokenHeader(),
+  })
+    .then(r => r.ok ? loadExitHooks() : showToast('Delete failed', 'error'))
+    .catch(() => showToast('Delete failed', 'error'));
 }
 
 // ── Visual viewport height tracking (mobile keyboard) ────────────────────────

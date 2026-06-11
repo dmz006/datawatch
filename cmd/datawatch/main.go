@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.5"
+var Version = "8.10.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -329,6 +329,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newFilesCmd(),      // BL333 — federated file service
 		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
 		newMatrixCmd(),     // BL241 — Matrix backend status + test
+		newExitHookCmd(),   // BL356 — session crash/exit hooks
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1494,6 +1495,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetScheduleStore(schedStore)
 	mgr.StartScheduleTimer(ctx)
 
+	// BL356 — exit hook store + config seeding.
+	exitHookStore, err := session.NewExitHookStore(exitHooksStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open exit hook store: %w", err)
+	}
+	// Seed from YAML config (only add hooks not already present by name+action).
+	for _, ce := range cfg.Session.ExitHooks {
+		if ce.Name == "" || ce.Action == "" {
+			continue
+		}
+		existing := exitHookStore.GetBySessionName(ce.Name)
+		alreadySeeded := false
+		for _, e := range existing {
+			if string(e.Action) == ce.Action {
+				alreadySeeded = true
+				break
+			}
+		}
+		if !alreadySeeded {
+			cd := ce.CooldownSeconds
+			if cd <= 0 {
+				cd = 300
+			}
+			_, _ = exitHookStore.Add(ce.Name, session.ExitHookAction(ce.Action),
+				ce.NotifySession, ce.NotifyMessage, cd)
+		}
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -2277,6 +2306,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
 		r.SetPipelineExecutor(pipeAdapter)
 		r.SetScheduleStore(schedStore)
+		r.SetExitHookStore(exitHookStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
 		r.SetProjectStore(projectStore)
@@ -2645,6 +2675,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.Hub().SetVersion(Version)
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
+		httpServer.SetExitHookStore(exitHookStore)
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -4801,6 +4832,7 @@ Return STRICT JSON:
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    alertStore,
 		SchedStore:    schedStore,
+		ExitHookStore: exitHookStore,
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -5200,6 +5232,22 @@ Return STRICT JSON:
 				},
 			})
 		}
+		// BL356: fire exit hooks on unexpected session failure/kill
+		if (sess.State == session.StateFailed || sess.State == session.StateKilled) && sess.Name != "" {
+			hooks := exitHookStore.GetBySessionName(sess.Name)
+			for _, hook := range hooks {
+				if exitHookStore.IsCoolingDown(hook) {
+					continue
+				}
+				_ = exitHookStore.MarkFired(hook.ID)
+				switch hook.Action {
+				case session.ExitHookRestart:
+					go runExitHookRestart(mgr, sess, hook)
+				case session.ExitHookNotify:
+					go runExitHookNotify(mgr, sess, hook)
+				}
+			}
+		}
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
 		// Build alert body: prompt (what user asked) + response (what LLM said)
@@ -5288,6 +5336,42 @@ Return STRICT JSON:
 			sess.FullID,
 		)
 		fireInputSchedules(schedStore, mgr, sess)
+	})
+
+	// BL355: zombie detection — alert when Claude process dies in active session.
+	mgr.SetClaudeAliveChangeHandler(func(sess *session.Session) {
+		alertStore.Add(alertspkg.LevelWarn,
+			fmt.Sprintf("%s: Claude process exited", sessionLabel(sess)),
+			fmt.Sprintf("Session %q appears active but the Claude process is no longer running in the tmux pane.", sess.Name),
+			sess.FullID,
+		)
+		server.PublishToTopic("alerts", server.PushEvent{
+			Title:   sessionLabel(sess) + " · zombie",
+			Message: fmt.Sprintf("Session %q: Claude process exited but session is still active.", sess.Name),
+			Tags:    []string{"session_zombie", sess.BackendFamily},
+			Click:   "/sessions/" + sess.FullID,
+			Extras: map[string]any{
+				"type":         "session_zombie",
+				"session_id":   sess.FullID,
+				"session_name": sess.Name,
+			},
+		})
+		// BL356: fire exit hooks for zombie sessions
+		if sess.Name != "" {
+			hooks := exitHookStore.GetBySessionName(sess.Name)
+			for _, hook := range hooks {
+				if exitHookStore.IsCoolingDown(hook) {
+					continue
+				}
+				_ = exitHookStore.MarkFired(hook.ID)
+				switch hook.Action {
+				case session.ExitHookRestart:
+					go runExitHookRestart(mgr, sess, hook)
+				case session.ExitHookNotify:
+					go runExitHookNotify(mgr, sess, hook)
+				}
+			}
+		}
 	})
 
 	// Reconnect backend state for sessions that survived daemon restart (B3)
@@ -7813,7 +7897,7 @@ func runSessionList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
+	_, _ = fmt.Fprintln(w, "ID\tSTATE\tALIVE\tBACKEND\tUPDATED\tNAME/TASK")
 	for _, s := range sessions {
 		display := s.Task
 		if s.Name != "" {
@@ -7827,8 +7911,18 @@ func runSessionList(cfg *config.Config) error {
 			}
 			suffix = " ↳ child of [" + parentShort + "]"
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n",
-			s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04:05"),
+		// BL355: show claude_alive for active sessions
+		aliveStr := "-"
+		isActiveState := s.State == session.StateRunning || s.State == session.StateWaitingInput || s.State == session.StateRateLimited
+		if isActiveState && s.ClaudeAlive != nil {
+			if *s.ClaudeAlive {
+				aliveStr = "yes"
+			} else {
+				aliveStr = "no"
+			}
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s%s\n",
+			s.ID, s.State, aliveStr, s.BackendFamily, s.UpdatedAt.Format("15:04:05"),
 			truncate(display, 60), suffix)
 	}
 	return w.Flush()
@@ -8461,6 +8555,12 @@ func openLocalManager(cfg *config.Config) (*session.Manager, error) {
 
 func schedStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "schedule.json")
+}
+
+// ---- exit hook helper functions (BL356) -------------------------------------
+
+func exitHooksStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "exit_hooks.json")
 }
 
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
@@ -13087,4 +13187,206 @@ func inheritWhisperEndpoint(b transcribePkg.BackendConfig, cfg *config.Config) t
 		// the YAML or `datawatch config set whisper.api_key …`.
 	}
 	return b
+}
+
+// ---- BL356 exit hook CLI commands -------------------------------------------
+
+func newExitHookCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "exit-hook",
+		Short: "Manage session crash/exit hooks (BL356)",
+		Long:  "Exit hooks fire when a watched session crashes (zombie) or enters failed/killed state. Actions: restart (relaunch) or notify (message another session).",
+	}
+
+	// list
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all exit hooks",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runExitHookList(cfg)
+		},
+	})
+
+	// add
+	addCmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add an exit hook",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			name, _ := cmd.Flags().GetString("name")
+			action, _ := cmd.Flags().GetString("action")
+			notifySess, _ := cmd.Flags().GetString("notify-session")
+			notifyMsg, _ := cmd.Flags().GetString("notify-message")
+			cooldown, _ := cmd.Flags().GetInt("cooldown")
+			return runExitHookAdd(cfg, name, action, notifySess, notifyMsg, cooldown)
+		},
+	}
+	addCmd.Flags().String("name", "", "Session name to watch (exact match) [required]")
+	addCmd.Flags().String("action", "", "Action: restart or notify [required]")
+	addCmd.Flags().String("notify-session", "", "For action=notify: target session name")
+	addCmd.Flags().String("notify-message", "", "For action=notify: message text")
+	addCmd.Flags().Int("cooldown", 300, "Minimum seconds between firings")
+	cmd.AddCommand(addCmd)
+
+	// delete
+	cmd.AddCommand(&cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete an exit hook by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runExitHookDelete(cfg, args[0])
+		},
+	})
+
+	// enable
+	cmd.AddCommand(&cobra.Command{
+		Use:   "enable <id>",
+		Short: "Enable an exit hook",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runExitHookSetEnabled(cfg, args[0], true)
+		},
+	})
+
+	// disable
+	cmd.AddCommand(&cobra.Command{
+		Use:   "disable <id>",
+		Short: "Disable an exit hook without deleting it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runExitHookSetEnabled(cfg, args[0], false)
+		},
+	})
+
+	return cmd
+}
+
+func runExitHookList(cfg *config.Config) error {
+	store, err := session.NewExitHookStore(exitHooksStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open exit hook store: %w", err)
+	}
+	entries := store.List()
+	if len(entries) == 0 {
+		fmt.Println("No exit hooks configured.")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "ID\tNAME\tACTION\tENABLED\tCOOLDOWN\tNOTIFY_SESSION\tLAST_FIRED")
+	for _, e := range entries {
+		lastFired := ""
+		if !e.LastFiredAt.IsZero() {
+			lastFired = e.LastFiredAt.Format("2006-01-02 15:04")
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%ds\t%s\t%s\n",
+			e.ID, e.Name, string(e.Action), e.Enabled,
+			e.CooldownSeconds, e.NotifySession, lastFired)
+	}
+	return w.Flush()
+}
+
+func runExitHookAdd(cfg *config.Config, name, action, notifySession, notifyMessage string, cooldown int) error {
+	if name == "" || action == "" {
+		return fmt.Errorf("--name and --action are required")
+	}
+	if action != "restart" && action != "notify" {
+		return fmt.Errorf("--action must be 'restart' or 'notify'")
+	}
+	store, err := session.NewExitHookStore(exitHooksStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open exit hook store: %w", err)
+	}
+	e, err := store.Add(name, session.ExitHookAction(action), notifySession, notifyMessage, cooldown)
+	if err != nil {
+		return fmt.Errorf("exit hook add: %w", err)
+	}
+	fmt.Printf("Exit hook added: id=%s name=%s action=%s cooldown=%ds\n",
+		e.ID, e.Name, string(e.Action), e.CooldownSeconds)
+	return nil
+}
+
+func runExitHookDelete(cfg *config.Config, id string) error {
+	store, err := session.NewExitHookStore(exitHooksStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open exit hook store: %w", err)
+	}
+	if err := store.Delete(id); err != nil {
+		return fmt.Errorf("exit hook delete: %w", err)
+	}
+	fmt.Printf("Exit hook %s deleted.\n", id)
+	return nil
+}
+
+func runExitHookSetEnabled(cfg *config.Config, id string, enabled bool) error {
+	store, err := session.NewExitHookStore(exitHooksStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open exit hook store: %w", err)
+	}
+	if err := store.SetEnabled(id, enabled); err != nil {
+		return fmt.Errorf("exit hook set-enabled: %w", err)
+	}
+	state := "enabled"
+	if !enabled {
+		state = "disabled"
+	}
+	fmt.Printf("Exit hook %s %s.\n", id, state)
+	return nil
+}
+
+// ---- BL356 exit hook action helpers -----------------------------------------
+
+// runExitHookRestart kills the zombie/failed session and relaunches it with the same task.
+func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *session.ExitHookEntry) {
+	// Kill the zombie (ignore error — may already be dead).
+	_ = mgr.Kill(sess.FullID)
+	time.Sleep(500 * time.Millisecond)
+	ctx := context.Background()
+	opts := &session.StartOptions{
+		Name:    sess.Name,
+		Backend: sess.BackendFamily,
+	}
+	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
+	if err != nil {
+		fmt.Printf("[exit-hook] restart failed for session %q: %v\n", sess.Name, err)
+		return
+	}
+	fmt.Printf("[exit-hook] restarted session %q as %s\n", sess.Name, newSess.ID)
+}
+
+// runExitHookNotify sends a message to the notify target session.
+func runExitHookNotify(mgr *session.Manager, sess *session.Session, hook *session.ExitHookEntry) {
+	if hook.NotifySession == "" {
+		return
+	}
+	target, ok := mgr.FindSessionByName(hook.NotifySession)
+	if !ok {
+		fmt.Printf("[exit-hook] notify target %q not found\n", hook.NotifySession)
+		return
+	}
+	msg := hook.NotifyMessage
+	if msg == "" {
+		msg = fmt.Sprintf("[exit-hook] session %q exited unexpectedly", sess.Name)
+	}
+	if err := mgr.SendInput(target.FullID, msg, "exit-hook"); err != nil {
+		fmt.Printf("[exit-hook] notify failed: %v\n", err)
+	}
 }

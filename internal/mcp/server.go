@@ -62,8 +62,9 @@ type Server struct {
 	dataDir    string
 	srv        *server.MCPServer
 	alertStore *alerts.Store
-	schedStore *session.ScheduleStore
-	cmdLib     *session.CmdLibrary
+	schedStore    *session.ScheduleStore
+	exitHookStore *session.ExitHookStore // BL356
+	cmdLib        *session.CmdLibrary
 	restartFn  func()
 	version    string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
@@ -144,6 +145,7 @@ type KGMCP interface {
 type Options struct {
 	AlertStore    *alerts.Store
 	SchedStore    *session.ScheduleStore
+	ExitHookStore *session.ExitHookStore // BL356
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
 	Version       string
@@ -159,6 +161,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		dataDir:       dataDir,
 		alertStore:    opts.AlertStore,
 		schedStore:    opts.SchedStore,
+		exitHookStore: opts.ExitHookStore,
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
 		version:       opts.Version,
@@ -233,6 +236,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolScheduleAdd(), tracked(s.handleScheduleAdd))
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
+
+	// BL356 — session crash/exit hooks (restart, notify, cooldown).
+	mcpSrv.AddTool(s.toolExitHookList(), tracked(s.handleExitHookList))
+	mcpSrv.AddTool(s.toolExitHookAdd(), tracked(s.handleExitHookAdd))
+	mcpSrv.AddTool(s.toolExitHookDelete(), tracked(s.handleExitHookDelete))
+	mcpSrv.AddTool(s.toolExitHookEnable(), tracked(s.handleExitHookEnable))
+	mcpSrv.AddTool(s.toolExitHookDisable(), tracked(s.handleExitHookDisable))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))
@@ -960,6 +970,11 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolScheduleAdd, "schedule_add"},
 		{s.toolScheduleList, "schedule_list"},
 		{s.toolScheduleCancel, "schedule_cancel"},
+		{s.toolExitHookList, "exit_hook_list"},
+		{s.toolExitHookAdd, "exit_hook_add"},
+		{s.toolExitHookDelete, "exit_hook_delete"},
+		{s.toolExitHookEnable, "exit_hook_enable"},
+		{s.toolExitHookDisable, "exit_hook_disable"},
 		{s.toolMemoryImport, "memory_import"},
 		{s.toolMemoryLearnings, "memory_learnings"},
 		{s.toolMemoryRemember, "memory_remember"},
@@ -1441,6 +1456,14 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 		}
 		if sess.State == session.StateWaitingInput && sess.LastPrompt != "" {
 			fmt.Fprintf(&sb, "Prompt:  %s\n", sess.LastPrompt)
+		}
+		// BL355: show claude_alive for active sessions
+		if sess.ClaudeAlive != nil {
+			if *sess.ClaudeAlive {
+				fmt.Fprintf(&sb, "Alive:   yes\n")
+			} else {
+				fmt.Fprintf(&sb, "Alive:   no (zombie — Claude process not running)\n")
+			}
 		}
 		sb.WriteString("\n")
 	}

@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.5"
+var Version = "8.10.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -185,6 +185,7 @@ type Server struct {
 	cfg               *config.Config
 	cfgPath           string
 	schedStore        *session.ScheduleStore
+	exitHookStore     *session.ExitHookStore // BL356
 	cmdLib            *session.CmdLibrary
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
@@ -695,6 +696,9 @@ func (s *Server) warmVersionCache() {
 
 // SetScheduleStore wires a schedule store into the API server.
 func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore = store }
+
+// SetExitHookStore wires an exit hook store into the API server (BL356).
+func (s *Server) SetExitHookStore(store *session.ExitHookStore) { s.exitHookStore = store }
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
@@ -7372,6 +7376,89 @@ func (s *Server) handleMatrixStatus(w http.ResponseWriter, r *http.Request) {
 		status["self_id"] = s.matrixBackend.SelfID()
 	}
 	writeJSONOK(w, status)
+}
+
+// handleExitHooks handles GET/POST /api/exit-hooks and PUT/DELETE /api/exit-hooks/{id}.
+// BL356 — session crash/exit hooks (restart, notify, cooldown).
+func (s *Server) handleExitHooks(w http.ResponseWriter, r *http.Request) {
+	if s.exitHookStore == nil {
+		http.Error(w, `{"error":"exit hook store not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	// Determine if there is an ID in the path: /api/exit-hooks/{id}
+	path := r.URL.Path
+	const prefix = "/api/exit-hooks"
+	id := ""
+	if len(path) > len(prefix)+1 {
+		id = path[len(prefix)+1:]
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		entries := s.exitHookStore.List()
+		writeJSONOK(w, entries)
+
+	case http.MethodPost:
+		var req struct {
+			Name            string `json:"name"`
+			Action          string `json:"action"`
+			NotifySession   string `json:"notify_session,omitempty"`
+			NotifyMessage   string `json:"notify_message,omitempty"`
+			CooldownSeconds int    `json:"cooldown_seconds,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" || req.Action == "" {
+			http.Error(w, `{"error":"name and action are required"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Action != "restart" && req.Action != "notify" {
+			http.Error(w, `{"error":"action must be 'restart' or 'notify'"}`, http.StatusBadRequest)
+			return
+		}
+		e, err := s.exitHookStore.Add(req.Name, session.ExitHookAction(req.Action),
+			req.NotifySession, req.NotifyMessage, req.CooldownSeconds)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(e)
+
+	case http.MethodPut:
+		if id == "" {
+			http.Error(w, `{"error":"id required in path"}`, http.StatusBadRequest)
+			return
+		}
+		var updates map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+			http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+			return
+		}
+		if err := s.exitHookStore.Update(id, updates); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		e, _ := s.exitHookStore.Get(id)
+		writeJSONOK(w, e)
+
+	case http.MethodDelete:
+		if id == "" {
+			http.Error(w, `{"error":"id required in path"}`, http.StatusBadRequest)
+			return
+		}
+		if err := s.exitHookStore.Delete(id); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleMatrixTest handles POST /api/matrix/test.

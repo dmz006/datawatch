@@ -1138,6 +1138,15 @@ type SignalConfig struct {
 	DeviceName string `yaml:"device_name"`
 }
 
+// ExitHookConfigEntry is one exit hook from YAML config (BL356).
+type ExitHookConfigEntry struct {
+	Name            string `yaml:"name"`
+	Action          string `yaml:"action"`                      // "restart" or "notify"
+	NotifySession   string `yaml:"notify_session,omitempty"`
+	NotifyMessage   string `yaml:"notify_message,omitempty"`
+	CooldownSeconds int    `yaml:"cooldown_seconds,omitempty"` // default 300
+}
+
 // SessionConfig holds session management configuration.
 type SessionConfig struct {
 	// MaxSessions is the max number of concurrent AI sessions
@@ -1199,6 +1208,11 @@ type SessionConfig struct {
 
 	// KillSessionsOnExit terminates all running sessions when the daemon exits.
 	KillSessionsOnExit bool `yaml:"kill_sessions_on_exit"`
+
+	// ExitHooks (BL356) — exit hooks loaded from config at startup.
+	// These seed the persistent ExitHookStore; runtime changes via REST/MCP/CLI
+	// are stored in exit_hooks.json and override config-seeded entries.
+	ExitHooks []ExitHookConfigEntry `yaml:"exit_hooks,omitempty"`
 
 	// LogLevel sets verbosity for session activity logging: debug, info, warn, error.
 	LogLevel string `yaml:"log_level"`
