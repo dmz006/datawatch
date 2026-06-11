@@ -1505,10 +1505,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if ce.Name == "" || ce.Action == "" {
 			continue
 		}
-		existing := exitHookStore.GetBySessionName(ce.Name)
+		// BL356: check ALL entries (including disabled) so disabling a hook
+		// does not cause the seeder to re-add it as a duplicate on restart.
 		alreadySeeded := false
-		for _, e := range existing {
-			if string(e.Action) == ce.Action {
+		for _, e := range exitHookStore.List() {
+			if e.Name == ce.Name && string(e.Action) == ce.Action {
 				alreadySeeded = true
 				break
 			}

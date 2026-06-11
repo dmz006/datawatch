@@ -7428,7 +7428,7 @@ func (s *Server) handleExitHooks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(e)
 
-	case http.MethodPut:
+	case http.MethodPut, http.MethodPatch:
 		if id == "" {
 			http.Error(w, `{"error":"id required in path"}`, http.StatusBadRequest)
 			return

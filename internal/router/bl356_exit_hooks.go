@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -113,8 +112,3 @@ func (r *Router) handleExitHookSetEnabled(cmd Command, enabled bool) {
 	r.send(fmt.Sprintf("[exit_hook] hook %s %s.", cmd.ExitHookID, state))
 }
 
-// handleExitHookListJSON is a utility for tests — not currently wired.
-func exitHookListJSON(entries []*session.ExitHookEntry) string {
-	data, _ := json.MarshalIndent(entries, "", "  ")
-	return string(data)
-}
