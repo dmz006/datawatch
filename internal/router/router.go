@@ -1404,8 +1404,9 @@ func (r *Router) handleNew(cmd Command) {
 	// ComputeNode), forward through the REST API so handleStartSession
 	// runs the same validation + cascade-resolve as the PWA/CLI paths.
 	// v8.8.3 — also forward when chrome=true is set.
+	// v8.10.0 — also forward when parent/kill_children are set.
 	// Otherwise fall through to the direct manager.Start (legacy path).
-	if (cmd.LLMRef != "" || cmd.Chrome) && r.webPort > 0 {
+	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren) && r.webPort > 0 {
 		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
 		if cmd.ComputeNodeRef != "" {
 			body["compute_node"] = cmd.ComputeNodeRef
@@ -1415,6 +1416,12 @@ func (r *Router) handleNew(cmd Command) {
 		}
 		if cmd.Chrome {
 			body["chrome"] = true
+		}
+		if cmd.ParentID != "" {
+			body["parent_id"] = cmd.ParentID
+		}
+		if cmd.KillChildren {
+			body["kill_children"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
@@ -1441,6 +1448,12 @@ func (r *Router) handleNew(cmd Command) {
 	if cmd.Chrome {
 		t := true
 		startOpts.Chrome = &t
+	}
+	if cmd.ParentID != "" {
+		startOpts.ParentID = cmd.ParentID
+	}
+	if cmd.KillChildren {
+		startOpts.KillChildren = true
 	}
 	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir, startOpts)
 	if err != nil {
@@ -1489,6 +1502,14 @@ func (r *Router) handleList(filter string) {
 				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 			if s.State == session.StateWaitingInput {
 				sb.WriteString(" ⚠ INPUT")
+			}
+			if s.ParentID != "" {
+				// Show short parent ID (first segment before "-")
+				parentShort := s.ParentID
+				if idx := strings.Index(parentShort, "-"); idx > 0 {
+					parentShort = parentShort[:idx]
+				}
+				fmt.Fprintf(&sb, " ↳ child of [%s]", parentShort)
 			}
 			// BL116 — surface scheduled-command count when the
 			// schedule store is wired.

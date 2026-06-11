@@ -206,6 +206,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 
 	mcpSrv.AddTool(s.toolListSessions(), tracked(s.handleListSessions))
 	mcpSrv.AddTool(s.toolStartSession(), tracked(s.handleStartSession))
+	mcpSrv.AddTool(s.toolSessionChildren(), tracked(s.handleSessionChildren))
+	mcpSrv.AddTool(s.toolReplyToParent(), tracked(s.handleReplyToParent))
 	mcpSrv.AddTool(s.toolSessionOutput(), tracked(s.handleSessionOutput))
 	mcpSrv.AddTool(s.toolSessionTimeline(), tracked(s.handleSessionTimeline))
 	// BL303 S1 — structured session telemetry.
@@ -931,6 +933,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 	defs := []toolDef{
 		{s.toolListSessions, "list_sessions"},
 		{s.toolStartSession, "start_session"},
+		{s.toolSessionChildren, "session_children"},
+		{s.toolReplyToParent, "reply_to_parent"},
 		{s.toolSessionOutput, "session_output"},
 		{s.toolSessionTimeline, "session_timeline"},
 		{s.toolTelemetryGet, "telemetry_get"},
@@ -1149,6 +1153,35 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("permission_mode",
 			mcpsdk.Description("claude-code permission mode: default | plan | acceptEdits | auto | bypassPermissions | dontAsk. Omit to use config default."),
+		),
+		mcpsdk.WithString("caller_session_id",
+			mcpsdk.Description("BL347 — FullID (hostname-hex) of the calling session to record as the parent. Pass your own $CLAUDE_SESSION_ID environment variable to establish lineage. Omit for root sessions."),
+		),
+		mcpsdk.WithBoolean("kill_children",
+			mcpsdk.Description("When true, killing this session will also kill all sessions it has spawned (recursively). Default false: children survive the parent."),
+		),
+	)
+}
+
+func (s *Server) toolSessionChildren() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_children",
+		mcpsdk.WithDescription("List the direct child sessions spawned by a parent session (BL347 lineage)."),
+		mcpsdk.WithString("session_id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name) of the parent session."),
+		),
+	)
+}
+
+func (s *Server) toolReplyToParent() mcpsdk.Tool {
+	return mcpsdk.NewTool("reply_to_parent",
+		mcpsdk.WithDescription("Send a message to the parent session that spawned this session (BL347). Equivalent to send_input targeting the parent. No-op when called from a root session."),
+		mcpsdk.WithString("text",
+			mcpsdk.Required(),
+			mcpsdk.Description("Text to send to the parent session's input."),
+		),
+		mcpsdk.WithString("session_id",
+			mcpsdk.Description("FullID of the child session to resolve the parent from. Defaults to caller_session_id if omitted."),
 		),
 	)
 }
@@ -1413,6 +1446,8 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	computeRef := req.GetString("compute_node", "")
 	chrome := req.GetBool("chrome", false)
 	pm := req.GetString("permission_mode", "")
+	callerID := req.GetString("caller_session_id", "")
+	killChildren := req.GetBool("kill_children", false)
 
 	if pm != "" {
 		valid := map[string]bool{
@@ -1431,7 +1466,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "") && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren) && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -1447,6 +1482,12 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if pm != "" {
 			body["permission_mode"] = pm
+		}
+		if callerID != "" {
+			body["parent_id"] = callerID
+		}
+		if killChildren {
+			body["kill_children"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -1486,7 +1527,11 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	opts := &session.StartOptions{PermissionMode: pm}
+	opts := &session.StartOptions{
+		PermissionMode: pm,
+		ParentID:       callerID,
+		KillChildren:   killChildren,
+	}
 	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
@@ -1750,6 +1795,73 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error renaming session: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s renamed to %q.", sess.ID, name)), nil
+}
+
+// handleSessionChildren — BL347: list child sessions of a parent.
+func (s *Server) handleSessionChildren(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsList); deny != nil {
+		return deny, nil
+	}
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+	}
+	parent, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	if parent == nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+	}
+	children := s.manager.GetChildren(parent.FullID)
+	if len(children) == 0 {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s has no child sessions.", parent.ID)), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Children of session %s (%d):\n", parent.ID, len(children))
+	for _, c := range children {
+		task := c.Task
+		if len(task) > 50 {
+			task = task[:47] + "..."
+		}
+		fmt.Fprintf(&sb, "  [%s] %s | %s | %s\n", c.ID, c.State, c.BackendFamily, task)
+	}
+	return mcpsdk.NewToolResultText(sb.String()), nil
+}
+
+// handleReplyToParent — BL347: send text to the parent session that spawned this one.
+func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapSessionsWrite); deny != nil {
+		return deny, nil
+	}
+	text := req.GetString("text", "")
+	if text == "" {
+		return mcpsdk.NewToolResultText("Error: text is required"), nil
+	}
+	childID := req.GetString("session_id", "")
+
+	// Resolve the child session — use the provided session_id, or find any
+	// session whose ID matches an active running session on this host.
+	var childSess *session.Session
+	if childID != "" {
+		var err error
+		childSess, err = s.resolveSession(childID)
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error resolving session: %v", err)), nil
+		}
+	}
+	if childSess == nil || childSess.ParentID == "" {
+		return mcpsdk.NewToolResultText("No parent session found. This session was not spawned by another session, or parent_id is not recorded."), nil
+	}
+
+	parent, ok := s.manager.GetSession(childSess.ParentID)
+	if !ok {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Parent session %q no longer exists.", childSess.ParentID)), nil
+	}
+	if err := s.manager.SendInput(parent.FullID, text, "mcp-reply"); err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending to parent session %s: %v", parent.ID, err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent to parent session %s.", parent.ID)), nil
 }
 
 func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

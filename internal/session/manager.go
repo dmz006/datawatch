@@ -1394,6 +1394,13 @@ type StartOptions struct {
 	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
+
+	// BL347 — session lineage.
+	// ParentID is the FullID of the session spawning this one. Empty for root sessions.
+	// KillChildren: when true, killing the spawned session will also kill
+	// all sessions whose ParentID equals this session's FullID.
+	ParentID     string
+	KillChildren bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1553,6 +1560,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
+	}
+	if opt != nil && opt.ParentID != "" {
+		sess.ParentID = opt.ParentID
+	}
+	if opt != nil && opt.KillChildren {
+		sess.KillChildren = true
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -2667,7 +2680,37 @@ func (m *Manager) Kill(fullID string) error {
 	if m.onSessionEnd != nil {
 		m.onSessionEnd(sess)
 	}
+
+	// BL347 — cascade kill children when the parent was created with KillChildren=true.
+	if sess.KillChildren {
+		for _, child := range m.GetChildren(sess.FullID) {
+			if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
+				if err := m.Kill(child.FullID); err != nil {
+					fmt.Printf("[warn] cascade kill child %s: %v\n", child.ID, err)
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+// GetChildren returns all sessions whose ParentID equals parentFullID.
+// Order is by CreatedAt ascending (oldest first). BL347.
+func (m *Manager) GetChildren(parentFullID string) []*Session {
+	var out []*Session
+	for _, s := range m.store.List() {
+		if s.ParentID == parentFullID {
+			out = append(out, s)
+		}
+	}
+	// Sort oldest first.
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].CreatedAt.Before(out[j-1].CreatedAt); j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
 }
 
 // Restart relaunches a completed/failed/killed session in-place, reusing the

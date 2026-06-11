@@ -337,6 +337,12 @@ type Command struct {
 	// When true, --chrome is forwarded to claude-code at launch.
 	Chrome bool
 
+	// BL347 — session lineage flags parsed from "new:" command.
+	// ParentID: "new: parent=<hostname-hex>: <task>" — records calling session.
+	// KillChildren: "new: kill_children=true: <task>" — cascade kill on parent death.
+	ParentID     string
+	KillChildren bool
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -411,15 +417,25 @@ func Parse(text string) Command {
 		}
 		// v7.0.0-alpha.21 (#259) — "new: llm=<name> [compute=<node>]: <task>"
 		// v8.8.3 — extended with chrome=true.
+		// v8.10.0 — extended with parent=<id> and kill_children=true.
 		// Strip leading key=value tokens before the ": <task>" separator.
-		// Recognised keys: llm, compute, chrome. Unknown keys are left alone
-		// (the entire prefix becomes part of the task), preserving back-compat.
-		if (strings.HasPrefix(rest, "llm=") || strings.HasPrefix(rest, "compute=") || strings.HasPrefix(rest, "chrome=")) && strings.Contains(rest, ": ") {
+		// Recognised keys: llm, compute, chrome, parent, kill_children.
+		// Unknown keys are left alone (the entire prefix becomes part of the
+		// task), preserving back-compat.
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "parent=", "kill_children="}
+		hasKnown := false
+		for _, p := range knownPrefixes {
+			if strings.HasPrefix(rest, p) {
+				hasKnown = true
+				break
+			}
+		}
+		if hasKnown && strings.Contains(rest, ": ") {
 			idx := strings.Index(rest, ": ")
 			prefix := rest[:idx]
 			tail := strings.TrimSpace(rest[idx+2:])
-			llmRef, computeRef := "", ""
-			chrome := false
+			llmRef, computeRef, parentID := "", "", ""
+			chrome, killChildren := false, false
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -431,17 +447,25 @@ func Parse(text string) Command {
 					chrome = true
 				case tok == "chrome=false":
 					// explicit false → leave chrome=false, still valid
+				case strings.HasPrefix(tok, "parent="):
+					parentID = strings.TrimPrefix(tok, "parent=")
+				case tok == "kill_children=true":
+					killChildren = true
+				case tok == "kill_children=false":
+					// explicit false → leave killChildren=false, still valid
 				default:
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome) {
+			if ok && (llmRef != "" || chrome || parentID != "" || killChildren) {
 				return Command{
 					Type:           CmdNew,
 					Text:           tail,
 					LLMRef:         llmRef,
 					ComputeNodeRef: computeRef,
 					Chrome:         chrome,
+					ParentID:       parentID,
+					KillChildren:   killChildren,
 				}
 			}
 		}

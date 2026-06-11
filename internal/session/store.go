@@ -109,6 +109,18 @@ type Session struct {
 	// sessions running directly on this host.
 	AgentID string `json:"agent_id,omitempty"`
 
+	// ParentID (BL347) — FullID of the session that spawned this one via the
+	// MCP start_session tool or REST API. Empty for root sessions. Used to build
+	// the session lineage tree in the web UI and messaging list views.
+	// Never mutated after creation.
+	ParentID string `json:"parent_id,omitempty"`
+
+	// KillChildren (BL347) — when true, killing THIS session also kills all
+	// sessions whose ParentID equals this session's FullID (recursively).
+	// Default false: children survive the parent and are shown as orphaned
+	// in the tree with the parent marked complete/killed.
+	KillChildren bool `json:"kill_children,omitempty"`
+
 	// DiffSummary (BL10) holds the post-session git diff shortstat
 	// (files changed, +ins/-del). Populated after PostSessionCommit
 	// when project_dir is a git repo. Empty when session.auto_git_commit

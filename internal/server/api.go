@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.9.25"
+var Version = "8.10.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1341,6 +1341,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 
+	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
+	if r.URL.Query().Get("tree") == "1" {
+		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
+		return
+	}
+
 	if s.schedStore == nil {
 		_ = json.NewEncoder(w).Encode(sessions)
 		return
@@ -1357,6 +1363,34 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	_ = json.NewEncoder(w).Encode(enriched)
+}
+
+// SessionTreeNode is one node in the BL347 lineage tree.
+type SessionTreeNode struct {
+	*session.Session
+	Children []*SessionTreeNode `json:"children,omitempty"`
+}
+
+// buildSessionTree converts a flat session list to a forest of trees.
+// Root nodes have no ParentID or an unresolved ParentID.
+func buildSessionTree(sessions []*session.Session) []*SessionTreeNode {
+	byFullID := make(map[string]*SessionTreeNode, len(sessions))
+	for _, s := range sessions {
+		byFullID[s.FullID] = &SessionTreeNode{Session: s}
+	}
+	var roots []*SessionTreeNode
+	for _, node := range byFullID {
+		if node.ParentID == "" {
+			roots = append(roots, node)
+			continue
+		}
+		if parent, ok := byFullID[node.ParentID]; ok {
+			parent.Children = append(parent.Children, node)
+		} else {
+			roots = append(roots, node) // parent no longer in store — treat as root
+		}
+	}
+	return roots
 }
 
 // handleSessionOutput returns the last N lines of a session's output.
@@ -3036,7 +3070,37 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionCurrentStatus(w, r)
 		return
 	}
+	if strings.HasSuffix(path, "/children") {
+		s.handleSessionChildren(w, r)
+		return
+	}
 	s.handleSessionsSubpath(w, r)
+}
+
+// handleSessionChildren returns the direct children of a session.
+// GET /api/sessions/{id}/children — BL347.
+func (s *Server) handleSessionChildren(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id := strings.TrimSuffix(path, "/children")
+	if id == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	children := s.manager.GetChildren(sess.FullID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(children) //nolint:errcheck
 }
 
 // handleSessionLastSummary returns the stored summary for a session.
@@ -3502,6 +3566,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Chrome (v8.8.3) — pass --chrome or --no-chrome to claude-code.
 		// Nil/absent = omit flag.
 		Chrome *bool `json:"chrome,omitempty"`
+		// BL347 — session lineage.
+		// ParentID: FullID (hostname-hex) of the calling session. Auto-set
+		// by the MCP start_session tool; pass explicitly from REST callers.
+		// KillChildren: when true, killing this session cascades to its children.
+		ParentID     string `json:"parent_id,omitempty"`
+		KillChildren bool   `json:"kill_children,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -3767,6 +3837,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		LSPLanguage:        req.LSPLanguage,
 		OllamaURL:          resolvedOllamaURL,
 		Chrome:             req.Chrome,
+		ParentID:           req.ParentID,
+		KillChildren:       req.KillChildren,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

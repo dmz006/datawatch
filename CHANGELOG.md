@@ -7,6 +7,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.0 — feat: BL347 session lineage — parent-child tracking, cascade kill, reply_to_parent (2026-06-10)
+
+### Added
+
+- **Session lineage tracking** (BL347) — every session now records its spawning parent via `parent_id` (the full `hostname-hex` ID of the caller). Agents that start sub-agents pass their own session ID as `caller_session_id` on `start_session`; the parent-child link is stored on the child and is permanent.
+
+- **Cascade kill** (BL347, opt-in) — new `kill_children` flag on session creation. When set to `true` on the parent at creation time, killing the parent also kills all running/waiting children recursively. Default is `false` — sub-agents are independent by default and survive their parent.
+
+- **`session_children` MCP tool** (BL347) — lists child sessions of a given parent. Returns ID, state, backend family, and truncated task for each child.
+
+- **`reply_to_parent` MCP tool** (BL347) — agent sends a message back to its spawning parent session via `send_input`. Uses source `"mcp-reply"` so the parent sees it on the next input prompt.
+
+- **REST: `GET /api/sessions/{id}/children`** (BL347) — direct child listing for a given session.
+
+- **REST: `GET /api/sessions?tree=1`** (BL347) — returns the full session forest as a nested `SessionTreeNode` tree. Orphaned children (parent gone or completed) appear as roots with their actual state preserved.
+
+- **Channel command parity** (BL347) — `new:` channel command now accepts `parent=<id>` and `kill_children=true` tokens alongside the existing `llm=`, `compute=`, and `chrome=` tokens:
+  ```
+  new: parent=host-abc123 kill_children=true: run a sub-task
+  new: llm=claude parent=host-abc123: sub-task with specific llm
+  ```
+
+- **Session list child indicator** (BL347) — `list` / `sessions` channel command appends `↳ child of [<parent-short-id>]` to any session row that has a recorded parent, making session lineage immediately visible in the channel view.
+
+### Internal
+
+- `Session.ParentID` and `Session.KillChildren` fields added to session store.
+- `StartOptions.ParentID` and `StartOptions.KillChildren` threaded through manager, REST API, MCP, and channel router.
+- `manager.GetChildren(parentFullID)` returns direct children sorted oldest-first.
+- 17 new targeted tests across `bl347_lineage_commands_test.go`, `bl347_lineage_test.go`, `bl347_lineage_mcp_test.go`.
+
+---
+
 ## v8.9.25 — fix: BL342 compute migrate CLI + BL343 federation peer health alerts (2026-06-10)
 
 ### Fixed
