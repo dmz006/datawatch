@@ -80,6 +80,9 @@ func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest)
 		return mcpsdk.NewToolResultText("Error: role is required"), nil
 	}
 	claimedBy := req.GetString("claimed_by", "")
+	if claimedBy == "" {
+		return mcpsdk.NewToolResultText("Error: claimed_by is required"), nil
+	}
 	leaseSeconds := 300
 	if ls := req.GetFloat("lease_seconds", 0); ls > 0 {
 		leaseSeconds = int(ls)
