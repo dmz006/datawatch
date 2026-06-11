@@ -8044,48 +8044,6 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-// runSessionListJSON outputs sessions as structured JSON. BL361.
-func runSessionListJSON(cfg *config.Config) error {
-	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
-	if err != nil {
-		return err
-	}
-	sessions := store.List()
-	type sessionJSON struct {
-		ID           string     `json:"id"`
-		FullID       string     `json:"full_id"`
-		Name         string     `json:"name,omitempty"`
-		State        string     `json:"state"`
-		Task         string     `json:"task,omitempty"`
-		Backend      string     `json:"backend,omitempty"`
-		ClaudeAlive  *bool      `json:"claude_alive,omitempty"`
-		ParentID     string     `json:"parent_id,omitempty"`
-		CreatedAt    time.Time  `json:"created_at"`
-		UpdatedAt    time.Time  `json:"updated_at"`
-		ShortSummary string     `json:"short_summary,omitempty"`
-		LastResponse string     `json:"last_response,omitempty"`
-	}
-	out := make([]sessionJSON, 0, len(sessions))
-	for _, s := range sessions {
-		out = append(out, sessionJSON{
-			ID:           s.ID,
-			FullID:       s.FullID,
-			Name:         s.Name,
-			State:        string(s.State),
-			Task:         s.Task,
-			Backend:      s.BackendFamily,
-			ClaudeAlive:  s.ClaudeAlive,
-			ParentID:     s.ParentID,
-			CreatedAt:    s.CreatedAt,
-			UpdatedAt:    s.UpdatedAt,
-			ShortSummary: s.LastSummaryLong,
-			LastResponse: s.LastResponse,
-		})
-	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
-}
 
 func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool) error {
 	// Try the structured HTTP API first

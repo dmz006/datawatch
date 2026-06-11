@@ -68,7 +68,7 @@ func (b *Backend) SelfID() string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var accounts []acctInfo
 	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		return ""
@@ -122,7 +122,7 @@ func (b *Backend) Send(recipient, message string) error {
 	if err != nil {
 		return fmt.Errorf("imap_mcp send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("imap_mcp send: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -173,7 +173,7 @@ func (b *Backend) stream(ctx context.Context, handler func(messaging.Message)) e
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("SSE endpoint returned %d", resp.StatusCode)

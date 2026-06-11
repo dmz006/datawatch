@@ -84,7 +84,7 @@ func TestSubscribeInboundCommand(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, sseBody)
+		fmt.Fprint(w, sseBody) //nolint:errcheck
 		// Close immediately to let stream() return.
 	}))
 	defer srv.Close()
@@ -135,7 +135,7 @@ func TestSubscribeIgnoresNonCommand(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, sseBody)
+		fmt.Fprint(w, sseBody) //nolint:errcheck
 	}))
 	defer srv.Close()
 

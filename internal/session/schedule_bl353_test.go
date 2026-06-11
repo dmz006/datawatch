@@ -169,5 +169,5 @@ func TestBL353_AddFull_ScheduleName(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Dir(store.path))
+	_ = os.RemoveAll(filepath.Dir(store.path))
 }
