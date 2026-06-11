@@ -612,6 +612,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDashboardCardUpdate(), tracked(s.handleDashboardCardUpdateMCP))
 	mcpSrv.AddTool(s.toolDashboardCardAdd(), tracked(s.handleDashboardCardAddMCP))
 	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
+	// BL349 — self-session discovery.
+	mcpSrv.AddTool(s.toolGetMySessionID(), tracked(s.handleGetMySessionID))
+	// BL350 — orphaned sessions listing.
+	mcpSrv.AddTool(s.toolListOrphanedSessions(), tracked(s.handleListOrphanedSessions))
 
 	s.srv = mcpSrv
 
@@ -994,6 +998,10 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGuardrailProfileDelete, "guardrail_profile_delete"},
 		{s.toolPerAutomatonGuardrailsSet, "per_automaton_guardrails_set"},
 		{s.toolSessionGuardrailRun, "session_guardrail_run"},
+		// BL349 — self-session discovery
+		{s.toolGetMySessionID, "get_my_session_id"},
+		// BL350 — orphan lineage listing
+		{s.toolListOrphanedSessions, "list_orphaned_sessions"},
 	}
 
 	var docs []ToolDoc
@@ -1129,6 +1137,9 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 func (s *Server) toolListSessions() mcpsdk.Tool {
 	return mcpsdk.NewTool("list_sessions",
 		mcpsdk.WithDescription("List all AI coding sessions on this host, including their state and task description."),
+		mcpsdk.WithBoolean("orphaned",
+			mcpsdk.Description("BL350 — when true, return only sessions whose parent_id points to a session that no longer exists (orphaned by parent death or eviction)."),
+		),
 	)
 }
 
@@ -1158,7 +1169,10 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 			mcpsdk.Description("BL347 — FullID (hostname-hex) of the calling session to record as the parent. Pass your own $CLAUDE_SESSION_ID environment variable to establish lineage. Omit for root sessions."),
 		),
 		mcpsdk.WithBoolean("kill_children",
-			mcpsdk.Description("When true, killing this session will also kill all sessions it has spawned (recursively). Default false: children survive the parent."),
+			mcpsdk.Description("When true, killing this session will also kill direct child sessions it has spawned. Default false."),
+		),
+		mcpsdk.WithBoolean("kill_children_recursive",
+			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
 		),
 	)
 }
@@ -1357,9 +1371,28 @@ func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 
 // ---- handlers ---------------------------------------------------------------
 
-func (s *Server) handleListSessions(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	sessions := s.manager.ListSessions()
+
+	// BL350 — orphaned=true filter.
+	if req.GetBool("orphaned", false) {
+		byFullID := make(map[string]bool, len(sessions))
+		for _, sess := range sessions {
+			byFullID[sess.FullID] = true
+		}
+		var orphans []*session.Session
+		for _, sess := range sessions {
+			if sess.ParentID != "" && !byFullID[sess.ParentID] {
+				orphans = append(orphans, sess)
+			}
+		}
+		sessions = orphans
+	}
+
 	if len(sessions) == 0 {
+		if req.GetBool("orphaned", false) {
+			return mcpsdk.NewToolResultText("No orphaned sessions found."), nil
+		}
 		return mcpsdk.NewToolResultText("No active sessions."), nil
 	}
 
@@ -1377,6 +1410,9 @@ func (s *Server) handleListSessions(_ context.Context, _ mcpsdk.CallToolRequest)
 		fmt.Fprintf(&sb, "Task:    %s\n", sess.Task)
 		fmt.Fprintf(&sb, "Dir:     %s\n", sess.ProjectDir)
 		fmt.Fprintf(&sb, "Updated: %s\n", sess.UpdatedAt.Format(time.RFC3339))
+		if sess.ParentID != "" {
+			fmt.Fprintf(&sb, "Parent:  %s\n", sess.ParentID)
+		}
 		if sess.State == session.StateWaitingInput && sess.LastPrompt != "" {
 			fmt.Fprintf(&sb, "Prompt:  %s\n", sess.LastPrompt)
 		}
@@ -1448,6 +1484,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	pm := req.GetString("permission_mode", "")
 	callerID := req.GetString("caller_session_id", "")
 	killChildren := req.GetBool("kill_children", false)
+	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 
 	if pm != "" {
 		valid := map[string]bool{
@@ -1466,7 +1503,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren) && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive) && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -1488,6 +1525,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if killChildren {
 			body["kill_children"] = true
+		}
+		if killChildrenRecursive {
+			body["kill_children_recursive"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -2210,4 +2250,84 @@ func (s *Server) handlePipelineList(_ context.Context, _ mcpsdk.CallToolRequest)
 		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
 	}
 	return mcpsdk.NewToolResultText(s.pipelineAPI.ListAll()), nil
+}
+
+// BL349 — get_my_session_id
+
+func (s *Server) toolGetMySessionID() mcpsdk.Tool {
+	return mcpsdk.NewTool("get_my_session_id",
+		mcpsdk.WithDescription("Discover the datawatch session ID of the calling Claude Code session. Returns the active channel-ready session. Useful for passing as caller_session_id to start_session or for lineage tracking. Supply hint to verify a known ID is still active."),
+		mcpsdk.WithString("hint",
+			mcpsdk.Description("Optional session ID (short or full) to verify. When supplied, the tool resolves it and returns it if active; error if not found."),
+		),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleGetMySessionID(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	hint := req.GetString("hint", "")
+	if hint != "" {
+		sess, err := s.resolveSession(hint)
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		}
+		if sess == nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: session %q not found", hint)), nil
+		}
+		return mcpsdk.NewToolResultText(fmt.Sprintf(
+			"Session ID:   %s\nFull ID:      %s\nState:        %s\nName:         %s\n",
+			sess.ID, sess.FullID, sess.State, sess.Name,
+		)), nil
+	}
+	// No hint — find the channel-ready active session.
+	all := s.manager.ListSessions()
+	for _, sess := range all {
+		if sess.ChannelReady && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
+			return mcpsdk.NewToolResultText(fmt.Sprintf(
+				"Session ID:   %s\nFull ID:      %s\nState:        %s\nName:         %s\n",
+				sess.ID, sess.FullID, sess.State, sess.Name,
+			)), nil
+		}
+	}
+	return mcpsdk.NewToolResultText("No channel-ready active session found. Set the CLAUDE_SESSION_ID env var or pass hint=<id>."), nil
+}
+
+// BL350 — list_orphaned_sessions
+
+func (s *Server) toolListOrphanedSessions() mcpsdk.Tool {
+	return mcpsdk.NewTool("list_orphaned_sessions",
+		mcpsdk.WithDescription("List sessions whose parent_id references a session that no longer exists in the store. These are children orphaned by parent death, eviction, or deletion."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleListOrphanedSessions(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	all := s.manager.ListSessions()
+	byFullID := make(map[string]bool, len(all))
+	for _, sess := range all {
+		byFullID[sess.FullID] = true
+	}
+	var orphans []*session.Session
+	for _, sess := range all {
+		if sess.ParentID != "" && !byFullID[sess.ParentID] {
+			orphans = append(orphans, sess)
+		}
+	}
+	if len(orphans) == 0 {
+		return mcpsdk.NewToolResultText("No orphaned sessions found."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Orphaned sessions (%d) — parent no longer in store:\n\n", len(orphans))
+	for _, sess := range orphans {
+		fmt.Fprintf(&sb, "ID:        %s\n", sess.ID)
+		if sess.Name != "" {
+			fmt.Fprintf(&sb, "Name:      %s\n", sess.Name)
+		}
+		fmt.Fprintf(&sb, "State:     %s\n", sess.State)
+		fmt.Fprintf(&sb, "ParentID:  %s (missing)\n", sess.ParentID)
+		fmt.Fprintf(&sb, "Task:      %s\n", sess.Task)
+		fmt.Fprintf(&sb, "Updated:   %s\n", sess.UpdatedAt.Format(time.RFC3339))
+		sb.WriteString("\n")
+	}
+	return mcpsdk.NewToolResultText(sb.String()), nil
 }

@@ -1395,12 +1395,14 @@ type StartOptions struct {
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
 
-	// BL347 — session lineage.
+	// BL347/BL351 — session lineage.
 	// ParentID is the FullID of the session spawning this one. Empty for root sessions.
 	// KillChildren: when true, killing the spawned session will also kill
-	// all sessions whose ParentID equals this session's FullID.
-	ParentID     string
-	KillChildren bool
+	// all sessions whose ParentID equals this session's FullID (direct children only).
+	// KillChildrenRecursive: like KillChildren but propagates to all descendants.
+	ParentID              string
+	KillChildren          bool
+	KillChildrenRecursive bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1566,6 +1568,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.KillChildren {
 		sess.KillChildren = true
+	}
+	if opt != nil && opt.KillChildrenRecursive {
+		sess.KillChildrenRecursive = true
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -2681,8 +2686,22 @@ func (m *Manager) Kill(fullID string) error {
 		m.onSessionEnd(sess)
 	}
 
-	// BL347 — cascade kill children when the parent was created with KillChildren=true.
-	if sess.KillChildren {
+	// BL351 — deep recursive cascade: kill all descendants regardless of their own settings.
+	if sess.KillChildrenRecursive {
+		var killAll func(parentID string)
+		killAll = func(parentID string) {
+			for _, child := range m.GetChildren(parentID) {
+				killAll(child.FullID)
+				if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
+					if err := m.Kill(child.FullID); err != nil {
+						fmt.Printf("[warn] recursive kill %s: %v\n", child.ID, err)
+					}
+				}
+			}
+		}
+		killAll(sess.FullID)
+	} else if sess.KillChildren {
+		// BL347 — shallow cascade: direct children only.
 		for _, child := range m.GetChildren(sess.FullID) {
 			if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
 				if err := m.Kill(child.FullID); err != nil {

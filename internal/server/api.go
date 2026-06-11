@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.2"
+var Version = "8.10.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1341,6 +1341,22 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 
+	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
+	if r.URL.Query().Get("orphaned") == "1" {
+		byFullID := make(map[string]bool, len(sessions))
+		for _, sess := range sessions {
+			byFullID[sess.FullID] = true
+		}
+		var orphans []*session.Session
+		for _, sess := range sessions {
+			if sess.ParentID != "" && !byFullID[sess.ParentID] {
+				orphans = append(orphans, sess)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(orphans)
+		return
+	}
+
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
 	if r.URL.Query().Get("tree") == "1" {
 		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
@@ -1561,7 +1577,12 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if cmd.Text == "" {
 			return "Usage: new: <task>"
 		}
-		sess, err := s.manager.Start(context.Background(), cmd.Text, "", cmd.ProjectDir)
+		newOpts := &session.StartOptions{
+			ParentID:              cmd.ParentID,
+			KillChildren:          cmd.KillChildren,
+			KillChildrenRecursive: cmd.KillChildrenRecursive,
+		}
+		sess, err := s.manager.Start(context.Background(), cmd.Text, "", cmd.ProjectDir, newOpts)
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
@@ -3029,6 +3050,71 @@ func (s *Server) handleSessionResponse(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"response": resp, "session_id": id}) //nolint:errcheck
 }
 
+// handleSessionsOrphaned returns sessions whose parent_id points to a session
+// that no longer exists in the store. GET /api/sessions/orphaned — BL350.
+func (s *Server) handleSessionsOrphaned(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsList) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	all := s.manager.ListSessions()
+	byFullID := make(map[string]bool, len(all))
+	for _, sess := range all {
+		byFullID[sess.FullID] = true
+	}
+	var orphans []*session.Session
+	for _, sess := range all {
+		if sess.ParentID != "" && !byFullID[sess.ParentID] {
+			orphans = append(orphans, sess)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(orphans)
+}
+
+// handleSessionSelf resolves the "self" session: the active session whose MCP
+// channel is connected (ChannelReady=true). Callers may supply an optional
+// ?hint=<id> query param to verify a known ID is still live.
+// GET /api/sessions/self — BL349.
+func (s *Server) handleSessionSelf(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	hint := r.URL.Query().Get("hint")
+	// Hint: resolve and verify it's live.
+	if hint != "" {
+		sess, ok := s.manager.GetSession(hint)
+		if !ok {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sess) //nolint:errcheck
+		return
+	}
+	// No hint: find the channel-ready active session.
+	all := s.manager.ListSessions()
+	var candidates []*session.Session
+	for _, sess := range all {
+		if sess.ChannelReady && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
+			candidates = append(candidates, sess)
+		}
+	}
+	if len(candidates) == 0 {
+		http.Error(w, "no channel-ready session found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(candidates[0]) //nolint:errcheck
+}
+
 // handleSessionPrompt returns the last user prompt for a session.
 func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsRead) {
@@ -3566,12 +3652,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Chrome (v8.8.3) — pass --chrome or --no-chrome to claude-code.
 		// Nil/absent = omit flag.
 		Chrome *bool `json:"chrome,omitempty"`
-		// BL347 — session lineage.
+		// BL347/BL351 — session lineage.
 		// ParentID: FullID (hostname-hex) of the calling session. Auto-set
 		// by the MCP start_session tool; pass explicitly from REST callers.
-		// KillChildren: when true, killing this session cascades to its children.
-		ParentID     string `json:"parent_id,omitempty"`
-		KillChildren bool   `json:"kill_children,omitempty"`
+		// KillChildren: when true, killing this session cascades to direct children.
+		// KillChildrenRecursive: cascades to all descendants (BL351).
+		ParentID              string `json:"parent_id,omitempty"`
+		KillChildren          bool   `json:"kill_children,omitempty"`
+		KillChildrenRecursive bool   `json:"kill_children_recursive,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -3837,8 +3925,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		LSPLanguage:        req.LSPLanguage,
 		OllamaURL:          resolvedOllamaURL,
 		Chrome:             req.Chrome,
-		ParentID:           req.ParentID,
-		KillChildren:       req.KillChildren,
+		ParentID:              req.ParentID,
+		KillChildren:          req.KillChildren,
+		KillChildrenRecursive: req.KillChildrenRecursive,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

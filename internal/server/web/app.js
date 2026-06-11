@@ -189,6 +189,7 @@ const state = {
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
   sessionFilter: '',      // dynamic filter for session list
+  sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
@@ -2076,6 +2077,9 @@ function renderSessionsView() {
     ${state._stateFilterOpen ? `<div class="state-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>` : ''}
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
+    <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
+      ${t('session_tree_btn')||'Tree'}
+    </button>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       History (${history.length})
     </button>
@@ -2100,7 +2104,10 @@ function renderSessionsView() {
     return;
   }
 
-  const cards = visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
+  // BL348 — tree mode or flat list
+  const cards = state.sessionTreeView
+    ? renderSessionsAsTree(visible)
+    : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${toggleBtn}<div class="session-list">${cards}</div></div>`;
@@ -2201,6 +2208,40 @@ function toggleHistory() {
     state.selectedSessions.clear();
   }
   renderSessionsView();
+}
+
+// BL348 — tree view toggle
+function toggleSessionTreeView() {
+  state.sessionTreeView = !state.sessionTreeView;
+  localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
+  renderSessionsView();
+}
+
+// BL348 — render sessions as a parent/child tree
+function renderSessionsAsTree(sessions) {
+  const byId = {};
+  sessions.forEach(s => { byId[s.full_id] = s; });
+  const childrenOf = {};
+  const roots = [];
+  sessions.forEach(s => {
+    if (s.parent_id && byId[s.parent_id]) {
+      if (!childrenOf[s.parent_id]) childrenOf[s.parent_id] = [];
+      childrenOf[s.parent_id].push(s);
+    } else {
+      roots.push(s);
+    }
+  });
+  function renderNode(sess, depth) {
+    const isOrphaned = sess.parent_id && !byId[sess.parent_id];
+    const orphanBadge = isOrphaned ? `<div style="font-size:10px;color:var(--warning,#f59e0b);margin-bottom:2px;">⚠ ${t('session_tree_orphaned')||'orphaned — parent no longer exists'}</div>` : '';
+    const allIdx = sessions.indexOf(sess);
+    const card = sessionCard(sess, allIdx, sessions.length);
+    const kids = childrenOf[sess.full_id] || [];
+    const kidHtml = kids.map(c => renderNode(c, depth + 1)).join('');
+    const indent = depth > 0 ? `margin-left:${depth * 18}px;padding-left:6px;border-left:2px solid var(--border);` : '';
+    return `<div style="${indent}">${orphanBadge}${card}${kidHtml}</div>`;
+  }
+  return roots.map(r => renderNode(r, 0)).join('');
 }
 
 function toggleSelectMode() {
@@ -5299,6 +5340,9 @@ function renderNewSessionView() {
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
             <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;" title="${t('kill_children_recursive_tip')||'When killed, also kill all descendant sessions recursively (BL351)'}">
+            <input type="checkbox" id="killChildrenRecursiveToggle" /> ${t('kill_children_recursive_label')||'Kill children recursively'}
+          </label>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
           <button class="btn-secondary" onclick="closeNewSessionModal()">${t('action_cancel')||'Cancel'}</button>
@@ -6020,6 +6064,9 @@ function submitNewSession() {
   // v8.8.3 — Chrome integration: only send chrome:true when checked; omit field otherwise.
   const chromeEl = document.getElementById('newSessionChrome');
   if (chromeEl && chromeEl.checked) payload.chrome = true;
+  // BL351 — kill_children_recursive: only send when checked.
+  const kcrEl = document.getElementById('killChildrenRecursiveToggle');
+  if (kcrEl && kcrEl.checked) payload.kill_children_recursive = true;
 
   // Use REST so we get the full session object back and can navigate directly to it.
   apiFetch('/api/sessions/start', { method: 'POST', body: JSON.stringify(payload) })
@@ -16876,6 +16923,8 @@ function renderAlertsView() {
         replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">${t('alerts_quick_reply_ph')||'Quick reply…'}</option>${opts}</select></div>`;
       }
 
+      // BL344 — navigate to session from alert card
+      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="navigate('session',${JSON.stringify(a.session_id)})" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
@@ -16883,7 +16932,7 @@ function renderAlertsView() {
         </div>
         <div style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
-        ${replyBtns}
+        ${sessNavBtn}${replyBtns}
       </div>`;
     };
 

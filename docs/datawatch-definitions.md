@@ -125,20 +125,48 @@ When starting a sub-agent session, pass the spawning session's ID:
 
 **Cascade kill (opt-in):**
 
-By default, sub-agents run independently and survive their parent. To cascade kills, set `kill_children=true` when creating the parent:
+By default, sub-agents run independently and survive their parent. Two modes:
 
+*Shallow (direct children only):* set `kill_children=true` when creating the parent.
 - **MCP:** `start_session(task="...", kill_children=true)`
 - **REST:** `{"task": "...", "kill_children": true}`
 - **CLI:** `datawatch session new "task" --kill-children`
 - **Channel:** `new: kill_children=true: task description`
+
+*Recursive (all descendants — BL351):* set `kill_children_recursive=true`. Kills grandchildren and deeper regardless of their own settings.
+- **MCP:** `start_session(task="...", kill_children_recursive=true)`
+- **REST:** `{"task": "...", "kill_children_recursive": true}`
+- **CLI:** `datawatch session new "task" --kill-children-recursive`
+- **Channel:** `new: kill_children_recursive=true: task description`
+- **PWA:** "Kill children recursively" checkbox in the new session form.
 
 **Viewing children:**
 
 - **MCP:** `session_children(session_id="pp01")` — lists child sessions with state and task.
 - **REST:** `GET /api/sessions/{id}/children` — JSON array of child sessions.
 - **REST tree:** `GET /api/sessions?tree=1` — full session forest as nested tree.
-- **CLI:** `datawatch session children <id>`
+- **REST aggregated:** `GET /api/sessions/aggregated?parent_id=<id>` — children across all federation peers (BL352).
+- **CLI:** `datawatch session children <id>` — local children; `--all-servers` for federation peers.
 - **Session list:** child sessions show `↳ child of [<parent-id>]` in all list views.
+- **PWA Tree view:** toggle "Tree" in Sessions toolbar to group sessions by parent/child lineage with orphan indicators.
+
+**Orphaned sessions (BL350):**
+
+Sessions whose `parent_id` references a session that no longer exists.
+
+- **REST:** `GET /api/sessions/orphaned` or `GET /api/sessions?orphaned=1`
+- **MCP:** `list_orphaned_sessions` tool; `list_sessions(orphaned=true)` param
+- **CLI:** `datawatch session orphaned` or `datawatch session list --orphaned`
+- **Channel:** `session orphaned`
+
+**Self-session discovery (BL349):**
+
+Agents that need to know their own session ID without relying on `$CLAUDE_SESSION_ID`.
+
+- **MCP:** `get_my_session_id(hint="<id>")` — hint is optional; finds the channel-ready active session.
+- **REST:** `GET /api/sessions/self`
+- **CLI:** `datawatch session self`
+- **Channel:** `session self`
 
 **Sub-agent reporting back:**
 
@@ -654,7 +682,7 @@ The agent worker fleet — Docker locally OR Kubernetes-spawned per-session pods
 
 Headscale-first (self-hosted), commercial Tailscale supported. Status card shows current node + advertised routes; Configuration accepts pre-auth keys or OAuth device flow. ACL Generator builds a Tailscale ACL from current node tags + agent fleet membership.
 
-#### Push Notifications (v8.2.0)
+#### Push Notifications (v8.2.0, BL346 lifecycle events v8.10.3)
 
 UnifiedPush + ntfy registration and fan-out. The card shows:
 
@@ -666,6 +694,8 @@ UnifiedPush + ntfy registration and fan-out. The card shows:
 CLI: `datawatch push list | test [--id <id>] [--message <m>] | unregister [--id <id>|--endpoint <url>]`.
 
 UnifiedPush auto-discovery: `GET /.well-known/unifiedpush` returns `{"version":1,"unifiedpush":{"gateway":"/api/push/notify"}}`.
+
+**BL346 — `session_state_changed` lifecycle events (v8.10.3):** The daemon publishes a push event to topic `session-<fullID>` on every non-oscillation, non-waiting-input state transition. Payload `extras` contains `{type: "session_state_changed", old_state, new_state, task, short_summary}`. Allows mobile apps and subscribers to display contextual notifications (e.g. "Session foo — complete").
 
 See [`howto/push-setup.md`](howto/push-setup.md) · [`howto/push-notifications.md`](howto/push-notifications.md).
 

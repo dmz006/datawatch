@@ -116,10 +116,15 @@ type Session struct {
 	ParentID string `json:"parent_id,omitempty"`
 
 	// KillChildren (BL347) — when true, killing THIS session also kills all
-	// sessions whose ParentID equals this session's FullID (recursively).
+	// sessions whose ParentID equals this session's FullID (direct children only).
 	// Default false: children survive the parent and are shown as orphaned
 	// in the tree with the parent marked complete/killed.
 	KillChildren bool `json:"kill_children,omitempty"`
+
+	// KillChildrenRecursive (BL351) — like KillChildren but propagates the
+	// cascade all the way down the lineage tree, killing grandchildren and
+	// deeper descendants regardless of their own KillChildren settings.
+	KillChildrenRecursive bool `json:"kill_children_recursive,omitempty"`
 
 	// DiffSummary (BL10) holds the post-session git diff shortstat
 	// (files changed, +ins/-del). Populated after PostSessionCommit

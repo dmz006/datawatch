@@ -440,6 +440,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/test/message", api.handleTestMessage)
 	apiMux.HandleFunc("/api/ollama/stats", api.handleOllamaStats)
 	apiMux.HandleFunc("/api/sessions/aggregated", api.handleAggregatedSessions)
+	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)  // BL349
+	apiMux.HandleFunc("/api/sessions/orphaned", api.handleSessionsOrphaned) // BL350
 	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
 	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
 	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)

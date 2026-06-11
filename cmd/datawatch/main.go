@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.2"
+var Version = "8.10.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5183,6 +5183,23 @@ Return STRICT JSON:
 				sess.FullID,
 			)
 		}
+		// BL346 — publish FCM/push lifecycle events for terminal-state and start transitions.
+		// Skip oscillation AND waiting_input (NeedsInputHandler sends richer content for that).
+		if !isPromptOscillation && sess.State != session.StateWaitingInput {
+			server.PublishToTopic("session-"+sess.FullID, server.PushEvent{
+				Title:   sessionLabel(sess) + " · " + string(sess.State),
+				Message: truncate(sess.Task, 120),
+				Tags:    []string{"session_state_changed", sess.BackendFamily, string(sess.State)},
+				Click:   "/sessions/" + sess.FullID,
+				Extras: map[string]any{
+					"type":          "session_state_changed",
+					"old_state":     string(old),
+					"new_state":     string(sess.State),
+					"task":          truncate(sess.Task, 100),
+					"short_summary": truncate(sess.LastResponse, 200),
+				},
+			})
+		}
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
 		// Build alert body: prompt (what user asked) + response (what LLM said)
@@ -7152,6 +7169,10 @@ func newSessionCmd() *cobra.Command {
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			allServers, _ := cmd.Flags().GetBool("all-servers")
+			orphaned, _ := cmd.Flags().GetBool("orphaned")
+			if orphaned {
+				return daemonGet("/api/sessions/orphaned")
+			}
 			if allServers {
 				return daemonGet("/api/sessions/aggregated")
 			}
@@ -7163,6 +7184,7 @@ func newSessionCmd() *cobra.Command {
 		},
 	}
 	sessionListCmd.Flags().Bool("all-servers", false, "include sessions from all federation peers via /api/sessions/aggregated")
+	sessionListCmd.Flags().Bool("orphaned", false, "list only sessions whose parent_id no longer exists (BL350)")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
@@ -7187,7 +7209,8 @@ func newSessionCmd() *cobra.Command {
 			chrome, _ := cmd.Flags().GetBool("chrome")
 			parent, _ := cmd.Flags().GetString("parent")
 			killChildren, _ := cmd.Flags().GetBool("kill-children")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren)
+			killChildrenRecursive, _ := cmd.Flags().GetBool("kill-children-recursive")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -7197,7 +7220,8 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().String("compute", "", "v7 ComputeNode registry name. Requires --llm; must be in that LLM's compute_nodes list.")
 	newCmd.Flags().Bool("chrome", false, "Enable Claude Chrome integration (--chrome flag)")
 	newCmd.Flags().String("parent", "", "Full ID (hostname-hex) of the parent session that spawned this one (sets lineage).")
-	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill all child sessions it spawns.")
+	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill direct child sessions it spawns.")
+	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -7375,12 +7399,36 @@ func newSessionCmd() *cobra.Command {
 	})
 
 	// session children <id> — list child sessions of a parent
-	sessionCmd.AddCommand(&cobra.Command{
+	childrenCmd := &cobra.Command{
 		Use:   "children <id>",
 		Short: "List child sessions spawned by a given session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			allServers, _ := cmd.Flags().GetBool("all-servers")
+			if allServers {
+				return daemonGet("/api/sessions/aggregated?parent_id=" + args[0])
+			}
 			return daemonGet(fmt.Sprintf("/api/sessions/%s/children", args[0]))
+		},
+	}
+	childrenCmd.Flags().Bool("all-servers", false, "query all federation peers via /api/sessions/aggregated?parent_id=<id> (BL352)")
+	sessionCmd.AddCommand(childrenCmd)
+
+	// session self — show the channel-ready session (BL349)
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "self",
+		Short: "Show the active channel-ready session ID",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonGet("/api/sessions/self")
+		},
+	})
+
+	// session orphaned — list sessions with a missing parent (BL350)
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "orphaned",
+		Short: "List sessions whose parent_id no longer exists",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonGet("/api/sessions/orphaned")
 		},
 	})
 
@@ -7771,20 +7819,21 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren bool) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool) error {
 	// Try the structured HTTP API first
 	type startReq struct {
-		Task         string `json:"task"`
-		ProjectDir   string `json:"project_dir,omitempty"`
-		Backend      string `json:"backend,omitempty"`
-		Name         string `json:"name,omitempty"`
-		LLM          string `json:"llm,omitempty"`
-		ComputeNode  string `json:"compute_node,omitempty"`
-		Chrome       *bool  `json:"chrome,omitempty"`
-		ParentID     string `json:"parent_id,omitempty"`
-		KillChildren bool   `json:"kill_children,omitempty"`
+		Task                  string `json:"task"`
+		ProjectDir            string `json:"project_dir,omitempty"`
+		Backend               string `json:"backend,omitempty"`
+		Name                  string `json:"name,omitempty"`
+		LLM                   string `json:"llm,omitempty"`
+		ComputeNode           string `json:"compute_node,omitempty"`
+		Chrome                *bool  `json:"chrome,omitempty"`
+		ParentID              string `json:"parent_id,omitempty"`
+		KillChildren          bool   `json:"kill_children,omitempty"`
+		KillChildrenRecursive bool   `json:"kill_children_recursive,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren}
+	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive}
 	if chrome {
 		t := true
 		req.Chrome = &t
@@ -7813,7 +7862,9 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		if parent != "" {
 			fmt.Printf("Parent: %s\n", parent)
 		}
-		if killChildren {
+		if killChildrenRecursive {
+			fmt.Printf("KillChildrenRecursive: true\n")
+		} else if killChildren {
 			fmt.Printf("KillChildren: true\n")
 		}
 		return nil

@@ -337,11 +337,13 @@ type Command struct {
 	// When true, --chrome is forwarded to claude-code at launch.
 	Chrome bool
 
-	// BL347 — session lineage flags parsed from "new:" command.
+	// BL347/BL351 — session lineage flags parsed from "new:" command.
 	// ParentID: "new: parent=<hostname-hex>: <task>" — records calling session.
-	// KillChildren: "new: kill_children=true: <task>" — cascade kill on parent death.
-	ParentID     string
-	KillChildren bool
+	// KillChildren: "new: kill_children=true: <task>" — cascade kill direct children.
+	// KillChildrenRecursive: "new: kill_children_recursive=true: <task>" — cascade all descendants.
+	ParentID              string
+	KillChildren          bool
+	KillChildrenRecursive bool
 
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
@@ -384,6 +386,8 @@ const (
 	SessionVerbReconcile = "reconcile"
 	SessionVerbImport    = "import"
 	SessionVerbSummarize = "summarize"
+	SessionVerbSelf      = "self"     // BL349
+	SessionVerbOrphaned  = "orphaned" // BL350
 )
 
 // Parse parses a Signal message text into a Command.
@@ -418,11 +422,12 @@ func Parse(text string) Command {
 		// v7.0.0-alpha.21 (#259) — "new: llm=<name> [compute=<node>]: <task>"
 		// v8.8.3 — extended with chrome=true.
 		// v8.10.0 — extended with parent=<id> and kill_children=true.
+		// v8.10.3 — extended with kill_children_recursive=true (BL351).
 		// Strip leading key=value tokens before the ": <task>" separator.
-		// Recognised keys: llm, compute, chrome, parent, kill_children.
+		// Recognised keys: llm, compute, chrome, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "parent=", "kill_children="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "parent=", "kill_children=", "kill_children_recursive="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -435,7 +440,7 @@ func Parse(text string) Command {
 			prefix := rest[:idx]
 			tail := strings.TrimSpace(rest[idx+2:])
 			llmRef, computeRef, parentID := "", "", ""
-			chrome, killChildren := false, false
+			chrome, killChildren, killChildrenRecursive := false, false, false
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -453,19 +458,24 @@ func Parse(text string) Command {
 					killChildren = true
 				case tok == "kill_children=false":
 					// explicit false → leave killChildren=false, still valid
+				case tok == "kill_children_recursive=true":
+					killChildrenRecursive = true
+				case tok == "kill_children_recursive=false":
+					// explicit false → leave killChildrenRecursive=false, still valid
 				default:
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || parentID != "" || killChildren) {
+			if ok && (llmRef != "" || chrome || parentID != "" || killChildren || killChildrenRecursive) {
 				return Command{
-					Type:           CmdNew,
-					Text:           tail,
-					LLMRef:         llmRef,
-					ComputeNodeRef: computeRef,
-					Chrome:         chrome,
-					ParentID:       parentID,
-					KillChildren:   killChildren,
+					Type:                  CmdNew,
+					Text:                  tail,
+					LLMRef:                llmRef,
+					ComputeNodeRef:        computeRef,
+					Chrome:                chrome,
+					ParentID:              parentID,
+					KillChildren:          killChildren,
+					KillChildrenRecursive: killChildrenRecursive,
 				}
 			}
 		}
@@ -624,7 +634,7 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
 		parts := strings.Fields(rest)
 		if len(parts) < 1 {
-			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id>"}
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned"}
 		}
 		verb := strings.ToLower(parts[0])
 		cmd := Command{Type: CmdSession, SessionVerb: verb}
@@ -648,6 +658,10 @@ func Parse(text string) Command {
 			}
 			cmd.SessionArg = parts[1]
 			return cmd
+		case SessionVerbSelf:
+			return cmd // BL349 — no arg needed
+		case SessionVerbOrphaned:
+			return cmd // BL350 — no arg needed
 		default:
 			cmd.Text = "unknown session verb: " + verb
 			return cmd

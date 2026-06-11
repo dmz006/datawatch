@@ -26,6 +26,10 @@ func (r *Router) handleSessionCmd(cmd Command) {
 		r.sessionImport(cmd.SessionArg)
 	case SessionVerbSummarize:
 		r.sessionSummarize(cmd.SessionArg)
+	case SessionVerbSelf:
+		r.sessionSelf()
+	case SessionVerbOrphaned:
+		r.sessionOrphaned()
 	default:
 		r.send(sessionHelpText(r.hostname, "unknown verb: "+cmd.SessionVerb))
 	}
@@ -108,6 +112,58 @@ func (r *Router) sessionSummarize(id string) {
 	r.send(fmt.Sprintf("[%s] summary: %s", r.hostname, v.Summary))
 }
 
+func (r *Router) sessionSelf() {
+	body, err := r.commJSON("GET", "/api/sessions/self", "")
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] session self: %v", r.hostname, err))
+		return
+	}
+	var v struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		r.send(fmt.Sprintf("[%s] session self: %s", r.hostname, strings.TrimSpace(body)))
+		return
+	}
+	out := fmt.Sprintf("[%s] self: id=%s", r.hostname, v.ID)
+	if v.Name != "" {
+		out += " name=" + v.Name
+	}
+	r.send(out)
+}
+
+func (r *Router) sessionOrphaned() {
+	body, err := r.commJSON("GET", "/api/sessions/orphaned", "")
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] session orphaned: %v", r.hostname, err))
+		return
+	}
+	var sessions []struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		State    string `json:"state"`
+		ParentID string `json:"parent_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &sessions); err != nil {
+		r.send(fmt.Sprintf("[%s] session orphaned: %s", r.hostname, strings.TrimSpace(body)))
+		return
+	}
+	if len(sessions) == 0 {
+		r.send(fmt.Sprintf("[%s] no orphaned sessions", r.hostname))
+		return
+	}
+	lines := []string{fmt.Sprintf("[%s] orphaned sessions (%d):", r.hostname, len(sessions))}
+	for _, s := range sessions {
+		line := fmt.Sprintf("  %s state=%s parent=%s", s.ID, s.State, s.ParentID)
+		if s.Name != "" {
+			line = fmt.Sprintf("  %s (%s) state=%s parent=%s", s.ID, s.Name, s.State, s.ParentID)
+		}
+		lines = append(lines, line)
+	}
+	r.send(strings.Join(lines, "\n"))
+}
+
 func sessionHelpText(hostname, note string) string {
 	out := []string{fmt.Sprintf("[%s] session usage:", hostname)}
 	if note != "" {
@@ -118,6 +174,8 @@ func sessionHelpText(hostname, note string) string {
 		"  session reconcile apply   — import every orphan",
 		"  session import <dir|id>   — import a single session dir",
 		"  session summarize <id>    — summarize last session output",
+		"  session self              — show the current channel-ready session",
+		"  session orphaned          — list sessions with a missing parent",
 	)
 	return strings.Join(out, "\n")
 }

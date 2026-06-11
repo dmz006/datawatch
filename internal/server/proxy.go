@@ -210,6 +210,17 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 		results = append(results, result.sessions...)
 	}
 
+	// BL352 — ?parent_id=<id> filters to sessions whose parent_id matches.
+	if pid := r.URL.Query().Get("parent_id"); pid != "" {
+		var filtered []taggedSession
+		for _, ts := range results {
+			if ts.ParentID == pid {
+				filtered = append(filtered, ts)
+			}
+		}
+		results = filtered
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
