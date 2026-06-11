@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.10"
+var Version = "8.10.11"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -332,6 +332,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newExitHookCmd(),        // BL356 — session crash/exit hooks
 		newQueueCmd(),           // BL357 — durable role-based work queue
 		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
+		newResultCmd(),          // BL360 — structured agent result store
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1538,6 +1539,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open discussion sub store: %w", err)
 	}
 
+	// BL360 — structured agent result store.
+	resultStore, err := session.NewResultStore(resultStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open result store: %w", err)
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -2693,6 +2700,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetExitHookStore(exitHookStore)
 		httpServer.SetQueueStore(queueStore)             // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
+		httpServer.SetResultStore(resultStore)            // BL360
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -4862,6 +4870,23 @@ Return STRICT JSON:
 		}
 	}()
 
+	// BL360 — background goroutine to expire result store entries every 60 seconds.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				n := resultStore.ExpireEntries()
+				if n > 0 {
+					fmt.Printf("[result-store] expired %d entries\n", n)
+				}
+			}
+		}
+	}()
+
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    alertStore,
@@ -4869,6 +4894,7 @@ Return STRICT JSON:
 		ExitHookStore: exitHookStore,
 		QueueStore:    queueStore,            // BL357
 		SubStore:      discussionSubStore,    // BL358
+		ResultStore:   resultStore,           // BL360
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -8638,6 +8664,12 @@ func discussionSubStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "discussion_subs.json")
 }
 
+// ---- result store helper functions (BL360) ----------------------------------
+
+func resultStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "result_store.json")
+}
+
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
 	store, err := session.NewScheduleStore(schedStorePath(cfg))
 	if err != nil {
@@ -9466,12 +9498,14 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
 	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                      // BL357
 	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))         // BL358
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                   // BL360
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    mcpAlertStore,
 		SchedStore:    mcpSchedStore,
-		QueueStore:    mcpQueueStore, // BL357
-		SubStore:      mcpSubStore,   // BL358
+		QueueStore:    mcpQueueStore,  // BL357
+		SubStore:      mcpSubStore,    // BL358
+		ResultStore:   mcpResultStore, // BL360
 		CmdLib:        mcpCmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -13749,5 +13783,127 @@ func newDiscussionSubCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(subscribeCmd, unsubscribeCmd, listCmd)
+	return cmd
+}
+
+// newResultCmd returns the "result" cobra subcommand tree (BL360).
+func newResultCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "result",
+		Short: "Manage the structured agent result store (BL360)",
+	}
+
+	// put
+	putCmd := &cobra.Command{
+		Use:   "put <name> <json-payload>",
+		Short: "Store a named result payload (upsert)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(c *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			name := args[0]
+			payloadStr := args[1]
+			ttl, _ := c.Flags().GetInt("ttl")
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+				return fmt.Errorf("invalid JSON payload: %w", err)
+			}
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
+			}
+			entry, err := rs.Put(name, payload, ttl)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("stored result %q (created=%s)\n", entry.Name, entry.CreatedAt.Format("15:04:05"))
+			return nil
+		},
+	}
+	putCmd.Flags().Int("ttl", 0, "Time-to-live in seconds (0 = no expiry)")
+
+	// get
+	getCmd := &cobra.Command{
+		Use:   "get <name>",
+		Short: "Retrieve a named result",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
+			}
+			entry, ok := rs.Get(args[0])
+			if !ok {
+				fmt.Printf("not found: %s\n", args[0])
+				return nil
+			}
+			b, _ := json.MarshalIndent(entry, "", "  ")
+			fmt.Println(string(b))
+			return nil
+		},
+	}
+
+	// list
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List stored results",
+		RunE: func(c *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			prefix, _ := c.Flags().GetString("prefix")
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
+			}
+			entries := rs.List(prefix)
+			if len(entries) == 0 {
+				fmt.Println("No result entries found.")
+				return nil
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "NAME\tCREATED_AT\tEXPIRES_AT")
+			for _, e := range entries {
+				exp := "(none)"
+				if e.ExpiresAt != nil {
+					exp = e.ExpiresAt.Format("15:04:05")
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", e.Name, e.CreatedAt.Format("15:04:05"), exp)
+			}
+			return w.Flush()
+		},
+	}
+	listCmd.Flags().String("prefix", "", "Filter by name prefix")
+
+	// delete
+	deleteCmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a named result",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
+			}
+			if err := rs.Delete(args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("deleted result %q\n", args[0])
+			return nil
+		},
+	}
+
+	cmd.AddCommand(putCmd, getCmd, listCmd, deleteCmd)
 	return cmd
 }

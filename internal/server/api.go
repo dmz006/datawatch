@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.10"
+var Version = "8.10.11"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -188,6 +188,7 @@ type Server struct {
 	exitHookStore     *session.ExitHookStore      // BL356
 	queueStore        *session.QueueStore          // BL357
 	discussionSubStore *session.DiscussionSubStore // BL358
+	resultStore       *session.ResultStore         // BL360
 	cmdLib            *session.CmdLibrary
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
@@ -704,6 +705,9 @@ func (s *Server) SetExitHookStore(store *session.ExitHookStore) { s.exitHookStor
 
 // SetQueueStore wires a work queue store into the API server (BL357).
 func (s *Server) SetQueueStore(store *session.QueueStore) { s.queueStore = store }
+
+// SetResultStore wires a result store into the API server (BL360).
+func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
 
 // SetDiscussionSubStore wires a discussion subscription store into the API server (BL358).
 func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
@@ -7647,6 +7651,81 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	default:
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
+}
+
+// handleResultStore dispatches /api/result-store* endpoints (BL360 — structured agent result store).
+//
+// Routes:
+//
+//	GET    /api/result-store           — list entries (query: prefix=)
+//	GET    /api/result-store/{name}    — get one entry
+//	POST   /api/result-store           — put/upsert entry {name, payload, ttl_seconds}
+//	DELETE /api/result-store/{name}    — delete entry
+func (s *Server) handleResultStore(w http.ResponseWriter, r *http.Request) {
+	if s.resultStore == nil {
+		http.Error(w, `{"error":"result store not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	// Determine sub-path after /api/result-store
+	sub := strings.TrimPrefix(r.URL.Path, "/api/result-store")
+	sub = strings.TrimPrefix(sub, "/")
+
+	switch {
+	case r.Method == http.MethodGet && sub == "":
+		// GET /api/result-store — list
+		prefix := r.URL.Query().Get("prefix")
+		entries := s.resultStore.List(prefix)
+		writeJSONOK(w, entries)
+
+	case r.Method == http.MethodGet && sub != "":
+		// GET /api/result-store/{name}
+		name := sub
+		entry, ok := s.resultStore.Get(name)
+		if !ok {
+			http.Error(w, fmt.Sprintf(`{"error":"not found: %s"}`, name), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, entry)
+
+	case r.Method == http.MethodPost && sub == "":
+		// POST /api/result-store — upsert
+		var req struct {
+			Name       string         `json:"name"`
+			Payload    map[string]any `json:"payload"`
+			TTLSeconds int            `json:"ttl_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Payload == nil {
+			http.Error(w, `{"error":"payload is required"}`, http.StatusBadRequest)
+			return
+		}
+		entry, err := s.resultStore.Put(req.Name, req.Payload, req.TTLSeconds)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, entry)
+
+	case r.Method == http.MethodDelete && sub != "":
+		// DELETE /api/result-store/{name}
+		name := sub
+		if err := s.resultStore.Delete(name); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{"ok": true, "deleted": name})
 
 	default:
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)

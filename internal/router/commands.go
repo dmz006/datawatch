@@ -316,6 +316,13 @@ const (
 	//   "discussion_sub list"
 	CmdDiscussionSub CommandType = "discussion_sub"
 
+	// BL360 — structured agent result store over chat.
+	//   "result put name=<n> payload=<json> [ttl=<sec>]"
+	//   "result get name=<n>"
+	//   "result list [prefix=<p>]"
+	//   "result delete name=<n>"
+	CmdResultStore CommandType = "result"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -433,6 +440,13 @@ type Command struct {
 	DiscussionSubVerb        string // "subscribe" | "unsubscribe" | "list"
 	DiscussionSubDiscussionID string // for subscribe/unsubscribe: discussion scope ID
 	DiscussionSubSessionName  string // for subscribe/unsubscribe: session name
+
+	// BL360 — CmdResultStore fields.
+	ResultVerb    string // "put" | "get" | "list" | "delete"
+	ResultName    string // for put/get/delete: entry name/key
+	ResultPayload string // for put: JSON payload string
+	ResultTTL     int    // for put: TTL in seconds (0=no expiry)
+	ResultPrefix  string // for list: prefix filter
 }
 
 // SessionVerb values.
@@ -1270,6 +1284,9 @@ func Parse(text string) Command {
 	case lower == "discussion_sub" || lower == "discussion_sub list" || strings.HasPrefix(lower, "discussion_sub "):
 		return parseDiscussionSubCommand(text)
 
+	case lower == "result" || lower == "result list" || strings.HasPrefix(lower, "result "):
+		return parseResultStoreCommand(text)
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -1398,6 +1415,50 @@ func parseDiscussionSubCommand(text string) Command {
 	}
 	cmd.DiscussionSubDiscussionID = params["discussion_id"]
 	cmd.DiscussionSubSessionName = params["session_name"]
+	return cmd
+}
+
+// parseResultStoreCommand parses a result command (BL360).
+// Formats:
+//
+//	result put name=<n> payload=<json> [ttl=<sec>]
+//	result get name=<n>
+//	result list [prefix=<p>]
+//	result delete name=<n>
+func parseResultStoreCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdResultStore, ResultVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	cmd := Command{Type: CmdResultStore, ResultVerb: verb}
+
+	// Parse key=value pairs from remaining args.
+	params := make(map[string]string)
+	for _, p := range parts[2:] {
+		if idx := strings.Index(p, "="); idx > 0 {
+			params[p[:idx]] = p[idx+1:]
+		}
+	}
+	// Multi-word extraction for "payload=".
+	marker := " payload="
+	if idx := strings.Index(text, marker); idx >= 0 {
+		val := text[idx+len(marker):]
+		for _, other := range []string{" name=", " ttl=", " prefix="} {
+			if ki := strings.Index(val, other); ki >= 0 {
+				val = val[:ki]
+			}
+		}
+		params["payload"] = strings.TrimSpace(val)
+	}
+
+	cmd.ResultName = params["name"]
+	cmd.ResultPayload = params["payload"]
+	cmd.ResultPrefix = params["prefix"]
+	if ttl, ok := params["ttl"]; ok {
+		n, _ := strconv.Atoi(ttl)
+		cmd.ResultTTL = n
+	}
 	return cmd
 }
 

@@ -486,6 +486,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL358 — discussion push/subscribe.
 	apiMux.HandleFunc("/api/discussion-subs", api.handleDiscussionSubs)
 	apiMux.HandleFunc("/api/discussion-subs/", api.handleDiscussionSubs)
+
+	// BL360 — structured agent result store.
+	apiMux.HandleFunc("/api/result-store", api.handleResultStore)
+	apiMux.HandleFunc("/api/result-store/", api.handleResultStore)
 	// Serve TLS certificate for easy install on mobile devices.
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.
@@ -637,6 +641,11 @@ func (s *HTTPServer) SetQueueStore(store *session.QueueStore) {
 // SetDiscussionSubStore wires a discussion subscription store into the server for /api/discussion-subs (BL358).
 func (s *HTTPServer) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 	s.api.SetDiscussionSubStore(store)
+}
+
+// SetResultStore wires a result store into the server for /api/result-store (BL360).
+func (s *HTTPServer) SetResultStore(store *session.ResultStore) {
+	s.api.SetResultStore(store)
 }
 
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers

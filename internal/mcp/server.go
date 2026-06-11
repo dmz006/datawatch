@@ -66,6 +66,7 @@ type Server struct {
 	exitHookStore *session.ExitHookStore    // BL356
 	queueStore    *session.QueueStore       // BL357
 	subStore      *session.DiscussionSubStore // BL358
+	resultStore   *session.ResultStore       // BL360
 	cmdLib        *session.CmdLibrary
 	restartFn  func()
 	version    string
@@ -97,6 +98,9 @@ type Server struct {
 	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
 	fedPeerStore FedPeerStore
 }
+
+// SetResultStore wires a result store into the MCP server (BL360).
+func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
 
 // SetAgentAuditPath wires the audit file path for the agent_audit
 // MCP tool. cef=true marks the file as CEF-formatted (in which case
@@ -150,6 +154,7 @@ type Options struct {
 	ExitHookStore *session.ExitHookStore      // BL356
 	QueueStore    *session.QueueStore          // BL357
 	SubStore      *session.DiscussionSubStore  // BL358
+	ResultStore   *session.ResultStore         // BL360
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
 	Version       string
@@ -167,7 +172,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		schedStore:    opts.SchedStore,
 		exitHookStore: opts.ExitHookStore,
 		queueStore:    opts.QueueStore,
-		subStore:      opts.SubStore, // BL358
+		subStore:      opts.SubStore,       // BL358
+		resultStore:   opts.ResultStore,    // BL360
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
 		version:       opts.Version,
@@ -261,6 +267,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDiscussionSubscribe(), tracked(s.handleDiscussionSubscribe))
 	mcpSrv.AddTool(s.toolDiscussionUnsubscribe(), tracked(s.handleDiscussionUnsubscribe))
 	mcpSrv.AddTool(s.toolDiscussionSubscriptions(), tracked(s.handleDiscussionSubscriptions))
+
+	// BL360 — structured agent result store.
+	mcpSrv.AddTool(s.toolResultPut(), tracked(s.handleResultPut))
+	mcpSrv.AddTool(s.toolResultGet(), tracked(s.handleResultGet))
+	mcpSrv.AddTool(s.toolResultList(), tracked(s.handleResultList))
+	mcpSrv.AddTool(s.toolResultDelete(), tracked(s.handleResultDelete))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))
