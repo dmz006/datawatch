@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.9.25 — fix: BL342 compute migrate CLI + BL343 federation peer health alerts (2026-06-10)
+
+### Fixed
+
+- **`compute node add/update` rejected deprecated kinds** (BL342) — `compute node add --kind local` (and `remote`, `ssh`, `docker`, `k8s`, `remote-proxy`) now fails at the CLI boundary with a clear error: `"kind 'local' is no longer supported — use --kind ollama or --kind openai-compat"`. The default `--kind` is now `ollama` instead of `remote`.
+
+- **Dispatcher error now cites the CLI fix** (BL342) — the "deprecated Kind" 502 error previously told operators to use the web-UI Settings banner. It now says `"run: datawatch compute migrate <name>"` so headless installs have a direct actionable path.
+
+- **ZAP Timestamp Disclosure false positive silenced** — added rule 10096 to `.zap/rules.tsv`. `sampled_at_unix_ms` and `last_ok_unix_ms` are intentional metric metadata on monitoring endpoints, not secret disclosures. Closes recurring ZAP CI issues #109, #115, #116, #121, #122, #123, #124, #126.
+
+### Added
+
+- **`datawatch compute migrate` CLI command** (BL342) — exposes the existing `PUT /api/migration/compute-kinds/<name>` REST endpoint on the CLI. Headless installs can now complete LLM setup without the web UI:
+  ```
+  datawatch compute migrate               # list nodes needing migration
+  datawatch compute migrate mynode --kind ollama
+  datawatch compute migrate --all --kind ollama
+  ```
+
+- **Background federation peer health monitor** (BL343) — a goroutine probes every federated peer's `/api/health` endpoint every 10 minutes (jittered). When a peer transitions from reachable → unreachable a `warn` system alert fires with the peer name, URL, error, and a tip to use Tailscale MagicDNS to avoid DHCP churn. A recovery `info` alert fires when the peer comes back.
+
+---
+
 ## v8.9.24 — fix(mcp): BL341 session name resolution + permission_mode for start_session (2026-06-09)
 
 ### Added

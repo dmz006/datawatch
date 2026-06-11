@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.9.24"
+var Version = "8.9.25"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2773,6 +2773,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				if msErr == nil {
 					httpServer.SetServerStore(msStore)
+					// BL343 — background peer health monitor.
+					server.StartPeerHealthMonitor(context.Background(), msStore, alertStore)
 				} else {
 					fmt.Printf("[servers] store init failed: %v\n", msErr)
 				}

@@ -51,9 +51,11 @@ Latest release: **v8.6.0** (committed 2026-05-19; GitHub publish pending). Full 
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
-| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.9.25 shipped 2026-06-10 — BL342+BL343: ComputeNode CLI catch-22 fix + federation peer health alerting. `compute migrate` CLI command exposes existing migration REST endpoint. `compute node add/update` rejects deprecated kinds at CLI boundary. Background peer-health goroutine fires system alerts on peer state transitions. ZAP 10096 (Timestamp Disclosure) suppressed in `.zap/rules.tsv`. Closes GH#125. Silences recurring ZAP issues #109, #115, #116, #121, #122, #123, #124, #126.
 
 v8.9.24 shipped 2026-06-09 — BL341: MCP session name resolution + permission_mode for autonomous handoff. `resolveSession` helper accepts session names in addition to hex IDs (with active-preference tiebreak). `start_session` tool gains `permission_mode` parameter. 12 new targeted tests.
 

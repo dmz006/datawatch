@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.9.24-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.24)
+[![Release](https://img.shields.io/badge/release-v8.9.25-success)](https://github.com/dmz006/datawatch/releases/tag/v8.9.25)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,8 +89,10 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.9.24](CHANGELOG.md) (2026-06-09)** — MCP session name resolution + permission_mode for autonomous handoff (BL341), imap-mcp email channel (BL340).
+**[v8.9.25](CHANGELOG.md) (2026-06-10)** — ComputeNode CLI catch-22 fix, federation peer health alerting, ZAP timestamp false-positive silenced (BL342 + BL343).
 
+- **`datawatch compute migrate` CLI command** (v8.9.25) — headless installs can now complete LLM setup without the web UI. `compute node add` also now rejects deprecated kinds at the CLI boundary with a clear error pointing to `compute migrate`.
+- **Federation peer health alerts** (v8.9.25) — background probe fires a system alert when a federated peer goes unreachable, with a Tailscale MagicDNS tip to prevent DHCP churn. Recovery alert fires when the peer comes back.
 - **MCP session name resolution** (v8.9.24) — `send_input`, `kill_session`, `rename_session`, `session_output`, `session_timeline`, `send_saved_command`, and `schedule_add` now accept human-readable session names (not just hex IDs). Tiebreak: active sessions preferred; multiple-active returns an error with the ID list. Enables autonomous session self-handoff without ID bookkeeping.
 - **`start_session` permission_mode** (v8.9.24) — `start_session` MCP tool now accepts `permission_mode` (`default` | `plan` | `acceptEdits` | `auto` | `bypassPermissions` | `dontAsk`). Allows agents to launch subagents at any permission level without operator intervention.
 - **imap-mcp email command channel** (v8.9.23) — new `imap_mcp` messaging backend bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance. Subscribes to imap-mcp's SSE event stream and acts only on `inbound.command` events that already passed imap-mcp's composable trust gates (allowlist, DKIM/DMARC, HMAC, replay-nonce). Sends replies via imap-mcp's new REST send endpoint. Enable with `imap_mcp.enabled: true` and `url: http://localhost:8765` in config.

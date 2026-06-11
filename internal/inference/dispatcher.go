@@ -148,7 +148,7 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 		// v7.0.0-alpha.23 (Q2 fail-loud) — refuse deprecated-Kind nodes.
 		// Operator must migrate via PWA banner / PUT /api/migration/compute-kinds.
 		if node.Kind.IsDeprecated() {
-			lastErr = fmt.Errorf("compute node %q has deprecated Kind %q — migrate via Settings → Compute → Migration banner", nodeName, node.Kind)
+			lastErr = fmt.Errorf("compute node %q has deprecated Kind %q — run: datawatch compute migrate %s", nodeName, node.Kind, nodeName)
 			continue
 		}
 		// v7.0.0-alpha.23 (Q6) — operator-disabled nodes bypass dispatch.

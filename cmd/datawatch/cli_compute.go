@@ -13,7 +13,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -28,7 +30,100 @@ datawatch peer. The LLM registry (S2) routes calls through Nodes via
 ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	}
 	cmd.AddCommand(newComputeNodeCmd())
+	cmd.AddCommand(newComputeMigrateCmd())
 	return cmd
+}
+
+// newComputeMigrateCmd — BL342: expose PUT /api/migration/compute-kinds as a CLI command.
+// Without this, headless installs had no path forward when all CLI-creatable
+// NodeKinds (local/remote/ssh/docker/k8s/remote-proxy) were rejected by the
+// dispatcher. The web-UI migration banner called this endpoint already; we're
+// just surfacing it on the CLI.
+func newComputeMigrateCmd() *cobra.Command {
+	var kind string
+	var all bool
+
+	cmd := &cobra.Command{
+		Use:   "migrate [<node-name>]",
+		Short: "Migrate deprecated ComputeNode kind(s) to ollama or openai-compat",
+		Long: `Migrates one or all ComputeNodes from a deprecated kind
+(local | remote | ssh | docker | k8s | remote-proxy) to a supported kind.
+
+Examples:
+  # List nodes that need migration:
+  datawatch compute migrate
+
+  # Migrate one node:
+  datawatch compute migrate mynode --kind ollama
+
+  # Migrate all deprecated nodes at once:
+  datawatch compute migrate --all --kind ollama`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if all {
+				if kind == "" {
+					return fmt.Errorf("--kind required with --all (use: ollama | openai-compat)")
+				}
+				return computeMigrateAll(kind)
+			}
+			if len(args) == 0 {
+				// No args + no --all: show list of deprecated nodes.
+				return daemonGet("/api/migration/compute-kinds")
+			}
+			if kind == "" {
+				return fmt.Errorf("--kind required (use: ollama | openai-compat)")
+			}
+			return daemonJSON(http.MethodPut, "/api/migration/compute-kinds/"+args[0], map[string]any{"kind": kind})
+		},
+	}
+	cmd.Flags().StringVar(&kind, "kind", "", "target kind: ollama or openai-compat")
+	cmd.Flags().BoolVar(&all, "all", false, "migrate every deprecated ComputeNode in one pass")
+	return cmd
+}
+
+// computeMigrateAll fetches the deprecated-node list then PUTs each one.
+func computeMigrateAll(kind string) error {
+	req, err := http.NewRequest(http.MethodGet, daemonURL()+"/api/migration/compute-kinds", nil)
+	if err != nil {
+		return err
+	}
+	if tok := daemonToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := daemonClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
+	}
+	var result struct {
+		Nodes []struct {
+			Name string `json:"name"`
+			Kind string `json:"current_kind"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+	if len(result.Nodes) == 0 {
+		fmt.Println("No deprecated ComputeNodes found — nothing to migrate.")
+		return nil
+	}
+	fmt.Printf("Migrating %d node(s) to kind=%q…\n", len(result.Nodes), kind)
+	var failed int
+	for _, n := range result.Nodes {
+		if err := daemonJSON(http.MethodPut, "/api/migration/compute-kinds/"+n.Name, map[string]any{"kind": kind}); err != nil {
+			fmt.Fprintf(os.Stderr, "  [error] %s (%s): %v\n", n.Name, n.Kind, err)
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d node(s) failed to migrate", failed)
+	}
+	return nil
 }
 
 func newComputeNodeCmd() *cobra.Command {
@@ -159,11 +254,22 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 		method = http.MethodPut
 		urlBuilder = func(name string) string { return "/api/compute/nodes/" + name }
 	}
+	deprecatedKinds := map[string]bool{
+		"local": true, "ssh": true, "docker": true,
+		"k8s": true, "remote": true, "remote-proxy": true,
+	}
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if deprecatedKinds[kind] {
+				return fmt.Errorf(
+					"kind %q is no longer supported — use --kind ollama or --kind openai-compat\n"+
+						"If you have existing nodes with deprecated kinds, run: datawatch compute migrate",
+					kind,
+				)
+			}
 			body := map[string]any{
 				"name":                args[0],
 				"kind":                kind,
@@ -198,7 +304,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 			return daemonJSON(method, urlBuilder(args[0]), body)
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "remote", "local | ssh | docker | k8s | remote | remote-proxy")
+	cmd.Flags().StringVar(&kind, "kind", "ollama", "ollama | openai-compat  (deprecated: local | ssh | docker | k8s | remote | remote-proxy)")
 	cmd.Flags().StringVar(&address, "address", "", "host:port or URL (required for ssh/remote/remote-proxy)")
 	cmd.Flags().StringVar(&monitoringEndpoint, "monitoring-endpoint", "", "stub --listen URL (e.g. https://gpu-1:9001/api/stats) for on-demand detail")
 	cmd.Flags().IntVar(&maxModels, "max-models", 0, "declared capacity: max concurrent models")

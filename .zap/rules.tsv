@@ -60,3 +60,14 @@
 # prevents cross-origin embedding. Adding Sec-Fetch validation is a future
 # hardening item (defence-in-depth, not a current exploit path).
 90005	IGNORE	Sec-Fetch-* Missing — server-side validation is defence-in-depth; CSP frame-ancestors guards embedding
+
+# [10096] Timestamp Disclosure - Unix
+# /api/stats and /api/observer/stats intentionally include millisecond-precision
+# sampling timestamps (sampled_at_unix_ms, last_ok_unix_ms) as operational
+# metric metadata. These are monitoring endpoints whose purpose is to surface
+# time-stamped telemetry to operators. The timestamps are not secret: they
+# convey when a CPU/GPU/memory sample was collected and are necessary for
+# consumers to detect stale data. No credentials, session tokens, or
+# user-identifiable data are disclosed. False positive — the endpoints are
+# intentional time-series data surfaces, not accidental server-time leaks.
+10096	IGNORE	Timestamp Disclosure — sampled_at_unix_ms / last_ok_unix_ms are intentional metric metadata on monitoring endpoints; not a secret disclosure
