@@ -302,6 +302,14 @@ const (
 	//   "exit_hook disable id=<id>"                  → disable a hook
 	CmdExitHook CommandType = "exit_hook"
 
+	// BL357 — durable role-based work queue over chat.
+	//   "queue push role=<r> [payload=<json>]"
+	//   "queue claim role=<r> [claimed_by=<s>] [lease=<sec>]"
+	//   "queue complete id=<id> [result=<json>]"
+	//   "queue fail id=<id> error=<msg>"
+	//   "queue list [role=<r>] [state=<s>]"
+	CmdQueue CommandType = "queue"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -402,6 +410,17 @@ type Command struct {
 	ExitHookNotifySession string // for add/notify: target session name
 	ExitHookMessage       string // for add/notify: message text
 	ExitHookCooldown      int    // for add: cooldown seconds
+
+	// BL357 — CmdQueue fields.
+	QueueVerb        string // "push" | "claim" | "complete" | "fail" | "list"
+	QueueRole        string // for push/claim/list: role filter/target
+	QueueID          string // for complete/fail: item id
+	QueuePayload     string // for push: JSON payload string
+	QueueClaimedBy   string // for claim: session identifier
+	QueueLeaseSeconds int   // for claim: lease duration
+	QueueResult      string // for complete: JSON result string
+	QueueError       string // for fail: error message
+	QueueState       string // for list: state filter
 }
 
 // SessionVerb values.
@@ -1197,6 +1216,9 @@ func Parse(text string) Command {
 	case lower == "exit_hook" || lower == "exit_hook list" || strings.HasPrefix(lower, "exit_hook "):
 		return parseExitHookCommand(text)
 
+	case lower == "queue" || lower == "queue list" || strings.HasPrefix(lower, "queue "):
+		return parseQueueCommand(text)
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -1244,6 +1266,60 @@ func parseExitHookCommand(text string) Command {
 	if cs, ok := params["cooldown"]; ok {
 		n, _ := strconv.Atoi(cs)
 		cmd.ExitHookCooldown = n
+	}
+	return cmd
+}
+
+// parseQueueCommand parses a queue command (BL357).
+// Formats:
+//
+//	queue push role=<r> [payload=<json>]
+//	queue claim role=<r> [claimed_by=<s>] [lease=<sec>]
+//	queue complete id=<id> [result=<json>]
+//	queue fail id=<id> error=<msg>
+//	queue list [role=<r>] [state=<s>]
+func parseQueueCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdQueue, QueueVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	cmd := Command{Type: CmdQueue, QueueVerb: verb}
+
+	// Parse key=value pairs from remaining args.
+	// Multi-word values (payload/result/error) are collected by scanning
+	// for the key= prefix in the original text.
+	params := make(map[string]string)
+	for _, p := range parts[2:] {
+		if idx := strings.Index(p, "="); idx > 0 {
+			params[p[:idx]] = p[idx+1:]
+		}
+	}
+	// Multi-word extraction for "error=", "payload=", "result=".
+	for _, key := range []string{"payload", "result", "error"} {
+		marker := " " + key + "="
+		if idx := strings.Index(text, marker); idx >= 0 {
+			val := text[idx+len(marker):]
+			// Trim at the next key= boundary.
+			for _, other := range []string{" role=", " claimed_by=", " lease=", " id=", " state=", " payload=", " result=", " error="} {
+				if ki := strings.Index(val, other); ki >= 0 {
+					val = val[:ki]
+				}
+			}
+			params[key] = strings.TrimSpace(val)
+		}
+	}
+
+	cmd.QueueRole = params["role"]
+	cmd.QueueID = params["id"]
+	cmd.QueuePayload = params["payload"]
+	cmd.QueueClaimedBy = params["claimed_by"]
+	cmd.QueueResult = params["result"]
+	cmd.QueueError = params["error"]
+	cmd.QueueState = params["state"]
+	if ls, ok := params["lease"]; ok {
+		n, _ := strconv.Atoi(ls)
+		cmd.QueueLeaseSeconds = n
 	}
 	return cmd
 }

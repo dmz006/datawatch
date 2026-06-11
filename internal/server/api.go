@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.7"
+var Version = "8.10.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -186,6 +186,7 @@ type Server struct {
 	cfgPath           string
 	schedStore        *session.ScheduleStore
 	exitHookStore     *session.ExitHookStore // BL356
+	queueStore        *session.QueueStore    // BL357
 	cmdLib            *session.CmdLibrary
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
@@ -699,6 +700,9 @@ func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore =
 
 // SetExitHookStore wires an exit hook store into the API server (BL356).
 func (s *Server) SetExitHookStore(store *session.ExitHookStore) { s.exitHookStore = store }
+
+// SetQueueStore wires a work queue store into the API server (BL357).
+func (s *Server) SetQueueStore(store *session.QueueStore) { s.queueStore = store }
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
@@ -7489,4 +7493,125 @@ func (s *Server) handleMatrixTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONOK(w, map[string]interface{}{"ok": true, "message": body.Message})
+}
+
+// handleQueue dispatches /api/queue* endpoints (BL357 — durable role-based work queue).
+//
+// Routes:
+//
+//	GET    /api/queue           — list items (query: role=, state=)
+//	POST   /api/queue/push      — push new item
+//	POST   /api/queue/claim     — claim item
+//	POST   /api/queue/complete  — complete item
+//	POST   /api/queue/fail      — fail item
+//	DELETE /api/queue/{id}      — delete item
+func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
+	if s.queueStore == nil {
+		http.Error(w, `{"error":"queue store not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	// Determine sub-path after /api/queue
+	sub := strings.TrimPrefix(r.URL.Path, "/api/queue")
+	sub = strings.TrimPrefix(sub, "/")
+
+	switch {
+	case r.Method == http.MethodGet && sub == "":
+		// GET /api/queue — list
+		role := r.URL.Query().Get("role")
+		state := r.URL.Query().Get("state")
+		items := s.queueStore.List(role, state)
+		writeJSONOK(w, items)
+
+	case r.Method == http.MethodPost && sub == "push":
+		var req struct {
+			Role    string         `json:"role"`
+			Payload map[string]any `json:"payload"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Role == "" {
+			http.Error(w, `{"error":"role is required"}`, http.StatusBadRequest)
+			return
+		}
+		it, err := s.queueStore.Push(req.Role, req.Payload)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, it)
+
+	case r.Method == http.MethodPost && sub == "claim":
+		var req struct {
+			Role         string `json:"role"`
+			ClaimedBy    string `json:"claimed_by"`
+			LeaseSeconds int    `json:"lease_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Role == "" {
+			http.Error(w, `{"error":"role is required"}`, http.StatusBadRequest)
+			return
+		}
+		it, err := s.queueStore.Claim(req.Role, req.ClaimedBy, req.LeaseSeconds)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, it)
+
+	case r.Method == http.MethodPost && sub == "complete":
+		var req struct {
+			ID     string         `json:"id"`
+			Result map[string]any `json:"result"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.ID == "" {
+			http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := s.queueStore.Complete(req.ID, req.Result); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	case r.Method == http.MethodPost && sub == "fail":
+		var req struct {
+			ID    string `json:"id"`
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.ID == "" {
+			http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := s.queueStore.Fail(req.ID, req.Error); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	case r.Method == http.MethodDelete && sub != "":
+		// DELETE /api/queue/{id}
+		id := sub
+		if err := s.queueStore.Delete(id); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	default:
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
 }

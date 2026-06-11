@@ -64,6 +64,7 @@ type Server struct {
 	alertStore *alerts.Store
 	schedStore    *session.ScheduleStore
 	exitHookStore *session.ExitHookStore // BL356
+	queueStore    *session.QueueStore    // BL357
 	cmdLib        *session.CmdLibrary
 	restartFn  func()
 	version    string
@@ -146,6 +147,7 @@ type Options struct {
 	AlertStore    *alerts.Store
 	SchedStore    *session.ScheduleStore
 	ExitHookStore *session.ExitHookStore // BL356
+	QueueStore    *session.QueueStore    // BL357
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
 	Version       string
@@ -162,6 +164,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		alertStore:    opts.AlertStore,
 		schedStore:    opts.SchedStore,
 		exitHookStore: opts.ExitHookStore,
+		queueStore:    opts.QueueStore,
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
 		version:       opts.Version,
@@ -243,6 +246,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolExitHookDelete(), tracked(s.handleExitHookDelete))
 	mcpSrv.AddTool(s.toolExitHookEnable(), tracked(s.handleExitHookEnable))
 	mcpSrv.AddTool(s.toolExitHookDisable(), tracked(s.handleExitHookDisable))
+
+	// BL357 — durable role-based work queue.
+	mcpSrv.AddTool(s.toolQueuePush(), tracked(s.handleQueuePush))
+	mcpSrv.AddTool(s.toolQueueClaim(), tracked(s.handleQueueClaim))
+	mcpSrv.AddTool(s.toolQueueComplete(), tracked(s.handleQueueComplete))
+	mcpSrv.AddTool(s.toolQueueFail(), tracked(s.handleQueueFail))
+	mcpSrv.AddTool(s.toolQueueList(), tracked(s.handleQueueList))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))

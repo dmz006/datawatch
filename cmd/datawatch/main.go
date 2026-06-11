@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.7"
+var Version = "8.10.8"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -330,6 +330,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
 		newMatrixCmd(),     // BL241 — Matrix backend status + test
 		newExitHookCmd(),   // BL356 — session crash/exit hooks
+		newQueueCmd(),      // BL357 — durable role-based work queue
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1524,6 +1525,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// BL357 — durable role-based work queue.
+	queueStore, err := session.NewQueueStore(queueStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open queue store: %w", err)
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -2677,6 +2684,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
 		httpServer.SetExitHookStore(exitHookStore)
+		httpServer.SetQueueStore(queueStore) // BL357
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -4829,11 +4837,29 @@ Return STRICT JSON:
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
 	go runScheduler(ctx, schedStore, mgr)
 
+	// BL357 — background goroutine to expire stale queue leases every 30 seconds.
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				n := queueStore.ExpireLeases()
+				if n > 0 {
+					fmt.Printf("[queue] expired %d leases\n", n)
+				}
+			}
+		}
+	}()
+
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    alertStore,
 		SchedStore:    schedStore,
 		ExitHookStore: exitHookStore,
+		QueueStore:    queueStore, // BL357
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -8564,6 +8590,12 @@ func exitHooksStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "exit_hooks.json")
 }
 
+// ---- queue helper functions (BL357) -----------------------------------------
+
+func queueStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "queue.json")
+}
+
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
 	store, err := session.NewScheduleStore(schedStorePath(cfg))
 	if err != nil {
@@ -9390,10 +9422,12 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg)) // BL357
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    mcpAlertStore,
 		SchedStore:    mcpSchedStore,
+		QueueStore:    mcpQueueStore, // BL357
 		CmdLib:        mcpCmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -13390,4 +13424,181 @@ func runExitHookNotify(mgr *session.Manager, sess *session.Session, hook *sessio
 	if err := mgr.SendInput(target.FullID, msg, "exit-hook"); err != nil {
 		fmt.Printf("[exit-hook] notify failed: %v\n", err)
 	}
+}
+
+// ---- queue CLI (BL357) -------------------------------------------------------
+
+func newQueueCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "queue",
+		Short: "Manage the durable role-based work queue (BL357)",
+	}
+
+	// push
+	pushCmd := &cobra.Command{
+		Use:   "push",
+		Short: "Push a new work item onto the queue",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			role, _ := cmd.Flags().GetString("role")
+			payloadStr, _ := cmd.Flags().GetString("payload")
+			if role == "" {
+				return fmt.Errorf("--role is required")
+			}
+			qs, err := session.NewQueueStore(queueStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open queue store: %w", err)
+			}
+			var payload map[string]any
+			if payloadStr != "" {
+				if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+					return fmt.Errorf("invalid --payload JSON: %w", err)
+				}
+			}
+			it, err := qs.Push(role, payload)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("pushed item %s (role=%s state=%s)\n", it.ID, it.Role, it.State)
+			return nil
+		},
+	}
+	pushCmd.Flags().String("role", "", "Role that can claim this item (required)")
+	pushCmd.Flags().String("payload", "", "JSON object payload")
+
+	// claim
+	claimCmd := &cobra.Command{
+		Use:   "claim",
+		Short: "Claim the oldest pending item for a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			role, _ := cmd.Flags().GetString("role")
+			claimedBy, _ := cmd.Flags().GetString("claimed-by")
+			lease, _ := cmd.Flags().GetInt("lease")
+			if role == "" {
+				return fmt.Errorf("--role is required")
+			}
+			qs, err := session.NewQueueStore(queueStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open queue store: %w", err)
+			}
+			it, err := qs.Claim(role, claimedBy, lease)
+			if err != nil {
+				return err
+			}
+			if it == nil {
+				fmt.Printf("no pending items available for role %q\n", role)
+				return nil
+			}
+			fmt.Printf("claimed item %s (role=%s claimed_by=%s)\n", it.ID, it.Role, it.ClaimedBy)
+			return nil
+		},
+	}
+	claimCmd.Flags().String("role", "", "Role to claim for (required)")
+	claimCmd.Flags().String("claimed-by", "", "Session identifier claiming the item")
+	claimCmd.Flags().Int("lease", 300, "Lease duration in seconds")
+
+	// complete
+	completeCmd := &cobra.Command{
+		Use:   "complete",
+		Short: "Mark a claimed item as complete",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			id, _ := cmd.Flags().GetString("id")
+			resultStr, _ := cmd.Flags().GetString("result")
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			qs, err := session.NewQueueStore(queueStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open queue store: %w", err)
+			}
+			var result map[string]any
+			if resultStr != "" {
+				if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
+					return fmt.Errorf("invalid --result JSON: %w", err)
+				}
+			}
+			if err := qs.Complete(id, result); err != nil {
+				return err
+			}
+			fmt.Printf("item %s marked complete\n", id)
+			return nil
+		},
+	}
+	completeCmd.Flags().String("id", "", "Item ID (required)")
+	completeCmd.Flags().String("result", "", "JSON result payload")
+
+	// fail
+	failCmd := &cobra.Command{
+		Use:   "fail",
+		Short: "Mark a claimed item as failed",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			id, _ := cmd.Flags().GetString("id")
+			errMsg, _ := cmd.Flags().GetString("error")
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			qs, err := session.NewQueueStore(queueStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open queue store: %w", err)
+			}
+			if err := qs.Fail(id, errMsg); err != nil {
+				return err
+			}
+			fmt.Printf("item %s marked failed: %s\n", id, errMsg)
+			return nil
+		},
+	}
+	failCmd.Flags().String("id", "", "Item ID (required)")
+	failCmd.Flags().String("error", "", "Error message")
+
+	// list
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List work queue items",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			role, _ := cmd.Flags().GetString("role")
+			state, _ := cmd.Flags().GetString("state")
+			qs, err := session.NewQueueStore(queueStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open queue store: %w", err)
+			}
+			items := qs.List(role, state)
+			if len(items) == 0 {
+				fmt.Println("No queue items found.")
+				return nil
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "ID\tROLE\tSTATE\tCLAIMED_BY\tCREATED_AT")
+			for _, it := range items {
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					it.ID, it.Role, string(it.State), it.ClaimedBy,
+					it.CreatedAt.Format("15:04:05"))
+			}
+			return w.Flush()
+		},
+	}
+	listCmd.Flags().String("role", "", "Filter by role")
+	listCmd.Flags().String("state", "", "Filter by state (pending|claimed|complete|failed)")
+
+	cmd.AddCommand(pushCmd, claimCmd, completeCmd, failCmd, listCmd)
+	return cmd
 }

@@ -478,6 +478,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL356 — session crash/exit hooks (restart, notify, cooldown).
 	apiMux.HandleFunc("/api/exit-hooks", api.handleExitHooks)
 	apiMux.HandleFunc("/api/exit-hooks/", api.handleExitHooks)
+
+	// BL357 — durable role-based work queue.
+	apiMux.HandleFunc("/api/queue", api.handleQueue)
+	apiMux.HandleFunc("/api/queue/", api.handleQueue)
 	// Serve TLS certificate for easy install on mobile devices.
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.
@@ -619,6 +623,11 @@ func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 // SetExitHookStore wires an exit hook store into the server for /api/exit-hooks (BL356).
 func (s *HTTPServer) SetExitHookStore(store *session.ExitHookStore) {
 	s.api.SetExitHookStore(store)
+}
+
+// SetQueueStore wires a work queue store into the server for /api/queue (BL357).
+func (s *HTTPServer) SetQueueStore(store *session.QueueStore) {
+	s.api.SetQueueStore(store)
 }
 
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers

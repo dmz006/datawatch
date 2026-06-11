@@ -6738,6 +6738,39 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL357 — durable role-based work queue panel. -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
+          ${settingsSectionHeader('work_queue', 'Work Queue (BL357)')}
+          <div id="settings-sec-work_queue" style="${secContent('work_queue')}">
+            <div style="font-size:11px;color:var(--text2);line-height:1.4;padding:4px 16px 8px;">
+              WAL-backed durable queue. Sessions holding a role claim items atomically.
+              Uncompleted items whose lease expires automatically return to pending.
+            </div>
+            <div style="padding:0 16px;margin-bottom:6px;">
+              <label style="font-size:11px;color:var(--text2);">Filter role</label>
+              <input id="queueFilterRole" class="form-input" type="text" placeholder="e.g. worker" style="max-width:180px;margin-right:6px;" />
+              <label style="font-size:11px;color:var(--text2);margin-left:4px;">Filter state</label>
+              <select id="queueFilterState" class="form-select" style="max-width:130px;margin-right:6px;">
+                <option value="">all</option>
+                <option value="pending">pending</option>
+                <option value="claimed">claimed</option>
+                <option value="complete">complete</option>
+                <option value="failed">failed</option>
+              </select>
+              <button class="btn-secondary" onclick="loadWorkQueue()">Refresh</button>
+            </div>
+            <div id="workQueueList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">Loading…</div></div>
+            <details class="create-form-details" style="padding:0 16px;">
+              <summary class="create-form-summary">+ Push Work Item</summary>
+              <div class="create-form">
+                <input id="newQueueRole" class="form-input" type="text" placeholder="Role (e.g. worker)" autocomplete="off" />
+                <input id="newQueuePayload" class="form-input" type="text" placeholder='Payload JSON (e.g. {"task":"do thing"})' autocomplete="off" />
+                <button class="btn-primary" style="margin-top:6px;" onclick="pushQueueItem()">Push Item</button>
+              </div>
+            </details>
+          </div>
+        </div>
+
         <!-- BL274 (v6.16.0) — Docs Search trust + pending queue. Operator
              opts plugins / skills into the index here per Q6(d) all-opt-in. -->
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
@@ -7244,6 +7277,7 @@ function renderSettingsView() {
   loadSavedCommands();
   loadAlertRules();
   loadExitHooks(); // BL356
+  loadWorkQueue(); // BL357
   // BL247-followup v6.7.3 — Monitor-card loaders (loadStatsPanel, listMemories,
   // loadSchedulesList, loadCooldownStatus, loadAnalyticsPanel, loadAuditPanel,
   // loadKgPanel, renderObserverPeersCard) moved to renderObserverView() since
@@ -23970,4 +24004,71 @@ function toggleFullscreen() {
   }
   // Notify xterm.js about the layout change so it re-fits to the new width.
   if (state && state.termFitAddon) { try { state.termFitAddon.fit(); } catch(_) {} }
+}
+
+// ── BL357 — Work Queue ───────────────────────────────────────────────────────
+function loadWorkQueue() {
+  const el = document.getElementById('workQueueList');
+  if (!el) return;
+  const role = (document.getElementById('queueFilterRole') || {}).value || '';
+  const state = (document.getElementById('queueFilterState') || {}).value || '';
+  let url = '/api/queue';
+  const params = [];
+  if (role) params.push('role=' + encodeURIComponent(role));
+  if (state) params.push('state=' + encodeURIComponent(state));
+  if (params.length) url += '?' + params.join('&');
+  fetch(url, { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(items => {
+      if (!items || items.length === 0) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:0 16px;">No queue items found.</div>';
+        return;
+      }
+      let html = '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+      html += '<tr style="color:var(--text2);font-size:11px;"><th style="text-align:left;padding:2px 8px;">ID</th><th>Role</th><th>State</th><th>Claimed By</th><th>Created</th><th></th></tr>';
+      for (const it of items) {
+        const stateColor = it.state === 'pending' ? 'var(--ok)' : it.state === 'claimed' ? 'var(--warn)' : it.state === 'complete' ? 'var(--text2)' : 'var(--error)';
+        html += `<tr style="border-top:1px solid var(--border);">
+          <td style="padding:3px 8px;font-family:monospace;">${escHtml(it.id)}</td>
+          <td style="padding:3px 8px;">${escHtml(it.role)}</td>
+          <td style="padding:3px 8px;color:${stateColor};">${escHtml(it.state)}</td>
+          <td style="padding:3px 8px;color:var(--text2);">${escHtml(it.claimed_by||'')}</td>
+          <td style="padding:3px 8px;color:var(--text2);">${it.created_at ? new Date(it.created_at).toLocaleTimeString() : ''}</td>
+          <td style="padding:3px 8px;"><button class="btn-icon btn-icon-del" title="Delete" onclick="deleteQueueItem('${escHtml(it.id)}')">✕</button></td>
+        </tr>`;
+      }
+      html += '</table>';
+      el.innerHTML = html;
+    })
+    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;padding:0 16px;">Failed to load queue items.</div>'; });
+}
+
+function deleteQueueItem(id) {
+  if (!confirm('Delete queue item ' + id + '?')) return;
+  fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(() => loadWorkQueue())
+    .catch(() => alert('Failed to delete queue item ' + id));
+}
+
+function pushQueueItem() {
+  const role = (document.getElementById('newQueueRole') || {}).value || '';
+  const payloadStr = (document.getElementById('newQueuePayload') || {}).value || '';
+  if (!role) { alert('Role is required.'); return; }
+  let payload = {};
+  if (payloadStr) {
+    try { payload = JSON.parse(payloadStr); } catch(e) { alert('Invalid payload JSON: ' + e.message); return; }
+  }
+  fetch('/api/queue/push', {
+    method: 'POST',
+    headers: { ...tokenHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, payload })
+  })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(it => {
+      if (document.getElementById('newQueueRole')) document.getElementById('newQueueRole').value = '';
+      if (document.getElementById('newQueuePayload')) document.getElementById('newQueuePayload').value = '';
+      loadWorkQueue();
+    })
+    .catch(() => alert('Failed to push queue item.'));
 }
