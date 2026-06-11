@@ -91,16 +91,13 @@ func (s *Server) handleDiscussionSubscriptions(_ context.Context, req mcpsdk.Cal
 	// Optional filter
 	filterID := req.GetString("discussion_id", "")
 	if filterID != "" {
-		var filtered []interface{}
+		filtered := make([]interface{}, 0)
 		for _, sub := range subs {
 			if sub.DiscussionID == filterID {
 				filtered = append(filtered, sub)
 			}
 		}
 		out, _ := json.Marshal(filtered)
-		if out == nil {
-			out = []byte("[]")
-		}
 		return textOK(string(out)), nil
 	}
 	out, _ := json.Marshal(subs)
