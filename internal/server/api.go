@@ -6256,12 +6256,20 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
+		name := r.URL.Query().Get("name")
 		all := r.URL.Query().Get("all")
-		if id == "" && all == "" {
-			http.Error(w, "id or all required", http.StatusBadRequest)
+		if id == "" && name == "" && all == "" {
+			http.Error(w, "id, name, or all required", http.StatusBadRequest)
 			return
 		}
-		if id != "" {
+		if name != "" {
+			// BL353: cancel-by-schedule-name
+			n := s.schedStore.CancelByScheduleName(name)
+			if n == 0 {
+				http.Error(w, fmt.Sprintf("no pending schedules with name %q", name), http.StatusNotFound)
+				return
+			}
+		} else if id != "" {
 			// Try cancel first (for pending), then delete (for any state)
 			err := s.schedStore.Cancel(id)
 			if err != nil {

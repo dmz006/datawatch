@@ -742,8 +742,35 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "schedule "):
 		// format: "schedule <id>: <when> <command>"
 		// BL353 extended format: "schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]"
+		// BL353 cancel format: "schedule cancel name=<sched-name>" or "schedule cancel id=<sched-id>"
 		rest := text[9:]
-		// Check for BL353 key=value style (session_name= present)
+		lowerRest := strings.ToLower(strings.TrimSpace(rest))
+		// BL353: sessionless cancel-by-schedule-name or cancel-by-id
+		if strings.HasPrefix(lowerRest, "cancel ") {
+			cancelArg := strings.TrimSpace(rest[7:]) // text after "cancel "
+			cmd := Command{Type: CmdSchedule}
+			for _, part := range strings.Fields(cancelArg) {
+				k, v, hasEq := strings.Cut(part, "=")
+				if !hasEq {
+					// bare value — treat as schedule ID
+					cmd.Text = "cancel " + part
+					continue
+				}
+				switch strings.ToLower(k) {
+				case "name":
+					cmd.ScheduleName = v
+				case "id":
+					cmd.Text = "cancel " + v
+				}
+			}
+			if cmd.ScheduleName != "" && cmd.Text == "" {
+				cmd.Text = "cancel " + cmd.ScheduleName
+			}
+			if cmd.ScheduleName != "" || cmd.Text != "" {
+				return cmd
+			}
+		}
+		// Check for BL353 key=value style (session_name= or cron= present)
 		if strings.Contains(rest, "session_name=") || strings.Contains(rest, "cron=") {
 			cmd := parseBL353ScheduleParams(rest)
 			if cmd.SessionName != "" || cmd.SessionID != "" {

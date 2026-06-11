@@ -1298,21 +1298,22 @@ func (r *Router) handleSchedule(cmd Command) {
 		r.send(fmt.Sprintf("[%s] Scheduling is not available (no schedule store).", r.hostname))
 		return
 	}
-	if cmd.SessionID == "" && cmd.SessionName == "" {
-		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>\n  when: now | HH:MM | cancel <schedID>\n  BL353: schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>]", r.hostname))
-		return
-	}
-	if cmd.Text == "" && cmd.CronExpr == "" {
-		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>", r.hostname))
-		return
-	}
-
-	// Split Text into "when" and "command"
+	// Split Text into "when" and "command" early so guards can inspect "when".
 	parts := strings.SplitN(strings.TrimSpace(cmd.Text), " ", 2)
 	when := strings.ToLower(strings.TrimSpace(parts[0]))
 	command := ""
 	if len(parts) >= 2 {
 		command = strings.TrimSpace(parts[1])
+	}
+
+	// BL353: sessionless cancel-by-schedule-name doesn't need a session target.
+	if cmd.SessionID == "" && cmd.SessionName == "" && when != "cancel" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>\n  when: now | HH:MM | cancel <schedID>\n  BL353: schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>]\n  BL353: schedule cancel name=<sched-name>|id=<id>", r.hostname))
+		return
+	}
+	if cmd.Text == "" && cmd.CronExpr == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>", r.hostname))
+		return
 	}
 
 	// Handle cancel — support name= param
