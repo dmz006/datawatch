@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.0"
+var Version = "8.10.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7185,7 +7185,9 @@ func newSessionCmd() *cobra.Command {
 			llm, _ := cmd.Flags().GetString("llm")
 			compute, _ := cmd.Flags().GetString("compute")
 			chrome, _ := cmd.Flags().GetBool("chrome")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome)
+			parent, _ := cmd.Flags().GetString("parent")
+			killChildren, _ := cmd.Flags().GetBool("kill-children")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -7194,6 +7196,8 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().String("llm", "", "v7 LLM registry name (e.g. ollama). Overrides --backend.")
 	newCmd.Flags().String("compute", "", "v7 ComputeNode registry name. Requires --llm; must be in that LLM's compute_nodes list.")
 	newCmd.Flags().Bool("chrome", false, "Enable Claude Chrome integration (--chrome flag)")
+	newCmd.Flags().String("parent", "", "Full ID (hostname-hex) of the parent session that spawned this one (sets lineage).")
+	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill all child sessions it spawns.")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -7367,6 +7371,16 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			return runSessionGuardrail(cfg, args[0], args[1])
+		},
+	})
+
+	// session children <id> — list child sessions of a parent
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "children <id>",
+		Short: "List child sessions spawned by a given session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonGet(fmt.Sprintf("/api/sessions/%s/children", args[0]))
 		},
 	})
 
@@ -7742,25 +7756,35 @@ func runSessionList(cfg *config.Config) error {
 		if s.Name != "" {
 			display = s.Name + ": " + s.Task
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		suffix := ""
+		if s.ParentID != "" {
+			parentShort := s.ParentID
+			if idx := strings.Index(parentShort, "-"); idx > 0 {
+				parentShort = parentShort[:idx]
+			}
+			suffix = " ↳ child of [" + parentShort + "]"
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n",
 			s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04:05"),
-			truncate(display, 60))
+			truncate(display, 60), suffix)
 	}
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren bool) error {
 	// Try the structured HTTP API first
 	type startReq struct {
-		Task        string `json:"task"`
-		ProjectDir  string `json:"project_dir,omitempty"`
-		Backend     string `json:"backend,omitempty"`
-		Name        string `json:"name,omitempty"`
-		LLM         string `json:"llm,omitempty"`
-		ComputeNode string `json:"compute_node,omitempty"`
-		Chrome      *bool  `json:"chrome,omitempty"`
+		Task         string `json:"task"`
+		ProjectDir   string `json:"project_dir,omitempty"`
+		Backend      string `json:"backend,omitempty"`
+		Name         string `json:"name,omitempty"`
+		LLM          string `json:"llm,omitempty"`
+		ComputeNode  string `json:"compute_node,omitempty"`
+		Chrome       *bool  `json:"chrome,omitempty"`
+		ParentID     string `json:"parent_id,omitempty"`
+		KillChildren bool   `json:"kill_children,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute}
+	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren}
 	if chrome {
 		t := true
 		req.Chrome = &t
@@ -7785,6 +7809,12 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 			}
 		} else if backend != "" {
 			fmt.Printf("Backend: %s\n", backend)
+		}
+		if parent != "" {
+			fmt.Printf("Parent: %s\n", parent)
+		}
+		if killChildren {
+			fmt.Printf("KillChildren: true\n")
 		}
 		return nil
 	}

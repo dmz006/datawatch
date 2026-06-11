@@ -232,7 +232,7 @@ shape.
 
 | Family | Tools |
 |--------|-------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions` |
+| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/children`, `autonomous_learnings` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -262,6 +262,9 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`sessions_stale`** (v5.x) — list sessions whose tmux pane has gone away but state hasn't been reaped yet.
 - **`stop_all_sessions`** (v5.x) — bulk stop with optional state filter.
 - **`reload`** (v5.7.0) — `POST /api/reload` shortcut, mirrors the new `datawatch reload` CLI subcommand.
+- **`session_children`** (v8.10.0) — list child sessions of a parent session. Returns ID, state, backend, and task for each child.
+- **`reply_to_parent`** (v8.10.0) — send a message to the parent session that spawned this one. Sub-agents use this to report completion back to their orchestrator.
+- **`start_session` extended** (v8.10.0) — added `caller_session_id` (records parent lineage), `kill_children` (cascade kill opt-in), `permission_mode` (v8.9.24), and `name` parameters.
 
 
 
@@ -301,6 +304,12 @@ Start a new AI coding session.
 |---|---|---|---|
 | `task` | string | Yes | Task description to send to the AI |
 | `project_dir` | string | No | Absolute path to the project directory. Defaults to `session.default_project_dir` from config |
+| `llm` | string | No | LLM registry name to use for this session (e.g. `"ollama"`, `"claude"`). Overrides daemon default. |
+| `compute_node` | string | No | ComputeNode registry name. Requires `llm` to be set. |
+| `name` | string | No | Human-readable session name (used by `send_input` name resolution). |
+| `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
+| `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
+| `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
 
 **Example response:**
 ```
@@ -372,6 +381,52 @@ Terminate a session.
 **Example response:**
 ```
 Session a3f2 killed.
+```
+
+---
+
+### `session_children`
+
+List child sessions spawned by a given parent session. Useful for agents orchestrating sub-agents to check progress.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | ID or name of the parent session |
+
+**Example response:**
+```
+Children of session pp01 (2):
+  [cc01] running | claude-code | write integration tests
+  [cc02] complete | claude-code | update documentation
+```
+
+---
+
+### `reply_to_parent`
+
+Send a message to the parent session that spawned this session. Used by sub-agents to report results back to the spawning agent without out-of-band coordination.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | Yes | Text to send as input to the parent session |
+| `session_id` | string | No | ID of the child session (used to look up `parent_id`). If omitted, the tool has no child reference and will return an error. |
+
+**Example response:**
+```
+Sent to parent session pp01.
+```
+
+**Usage pattern for sub-agents:**
+```
+# At spawn time, parent passes its own session ID:
+start_session(task="...", caller_session_id="host-abc123")
+
+# When the sub-agent finishes, it calls:
+reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")
 ```
 
 ---

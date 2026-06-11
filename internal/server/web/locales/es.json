@@ -926,6 +926,7 @@
   "session_summarizer_no_llms": "No Ollama/OpenAI LLMs configured",
   "session_summarizer_prompt": "Summary prompt",
   "session_server_badge": "Servidor",
+  "session_child_of": "hijo de",
   "session_stale_comms": "Sin actividad en el canal durante >7 s — pasa a WaitingInput a los 15 s",
   "session_stats_backend_title": "Estadísticas de backend",
   "session_stats_no_envelope_body": "El observer no ha atribuido un árbol de procesos a esta sesión. Causas más comunes: (1) SessionAttribution está desactivado en la configuración del observer, o (2) el LLM se ejecuta dentro de un contenedor al que el observer no puede entrar. Recurriendo a estadísticas a nivel de backend cuando estén disponibles.",

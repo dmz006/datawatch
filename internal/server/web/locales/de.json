@@ -926,6 +926,7 @@
   "session_summarizer_no_llms": "No Ollama/OpenAI LLMs configured",
   "session_summarizer_prompt": "Summary prompt",
   "session_server_badge": "Server",
+  "session_child_of": "Kind von",
   "session_stale_comms": "Seit >7 s keine Kanal-Aktivität — Wechsel zu WaitingInput bei 15 s",
   "session_stats_backend_title": "Backend-Statistiken",
   "session_stats_no_envelope_body": "Der Observer hat dieser Sitzung keinen Prozessbaum zugeordnet. Häufigste Ursachen: (1) SessionAttribution ist in der Observer-Konfiguration deaktiviert, oder (2) der LLM läuft in einem Container, in den der Observer nicht eintreten kann. Fallback auf Backend-Statistiken, wenn verfügbar.",

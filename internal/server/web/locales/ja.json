@@ -926,6 +926,7 @@
   "session_summarizer_prompt": "Summary prompt",
   "session_select_title": "セッションを選択",
   "session_server_badge": "サーバー",
+  "session_child_of": "の子セッション",
   "session_stale_comms": "7 秒以上チャンネル活動なし — 15 秒で WaitingInput に遷移",
   "session_stats_backend_title": "バックエンド統計",
   "session_stats_no_envelope_body": "observer はこのセッションにプロセスツリーを紐付けていません。主な原因: (1) observer 設定で SessionAttribution が無効、または (2) LLM が observer の入れないコンテナ内で動作中。利用可能な場合はバックエンドレベルの統計にフォールバックします。",

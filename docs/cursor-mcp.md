@@ -121,17 +121,19 @@ Selected core tools:
 | Tool | Description |
 |------|-------------|
 | `list_sessions` | List all active AI sessions on this host |
-| `start_session` | Start a new AI session for a task |
+| `start_session` | Start a new AI session (supports `caller_session_id`, `kill_children`, `permission_mode`) |
 | `session_output` | Get the last N lines of output from a session |
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
-| `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | BL24 autonomous PRD lifecycle |
-| `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` (v5.9.0) |
+| `session_children` | List child sessions spawned by a parent session (v8.10.0) |
+| `reply_to_parent` | Send a message back to the spawning parent session (v8.10.0) |
+| `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | Autonomous PRD lifecycle |
+| `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
 | `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
-| `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution (v5.12.0) |
+| `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution |
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
-| `orchestrator_graph_run` / `orchestrator_verdicts` | BL117 PRD-DAG orchestrator |
-| `pipeline_start` / `pipeline_status` | F15 session chaining |
+| `orchestrator_graph_run` / `orchestrator_verdicts` | PRD-DAG orchestrator |
+| `pipeline_start` / `pipeline_status` | Session chaining |
 
 ## Example Usage in Cursor
 

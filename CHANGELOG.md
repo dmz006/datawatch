@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.1 — fix: session lineage surface parity — CLI flags, PWA badge, MCP docs (2026-06-10)
+
+### Fixed
+
+- **`datawatch session new` missing `--parent` and `--kill-children` flags** — CLI was the only access method lacking the new lineage options. `--parent <id>` sets the spawning parent; `--kill-children` opts the session into cascade kill. Both are passed through to the REST start endpoint.
+
+- **`datawatch session list` missing child indicator** — Session rows in the CLI list now show `↳ child of [<parent-id>]` for child sessions, matching the channel command `list` view.
+
+- **Missing `datawatch session children <id>` CLI subcommand** — Lists child sessions of a given parent by calling `GET /api/sessions/{id}/children`.
+
+- **PWA session card missing parent indicator** — Child sessions in the session list now display a `↳ child of [<id>]` badge beneath the ID, with localized text in all 5 locale bundles (EN/DE/ES/FR/JA).
+
+- **`docs/mcp.md` not updated** — Added `caller_session_id`, `kill_children`, `permission_mode`, and `name` to the `start_session` parameter table. Added full tool sections for `session_children` and `reply_to_parent`. Updated tools-added list and families table.
+
+- **`docs/cursor-mcp.md` not updated** — Added `session_children` and `reply_to_parent` to the selected tools table.
+
+- **`docs/datawatch-definitions.md` not updated** — Added "Session lineage — parent-child tracking" section under Sessions covering all five access methods (MCP, REST, CLI, channel, PWA) plus the cascade-kill and reply_to_parent patterns.
+
+---
+
 ## v8.10.0 — feat: BL347 session lineage — parent-child tracking, cascade kill, reply_to_parent (2026-06-10)
 
 ### Added

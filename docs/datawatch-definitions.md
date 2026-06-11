@@ -108,6 +108,48 @@ The home view. Every session your daemon knows about, regardless of state. New s
 [backends](backends.md) ·
 [api/](api/)
 
+### Session lineage — parent-child tracking
+
+When an AI agent spawns sub-agents to parallelize work, datawatch tracks the parent-child relationship. Each session can record the ID of the session that created it and whether its children should be stopped when it stops.
+
+**How to record lineage:**
+
+When starting a sub-agent session, pass the spawning session's ID:
+
+- **MCP:** `start_session(task="...", caller_session_id="host-abc123")` — the spawning agent passes its own `$CLAUDE_SESSION_ID`.
+- **REST:** `POST /api/sessions/start` body: `{"task": "...", "parent_id": "host-abc123"}`
+- **CLI:** `datawatch session new "task" --parent host-abc123`
+- **Channel:** `new: parent=host-abc123: task description`
+
+**Cascade kill (opt-in):**
+
+By default, sub-agents run independently and survive their parent. To cascade kills, set `kill_children=true` when creating the parent:
+
+- **MCP:** `start_session(task="...", kill_children=true)`
+- **REST:** `{"task": "...", "kill_children": true}`
+- **CLI:** `datawatch session new "task" --kill-children`
+- **Channel:** `new: kill_children=true: task description`
+
+**Viewing children:**
+
+- **MCP:** `session_children(session_id="pp01")` — lists child sessions with state and task.
+- **REST:** `GET /api/sessions/{id}/children` — JSON array of child sessions.
+- **REST tree:** `GET /api/sessions?tree=1` — full session forest as nested tree.
+- **CLI:** `datawatch session children <id>`
+- **Session list:** child sessions show `↳ child of [<parent-id>]` in all list views.
+
+**Sub-agent reporting back:**
+
+A sub-agent can send a message to its spawning parent's input prompt without any out-of-band coordination:
+
+- **MCP:** `reply_to_parent(session_id="cc01", text="Done. 14 tests written, all passing.")`
+
+This sends the text as input to the parent session so it can act on the result.
+
+**See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md)
+
+---
+
 ### Inside a session — terminal area
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.
