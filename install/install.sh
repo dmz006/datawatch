@@ -9,19 +9,27 @@ SIGNAL_CLI_VERSION="0.14.1"
 BINARY_NAME="datawatch"
 
 # Fetch the latest published release version from GitHub API.
+# Uses /releases?per_page=20 + sort -V to find the highest semver, matching
+# the logic in the Go updater (avoids the /releases/latest pitfall where
+# out-of-order publishing can return a stale version).
 # Falls back to a hardcoded minimum version if the API is unavailable.
 fetch_latest_version() {
-  local fallback="8.9.25"
-  local api_url="https://api.github.com/repos/${REPO}/releases/latest"
-  local ver=""
+  local fallback="8.10.13"
+  local api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
+  local raw=""
   if command -v curl &>/dev/null; then
-    ver=$(curl -fsSL --max-time 10 "${api_url}" 2>/dev/null \
-          | grep '"tag_name"' | head -1 \
-          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
+    raw=$(curl -fsSL --max-time 10 "${api_url}" 2>/dev/null)
   elif command -v wget &>/dev/null; then
-    ver=$(wget -qO- --timeout=10 "${api_url}" 2>/dev/null \
-          | grep '"tag_name"' | head -1 \
-          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
+    raw=$(wget -qO- --timeout=10 "${api_url}" 2>/dev/null)
+  fi
+  # Extract all tag_name values, strip leading "v", sort by version, take highest.
+  local ver=""
+  if [[ -n "${raw}" ]]; then
+    ver=$(echo "${raw}" \
+          | grep '"tag_name"' \
+          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/' \
+          | sort -V \
+          | tail -1)
   fi
   # Sanity-check: must look like a version number (digits and dots)
   if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then

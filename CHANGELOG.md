@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.14 — fix: installer always picks highest semver release (2026-06-11)
+
+### Fixed
+
+- **`install.sh` now uses `/releases?per_page=20` + `sort -V`** — previously the script called `/releases/latest` which returns the most-recently-published release rather than the highest version. Out-of-order publishing (common during rapid patch series) could cause the installer to fetch an older version. The new logic fetches the last 20 releases, extracts all `tag_name` values, and picks the highest with `sort -V`, matching the approach used by the Go auto-updater. The fallback hardcoded version was also updated from `8.9.25` to `8.10.13`.
+
+---
+
 ## v8.10.13 — fix: update/restart always target local daemon (2026-06-11)
 
 ### Fixed

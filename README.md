@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.10.13-success)](https://github.com/dmz006/datawatch/releases/tag/v8.10.13)
+[![Release](https://img.shields.io/badge/release-v8.10.14-success)](https://github.com/dmz006/datawatch/releases/tag/v8.10.14)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.10.12](CHANGELOG.md) (2026-06-11)** — Fleet coordination suite: recurring schedules, session name resolution, zombie detection, exit hooks, work queue, discussion subscribe, session restart, result store, and structured session filters.
+**[v8.10.14](CHANGELOG.md) (2026-06-11)** — Installer robustness: `install.sh` now selects the highest semver release rather than the most-recently-published, preventing stale installs during rapid patch series.
 
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
 - **Name-addressed session operations** (v8.10.5) — `send_input`, `kill_session`, `session_output`, `rename_session`, and 5 more MCP tools now accept `session_name` instead of requiring a hex session ID. Oldest-active tiebreak when multiple sessions share a name.
