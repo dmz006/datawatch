@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.15 — fix(lint): errcheck + unused — unblock release CI (2026-06-11)
+
+### Fixed
+
+- **`imapmcp/backend.go`** — `//nolint:errcheck` on three `defer resp.Body.Close()` calls (HTTP response body close in defer is always best-effort).
+- **`imapmcp/backend_test.go`** — `//nolint:errcheck` on two `fmt.Fprint` test handler writes.
+- **`schedule_bl353_test.go`** — assign `_` to `os.RemoveAll` return value in test cleanup.
+- **`cmd/datawatch/main.go`** — removed unused `runSessionListJSON` function (dead code left over from the BL361 structured-filter refactor).
+
+---
+
 ## v8.10.14 — fix: installer always picks highest semver release (2026-06-11)
 
 ### Fixed
