@@ -30,6 +30,8 @@ func (r *Router) handleSessionCmd(cmd Command) {
 		r.sessionSelf()
 	case SessionVerbOrphaned:
 		r.sessionOrphaned()
+	case SessionVerbRestart: // BL359
+		r.sessionRestart(cmd)
 	default:
 		r.send(sessionHelpText(r.hostname, "unknown verb: "+cmd.SessionVerb))
 	}
@@ -164,6 +166,40 @@ func (r *Router) sessionOrphaned() {
 	r.send(strings.Join(lines, "\n"))
 }
 
+// sessionRestart handles "session restart id=<id>|name=<name> [task=<task>]" (BL359).
+func (r *Router) sessionRestart(cmd Command) {
+	// Resolve ID or name.
+	id := cmd.SessionArg
+	if id == "" && cmd.SessionName != "" {
+		sess, ok := r.manager.FindSessionByName(cmd.SessionName)
+		if !ok || sess == nil {
+			r.send(fmt.Sprintf("[%s] session restart: no session named %q", r.hostname, cmd.SessionName))
+			return
+		}
+		id = sess.FullID
+	}
+	if id == "" {
+		r.send(sessionHelpText(r.hostname, "restart requires id=<id> or name=<name>"))
+		return
+	}
+	body := map[string]string{"id": id}
+	if cmd.SessionRestartTask != "" {
+		body["task"] = cmd.SessionRestartTask
+	}
+	result, err := r.commJSON("POST", "/api/sessions/restart", bodyJSON(body))
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] session restart %s: %v", r.hostname, id, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] session restarted: %s", r.hostname, strings.TrimSpace(result)))
+}
+
+// bodyJSON marshals a map to a compact JSON string for commJSON.
+func bodyJSON(m map[string]string) string {
+	out, _ := json.Marshal(m)
+	return string(out)
+}
+
 func sessionHelpText(hostname, note string) string {
 	out := []string{fmt.Sprintf("[%s] session usage:", hostname)}
 	if note != "" {
@@ -176,6 +212,9 @@ func sessionHelpText(hostname, note string) string {
 		"  session summarize <id>    — summarize last session output",
 		"  session self              — show the current channel-ready session",
 		"  session orphaned          — list sessions with a missing parent",
+		"  session restart id=<id>   — restart session from any state (BL359)",
+		"  session restart name=<n>  — restart session by name",
+		"  session restart id=<id> task=<task>  — restart with new task",
 	)
 	return strings.Join(out, "\n")
 }

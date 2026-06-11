@@ -477,21 +477,42 @@ func (s *Server) handleDeleteSession(_ context.Context, req mcpsdk.CallToolReque
 
 func (s *Server) toolRestartSession() mcpsdk.Tool {
 	return mcpsdk.NewTool("restart_session",
-		mcpsdk.WithDescription("Restart a completed/failed/killed session with the same task."),
-		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID to restart")),
+		mcpsdk.WithDescription("Restart a session from any state (running, waiting_input, complete, failed, or killed). Kills the session if still alive, then relaunches with the same task. Session ID and name are preserved."),
+		mcpsdk.WithString("session_id",
+			mcpsdk.Description("Session ID to restart (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
+		),
+		mcpsdk.WithString("task",
+			mcpsdk.Description("Optional new task string. If omitted, the session's existing task is reused."),
+		),
 	)
 }
 
 func (s *Server) handleRestartSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
-	if id == "" {
-		return mcpsdk.NewToolResultError("session_id is required"), nil
+	sn := req.GetString("session_name", "")
+	task := req.GetString("task", "")
+
+	if id == "" && sn != "" {
+		id = sn // resolveSession handles name lookup
 	}
-	sess, err := s.manager.Restart(context.Background(), id)
+	if id == "" {
+		return mcpsdk.NewToolResultError("session_id or session_name is required"), nil
+	}
+	sess, err := s.resolveSession(id)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("resolve session: %v", err)), nil
+	}
+	if sess == nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("session not found: %s", id)), nil
+	}
+	updated, err := s.manager.RestartSession(context.Background(), sess.FullID, task)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("restart error: %v", err)), nil
 	}
-	return mcpsdk.NewToolResultText(fmt.Sprintf("Restarted session %s", sess.FullID)), nil
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Restarted session %s (state: %s)", updated.FullID, updated.State)), nil
 }
 
 func (s *Server) toolGetStats() mcpsdk.Tool {

@@ -2904,6 +2904,59 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	return sess, nil
 }
 
+// RestartSession relaunches a session from ANY state (BL359).
+// If the session is still alive (running/waiting_input/rate_limited) it is
+// killed first. An optional task override replaces sess.Task; pass "" to
+// keep the existing task. The session ID and name are preserved.
+func (m *Manager) RestartSession(ctx context.Context, fullID string, task string) (*Session, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return nil, fmt.Errorf("session %s not found", fullID)
+		}
+	}
+
+	// Kill the session if it is still alive.
+	switch sess.State {
+	case StateRunning, StateWaitingInput, StateRateLimited:
+		// Cancel the monitor goroutine and clean up resources before Kill so
+		// Kill's tmux call is the only thing that tears it down.
+		m.mu.Lock()
+		if cancel, ok2 := m.monitors[sess.FullID]; ok2 {
+			cancel()
+			delete(m.monitors, sess.FullID)
+		}
+		if fifo, ok2 := m.encFIFOs[sess.FullID]; ok2 {
+			_ = fifo.Close()
+			delete(m.encFIFOs, sess.FullID)
+		}
+		if sp, ok2 := m.streamPipes[sess.FullID]; ok2 {
+			sp.Close()
+			delete(m.streamPipes, sess.FullID)
+		}
+		m.mu.Unlock()
+		if strings.TrimSpace(sess.TmuxSession) != "" {
+			_ = m.tmux.KillSession(sess.TmuxSession)
+		}
+	}
+
+	// Override task if requested.
+	if task != "" {
+		sess.Task = task
+	}
+
+	// Delegate to the existing Restart logic (which handles terminal states).
+	// Temporarily set state to a terminal state so Restart's guard passes, then
+	// let Restart do the full relaunch sequence.
+	sess.State = StateKilled
+	if err := m.store.Save(sess); err != nil {
+		return nil, fmt.Errorf("save before restart: %w", err)
+	}
+
+	return m.Restart(ctx, sess.FullID)
+}
+
 // Delete removes a session from the store and optionally deletes its tracking data on disk.
 // If the session is running or waiting, it is killed first.
 func (m *Manager) Delete(fullID string, deleteData bool) error {

@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.9"
+var Version = "8.10.10"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3197,6 +3197,11 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionChildren(w, r)
 		return
 	}
+	// BL359 — POST /api/sessions/{id}/restart
+	if strings.HasSuffix(path, "/restart") {
+		s.handleRestartSession(w, r)
+		return
+	}
 	s.handleSessionsSubpath(w, r)
 }
 
@@ -4055,8 +4060,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }
 
-// handleRestartSession restarts a completed/failed/killed session in-place,
+// handleRestartSession restarts a session from any state in-place (BL359),
 // reusing the same session ID and resuming the LLM conversation.
+// Accepts optional "task" to override the session's task, and optional
+// "session_name" to resolve the session by name (BL354 pattern).
 func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
@@ -4066,13 +4073,37 @@ func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID string `json:"id"`
+		ID          string `json:"id"`
+		SessionName string `json:"session_name"` // BL354 — alternative to id
+		Task        string `json:"task"`         // BL359 — optional task override
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	sess, err := s.manager.Restart(context.Background(), req.ID)
+	// BL354 — resolve by name if id is absent.
+	targetID := req.ID
+	if targetID == "" && req.SessionName != "" {
+		resolved, resolveErr := s.resolveSessionAny("", req.SessionName)
+		if resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		}
+		if resolved == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		targetID = resolved.FullID
+	}
+	// Also support path-based ID: POST /api/sessions/{id}/restart
+	if targetID == "" {
+		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+		path = strings.TrimSuffix(path, "/restart")
+		if path != "" {
+			targetID = path
+		}
+	}
+	sess, err := s.manager.RestartSession(context.Background(), targetID, req.Task)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

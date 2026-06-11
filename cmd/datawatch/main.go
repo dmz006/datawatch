@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.9"
+var Version = "8.10.10"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7565,6 +7565,24 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session restart <id-or-name> [--task <task>] — BL359
+	sessionRestartCmd := &cobra.Command{
+		Use:   "restart <id-or-name>",
+		Short: "Restart a session from any state",
+		Long:  "Restart a session from any state (running, waiting_input, complete, failed, or killed).\nKills the session if still alive, then relaunches with the same task (or a new task if --task is supplied).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			task, _ := cmd.Flags().GetString("task")
+			return runSessionRestart(cfg, args[0], task)
+		},
+	}
+	sessionRestartCmd.Flags().String("task", "", "Override the session's task string for this restart")
+	sessionCmd.AddCommand(sessionRestartCmd)
+
 	// session schedule — manage scheduled commands for a session
 	scheduleCmd := &cobra.Command{
 		Use:   "schedule",
@@ -8143,6 +8161,15 @@ func runSessionKill(cfg *config.Config, id string) error {
 	}
 	fmt.Printf("Session %s killed (tmux: %s)\n", id, sess.TmuxSession)
 	return nil
+}
+
+// runSessionRestart restarts a session from any state via the daemon REST API (BL359).
+func runSessionRestart(cfg *config.Config, idOrName string, task string) error {
+	body := map[string]string{"id": idOrName}
+	if task != "" {
+		body["task"] = task
+	}
+	return daemonJSON(http.MethodPost, "/api/sessions/restart", body)
 }
 
 func runSessionTail(cfg *config.Config, id string, n int) error {

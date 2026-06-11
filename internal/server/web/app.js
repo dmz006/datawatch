@@ -1613,12 +1613,17 @@ function updateSessionDetailButtons(sessionId) {
   }
   const btnContainer = document.getElementById('actionBtns');
   if (btnContainer) {
-    btnContainer.innerHTML = isActive
-      ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`
-      : isDone
-      ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>
-         <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`
-      : '';
+    // BL359 — Restart is available on all states.
+    const restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>`;
+    const stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`;
+    const deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`;
+    if (isActive) {
+      btnContainer.innerHTML = stopBtn + restartBtn;
+    } else if (isDone) {
+      btnContainer.innerHTML = restartBtn + deleteBtn;
+    } else {
+      btnContainer.innerHTML = restartBtn;
+    }
   }
   // Refresh schedule bar — removes executed schedules from the UI
   loadSessionSchedules(sessionId);
@@ -2764,12 +2769,15 @@ function renderSessionDetail(sessionId) {
     }
   }
 
+  // BL359 — Restart is available on all states.
+  const _restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>`;
+  const _stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`;
+  const _deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`;
   const actionButtons = isActive
-    ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`
+    ? _stopBtn + _restartBtn
     : isDone
-    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>
-       <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`
-    : '';
+    ? _restartBtn + _deleteBtn
+    : _restartBtn;
 
   // Dual output areas: channel tab visible whenever the session uses MCP
   // channel mode (claude / claude-code), regardless of channel-ready state.

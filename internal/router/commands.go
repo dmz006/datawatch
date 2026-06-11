@@ -384,8 +384,9 @@ type Command struct {
 	BindAgentID string // empty means unbind
 
 	// BL93/BL94 — CmdSession fields.
-	SessionVerb string // "reconcile" | "import" | "summarize"
-	SessionArg  string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id
+	SessionVerb        string // "reconcile" | "import" | "summarize" | "restart"
+	SessionArg         string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id
+	SessionRestartTask string // BL359 — optional task override for "session restart"
 
 	// Sprint Sx2 — CmdRest fields.
 	//   Method:  GET | POST | PUT | DELETE
@@ -441,6 +442,7 @@ const (
 	SessionVerbSummarize = "summarize"
 	SessionVerbSelf      = "self"     // BL349
 	SessionVerbOrphaned  = "orphaned" // BL350
+	SessionVerbRestart   = "restart"  // BL359
 )
 
 // parseBL353ScheduleParams parses a BL353 key=value style schedule command.
@@ -722,7 +724,7 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
 		parts := strings.Fields(rest)
 		if len(parts) < 1 {
-			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned"}
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned | session restart id=<id>|name=<n> [task=<task>]"}
 		}
 		verb := strings.ToLower(parts[0])
 		cmd := Command{Type: CmdSession, SessionVerb: verb}
@@ -750,6 +752,41 @@ func Parse(text string) Command {
 			return cmd // BL349 — no arg needed
 		case SessionVerbOrphaned:
 			return cmd // BL350 — no arg needed
+		case SessionVerbRestart:
+			// BL359 — "session restart id=<id>" or "session restart name=<name>"
+			// optional "task=<task>" for task override.
+			// Also accepts positional: "session restart <id-or-name>"
+			params := make(map[string]string)
+			for _, p := range parts[1:] {
+				if idx := strings.Index(p, "="); idx > 0 {
+					params[p[:idx]] = p[idx+1:]
+				}
+			}
+			// Extract task= which may be multi-word — scan original text.
+			if idx := strings.Index(rest, "task="); idx >= 0 {
+				val := rest[idx+5:]
+				for _, key := range []string{" id=", " name=", " session_id=", " session_name="} {
+					if ki := strings.Index(val, key); ki >= 0 {
+						val = val[:ki]
+					}
+				}
+				params["task"] = strings.TrimSpace(val)
+			}
+			if id, ok := params["id"]; ok {
+				cmd.SessionArg = id
+			} else if sn, ok := params["name"]; ok {
+				cmd.SessionName = sn
+			} else if len(parts) >= 2 {
+				// Positional: first token after "restart" that is not a key=value
+				for _, p := range parts[1:] {
+					if !strings.Contains(p, "=") {
+						cmd.SessionArg = p
+						break
+					}
+				}
+			}
+			cmd.SessionRestartTask = params["task"]
+			return cmd
 		default:
 			cmd.Text = "unknown session verb: " + verb
 			return cmd
