@@ -15,7 +15,8 @@ import (
 func TestSessionChildren_NoParentID(t *testing.T) {
 	s := bl91Server(t)
 	res := invoke(t, s.handleSessionChildren, map[string]any{})
-	if !strings.Contains(res, "session_id is required") {
+	// BL354: message updated to mention session_name as an alternative.
+	if !strings.Contains(res, "session_id or session_name is required") {
 		t.Errorf("want required error, got %q", res)
 	}
 }

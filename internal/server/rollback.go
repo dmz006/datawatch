@@ -126,17 +126,31 @@ func (s *Server) handleSessionInput(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Text string `json:"text"`
+		Text        string `json:"text"`
+		SessionName string `json:"session_name"` // BL354 — alternative resolution by name
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.manager.SendInput(id, req.Text, "api"); err != nil {
+
+	// BL354 — if the path-segment id looks like a name (no hex chars only), also
+	// try resolving via session_name body field when present.
+	resolvedID := id
+	if req.SessionName != "" {
+		if sess, resolveErr := s.resolveSessionAny("", req.SessionName); resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		} else if sess != nil {
+			resolvedID = sess.FullID
+		}
+	}
+
+	if err := s.manager.SendInput(resolvedID, req.Text, "api"); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSONOK(w, map[string]any{"session_id": id, "sent": true})
+	writeJSONOK(w, map[string]any{"session_id": resolvedID, "sent": true})
 }
 
 // proxySessionInput forwards an input request to a named federation peer.

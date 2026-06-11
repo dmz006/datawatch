@@ -1181,8 +1181,10 @@ func (s *Server) toolSessionChildren() mcpsdk.Tool {
 	return mcpsdk.NewTool("session_children",
 		mcpsdk.WithDescription("List the direct child sessions spawned by a parent session (BL347 lineage)."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name) of the parent session."),
+			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name) of the parent session. (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 	)
 }
@@ -1204,8 +1206,10 @@ func (s *Server) toolSessionOutput() mcpsdk.Tool {
 	return mcpsdk.NewTool("session_output",
 		mcpsdk.WithDescription("Get the last N lines of output from an AI coding session."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID)"),
+			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID) (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 		mcpsdk.WithNumber("lines",
 			mcpsdk.Description("Number of lines to return (default: 50)"),
@@ -1217,8 +1221,10 @@ func (s *Server) toolSessionTimeline() mcpsdk.Tool {
 	return mcpsdk.NewTool("session_timeline",
 		mcpsdk.WithDescription("Get the structured event timeline for a session (state changes, inputs, rate limits, etc.)."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID"),
+			mcpsdk.Description("Session ID (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 	)
 }
@@ -1227,8 +1233,10 @@ func (s *Server) toolSessionSummarize() mcpsdk.Tool {
 	return mcpsdk.NewTool("session_summarize",
 		mcpsdk.WithDescription("Summarize the last N lines of session output using the configured LLM. Returns a short spoken-language summary suitable for voice notifications or alerts."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID)"),
+			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID) (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 		mcpsdk.WithNumber("lines",
 			mcpsdk.Description("Number of output lines to summarize (default: 200)"),
@@ -1240,8 +1248,10 @@ func (s *Server) toolSendInput() mcpsdk.Tool {
 	return mcpsdk.NewTool("send_input",
 		mcpsdk.WithDescription("Send text input to a session that is waiting for a response."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name set via rename_session)"),
+			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name set via rename_session) (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 		mcpsdk.WithString("text",
 			mcpsdk.Required(),
@@ -1254,8 +1264,10 @@ func (s *Server) toolKillSession() mcpsdk.Tool {
 	return mcpsdk.NewTool("kill_session",
 		mcpsdk.WithDescription("Terminate an AI coding session."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID to kill"),
+			mcpsdk.Description("Session ID to kill (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 	)
 }
@@ -1264,8 +1276,10 @@ func (s *Server) toolRenameSession() mcpsdk.Tool {
 	return mcpsdk.NewTool("rename_session",
 		mcpsdk.WithDescription("Set or update the human-readable name for a session."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID"),
+			mcpsdk.Description("Session ID (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 		mcpsdk.WithString("name",
 			mcpsdk.Required(),
@@ -1326,8 +1340,10 @@ func (s *Server) toolSendSavedCommand() mcpsdk.Tool {
 	return mcpsdk.NewTool("send_saved_command",
 		mcpsdk.WithDescription("Send a named saved command to a session."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID"),
+			mcpsdk.Description("Session ID (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 		mcpsdk.WithString("command_name",
 			mcpsdk.Required(),
@@ -1470,12 +1486,13 @@ func (s *Server) resolveSession(id string) (*session.Session, error) {
 	case 1:
 		return active[0], nil
 	default:
-		ids := make([]string, len(active))
-		for i, sess := range active {
-			ids[i] = sess.ID
-		}
-		return nil, fmt.Errorf("multiple active sessions named %q: %s — use session ID to disambiguate",
-			id, strings.Join(ids, ", "))
+		// BL354 — during a name handoff, two sessions briefly share a name.
+		// Return the oldest (earliest CreatedAt) to route to the established session,
+		// not the newly-starting one.
+		sort.Slice(active, func(i, j int) bool {
+			return active[i].CreatedAt.Before(active[j].CreatedAt)
+		})
+		return active[0], nil
 	}
 }
 
@@ -1595,8 +1612,11 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 
 func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 
 	n := req.GetInt("lines", 50)
@@ -1627,8 +1647,11 @@ func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolReque
 
 func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 	n := req.GetInt("lines", 200)
 	if n <= 0 {
@@ -1669,8 +1692,11 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 
 func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
@@ -1705,8 +1731,10 @@ func (s *Server) toolTelemetryGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("telemetry_get",
 		mcpsdk.WithDescription("Get the structured telemetry for a session: task list with daemon-stamped timings, guardrail verdicts, sprint ancestry, tests, and the last 5 hook events before any task failure."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID)"),
+			mcpsdk.Description("Session ID (short 4-char hex or full hostname-hex ID) (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name (alternative to session_id; resolves to oldest active session with this name)"),
 		),
 	)
 }
@@ -1719,8 +1747,11 @@ func (s *Server) toolTelemetryList() mcpsdk.Tool {
 
 func (s *Server) handleTelemetryGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 	if s.webPort <= 0 {
 		return mcpsdk.NewToolResultText("Error: daemon API not available"), nil
@@ -1778,8 +1809,11 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		return deny, nil
 	}
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 	text := req.GetString("text", "")
 	if text == "" {
@@ -1805,8 +1839,11 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		return deny, nil
 	}
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
@@ -1828,9 +1865,12 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 		return deny, nil
 	}
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	name := req.GetString("name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: session_id and name are required"), nil
+		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and name are required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
@@ -1853,8 +1893,11 @@ func (s *Server) handleSessionChildren(ctx context.Context, req mcpsdk.CallToolR
 		return deny, nil
 	}
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id is required"), nil
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 	parent, err := s.resolveSession(id)
 	if err != nil {
@@ -2069,9 +2112,12 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 		return mcpsdk.NewToolResultText("Command library not available."), nil
 	}
 	id := req.GetString("session_id", "")
+	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
+		id = sn // resolveSession handles name lookup
+	}
 	name := req.GetString("command_name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: session_id and command_name are required"), nil
+		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and command_name are required"), nil
 	}
 
 	cmd, ok := s.cmdLib.Get(name)

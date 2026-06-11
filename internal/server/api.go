@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.4"
+var Version = "8.10.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1451,18 +1451,41 @@ func (s *Server) forwardSessionToAgent(w http.ResponseWriter, r *http.Request, s
 	return true
 }
 
+// resolveSessionAny looks up a session by ID or by name (BL354).
+// idOrPath: the session ID (path param or query param "id").
+// nameParam: value of the "session_name" query param.
+// Returns (nil, nil) if not found, (nil, err) on ambiguity/error.
+func (s *Server) resolveSessionAny(idOrPath, nameParam string) (*session.Session, error) {
+	if idOrPath != "" {
+		if sess, ok := s.manager.GetSession(idOrPath); ok {
+			return sess, nil
+		}
+	}
+	if nameParam != "" {
+		if sess, ok := s.manager.FindSessionByName(nameParam); ok {
+			return sess, nil
+		}
+	}
+	return nil, nil
+}
+
 // handleSessionTimeline returns the structured timeline events for a session as JSON.
 func (s *Server) handleSessionTimeline(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsRead) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+	sessionName := r.URL.Query().Get("session_name")
+	if id == "" && sessionName == "" {
+		http.Error(w, "missing id or session_name", http.StatusBadRequest)
 		return
 	}
-	sess, ok := s.manager.GetSession(id)
-	if !ok {
+	sess, resolveErr := s.resolveSessionAny(id, sessionName)
+	if resolveErr != nil {
+		http.Error(w, resolveErr.Error(), http.StatusConflict)
+		return
+	}
+	if sess == nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
@@ -3414,14 +3437,29 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		ID          string `json:"id"`
+		SessionName string `json:"session_name"` // BL354 — alternative to id
+		Name        string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := s.manager.Rename(req.ID, req.Name); err != nil {
+	// BL354 — resolve by name if id is absent.
+	targetID := req.ID
+	if targetID == "" && req.SessionName != "" {
+		sess, resolveErr := s.resolveSessionAny("", req.SessionName)
+		if resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		}
+		if sess == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		targetID = sess.FullID
+	}
+	if err := s.manager.Rename(targetID, req.Name); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -3555,13 +3593,28 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID string `json:"id"`
+		ID          string `json:"id"`
+		SessionName string `json:"session_name"` // BL354 — alternative to id
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := s.manager.Kill(req.ID); err != nil {
+	// BL354 — resolve by name if id is absent.
+	targetID := req.ID
+	if targetID == "" && req.SessionName != "" {
+		sess, resolveErr := s.resolveSessionAny("", req.SessionName)
+		if resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		}
+		if sess == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		targetID = sess.FullID
+	}
+	if err := s.manager.Kill(targetID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

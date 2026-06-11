@@ -54,25 +54,33 @@ func TestResolveSession_ByName_NotFound(t *testing.T) {
 	}
 }
 
-func TestResolveSession_ByName_MultipleActive_Ambiguous(t *testing.T) {
+// TestResolveSession_ByName_MultipleActive_TieBreak verifies BL354 tie-breaking:
+// when multiple active sessions share a name, the OLDEST (earliest CreatedAt) is
+// returned instead of an ambiguity error.
+func TestResolveSession_ByName_MultipleActive_TieBreak(t *testing.T) {
 	s := bl91Server(t)
-	for _, id := range []string{"ef03", "ef04"} {
-		s.manager.SaveSession(&session.Session{ //nolint:errcheck
-			ID: id, FullID: "testhost-" + id, Hostname: "testhost",
-			Name: "shared-name", Task: "t", State: session.StateRunning,
-			UpdatedAt: time.Now(),
-		})
-	}
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now()
+	s.manager.SaveSession(&session.Session{ //nolint:errcheck
+		ID: "ef04", FullID: "testhost-ef04", Hostname: "testhost",
+		Name: "shared-name", Task: "t", State: session.StateRunning,
+		CreatedAt: newer, UpdatedAt: newer,
+	})
+	s.manager.SaveSession(&session.Session{ //nolint:errcheck
+		ID: "ef03", FullID: "testhost-ef03", Hostname: "testhost",
+		Name: "shared-name", Task: "t", State: session.StateRunning,
+		CreatedAt: older, UpdatedAt: older,
+	})
 	sess, err := s.resolveSession("shared-name")
-	if err == nil {
-		t.Fatalf("expected ambiguity error, got nil (sess=%v)", sess)
+	if err != nil {
+		t.Fatalf("BL354: expected no error during tie-break, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "multiple active") {
-		t.Errorf("error should mention 'multiple active': %v", err)
+	if sess == nil {
+		t.Fatal("expected a session, got nil")
 	}
-	// Both IDs should be listed.
-	if !strings.Contains(err.Error(), "ef03") || !strings.Contains(err.Error(), "ef04") {
-		t.Errorf("error should list IDs: %v", err)
+	// ef03 is older — it should win.
+	if sess.ID != "ef03" {
+		t.Errorf("BL354: expected oldest session ef03, got %q", sess.ID)
 	}
 }
 
@@ -135,18 +143,30 @@ func TestSendInput_ByName(t *testing.T) {
 	}
 }
 
-func TestSendInput_ByName_Ambiguous(t *testing.T) {
+// TestSendInput_ByName_TwoActive_RouteToOldest verifies BL354: when two active
+// sessions share a name, send_input routes to the oldest instead of failing.
+func TestSendInput_ByName_TwoActive_RouteToOldest(t *testing.T) {
 	s := bl91Server(t)
-	for _, id := range []string{"mn10", "mn11"} {
-		s.manager.SaveSession(&session.Session{ //nolint:errcheck
-			ID: id, FullID: "testhost-" + id, Hostname: "testhost",
-			Name: "dupe", State: session.StateRunning, UpdatedAt: time.Now(),
-		})
-	}
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now()
+	s.manager.SaveSession(&session.Session{ //nolint:errcheck
+		ID: "mn11", FullID: "testhost-mn11", Hostname: "testhost",
+		Name: "dupe", State: session.StateRunning, CreatedAt: newer, UpdatedAt: newer,
+	})
+	s.manager.SaveSession(&session.Session{ //nolint:errcheck
+		ID: "mn10", FullID: "testhost-mn10", Hostname: "testhost",
+		Name: "dupe", State: session.StateRunning, CreatedAt: older, UpdatedAt: older,
+	})
 	text := invoke(t, s.handleSendInput,
 		map[string]any{"session_id": "dupe", "text": "hi"})
-	if !strings.Contains(strings.ToLower(text), "multiple active") {
-		t.Errorf("expected ambiguity error, got: %q", text)
+	// Should NOT produce an ambiguity error — either succeeds or fails on tmux,
+	// but must not return "multiple active".
+	if strings.Contains(strings.ToLower(text), "multiple active") {
+		t.Errorf("BL354: should not produce ambiguity error, got: %q", text)
+	}
+	// Should reference the older session (mn10), not the newer one.
+	if strings.Contains(text, "mn11") && !strings.Contains(text, "mn10") {
+		t.Errorf("BL354: expected routing to mn10 (older), got: %q", text)
 	}
 }
 

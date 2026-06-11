@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -3228,7 +3229,11 @@ func (m *Manager) GetSession(id string) (*Session, bool) {
 }
 
 // FindSessionByName returns the best-match session for the given human-readable name.
-// Active sessions (running/waiting_input) are preferred. Returns (nil, false) if none found.
+// Active sessions (running/waiting_input) are preferred over done/stopped sessions.
+// Among equally-active sessions, the oldest (earliest CreatedAt) is returned (BL354
+// tie-breaking: during a name handoff two sessions briefly share a name; route to the
+// established one, not the newly-starting one).
+// Returns (nil, false) if none found.
 func (m *Manager) FindSessionByName(name string) (*Session, bool) {
 	all := m.ListSessions()
 	var matched []*Session
@@ -3240,11 +3245,15 @@ func (m *Manager) FindSessionByName(name string) (*Session, bool) {
 	if len(matched) == 0 {
 		return nil, false
 	}
-	for _, s := range matched {
-		if s.State == StateRunning || s.State == StateWaitingInput {
-			return s, true
+	// Prefer active sessions (running/waiting_input); prefer oldest among ties.
+	sort.Slice(matched, func(i, j int) bool {
+		ai := matched[i].State == StateRunning || matched[i].State == StateWaitingInput
+		aj := matched[j].State == StateRunning || matched[j].State == StateWaitingInput
+		if ai != aj {
+			return ai // active before inactive
 		}
-	}
+		return matched[i].CreatedAt.Before(matched[j].CreatedAt) // older first
+	})
 	return matched[0], true
 }
 

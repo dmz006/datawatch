@@ -3601,9 +3601,9 @@ function showScheduleInputPopup(sessionId) {
         <div style="font-size:9px;color:var(--text2);margin-top:2px;">5-field cron: minute hour dom month dow. Overrides 'When' for recurrence.</div>
       </div>
       <div class="form-group" style="margin-top:8px;">
-        <label style="font-size:11px;color:var(--text2);">Session name (BL353)</label>
-        <input type="text" id="schedInputSessionName" class="form-input" placeholder="session name (optional)" />
-        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Target session by name — schedule survives session restarts.</div>
+        <label style="font-size:11px;color:var(--text2);">Session ID or name (BL354)</label>
+        <input type="text" id="schedInputSessionName" class="form-input" placeholder="Session ID or name (optional)" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Target session by name or ID — schedule survives restarts; ties resolved to oldest active session.</div>
       </div>
       <div class="form-group" style="margin-top:8px;">
         <label style="font-size:11px;color:var(--text2);">Schedule name (BL353)</label>
