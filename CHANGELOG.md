@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.2 — docs: definitions audit — backlog BL344/346/348-352 filed, 8 missing features documented (2026-06-10)
+
+### Added
+
+- **`docs/datawatch-definitions.md` — Session AI summarizer** — new section documenting the dual short/long summary pipeline (`last_response` + `last_summary_long`), `GET /api/sessions/{id}/current-status`, `session.summarizer.model` config, and parser resilience details (v8.9.0–v8.9.4).
+- **`docs/datawatch-definitions.md` — Anti-clobber typing detection** — documents the 30 s keystroke idle wait, per-session send queue (cap 256), AI-relay bypass, and queue lifecycle (BL336, v8.9.17–v8.9.19).
+- **`docs/datawatch-definitions.md` — Renderer lock** — documents `ensureClaudeTUISetting` writing `"tui":"default"` into the datawatch-scoped settings.json to pin claude-code to line-printing mode (BL337, v8.9.20).
+- **`docs/datawatch-definitions.md` — Self-update pipeline** — documents goreleaser archive priority, `datawatch-channel` co-update, `GET /api/update/check` read-only endpoint, and auto-update config fields (BL338, v8.9.21).
+- **`docs/datawatch-definitions.md` — imap-mcp email command channel** — full config reference (`imap_mcp.enabled/url/account/subject_prefix`), receive/send model, trust-boundary note, imap-mcp v0.2.0 requirement (BL340, v8.9.23).
+- **`docs/datawatch-definitions.md` — MCP session name resolution + permission_mode** — documents session-name lookup with active-preference tiebreak; `start_session` `permission_mode` parameter reference table (BL341, v8.9.24).
+- **`docs/datawatch-definitions.md` — `datawatch compute migrate` CLI** — documents deprecated-kind migration command and `POST /api/compute/nodes/{name}/migrate` endpoint (BL342, v8.9.25).
+- **`docs/datawatch-definitions.md` — Federation peer health alerts** — documents background peer-health goroutine, system alert on state transitions, and threshold values (BL343, v8.9.25).
+- **`docs/plans/README.md` — BL344, BL346, BL348–BL352** — seven new backlog items filed: alert-click navigation, FCM session_state_changed, PWA session tree view, get_my_session_id MCP tool, orphan lineage cleanup, kill-children cascade depth policy, federation lineage parity.
+- **Core feature reference matrix** — nine new rows covering all features documented in this release.
+
+
+---
+
 ## v8.10.1 — fix: session lineage surface parity — CLI flags, PWA badge, MCP docs (2026-06-10)
 
 ### Fixed

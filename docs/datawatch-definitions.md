@@ -49,6 +49,8 @@ There's also a **Core feature reference matrix** further down, listing which fea
 
 - [Sessions](#sessions)
   - [Sessions list](#sessions-list)
+  - [Session lineage — parent-child tracking](#session-lineage--parent-child-tracking)
+  - [Session AI summarizer](#session-ai-summarizer)
   - [Inside a session — terminal area](#inside-a-session--terminal-area)
   - [Inside a session — channel tab](#inside-a-session--channel-tab)
   - [Inside a session — stats tab](#inside-a-session--stats-tab)
@@ -150,6 +152,33 @@ This sends the text as input to the parent session so it can act on the result.
 
 ---
 
+### Session AI summarizer
+
+Each session maintains a live AI-generated summary of its most recent output. A background pipeline triggers after each significant channel event, runs a single LLM call against recent terminal output, and produces two complementary summary forms.
+
+**Summary fields:**
+
+| Field | What it holds |
+|---|---|
+| `last_response` | Short snippet (1–2 sentences): what the AI just did or produced |
+| `last_summary_long` | Full paragraph: context, decisions made, blockers, next steps |
+
+**Where to see them:**
+
+- **PWA session card** — `last_response` appears beneath the session ID badge on every card. Click the envelope button to expand `last_summary_long`.
+- **REST:** `GET /api/sessions/{id}/current-status` — returns `{last_response, last_summary_long, summary_model, summary_updated_at}`.
+- **CLI:** `datawatch session status <id>` includes the summarizer output block.
+
+**Summarizer model selection:**
+
+Configure which LLM handles summarization via `session.summarizer.model` in `datawatch.yaml` or `PUT /api/config`. The PWA shows a datalist from all registered compute nodes with quality-tier hints. When unset, the session's own backend LLM is used.
+
+**Parser resilience:** strips `<think>…</think>` reasoning blocks, handles multi-format short/long section markers, and falls back to paragraph splitting for LLMs that don't emit a structured separator.
+
+**See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md)
+
+---
+
 ### Inside a session — terminal area
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.
@@ -163,6 +192,10 @@ This sends the text as input to the parent session so it can act on the result.
 **Loading splash:** appears while the first pane_capture frame arrives. Always dismisses — even for ended sessions, the saved final frame is shown.
 
 **Generating indicator:** a 3-dot wave below the output area when the session is `Running`. Sits below the channel tab too, so it's always under the visible content.
+
+**Anti-clobber typing detection:** when an agent (via MCP, channel relay, or session→session send) sends input to an active session while the operator is typing in the xterm input bar, the daemon holds the message until 30 s of operator keystroke idle has elapsed, so agent messages never clobber in-progress operator input. Multiple agent messages that arrive during a typing window queue in arrival order (capacity 256) and flush immediately after the first held message is finally sent. Session-to-session AI relays (agent→agent) bypass the idle wait entirely. The queue closes cleanly on session delete.
+
+**Renderer lock:** on startup the daemon writes `"tui":"default"` into `<dataDir>/.claude/settings.json`, pinning claude-code to line-printing mode. This prevents Anthropic's server-side alt-screen flag from switching claude to alternate-screen output (`\e[?1049h`), which would break tmux scrollback and the `pipe-pane` capture that datawatch relies on.
 
 ### Inside a session — channel tab
 
@@ -294,6 +327,8 @@ Other datawatch instances pushing observer / stats data into this one. Each peer
 - **×** — remove peer (rotates token; peer auto-re-registers if it's still alive).
 
 When ANY peer goes stale, the gear icon in the bottom nav shows a numeric badge. Click the badge to land on this card with the offending peer flashed.
+
+**Peer health alerts (v8.9.25):** a background goroutine polls each registered peer's push timestamps every 30 s and fires a system alert on every state transition — `online → stale`, `stale → online`, or `peer → unreachable`. Alerts appear in the Alerts tab with `source: system` and the peer name so you can correlate observer gaps with network or daemon restarts on the remote host. Alert thresholds match the health-dot thresholds: stale > 60 s, unreachable on first push-timeout after a previously-healthy period.
 
 ### Process envelopes
 
@@ -433,7 +468,29 @@ Capability-based access control (CBAC) for federation peers — remote datawatch
 
 #### Communication Configuration
 
-Per-channel registries: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, Generic webhooks, DNS channel. Each row exposes connect/disconnect, status, and per-channel settings (e.g. Signal device link QR, Telegram bot token, Slack workspace OAuth). Channels in red are inactive; tap to reconnect.
+Per-channel registries: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, Generic webhooks, DNS channel, imap-mcp. Each row exposes connect/disconnect, status, and per-channel settings (e.g. Signal device link QR, Telegram bot token, Slack workspace OAuth). Channels in red are inactive; tap to reconnect.
+
+#### imap-mcp email command channel (v8.9.23)
+
+The `imap_mcp` backend bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance, letting operators send commands to datawatch via email. Trust enforcement (allowlist / DKIM / DMARC / HMAC replay-nonce) lives entirely in imap-mcp; datawatch acts only on `inbound.command` events that have already passed imap-mcp's trust gates.
+
+**How it works:**
+
+- **Receive:** subscribes to `GET /api/events` on the imap-mcp SSE endpoint. Ignores all event types except `inbound.command`.
+- **Send:** session replies are delivered via `POST /api/accounts/{account}/messages/send` on the imap-mcp REST endpoint.
+
+**Config fields** (under `imap_mcp:` in `datawatch.yaml`):
+
+| Field | Description |
+|---|---|
+| `enabled` | `true` to activate the channel |
+| `url` | Base URL of the imap-mcp instance (e.g. `http://localhost:8025`) |
+| `account` | imap-mcp account name to use for sending replies |
+| `subject_prefix` | Optional prefix prepended to outgoing email subjects (e.g. `[datawatch]`) |
+
+**REST:** the channel appears in `GET /api/channels` with kind `imap_mcp`. Toggle via standard channel enable/disable endpoints.
+
+**Requires:** imap-mcp v0.2.0 or later (provides both `GET /api/events` SSE and `POST /api/accounts/{account}/messages/send`). See GH#127.
 
 #### Proxy Resilience
 
@@ -561,7 +618,9 @@ The Compute Node registry — hardware or remote endpoints that run LLM inferenc
 datawatch compute node add <name> kind=ollama routing=docker-network image=ollama/ollama:latest network=datawatch-llm port=11434
 datawatch compute node add <name> kind=ollama routing=datawatch-proxy peer=dc2 remote_llm=llama3 timeout=30
 ```
-Full verb list: `list | get | add | update | delete | detail | health | pull-model | remove-model | attach-observer | detach-observer | observer-free | observer-by-node | federation-meta-peers`
+Full verb list: `list | get | add | update | delete | detail | health | pull-model | remove-model | attach-observer | detach-observer | observer-free | observer-by-node | federation-meta-peers | migrate`
+
+**`datawatch compute migrate` (v8.9.25):** migrates nodes still using deprecated kinds (`local`, `remote`, `ssh`, `docker`, `k8s`) to supported ones (`ollama`, `openai-compat`). Running `migrate` is required before `add` or `update` will accept those nodes from the CLI. The PWA shows a migration banner when any deprecated-kind node is detected; the CLI equivalent is `datawatch compute migrate [--dry-run]`. Internally calls `POST /api/compute/nodes/{name}/migrate` with a suggested target kind.
 
 **MCP tools (v8.0):** `compute_node_add` and `compute_node_update` accept `routing`, `routing_docker_network_json`, and `routing_datawatch_proxy_json` string parameters.
 
@@ -698,6 +757,25 @@ Automaton-related cards.
 
 Datawatch acts as an MCP server (Model Context Protocol), exposing tools, resources, and prompts to any MCP-aware client (Claude Code, Claude Desktop, Cursor, etc.).
 
+#### Session name resolution and permission_mode (v8.9.24)
+
+MCP tools that accept a session identifier (`session_id`, `parent_id`, `caller_session_id`) now resolve **session names** in addition to hex IDs. Pass the human-readable session name (e.g. `"my-research"`) and the daemon looks up the matching active session. When multiple active sessions share the same name, the most recently started one wins.
+
+**`start_session` — `permission_mode` parameter:**
+
+The `start_session` MCP tool accepts a `permission_mode` string that sets the claude-code permission policy for the spawned session:
+
+| Value | Effect |
+|---|---|
+| `auto` | claude-code default (same as omitting the flag) |
+| `plan` | Read-only analysis; no file edits permitted |
+| `acceptEdits` | Auto-accept file edits without prompting |
+| `bypassPermissions` | Skip all permission prompts (use with caution) |
+
+Use `permission_mode: "plan"` to spawn a session that can analyse code but not modify it — useful for autonomous review steps inside a PRD that should not write files.
+
+**See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md)
+
 #### MCP Tools
 
 Every datawatch capability — session management, memory, Automata, Council, evals, secrets, plugins — is available as an MCP tool. The tool catalogue is served at `GET /api/mcp/docs` (human-readable) and via the MCP `tools/list` protocol. See [`howto/mcp-tools.md`](howto/mcp-tools.md).
@@ -750,6 +828,23 @@ Inline links to `/api/docs` (Swagger UI), `/api/openapi.yaml` (raw OpenAPI spec)
 #### Mobile app pointer
 
 GitHub link to `dmz006/datawatch-app` (the Compose Multiplatform companion). Play Store link will land here once the app is published.
+
+#### Self-update (v8.9.21)
+
+`datawatch update` (CLI) and `POST /api/update` (REST) install the latest prebuilt binary from the GitHub Releases goreleaser archive. The pipeline:
+
+1. Queries the GitHub Releases API for the latest tag.
+2. Downloads the goreleaser archive for the current `GOOS/GOARCH` (e.g. `datawatch_linux_amd64.tar.gz`).
+3. Extracts the `datawatch` binary and atomically replaces the running binary.
+4. Downloads and replaces the `datawatch-channel` sibling binary from the same archive.
+
+A legacy bare-binary fallback is retained for pre-goreleaser releases.
+
+**Version check only:** `GET /api/update/check` returns `{current_version, latest_version, update_available}` without installing anything. Use this to implement "check → confirm → install" workflows in scripts or the mobile app before committing to an install.
+
+**Auto-update:** set `auto_update.enabled: true` and `auto_update.check_interval_hours` in `datawatch.yaml` to let the daemon check and install updates on a schedule.
+
+**CLI:** `datawatch update [--check]` — `--check` is equivalent to the read-only REST endpoint.
 
 #### Orphaned tmux sessions
 
@@ -859,6 +954,14 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Alerts & notifications | [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) | v7.0.0 | alert dock + per-channel delivery |
 | Guardrail library | [`howto/guardrail-library.md`](howto/guardrail-library.md) | v7.0.0 | SAST/secrets/deps/LLM scan profiles |
 | Ollama marketplace | [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) | v7.0.0-alpha.33 | embedded catalog + background pull |
+| Session AI summarizer | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.9.0–v8.9.4 | dual short/long summary, model selector, `GET /api/sessions/{id}/current-status` |
+| Anti-clobber typing detection | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.9.17–v8.9.19 | 30 s idle wait, per-session send queue |
+| imap-mcp email channel | [`howto/comm-channels.md`](howto/comm-channels.md) | v8.9.23 | SSE receive + REST send via imap-mcp, `imap_mcp.*` config |
+| MCP session name resolution | [`howto/mcp-tools.md`](howto/mcp-tools.md) | v8.9.24 | session names accepted in addition to hex IDs; `start_session` gains `permission_mode` |
+| Compute node migration CLI | [`howto/compute-nodes.md`](howto/compute-nodes.md) | v8.9.25 | `datawatch compute migrate` for deprecated-kind nodes |
+| Federation peer health alerts | [`howto/federated-observer.md`](howto/federated-observer.md) | v8.9.25 | background peer-health goroutine, system alerts on state transitions |
+| Self-update pipeline | [`howto/daemon-operations.md`](howto/daemon-operations.md) | v8.9.21 | goreleaser archive priority, `datawatch-channel` co-update, `GET /api/update/check` |
+| Session lineage | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.0 | parent_id, kill_children, session_children MCP, reply_to_parent, REST tree |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
