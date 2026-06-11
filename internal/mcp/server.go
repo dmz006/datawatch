@@ -1338,10 +1338,12 @@ func (s *Server) toolSendSavedCommand() mcpsdk.Tool {
 
 func (s *Server) toolScheduleAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_add",
-		mcpsdk.WithDescription("Schedule a command to be sent to a session. Use run_at='prompt' to fire on next input prompt."),
+		mcpsdk.WithDescription("Schedule a command to be sent to a session. Use run_at='prompt' to fire on next input prompt. Supports session_name targeting (BL353) so the schedule survives session restarts, and cron_expr for recurring schedules."),
 		mcpsdk.WithString("session_id",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session ID"),
+			mcpsdk.Description("Session ID (required if session_name not provided)"),
+		),
+		mcpsdk.WithString("session_name",
+			mcpsdk.Description("Session name — target session by name (alternative to session_id; schedule survives restarts)"),
 		),
 		mcpsdk.WithString("command",
 			mcpsdk.Required(),
@@ -1350,21 +1352,29 @@ func (s *Server) toolScheduleAdd() mcpsdk.Tool {
 		mcpsdk.WithString("run_at",
 			mcpsdk.Description("When to run: 'prompt' (next input prompt), 'HH:MM' (24h today), or RFC3339. Default: prompt."),
 		),
+		mcpsdk.WithString("cron_expr",
+			mcpsdk.Description("5-field cron expression for recurring schedule, e.g. '*/5 * * * *'. Overrides run_at for initial fire time."),
+		),
+		mcpsdk.WithString("schedule_name",
+			mcpsdk.Description("Human-readable name for this schedule entry (for later lookup/cancel)"),
+		),
 	)
 }
 
 func (s *Server) toolScheduleList() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_list",
-		mcpsdk.WithDescription("List all pending scheduled commands."),
+		mcpsdk.WithDescription("List all pending scheduled commands. Includes session_name, cron_expr, and schedule_name (BL353)."),
 	)
 }
 
 func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_cancel",
-		mcpsdk.WithDescription("Cancel a pending scheduled command by ID."),
+		mcpsdk.WithDescription("Cancel a pending scheduled command by ID or schedule name (BL353)."),
 		mcpsdk.WithString("id",
-			mcpsdk.Required(),
 			mcpsdk.Description("Schedule entry ID to cancel"),
+		),
+		mcpsdk.WithString("name",
+			mcpsdk.Description("Schedule name (alternative to id; cancels all pending entries with this name)"),
 		),
 	)
 }
@@ -2088,22 +2098,57 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 		return mcpsdk.NewToolResultText("Schedule store not available."), nil
 	}
 	id := req.GetString("session_id", "")
+	sessionName := req.GetString("session_name", "")
 	command := req.GetString("command", "")
-	if id == "" || command == "" {
-		return mcpsdk.NewToolResultText("Error: session_id and command are required"), nil
+	cronExpr := req.GetString("cron_expr", "")
+	scheduleName := req.GetString("schedule_name", "")
+
+	if command == "" {
+		return mcpsdk.NewToolResultText("Error: command is required"), nil
+	}
+	if id == "" && sessionName == "" {
+		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
 	}
 
-	sess, resolveErr := s.resolveSession(id)
-	if resolveErr != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+	// Resolve session ID
+	var resolvedID string
+	var sessID string
+	if id != "" {
+		sess, resolveErr := s.resolveSession(id)
+		if resolveErr != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+		}
+		if sess == nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		}
+		resolvedID = sess.FullID
+		sessID = sess.ID
+	} else {
+		// session_name only — try to resolve, but OK if not found yet (schedule survives restarts)
+		if sess, ok := s.manager.FindSessionByName(sessionName); ok {
+			resolvedID = sess.FullID
+			sessID = sess.ID
+		} else {
+			sessID = "(name:" + sessionName + ")"
+		}
 	}
-	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+
+	// Validate cron if provided
+	if cronExpr != "" {
+		if err := session.ValidateCron(cronExpr); err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Invalid cron_expr %q: %v", cronExpr, err)), nil
+		}
 	}
 
 	runAtStr := req.GetString("run_at", "prompt")
 	var runAt time.Time
-	if runAtStr != "" && runAtStr != "prompt" {
+	if cronExpr != "" && (runAtStr == "" || runAtStr == "prompt") {
+		var err error
+		runAt, err = session.CronNext(cronExpr, time.Now())
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Cron next error: %v", err)), nil
+		}
+	} else if runAtStr != "" && runAtStr != "prompt" {
 		// Try HH:MM
 		if t, err := time.ParseInLocation("15:04", runAtStr, time.Local); err == nil {
 			now := time.Now()
@@ -2115,7 +2160,14 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 		}
 	}
 
-	sc, err := s.schedStore.Add(sess.FullID, command, runAt, "")
+	sc, err := s.schedStore.AddFull(session.AddOptions{
+		SessionID:    resolvedID,
+		SessionName:  sessionName,
+		ScheduleName: scheduleName,
+		Command:      command,
+		RunAt:        runAt,
+		CronExpr:     cronExpr,
+	})
 	if err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error scheduling: %v", err)), nil
 	}
@@ -2123,7 +2175,11 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 	if !runAt.IsZero() {
 		runDesc = "at " + runAt.Format("15:04:05")
 	}
-	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled [%s]: %q → session %s %s.", sc.ID, command, sess.ID, runDesc)), nil
+	label := sc.ID
+	if scheduleName != "" {
+		label = sc.ID + " (" + scheduleName + ")"
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled [%s]: %q → session %s %s.", label, command, sessID, runDesc)), nil
 }
 
 func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -2140,7 +2196,17 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 		if !sc.RunAt.IsZero() {
 			runDesc = "at " + sc.RunAt.Format("15:04:05")
 		}
-		fmt.Fprintf(&sb, "[%s] session:%s %s — %q\n", sc.ID, sc.SessionID, runDesc, sc.Command)
+		extra := ""
+		if sc.SessionName != "" {
+			extra += " name:" + sc.SessionName
+		}
+		if sc.CronExpr != "" {
+			extra += " cron:" + sc.CronExpr
+		}
+		if sc.ScheduleName != "" {
+			extra += " sched-name:" + sc.ScheduleName
+		}
+		fmt.Fprintf(&sb, "[%s] session:%s%s %s — %q\n", sc.ID, sc.SessionID, extra, runDesc, sc.Command)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }
@@ -2150,8 +2216,16 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText("Schedule store not available."), nil
 	}
 	id := req.GetString("id", "")
-	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+	name := req.GetString("name", "")
+	if id == "" && name == "" {
+		return mcpsdk.NewToolResultText("Error: id or name is required"), nil
+	}
+	if name != "" {
+		n := s.schedStore.CancelByScheduleName(name)
+		if n == 0 {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("No pending schedules found with name %q.", name)), nil
+		}
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Cancelled %d scheduled command(s) named %q.", n, name)), nil
 	}
 	if err := s.schedStore.Cancel(id); err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil

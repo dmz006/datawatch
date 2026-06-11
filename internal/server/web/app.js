@@ -3557,9 +3557,13 @@ function loadSessionSchedules(sessionId) {
       el.style.display = 'block';
       const rows = items.map(sc => {
         const when = _fmtScheduleTime(sc.run_at);
+        const extras = [];
+        if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
+        if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
+        const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
         return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
           <span style="color:var(--text2);">${escHtml(when)}</span>
-          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
           <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
         </div>`;
       }).join('');
@@ -3576,7 +3580,7 @@ function showScheduleInputPopup(sessionId) {
   const popup = document.createElement('div');
   popup.id = 'schedInputPopup';
   popup.className = 'backend-config-overlay';
-  popup.innerHTML = `<div class="backend-config-popup" style="max-width:340px;">
+  popup.innerHTML = `<div class="backend-config-popup" style="max-width:360px;">
     <div class="backend-config-header">
       <strong>${t('sched_input_title')||'Schedule Input'}</strong>
       <button class="btn-icon" onclick="document.getElementById('schedInputPopup').remove()">&#10005;</button>
@@ -3590,6 +3594,21 @@ function showScheduleInputPopup(sessionId) {
         <label style="font-size:11px;color:var(--text2);">${t('sched_input_when_label')||'When'}</label>
         <input type="text" id="schedInputTime" class="form-input" placeholder="${t('sched_input_when_ph')||'in 30 minutes'}" />
         <div style="font-size:9px;color:var(--text2);margin-top:2px;">${t('sched_input_when_hint')||'Examples: in 30m, at 14:00, tomorrow at 9am, next monday at 10:00'}</div>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label style="font-size:11px;color:var(--text2);">Cron expression (recurring, BL353)</label>
+        <input type="text" id="schedInputCron" class="form-input" placeholder="*/5 * * * * (optional)" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">5-field cron: minute hour dom month dow. Overrides 'When' for recurrence.</div>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label style="font-size:11px;color:var(--text2);">Session name (BL353)</label>
+        <input type="text" id="schedInputSessionName" class="form-input" placeholder="session name (optional)" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Target session by name — schedule survives session restarts.</div>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label style="font-size:11px;color:var(--text2);">Schedule name (BL353)</label>
+        <input type="text" id="schedInputScheduleName" class="form-input" placeholder="e.g. daily-standup (optional)" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Human-readable label for later lookup/cancel.</div>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
         <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='on input'">${t('sched_input_on_prompt')||'On next prompt'}</button>
@@ -3611,8 +3630,14 @@ function showScheduleInputPopup(sessionId) {
 function submitScheduleInput(sessionId) {
   const text = document.getElementById('schedInputText')?.value || '';
   const when = document.getElementById('schedInputTime')?.value || '';
+  const cronExpr = document.getElementById('schedInputCron')?.value || '';
+  const sessionName = document.getElementById('schedInputSessionName')?.value || '';
+  const scheduleName = document.getElementById('schedInputScheduleName')?.value || '';
   if (!text) { showToast('Enter a command to schedule', 'warning'); return; }
   const body = { session_id: sessionId, command: text, run_at: when || '' };
+  if (cronExpr) body.cron_expr = cronExpr;
+  if (sessionName) body.session_name = sessionName;
+  if (scheduleName) body.schedule_name = scheduleName;
   apiFetch('/api/schedules', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -18227,9 +18252,12 @@ function loadSchedulesList() {
     html += pageItems.map(sc => {
       const when = _fmtScheduleTime(sc.run_at);
       const stateClass = sc.state === 'pending' ? 'color:var(--warning)' : sc.state === 'done' ? 'color:var(--success)' : 'color:var(--text2)';
+      const sessionRef = sc.session_name ? escHtml(sc.session_name) : escHtml(sc.session_id);
+      const schedRef = sc.schedule_name ? ` [${escHtml(sc.schedule_name)}]` : '';
+      const cronBadge = sc.cron_expr ? ` <span style="font-size:9px;background:var(--bg2);padding:1px 4px;border-radius:2px;" title="Cron: ${escHtml(sc.cron_expr)}">cron</span>` : '';
       const label = sc.type === 'new_session' && sc.deferred_session
         ? 'NEW: ' + escHtml(sc.deferred_session.name || sc.command)
-        : escHtml(sc.session_id) + ': ' + escHtml(sc.command);
+        : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
       const actions = [];
       if (sc.state === 'pending') {
         actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${sc.id}','${escHtml(sc.command).replace(/'/g,"\\'")}','${sc.run_at||''}')" title="Edit">&#9998;</button>`);

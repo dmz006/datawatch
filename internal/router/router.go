@@ -1298,8 +1298,12 @@ func (r *Router) handleSchedule(cmd Command) {
 		r.send(fmt.Sprintf("[%s] Scheduling is not available (no schedule store).", r.hostname))
 		return
 	}
-	if cmd.SessionID == "" || cmd.Text == "" {
-		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>\n  when: now | HH:MM | cancel <schedID>", r.hostname))
+	if cmd.SessionID == "" && cmd.SessionName == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>\n  when: now | HH:MM | cancel <schedID>\n  BL353: schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>]", r.hostname))
+		return
+	}
+	if cmd.Text == "" && cmd.CronExpr == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>", r.hostname))
 		return
 	}
 
@@ -1311,14 +1315,20 @@ func (r *Router) handleSchedule(cmd Command) {
 		command = strings.TrimSpace(parts[1])
 	}
 
-	// Handle cancel
+	// Handle cancel — support name= param
 	if when == "cancel" {
 		if command == "" {
 			r.send(fmt.Sprintf("[%s] Usage: schedule <id>: cancel <schedID>", r.hostname))
 			return
 		}
+		// Try cancel by ID; fall back to schedule name
 		if err := r.schedStore.Cancel(command); err != nil {
-			r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
+			n := r.schedStore.CancelByScheduleName(command)
+			if n == 0 {
+				r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
+			} else {
+				r.send(fmt.Sprintf("[%s] Cancelled %d scheduled command(s) named %q.", r.hostname, n, command))
+			}
 		} else {
 			r.send(fmt.Sprintf("[%s] Scheduled command %s cancelled.", r.hostname, command))
 		}
@@ -1354,7 +1364,19 @@ func (r *Router) handleSchedule(cmd Command) {
 	}
 
 	var runAt time.Time
-	if when != "now" {
+	// BL353: cron expression overrides when field
+	if cmd.CronExpr != "" {
+		if err := session.ValidateCron(cmd.CronExpr); err != nil {
+			r.send(fmt.Sprintf("[%s] Invalid cron expression %q: %v", r.hostname, cmd.CronExpr, err))
+			return
+		}
+		var err error
+		runAt, err = session.CronNext(cmd.CronExpr, time.Now())
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Cron next error: %v", r.hostname, err))
+			return
+		}
+	} else if when != "now" {
 		// Use natural language time parser (supports "in 30m", "at 14:00", "tomorrow at 9am", etc.)
 		var err error
 		runAt, err = session.ParseScheduleTime(when+" "+command, time.Now())
@@ -1368,7 +1390,14 @@ func (r *Router) handleSchedule(cmd Command) {
 		}
 	}
 
-	sc, err := r.schedStore.Add(cmd.SessionID, command, runAt, "")
+	sc, err := r.schedStore.AddFull(session.AddOptions{
+		SessionID:    cmd.SessionID,
+		SessionName:  cmd.SessionName,
+		ScheduleName: cmd.ScheduleName,
+		Command:      command,
+		RunAt:        runAt,
+		CronExpr:     cmd.CronExpr,
+	})
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to schedule: %v", r.hostname, err))
 		return
@@ -1378,7 +1407,11 @@ func (r *Router) handleSchedule(cmd Command) {
 	if !sc.RunAt.IsZero() {
 		when2 = sc.RunAt.Format("2006-01-02 15:04")
 	}
-	r.send(fmt.Sprintf("[%s] Scheduled [%s] for session %s at %s:\n  %s", r.hostname, sc.ID, cmd.SessionID, when2, command))
+	ref := cmd.SessionID
+	if cmd.SessionName != "" {
+		ref = fmt.Sprintf("%s (name:%s)", cmd.SessionID, cmd.SessionName)
+	}
+	r.send(fmt.Sprintf("[%s] Scheduled [%s] for session %s at %s:\n  %s", r.hostname, sc.ID, ref, when2, command))
 }
 
 func (r *Router) handleNew(cmd Command) {

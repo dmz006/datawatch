@@ -72,6 +72,20 @@ type ScheduledCommand struct {
 	// RecurUntil (BL26) — optional deadline; the recurrence stops
 	// firing once Now > RecurUntil. Zero = unlimited.
 	RecurUntil time.Time `json:"recur_until,omitempty"`
+
+	// SessionName (BL353) — human-readable session name to resolve at fire time.
+	// When set, the scheduler looks up the active session by this name instead
+	// of SessionID. The schedule survives session restarts under the same name.
+	SessionName string `json:"session_name,omitempty"`
+
+	// CronExpr (BL353) — 5-field cron expression for recurring schedules.
+	// When set, overrides RecurEverySeconds-based recurrence. After each fire
+	// the scheduler computes the next RunAt via CronNext(CronExpr, now).
+	CronExpr string `json:"cron_expr,omitempty"`
+
+	// ScheduleName (BL353) — optional human-readable label for this schedule entry.
+	// Used for lookup and cancel by name.
+	ScheduleName string `json:"schedule_name,omitempty"`
 }
 
 // DeferredSession holds parameters for creating a new session at a scheduled time.
@@ -147,6 +161,76 @@ func (s *ScheduleStore) Add(sessionID, command string, runAt time.Time, runAfter
 	}
 	s.entries = append(s.entries, sc)
 	return sc, s.save()
+}
+
+// AddOptions holds all options for AddFull (BL353).
+type AddOptions struct {
+	SessionID    string
+	SessionName  string
+	ScheduleName string
+	Command      string
+	RunAt        time.Time
+	RunAfterID   string
+	CronExpr     string
+	RecurEvery   int
+	RecurUntil   time.Time
+}
+
+// AddFull inserts a scheduled command with all BL353 options.
+func (s *ScheduleStore) AddFull(opts AddOptions) (*ScheduledCommand, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id, err := randomID()
+	if err != nil {
+		return nil, err
+	}
+	sc := &ScheduledCommand{
+		ID:                id,
+		SessionID:         opts.SessionID,
+		SessionName:       opts.SessionName,
+		ScheduleName:      opts.ScheduleName,
+		Command:           opts.Command,
+		RunAt:             opts.RunAt,
+		RunAfterID:        opts.RunAfterID,
+		CronExpr:          opts.CronExpr,
+		RecurEverySeconds: opts.RecurEvery,
+		RecurUntil:        opts.RecurUntil,
+		State:             SchedPending,
+		CreatedAt:         time.Now(),
+	}
+	s.entries = append(s.entries, sc)
+	return sc, s.save()
+}
+
+// GetByScheduleName returns the first pending schedule with the given ScheduleName.
+func (s *ScheduleStore) GetByScheduleName(name string) (*ScheduledCommand, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sc := range s.entries {
+		if sc.State == SchedPending && sc.ScheduleName == name {
+			return sc, true
+		}
+	}
+	return nil, false
+}
+
+// CancelByScheduleName cancels all pending schedules with the given ScheduleName.
+func (s *ScheduleStore) CancelByScheduleName(name string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cancelled := 0
+	for _, sc := range s.entries {
+		if sc.State == SchedPending && sc.ScheduleName == name {
+			sc.State = SchedCancelled
+			sc.DoneAt = time.Now()
+			cancelled++
+		}
+	}
+	if cancelled > 0 {
+		_ = s.save()
+	}
+	return cancelled
 }
 
 // AddDeferredSession schedules a new session to be started at runAt.
@@ -388,6 +472,20 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 					sc.State = SchedPending
 				}
 				return s.save()
+			}
+			// BL353 — cron-based recurrence: compute next fire time via CronNext.
+			if !failed && sc.CronExpr != "" {
+				next, err := CronNext(sc.CronExpr, time.Now())
+				if err == nil {
+					if !sc.RecurUntil.IsZero() && next.After(sc.RecurUntil) {
+						sc.State = SchedDone
+						sc.DoneAt = time.Now()
+					} else {
+						sc.RunAt = next
+						sc.State = SchedPending
+					}
+					return s.save()
+				}
 			}
 			if failed {
 				sc.State = SchedFailed

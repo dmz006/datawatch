@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.3"
+var Version = "8.10.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5994,21 +5994,49 @@ func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		SessionID  string `json:"session_id"`
-		Command    string `json:"command"`
-		RunAt      string `json:"run_at,omitempty"`      // RFC3339 or "" for on-input
-		RunAfterID string `json:"run_after_id,omitempty"` // chain after another scheduled command
+		SessionID    string `json:"session_id"`
+		SessionName  string `json:"session_name"`
+		Command      string `json:"command"`
+		RunAt        string `json:"run_at,omitempty"`       // RFC3339 or "" for on-input
+		RunAfterID   string `json:"run_after_id,omitempty"` // chain after another scheduled command
+		CronExpr     string `json:"cron_expr"`
+		ScheduleName string `json:"schedule_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if req.SessionID == "" || req.Command == "" {
-		http.Error(w, "session_id and command are required", http.StatusBadRequest)
+	// Resolve session: by name if session_id not provided
+	sessionID := req.SessionID
+	if sessionID == "" && req.SessionName != "" {
+		if sess, ok := s.manager.FindSessionByName(req.SessionName); ok {
+			sessionID = sess.FullID
+		}
+	}
+	if sessionID == "" && req.SessionName == "" {
+		http.Error(w, "session_id or session_name required", http.StatusBadRequest)
 		return
 	}
+	if req.Command == "" {
+		http.Error(w, "command is required", http.StatusBadRequest)
+		return
+	}
+	// Validate cron if provided
+	if req.CronExpr != "" {
+		if err := session.ValidateCron(req.CronExpr); err != nil {
+			http.Error(w, "invalid cron_expr: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	var runAt time.Time
-	if req.RunAt != "" {
+	if req.CronExpr != "" && req.RunAt == "" {
+		var err error
+		runAt, err = session.CronNext(req.CronExpr, time.Now())
+		if err != nil {
+			http.Error(w, "cron next: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else if req.RunAt != "" {
 		var err error
 		runAt, err = time.Parse(time.RFC3339, req.RunAt)
 		if err != nil {
@@ -6016,7 +6044,15 @@ func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	sc, err := s.schedStore.Add(req.SessionID, req.Command, runAt, req.RunAfterID)
+	sc, err := s.schedStore.AddFull(session.AddOptions{
+		SessionID:    sessionID,
+		SessionName:  req.SessionName,
+		ScheduleName: req.ScheduleName,
+		Command:      req.Command,
+		RunAt:        runAt,
+		RunAfterID:   req.RunAfterID,
+		CronExpr:     req.CronExpr,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -6032,8 +6068,19 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "id query param required", http.StatusBadRequest)
+	name := r.URL.Query().Get("name")
+	if id == "" && name == "" {
+		http.Error(w, "id or name query param required", http.StatusBadRequest)
+		return
+	}
+	if name != "" {
+		n := s.schedStore.CancelByScheduleName(name)
+		if n == 0 {
+			http.Error(w, "no pending schedules with that name", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "cancelled", "count": n}) //nolint:errcheck
 		return
 	}
 	if err := s.schedStore.Cancel(id); err != nil {
@@ -6086,11 +6133,14 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			Type       string `json:"type"`        // "command" or "new_session"
-			SessionID  string `json:"session_id"`   // for command type
-			Command    string `json:"command"`       // text to send or task for new session
-			RunAt      string `json:"run_at"`        // natural language or RFC3339
-			RunAfterID string `json:"run_after_id"`
+			Type         string `json:"type"`          // "command" or "new_session"
+			SessionID    string `json:"session_id"`    // for command type
+			SessionName  string `json:"session_name"`  // BL353 — resolve by name at fire time
+			Command      string `json:"command"`       // text to send or task for new session
+			RunAt        string `json:"run_at"`        // natural language or RFC3339
+			RunAfterID   string `json:"run_after_id"`
+			CronExpr     string `json:"cron_expr"`     // BL353 — 5-field cron expression
+			ScheduleName string `json:"schedule_name"` // BL353 — human-readable label
 			// For deferred sessions
 			Name       string `json:"name"`
 			ProjectDir string `json:"project_dir"`
@@ -6100,9 +6150,23 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
+		// Validate cron if provided
+		if req.CronExpr != "" {
+			if err := session.ValidateCron(req.CronExpr); err != nil {
+				http.Error(w, "invalid cron_expr: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		// Parse time (supports natural language)
 		var runAt time.Time
-		if req.RunAt != "" {
+		if req.CronExpr != "" && req.RunAt == "" {
+			var err error
+			runAt, err = session.CronNext(req.CronExpr, time.Now())
+			if err != nil {
+				http.Error(w, "cron next: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else if req.RunAt != "" {
 			var err error
 			runAt, err = session.ParseScheduleTime(req.RunAt, time.Now())
 			if err != nil {
@@ -6124,11 +6188,30 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			}
 			sc, err = s.schedStore.AddDeferredSession(req.Name, req.Command, req.ProjectDir, req.Backend, runAt)
 		} else {
-			if req.SessionID == "" || req.Command == "" {
-				http.Error(w, "session_id and command required", http.StatusBadRequest)
+			// Resolve session by name if session_id not provided
+			sessionID := req.SessionID
+			if sessionID == "" && req.SessionName != "" {
+				if sess, ok := s.manager.FindSessionByName(req.SessionName); ok {
+					sessionID = sess.FullID
+				}
+			}
+			if sessionID == "" && req.SessionName == "" {
+				http.Error(w, "session_id or session_name required", http.StatusBadRequest)
 				return
 			}
-			sc, err = s.schedStore.Add(req.SessionID, req.Command, runAt, req.RunAfterID)
+			if req.Command == "" {
+				http.Error(w, "command required", http.StatusBadRequest)
+				return
+			}
+			sc, err = s.schedStore.AddFull(session.AddOptions{
+				SessionID:    sessionID,
+				SessionName:  req.SessionName,
+				ScheduleName: req.ScheduleName,
+				Command:      req.Command,
+				RunAt:        runAt,
+				RunAfterID:   req.RunAfterID,
+				CronExpr:     req.CronExpr,
+			})
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

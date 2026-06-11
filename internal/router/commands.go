@@ -379,6 +379,11 @@ type Command struct {
 	CooldownVerb    string
 	CooldownSeconds int
 	CooldownReason  string
+
+	// BL353 — schedule targeting fields.
+	SessionName  string // for schedule: resolve session by name at fire time
+	CronExpr     string // for schedule: 5-field cron expression
+	ScheduleName string // for schedule: human-readable label for the entry
 }
 
 // SessionVerb values.
@@ -389,6 +394,41 @@ const (
 	SessionVerbSelf      = "self"     // BL349
 	SessionVerbOrphaned  = "orphaned" // BL350
 )
+
+// parseBL353ScheduleParams parses a BL353 key=value style schedule command.
+// Supports: session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
+func parseBL353ScheduleParams(text string) Command {
+	params := make(map[string]string)
+	// Simple key=value parser; values may be quoted or unquoted up to next key=
+	parts := strings.Fields(text)
+	for _, p := range parts {
+		if idx := strings.Index(p, "="); idx > 0 {
+			k := p[:idx]
+			v := p[idx+1:]
+			params[k] = v
+		}
+	}
+	// Handle command= which may be multi-word: find "command=" in original text
+	if idx := strings.Index(text, "command="); idx >= 0 {
+		val := text[idx+8:]
+		// Trim up to next known key
+		for _, key := range []string{" cron=", " name=", " at=", " session_name=", " session_id="} {
+			if ki := strings.Index(val, key); ki >= 0 {
+				val = val[:ki]
+			}
+		}
+		params["command"] = strings.TrimSpace(val)
+	}
+	cmd := Command{Type: CmdSchedule}
+	cmd.SessionID = params["session_id"]
+	cmd.SessionName = params["session_name"]
+	cmd.CronExpr = params["cron"]
+	cmd.ScheduleName = params["name"]
+	at := params["at"]
+	cmdText := params["command"]
+	cmd.Text = at + " " + cmdText
+	return cmd
+}
 
 // Parse parses a Signal message text into a Command.
 // Returns CmdUnknown if the message doesn't match any known command.
@@ -701,8 +741,15 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "schedule "):
 		// format: "schedule <id>: <when> <command>"
-		// e.g. "schedule a3f2: now yes" or "schedule a3f2: 14:00 run tests"
+		// BL353 extended format: "schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]"
 		rest := text[9:]
+		// Check for BL353 key=value style (session_name= present)
+		if strings.Contains(rest, "session_name=") || strings.Contains(rest, "cron=") {
+			cmd := parseBL353ScheduleParams(rest)
+			if cmd.SessionName != "" || cmd.SessionID != "" {
+				return cmd
+			}
+		}
 		if idx := strings.Index(rest, ":"); idx >= 0 {
 			sessionID := strings.TrimSpace(rest[:idx])
 			remainder := strings.TrimSpace(rest[idx+1:])
@@ -1120,6 +1167,8 @@ tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
+schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
+schedule cancel id=<id>|name=<sched-name>
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)

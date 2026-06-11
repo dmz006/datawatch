@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.3"
+var Version = "8.10.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7451,21 +7451,36 @@ func newSessionCmd() *cobra.Command {
 		Short: "Schedule commands to run for a session",
 	}
 	schedAddCmd := &cobra.Command{
-		Use:   "add <session-id> <command>",
+		Use:   "add [<session-id>] <command>",
 		Short: "Schedule a command for a session",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			sessionID := args[0]
-			command := strings.Join(args[1:], " ")
+			sessName, _ := cmd.Flags().GetString("session-name")
+			cronExpr, _ := cmd.Flags().GetString("cron")
+			schedName, _ := cmd.Flags().GetString("schedule-name")
 			at, _ := cmd.Flags().GetString("at")
-			return runScheduleAdd(cfg, sessionID, command, at)
+			var sessionID, command string
+			if sessName != "" {
+				// session-name provided; all args are the command
+				command = strings.Join(args, " ")
+			} else {
+				if len(args) < 2 {
+					return fmt.Errorf("requires <session-id> and <command> (or use --session-name)")
+				}
+				sessionID = args[0]
+				command = strings.Join(args[1:], " ")
+			}
+			return runScheduleAdd(cfg, sessionID, sessName, command, at, cronExpr, schedName)
 		},
 	}
 	schedAddCmd.Flags().String("at", "", "When to run: 'now', 'HH:MM', or RFC3339 timestamp. Default: on next input prompt")
+	schedAddCmd.Flags().String("session-name", "", "Target session by name (alternative to positional session-id)")
+	schedAddCmd.Flags().String("cron", "", "5-field cron expression for recurring schedule (e.g. \"*/5 * * * *\")")
+	schedAddCmd.Flags().String("schedule-name", "", "Human-readable name for this schedule entry (for later lookup/cancel)")
 	scheduleCmd.AddCommand(schedAddCmd)
 	scheduleCmd.AddCommand(&cobra.Command{
 		Use:   "list",
@@ -8448,13 +8463,27 @@ func schedStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "schedule.json")
 }
 
-func runScheduleAdd(cfg *config.Config, sessionID, command, at string) error {
+func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
 	store, err := session.NewScheduleStore(schedStorePath(cfg))
 	if err != nil {
 		return fmt.Errorf("open schedule store: %w", err)
 	}
+
+	// Validate cron if provided
+	if cronExpr != "" {
+		if err := session.ValidateCron(cronExpr); err != nil {
+			return fmt.Errorf("invalid cron expression %q: %w", cronExpr, err)
+		}
+	}
+
 	var runAt time.Time
-	if at != "" && at != "now" {
+	if cronExpr != "" && at == "" {
+		// Compute initial run time from cron
+		runAt, err = session.CronNext(cronExpr, time.Now())
+		if err != nil {
+			return fmt.Errorf("cron next: %w", err)
+		}
+	} else if at != "" && at != "now" {
 		// Try HH:MM first
 		if t, err2 := time.Parse("15:04", at); err2 == nil {
 			now := time.Now()
@@ -8470,7 +8499,15 @@ func runScheduleAdd(cfg *config.Config, sessionID, command, at string) error {
 			}
 		}
 	}
-	sc, err := store.Add(sessionID, command, runAt, "")
+
+	sc, err := store.AddFull(session.AddOptions{
+		SessionID:    sessionID,
+		SessionName:  sessionName,
+		ScheduleName: scheduleName,
+		Command:      command,
+		RunAt:        runAt,
+		CronExpr:     cronExpr,
+	})
 	if err != nil {
 		return fmt.Errorf("schedule add: %w", err)
 	}
@@ -8478,7 +8515,15 @@ func runScheduleAdd(cfg *config.Config, sessionID, command, at string) error {
 	if !sc.RunAt.IsZero() {
 		when = sc.RunAt.Format("2006-01-02 15:04")
 	}
-	fmt.Printf("Scheduled [%s] for session %s at %s:\n  %s\n", sc.ID, sessionID, when, command)
+	ref := sessionID
+	if sessionName != "" {
+		ref = fmt.Sprintf("%s (name:%s)", sessionID, sessionName)
+	}
+	label := sc.ID
+	if scheduleName != "" {
+		label = fmt.Sprintf("%s (%s)", sc.ID, scheduleName)
+	}
+	fmt.Printf("Scheduled [%s] for session %s at %s:\n  %s\n", label, ref, when, command)
 	return nil
 }
 
@@ -8493,13 +8538,15 @@ func runScheduleList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tSESSION\tSTATE\tWHEN\tCOMMAND")
+	_, _ = fmt.Fprintln(w, "ID\tSESSION\tSESSION-NAME\tSCHED-NAME\tSTATE\tWHEN\tCRON\tCOMMAND")
 	for _, sc := range entries {
 		when := "on input"
 		if !sc.RunAt.IsZero() {
 			when = sc.RunAt.Format("15:04")
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sc.ID, sc.SessionID, sc.State, when, truncate(sc.Command, 40))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			sc.ID, sc.SessionID, sc.SessionName, sc.ScheduleName,
+			sc.State, when, sc.CronExpr, truncate(sc.Command, 40))
 	}
 	return w.Flush()
 }
@@ -8509,8 +8556,14 @@ func runScheduleCancel(cfg *config.Config, id string) error {
 	if err != nil {
 		return fmt.Errorf("open schedule store: %w", err)
 	}
+	// Try cancel by ID first; if not found, try by schedule name
 	if err := store.Cancel(id); err != nil {
-		return err
+		n := store.CancelByScheduleName(id)
+		if n == 0 {
+			return err
+		}
+		fmt.Printf("Cancelled %d scheduled command(s) named %q.\n", n, id)
+		return nil
 	}
 	fmt.Printf("Scheduled command %s cancelled.\n", id)
 	return nil
@@ -8523,19 +8576,35 @@ func newScheduleTopCmd() *cobra.Command {
 		Short: "Manage scheduled session commands",
 	}
 	addCmd := &cobra.Command{
-		Use:   "add <session-id> <command>",
+		Use:   "add [<session-id>] <command>",
 		Short: "Schedule a command for a session",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
+			sessName, _ := cmd.Flags().GetString("session-name")
+			cronExpr, _ := cmd.Flags().GetString("cron")
+			schedName, _ := cmd.Flags().GetString("schedule-name")
 			at, _ := cmd.Flags().GetString("at")
-			return runScheduleAdd(cfg, args[0], strings.Join(args[1:], " "), at)
+			var sessionID, command string
+			if sessName != "" {
+				command = strings.Join(args, " ")
+			} else {
+				if len(args) < 2 {
+					return fmt.Errorf("requires <session-id> and <command> (or use --session-name)")
+				}
+				sessionID = args[0]
+				command = strings.Join(args[1:], " ")
+			}
+			return runScheduleAdd(cfg, sessionID, sessName, command, at, cronExpr, schedName)
 		},
 	}
 	addCmd.Flags().String("at", "", "When to run: 'now', 'HH:MM', or RFC3339 timestamp")
+	addCmd.Flags().String("session-name", "", "Target session by name (alternative to positional session-id)")
+	addCmd.Flags().String("cron", "", "5-field cron expression for recurring schedule (e.g. \"*/5 * * * *\")")
+	addCmd.Flags().String("schedule-name", "", "Human-readable name for this schedule entry (for later lookup/cancel)")
 	cmd.AddCommand(addCmd)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
@@ -8601,10 +8670,16 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 		case t := <-ticker.C:
 			for _, sc := range store.DuePending(t) {
 				sess, ok := mgr.GetSession(sc.SessionID)
+				if !ok && sc.SessionName != "" {
+					sess, ok = mgr.FindSessionByName(sc.SessionName)
+				}
 				if !ok {
 					// Session may use short ID
-					fmt.Printf("[scheduler] session %q not found for command [%s], skipping\n", sc.SessionID, sc.ID)
-					_ = store.MarkDone(sc.ID, true)
+					fmt.Printf("[scheduler] session %q (name:%q) not found for command [%s], skipping\n", sc.SessionID, sc.SessionName, sc.ID)
+					// Don't mark failed for name-targeted schedules — the session may not be started yet.
+					if sc.SessionName == "" {
+						_ = store.MarkDone(sc.ID, true)
+					}
 					continue
 				}
 				if err := mgr.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {

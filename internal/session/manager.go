@@ -3227,6 +3227,27 @@ func (m *Manager) GetSession(id string) (*Session, bool) {
 	return m.store.GetByShortID(id)
 }
 
+// FindSessionByName returns the best-match session for the given human-readable name.
+// Active sessions (running/waiting_input) are preferred. Returns (nil, false) if none found.
+func (m *Manager) FindSessionByName(name string) (*Session, bool) {
+	all := m.ListSessions()
+	var matched []*Session
+	for _, s := range all {
+		if s.Name == name {
+			matched = append(matched, s)
+		}
+	}
+	if len(matched) == 0 {
+		return nil, false
+	}
+	for _, s := range matched {
+		if s.State == StateRunning || s.State == StateWaitingInput {
+			return s, true
+		}
+	}
+	return matched[0], true
+}
+
 // SaveSession persists the session state to the store.
 func (m *Manager) SaveSession(sess *Session) error {
 	return m.store.Save(sess)
