@@ -63,8 +63,9 @@ type Server struct {
 	srv        *server.MCPServer
 	alertStore *alerts.Store
 	schedStore    *session.ScheduleStore
-	exitHookStore *session.ExitHookStore // BL356
-	queueStore    *session.QueueStore    // BL357
+	exitHookStore *session.ExitHookStore    // BL356
+	queueStore    *session.QueueStore       // BL357
+	subStore      *session.DiscussionSubStore // BL358
 	cmdLib        *session.CmdLibrary
 	restartFn  func()
 	version    string
@@ -146,8 +147,9 @@ type KGMCP interface {
 type Options struct {
 	AlertStore    *alerts.Store
 	SchedStore    *session.ScheduleStore
-	ExitHookStore *session.ExitHookStore // BL356
-	QueueStore    *session.QueueStore    // BL357
+	ExitHookStore *session.ExitHookStore      // BL356
+	QueueStore    *session.QueueStore          // BL357
+	SubStore      *session.DiscussionSubStore  // BL358
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
 	Version       string
@@ -165,6 +167,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		schedStore:    opts.SchedStore,
 		exitHookStore: opts.ExitHookStore,
 		queueStore:    opts.QueueStore,
+		subStore:      opts.SubStore, // BL358
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
 		version:       opts.Version,
@@ -253,6 +256,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolQueueComplete(), tracked(s.handleQueueComplete))
 	mcpSrv.AddTool(s.toolQueueFail(), tracked(s.handleQueueFail))
 	mcpSrv.AddTool(s.toolQueueList(), tracked(s.handleQueueList))
+
+	// BL358 — discussion push/subscribe.
+	mcpSrv.AddTool(s.toolDiscussionSubscribe(), tracked(s.handleDiscussionSubscribe))
+	mcpSrv.AddTool(s.toolDiscussionUnsubscribe(), tracked(s.handleDiscussionUnsubscribe))
+	mcpSrv.AddTool(s.toolDiscussionSubscriptions(), tracked(s.handleDiscussionSubscriptions))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))

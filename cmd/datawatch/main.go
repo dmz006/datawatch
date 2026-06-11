@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.8"
+var Version = "8.10.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -329,8 +329,9 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newFilesCmd(),      // BL333 — federated file service
 		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
 		newMatrixCmd(),     // BL241 — Matrix backend status + test
-		newExitHookCmd(),   // BL356 — session crash/exit hooks
-		newQueueCmd(),      // BL357 — durable role-based work queue
+		newExitHookCmd(),        // BL356 — session crash/exit hooks
+		newQueueCmd(),           // BL357 — durable role-based work queue
+		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1531,6 +1532,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open queue store: %w", err)
 	}
 
+	// BL358 — discussion subscription store.
+	discussionSubStore, err := session.NewDiscussionSubStore(discussionSubStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open discussion sub store: %w", err)
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -2684,7 +2691,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
 		httpServer.SetExitHookStore(exitHookStore)
-		httpServer.SetQueueStore(queueStore) // BL357
+		httpServer.SetQueueStore(queueStore)             // BL357
+		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -4859,7 +4867,8 @@ Return STRICT JSON:
 		AlertStore:    alertStore,
 		SchedStore:    schedStore,
 		ExitHookStore: exitHookStore,
-		QueueStore:    queueStore, // BL357
+		QueueStore:    queueStore,            // BL357
+		SubStore:      discussionSubStore,    // BL358
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -8596,6 +8605,12 @@ func queueStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "queue.json")
 }
 
+// ---- discussion-sub helper functions (BL358) --------------------------------
+
+func discussionSubStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "discussion_subs.json")
+}
+
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
 	store, err := session.NewScheduleStore(schedStorePath(cfg))
 	if err != nil {
@@ -9422,12 +9437,14 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg)) // BL357
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                      // BL357
+	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))         // BL358
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    mcpAlertStore,
 		SchedStore:    mcpSchedStore,
 		QueueStore:    mcpQueueStore, // BL357
+		SubStore:      mcpSubStore,   // BL358
 		CmdLib:        mcpCmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -13600,5 +13617,110 @@ func newQueueCmd() *cobra.Command {
 	listCmd.Flags().String("state", "", "Filter by state (pending|claimed|complete|failed)")
 
 	cmd.AddCommand(pushCmd, claimCmd, completeCmd, failCmd, listCmd)
+	return cmd
+}
+
+// newDiscussionSubCmd returns the "discussion-sub" CLI command (BL358).
+//
+//	datawatch discussion-sub subscribe --discussion <id> --session-name <name>
+//	datawatch discussion-sub unsubscribe --discussion <id> --session-name <name>
+//	datawatch discussion-sub list
+func newDiscussionSubCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "discussion-sub",
+		Short: "Manage discussion subscriptions (BL358)",
+		Long:  "Subscribe sessions to discussions so that new entries written via memory_discussion_write are delivered to the session via send_input.",
+	}
+
+	// subscribe
+	subscribeCmd := &cobra.Command{
+		Use:   "subscribe",
+		Short: "Subscribe a session to a discussion",
+		RunE: func(c *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			discID, _ := c.Flags().GetString("discussion")
+			sessName, _ := c.Flags().GetString("session-name")
+			if discID == "" {
+				return fmt.Errorf("--discussion is required")
+			}
+			if sessName == "" {
+				return fmt.Errorf("--session-name is required")
+			}
+			store, err := session.NewDiscussionSubStore(discussionSubStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open discussion sub store: %w", err)
+			}
+			if err := store.Subscribe(discID, sessName); err != nil {
+				return err
+			}
+			fmt.Printf("subscribed session %q to discussion %q\n", sessName, discID)
+			return nil
+		},
+	}
+	subscribeCmd.Flags().String("discussion", "", "Discussion scope ID (required)")
+	subscribeCmd.Flags().String("session-name", "", "Session name to deliver entries to (required)")
+
+	// unsubscribe
+	unsubscribeCmd := &cobra.Command{
+		Use:   "unsubscribe",
+		Short: "Unsubscribe a session from a discussion",
+		RunE: func(c *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			discID, _ := c.Flags().GetString("discussion")
+			sessName, _ := c.Flags().GetString("session-name")
+			if discID == "" {
+				return fmt.Errorf("--discussion is required")
+			}
+			if sessName == "" {
+				return fmt.Errorf("--session-name is required")
+			}
+			store, err := session.NewDiscussionSubStore(discussionSubStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open discussion sub store: %w", err)
+			}
+			if err := store.Unsubscribe(discID, sessName); err != nil {
+				return err
+			}
+			fmt.Printf("unsubscribed session %q from discussion %q\n", sessName, discID)
+			return nil
+		},
+	}
+	unsubscribeCmd.Flags().String("discussion", "", "Discussion scope ID (required)")
+	unsubscribeCmd.Flags().String("session-name", "", "Session name to remove (required)")
+
+	// list
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all discussion subscriptions",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			store, err := session.NewDiscussionSubStore(discussionSubStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open discussion sub store: %w", err)
+			}
+			subs := store.List()
+			if len(subs) == 0 {
+				fmt.Println("No discussion subscriptions found.")
+				return nil
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "DISCUSSION_ID\tSESSION_NAME")
+			for _, s := range subs {
+				_, _ = fmt.Fprintf(w, "%s\t%s\n", s.DiscussionID, s.SessionName)
+			}
+			return w.Flush()
+		},
+	}
+
+	cmd.AddCommand(subscribeCmd, unsubscribeCmd, listCmd)
 	return cmd
 }

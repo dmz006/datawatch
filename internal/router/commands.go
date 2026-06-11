@@ -310,6 +310,12 @@ const (
 	//   "queue list [role=<r>] [state=<s>]"
 	CmdQueue CommandType = "queue"
 
+	// BL358 — discussion push/subscribe over chat.
+	//   "discussion_sub subscribe discussion_id=<id> session_name=<name>"
+	//   "discussion_sub unsubscribe discussion_id=<id> session_name=<name>"
+	//   "discussion_sub list"
+	CmdDiscussionSub CommandType = "discussion_sub"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -421,6 +427,11 @@ type Command struct {
 	QueueResult      string // for complete: JSON result string
 	QueueError       string // for fail: error message
 	QueueState       string // for list: state filter
+
+	// BL358 — CmdDiscussionSub fields.
+	DiscussionSubVerb        string // "subscribe" | "unsubscribe" | "list"
+	DiscussionSubDiscussionID string // for subscribe/unsubscribe: discussion scope ID
+	DiscussionSubSessionName  string // for subscribe/unsubscribe: session name
 }
 
 // SessionVerb values.
@@ -1219,6 +1230,9 @@ func Parse(text string) Command {
 	case lower == "queue" || lower == "queue list" || strings.HasPrefix(lower, "queue "):
 		return parseQueueCommand(text)
 
+	case lower == "discussion_sub" || lower == "discussion_sub list" || strings.HasPrefix(lower, "discussion_sub "):
+		return parseDiscussionSubCommand(text)
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -1321,6 +1335,32 @@ func parseQueueCommand(text string) Command {
 		n, _ := strconv.Atoi(ls)
 		cmd.QueueLeaseSeconds = n
 	}
+	return cmd
+}
+
+// parseDiscussionSubCommand parses a discussion_sub command (BL358).
+// Formats:
+//
+//	discussion_sub subscribe discussion_id=<id> session_name=<name>
+//	discussion_sub unsubscribe discussion_id=<id> session_name=<name>
+//	discussion_sub list
+func parseDiscussionSubCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdDiscussionSub, DiscussionSubVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	cmd := Command{Type: CmdDiscussionSub, DiscussionSubVerb: verb}
+
+	// Parse key=value pairs.
+	params := make(map[string]string)
+	for _, p := range parts[2:] {
+		if idx := strings.Index(p, "="); idx > 0 {
+			params[p[:idx]] = p[idx+1:]
+		}
+	}
+	cmd.DiscussionSubDiscussionID = params["discussion_id"]
+	cmd.DiscussionSubSessionName = params["session_name"]
 	return cmd
 }
 

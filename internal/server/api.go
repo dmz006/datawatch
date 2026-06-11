@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.8"
+var Version = "8.10.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -185,8 +185,9 @@ type Server struct {
 	cfg               *config.Config
 	cfgPath           string
 	schedStore        *session.ScheduleStore
-	exitHookStore     *session.ExitHookStore // BL356
-	queueStore        *session.QueueStore    // BL357
+	exitHookStore     *session.ExitHookStore      // BL356
+	queueStore        *session.QueueStore          // BL357
+	discussionSubStore *session.DiscussionSubStore // BL358
 	cmdLib            *session.CmdLibrary
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
@@ -703,6 +704,11 @@ func (s *Server) SetExitHookStore(store *session.ExitHookStore) { s.exitHookStor
 
 // SetQueueStore wires a work queue store into the API server (BL357).
 func (s *Server) SetQueueStore(store *session.QueueStore) { s.queueStore = store }
+
+// SetDiscussionSubStore wires a discussion subscription store into the API server (BL358).
+func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
+	s.discussionSubStore = store
+}
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
@@ -7610,6 +7616,85 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, map[string]interface{}{"ok": true})
+
+	default:
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
+}
+
+// handleDiscussionSubs handles the /api/discussion-subs REST surface (BL358).
+//
+//	GET    /api/discussion-subs           — list all subscriptions
+//	POST   /api/discussion-subs           — subscribe {discussion_id, session_name}
+//	DELETE /api/discussion-subs/{disc}/{sess} — unsubscribe
+func (s *Server) handleDiscussionSubs(w http.ResponseWriter, r *http.Request) {
+	if s.discussionSubStore == nil {
+		http.Error(w, `{"error":"discussion subscription store not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	// Determine sub-path after /api/discussion-subs
+	sub := strings.TrimPrefix(r.URL.Path, "/api/discussion-subs")
+	sub = strings.TrimPrefix(sub, "/")
+
+	switch {
+	case r.Method == http.MethodGet && sub == "":
+		// GET /api/discussion-subs — list all subscriptions
+		subs := s.discussionSubStore.List()
+		if subs == nil {
+			subs = []session.DiscussionSub{}
+		}
+		writeJSONOK(w, subs)
+
+	case r.Method == http.MethodPost && sub == "":
+		// POST /api/discussion-subs — subscribe
+		var req struct {
+			DiscussionID string `json:"discussion_id"`
+			SessionName  string `json:"session_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if req.DiscussionID == "" {
+			http.Error(w, `{"error":"discussion_id is required"}`, http.StatusBadRequest)
+			return
+		}
+		if req.SessionName == "" {
+			http.Error(w, `{"error":"session_name is required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := s.discussionSubStore.Subscribe(req.DiscussionID, req.SessionName); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{
+			"ok":            true,
+			"discussion_id": req.DiscussionID,
+			"session_name":  req.SessionName,
+			"status":        "subscribed",
+		})
+
+	case r.Method == http.MethodDelete && sub != "":
+		// DELETE /api/discussion-subs/{disc}/{sess}
+		// sub has form: {discussion_id}/{session_name}
+		parts := strings.SplitN(sub, "/", 2)
+		if len(parts) != 2 {
+			http.Error(w, `{"error":"path must be /api/discussion-subs/{discussion_id}/{session_name}"}`, http.StatusBadRequest)
+			return
+		}
+		discID := parts[0]
+		sessName := parts[1]
+		if err := s.discussionSubStore.Unsubscribe(discID, sessName); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, map[string]interface{}{
+			"ok":            true,
+			"discussion_id": discID,
+			"session_name":  sessName,
+			"status":        "unsubscribed",
+		})
 
 	default:
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)

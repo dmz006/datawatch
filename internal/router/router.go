@@ -1075,6 +1075,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleExitHookCmd(cmd)
 	case CmdQueue: // BL357
 		r.handleQueueCmd(cmd)
+	case CmdDiscussionSub: // BL358
+		r.handleDiscussionSubCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

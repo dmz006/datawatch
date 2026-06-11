@@ -6,14 +6,19 @@
 //	memory_discussion_recall     GET  /api/memory/discussion/{id}
 //	memory_discussion_wal        GET  /api/memory/discussion/{id}/wal
 //	memory_discussion_participants  GET/PUT /api/memory/discussion/{id}/participants
+//
+// BL358 extends memory_discussion_wal with after_seq/block/timeout params.
 
 package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -37,8 +42,9 @@ func (s *Server) handleDiscussionWrite(_ context.Context, req mcpsdk.CallToolReq
 	if id == "" {
 		return textOK("Error: discussion_id is required"), nil
 	}
+	content := req.GetString("content", "")
 	body := map[string]any{
-		"content": req.GetString("content", ""),
+		"content": content,
 	}
 	if v := req.GetString("summary", ""); v != "" {
 		body["summary"] = v
@@ -49,6 +55,10 @@ func (s *Server) handleDiscussionWrite(_ context.Context, req mcpsdk.CallToolReq
 	out, err := s.proxyJSON(http.MethodPost, fmt.Sprintf("/api/memory/discussion/%s", url.PathEscape(id)), body)
 	if err != nil {
 		return textOK("Error: " + err.Error()), nil
+	}
+	// BL358: dispatch to subscribers asynchronously.
+	if s.subStore != nil && s.manager != nil {
+		go s.dispatchDiscussionEntry(id, content)
 	}
 	return textOK(string(out)), nil
 }
@@ -92,10 +102,20 @@ func (s *Server) handleDiscussionRecall(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolDiscussionWAL() mcpsdk.Tool {
 	return mcpsdk.NewTool("memory_discussion_wal",
-		mcpsdk.WithDescription("Read the write-ahead log (WAL) for a discussion scope (BL332). "+
-			"Returns the last N entries including origin peer, sequence number, and timestamp."),
+		mcpsdk.WithDescription("Read the write-ahead log (WAL) for a discussion scope (BL332/BL358). "+
+			"Returns the last N entries including origin peer, sequence number, and timestamp. "+
+			"BL358: supports after_seq/block/timeout for long-poll streaming."),
 		mcpsdk.WithString("discussion_id", mcpsdk.Required(), mcpsdk.Description("Discussion scope ID")),
 		mcpsdk.WithString("n", mcpsdk.Description("Number of WAL entries to return (default 20)")),
+		mcpsdk.WithString("after_seq",
+			mcpsdk.Description("Return only entries with sequence number > after_seq (integer as string)"),
+		),
+		mcpsdk.WithString("block",
+			mcpsdk.Description("If 'true', block until new entries appear (long-poll). Use with after_seq."),
+		),
+		mcpsdk.WithString("timeout",
+			mcpsdk.Description("Long-poll timeout in seconds (default 30, max 60). Used with block=true."),
+		),
 	)
 }
 
@@ -104,19 +124,87 @@ func (s *Server) handleDiscussionWAL(_ context.Context, req mcpsdk.CallToolReque
 	if id == "" {
 		return textOK("Error: discussion_id is required"), nil
 	}
+
+	afterSeq := -1
+	if v := req.GetString("after_seq", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			afterSeq = n
+		}
+	}
+
+	block := req.GetString("block", "") == "true"
+	timeout := 30
+	if v := req.GetString("timeout", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 60 {
+				n = 60
+			}
+			timeout = n
+		}
+	}
+
 	q := url.Values{}
 	if v := req.GetString("n", ""); v != "" {
 		q.Set("n", v)
+	} else {
+		q.Set("n", "50") // fetch more for filtering
 	}
 	path := fmt.Sprintf("/api/memory/discussion/%s/wal", url.PathEscape(id))
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
-	out, err := s.proxyJSON(http.MethodGet, path, nil)
-	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+
+	// Non-blocking case: just fetch and optionally filter
+	if !block || afterSeq < 0 {
+		out, err := s.proxyJSON(http.MethodGet, path, nil)
+		if err != nil {
+			return textOK("Error: " + err.Error()), nil
+		}
+		if afterSeq >= 0 {
+			out = filterWALAfterSeq(out, afterSeq)
+		}
+		return textOK(string(out)), nil
 	}
-	return textOK(string(out)), nil
+
+	// Long-poll: poll until entries > afterSeq appear or timeout
+	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+	for time.Now().Before(deadline) {
+		out, err := s.proxyJSON(http.MethodGet, path, nil)
+		if err != nil {
+			return textOK("Error: " + err.Error()), nil
+		}
+		filtered := filterWALAfterSeq(out, afterSeq)
+		if len(filtered) > 2 { // non-empty JSON array
+			return textOK(string(filtered)), nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return textOK("[]"), nil // timeout — no new entries
+}
+
+// filterWALAfterSeq filters WAL entries to only those with seq > afterSeq.
+// The WAL JSON is expected to be an array of objects with a "seq" field.
+func filterWALAfterSeq(data []byte, afterSeq int) []byte {
+	var entries []map[string]any
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return data // can't parse, return as-is
+	}
+	var filtered []map[string]any
+	for _, e := range entries {
+		if seq, ok := e["seq"]; ok {
+			switch v := seq.(type) {
+			case float64:
+				if int(v) > afterSeq {
+					filtered = append(filtered, e)
+				}
+			}
+		}
+	}
+	out, _ := json.Marshal(filtered)
+	if out == nil {
+		return []byte("[]")
+	}
+	return out
 }
 
 // ── memory_discussion_participants ────────────────────────────────────────────
