@@ -1,5 +1,5 @@
-# Container image CVE exceptions — v8.9.21
-# Reviewed: 2026-06-07  |  Re-review: each release cycle
+# Container image CVE exceptions — v8.10.17
+# Reviewed: 2026-06-12  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
 # "affected" or "will_not_fix" for each.
@@ -71,7 +71,7 @@ CVE-2026-7598
 # Not present in the runtime attack surface of a deployed container.
 CVE-2026-41989
 
-# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (5 CVEs)
+# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (6 CVEs)
 # Perl is installed as a transitive dependency (git and gnupg pull it in).
 # The datawatch service does not execute Perl scripts or call Archive::Tar.
 #   CVE-2026-42496 (CRITICAL): Archive::Tar symlink traversal during extraction.
@@ -83,11 +83,15 @@ CVE-2026-41989
 #   CVE-2026-8376 (HIGH): heap buffer overflow in Perl interpreter. Requires
 #     running attacker-supplied Perl code; no Perl execution in container.
 #   CVE-2026-9538 (HIGH): Archive::Tar memory corruption. Same as CVE-2026-42496.
+#   CVE-2026-48959 (HIGH): IO::Uncompress::Unzip CPU exhaustion via malformed
+#     zip file. datawatch does not decompress zip files via Perl at runtime;
+#     Perl is only present as a transitive dependency of git.
 CVE-2026-42496
 CVE-2026-42497
 CVE-2026-48962
 CVE-2026-8376
 CVE-2026-9538
+CVE-2026-48959
 
 # git-lfs CVE-2025-26625 — HIGH, no fix available
 # git-lfs may write to arbitrary files via crafted LFS pointer refs returned
