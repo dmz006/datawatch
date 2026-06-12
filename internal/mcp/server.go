@@ -331,6 +331,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// v5.27.10 (BL216) — channel bridge introspection.
 	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
 
+	// BL362 — channel bridge diagnostics (per-session ports, live probes, hints).
+	mcpSrv.AddTool(s.toolChannelDiagnostics(), tracked(s.handleChannelDiagnostics))
+
 	// BL331 parity — channel routing config.
 	mcpSrv.AddTool(s.toolChannelRoutingConfigGet(), tracked(s.handleChannelRoutingConfigGet))
 	mcpSrv.AddTool(s.toolChannelRoutingConfigSet(), tracked(s.handleChannelRoutingConfigSet))

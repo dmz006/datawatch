@@ -119,8 +119,29 @@ server:
   tls_cert: ""
   # Path to TLS private key PEM file
   tls_key: ""
-  # Per-session MCP channel port (0 = random)
+  # Per-session MCP channel port (0 = random; auto-selects a free port)
   channel_port: 0
+
+# ── datawatch-channel binary environment variables ──
+# These are injected by the daemon into each session's environment when
+# spawning the datawatch-channel bridge process. They are not set in
+# this YAML file but are documented here for troubleshooting.
+#
+#   DATAWATCH_CHANNEL_PORT   HTTP listen port for the bridge (default 7433; 0 = random).
+#                            If the default port is in use the bridge will fail to start.
+#                            Symptom: MCP error with no further detail; session cannot connect.
+#                            Fix: set to 0 in server.channel_port to auto-select a free port.
+#   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
+#                            (default http://localhost:8080). Wrong value → bridge starts but
+#                            tool discovery fails; sessions show "reply-only" mode.
+#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
+#                            Wrong/missing → 401 on discovery and /api/channel/ready;
+#                            bridge starts but push notifications never work.
+#   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
+#                            Auto-set by the daemon; do not override unless testing.
+#
+# Run `datawatch channel diagnostics` or check GET /api/channel/diagnostics to see
+# per-session port registrations and live bridge /health probe results.
   # How long completed sessions show in active list (minutes)
   recent_session_minutes: 5
   # Auto-restart daemon when config is saved via web UI

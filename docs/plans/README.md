@@ -38,22 +38,24 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-06-11
+## Current state — 2026-06-12
 
-Latest release: **v8.10.12** (2026-06-11). Fleet coordination suite: recurring schedules, zombie detection, exit hooks, work queue, discussion subscribe, session restart, result store, and structured session filters (BL353–BL361).
+Latest release: **v8.10.17** (2026-06-12). MCP channel bridge diagnostics (BL362): 7-surface — REST, MCP, CLI, comm channel, PWA, config docs, definitions.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
-| Active backlog | 0 | BL353–BL361 all delivered v8.10.4–v8.10.12 |
+| Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
-| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters |
+| Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.10.17 shipped 2026-06-12 — BL362: MCP channel bridge diagnostics. `GET /api/channel/diagnostics` returns bridge kind/path, global port config, per-session `ChannelSessionDiag` (port, `bridge_alive`, `probe_error`), and actionable hints. `channel_diagnostics` MCP tool. `datawatch channel diagnostics [--json]` CLI. `channel diagnostics` comm router trigger. PWA diagnostics card. `docs/config-reference.yaml` env var docs. `docs/datawatch-definitions.md` definition section. Full 7-surface parity.
 
 v8.10.12 shipped 2026-06-11 — BL361: `list_sessions` structured filters. `SessionFilter` (name glob, state, backend, alive). `ListSessionsFiltered` AND-logic. `GET /api/sessions` gains `?name/state/backend/alive` query params. MCP `list_sessions` gains 5 params including `format=json`. CLI `session list` gains `--name/--state/--backend/--alive/--json`. 6 tests.
 

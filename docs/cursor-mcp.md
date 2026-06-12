@@ -138,6 +138,8 @@ Selected core tools:
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |
 | `discussion_subscribe` / `discussion_unsubscribe` / `discussion_subscriptions` | Discussion subscriptions (BL358) |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
+| `channel_info` | Channel bridge status for the current session |
+| `channel_diagnostics` | Full MCP channel bridge health — all sessions, bridge kind/path, per-session liveness, hints (BL362) |
 
 ## Example Usage in Cursor
 

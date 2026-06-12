@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.17 — feat(channel): MCP channel bridge diagnostics — full 7-surface parity (BL362) (2026-06-12)
+
+### Added
+
+- **`GET /api/channel/diagnostics`** (REST) — returns `ChannelDiagnostics`: bridge kind/path, global port config, per-session `ChannelSessionDiag` (port, `bridge_alive`, `probe_error`), and actionable `hints` for bridge-not-ready or bridge-crashed conditions.
+- **`channel_diagnostics` MCP tool** — forwarding wrapper; agents can query bridge health without shell access.
+- **`datawatch channel diagnostics [--json]`** (CLI) — human-readable or JSON channel bridge status.
+- **Comm channel router** — natural-language trigger `channel diagnostics` dispatches `channelDiagnosticsSummary()` into chat.
+- **PWA diagnostics card** — `loadChannelDiagnostics()` adds a "Channel Bridge" card to the monitor page alongside the existing `channelBridgeStatus` div.
+- **`docs/config-reference.yaml`** — documents `DATAWATCH_CHANNEL_PORT`, `DATAWATCH_API_URL`, `DATAWATCH_TOKEN`, `CLAUDE_SESSION_ID` env vars with symptom/fix tables.
+- **`docs/datawatch-definitions.md`** — "MCP Channel Bridge Diagnostics (BL362, v8.10.17)" definition with 7-surface table, env var table, and core feature matrix row.
+
+---
+
 ## v8.10.16 — feat(channel): startup diagnostics and port-conflict identification (2026-06-12)
 
 ### Added

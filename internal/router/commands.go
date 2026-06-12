@@ -54,7 +54,10 @@ const (
 	CmdReload       CommandType = "reload"
 	// v5.27.10 (BL216) — channel bridge introspection over chat:
 	//   "channel info" — daemon's resolved bridge kind/path + stale .mcp.json
-	CmdChannelInfo  CommandType = "channel_info"
+	CmdChannelInfo        CommandType = "channel_info"
+	// BL362 — channel bridge diagnostics over chat:
+	//   "channel diagnostics" — per-session ports, live /health probes, hints
+	CmdChannelDiagnostics CommandType = "channel_diagnostics"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	// F10 sprint 2: read-only profile access over chat. Create/update/
@@ -992,6 +995,10 @@ func Parse(text string) Command {
 	// v5.27.10 (BL216) — channel info via chat: `channel info`.
 	case lower == "channel info":
 		return Command{Type: CmdChannelInfo}
+
+	// BL362 — channel diagnostics via chat: `channel diagnostics`.
+	case lower == "channel diagnostics":
+		return Command{Type: CmdChannelDiagnostics}
 
 	case lower == "learnings" || strings.HasPrefix(lower, "learnings "):
 		rest := ""

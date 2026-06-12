@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.16"
+var Version = "8.10.17"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2367,6 +2367,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Telegram can answer "which bridge are sessions plumbed through"
 		// without shelling into the host. Same parity rule as `reload`.
 		r.SetChannelInfoFn(channelInfoSummary)
+		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			apiURL := loopbackBaseURL(cfg)+"/api/config"
@@ -4338,6 +4339,7 @@ Return STRICT JSON:
 		// as v5.27.3 testRouter SetReloadFn fix. Without this the
 		// /api/test/message surface would return "Channel info not wired".
 		testRouter.SetChannelInfoFn(channelInfoSummary)
+		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			apiURL := loopbackBaseURL(cfg)+"/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)

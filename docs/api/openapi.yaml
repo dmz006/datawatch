@@ -1912,6 +1912,20 @@ paths:
       responses: {"200": {description: OK}}
 
   # Channel
+  /api/channel/diagnostics:
+    get:
+      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness (BL362)
+      operationId: channelDiagnostics
+      tags: [Channel]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelDiagnostics"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+
   /api/channel/reply:
     post:
       summary: Inbound MCP-bridge reply from Claude (used by channel.js)
@@ -2382,6 +2396,54 @@ components:
             example: "unauthorized"
 
   schemas:
+    ChannelDiagnostics:
+      type: object
+      properties:
+        bridge_kind:
+          type: string
+          description: '"go" or "js" — which bridge the daemon resolved'
+          example: "go"
+        bridge_path:
+          type: string
+          description: Resolved binary/script path
+          example: "/usr/local/bin/datawatch-channel"
+        global_port:
+          type: integer
+          description: server.channel_port config value (0 = auto/random)
+          example: 0
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelSessionDiag"
+        hints:
+          type: array
+          items:
+            type: string
+          description: Actionable remediation hints when problems are detected
+
+    ChannelSessionDiag:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Short session hex ID
+          example: "a3f2"
+        session_name:
+          type: string
+          description: Human name if set
+          example: "worker"
+        channel_port:
+          type: integer
+          description: Port the bridge registered via POST /api/channel/ready (0 = not ready yet)
+          example: 54321
+        bridge_alive:
+          type: boolean
+          description: Result of a live GET http://127.0.0.1:PORT/health probe
+          example: true
+        probe_error:
+          type: string
+          description: Human-readable error when bridge_alive is false
+
     Session:
       type: object
       properties:

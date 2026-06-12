@@ -33,6 +33,7 @@ channel.js that no longer exists on disk.`,
 	}
 	cmd.AddCommand(newChannelInfoCmd())
 	cmd.AddCommand(newChannelCleanupStaleMCPJSONCmd())
+	cmd.AddCommand(newChannelDiagnosticsCmd()) // BL362
 	return cmd
 }
 

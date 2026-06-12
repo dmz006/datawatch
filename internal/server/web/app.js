@@ -17399,6 +17399,8 @@ function loadStatsPanel() {
   loadObserverClusterNodes();
   // v5.27.10 (BL216) — MCP channel bridge state.
   loadChannelBridge();
+  // BL362 — per-session bridge diagnostics (ports + live probes).
+  loadChannelDiagnostics();
 }
 
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
@@ -17446,6 +17448,38 @@ function loadChannelBridge() {
   }).catch(() => {
     el.textContent = 'unavailable';
   });
+}
+
+// BL362 — render /api/channel/diagnostics into the Monitor card: per-session
+// bridge ports, live /health probe results, and remediation hints.
+function loadChannelDiagnostics() {
+  const el = document.getElementById('channelDiagStatus');
+  if (!el) return;
+  apiFetch('/api/channel/diagnostics').then(d => {
+    if (!d || typeof d !== 'object') { el.textContent = 'unavailable'; return; }
+    let html = '';
+    if (!d.sessions || d.sessions.length === 0) {
+      html += '<div style="opacity:0.7;">(no active sessions)</div>';
+    } else {
+      d.sessions.forEach(sd => {
+        const portStr = sd.channel_port > 0 ? `port ${sd.channel_port}` : 'port –';
+        const name = sd.session_name || sd.session_id;
+        if (sd.bridge_alive) {
+          html += `<div>✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
+        } else {
+          const err = sd.probe_error ? ` — ${sd.probe_error}` : '';
+          html += `<div><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
+        }
+      });
+    }
+    if (Array.isArray(d.hints) && d.hints.length) {
+      html += '<div style="margin-top:6px;color:var(--warning);font-size:11px;">Hints:</div>';
+      d.hints.forEach(h => {
+        html += `<div style="opacity:0.85;font-size:11px;">• ${escHtml(h)}</div>`;
+      });
+    }
+    el.innerHTML = html;
+  }).catch(() => { el.textContent = 'unavailable'; });
 }
 
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
@@ -20680,6 +20714,14 @@ function renderObserverView() {
               <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">help</a>
             </div>
             <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <!-- BL362 — Channel bridge diagnostics: per-session ports + live probes -->
+          <div id="channelDiagBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+              <span>Channel bridge diagnostics</span>
+              <button onclick="loadChannelDiagnostics()" style="font-size:10px;padding:1px 6px;background:var(--btn-bg,var(--surface2));border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2);">refresh</button>
+            </div>
+            <div id="channelDiagStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
           <!-- BL241 — Communication backends live status -->
           <div id="commBackendsBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">

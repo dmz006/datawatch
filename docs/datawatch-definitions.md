@@ -973,6 +973,32 @@ Use `permission_mode: "plan"` to spawn a session that can analyse code but not m
 
 **See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md)
 
+#### MCP Channel Bridge Diagnostics (BL362, v8.10.16)
+
+When sessions fail to connect or MCP errors appear with no clear cause, this surface exposes the full diagnostic picture:
+
+- **Bridge kind / path** — whether the daemon resolved the Go binary (`datawatch-channel`) or Node.js fallback, and its path on disk.
+- **Per-session channel port** — every session's bridge registers its HTTP listen port via `POST /api/channel/ready`. The diagnostics endpoint lists those ports so you can see which bridge is on which port.
+- **Live `/health` probe** — the daemon probes `GET http://127.0.0.1:PORT/health` against each session's registered bridge and reports `bridge_alive: true/false`. A dead bridge that still has a registered port means the process crashed after registering.
+- **Remediation hints** — if a bridge never called ready (port=0), the hint points at `DATAWATCH_API_URL`/`DATAWATCH_TOKEN` misconfiguration. If a bridge is dead on a known port, the hint suggests restarting the session.
+- **Startup stderr diagnostics** — the `datawatch-channel` binary itself now prints a config dump (`api_url`, `channel_port`, `session_id`, token set/not-set), a pre-flight `GET /api/health` probe, port-conflict identification (reads `/proc/net/tcp` + `/proc/<pid>/comm` to name the holding process), and a clearer `notifyReady` failure message on every launch.
+
+**Surfaces:**
+- `GET /api/channel/diagnostics` — JSON response with `{bridge_kind, bridge_path, global_port, sessions[], hints[]}`.
+- `channel_diagnostics` MCP tool — same payload, usable from any IDE-side agent.
+- `datawatch channel diagnostics [--json]` CLI — human-readable table of session→port→alive, plus hints.
+- Chat command `channel diagnostics` — usable from Signal/Telegram/Slack/etc.
+- PWA Settings → Monitor → Channel bridge diagnostics card — live per-session status with refresh button.
+
+**Key env vars injected into bridge processes (documented in `docs/config-reference.yaml`):**
+
+| Var | Default | Effect |
+|-----|---------|--------|
+| `DATAWATCH_CHANNEL_PORT` | 7433 (or `server.channel_port`) | HTTP listen port; 0 = auto-select. Port conflict → bridge exits with diagnostic. |
+| `DATAWATCH_API_URL` | `http://localhost:8080` | Daemon callback URL; wrong value → tool discovery fails silently. |
+| `DATAWATCH_TOKEN` | (server token) | Bearer auth; missing/wrong → 401 on ready + tool discovery. |
+| `CLAUDE_SESSION_ID` | (session id) | Tags replies; auto-set by daemon. |
+
 #### MCP Tools
 
 Every datawatch capability — session management, memory, Automata, Council, evals, secrets, plugins — is available as an MCP tool. The tool catalogue is served at `GET /api/mcp/docs` (human-readable) and via the MCP `tools/list` protocol. See [`howto/mcp-tools.md`](howto/mcp-tools.md).
@@ -1168,6 +1194,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Session restart from any state | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.10 | RestartSession kills live tmux + relaunches, preserves ID/name/lineage |
 | Agent result store | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.11 | ResultStore KV, optional TTL, file-backed |
 | Structured session filters | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.12 | SessionFilter glob/state/backend/alive, ListSessionsFiltered, format=json |
+| MCP channel bridge diagnostics | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | v8.10.16 | per-session ChannelPort registry, live /health probe, port-conflict identification, DATAWATCH_* env var documentation |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 

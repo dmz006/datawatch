@@ -220,8 +220,8 @@ See the operations guide for device-specific cert install instructions.
 
 ## Available Tools
 
-The MCP server exposes **149 tools** across the surfaces below
-(v8.7.3 count — includes BL356–BL361 additions). The authoritative live list is served at
+The MCP server exposes **150 tools** across the surfaces below
+(v8.10.16 count — includes BL356–BL362 additions). The authoritative live list is served at
 `GET /api/mcp/docs` (HTML) or `GET /api/mcp/docs?format=json` (JSON)
 — `claude mcp list` queries this on connect, and the PWA Settings →
 About → "MCP tools" link opens it. The selected tools below are
@@ -247,6 +247,7 @@ shape.
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
+| Channel bridge | `channel_info`, `channel_diagnostics` |
 | Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
@@ -275,6 +276,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`queue_push/claim/complete/fail/list`** (BL357) — durable role-based work queue for multi-agent coordination.
 - **`discussion_subscribe/unsubscribe/subscriptions`** (BL358) — subscribe sessions to discussions so new entries are forwarded via `send_input`.
 - **`result_put/get/list/delete`** (BL360) — structured named-result store for agents to share outputs without out-of-band coordination.
+- **`channel_info`** (BL216) — daemon's resolved MCP bridge kind (go|js), path, ready state, stale .mcp.json detection. Read-only.
+- **`channel_diagnostics`** (BL362) — per-session bridge ports, live `/health` probe results, and actionable remediation hints. Use when sessions fail to connect or MCP errors appear with no clear cause.
 
 
 

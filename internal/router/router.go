@@ -53,7 +53,8 @@ type Router struct {
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
 	reloadFn    func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
-	channelInfoFn func() string                        // v5.27.10 — channel bridge introspection
+	channelInfoFn        func() string // v5.27.10 — channel bridge introspection
+	channelDiagnosticsFn func() string // BL362 — per-session bridge diagnostics
 	statsFn     func() string // optional func returning system stats summary
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
@@ -135,7 +136,8 @@ func (r *Router) SetReloadFn(fn func(subsystem string) (string, error)) { r.relo
 // path so chat-channel `channel info` returns the same kind/path/stale
 // summary the REST + CLI + MCP surfaces emit. fn returns a multi-line
 // human-readable string ready for chat display.
-func (r *Router) SetChannelInfoFn(fn func() string) { r.channelInfoFn = fn }
+func (r *Router) SetChannelInfoFn(fn func() string)        { r.channelInfoFn = fn }
+func (r *Router) SetChannelDiagnosticsFn(fn func() string) { r.channelDiagnosticsFn = fn }
 
 func (r *Router) handleChannelInfo() {
 	if r.channelInfoFn == nil {
@@ -143,6 +145,14 @@ func (r *Router) handleChannelInfo() {
 		return
 	}
 	r.send(fmt.Sprintf("[%s] %s", r.hostname, r.channelInfoFn()))
+}
+
+func (r *Router) handleChannelDiagnostics() {
+	if r.channelDiagnosticsFn == nil {
+		r.send(fmt.Sprintf("[%s] Channel diagnostics not wired by this build.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] %s", r.hostname, r.channelDiagnosticsFn()))
 }
 
 func (r *Router) handleReload(cmd Command) {
@@ -993,6 +1003,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleReload(cmd)
 	case CmdChannelInfo:
 		r.handleChannelInfo()
+	case CmdChannelDiagnostics:
+		r.handleChannelDiagnostics()
 	case CmdProfile:
 		r.handleProfile(cmd)
 	case CmdAgent:
