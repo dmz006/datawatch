@@ -25,9 +25,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,6 +37,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -52,6 +55,23 @@ const (
 
 func main() {
 	cfg := loadConfig()
+
+	// ── startup diagnostic block ─────────────────────────────────────────────
+	tokenStatus := "not set"
+	if cfg.token != "" {
+		tokenStatus = fmt.Sprintf("set (%d chars)", len(cfg.token))
+	}
+	fmt.Fprintf(os.Stderr, "[datawatch-channel] starting up\n")
+	fmt.Fprintf(os.Stderr, "[datawatch-channel] config: api_url=%s channel_port=%d session_id=%q token=%s\n",
+		cfg.apiURL, cfg.channelPort, cfg.sessionID, tokenStatus)
+
+	// ── pre-flight: verify the daemon is reachable ───────────────────────────
+	if err := probeDaemon(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN daemon health check failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN tool discovery will likely fail; check DATAWATCH_API_URL=%s and that the daemon is running\n", cfg.apiURL)
+	} else {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] daemon reachable at %s\n", cfg.apiURL)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -131,7 +151,16 @@ the request will be forwarded to the user automatically.`),
 	// one — the daemon discovers it via /api/channel/ready.
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.channelPort))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[datawatch-channel] HTTP listen: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] FATAL HTTP listen on port %d: %v\n", cfg.channelPort, err)
+		if isAddrInUse(err) {
+			owner := portOwner(cfg.channelPort)
+			if owner != "" {
+				fmt.Fprintf(os.Stderr, "[datawatch-channel] FATAL port %d is already in use by: %s\n", cfg.channelPort, owner)
+			} else {
+				fmt.Fprintf(os.Stderr, "[datawatch-channel] FATAL port %d is already in use (could not identify process)\n", cfg.channelPort)
+			}
+			fmt.Fprintf(os.Stderr, "[datawatch-channel] FIX  set DATAWATCH_CHANNEL_PORT=0 to auto-select a free port, or choose a different port\n")
+		}
 		os.Exit(1)
 	}
 	bridge.actualPort = listener.Addr().(*net.TCPAddr).Port
@@ -150,7 +179,11 @@ the request will be forwarded to the user automatically.`),
 	// Tell the parent we are up; best-effort — the daemon may not be
 	// running locally if this bridge was launched stand-alone for tests.
 	if err := bridge.notifyReady(); err != nil {
-		fmt.Fprintf(os.Stderr, "[datawatch-channel] notify ready (non-fatal): %v\n", err)
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN notify ready failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN daemon at %s could not learn our port (%d); push notifications will not work\n", cfg.apiURL, bridge.actualPort)
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN check DATAWATCH_API_URL and DATAWATCH_TOKEN\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] notified daemon: port=%d session_id=%q\n", bridge.actualPort, cfg.sessionID)
 	}
 
 	// MCP stdio transport — claude-code spawns us and talks over stdin/stdout.
@@ -377,3 +410,114 @@ func writeJSONOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
+
+// ── diagnostic helpers ───────────────────────────────────────────────────────
+
+// probeDaemon does a quick GET /api/health against the configured API URL
+// to verify the daemon is reachable before we attempt tool discovery.
+func probeDaemon(cfg config) error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, cfg.apiURL+"/api/health", nil)
+	if err != nil {
+		return err
+	}
+	if cfg.token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET %s/api/health: %w", cfg.apiURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("GET %s/api/health: HTTP %d — token may be wrong or missing (DATAWATCH_TOKEN)", cfg.apiURL, resp.StatusCode)
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("GET %s/api/health: HTTP %d %s", cfg.apiURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+// isAddrInUse reports whether err is a "address already in use" bind error.
+func isAddrInUse(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var syscallErr *os.SyscallError
+		if errors.As(opErr.Err, &syscallErr) {
+			return errors.Is(syscallErr.Err, syscall.EADDRINUSE)
+		}
+		return errors.Is(opErr.Err, syscall.EADDRINUSE)
+	}
+	return false
+}
+
+// portOwner tries to identify the process holding a TCP port by reading
+// /proc/net/tcp (Linux only). Returns an empty string on non-Linux or error.
+func portOwner(port int) string {
+	f, err := os.Open("/proc/net/tcp")
+	if err != nil {
+		return "" // non-Linux or permission denied
+	}
+	defer func() { _ = f.Close() }()
+
+	// /proc/net/tcp columns: sl local_address rem_address ...
+	// local_address is hex "IP:PORT" in little-endian byte order.
+	target := fmt.Sprintf("%04X", port)
+	scanner := bufio.NewScanner(f)
+	scanner.Scan() // skip header
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		parts := strings.SplitN(fields[1], ":", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[1], target) {
+			// Found a listener on this port. Try to decode the inode → pid.
+			if len(fields) >= 10 {
+				inode := fields[9]
+				if pid := inodeToPID(inode); pid != "" {
+					return fmt.Sprintf("pid %s (%s)", pid, pidName(pid))
+				}
+			}
+			return fmt.Sprintf("unknown process (inode lookup failed)")
+		}
+	}
+	return ""
+}
+
+// inodeToPID walks /proc/*/fd/* looking for a socket with the given inode.
+func inodeToPID(inode string) string {
+	target := "socket:[" + inode + "]"
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		fdDir := "/proc/" + e.Name() + "/fd"
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			link, err := os.Readlink(fdDir + "/" + fd.Name())
+			if err == nil && link == target {
+				return e.Name()
+			}
+		}
+	}
+	return ""
+}
+
+// pidName reads /proc/<pid>/comm for the process name.
+func pidName(pid string) string {
+	data, err := os.ReadFile("/proc/" + pid + "/comm")
+	if err != nil {
+		return "?"
+	}
+	return strings.TrimSpace(string(data))
+}
+

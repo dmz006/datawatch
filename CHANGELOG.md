@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.16 — feat(channel): startup diagnostics and port-conflict identification (2026-06-12)
+
+### Added
+
+- **Config dump at startup** — `datawatch-channel` now prints all config at launch (`api_url`, `channel_port`, `session_id`, token set/not-set) so failures can be diagnosed without guessing what environment was injected.
+- **Pre-flight daemon health probe** — before tool discovery, the bridge does a `GET /api/health` against `DATAWATCH_API_URL`. If unreachable or auth fails (401/403), a `WARN` line is printed with the exact URL and error so the operator knows immediately whether the problem is connectivity or a bad token.
+- **Port-conflict diagnosis** — when `DATAWATCH_CHANNEL_PORT` is already in use, the bridge now identifies the process holding the port by reading `/proc/net/tcp` + `/proc/<pid>/comm`, prints `FATAL port N is already in use by: pid X (name)`, and suggests `DATAWATCH_CHANNEL_PORT=0` to auto-select a free port.
+- **Louder `notifyReady` failure** — the "notify ready" call was silently non-fatal. It now prints the full URL attempted, the error, and a hint to check `DATAWATCH_API_URL`/`DATAWATCH_TOKEN` so the operator knows push notifications will not work.
+
+---
+
 ## v8.10.15 — fix(lint): errcheck + unused — unblock release CI (2026-06-11)
 
 ### Fixed
