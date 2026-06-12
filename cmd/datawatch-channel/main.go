@@ -480,7 +480,7 @@ func portOwner(port int) string {
 					return fmt.Sprintf("pid %s (%s)", pid, pidName(pid))
 				}
 			}
-			return fmt.Sprintf("unknown process (inode lookup failed)")
+			return "unknown process (inode lookup failed)"
 		}
 	}
 	return ""
