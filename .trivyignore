@@ -199,3 +199,19 @@ CVE-2025-66418
 CVE-2026-23490
 CVE-2026-0994
 CVE-2026-25990
+
+# python3.11 / libpython3.11-* — 3 new HIGH CVEs, no fix in bookworm
+# Affect libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal.
+# Python is installed in agent-gemini for gemini-cli; the datawatch service is Go.
+#   CVE-2026-3644 (HIGH): cpython incomplete control character validation in HTTP
+#     header parsing. Gemini CLI uses Python; no direct HTTP server exposure via
+#     Python in the container.
+#   CVE-2026-4224 (HIGH): cpython stack overflow parsing XML with deeply nested
+#     DTD. Only triggerable via attacker-controlled XML; gemini-cli does not parse
+#     untrusted XML.
+#   CVE-2026-9669 (HIGH): bz2.BZ2Decompressor reuse after exception. Only
+#     exploitable if bz2 decompressor is called on attacker-controlled data;
+#     no bz2 decompression of untrusted streams by gemini-cli.
+CVE-2026-3644
+CVE-2026-4224
+CVE-2026-9669
