@@ -164,23 +164,8 @@ jobs:
           mkdir -p internal/docsindex/assets
           echo '{}' > internal/docsindex/assets/docs-bm25-index.json
           make sync-docs docs-index
-      - name: Check if release already exists
-        id: release-check
-        run: |
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")
-          if [ "$HTTP" = "200" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release ${GITHUB_REF_NAME} already published (HTTP 200) — skipping goreleaser"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Release ${GITHUB_REF_NAME} not found (HTTP ${HTTP}) — goreleaser will run"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: goreleaser
-        if: steps.release-check.outputs.exists == 'false'
+        continue-on-error: true
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
