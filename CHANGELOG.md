@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.20 — fix(summarizer): strip technical artifacts + strengthen plain-English prompts (2026-06-13)
+
+### Fixed
+
+- **Prompts rewritten for plain-English output** — `ollamaChatSystemPrompt` and `dualSummaryPrompt` now explicitly forbid file names, function names, variable names, test names, identifiers, file paths, line numbers, error codes, and technical jargon (`undefined`, `panic`, `goroutine`, `nil`, `FAIL`, `exit`). Instructs the model to write "as if explaining to a non-technical person on a car dashboard."
+- **`sanitizeForSpeech` post-processor added** — strips file paths (tokens containing `/` with a file extension), URLs (`http://`, `https://`), error code patterns (`N:N`, `0xHHHH`), and drops lines that are less than 55% alphabetic characters (code remnants like `{} => nil`). Applied to both the `short` and `long` sections of every dual summary.
+- **`cleanShort` uses `sanitizeForSpeech`** as a final pass so the notification-body text is also fully sanitized.
+- Tests: added `TestSanitizeForSpeech` (8 cases), 95 summarizer tests pass, 2352 total tests pass.
+
+---
+
 ## v8.10.19 — fix(summarizer): Ollama summary overwritten by live tmux capture + Android Auto formatting (2026-06-13)
 
 ### Fixed

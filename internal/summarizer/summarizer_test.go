@@ -272,11 +272,13 @@ func TestParseDualSummary(t *testing.T) {
 			wantLong:  "",
 		},
 		{
-			name:      "markers present but long before short (invalid) falls through to paragraph",
-			raw:       "===LONG===\n" + longText + "\n\n===SHORT===\n" + shortText,
-			// cleanShort now drops ===LONG=== marker line, leaving just the longText content.
+			name: "markers present but long before short (invalid) falls through to paragraph",
+			raw:  "===LONG===\n" + longText + "\n\n===SHORT===\n" + shortText,
+			// cleanShort drops ===LONG=== marker, giving longText as short.
+			// sanitizeForSpeech drops ===SHORT=== (below 55% letter density),
+			// leaving only the shortText content as the long section.
 			wantShort: longText,
-			wantLong:  "===SHORT===\n" + shortText,
+			wantLong:  shortText,
 		},
 		{
 			name:      "primary markers with extra blank lines around content",
@@ -504,6 +506,59 @@ func TestIsSeparatorLine(t *testing.T) {
 			got := isSeparatorLine(tc.s)
 			if got != tc.want {
 				t.Errorf("isSeparatorLine(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSanitizeForSpeech verifies that technical artifacts are stripped.
+func TestSanitizeForSpeech(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "plain English unchanged",
+			in:   "The build succeeded. Tests passed. Code is ready to review.",
+			want: "The build succeeded. Tests passed. Code is ready to review.",
+		},
+		{
+			name: "file path stripped",
+			in:   "The file internal/session/manager.go was updated.",
+			want: "The file was updated.",
+		},
+		{
+			name: "URL stripped",
+			in:   "See https://example.com/docs for details.",
+			want: "See for details.",
+		},
+		{
+			name: "error code stripped",
+			in:   "There was an error at line 1304:3 in the code.",
+			want: "There was an error at line in the code.",
+		},
+		{
+			name: "code-only line dropped",
+			in:   "The build succeeded.\n{} => nil\nTests all passed.",
+			want: "The build succeeded.\nTests all passed.",
+		},
+		{
+			name: "multi-line prose preserved",
+			in:   "The build succeeded.\nAll tests passed.\nReady for review.",
+			want: "The build succeeded.\nAll tests passed.\nReady for review.",
+		},
+		{
+			name: "empty string unchanged",
+			in:   "",
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeForSpeech(tc.in)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
 	}

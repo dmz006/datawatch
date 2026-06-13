@@ -13,9 +13,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -26,9 +28,18 @@ import (
 // with whatever the service uses.
 const DefaultSummarizerPrompt = "Compress the following AI coding assistant output into exactly 3 short sentences (under 15 words each) suitable for a car dashboard or phone notification. Sentence 1: what was done. Sentence 2: did it succeed or fail. Sentence 3: what comes next. No code, no markdown, no bullet points."
 
-const dualSummaryPrompt = `Read the terminal output below and write a two-part summary.
+const dualSummaryPrompt = `Summarize the terminal session below in plain spoken English for a car dashboard.
 
-Begin with ===SHORT=== on its own line, then write 3 plain sentences (each under 15 words): say what happened, say whether it succeeded or failed, say what comes next. Then write ===LONG=== on its own line, then write 3 to 5 plain English sentences with more detail. No labels, no markdown, no code, no lists, no headings, no brackets.
+Begin with ===SHORT=== on its own line. Write exactly 3 plain English sentences (each under 15 words): what task was worked on, whether it succeeded or failed, what comes next.
+Then write ===LONG=== on its own line. Write 3 to 5 plain English sentences describing what was done and the outcome in more detail.
+
+Critical rules — these apply to BOTH sections:
+- Write ONLY plain English words a non-programmer would understand
+- Do NOT copy file names, function names, variable names, test names, or identifiers from the output
+- Do NOT include error codes, line numbers, or paths like "manager.go:145"
+- Do NOT use code terms like "undefined", "panic", "goroutine", "exit status"
+- Describe actions in human terms: "the code was fixed" not "manager.go:1304 was patched"
+- No markdown, no bullet points, no numbered lists, no code blocks
 
 Terminal output:
 `
@@ -325,7 +336,7 @@ func parseDualSummary(raw string) (short, long string) {
 			if l == "" {
 				l = strings.TrimSpace(s)
 			}
-			return cleanShort(s), l
+			return cleanShort(s), sanitizeForSpeech(l)
 		}
 	}
 
@@ -335,7 +346,7 @@ func parseDualSummary(raw string) (short, long string) {
 		if capped := extractFirstNSentences(s, 3); capped != "" {
 			s = capped
 		}
-		return cleanShort(s), l
+		return cleanShort(s), sanitizeForSpeech(l)
 	}
 
 	// Blank-line paragraph split: first paragraph → short, remainder → long.
@@ -347,7 +358,7 @@ func parseDualSummary(raw string) (short, long string) {
 		if s := extractFirstNSentences(shortPart, 3); s != "" && s != shortPart {
 			shortPart = s
 		}
-		return cleanShort(shortPart), strings.TrimSpace(parts[1])
+		return cleanShort(shortPart), sanitizeForSpeech(strings.TrimSpace(parts[1]))
 	}
 
 	// Sentence-split last resort: model didn't use any structural format.
@@ -355,7 +366,7 @@ func parseDualSummary(raw string) (short, long string) {
 	// current_status_long is always populated even for unstructured output.
 	text := strings.TrimSpace(raw)
 	if s := extractFirstNSentences(text, 3); s != "" && s != text {
-		return cleanShort(s), text
+		return cleanShort(s), sanitizeForSpeech(text)
 	}
 	return cleanShort(text), ""
 }
@@ -417,7 +428,9 @@ func cleanShort(s string) string {
 		result = strings.TrimPrefix(result, label)
 	}
 
-	return result
+	// Final pass: remove technical artifacts (file paths, URLs, error codes)
+	// that small LLMs sometimes copy verbatim from the session output.
+	return sanitizeForSpeech(result)
 }
 
 // stripMarkdownPair removes surrounding marker pairs (e.g. "**" or "__") from
@@ -442,6 +455,57 @@ func stripMarkdownPair(s, marker string) string {
 		i++
 	}
 	return b.String()
+}
+
+// reFilePath matches file paths: tokens containing at least one "/" with a
+// file-extension-like suffix, or colon-number suffixes like "file.go:145:3".
+var reFilePath = regexp.MustCompile(`\S+/\S+\.\w+(?::\d+)*|\S+\.\w{1,4}:\d+`)
+
+// reErrorCode matches standalone error-code patterns: "1304:3", "0x1abc", "N:M".
+var reErrorCode = regexp.MustCompile(`\b\d+:\d+\b|\b0x[0-9a-fA-F]{4,}\b`)
+
+// reURL matches http(s):// URLs.
+var reURL = regexp.MustCompile(`https?://\S+`)
+
+// sanitizeForSpeech removes technical artifacts from summary text that would
+// sound wrong when read aloud by TTS (Android Auto, phone notifications).
+// It strips file paths, URLs, error codes, and code-like tokens. It is applied
+// to both the short and long sections after parseDualSummary extracts them.
+// The function works line-by-line, preserving paragraph structure.
+func sanitizeForSpeech(s string) string {
+	if s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	var kept []string
+	for _, line := range lines {
+		// Apply pattern removals per-line so newlines are never collapsed.
+		cleaned := reURL.ReplaceAllString(line, "")
+		cleaned = reFilePath.ReplaceAllString(cleaned, "")
+		cleaned = reErrorCode.ReplaceAllString(cleaned, "")
+		// Collapse multiple spaces introduced by removals within this line.
+		cleaned = strings.Join(strings.Fields(cleaned), " ")
+
+		if cleaned == "" {
+			kept = append(kept, "")
+			continue
+		}
+		// Count alphabetic runes vs total runes in the cleaned line.
+		total, alpha := 0, 0
+		for _, r := range cleaned {
+			total++
+			if unicode.IsLetter(r) {
+				alpha++
+			}
+		}
+		// Keep lines where at least 55% of characters are letters.
+		// This drops pure-code remnants (lone "{", "}}", "::", "->", "=>")
+		// while preserving normal prose.
+		if total > 0 && float64(alpha)/float64(total) >= 0.55 {
+			kept = append(kept, cleaned)
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 // isSeparatorLine reports whether a line consists only of decoration characters
@@ -610,14 +674,25 @@ func (s *Service) callOllama(ctx context.Context, llm *inference.LLM, prompt str
 // ollamaChatSystemPrompt is the system message injected when using the chat
 // endpoint. A system message is more forceful than a user prompt for small
 // models — they're trained to follow system instructions strictly.
-const ollamaChatSystemPrompt = `You are a session summarizer. When given terminal output, respond with ONLY the following format and nothing else:
+const ollamaChatSystemPrompt = `You are a car-dashboard session summarizer. You translate AI coding session terminal output into plain spoken English for a driver. Write as if explaining to a non-technical person.
+
+Respond with ONLY this format:
 
 ===SHORT===
-Three plain sentences, each under 15 words. Say what happened. Say whether it succeeded or failed. Say what comes next.
+Three plain English sentences, each under 15 words, suitable for reading aloud in a car.
+Sentence 1: describe what computing task was worked on (e.g. "The team fixed a bug in the login system").
+Sentence 2: say whether the work succeeded or failed.
+Sentence 3: say what comes next.
 ===LONG===
-Three to five plain English sentences with full context, key decisions, current status, and any blockers.
+Three to five plain English sentences with more context about what was done and the outcome.
 
-Start your response immediately with ===SHORT===. No labels, no preamble, no markdown, no code blocks, no bullet points, no brackets.`
+Strict rules — violations make the summary unusable on a car display:
+- Use ONLY plain English words. No technical jargon.
+- NEVER copy file names, function names, variable names, test names, or code identifiers.
+- NEVER include file paths (no slashes), line numbers, error codes, or hex values.
+- NEVER use words like: undefined, panic, goroutine, nil, stdout, stderr, FAIL, PASS, exit.
+- Describe technology work in human terms: "the build succeeded", "the tests passed", "a bug was fixed".
+- Start immediately with ===SHORT===. No preamble, no explanation, no labels.`
 
 // callOllamaRaw sends to {host}/api/chat (preferred) with a strict system
 // message, falling back to /api/generate if chat is unavailable.
