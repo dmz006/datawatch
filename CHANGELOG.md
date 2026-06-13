@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.23 — fix(cli): session new silently ignored API errors (2026-06-13)
+
+### Fixed
+
+- **`datawatch session new` printed "Session started" on API errors** — `runSessionNew` posted to `/api/sessions/start` and checked only whether the HTTP transport call succeeded (`err == nil`), never inspecting the response status code. Any 4xx/5xx reply (e.g. `"llm not found: nonexistent-llm"`, `"create project dir: mkdir /nonexistent: permission denied"`) was silently discarded and the command printed "Session started" with exit 0 even though no session was created. Now reads the response body, and returns a descriptive error with exit 1 when the status is ≥ 300.
+
+---
+
 ## v8.10.22 — fix(summarizer): summary not visible on first GetLastResponse poll (2026-06-13)
 
 ### Fixed

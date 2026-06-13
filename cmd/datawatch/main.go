@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.22"
+var Version = "8.10.23"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8071,7 +8071,15 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		"application/json", bytes.NewReader(body))
 	if err == nil {
+		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			msg := strings.TrimSpace(string(respBody))
+			if msg == "" {
+				msg = resp.Status
+			}
+			return fmt.Errorf("failed to start session: %s", msg)
+		}
 		fmt.Printf("Session started. Task: %s\n", task)
 		if name != "" {
 			fmt.Printf("Name: %s\n", name)
