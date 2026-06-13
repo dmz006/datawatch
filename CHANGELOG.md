@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.25 — feat(summarizer): strip trailing noise; settings docs links fixed (2026-06-13)
+
+### Changed
+
+- **`stripTrailingNoise`** — new pre-processing step in `SummarizeDual` strips known end-of-task artifacts from the bottom of session output before the LLM call. Removed patterns: git log lines (7–12 char hex hash + commit message), `[HH:MM:SS] start/done` timing markers, `DATAWATCH_COMPLETE:` / `DATAWATCH_RATE_LIMITED:` / `DATAWATCH_NEEDS_INPUT:` markers, `Co-Authored-By:` / `Co-authored-by:` git trailers, git commit summaries (`N files changed`), `create/delete mode XXXXXX` lines. This ensures summaries describe actual work content rather than the session housekeeping that accumulates at the tail.
+
+- **LLM prompt updated** — added explicit instruction: "Focus on the WORK that was done, not how the session ended. Ignore any trailing git log lines, commit hashes, build output, or completion markers at the bottom of the terminal output — those are session housekeeping, not the story of what was accomplished."
+
+- **Settings docs links fixed** — the "Session" settings card renamed to "Sessions" (slug `sessions` → matches `## Sessions` in the definitions doc). Summarizer fields split into a dedicated "Session AI Summarizer" section (slug `session-ai-summarizer` → matches `### Session AI summarizer`), so the docs link in the settings panel opens the correct manual section.
+
+- **`datawatch-definitions.md` updated** — `### Session AI summarizer` section documents the `humanizeText` TTS conversions added in v8.10.24 and the new `stripTrailingNoise` behavior added in v8.10.25.
+
+### Tests
+
+- `TestIsNoiseLine` — 17 noisy lines + 6 clean lines (noise detection coverage)
+- `TestStripTrailingNoise` — 5 table-driven cases covering git log, Co-Authored-By, git commit summary, no-noise passthrough, and all-noise safety fallback.
+- 121 summarizer tests pass; 318 session tests pass.
+
+---
+
 ## v8.10.24 — feat(summarizer): humanize technical artifacts for TTS + tighten SHORT/LONG flow (2026-06-13)
 
 ### Changed
