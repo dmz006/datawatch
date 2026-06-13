@@ -30,8 +30,12 @@ const DefaultSummarizerPrompt = "Compress the following AI coding assistant outp
 
 const dualSummaryPrompt = `Summarize the terminal session below in plain spoken English for a car dashboard.
 
-Begin with ===SHORT=== on its own line. Write exactly 3 plain English sentences (each under 15 words): what task was worked on, whether it succeeded or failed, what comes next.
-Then write ===LONG=== on its own line. Write 3 to 5 plain English sentences describing what was done and the outcome in more detail.
+Begin with ===SHORT=== on its own line. Write exactly 3 plain English sentences (each under 15 words):
+  Sentence 1: what task was being worked on.
+  Sentence 2: whether it succeeded or failed.
+  Sentence 3: what comes next.
+
+Then write ===LONG=== on its own line. Write 3 to 5 plain English sentences that EXPAND on the short summary — add context, specifics, and detail. Do NOT repeat the short summary sentences word-for-word; the long section should feel like a natural continuation that a listener would want to hear after the short one.
 
 Critical rules — these apply to BOTH sections:
 - Write ONLY plain English words a non-programmer would understand
@@ -461,16 +465,115 @@ func stripMarkdownPair(s, marker string) string {
 // file-extension-like suffix, or colon-number suffixes like "file.go:145:3".
 var reFilePath = regexp.MustCompile(`\S+/\S+\.\w+(?::\d+)*|\S+\.\w{1,4}:\d+`)
 
-// reErrorCode matches standalone error-code patterns: "1304:3", "0x1abc", "N:M".
-var reErrorCode = regexp.MustCompile(`\b\d+:\d+\b|\b0x[0-9a-fA-F]{4,}\b`)
+// reErrorCode matches line:column and hex error-code patterns.
+// Requires 3+ digits before the colon so that valid clock times (HH:MM)
+// and short references (N:M with N<100) are not stripped.
+var reErrorCode = regexp.MustCompile(`\b\d{3,}:\d+\b|\b0x[0-9a-fA-F]{4,}\b`)
 
 // reURL matches http(s):// URLs.
 var reURL = regexp.MustCompile(`https?://\S+`)
 
-// sanitizeForSpeech removes technical artifacts from summary text that would
-// sound wrong when read aloud by TTS (Android Auto, phone notifications).
-// It strips file paths, URLs, error codes, and code-like tokens. It is applied
-// to both the short and long sections after parseDualSummary extracts them.
+// humanizeText patterns — convert technical artifacts to speech-friendly text.
+var (
+	// [11:20:37] or [11:20] → "at 11:20"
+	reBracketTime = regexp.MustCompile(`\[(\d{1,2}):(\d{2})(?::\d{2})?\]`)
+	// v8.10.23 → "version 8.10.23"
+	reVersionTag = regexp.MustCompile(`\bv(\d+(?:\.\d+)+)\b`)
+	// 2026-06-13 → "June 13"
+	reDateISO = regexp.MustCompile(`\b(\d{4})-(0?[1-9]|1[0-2])-(0?[1-9]|[12]\d|3[01])\b`)
+	// "exit: 0" / "exit 0" / "exit code 0" → "success" or "error"
+	reExitCodePat = regexp.MustCompile(`(?i)\bexit(?:\s+code)?:?\s*(\d+)\b`)
+	// 250ms → "250 milliseconds"  (must be applied before reDurationSec)
+	reDurationMS = regexp.MustCompile(`\b(\d+)\s*ms\b`)
+	// 5s → "5 seconds"
+	reDurationSec = regexp.MustCompile(`\b(\d+)s\b`)
+	// 87% → "87 percent"
+	rePercent = regexp.MustCompile(`(\d+)%`)
+	// [OK], [error], [done] → strip brackets, keep text
+	reBracketLabel = regexp.MustCompile(`\[([A-Za-z][A-Za-z0-9 .,_'"\-]{0,40})\]`)
+	// {status: ok} → "status ok"
+	reCurlyBrace = regexp.MustCompile(`\{([^{}]{0,80})\}`)
+)
+
+var speechMonths = [13]string{
+	"", "January", "February", "March", "April", "May", "June",
+	"July", "August", "September", "October", "November", "December",
+}
+
+// humanizeText converts technical patterns to speech-friendly equivalents so
+// TTS surfaces (Android Auto, phone notifications) hear natural language
+// instead of code artifacts. It is called before the removal regexes in
+// sanitizeForSpeech so that patterns carrying useful meaning are spoken
+// rather than silently dropped.
+func humanizeText(s string) string {
+	// [11:20:37] or [11:20] → "at 11:20"
+	s = reBracketTime.ReplaceAllStringFunc(s, func(m string) string {
+		p := reBracketTime.FindStringSubmatch(m)
+		if len(p) >= 3 {
+			return "at " + p[1] + ":" + p[2]
+		}
+		return ""
+	})
+
+	// v8.10.23 → "version 8.10.23"
+	s = reVersionTag.ReplaceAllString(s, "version $1")
+
+	// 2026-06-13 → "June 13"
+	s = reDateISO.ReplaceAllStringFunc(s, func(m string) string {
+		p := reDateISO.FindStringSubmatch(m)
+		if len(p) >= 4 {
+			month, err1 := strconv.Atoi(p[2])
+			day, err2 := strconv.Atoi(p[3])
+			if err1 == nil && err2 == nil && month >= 1 && month <= 12 {
+				return fmt.Sprintf("%s %d", speechMonths[month], day)
+			}
+		}
+		return m
+	})
+
+	// "exit: 0" / "exit 0" → "success"; any non-zero code → "error"
+	s = reExitCodePat.ReplaceAllStringFunc(s, func(m string) string {
+		p := reExitCodePat.FindStringSubmatch(m)
+		if len(p) >= 2 {
+			if code, err := strconv.Atoi(p[1]); err == nil {
+				if code == 0 {
+					return "success"
+				}
+				return "error"
+			}
+		}
+		return m
+	})
+
+	// Durations — process ms before s to avoid double-replacement.
+	s = reDurationMS.ReplaceAllString(s, "$1 milliseconds")
+	s = reDurationSec.ReplaceAllString(s, "$1 seconds")
+
+	// Percentages: 87% → "87 percent"
+	s = rePercent.ReplaceAllString(s, "$1 percent")
+
+	// [OK], [error], [done] → strip brackets, keep inner text
+	s = reBracketLabel.ReplaceAllString(s, "$1")
+
+	// {status: ok} → "status ok"; {} → removed
+	s = reCurlyBrace.ReplaceAllStringFunc(s, func(m string) string {
+		p := reCurlyBrace.FindStringSubmatch(m)
+		if len(p) >= 2 {
+			inner := strings.ReplaceAll(p[1], ":", " ")
+			inner = strings.Join(strings.Fields(inner), " ")
+			return inner
+		}
+		return ""
+	})
+
+	return s
+}
+
+// sanitizeForSpeech converts and removes technical artifacts from summary text
+// so it sounds natural when read aloud by TTS (Android Auto, phone notifications).
+// It first humanizes recognizable patterns (timestamps, versions, dates, exit codes,
+// durations, brackets) then strips remaining technical artifacts (file paths, URLs,
+// error codes) and drops lines that are predominantly non-alphabetic.
 // The function works line-by-line, preserving paragraph structure.
 func sanitizeForSpeech(s string) string {
 	if s == "" {
@@ -479,8 +582,10 @@ func sanitizeForSpeech(s string) string {
 	lines := strings.Split(s, "\n")
 	var kept []string
 	for _, line := range lines {
-		// Apply pattern removals per-line so newlines are never collapsed.
-		cleaned := reURL.ReplaceAllString(line, "")
+		// Convert recognizable patterns to speech-friendly equivalents first.
+		cleaned := humanizeText(line)
+		// Strip remaining technical artifacts.
+		cleaned = reURL.ReplaceAllString(cleaned, "")
 		cleaned = reFilePath.ReplaceAllString(cleaned, "")
 		cleaned = reErrorCode.ReplaceAllString(cleaned, "")
 		// Collapse multiple spaces introduced by removals within this line.
@@ -674,25 +779,27 @@ func (s *Service) callOllama(ctx context.Context, llm *inference.LLM, prompt str
 // ollamaChatSystemPrompt is the system message injected when using the chat
 // endpoint. A system message is more forceful than a user prompt for small
 // models — they're trained to follow system instructions strictly.
-const ollamaChatSystemPrompt = `You are a car-dashboard session summarizer. You translate AI coding session terminal output into plain spoken English for a driver. Write as if explaining to a non-technical person.
+const ollamaChatSystemPrompt = `You are a car-dashboard session summarizer. You translate AI coding session terminal output into plain spoken English for a driver. Write as if explaining to a non-technical person who is listening, not reading.
 
-Respond with ONLY this format:
+Respond with ONLY this format — nothing before or after:
 
 ===SHORT===
-Three plain English sentences, each under 15 words, suitable for reading aloud in a car.
-Sentence 1: describe what computing task was worked on (e.g. "The team fixed a bug in the login system").
-Sentence 2: say whether the work succeeded or failed.
-Sentence 3: say what comes next.
+Exactly three plain English sentences (each under 15 words) that together tell the complete story in brief.
+  Sentence 1: what computing task was being worked on.
+  Sentence 2: whether the work succeeded or failed, and briefly why.
+  Sentence 3: what the next step is.
 ===LONG===
-Three to five plain English sentences with more context about what was done and the outcome.
+Three to five plain English sentences that EXPAND on the short summary with more context and specifics.
+  The long section should feel like a natural continuation — as if the listener said "tell me more" after the short version.
+  Do NOT repeat the short summary sentences word-for-word. Add what was changed, discovered, or decided.
 
-Strict rules — violations make the summary unusable on a car display:
-- Use ONLY plain English words. No technical jargon.
+Strict rules — violations make the summary unusable for voice playback:
+- Use ONLY plain English words a non-technical person would understand. No jargon.
 - NEVER copy file names, function names, variable names, test names, or code identifiers.
 - NEVER include file paths (no slashes), line numbers, error codes, or hex values.
 - NEVER use words like: undefined, panic, goroutine, nil, stdout, stderr, FAIL, PASS, exit.
 - Describe technology work in human terms: "the build succeeded", "the tests passed", "a bug was fixed".
-- Start immediately with ===SHORT===. No preamble, no explanation, no labels.`
+- Start immediately with ===SHORT===. No preamble, no explanation, no extra labels.`
 
 // callOllamaRaw sends to {host}/api/chat (preferred) with a strict system
 // message, falling back to /api/generate if chat is unavailable.

@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.24 — feat(summarizer): humanize technical artifacts for TTS + tighten SHORT/LONG flow (2026-06-13)
+
+### Changed
+
+- **`humanizeText` converter added** — instead of silently dropping technical patterns, `sanitizeForSpeech` now converts them to spoken English before the removal pass:
+  - `[11:20:37]` / `[11:20]` → `"at 11:20"`
+  - `v8.10.23` → `"version 8.10.23"`
+  - `2026-06-13` → `"June 13"`
+  - `exit: 0` → `"success"` / `exit: N` → `"error"`
+  - `250ms` → `"250 milliseconds"` / `5s` → `"5 seconds"`
+  - `87%` → `"87 percent"`
+  - `[OK]` / `[error]` → text only (brackets stripped)
+  - `{status: ok}` → `"status ok"` (braces stripped, colons removed)
+
+- **`reErrorCode` narrowed** — error-code stripper now requires 3+ digits before the colon (`\b\d{3,}:\d+\b`) so valid clock times like `09:00` or `11:20` in spoken text are no longer stripped. Hex values (`0x…`) still removed.
+
+- **SHORT/LONG prompts tightened** — both `dualSummaryPrompt` and `ollamaChatSystemPrompt` now explicitly instruct the model that the LONG section should feel like a natural continuation of SHORT, not a word-for-word repeat. SHORT stays as a 3-sentence overview; LONG adds context, specifics, and what was decided — as if the listener said "tell me more."
+
+---
+
 ## v8.10.23 — fix(cli): session new silently ignored API errors (2026-06-13)
 
 ### Fixed

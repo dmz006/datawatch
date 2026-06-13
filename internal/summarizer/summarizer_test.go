@@ -564,6 +564,120 @@ func TestSanitizeForSpeech(t *testing.T) {
 	}
 }
 
+// TestHumanizeText verifies that technical artifacts are converted to
+// speech-friendly equivalents rather than stripped silently.
+func TestHumanizeText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "plain text unchanged",
+			in:   "The auth module was fixed.",
+			want: "The auth module was fixed.",
+		},
+		{
+			name: "bracketed timestamp with seconds",
+			in:   "[11:20:37] Build complete.",
+			want: "at 11:20 Build complete.",
+		},
+		{
+			name: "bracketed timestamp without seconds",
+			in:   "[09:05] Started.",
+			want: "at 09:05 Started.",
+		},
+		{
+			name: "version tag",
+			in:   "Released v8.10.23 today.",
+			want: "Released version 8.10.23 today.",
+		},
+		{
+			name: "version tag two-part",
+			in:   "Using v1.0 of the tool.",
+			want: "Using version 1.0 of the tool.",
+		},
+		{
+			name: "ISO date",
+			in:   "Completed on 2026-06-13.",
+			want: "Completed on June 13.",
+		},
+		{
+			name: "exit code zero becomes success",
+			in:   "Process finished with exit: 0",
+			want: "Process finished with success",
+		},
+		{
+			name: "exit code nonzero becomes error",
+			in:   "Process finished with exit: 2",
+			want: "Process finished with error",
+		},
+		{
+			name: "millisecond duration",
+			in:   "Completed in 250ms.",
+			want: "Completed in 250 milliseconds.",
+		},
+		{
+			name: "second duration",
+			in:   "Ran in 5s.",
+			want: "Ran in 5 seconds.",
+		},
+		{
+			name: "ms converted before s so no double-replacement",
+			in:   "Took 100ms and then 3s.",
+			want: "Took 100 milliseconds and then 3 seconds.",
+		},
+		{
+			name: "percentage",
+			in:   "Coverage is 87%.",
+			want: "Coverage is 87 percent.",
+		},
+		{
+			name: "bracket label stripped",
+			in:   "Status: [OK]",
+			want: "Status: OK",
+		},
+		{
+			name: "bracket label with version inside",
+			in:   "Running [version 8.10.23].",
+			want: "Running version 8.10.23.",
+		},
+		{
+			name: "curly braces with key-value",
+			in:   "Response: {status: ok}",
+			want: "Response: status ok",
+		},
+		{
+			name: "empty curly braces removed",
+			in:   "Got: {}",
+			want: "Got: ", // trailing space is collapsed by sanitizeForSpeech's field-join pass
+		},
+		{
+			name: "bare word v not a version",
+			in:   "Please review this.",
+			want: "Please review this.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := humanizeText(tc.in)
+			if got != tc.want {
+				t.Errorf("humanizeText(%q)\n  got:  %q\n  want: %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSanitizeForSpeech_PreservesValidTimes verifies that HH:MM times in prose
+// are not stripped by the error-code remover (which now requires 3+ digits).
+func TestSanitizeForSpeech_PreservesValidTimes(t *testing.T) {
+	in := "The job ran from 09:00 to 11:20 without errors."
+	got := sanitizeForSpeech(in)
+	if got != in {
+		t.Errorf("sanitizeForSpeech unexpectedly modified valid time text:\n  got:  %q\n  want: %q", got, in)
+	}
+}
+
 // TestStripMarkdownPair verifies that bold/italic decorators are removed.
 func TestStripMarkdownPair(t *testing.T) {
 	tests := []struct {
