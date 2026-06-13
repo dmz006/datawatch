@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.18 — fix(sessions): child-of label shows hostname instead of 4-char session ID (2026-06-12)
+
+### Fixed
+
+- **Child session label** — `↳ child of [X]` in the comm router session list and CLI sessions table was showing the hostname portion of the parent's full ID (e.g. `myserver`) instead of the 4-char hex short ID (e.g. `ab22`). `strings.Index` (first `-`) replaced with `strings.LastIndex` (last `-`) in both `internal/router/router.go` and `cmd/datawatch/main.go`.
+
+---
+
 ## v8.10.17 — feat(channel): MCP channel bridge diagnostics — full 7-surface parity (BL362) (2026-06-12)
 
 ### Added

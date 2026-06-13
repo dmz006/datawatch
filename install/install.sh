@@ -17,7 +17,7 @@ BINARY_NAME="datawatch"
 #      publishing but costs one API request (60/hr unauthenticated).
 #   3. Hardcoded fallback — last resort when both network methods fail.
 fetch_latest_version() {
-  local fallback="8.10.17"
+  local fallback="8.10.18"
   local ver=""
 
   # 1. Redirect approach — immune to API rate limits.
@@ -52,7 +52,7 @@ fetch_latest_version() {
   # 3. Hardcoded fallback.
   if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
     warn "Could not determine latest version from GitHub; defaulting to v${fallback}"
-    warn "Use --version X.Y.Z to install a specific version, e.g.: bash install.sh --version 8.10.17"
+    warn "Use --version X.Y.Z to install a specific version, e.g.: bash install.sh --version 8.10.18"
     ver="${fallback}"
   fi
   echo "${ver}"
