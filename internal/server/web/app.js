@@ -11330,7 +11330,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
     { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
   ]},
-  { id: 'sess', section: 'Session', docs: 'howto/chat-and-llm-quickstart.md', fields: [
+  // Section title "Sessions" → slug "sessions" → matches ## Sessions in datawatch-definitions.md
+  { id: 'sess', section: 'Sessions', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
@@ -11346,6 +11347,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
+  ]},
+  // Section title "Session AI Summarizer" → slug "session-ai-summarizer" →
+  // matches ### Session AI summarizer in datawatch-definitions.md.
+  { id: 'summarizer', section: 'Session AI Summarizer', fields: [
     { key: 'session.summarizer.enabled', label: t('session_summarizer_enabled') || 'Summarize last response', type: 'toggle' },
     { key: 'session.summarizer.llm_ref', label: t('session_summarizer_llm') || 'Summarizer LLM', type: 'llm_summarizer' },
     { key: 'session.summarizer.model', label: 'Summarizer model', type: 'summarizer_model' },

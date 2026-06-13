@@ -766,6 +766,102 @@ func TestSummarizeDual_PrevShortIncludedInPrompt(t *testing.T) {
 }
 
 // TestSummarize_CustomPrompt verifies that a custom prompt is used when set.
+// TestIsNoiseLine verifies that known end-of-task terminal artifacts are
+// identified as noise, while real content lines are not.
+func TestIsNoiseLine(t *testing.T) {
+	noisy := []string{
+		"",
+		"[19:03:40] start",
+		"[19:03:40] done",
+		"[9:03:40] done",
+		"DATAWATCH_COMPLETE: Fixed the bug",
+		"DATAWATCH_RATE_LIMITED: resets at 12:00",
+		"DATAWATCH_NEEDS_INPUT: which branch?",
+		"Co-Authored-By: Claude Sonnet <noreply@anthropic.com>",
+		"Co-authored-by: Someone <foo@bar.com>",
+		"33b22143 fix(opencode): lint fix",
+		"97e29199 docs: update README",
+		"abcdef1 some commit message here",
+		"3 files changed, 41 insertions(+), 12 deletions(-)",
+		"1 file changed, 2 insertions(+)",
+		"create mode 100644 internal/summarizer/summarizer.go",
+		"delete mode 100644 old/file.go",
+	}
+	for _, line := range noisy {
+		if !isNoiseLine(line) {
+			t.Errorf("isNoiseLine(%q) = false, want true", line)
+		}
+	}
+
+	clean := []string{
+		"The summarizer was updated to strip trailing noise.",
+		"Tests pass and the daemon was restarted.",
+		"Fixed a race condition in session state updates.",
+		"go: downloading github.com/some/pkg v1.2.3",
+		"ok  github.com/foo/bar  0.456s",
+		"PASS",
+	}
+	for _, line := range clean {
+		if isNoiseLine(line) {
+			t.Errorf("isNoiseLine(%q) = true, want false", line)
+		}
+	}
+}
+
+// TestStripTrailingNoise verifies that noise is stripped from the bottom but
+// real content above it is preserved.
+func TestStripTrailingNoise(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "removes git log + timing + complete marker",
+			input: "The fix was applied to the summarizer.\n" +
+				"Tests were updated and now pass.\n" +
+				"[19:03:40] start\n" +
+				"33b22143 fix: something\n" +
+				"97e29199 docs: update\n" +
+				"[19:03:41] done\n" +
+				"DATAWATCH_COMPLETE: Done\n",
+			want: "The fix was applied to the summarizer.\n" +
+				"Tests were updated and now pass.",
+		},
+		{
+			name: "removes co-authored-by trailer",
+			input: "Work was done.\n" +
+				"Co-Authored-By: Claude Sonnet <noreply@anthropic.com>\n",
+			want: "Work was done.",
+		},
+		{
+			name: "preserves all content when no noise present",
+			input: "The code was fixed.\nTests pass.",
+			want:  "The code was fixed.\nTests pass.",
+		},
+		{
+			name:  "returns original when everything is noise (safety)",
+			input: "[19:03:40] done\nDATAWATCH_COMPLETE: Done\n",
+			want:  "[19:03:40] done\nDATAWATCH_COMPLETE: Done\n",
+		},
+		{
+			name: "removes git files-changed summary",
+			input: "Applied the patch.\n" +
+				"3 files changed, 41 insertions(+), 12 deletions(-)\n" +
+				"create mode 100644 new/file.go\n",
+			want: "Applied the patch.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripTrailingNoise(tc.input)
+			if got != tc.want {
+				t.Errorf("stripTrailingNoise:\n  got:  %q\n  want: %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSummarize_CustomPrompt(t *testing.T) {
 	const customPrompt = "One sentence summary only."
 	var gotPrompt string

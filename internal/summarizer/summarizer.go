@@ -44,6 +44,7 @@ Critical rules — these apply to BOTH sections:
 - Do NOT use code terms like "undefined", "panic", "goroutine", "exit status"
 - Describe actions in human terms: "the code was fixed" not "manager.go:1304 was patched"
 - No markdown, no bullet points, no numbered lists, no code blocks
+- Focus on the WORK that was done, not how the session ended. Ignore any trailing git log lines, commit hashes, build output, or completion markers at the bottom of the terminal output — those are session housekeeping, not the story of what was accomplished.
 
 Terminal output:
 `
@@ -121,10 +122,15 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 		return "", "", nil
 	}
 
+	// Strip trailing noise (git log lines, timing markers, DATAWATCH_COMPLETE,
+	// Co-Authored-By trailers) so the LLM sees actual work content rather than
+	// the end-of-task system artifacts that accumulate after the last real output.
+	inputText := stripTrailingNoise(text)
+
 	// Cap input to the most recent 6000 characters so small models don't
-	// get overwhelmed by long session logs; the tail is most relevant.
+	// get overwhelmed by long session logs; the tail of the cleaned text is
+	// the most relevant content.
 	const maxInputChars = 6000
-	inputText := text
 	if len(inputText) > maxInputChars {
 		// Trim to the most recent portion, starting at a line boundary.
 		trimmed := inputText[len(inputText)-maxInputChars:]
@@ -461,6 +467,19 @@ func stripMarkdownPair(s, marker string) string {
 	return b.String()
 }
 
+// reTrailingTimestamp matches [HH:MM:SS] start/done command-timing markers.
+var reTrailingTimestamp = regexp.MustCompile(`^\[\d{1,2}:\d{2}:\d{2}\]\s*(start|done)`)
+
+// reGitShortHash matches git log lines that begin with a short SHA (7-12 hex
+// chars) followed by a space and at least one non-space character.
+var reGitShortHash = regexp.MustCompile(`^[0-9a-f]{7,12} \S`)
+
+// reGitFilesChanged matches git commit summary lines ("3 files changed, ...").
+var reGitFilesChanged = regexp.MustCompile(`^\d+ files? changed`)
+
+// reGitModeChange matches "create mode 100644 …" and "delete mode …" lines.
+var reGitModeChange = regexp.MustCompile(`^(?:create|delete) mode \d{6}\s`)
+
 // reFilePath matches file paths: tokens containing at least one "/" with a
 // file-extension-like suffix, or colon-number suffixes like "file.go:145:3".
 var reFilePath = regexp.MustCompile(`\S+/\S+\.\w+(?::\d+)*|\S+\.\w{1,4}:\d+`)
@@ -611,6 +630,57 @@ func sanitizeForSpeech(s string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// isNoiseLine reports whether line is a known end-of-task terminal artifact
+// that should be stripped before the LLM sees the session output.
+func isNoiseLine(line string) bool {
+	if line == "" {
+		return true
+	}
+	if reTrailingTimestamp.MatchString(line) {
+		return true
+	}
+	if strings.HasPrefix(line, "DATAWATCH_COMPLETE:") ||
+		strings.HasPrefix(line, "DATAWATCH_RATE_LIMITED:") ||
+		strings.HasPrefix(line, "DATAWATCH_NEEDS_INPUT:") {
+		return true
+	}
+	if strings.HasPrefix(line, "Co-Authored-By:") ||
+		strings.HasPrefix(line, "Co-authored-by:") {
+		return true
+	}
+	if reGitShortHash.MatchString(line) {
+		return true
+	}
+	if reGitFilesChanged.MatchString(line) {
+		return true
+	}
+	if reGitModeChange.MatchString(line) {
+		return true
+	}
+	return false
+}
+
+// stripTrailingNoise removes known end-of-task terminal artifacts from the
+// bottom of text so the LLM summarizes actual work content rather than the
+// final git log output, build completion markers, or session housekeeping.
+// It scans from the end and removes noise lines until it hits real content.
+// If every line is noise (pathological case), the original text is returned.
+func stripTrailingNoise(text string) string {
+	lines := strings.Split(text, "\n")
+	end := len(lines)
+	for end > 0 {
+		if isNoiseLine(strings.TrimSpace(lines[end-1])) {
+			end--
+		} else {
+			break
+		}
+	}
+	if end == 0 {
+		return text
+	}
+	return strings.Join(lines[:end], "\n")
 }
 
 // isSeparatorLine reports whether a line consists only of decoration characters

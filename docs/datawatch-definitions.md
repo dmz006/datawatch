@@ -375,7 +375,12 @@ Both summary fields are post-processed to be safe for text-to-speech surfaces li
 - Error codes, hex values, and `file.go:line` references are removed.
 - Lines that are mostly non-alphabetic characters (code fragments, stack traces) are dropped.
 - Markdown decorators (`**bold**`, `` `backtick` ``, bullets, numbered lists) are removed.
+- Timestamps (`[11:20:37]`), version numbers (`v8.10.25`), ISO dates, exit codes, durations, and percentages are converted to spoken form rather than stripped.
 - The LLM prompt explicitly prohibits all identifiers, error codes, and code terms in favor of plain spoken English.
+
+**Work-focused summarization (v8.10.25+):**
+
+Before sending terminal output to the LLM, known end-of-task artifacts are stripped from the tail of the captured text: git log lines (commit hash + message), timing markers (`[HH:MM:SS] done`), `DATAWATCH_COMPLETE:` markers, `Co-Authored-By:` git trailers, git commit summaries (`N files changed`), and `create/delete mode` lines. This ensures the summary describes what was actually done during the task rather than the session housekeeping that appears at the very bottom of the terminal.
 
 For `waiting_input` sessions, the Ollama summary is preserved across repeated API polls — the stored summary is returned directly rather than being overwritten by a fresh tmux capture.
 
