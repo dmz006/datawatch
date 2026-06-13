@@ -355,8 +355,8 @@ Each session maintains a live AI-generated summary of its most recent output. A 
 
 | Field | What it holds |
 |---|---|
-| `last_response` | Short snippet (1–2 sentences): what the AI just did or produced |
-| `last_summary_long` | Full paragraph: context, decisions made, blockers, next steps |
+| `last_response` | Short (3 sentences, ≤15 words each): task, outcome, next step |
+| `last_summary_long` | Narrative (3–5 sentences): context, decisions, blockers, next steps |
 
 **Where to see them:**
 
@@ -366,7 +366,18 @@ Each session maintains a live AI-generated summary of its most recent output. A 
 
 **Summarizer model selection:**
 
-Configure which LLM handles summarization via `session.summarizer.model` in `datawatch.yaml` or `PUT /api/config`. The PWA shows a datalist from all registered compute nodes with quality-tier hints. When unset, the session's own backend LLM is used.
+Configure which LLM handles summarization via `session.summarizer.llm_ref` and `session.summarizer.model` in `datawatch.yaml` or `PUT /api/config`. The PWA shows a datalist from all registered compute nodes with quality-tier hints. When unset, the session's own backend LLM is used.
+
+**Plain-English / TTS-safe output (v8.10.19+):**
+
+Both summary fields are post-processed to be safe for text-to-speech surfaces like Android Auto and lock screens:
+- File paths, function names, and identifiers are stripped before returning.
+- Error codes, hex values, and `file.go:line` references are removed.
+- Lines that are mostly non-alphabetic characters (code fragments, stack traces) are dropped.
+- Markdown decorators (`**bold**`, `` `backtick` ``, bullets, numbered lists) are removed.
+- The LLM prompt explicitly prohibits all identifiers, error codes, and code terms in favor of plain spoken English.
+
+For `waiting_input` sessions, the Ollama summary is preserved across repeated API polls — the stored summary is returned directly rather than being overwritten by a fresh tmux capture.
 
 **Parser resilience:** strips `<think>…</think>` reasoning blocks, handles multi-format short/long section markers, and falls back to paragraph splitting for LLMs that don't emit a structured separator.
 

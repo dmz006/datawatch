@@ -73,3 +73,27 @@ non-empty lines (< 7 newlines after trim). Prevents meaningless summaries from s
 - [x] Phase 7 — CHANGELOG, plan doc
 
 ## Status: Done — shipped in v8.9.0
+
+---
+
+## Patch History
+
+### v8.10.19 — GetLastResponse overwrite fix
+
+**Problem:** For `waiting_input` sessions, `GetLastResponse` called `CaptureResponse` (raw tmux re-capture) on every read, immediately overwriting the Ollama dual-summary stored in `sess.LastResponse`.
+
+**Fix (`internal/session/manager.go`):** Added a guard at the top of `GetLastResponse`: if the session is in `StateWaitingInput` and `SummaryGeneratedAt` is non-zero (a summary has been generated), return `sess.LastResponse` directly without performing a tmux re-capture.
+
+### v8.10.20 — Plain-English / TTS-safe output
+
+**Problem:** Small Ollama models (e.g. qwen3:1.7b) copy file paths, function names, error codes, and stack trace fragments from the terminal output into summaries despite basic prompt instructions. Android Auto TTS reads these literally ("manager dot go colon 1304").
+
+**Fix (`internal/summarizer/summarizer.go`):**
+
+1. **Stronger prompt** — `dualSummaryPrompt` and `ollamaChatSystemPrompt` rewritten with explicit "Critical rules" banning all identifiers, paths, error codes, and code terms. Car-dashboard framing throughout.
+
+2. **`sanitizeForSpeech` post-processor** — regex-based removal of file paths (`\S+/\S+\.\w+`), URLs, and error codes (`\d+:\d+`, `0x…`); per-line letter-density filter drops lines where alphabetic characters are below 55% of total characters.
+
+3. **`cleanShort` updated** — strips numbered lists, backticks, `**bold**`/`__italic__` pairs via new `stripMarkdownPair` helper, then calls `sanitizeForSpeech` as final pass.
+
+4. **`parseDualSummary` updated** — applies `sanitizeForSpeech` to long-section output in all return paths.

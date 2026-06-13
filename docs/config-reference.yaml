@@ -95,7 +95,13 @@ session:
     # LLM backend reference (must be an Ollama or OpenAI-compatible LLM).
     # Leave empty to use the first available compatible LLM.
     llm_ref: ""
+    # Ollama model name to use for summarization (e.g. "qwen3:1.7b", "llama3.2").
+    # Leave empty to use the default model of the selected LLM backend.
+    model: ""
     # System/instruction prompt. Leave empty to use the built-in default.
+    # The built-in default instructs the model to produce plain spoken English
+    # suitable for text-to-speech surfaces (Android Auto, lock screen). It
+    # prohibits file names, identifiers, error codes, and markdown formatting.
     prompt: ""
 
 # ── Web Server ──
