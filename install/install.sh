@@ -8,33 +8,51 @@ REPO="dmz006/datawatch"
 SIGNAL_CLI_VERSION="0.14.1"
 BINARY_NAME="datawatch"
 
-# Fetch the latest published release version from GitHub API.
-# Uses /releases?per_page=20 + sort -V to find the highest semver, matching
-# the logic in the Go updater (avoids the /releases/latest pitfall where
-# out-of-order publishing can return a stale version).
-# Falls back to a hardcoded minimum version if the API is unavailable.
+# Fetch the latest published release version.
+#
+# Strategy (most-to-least reliable):
+#   1. HTML redirect: follow github.com/REPO/releases/latest — returns the
+#      release page URL containing the tag; never hits the API rate limit.
+#   2. JSON API: /releases?per_page=20 + sort -V — handles out-of-order
+#      publishing but costs one API request (60/hr unauthenticated).
+#   3. Hardcoded fallback — last resort when both network methods fail.
 fetch_latest_version() {
-  local fallback="8.10.13"
-  local api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
-  local raw=""
-  if command -v curl &>/dev/null; then
-    raw=$(curl -fsSL --max-time 10 "${api_url}" 2>/dev/null)
-  elif command -v wget &>/dev/null; then
-    raw=$(wget -qO- --timeout=10 "${api_url}" 2>/dev/null)
-  fi
-  # Extract all tag_name values, strip leading "v", sort by version, take highest.
+  local fallback="8.10.17"
   local ver=""
-  if [[ -n "${raw}" ]]; then
-    ver=$(echo "${raw}" \
-          | grep '"tag_name"' \
-          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/' \
-          | sort -V \
-          | tail -1)
+
+  # 1. Redirect approach — immune to API rate limits.
+  if command -v curl &>/dev/null; then
+    ver=$(curl -fsSL --max-time 10 -o /dev/null -w "%{url_effective}" \
+          "https://github.com/${REPO}/releases/latest" 2>/dev/null \
+          | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  elif command -v wget &>/dev/null; then
+    ver=$(wget -qO- --timeout=10 --server-response \
+          "https://github.com/${REPO}/releases/latest" 2>&1 \
+          | grep -i "Location:" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
   fi
-  # Sanity-check: must look like a version number (digits and dots)
+
+  # 2. JSON API fallback if redirect gave nothing.
   if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
-    warn "Could not fetch latest version from GitHub (API may be rate-limited); defaulting to v${fallback}"
-    warn "Use --version X.Y.Z to install a specific version."
+    local api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
+    local raw=""
+    if command -v curl &>/dev/null; then
+      raw=$(curl -fsSL --max-time 10 "${api_url}" 2>/dev/null)
+    elif command -v wget &>/dev/null; then
+      raw=$(wget -qO- --timeout=10 "${api_url}" 2>/dev/null)
+    fi
+    if [[ -n "${raw}" ]]; then
+      ver=$(echo "${raw}" \
+            | grep '"tag_name"' \
+            | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/' \
+            | sort -V \
+            | tail -1)
+    fi
+  fi
+
+  # 3. Hardcoded fallback.
+  if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
+    warn "Could not determine latest version from GitHub; defaulting to v${fallback}"
+    warn "Use --version X.Y.Z to install a specific version, e.g.: bash install.sh --version 8.10.17"
     ver="${fallback}"
   fi
   echo "${ver}"
