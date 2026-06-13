@@ -3160,6 +3160,12 @@ func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, new
 		}
 	}
 
+	// When no prior offset exists (first summarization of a session), tail from
+	// the end of the log rather than reading from the start. Long-running sessions
+	// accumulate many megabytes; the LLM only needs recent output, and reading from
+	// the top buries the most recent work under hours of old history.
+	const summaryTailBytes = 64 * 1024
+
 	var data []byte
 	encPath := sess.LogFile + ".enc"
 	if _, statErr := os.Stat(encPath); statErr == nil && m.encKey != nil {
@@ -3180,8 +3186,18 @@ func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, new
 		case byteOffset > 0 && byteOffset < newOffset:
 			data = all[byteOffset:]
 		default:
-			// byteOffset == 0 (first call) or > newOffset (log rotated): full read.
-			data = all
+			// byteOffset == 0 (first call) or > newOffset (log rotated): tail from end.
+			tailStart := int64(len(all)) - summaryTailBytes
+			if tailStart < 0 {
+				tailStart = 0
+			}
+			data = all[tailStart:]
+			// Skip first partial line when we seeked into the middle.
+			if tailStart > 0 {
+				if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+					data = data[idx+1:]
+				}
+			}
 		}
 	} else {
 		f, openErr := os.Open(sess.LogFile)
@@ -3221,10 +3237,21 @@ func (m *Manager) OutputSince(fullID string, byteOffset int64) (text string, new
 				}
 			}
 		default:
-			// byteOffset == 0 (first call) or > newOffset (log rotated): read from start.
+			// byteOffset == 0 (first call) or > newOffset (log rotated): tail from end.
+			tailStart := newOffset - summaryTailBytes
+			if tailStart < 0 {
+				tailStart = 0
+			}
+			f.Seek(tailStart, 0) //nolint:errcheck
 			data, err = io.ReadAll(f)
 			if err != nil {
-				return "", byteOffset, fmt.Errorf("read log delta: %w", err)
+				return "", byteOffset, fmt.Errorf("read log tail: %w", err)
+			}
+			// Skip first partial line when we seeked into the middle.
+			if tailStart > 0 {
+				if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+					data = data[idx+1:]
+				}
 			}
 		}
 	}

@@ -78,6 +78,14 @@ non-empty lines (< 7 newlines after trim). Prevents meaningless summaries from s
 
 ## Patch History
 
+### v8.10.21 — OutputSince tails from end on first call
+
+**Problem:** `OutputSince` with `byteOffset == 0` (first summarization of a session) read `data = all` — the entire log from the beginning. Long-running sessions have megabytes of old history that buried the most recent work under irrelevant context.
+
+**Fix (`internal/session/manager.go`):** When `byteOffset == 0` (or log rotation detected), tail the last 64 KB from the end of the log instead of reading from the start, matching the `TailOutput` window. The returned `newOffset` is still set to the actual end-of-file position, so subsequent incremental calls continue to work correctly from that point forward.
+
+---
+
 ### v8.10.19 — GetLastResponse overwrite fix
 
 **Problem:** For `waiting_input` sessions, `GetLastResponse` called `CaptureResponse` (raw tmux re-capture) on every read, immediately overwriting the Ollama dual-summary stored in `sess.LastResponse`.

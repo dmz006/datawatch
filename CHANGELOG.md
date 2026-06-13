@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.21 — fix(summarizer): tail from end of log on first summarization (2026-06-13)
+
+### Fixed
+
+- **Summarizer read from top of buffer** — `OutputSince` with `byteOffset == 0` previously read the entire log file from the beginning, feeding the LLM hours of stale history for long-running sessions. Now tails the last 64 KB (matching `TailOutput`) so only recent output is summarized. Subsequent incremental calls continue to read only the delta forward from the tail point.
+
+---
+
 ## v8.10.20 — fix(summarizer): strip technical artifacts + strengthen plain-English prompts (2026-06-13)
 
 ### Fixed
