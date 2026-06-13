@@ -38,9 +38,9 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-06-12
+## Current state — 2026-06-13
 
-Latest release: **v8.10.18** (2026-06-12). Patch: child-of label bug fix — `↳ child of [X]` now shows 4-char session ID instead of hostname.
+Latest release: **v8.10.19** (2026-06-13). Patch: Ollama summary overwrite + Android Auto TTS formatting bugs.
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -54,6 +54,8 @@ Latest release: **v8.10.18** (2026-06-12). Patch: child-of label bug fix — `�
 | Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint) | |
+
+v8.10.19 shipped 2026-06-13 — patch: Ollama summary overwrite bug (`GetLastResponse` for `waiting_input` sessions now returns stored summary when `SummaryGeneratedAt` is set, instead of re-capturing raw tmux content). Android Auto TTS formatting: `cleanShort` strips numbered lists, backticks, and bold/italic markdown pairs. Tests added for `stripMarkdownPair` and new `cleanShort` cases.
 
 v8.10.18 shipped 2026-06-12 — patch: `↳ child of [X]` display bug. `strings.Index` (first `-`) → `strings.LastIndex` (last `-`) so the 4-char hex short ID is shown, not the hostname. Fixed in comm router session list and CLI sessions table.
 

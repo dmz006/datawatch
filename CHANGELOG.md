@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.19 — fix(summarizer): Ollama summary overwritten by live tmux capture + Android Auto formatting (2026-06-13)
+
+### Fixed
+
+- **Summary preserved on read** — `GetLastResponse` for `waiting_input` sessions now returns the stored Ollama summary (set on the `running→waiting_input` transition) instead of re-capturing raw tmux content and overwriting it. Previously the clean summary was immediately replaced with noisy terminal output on the very next API poll, so Android Auto / push notifications showed shell command invocations instead of the readable summary.
+- **Android Auto TTS formatting** — `cleanShort` now strips: numbered list prefixes (`1. `, `2. `, etc.), backticks (which TTS reads as "backtick"), and bold/italic markdown pairs (`**word**`, `__word__`). This prevents car-dashboard TTS from reading markdown decorators aloud.
+
+---
+
 ## v8.10.18 — fix(sessions): child-of label shows hostname instead of 4-char session ID (2026-06-12)
 
 ### Fixed

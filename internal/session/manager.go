@@ -1287,6 +1287,15 @@ func (m *Manager) GetLastResponse(fullID string) string {
 	}
 	switch sess.State {
 	case StateRunning, StateWaitingInput:
+		// When a session is waiting for input AND the dual-summary pipeline has
+		// run at least once, the stored LastResponse IS the clean Ollama summary.
+		// Return it directly rather than overwriting it with raw tmux capture.
+		// The summary is the correct "what just happened" view for Android Auto,
+		// push notifications, and the copy_response MCP tool.
+		// For running sessions (actively working) we always want live capture.
+		if sess.State == StateWaitingInput && !sess.SummaryGeneratedAt.IsZero() {
+			return sess.LastResponse
+		}
 		if v, ok := lastResponseCache.Load(sess.FullID); ok {
 			if c, ok := v.(*cachedResponse); ok && time.Since(c.at) < 2*time.Second {
 				return c.body

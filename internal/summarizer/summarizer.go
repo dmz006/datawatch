@@ -360,7 +360,8 @@ func parseDualSummary(raw string) (short, long string) {
 	return cleanShort(text), ""
 }
 
-// cleanShort strips markdown artifacts and template labels from a short summary.
+// cleanShort strips markdown artifacts and template labels from a short summary,
+// producing plain text safe for Android Auto TTS and mobile notifications.
 func cleanShort(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	var kept []string
@@ -382,9 +383,24 @@ func cleanShort(s string) string {
 		if len(stripped) >= 2 && (stripped[0] == '-' || stripped[0] == '*' || stripped[0] == '+') && stripped[1] == ' ' {
 			stripped = stripped[2:]
 		}
+		// Strip leading numbered list prefixes: "1. ", "2. ", etc.
+		if len(stripped) >= 3 && stripped[0] >= '0' && stripped[0] <= '9' && stripped[1] == '.' && stripped[2] == ' ' {
+			stripped = stripped[3:]
+		} else if len(stripped) >= 4 && stripped[0] >= '0' && stripped[0] <= '9' && stripped[1] >= '0' && stripped[1] <= '9' && stripped[2] == '.' && stripped[3] == ' ' {
+			stripped = stripped[4:]
+		}
 		kept = append(kept, strings.TrimSpace(stripped))
 	}
 	result := strings.TrimSpace(strings.Join(kept, " "))
+
+	// Strip backticks — TTS reads them as "backtick", ruining car/phone audio.
+	result = strings.ReplaceAll(result, "`", "")
+
+	// Strip bold/italic markdown decorators: **word** → word, __word__ → word,
+	// *word* → word, _word_ → word. Replace pairs first (longer patterns win).
+	for _, pair := range []string{"**", "__"} {
+		result = stripMarkdownPair(result, pair)
+	}
 
 	// Strip outer [...] wrapping — models that treat [placeholder] as a template
 	// to fill in sometimes wrap the entire short in brackets.
@@ -402,6 +418,30 @@ func cleanShort(s string) string {
 	}
 
 	return result
+}
+
+// stripMarkdownPair removes surrounding marker pairs (e.g. "**" or "__") from
+// a string. "**hello**" → "hello". Unpaired markers are left untouched.
+func stripMarkdownPair(s, marker string) string {
+	mlen := len(marker)
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if i+mlen <= len(s) && s[i:i+mlen] == marker {
+			// Look ahead for a closing marker.
+			j := strings.Index(s[i+mlen:], marker)
+			if j >= 0 {
+				// Write content between the markers, skip both markers.
+				b.WriteString(s[i+mlen : i+mlen+j])
+				i = i + mlen + j + mlen
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
 
 // isSeparatorLine reports whether a line consists only of decoration characters

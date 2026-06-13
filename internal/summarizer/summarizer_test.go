@@ -464,6 +464,11 @@ func TestCleanShort(t *testing.T) {
 		{"mixed separator dropped", "* * *", ""},
 		{"empty string unchanged", "", ""},
 		{"multi-line joined with space", "Sentence one.\nSentence two.", "Sentence one. Sentence two."},
+		{"numbered list stripped", "1. Auth fixed.\n2. Tests passed.\n3. PR open.", "Auth fixed. Tests passed. PR open."},
+		{"numbered list two digits stripped", "10. Auth fixed.\n11. Tests passed.", "Auth fixed. Tests passed."},
+		{"backticks stripped", "The `main()` function was fixed.", "The main() function was fixed."},
+		{"bold stripped", "The **auth** module was fixed. Tests **passed**.", "The auth module was fixed. Tests passed."},
+		{"double underscore stripped", "The __auth__ module was fixed.", "The auth module was fixed."},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -499,6 +504,29 @@ func TestIsSeparatorLine(t *testing.T) {
 			got := isSeparatorLine(tc.s)
 			if got != tc.want {
 				t.Errorf("isSeparatorLine(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStripMarkdownPair verifies that bold/italic decorators are removed.
+func TestStripMarkdownPair(t *testing.T) {
+	tests := []struct {
+		in, marker, want string
+	}{
+		{"hello **world** today", "**", "hello world today"},
+		{"**hello** world", "**", "hello world"},
+		{"hello **world**", "**", "hello world"},
+		{"__hello__ world", "__", "hello world"},
+		{"no markers here", "**", "no markers here"},
+		{"unpaired ** marker", "**", "unpaired ** marker"},
+		{"**a** and **b** done", "**", "a and b done"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			got := stripMarkdownPair(tc.in, tc.marker)
+			if got != tc.want {
+				t.Errorf("stripMarkdownPair(%q, %q) = %q, want %q", tc.in, tc.marker, got, tc.want)
 			}
 		})
 	}
