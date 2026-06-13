@@ -17,7 +17,7 @@ BINARY_NAME="datawatch"
 #      publishing but costs one API request (60/hr unauthenticated).
 #   3. Hardcoded fallback — last resort when both network methods fail.
 fetch_latest_version() {
-  local fallback="8.10.21"
+  local fallback="8.10.22"
   local ver=""
 
   # 1. Redirect approach — immune to API rate limits.

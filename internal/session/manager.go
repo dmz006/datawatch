@@ -1293,8 +1293,23 @@ func (m *Manager) GetLastResponse(fullID string) string {
 		// The summary is the correct "what just happened" view for Android Auto,
 		// push notifications, and the copy_response MCP tool.
 		// For running sessions (actively working) we always want live capture.
-		if sess.State == StateWaitingInput && !sess.SummaryGeneratedAt.IsZero() {
-			return sess.LastResponse
+		if sess.State == StateWaitingInput {
+			// Fast-path: SummaryGeneratedAt is already set on the session struct.
+			if !sess.SummaryGeneratedAt.IsZero() {
+				return sess.LastResponse
+			}
+			// Race-path: the inline summarizer goroutine may have already written
+			// to m.summaries (via StoreSummary) but not yet finished saving the
+			// session struct. Check the in-memory summary map directly so the
+			// first API poll after a running→waiting_input transition returns the
+			// Ollama summary rather than raw tmux capture.
+			if stored, ok := m.GetSummary(sess.FullID); ok && stored.Summary != "" {
+				sess.LastResponse = stored.Summary
+				sess.LastSummaryLong = stored.LongSummary
+				sess.SummaryGeneratedAt = stored.GeneratedAt
+				_ = m.store.Save(sess)
+				return stored.Summary
+			}
 		}
 		if v, ok := lastResponseCache.Load(sess.FullID); ok {
 			if c, ok := v.(*cachedResponse); ok && time.Since(c.at) < 2*time.Second {
@@ -1958,7 +1973,10 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 													short, long, serr := m.dualSummarizeFn(sctx, text, prevShort)
 													scancel()
 													if serr != nil {
-														log.Printf("[summarizer] LLM error for session %s: %v", s.FullID, serr)
+														log.Printf("[summarizer] LLM error for session %s (pre-push): %v — queuing async retry", s.FullID, serr)
+														// Inline call timed out or failed; async follow-up
+														// ensures the summary still arrives after the push.
+														go m.triggerSummarize(s.FullID, 0)
 													} else if strings.TrimSpace(short) != "" {
 														log.Printf("[summarizer] updated LastResponse for session %s (short=%d long=%d chars, offset %d→%d)",
 															s.FullID, len(short), len(long), prevOffset, newOffset)

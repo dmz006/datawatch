@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.10.22 — fix(summarizer): summary not visible on first GetLastResponse poll (2026-06-13)
+
+### Fixed
+
+- **Race-path: summary in map but not yet on session struct** — `GetLastResponse` for `waiting_input` sessions now checks `m.GetSummary()` (the in-memory summary map) before falling through to `CaptureResponse`. If the async summarizer wrote to `StoreSummary` between the time `sess` was fetched from the store and the time `SummaryGeneratedAt` was written back, the summary is now returned and the session struct is updated in one step.
+- **Inline timeout → no follow-up** — When the pre-push inline LLM call (8 s timeout) times out or fails, `triggerSummarize` is now kicked off as an async follow-up goroutine. Previously a timeout meant no summary was ever generated for that transition; now it retries with the full 35 s budget and stores the result so the next `GetLastResponse` call returns the clean Ollama summary.
+
+---
+
 ## v8.10.21 — fix(summarizer): tail from end of log on first summarization (2026-06-13)
 
 ### Fixed
