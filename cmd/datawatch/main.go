@@ -8024,8 +8024,8 @@ func runSessionList(cfg *config.Config) error {
 		suffix := ""
 		if s.ParentID != "" {
 			parentShort := s.ParentID
-			if idx := strings.Index(parentShort, "-"); idx > 0 {
-				parentShort = parentShort[:idx]
+			if idx := strings.LastIndex(parentShort, "-"); idx >= 0 {
+				parentShort = parentShort[idx+1:]
 			}
 			suffix = " ↳ child of [" + parentShort + "]"
 		}

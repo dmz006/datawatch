@@ -1566,10 +1566,10 @@ func (r *Router) handleList(filter string) {
 				sb.WriteString(" [ZOMBIE]")
 			}
 			if s.ParentID != "" {
-				// Show short parent ID (first segment before "-")
+				// Show short parent ID (4-char hex after the last "-")
 				parentShort := s.ParentID
-				if idx := strings.Index(parentShort, "-"); idx > 0 {
-					parentShort = parentShort[:idx]
+				if idx := strings.LastIndex(parentShort, "-"); idx >= 0 {
+					parentShort = parentShort[idx+1:]
 				}
 				fmt.Fprintf(&sb, " ↳ child of [%s]", parentShort)
 			}
