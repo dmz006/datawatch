@@ -242,6 +242,43 @@ func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
 	}
 }
 
+// TestDuePendingExcludesSpawnAndNewSession is a regression test for GH#128 bug 1
+// root cause: DuePending returned spawn-type entries, the command-dispatch loop
+// called MarkDone(id, true) on them (session not found), marking them SchedFailed
+// before DuePendingSessions could process them.
+func TestDuePendingExcludesSpawnAndNewSession(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "sched-test-*.json")
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
+
+	store, _ := NewScheduleStore(tmp.Name())
+
+	past := time.Now().Add(-time.Minute)
+
+	// Command entry — must appear in DuePending
+	cmd, _ := store.Add("session1", "do-work", past, "")
+	// Spawn entry — must NOT appear in DuePending (handled by DuePendingSessions)
+	spn, _ := store.AddSpawn(AddSpawnOptions{Task: "spawn-task", RunAt: past, OneShot: true})
+	// NewSession entry — must NOT appear in DuePending
+	ns, _ := store.AddDeferredSession("ns", "ns-task", "/tmp", "", past)
+
+	due := store.DuePending(time.Now())
+	ids := map[string]bool{}
+	for _, d := range due {
+		ids[d.ID] = true
+	}
+
+	if !ids[cmd.ID] {
+		t.Errorf("command entry %s should be in DuePending", cmd.ID)
+	}
+	if ids[spn.ID] {
+		t.Errorf("spawn entry %s must NOT be in DuePending — it belongs to DuePendingSessions", spn.ID)
+	}
+	if ids[ns.ID] {
+		t.Errorf("new_session entry %s must NOT be in DuePending — it belongs to DuePendingSessions", ns.ID)
+	}
+}
+
 // TestCancelBySessionDoesNotAffectSpawnSchedule is a regression test for GH#128
 // bug 1: spawn schedules must not be cancelled when the spawned session is deleted.
 // The bug was that manager.go set sc.SessionID = newSess.FullID on the spawn entry,

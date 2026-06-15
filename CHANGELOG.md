@@ -7,6 +7,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.11.4 — fix(schedule): CLI spawn/cancel bypass daemon in-memory store (GH#128) (2026-06-15)
+
+### Fixed
+
+- **CLI schedule spawn and cancel both bypassed the daemon's in-memory ScheduleStore** — both opened a *separate* `ScheduleStore` backed by the JSON file on disk. Any entry added or cancelled by the CLI was immediately overwritten when the daemon's scheduler next called `MarkDone` + `save()` (writing the daemon's own in-memory entries to disk). This caused: (a) CLI-created spawn schedules to vanish after the first daemon save; (b) CLI cancels to appear to succeed but be undone by the next daemon tick.
+
+  Fix: `runScheduleSpawn` now POSTs to `POST /api/schedule` (type=spawn); `runScheduleCancel` now calls `DELETE /api/schedule?id=X`. Both update the daemon's authoritative in-memory store, which is then persisted correctly.
+
+- **CLI body field mapping fixed**: the API request struct uses `"command"` for the task prompt and `"run_at"` for the time field; the CLI was incorrectly sending `"task"` and `"at"` respectively.
+
+- **All v8.11.1–v8.11.3 fixes retained**: `MarkDone` cancel-race guard, `DuePending` type filter, `runScheduler` now calls `DuePendingSessions`.
+
+---
+
+## v8.11.3 — fix(schedule): spawn sessions never fired — runScheduler missing DuePendingSessions call (GH#128) (2026-06-15)
+
+### Fixed
+
+- **True root cause of recurring spawn never firing**: there are two schedulers in the daemon — `runScheduler` (10s tick, in `main.go`, confirmed active via `[scheduler]` log prefix) and `StartScheduleTimer` (30s tick, in `manager.go`). `runScheduler` only called `DuePending` (command dispatch), never `DuePendingSessions`. Spawn and new_session entries were therefore never processed by the live scheduler. `StartScheduleTimer` / `processScheduledItems` was also running but the two schedulers share the same `DuePending` call path; the command-dispatch loop in `manager.go` was silently marking spawn entries failed (no session found for `SessionID=""`), hiding the miss. Fix: `runScheduler` now calls `DuePendingSessions` after the command loop and starts the spawned session via `mgr.Start`.
+
+- **All prior v8.11.x fixes are retained**: `DuePending` type filter (v8.11.2), `MarkDone` cancel-race guard (v8.11.1), `manager.go` not writing `SessionID` on spawn entries (v8.11.1).
+
+---
+
+## v8.11.2 — fix(schedule): DuePending intercepts spawn entries before DuePendingSessions (GH#128) (2026-06-15)
+
+### Fixed
+
+- **Root cause of recurring spawn vanishing**: `DuePending` (the command-dispatch path) had no type filter, so it returned `spawn` and `new_session` entries alongside ordinary command entries. The command-dispatch loop tried to look up a session by `SessionID=""` (spawn entries have no session ID), found nothing, and called `MarkDone(id, true)` — marking the spawn entry as `SchedFailed`. By the time `DuePendingSessions` ran, the entry was no longer `SchedPending` and was skipped. The spawn session was never started and the schedule disappeared from the list. Fix: `DuePending` now explicitly skips any entry whose `Type` is not `""` (default command) or `"command"`. Spawn and new_session entries remain untouched for `DuePendingSessions` to process.
+
+- **v8.11.1 fixes are retained**: `MarkDone` still respects `SchedCancelled` (cancel-race fix); `manager.go` still avoids writing `SessionID` on spawn entries (defensive guard).
+
+### Tests
+
+- `TestDuePendingExcludesSpawnAndNewSession` — regression: `DuePending` must not return spawn or new_session entries; command entries must still be returned
+
+---
+
 ## v8.11.1 — fix(schedule): recurring spawn re-arm + cancel race (GH#128) (2026-06-15)
 
 ### Fixed

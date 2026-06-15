@@ -474,12 +474,19 @@ func (s *ScheduleStore) List(states ...string) []*ScheduledCommand {
 
 // DuePending returns all pending commands that are due to run by time t (RunAt <= t)
 // and do not have a RunAfterID dependency.
+// Only returns command-type (default/empty or "command") entries.
+// new_session and spawn entries are handled by DuePendingSessions; returning them
+// here would cause the command-dispatch loop to mark them failed (no session match).
 func (s *ScheduleStore) DuePending(t time.Time) []*ScheduledCommand {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*ScheduledCommand
 	for _, sc := range s.entries {
 		if sc.State != SchedPending {
+			continue
+		}
+		// GH#128: skip session-spawning types; they are handled by DuePendingSessions.
+		if sc.Type != SchedTypeCommand && sc.Type != "" {
 			continue
 		}
 		if sc.RunAfterID != "" {

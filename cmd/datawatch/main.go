@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.11.1"
+var Version = "8.11.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8818,18 +8818,50 @@ func runScheduleList(cfg *config.Config) error {
 }
 
 func runScheduleCancel(cfg *config.Config, id string) error {
-	store, err := session.NewScheduleStore(schedStorePath(cfg))
-	if err != nil {
-		return fmt.Errorf("open schedule store: %w", err)
+	// GH#128: must go through the API so the daemon's in-memory ScheduleStore is
+	// updated. Direct file writes are overwritten on the next daemon save().
+	// Use TLS-skipping client: HTTP→HTTPS 307 redirect on the loopback port
+	// lands on a self-signed cert; the same pattern as validateLoopback().
+	loopbackClient := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback to self-signed daemon
+		},
 	}
-	// Try cancel by ID first; if not found, try by schedule name
-	if err := store.Cancel(id); err != nil {
-		n := store.CancelByScheduleName(id)
-		if n == 0 {
-			return err
+	baseURL := loopbackBaseURL(cfg)
+	apiURL := fmt.Sprintf("%s/api/schedule?id=%s", baseURL, id)
+	req, err := http.NewRequest(http.MethodDelete, apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := loopbackClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("cancel schedule: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode == http.StatusNotFound {
+		// Try cancel by name
+		apiURL = fmt.Sprintf("%s/api/schedule?name=%s", baseURL, id)
+		req2, _ := http.NewRequest(http.MethodDelete, apiURL, nil)
+		if cfg.Server.Token != "" {
+			req2.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 		}
-		fmt.Printf("Cancelled %d scheduled command(s) named %q.\n", n, id)
+		resp2, err2 := loopbackClient.Do(req2)
+		if err2 != nil {
+			return fmt.Errorf("cancel schedule by name: %w", err2)
+		}
+		defer resp2.Body.Close() //nolint:errcheck
+		if resp2.StatusCode >= 300 {
+			return fmt.Errorf("schedule %q not found (tried id and name)", id)
+		}
+		fmt.Printf("Cancelled schedule(s) named %q.\n", id)
 		return nil
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("cancel schedule: HTTP %d", resp.StatusCode)
 	}
 	fmt.Printf("Scheduled command %s cancelled.\n", id)
 	return nil
@@ -8883,60 +8915,63 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 }
 
 func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, effort, cronExpr, at, schedName, sessName string, oneShot, ephemeral bool) error {
-	store, err := session.NewScheduleStore(schedStorePath(cfg))
-	if err != nil {
-		return fmt.Errorf("open schedule store: %w", err)
-	}
+	// GH#128: must go through the API so the daemon's in-memory ScheduleStore is
+	// updated. Direct file writes are overwritten on the next daemon save().
 	if task == "" {
 		return fmt.Errorf("--task is required")
 	}
-	if cronExpr != "" {
-		if err := session.ValidateCron(cronExpr); err != nil {
-			return fmt.Errorf("invalid --cron expression %q: %w", cronExpr, err)
-		}
+	body := map[string]any{
+		"type":          "spawn",
+		"command":       task,      // API uses "command" field for the task prompt
+		"project_dir":   dir,
+		"backend":       backend,
+		"llm_ref":       llmRef,
+		"model":         model,
+		"effort":        effort,
+		"cron_expr":     cronExpr,
+		"run_at":        at,        // API uses "run_at" not "at"
+		"schedule_name": schedName,
+		"name":          sessName,
+		"one_shot":      oneShot,
+		"ephemeral":     ephemeral,
 	}
-	var runAt time.Time
-	if cronExpr != "" && at == "" {
-		runAt, err = session.CronNext(cronExpr, time.Now())
-		if err != nil {
-			return fmt.Errorf("cron next: %w", err)
-		}
-	} else if at != "" {
-		if t, err2 := time.Parse("15:04", at); err2 == nil {
-			now := time.Now()
-			runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-			if runAt.Before(now) {
-				runAt = runAt.Add(24 * time.Hour)
-			}
-		} else {
-			runAt, err = time.Parse(time.RFC3339, at)
-			if err != nil {
-				return fmt.Errorf("invalid --at value %q: use 'HH:MM' or RFC3339", at)
-			}
-		}
+	bodyBytes, _ := json.Marshal(body)
+	baseURL := loopbackBaseURL(cfg)
+	loopbackClient := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback to self-signed daemon
+		},
 	}
-
-	sc, err := store.AddSpawn(session.AddSpawnOptions{
-		Task:         task,
-		ProjectDir:   dir,
-		Backend:      backend,
-		LLMRef:       llmRef,
-		Model:        model,
-		Effort:       effort,
-		SessionName:  sessName,
-		ScheduleName: schedName,
-		CronExpr:     cronExpr,
-		RunAt:        runAt,
-		OneShot:      oneShot,
-		Ephemeral:    ephemeral,
-	})
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/schedules", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := loopbackClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("schedule spawn: %w", err)
 	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("schedule spawn: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	var sc struct {
+		ID       string `json:"id"`
+		RunAt    string `json:"run_at"`
+		CronExpr string `json:"cron_expr"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&sc)
 
 	when := "immediately (on next scheduler tick)"
-	if !sc.RunAt.IsZero() {
-		when = sc.RunAt.Format("2006-01-02 15:04")
+	if sc.RunAt != "" && sc.RunAt != "0001-01-01T00:00:00Z" {
+		if t, err2 := time.Parse(time.RFC3339, sc.RunAt); err2 == nil {
+			when = t.Format("2006-01-02 15:04")
+		}
 	}
 	label := sc.ID
 	if schedName != "" {
@@ -9050,6 +9085,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 		case <-ctx.Done():
 			return
 		case t := <-ticker.C:
+			// Command schedules: send to an existing named/ID session.
 			for _, sc := range store.DuePending(t) {
 				sess, ok := mgr.GetSession(sc.SessionID)
 				if !ok && sc.SessionName != "" {
@@ -9077,6 +9113,33 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 							_ = store.MarkDone(next.ID, false)
 						}
 					}
+				}
+			}
+			// GH#128: spawn/new_session schedules — start a fresh independent session.
+			// DuePending excludes these types; they must be processed here via DuePendingSessions.
+			for _, sc := range store.DuePendingSessions(t) {
+				ds := sc.DeferredSession
+				if ds == nil {
+					_ = store.MarkDone(sc.ID, true)
+					fmt.Printf("[scheduler] spawn [%s] has no DeferredSession, marking failed\n", sc.ID)
+					continue
+				}
+				opts := &session.StartOptions{
+					Name:               ds.Name,
+					Backend:            ds.Backend,
+					LLMRef:             ds.LLMRef,
+					Model:              ds.Model,
+					Effort:             ds.Effort,
+					OneShot:            ds.OneShot,
+					EphemeralWorkspace: ds.Ephemeral,
+				}
+				_, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
+				if err != nil {
+					_ = store.MarkDone(sc.ID, true)
+					fmt.Printf("[scheduler] failed to spawn session (type=%s sched=%s): %v\n", sc.Type, sc.ID, err)
+				} else {
+					_ = store.MarkDone(sc.ID, false)
+					fmt.Printf("[scheduler] spawned session (type=%s sched=%s task=%q)\n", sc.Type, sc.ID, ds.Task)
 				}
 			}
 		}
