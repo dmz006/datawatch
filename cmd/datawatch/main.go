@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.11.5"
+var Version = "8.12.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -814,16 +814,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
 	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
 	channel.SetClaudeBin(claudeBin)
-	// BL318 — scope all `claude mcp add/remove` calls to the instance's own
-	// config directory. Prevents test daemons from corrupting the production
-	// operator's ~/.claude.json when multiple instances share a host.
+	// GH#128 v8.12.0 — MCP bridge registrations go to ~/.claude/ (default).
+	// Injecting a datawatch-scoped CLAUDE_CONFIG_DIR caused auth credential
+	// and first-run onboarding issues in spawned sessions.
 	claudeConfigDir := filepath.Join(expandHome(cfg.DataDir), ".claude")
-	channel.SetClaudeConfigDir(claudeConfigDir)
-	// Ensure settings.json in the datawatch-scoped claude config dir has the
-	// required flags (skipDangerousModePermissionPrompt etc.) so sessions
-	// launched under CLAUDE_CONFIG_DIR don't block on interactive prompts.
+	// Still call EnsureClaudeSettings on the datawatch dir (idempotent) so
+	// any sessions that retained a CLAUDE_CONFIG_DIR env from older hookEnv
+	// injection also have the required flags.
 	if err := channel.EnsureClaudeSettings(claudeConfigDir); err != nil {
 		fmt.Printf("[warn] ensure claude settings: %v\n", err)
+	}
+	// Also ensure ~/.claude/settings.json has the flags for the default config dir.
+	if err := channel.EnsureClaudeSettings(filepath.Join(expandHome("~"), ".claude")); err != nil {
+		fmt.Printf("[warn] ensure claude settings (home): %v\n", err)
 	}
 
 	// Register LLM backends from config.
@@ -5202,6 +5205,33 @@ Return STRICT JSON:
 
 	// Wire state-change callbacks — web fires immediately, remote channels bundled
 	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
+		// GH#128 v8.11.7 — auto-accept claude startup prompts via state change.
+		// The earlier DetectPrompt path (filter engine) only fires for non-channel
+		// sessions. Channel-enabled sessions (e.g. spawned one-shot) transition to
+		// waiting_input via the screen-capture path (tryTransitionToWaiting) which
+		// never calls DetectPrompt. Wiring the same logic here ensures auto-accept
+		// fires regardless of which code path triggered the state transition.
+		if claudeAutoAccept && sess.State == session.StateWaitingInput &&
+			sess.BackendFamily == "claude-code" &&
+			claudeDisclaimerResponse(sess.LastPrompt) != "" {
+			if _, loaded := claudeStartupAccepted.LoadOrStore(sess.FullID, struct{}{}); !loaded {
+				go func(sessID string) {
+					defer claudeStartupAccepted.Delete(sessID)
+					time.Sleep(750 * time.Millisecond)
+					for i := 0; i < 5; i++ {
+						liveResp := mgr.GetActiveStartupPromptInput(sessID)
+						if liveResp == "" {
+							break
+						}
+						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
+							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+							break
+						}
+						time.Sleep(500 * time.Millisecond)
+					}
+				}(sess.FullID)
+			}
+		}
 		// alpha.34d #281 — universal hook-event emit covering ALL session
 		// backends (claude-code, opencode-acp, openwebui, ollama-direct,
 		// council, autonomous workers). Maps state transitions to canonical

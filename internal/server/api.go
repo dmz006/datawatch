@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.11.5"
+var Version = "8.12.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6873,9 +6873,17 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	}
 	targetSess := readySess
 
+	// GH#128: OneShot + bare shell task — append DATAWATCH_COMPLETE: so the
+	// one-shot reaper can terminate the session after the command exits.
+	// This mirrors the non-channel path in Manager.Start (manager.go).
+	channelTask := targetSess.Task
+	if targetSess.OneShot && strings.HasPrefix(targetSess.Task, "!") {
+		channelTask = targetSess.Task + `; echo "DATAWATCH_COMPLETE: shell task done"`
+	}
+
 	// Forward the task to the channel server.
 	payload, _ := json.Marshal(map[string]string{
-		"text":       targetSess.Task,
+		"text":       channelTask,
 		"source":     "datawatch",
 		"session_id": targetSess.FullID,
 	})

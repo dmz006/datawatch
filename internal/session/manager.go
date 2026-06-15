@@ -1754,10 +1754,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	// Always inject DATAWATCH_SESSION_ID + DATAWATCH_BASE_URL so Claude Code
 	// hook scripts can POST status-board events without needing daemon config.
-	// Also inject CLAUDE_CONFIG_DIR so claude-code sessions use the
-	// datawatch-scoped config dir where per-session MCP servers are registered
-	// via RegisterSessionMCP (otherwise claude uses ~/.claude/ and the channel
-	// server names like "datawatch-{hostname}-{id}" are not found).
+	// GH#128 v8.12.0 — do NOT inject CLAUDE_CONFIG_DIR; bridges are registered
+	// in ~/.claude/ (default) so spawned claude processes find them without
+	// any config-dir override. Injecting a datawatch-scoped CLAUDE_CONFIG_DIR
+	// caused auth credential and first-run onboarding issues.
 	{
 		port := 8080
 		if m.cfg != nil && m.cfg.Server.Port > 0 {
@@ -1766,7 +1766,6 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		hookEnv := map[string]string{
 			"DATAWATCH_SESSION_ID": fullID,
 			"DATAWATCH_BASE_URL":   fmt.Sprintf("http://127.0.0.1:%d", port),
-			"CLAUDE_CONFIG_DIR":    filepath.Join(m.dataDir, ".claude"),
 		}
 		if err := m.tmux.SetEnvironment(tmuxSession, hookEnv); err != nil {
 			fmt.Printf("[warn] set DATAWATCH_SESSION_ID for %s: %v\n", sess.ID, err)

@@ -7,6 +7,56 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.0 — fix(channel): bridge task-delivery timing race + remove CLAUDE_CONFIG_DIR override (GH#128) (2026-06-15)
+
+### Fixed
+
+- **Bridge task-delivery timing race (GH#128)** — `cmd/datawatch-channel` called `notifyReady()` before the MCP stdio goroutine started. The daemon immediately POSTed the initial task to `/send`, but `SendNotificationToAllClients` had no connected MCP clients yet and silently dropped it. One-shot `!shell` sessions were stuck in `waiting_input` forever as a result.
+
+  Fix: `/send` now buffers incoming notifications when `mcpClientReady=false`. An `OnAfterInitialize` hook (go-mcp v0.46.0 `Hooks.AddAfterInitialize`) fires after the first MCP client completes initialization; after a 50 ms goroutine delay (ensuring the init response is written to stdout first), buffered notifications are drained and `SendNotificationToAllClients` delivers them. Tasks arriving after init proceed without buffering.
+
+- **Removed `CLAUDE_CONFIG_DIR` override for spawned sessions** — Spawned claude sessions were launched with `CLAUDE_CONFIG_DIR=~/.datawatch/.claude` to scope per-session MCP bridge registrations. This caused: (1) auth credential mismatches (different user ID between the scoped dir and `~/.claude/`), (2) first-run onboarding prompts (theme selector, OAuth flow) on every spawned session. Fix: `CLAUDE_CONFIG_DIR` is no longer injected in `hookEnv` (`manager.go`). Bridges are registered in `~/.claude.json` via `claude mcp add --scope user` (the user-level default), accessible from all spawned sessions without any config override.
+
+- **`EnsureClaudeSettings` applied to home config dir** — Added a call to `EnsureClaudeSettings(~/.claude/)` at daemon startup so `skipDangerousModePermissionPrompt`, `enableAllProjectMcpServers`, and `enabledMcpjsonServers` are set in the user's primary config. Prevents interactive prompts when sessions use the default config dir.
+
+### Removed
+
+- `SetClaudeConfigDir(string)` method removed from `internal/llm/claudecode/backend.go` (BL318 scoped-config approach). Bridge MCP registrations now always target the user-level `~/.claude.json`.
+
+---
+
+## v8.11.8 — fix(schedule): auto-accept trust dialog for channel-enabled spawned sessions (GH#128) (2026-06-15)
+
+### Fixed
+
+- **Auto-accept startup prompts not firing for channel-enabled spawned sessions** — the existing auto-accept goroutine was wired only to the filter-engine `DetectPrompt` action handler. Channel-enabled sessions (the default for claude-code) take the `processOutputLine` structured-channel path which calls `tryTransitionToWaiting` → `onStateChange` directly, bypassing `DetectPrompt`. As a result, the trust-folder confirmation prompt ("Quick safety check", "Enter to confirm · Esc to cancel") was never auto-accepted for one-shot spawned sessions, causing them to sit idle indefinitely.
+
+  Fix: moved the auto-accept goroutine launch into the `SetStateChangeHandler` callback so it fires for **any** path that transitions a session to `waiting_input`. The existing `LoadOrStore` guard prevents double-firing when both `DetectPrompt` and `onStateChange` fire for the same session startup sequence. The filter-engine path remains unchanged for non-channel backends.
+
+---
+
+## v8.11.7 — fix(channel): bridge TLS skip for HTTP→HTTPS redirect on loopback (GH#128) (2026-06-15)
+
+### Fixed
+
+- **MCP channel bridge `notifyReady` failed silently on self-signed TLS** — `cmd/datawatch-channel` calls `POST /api/channel/ready` via `DATAWATCH_API_URL` (default `http://127.0.0.1:8080`). The server issues a 307 redirect to `https://127.0.0.1:8443`. The bridge's `postToParent` used a plain `http.Client` without `InsecureSkipVerify`, causing TLS certificate verification failure on the redirect. Result: `handleChannelReady` was never called, the initial task was never delivered to claude, and one-shot `!cmd` sessions sat idle in `waiting_input` forever — even with the v8.11.5/v8.11.6 wrapping fixes in place.
+
+  Fix: `postToParent` now uses an `http.Transport` with `InsecureSkipVerify: true`. This is safe because the connection is loopback-only (127.0.0.1) and the risk of a MITM on localhost is out-of-scope for a self-hosted daemon.
+
+---
+
+## v8.11.6 — fix(schedule): one-shot !shell reap works with MCP channel path (GH#128) (2026-06-15)
+
+### Fixed
+
+- **v8.11.5 fix was inert when MCP channel is enabled** (the default). When `claude_channel_enabled=true` (the default), the claude backend ignores the `launchTask` string and sends the task to Claude via the MCP channel instead. The `Manager.Start` wrapping of the task had no effect because `handleChannelReady` (`POST /api/channel/ready`) sends `sess.Task` (the stored, unwrapped original) directly to the channel port. Fix: `handleChannelReady` now applies the same `!`-prefix wrapping: when `targetSess.OneShot && strings.HasPrefix(targetSess.Task, "!")`, the text sent to the channel is `task + `; echo "DATAWATCH_COMPLETE: shell task done"`` — matching the non-channel path in `Manager.Start`. The stored `sess.Task`, channel history, and WS broadcast are unaffected (still show the original).
+
+### Notes
+
+- `Manager.Start` wrapping (v8.11.5) is retained for non-channel backends (e.g. direct claude binary without MCP channel). Both paths now have the fix.
+
+---
+
 ## v8.11.5 — fix(schedule): one-shot spawn leaks session when task is bare !shell command (GH#128) (2026-06-15)
 
 ### Fixed

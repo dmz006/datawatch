@@ -28,6 +28,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -76,11 +78,44 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// GH#128 — task delivery timing race.
+	// notifyReady() fires before MCP stdio starts; the daemon immediately POSTs
+	// the task to /send, but SendNotificationToAllClients has no connected clients
+	// yet and silently drops it.  Fix: /send buffers tasks until the MCP client
+	// has initialized (mcpClientReady=true).  The OnAfterInitialize hook sets the
+	// flag and drains the buffer, but with a 50 ms goroutine delay so the init
+	// response reaches the client before any queued notification.
+	var bridgeRef *bridge
+	mcpHooks := &server.Hooks{}
+	mcpHooks.AddAfterInitialize(func(_ context.Context, _ any, _ *mcpsdk.InitializeRequest, _ *mcpsdk.InitializeResult) {
+		b := bridgeRef
+		if b == nil {
+			return
+		}
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			b.taskMu.Lock()
+			b.mcpClientReady = true
+			pending := b.pending
+			b.pending = nil
+			b.taskMu.Unlock()
+			if len(pending) > 0 {
+				fmt.Fprintf(os.Stderr, "[datawatch-channel] MCP client ready, delivering %d buffered task(s)\n", len(pending))
+			} else {
+				fmt.Fprintf(os.Stderr, "[datawatch-channel] MCP client ready\n")
+			}
+			for _, msg := range pending {
+				b.srv.SendNotificationToAllClients(msg.method, msg.params)
+			}
+		}()
+	})
+
 	mcpSrv := server.NewMCPServer(
 		bridgeName, bridgeVersion,
 		server.WithToolCapabilities(true),
 		// BL302 S1 — resource capability (subscribe=false).
 		server.WithResourceCapabilities(false, false),
+		server.WithHooks(mcpHooks),
 		server.WithInstructions(`You are connected to the datawatch monitoring system.
 Events arrive as <channel source="datawatch" ...>. Read and act on them.
 When you have a response, use the reply tool to send it back.
@@ -95,6 +130,7 @@ the request will be forwarded to the user automatically.`),
 	mcpSrv.EnableSampling()
 
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
+	bridgeRef = bridge
 	mcpSrv.AddTool(bridge.replyTool(), bridge.handleReply)
 
 	// Discover all daemon tools and register generic forwarding handlers.
@@ -237,11 +273,21 @@ func envInt(key string, def int) int {
 
 // ── bridge ──────────────────────────────────────────────────────────────────
 
+// pendingMsg holds a buffered MCP notification waiting to be delivered once
+// the MCP client has completed initialization.
+type pendingMsg struct {
+	method string
+	params map[string]any
+}
+
 type bridge struct {
-	cfg        config
-	srv        *server.MCPServer
-	actualPort int
-	notified   atomic.Bool
+	cfg            config
+	srv            *server.MCPServer
+	actualPort     int
+	notified       atomic.Bool
+	taskMu         sync.Mutex
+	mcpClientReady bool     // protected by taskMu
+	pending        []pendingMsg // buffered until mcpClientReady
 }
 
 func (b *bridge) replyTool() mcpsdk.Tool {
@@ -330,13 +376,24 @@ func (b *bridge) httpHandler() http.Handler {
 		if msg.Source == "" {
 			msg.Source = "datawatch"
 		}
-		b.srv.SendNotificationToAllClients("notifications/claude/channel", map[string]any{
+		params := map[string]any{
 			"content": msg.Text,
 			"meta": map[string]any{
 				"source":     msg.Source,
 				"session_id": msg.SessionID,
 			},
-		})
+		}
+		b.taskMu.Lock()
+		ready := b.mcpClientReady
+		if !ready {
+			b.pending = append(b.pending, pendingMsg{method: "notifications/claude/channel", params: params})
+		}
+		b.taskMu.Unlock()
+		if ready {
+			b.srv.SendNotificationToAllClients("notifications/claude/channel", params)
+		} else {
+			fmt.Fprintf(os.Stderr, "[datawatch-channel] /send: MCP client not ready, buffered notification\n")
+		}
 		writeJSONOK(w)
 	})
 	mux.HandleFunc("/permission", func(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +449,12 @@ func (b *bridge) postToParent(ctx context.Context, path string, body any) error 
 	if b.cfg.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.cfg.token)
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{ // #nosec G402 -- loopback only, self-signed daemon cert
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
