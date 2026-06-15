@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.11.5 — fix(schedule): one-shot spawn leaks session when task is bare !shell command (GH#128) (2026-06-15)
+
+### Fixed
+
+- **One-shot spawned sessions with bare `!shell` tasks never terminate** — a spawn registered with `--one-shot` and a task starting with `!` (e.g. `--task "!/usr/bin/imap-mcp run-rules ..."`) ran the shell command but then stayed alive in `waiting_input` forever, leaking one session per cron tick. Root cause: `--one-shot` termination is triggered by detecting `DATAWATCH_COMPLETE:` in the pane output. A bare `!cmd` task passes directly to the shell; there is no AI step to emit the marker, so the session never exits.
+
+  Fix: in `Manager.Start`, when `OneShot=true` and the task begins with `!`, the text sent to the LLM is automatically appended with `; echo "DATAWATCH_COMPLETE: shell task done"`. The stored `sess.Task` keeps the original (unwrapped) text for display. Non-`!` tasks (AI prompts) and non-one-shot sessions are unaffected.
+
+### Tests
+
+- `TestGH128_OneShotShellTaskWrapped` — launchFn receives DATAWATCH_COMPLETE suffix when OneShot + `!` task
+- `TestGH128_NonOneShotShellTaskNotWrapped` — non-one-shot sessions do not get the suffix
+- `TestGH128_OneShotAITaskNotWrapped` — AI task (no `!` prefix) is not wrapped even with OneShot
+
+---
+
 ## v8.11.4 — fix(schedule): CLI spawn/cancel bypass daemon in-memory store (GH#128) (2026-06-15)
 
 ### Fixed

@@ -1773,7 +1773,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
-	// Launch the LLM backend in the tmux session
+	// Launch the LLM backend in the tmux session.
+	// GH#128: OneShot + bare shell task — wrap to emit DATAWATCH_COMPLETE: so
+	// the one-shot reaper can kill the session after the command exits.
+	// sess.Task keeps the original text; only the text sent to the LLM is wrapped.
+	launchTask := task
+	if sess.OneShot && strings.HasPrefix(task, "!") {
+		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
+	}
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {
@@ -1786,14 +1793,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				} else {
 					m.debugf("launching %q with resume=%q", backendName, resumeID)
 				}
-				launchErr = rb.LaunchResume(ctx, task, tmuxSession, projectDir, logFile, resumeID)
+				launchErr = rb.LaunchResume(ctx, launchTask, tmuxSession, projectDir, logFile, resumeID)
 			} else {
 				m.debugf("launching %q (no resume support, ignoring resumeID)", backendName)
-				launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
+				launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
 			}
 		} else {
 			m.debugf("launching %q", backendName)
-			launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
+			launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
 			_ = m.tmux.KillSession(tmuxSession)
@@ -1804,7 +1811,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			m.saveBackendState(sess)
 		} else {
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
-		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, task)
+		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, launchTask)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
 			_ = m.tmux.KillSession(tmuxSession)
 			return nil, fmt.Errorf("send LLM command: %w", err)
