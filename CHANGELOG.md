@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.1 — fix(channel): auto-accept skipped second startup dialog on spawned sessions (GH#128) (2026-06-15)
+
+### Fixed
+
+- **Auto-accept goroutine broke on the brief gap between two sequential startup dialogs** — when claude-code shows both the "trust this folder" and "Loading development channels" dialogs in sequence, the retry loop called `GetActiveStartupPromptInput` between dialogs (0–50 ms window with nothing visible), got `""`, and hit `break` — leaving the second dialog unhandled indefinitely. Fix: changed both auto-accept retry loops (DetectPrompt path and SetStateChangeHandler path) to `continue` on empty response instead of breaking. The goroutine now checks all 5 × 500 ms slots regardless, and only sends input when a dialog is actually visible.
+
+---
+
 ## v8.12.0 — fix(channel): bridge task-delivery timing race + remove CLAUDE_CONFIG_DIR override (GH#128) (2026-06-15)
 
 ### Fixed

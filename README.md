@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.12.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.12.0)
+[![Release](https://img.shields.io/badge/release-v8.12.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.12.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.12.0](CHANGELOG.md) (2026-06-15)** — Bridge task-delivery timing race fixed (GH#128): `/send` buffers tasks until the MCP client initializes; `OnAfterInitialize` hook drains the buffer after a 50 ms settle. Removes `CLAUDE_CONFIG_DIR` override for spawned sessions — bridges now register in `~/.claude.json` (user scope) avoiding auth/onboarding issues. Completes the GH#128 one-shot `!cmd` reap fix: TLS (v8.11.7) + task wrapping (v8.11.5/6) + trust dialog (v8.11.8) + delivery timing (v8.12.0).
+**[v8.12.1](CHANGELOG.md) (2026-06-15)** — Auto-accept retry loop now handles sequential startup dialogs (trust + dev-channels) without breaking on the brief gap between them. Preceded by bridge task-delivery timing race fix (v8.12.0, GH#128): `/send` buffers tasks until the MCP client initializes; `OnAfterInitialize` hook drains the buffer after a 50 ms settle. Removes `CLAUDE_CONFIG_DIR` override for spawned sessions — bridges now register in `~/.claude.json` (user scope) avoiding auth/onboarding issues. Completes the GH#128 one-shot `!cmd` reap fix: TLS (v8.11.7) + task wrapping (v8.11.5/6) + trust dialog (v8.11.8) + delivery timing (v8.12.0).
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.

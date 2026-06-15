@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.12.0"
+var Version = "8.12.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1902,12 +1902,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// startup prompt is on screen (all accepted, or session dead).
 				for i := 0; i < 5; i++ {
 					liveResp := mgr.GetActiveStartupPromptInput(sessID)
-					if liveResp == "" {
-						break
-					}
-					if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-						fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-						break
+					if liveResp != "" {
+						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
+							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+							break
+						}
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -5220,12 +5219,11 @@ Return STRICT JSON:
 					time.Sleep(750 * time.Millisecond)
 					for i := 0; i < 5; i++ {
 						liveResp := mgr.GetActiveStartupPromptInput(sessID)
-						if liveResp == "" {
-							break
-						}
-						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-							break
+						if liveResp != "" {
+							if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
+								fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+								break
+							}
 						}
 						time.Sleep(500 * time.Millisecond)
 					}
