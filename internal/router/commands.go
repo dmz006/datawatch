@@ -22,7 +22,8 @@ const (
 	CmdVersion     CommandType = "version"
 	CmdUpdateCheck CommandType = "update"
 	CmdRestart     CommandType = "restart"
-	CmdSchedule    CommandType = "schedule"
+	CmdSchedule      CommandType = "schedule"
+	CmdScheduleSpawn CommandType = "schedule_spawn" // GH#128
 	CmdAlerts      CommandType = "alerts"
 	CmdStats       CommandType = "stats"
 	CmdConfigure   CommandType = "configure"
@@ -419,6 +420,16 @@ type Command struct {
 	CronExpr     string // for schedule: 5-field cron expression
 	ScheduleName string // for schedule: human-readable label for the entry
 
+	// GH#128 — schedule spawn fields.
+	SpawnTask      string // task prompt for spawned session
+	SpawnDir       string // working directory
+	SpawnBackend   string // LLM backend name
+	SpawnLLMRef    string // unified registry ref
+	SpawnModel     string // model override
+	SpawnEffort    string // quick/normal/thorough
+	SpawnOneShot   bool   // auto-terminate on DATAWATCH_COMPLETE:
+	SpawnEphemeral bool   // reap workspace on delete
+
 	// BL356 — CmdExitHook fields.
 	ExitHookVerb          string // "list" | "add" | "delete" | "enable" | "disable"
 	ExitHookID            string // for delete/enable/disable
@@ -494,6 +505,66 @@ func parseBL353ScheduleParams(text string) Command {
 	at := params["at"]
 	cmdText := params["command"]
 	cmd.Text = at + " " + cmdText
+	return cmd
+}
+
+// parseScheduleSpawnParams parses a "schedule spawn" key=value command (GH#128).
+// Supported keys: task= dir= backend= llm-ref= model= effort= cron= at= name= session-name=
+func parseScheduleSpawnParams(text string) Command {
+	params := make(map[string]string)
+	parts := strings.Fields(text)
+	for _, p := range parts {
+		if idx := strings.Index(p, "="); idx > 0 {
+			k := p[:idx]
+			v := p[idx+1:]
+			params[k] = v
+		}
+	}
+	spawnKeys := []string{" task=", " dir=", " backend=", " llm-ref=", " model=", " effort=", " cron=", " at=", " name=", " session-name=", " one-shot=", " ephemeral="}
+	// Handle task= which may be multi-word
+	if idx := strings.Index(text, "task="); idx >= 0 {
+		val := text[idx+5:]
+		for _, key := range spawnKeys {
+			if key == " task=" {
+				continue
+			}
+			if ki := strings.Index(val, key); ki >= 0 {
+				val = val[:ki]
+			}
+		}
+		params["task"] = strings.TrimSpace(val)
+	}
+	// Handle cron= which may be 5-field (contains spaces)
+	if idx := strings.Index(text, "cron="); idx >= 0 {
+		val := text[idx+5:]
+		for _, key := range spawnKeys {
+			if key == " cron=" {
+				continue
+			}
+			if ki := strings.Index(val, key); ki >= 0 {
+				val = val[:ki]
+			}
+		}
+		params["cron"] = strings.TrimSpace(val)
+	}
+	cmd := Command{Type: CmdScheduleSpawn}
+	cmd.SpawnTask = params["task"]
+	cmd.SpawnDir = params["dir"]
+	cmd.SpawnBackend = params["backend"]
+	cmd.SpawnLLMRef = params["llm-ref"]
+	cmd.SpawnModel = params["model"]
+	cmd.SpawnEffort = params["effort"]
+	cmd.CronExpr = params["cron"]
+	cmd.ScheduleName = params["name"]
+	cmd.SessionName = params["session-name"] // spawned session name
+	cmd.Text = params["at"]
+	cmd.SpawnOneShot = true // default true for spawn
+	if v, ok := params["one-shot"]; ok {
+		cmd.SpawnOneShot = v != "false" && v != "0"
+	}
+	if v, ok := params["ephemeral"]; ok {
+		cmd.SpawnEphemeral = v == "true" || v == "1"
+	}
 	return cmd
 }
 
@@ -845,8 +916,15 @@ func Parse(text string) Command {
 		// format: "schedule <id>: <when> <command>"
 		// BL353 extended format: "schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]"
 		// BL353 cancel format: "schedule cancel name=<sched-name>" or "schedule cancel id=<sched-id>"
+		// GH#128 spawn format: "schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>] [session-name=<n>]"
 		rest := text[9:]
 		lowerRest := strings.ToLower(strings.TrimSpace(rest))
+		// GH#128: session-independent ephemeral spawn
+		if strings.HasPrefix(lowerRest, "spawn") {
+			spawnRest := strings.TrimSpace(rest[5:])
+			cmd := parseScheduleSpawnParams(spawnRest)
+			return cmd
+		}
 		// BL353: sessionless cancel-by-schedule-name or cancel-by-id
 		if strings.HasPrefix(lowerRest, "cancel ") {
 			cancelArg := strings.TrimSpace(rest[7:]) // text after "cancel "
@@ -1483,6 +1561,7 @@ attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
 schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
+schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
 schedule cancel id=<id>|name=<sched-name>
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)

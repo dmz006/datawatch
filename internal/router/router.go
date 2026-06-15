@@ -949,6 +949,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleUpdateCheck()
 	case CmdSchedule:
 		r.handleSchedule(cmd)
+	case CmdScheduleSpawn: // GH#128
+		r.handleScheduleSpawn(cmd)
 	case CmdAlerts:
 		r.handleAlerts(cmd)
 	case CmdStats:
@@ -1381,6 +1383,8 @@ func (r *Router) handleSchedule(cmd Command) {
 			label := sc.SessionID
 			if sc.Type == session.SchedTypeNewSession && sc.DeferredSession != nil {
 				label = "NEW: " + sc.DeferredSession.Name
+			} else if sc.Type == session.SchedTypeSpawn && sc.DeferredSession != nil {
+				label = "SPAWN: " + sc.DeferredSession.Name
 			}
 			lines = append(lines, fmt.Sprintf("  [%s] %s @ %s: %s", sc.ID, label, when2, sc.Command))
 		}
@@ -1437,6 +1441,71 @@ func (r *Router) handleSchedule(cmd Command) {
 		ref = fmt.Sprintf("%s (name:%s)", cmd.SessionID, cmd.SessionName)
 	}
 	r.send(fmt.Sprintf("[%s] Scheduled [%s] for session %s at %s:\n  %s", r.hostname, sc.ID, ref, when2, command))
+}
+
+// handleScheduleSpawn handles "schedule spawn task=<t> ..." comms commands (GH#128).
+func (r *Router) handleScheduleSpawn(cmd Command) {
+	if r.schedStore == nil {
+		r.send(fmt.Sprintf("[%s] Scheduling is not available (no schedule store).", r.hostname))
+		return
+	}
+	if cmd.SpawnTask == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule spawn task=<task> [dir=<d>] [backend=<b>] [cron=<c>] [name=<sched-name>] [session-name=<n>]", r.hostname))
+		return
+	}
+	if cmd.CronExpr != "" {
+		if err := session.ValidateCron(cmd.CronExpr); err != nil {
+			r.send(fmt.Sprintf("[%s] Invalid cron expression %q: %v", r.hostname, cmd.CronExpr, err))
+			return
+		}
+	}
+	var runAt time.Time
+	if cmd.CronExpr != "" {
+		var err error
+		runAt, err = session.CronNext(cmd.CronExpr, time.Now())
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Cron next error: %v", r.hostname, err))
+			return
+		}
+	} else if cmd.Text != "" {
+		var err error
+		runAt, err = session.ParseScheduleTime(cmd.Text, time.Now())
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Invalid time %q", r.hostname, cmd.Text))
+			return
+		}
+	}
+	sc, err := r.schedStore.AddSpawn(session.AddSpawnOptions{
+		Task:         cmd.SpawnTask,
+		ProjectDir:   cmd.SpawnDir,
+		Backend:      cmd.SpawnBackend,
+		LLMRef:       cmd.SpawnLLMRef,
+		Model:        cmd.SpawnModel,
+		Effort:       cmd.SpawnEffort,
+		SessionName:  cmd.SessionName,
+		ScheduleName: cmd.ScheduleName,
+		CronExpr:     cmd.CronExpr,
+		RunAt:        runAt,
+		OneShot:      cmd.SpawnOneShot,
+		Ephemeral:    cmd.SpawnEphemeral,
+	})
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to schedule spawn: %v", r.hostname, err))
+		return
+	}
+	when2 := "immediately"
+	if !sc.RunAt.IsZero() {
+		when2 = sc.RunAt.Format("2006-01-02 15:04")
+	}
+	label := sc.ID
+	if sc.ScheduleName != "" {
+		label = fmt.Sprintf("%s (%s)", sc.ID, sc.ScheduleName)
+	}
+	extra := ""
+	if cmd.CronExpr != "" {
+		extra = fmt.Sprintf(" [recurring: %s]", cmd.CronExpr)
+	}
+	r.send(fmt.Sprintf("[%s] Spawn scheduled [%s]: %q fires %s%s.", r.hostname, label, cmd.SpawnTask, when2, extra))
 }
 
 func (r *Router) handleNew(cmd Command) {

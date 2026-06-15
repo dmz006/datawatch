@@ -25,6 +25,7 @@ const (
 const (
 	SchedTypeCommand    = "command"     // send input to existing session
 	SchedTypeNewSession = "new_session" // start a new session at scheduled time
+	SchedTypeSpawn      = "spawn"       // start a fresh ephemeral one-shot session (GH#128)
 )
 
 // ScheduledCommand is a command queued to be sent to a session at a specific time
@@ -94,6 +95,12 @@ type DeferredSession struct {
 	ProjectDir string `json:"project_dir"`
 	Backend    string `json:"backend"`
 	Name       string `json:"name"`
+	// v8.11.0 — extended spawn fields (GH#128)
+	LLMRef    string `json:"llm_ref,omitempty"`  // unified LLM registry ref
+	Model     string `json:"model,omitempty"`     // model name override
+	Effort    string `json:"effort,omitempty"`    // quick/normal/thorough
+	OneShot   bool   `json:"one_shot,omitempty"`  // terminate on DATAWATCH_COMPLETE:
+	Ephemeral bool   `json:"ephemeral,omitempty"` // reap workspace directory on delete
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -260,13 +267,77 @@ func (s *ScheduleStore) AddDeferredSession(name, task, projectDir, backend strin
 	return sc, s.save()
 }
 
-// DuePendingSessions returns pending deferred sessions that are due to start by time t.
+// AddSpawnOptions holds parameters for scheduling an ephemeral one-shot session (GH#128).
+type AddSpawnOptions struct {
+	Task         string    // task prompt for the spawned session (required)
+	ProjectDir   string    // working directory
+	Backend      string    // LLM backend name (legacy; prefer LLMRef)
+	LLMRef       string    // unified LLM registry reference
+	Model        string    // model name override
+	Effort       string    // quick/normal/thorough
+	SessionName  string    // human-readable name for the spawned session
+	ScheduleName string    // name for this schedule entry (for lookup/cancel)
+	CronExpr     string    // 5-field cron for recurring spawns
+	RunAt        time.Time // explicit first fire time (zero = computed from CronExpr)
+	OneShot      bool      // auto-terminate session on DATAWATCH_COMPLETE: (default true for spawn)
+	Ephemeral    bool      // reap workspace directory when session is deleted (default true)
+}
+
+// AddSpawn schedules an ephemeral one-shot session to start at a future time or
+// on a recurring cron, independent of any running session (GH#128).
+func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id, err := randomID()
+	if err != nil {
+		return nil, err
+	}
+
+	runAt := opts.RunAt
+	if runAt.IsZero() && opts.CronExpr != "" {
+		runAt, err = CronNext(opts.CronExpr, time.Now())
+		if err != nil {
+			return nil, fmt.Errorf("cron: %w", err)
+		}
+	}
+
+	sc := &ScheduledCommand{
+		ID:           id,
+		Type:         SchedTypeSpawn,
+		Command:      opts.Task,
+		RunAt:        runAt,
+		CronExpr:     opts.CronExpr,
+		ScheduleName: opts.ScheduleName,
+		State:        SchedPending,
+		CreatedAt:    time.Now(),
+		DeferredSession: &DeferredSession{
+			Task:       opts.Task,
+			ProjectDir: opts.ProjectDir,
+			Backend:    opts.Backend,
+			Name:       opts.SessionName,
+			LLMRef:     opts.LLMRef,
+			Model:      opts.Model,
+			Effort:     opts.Effort,
+			OneShot:    opts.OneShot,
+			Ephemeral:  opts.Ephemeral,
+		},
+	}
+	s.entries = append(s.entries, sc)
+	return sc, s.save()
+}
+
+// DuePendingSessions returns pending deferred sessions (new_session or spawn type)
+// that are due to start by time t.
 func (s *ScheduleStore) DuePendingSessions(t time.Time) []*ScheduledCommand {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*ScheduledCommand
 	for _, sc := range s.entries {
-		if sc.State != SchedPending || sc.Type != SchedTypeNewSession {
+		if sc.State != SchedPending {
+			continue
+		}
+		if sc.Type != SchedTypeNewSession && sc.Type != SchedTypeSpawn {
 			continue
 		}
 		if !sc.RunAt.IsZero() && !sc.RunAt.After(t) {

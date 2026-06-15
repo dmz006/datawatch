@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.10.25"
+var Version = "8.11.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6245,18 +6245,24 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			Type         string `json:"type"`          // "command" or "new_session"
+			Type         string `json:"type"`          // "command", "new_session", or "spawn"
 			SessionID    string `json:"session_id"`    // for command type
 			SessionName  string `json:"session_name"`  // BL353 — resolve by name at fire time
-			Command      string `json:"command"`       // text to send or task for new session
+			Command      string `json:"command"`       // text to send or task for new session / spawn
 			RunAt        string `json:"run_at"`        // natural language or RFC3339
 			RunAfterID   string `json:"run_after_id"`
 			CronExpr     string `json:"cron_expr"`     // BL353 — 5-field cron expression
 			ScheduleName string `json:"schedule_name"` // BL353 — human-readable label
-			// For deferred sessions
-			Name       string `json:"name"`
+			// For deferred sessions and spawns
+			Name       string `json:"name"`        // spawned session name
 			ProjectDir string `json:"project_dir"`
 			Backend    string `json:"backend"`
+			// GH#128 — spawn-specific fields
+			LLMRef    string `json:"llm_ref"`
+			Model     string `json:"model"`
+			Effort    string `json:"effort"`
+			OneShot   bool   `json:"one_shot"`
+			Ephemeral bool   `json:"ephemeral"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -6293,13 +6299,35 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 		var sc *session.ScheduledCommand
 		var err error
-		if req.Type == session.SchedTypeNewSession {
+		switch req.Type {
+		case session.SchedTypeSpawn:
+			// GH#128 — ephemeral one-shot session spawn, session-independent.
+			if req.Command == "" {
+				http.Error(w, "command (task) required for spawn", http.StatusBadRequest)
+				return
+			}
+			sc, err = s.schedStore.AddSpawn(session.AddSpawnOptions{
+				Task:         req.Command,
+				ProjectDir:   req.ProjectDir,
+				Backend:      req.Backend,
+				LLMRef:       req.LLMRef,
+				Model:        req.Model,
+				Effort:       req.Effort,
+				SessionName:  req.Name,
+				ScheduleName: req.ScheduleName,
+				CronExpr:     req.CronExpr,
+				RunAt:        runAt,
+				OneShot:      req.OneShot,
+				Ephemeral:    req.Ephemeral,
+			})
+		case session.SchedTypeNewSession:
 			if req.Command == "" && req.Name == "" {
 				http.Error(w, "task or name required for new session", http.StatusBadRequest)
 				return
 			}
 			sc, err = s.schedStore.AddDeferredSession(req.Name, req.Command, req.ProjectDir, req.Backend, runAt)
-		} else {
+		default:
+			// "command" type (default when type is empty or "command")
 			// Resolve session by name if session_id not provided
 			sessionID := req.SessionID
 			if sessionID == "" && req.SessionName != "" {

@@ -7,6 +7,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.11.0 — feat(schedule): spawn ephemeral one-shot sessions on a schedule (GH#128) (2026-06-15)
+
+### Added
+
+- **`schedule spawn`** — new schedule type that starts a fresh, independent session at a scheduled time or on a recurring cron, independent of any running operator session. Designed for scheduled jobs (hourly audits, nightly reports, background pipelines) that should not rely on an existing session being alive.
+
+- **`one_shot`** (default `true`) — spawned session auto-terminates when it outputs `DATAWATCH_COMPLETE:`, freeing resources without operator intervention.
+
+- **`ephemeral`** — when `true`, the session workspace directory is reaped when the session is deleted.
+
+- **`llm_ref` / `model` / `effort`** fields on the spawned session — full LLM selection parity with interactive session start.
+
+- **Full surface parity:**
+  - **MCP:** `schedule_spawn(task, dir, backend, llm_ref, model, effort, cron_expr, run_at, name, session_name, one_shot, ephemeral)`
+  - **REST:** `POST /api/schedule` with `"type": "spawn"` and all new fields
+  - **CLI:** `datawatch schedule spawn --task ... [--dir] [--backend] [--llm-ref] [--model] [--effort] [--cron] [--at] [--schedule-name] [--name] [--one-shot] [--ephemeral]`; also available as `datawatch session schedule spawn`
+  - **Channel comms:** `schedule spawn task=<t> [dir=<d>] [backend=<b>] [llm-ref=<r>] [model=<m>] [effort=<e>] [cron=<expr>] [name=<n>] [session-name=<n>] [one-shot=false] [ephemeral=true]`
+  - **Schedule list:** now shows TYPE and TARGET columns (spawn shows `SPAWN:<task-prefix>`, new_session shows `NEW:<name>`)
+
+- **`SchedTypeSpawn = "spawn"`** — new schedule type constant in `ScheduleStore`. `DuePendingSessions` returns both `new_session` and `spawn` entries. `MarkDone` cron recurrence works for both types without changes.
+
+- **`DeferredSession`** extended with `LLMRef`, `Model`, `Effort`, `OneShot`, `Ephemeral` fields (backward-compatible: omitempty).
+
+- **Docs:** `datawatch-definitions.md` — new "Scheduled session spawn (ephemeral one-shot)" section under Sessions with full parameter table and surface examples.
+
+### Tests
+
+- `TestAddSpawn` — verifies all fields persist across store reload
+- `TestDuePendingSessionsSpawn` — verifies spawn + new_session returned by `DuePendingSessions`; plain commands excluded
+- `TestAddSpawnCronNextFire` — cron expression computes non-zero future `RunAt`
+- `TestMarkDoneSpawnCronRecurrence` — cron recurrence keeps spawn pending with updated `RunAt`
+- `TestParseScheduleSpawnParams` — key=value parser: multi-word task, 5-field cron, one-shot/ephemeral flags
+- `TestParse_ScheduleSpawn` — end-to-end `Parse("schedule spawn ...")` produces `CmdScheduleSpawn`
+
+---
+
 ## v8.10.25 — feat(summarizer): strip trailing noise; settings docs links fixed (2026-06-13)
 
 ### Changed

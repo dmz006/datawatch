@@ -371,3 +371,104 @@ func TestTruncate(t *testing.T) {
 		}
 	}
 }
+
+func TestParseScheduleSpawnParams(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantTask    string
+		wantDir     string
+		wantBackend string
+		wantLLMRef  string
+		wantModel   string
+		wantEffort  string
+		wantCron    string
+		wantName    string
+		wantSessName string
+		wantOneShot bool
+		wantEphemeral bool
+	}{
+		{
+			input:       "task=run audit",
+			wantTask:    "run audit",
+			wantOneShot: true, // default
+		},
+		{
+			input:        "task=check logs dir=/home/user backend=openai llm-ref=gpt4o model=gpt-4o effort=thorough cron=0 * * * * name=hourly session-name=audit-sess",
+			wantTask:     "check logs",
+			wantDir:      "/home/user",
+			wantBackend:  "openai",
+			wantLLMRef:   "gpt4o",
+			wantModel:    "gpt-4o",
+			wantEffort:   "thorough",
+			wantCron:     "0 * * * *",
+			wantName:     "hourly",
+			wantSessName: "audit-sess",
+			wantOneShot:  true,
+		},
+		{
+			input:         "task=test one-shot=false ephemeral=true",
+			wantTask:      "test",
+			wantOneShot:   false,
+			wantEphemeral: true,
+		},
+	}
+
+	for _, tt := range tests {
+		cmd := parseScheduleSpawnParams(tt.input)
+		if cmd.Type != CmdScheduleSpawn {
+			t.Errorf("[%q] Type = %q, want %q", tt.input, cmd.Type, CmdScheduleSpawn)
+		}
+		if cmd.SpawnTask != tt.wantTask {
+			t.Errorf("[%q] SpawnTask = %q, want %q", tt.input, cmd.SpawnTask, tt.wantTask)
+		}
+		if tt.wantDir != "" && cmd.SpawnDir != tt.wantDir {
+			t.Errorf("[%q] SpawnDir = %q, want %q", tt.input, cmd.SpawnDir, tt.wantDir)
+		}
+		if tt.wantBackend != "" && cmd.SpawnBackend != tt.wantBackend {
+			t.Errorf("[%q] SpawnBackend = %q, want %q", tt.input, cmd.SpawnBackend, tt.wantBackend)
+		}
+		if tt.wantLLMRef != "" && cmd.SpawnLLMRef != tt.wantLLMRef {
+			t.Errorf("[%q] SpawnLLMRef = %q, want %q", tt.input, cmd.SpawnLLMRef, tt.wantLLMRef)
+		}
+		if tt.wantModel != "" && cmd.SpawnModel != tt.wantModel {
+			t.Errorf("[%q] SpawnModel = %q, want %q", tt.input, cmd.SpawnModel, tt.wantModel)
+		}
+		if tt.wantEffort != "" && cmd.SpawnEffort != tt.wantEffort {
+			t.Errorf("[%q] SpawnEffort = %q, want %q", tt.input, cmd.SpawnEffort, tt.wantEffort)
+		}
+		if tt.wantCron != "" && cmd.CronExpr != tt.wantCron {
+			t.Errorf("[%q] CronExpr = %q, want %q", tt.input, cmd.CronExpr, tt.wantCron)
+		}
+		if tt.wantName != "" && cmd.ScheduleName != tt.wantName {
+			t.Errorf("[%q] ScheduleName = %q, want %q", tt.input, cmd.ScheduleName, tt.wantName)
+		}
+		if tt.wantSessName != "" && cmd.SessionName != tt.wantSessName {
+			t.Errorf("[%q] SessionName = %q, want %q", tt.input, cmd.SessionName, tt.wantSessName)
+		}
+		if cmd.SpawnOneShot != tt.wantOneShot {
+			t.Errorf("[%q] SpawnOneShot = %v, want %v", tt.input, cmd.SpawnOneShot, tt.wantOneShot)
+		}
+		if cmd.SpawnEphemeral != tt.wantEphemeral {
+			t.Errorf("[%q] SpawnEphemeral = %v, want %v", tt.input, cmd.SpawnEphemeral, tt.wantEphemeral)
+		}
+	}
+}
+
+func TestParse_ScheduleSpawn(t *testing.T) {
+	cmd := Parse("schedule spawn task=audit logs dir=/home/dmz cron=0 * * * *")
+	if cmd.Type != CmdScheduleSpawn {
+		t.Errorf("Type = %q, want %q", cmd.Type, CmdScheduleSpawn)
+	}
+	if cmd.SpawnTask != "audit logs" {
+		t.Errorf("SpawnTask = %q, want %q", cmd.SpawnTask, "audit logs")
+	}
+	if cmd.SpawnDir != "/home/dmz" {
+		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/dmz")
+	}
+	if cmd.CronExpr != "0 * * * *" {
+		t.Errorf("CronExpr = %q, want %q", cmd.CronExpr, "0 * * * *")
+	}
+	if !cmd.SpawnOneShot {
+		t.Error("SpawnOneShot should default to true")
+	}
+}

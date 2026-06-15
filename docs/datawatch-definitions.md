@@ -204,6 +204,47 @@ If the named session is absent when the schedule fires, the item is skipped (not
 
 ---
 
+### Scheduled session spawn (ephemeral one-shot)
+
+Spawn a fresh, independent session at a scheduled time or on a recurring cron — without targeting any existing session. The spawned session starts with a clean workspace, runs its task, and (by default) terminates automatically when it outputs `DATAWATCH_COMPLETE:`. This is the recommended pattern for scheduled jobs that should be independent of any operator session (e.g. hourly audit runs, nightly reports, background data pulls).
+
+**Creating a spawn schedule:**
+
+- **MCP:** `schedule_spawn(task="run audit", dir="/home/user/project", cron_expr="0 * * * *", name="hourly-audit", one_shot=true, ephemeral=true)`
+- **REST:** `POST /api/schedule` body: `{"type": "spawn", "task": "run audit", "project_dir": "/home/user/project", "cron_expr": "0 * * * *", "schedule_name": "hourly-audit", "one_shot": true, "ephemeral": true}`
+- **CLI:** `datawatch schedule spawn --task "run audit" --dir /home/user/project --cron "0 * * * *" --schedule-name hourly-audit --ephemeral`
+- **Channel:** `schedule spawn task=run audit dir=/home/user/project cron=0 * * * * name=hourly-audit ephemeral=true`
+
+**Key parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `task` | string | required | Task prompt sent to the spawned session |
+| `dir` | string | `""` | Working directory for the session |
+| `backend` | string | `""` | LLM backend name (legacy; prefer `llm_ref`) |
+| `llm_ref` | string | `""` | Unified LLM registry reference (e.g. `"claude-sonnet"`) |
+| `model` | string | `""` | Model name override |
+| `effort` | string | `""` | Effort level: `quick`, `normal`, or `thorough` |
+| `name` | string | `""` | Human-readable name for this schedule entry (for lookup/cancel) |
+| `session-name` | string | `""` | Name given to the spawned session |
+| `run_at` | time | computed | Explicit first fire time (ISO-8601 or `HH:MM`) |
+| `cron_expr` | string | `""` | 5-field cron for recurring spawns |
+| `one_shot` | bool | `true` | Auto-terminate session on `DATAWATCH_COMPLETE:` |
+| `ephemeral` | bool | `false` | Reap workspace directory when session is deleted |
+
+**Difference from `schedule new-session`:** `new_session` starts a session connected to the scheduler's existing session context. `spawn` starts a fully independent session with its own lifecycle, optional ephemeral workspace, and `DATAWATCH_COMPLETE:` auto-termination.
+
+**Cancelling a spawn schedule:**
+
+- **MCP:** `schedule_cancel(name="hourly-audit")`
+- **REST:** `DELETE /api/schedules?name=hourly-audit`
+- **CLI:** `datawatch schedule cancel name=hourly-audit`
+- **Channel:** `schedule cancel name=hourly-audit`
+
+If `cron_expr` is set, the spawn reschedules automatically after each fire. Cancel explicitly to stop recurrence.
+
+---
+
 ### Session zombie detection
 
 Detects when Claude has exited but the shell is still running inside the tmux pane.

@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.10.25"
+var Version = "8.11.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7684,6 +7684,7 @@ func newSessionCmd() *cobra.Command {
 	schedAddCmd.Flags().String("cron", "", "5-field cron expression for recurring schedule (e.g. \"*/5 * * * *\")")
 	schedAddCmd.Flags().String("schedule-name", "", "Human-readable name for this schedule entry (for later lookup/cancel)")
 	scheduleCmd.AddCommand(schedAddCmd)
+	scheduleCmd.AddCommand(newScheduleSpawnCmd())
 	scheduleCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List all scheduled commands",
@@ -8792,14 +8793,25 @@ func runScheduleList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tSESSION\tSESSION-NAME\tSCHED-NAME\tSTATE\tWHEN\tCRON\tCOMMAND")
+	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tTASK/COMMAND")
 	for _, sc := range entries {
 		when := "on input"
 		if !sc.RunAt.IsZero() {
 			when = sc.RunAt.Format("15:04")
 		}
+		typ := sc.Type
+		if typ == "" {
+			typ = "command"
+		}
+		target := sc.SessionID
+		if sc.SessionName != "" {
+			target = "name:" + sc.SessionName
+		}
+		if (sc.Type == session.SchedTypeNewSession || sc.Type == session.SchedTypeSpawn) && sc.DeferredSession != nil {
+			target = "spawn:" + sc.DeferredSession.Name
+		}
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			sc.ID, sc.SessionID, sc.SessionName, sc.ScheduleName,
+			sc.ID, typ, target, sc.ScheduleName,
 			sc.State, when, sc.CronExpr, truncate(sc.Command, 40))
 	}
 	return w.Flush()
@@ -8820,6 +8832,121 @@ func runScheduleCancel(cfg *config.Config, id string) error {
 		return nil
 	}
 	fmt.Printf("Scheduled command %s cancelled.\n", id)
+	return nil
+}
+
+// newScheduleSpawnCmd builds the "schedule spawn" subcommand (GH#128).
+// Schedules a fresh ephemeral one-shot session to fire at a time or on a cron,
+// independent of any running session.
+func newScheduleSpawnCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "spawn",
+		Short: "Schedule a fresh ephemeral session to spawn at a time or on a cron (GH#128)",
+		Long: `schedule spawn schedules a brand-new session to start at a specific time or
+on a recurring cron schedule. The session is independent of any running session.
+Use --one-shot (default true) to auto-terminate the session on DATAWATCH_COMPLETE:.
+Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			task, _ := cmd.Flags().GetString("task")
+			dir, _ := cmd.Flags().GetString("dir")
+			backend, _ := cmd.Flags().GetString("backend")
+			llmRef, _ := cmd.Flags().GetString("llm-ref")
+			model, _ := cmd.Flags().GetString("model")
+			effort, _ := cmd.Flags().GetString("effort")
+			cron, _ := cmd.Flags().GetString("cron")
+			at, _ := cmd.Flags().GetString("at")
+			schedName, _ := cmd.Flags().GetString("schedule-name")
+			sessName, _ := cmd.Flags().GetString("name")
+			oneShot, _ := cmd.Flags().GetBool("one-shot")
+			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
+			return runScheduleSpawn(cfg, task, dir, backend, llmRef, model, effort, cron, at, schedName, sessName, oneShot, ephemeral)
+		},
+	}
+	cmd.Flags().String("task", "", "Task prompt for the spawned session (required)")
+	cmd.Flags().String("dir", "", "Working directory for the spawned session")
+	cmd.Flags().String("backend", "", "LLM backend name (e.g. 'claude')")
+	cmd.Flags().String("llm-ref", "", "Unified LLM registry reference (alternative to --backend)")
+	cmd.Flags().String("model", "", "Model name override")
+	cmd.Flags().String("effort", "", "Thoroughness: quick, normal, or thorough")
+	cmd.Flags().String("cron", "", "5-field cron for recurring spawns (e.g. '0 * * * *' for hourly)")
+	cmd.Flags().String("at", "", "First fire time: 'HH:MM' or RFC3339 (overridden by --cron initial fire)")
+	cmd.Flags().String("schedule-name", "", "Name for this schedule entry (for lookup/cancel)")
+	cmd.Flags().String("name", "", "Human-readable name for each spawned session")
+	cmd.Flags().Bool("one-shot", true, "Auto-terminate session on DATAWATCH_COMPLETE:")
+	cmd.Flags().Bool("ephemeral", false, "Reap workspace directory when session is deleted")
+	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
+func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, effort, cronExpr, at, schedName, sessName string, oneShot, ephemeral bool) error {
+	store, err := session.NewScheduleStore(schedStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+	if task == "" {
+		return fmt.Errorf("--task is required")
+	}
+	if cronExpr != "" {
+		if err := session.ValidateCron(cronExpr); err != nil {
+			return fmt.Errorf("invalid --cron expression %q: %w", cronExpr, err)
+		}
+	}
+	var runAt time.Time
+	if cronExpr != "" && at == "" {
+		runAt, err = session.CronNext(cronExpr, time.Now())
+		if err != nil {
+			return fmt.Errorf("cron next: %w", err)
+		}
+	} else if at != "" {
+		if t, err2 := time.Parse("15:04", at); err2 == nil {
+			now := time.Now()
+			runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+			if runAt.Before(now) {
+				runAt = runAt.Add(24 * time.Hour)
+			}
+		} else {
+			runAt, err = time.Parse(time.RFC3339, at)
+			if err != nil {
+				return fmt.Errorf("invalid --at value %q: use 'HH:MM' or RFC3339", at)
+			}
+		}
+	}
+
+	sc, err := store.AddSpawn(session.AddSpawnOptions{
+		Task:         task,
+		ProjectDir:   dir,
+		Backend:      backend,
+		LLMRef:       llmRef,
+		Model:        model,
+		Effort:       effort,
+		SessionName:  sessName,
+		ScheduleName: schedName,
+		CronExpr:     cronExpr,
+		RunAt:        runAt,
+		OneShot:      oneShot,
+		Ephemeral:    ephemeral,
+	})
+	if err != nil {
+		return fmt.Errorf("schedule spawn: %w", err)
+	}
+
+	when := "immediately (on next scheduler tick)"
+	if !sc.RunAt.IsZero() {
+		when = sc.RunAt.Format("2006-01-02 15:04")
+	}
+	label := sc.ID
+	if schedName != "" {
+		label = fmt.Sprintf("%s (%s)", sc.ID, schedName)
+	}
+	recurring := ""
+	if cronExpr != "" {
+		recurring = fmt.Sprintf("  cron: %s\n", cronExpr)
+	}
+	fmt.Printf("Spawn scheduled [%s]\n  task: %s\n  fires: %s\n%s", label, task, when, recurring)
 	return nil
 }
 
@@ -8860,6 +8987,7 @@ func newScheduleTopCmd() *cobra.Command {
 	addCmd.Flags().String("cron", "", "5-field cron expression for recurring schedule (e.g. \"*/5 * * * *\")")
 	addCmd.Flags().String("schedule-name", "", "Human-readable name for this schedule entry (for later lookup/cancel)")
 	cmd.AddCommand(addCmd)
+	cmd.AddCommand(newScheduleSpawnCmd())
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List all scheduled commands",

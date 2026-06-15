@@ -4223,7 +4223,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 		}
 	}
 
-	// Process due deferred sessions (start new sessions)
+	// Process due deferred sessions (new_session and spawn types).
 	dueSessions := m.schedStore.DuePendingSessions(now)
 	for _, sc := range dueSessions {
 		if sc.DeferredSession == nil {
@@ -4231,17 +4231,23 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			continue
 		}
 		ds := sc.DeferredSession
-		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, &StartOptions{
-			Name:    ds.Name,
-			Backend: ds.Backend,
-		})
+		opts := &StartOptions{
+			Name:               ds.Name,
+			Backend:            ds.Backend,
+			LLMRef:             ds.LLMRef,
+			Model:              ds.Model,
+			Effort:             ds.Effort,
+			OneShot:            ds.OneShot,
+			EphemeralWorkspace: ds.Ephemeral,
+		}
+		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 		if err != nil {
 			_ = m.schedStore.MarkDone(sc.ID, true)
-			fmt.Printf("[schedule] failed to start deferred session %q: %v\n", ds.Name, err)
+			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)
 		} else {
 			sc.SessionID = newSess.FullID
 			_ = m.schedStore.MarkDone(sc.ID, false)
-			fmt.Printf("[schedule] started deferred session %s (%s)\n", newSess.FullID, ds.Name)
+			fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)
 		}
 	}
 

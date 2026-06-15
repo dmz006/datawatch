@@ -246,6 +246,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolListSavedCommands(), tracked(s.handleListSavedCommands))
 	mcpSrv.AddTool(s.toolSendSavedCommand(), tracked(s.handleSendSavedCommand))
 	mcpSrv.AddTool(s.toolScheduleAdd(), tracked(s.handleScheduleAdd))
+	mcpSrv.AddTool(s.toolScheduleSpawn(), tracked(s.handleScheduleSpawn)) // GH#128
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
@@ -1440,6 +1441,51 @@ func (s *Server) toolScheduleAdd() mcpsdk.Tool {
 	)
 }
 
+// toolScheduleSpawn defines the schedule_spawn MCP tool (GH#128).
+// Schedules a fresh ephemeral one-shot session independent of any running session.
+func (s *Server) toolScheduleSpawn() mcpsdk.Tool {
+	return mcpsdk.NewTool("schedule_spawn",
+		mcpsdk.WithDescription("Schedule a fresh ephemeral session to spawn at a time or on a cron, independent of any running session. The session runs the task to completion then terminates. Ideal for periodic background tasks (e.g. hourly email checks, nightly reports)."),
+		mcpsdk.WithString("task",
+			mcpsdk.Required(),
+			mcpsdk.Description("Task prompt for the spawned session"),
+		),
+		mcpsdk.WithString("project_dir",
+			mcpsdk.Description("Working directory for the spawned session"),
+		),
+		mcpsdk.WithString("backend",
+			mcpsdk.Description("LLM backend name (e.g. 'claude'). Use llm_ref for unified registry."),
+		),
+		mcpsdk.WithString("llm_ref",
+			mcpsdk.Description("Unified LLM registry reference (alternative to backend)"),
+		),
+		mcpsdk.WithString("model",
+			mcpsdk.Description("Model name override (e.g. 'claude-opus-4-5')"),
+		),
+		mcpsdk.WithString("effort",
+			mcpsdk.Description("Thoroughness: quick, normal, or thorough"),
+		),
+		mcpsdk.WithString("run_at",
+			mcpsdk.Description("First fire time: 'HH:MM' (24h today) or RFC3339. Overridden by cron_expr initial fire."),
+		),
+		mcpsdk.WithString("cron_expr",
+			mcpsdk.Description("5-field cron expression for recurring spawns, e.g. '0 * * * *' for hourly."),
+		),
+		mcpsdk.WithString("schedule_name",
+			mcpsdk.Description("Human-readable name for this schedule entry (for lookup/cancel)"),
+		),
+		mcpsdk.WithString("name",
+			mcpsdk.Description("Human-readable name for each spawned session"),
+		),
+		mcpsdk.WithBoolean("one_shot",
+			mcpsdk.Description("Auto-terminate session on DATAWATCH_COMPLETE: (default true)"),
+		),
+		mcpsdk.WithBoolean("ephemeral",
+			mcpsdk.Description("Reap workspace directory when session is deleted (default false unless project_dir is empty)"),
+		),
+	)
+}
+
 func (s *Server) toolScheduleList() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_list",
 		mcpsdk.WithDescription("List all pending scheduled commands. Includes session_name, cron_expr, and schedule_name (BL353)."),
@@ -2396,6 +2442,78 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled command [%s] cancelled.", id)), nil
+}
+
+// handleScheduleSpawn schedules an ephemeral one-shot session spawn (GH#128).
+func (s *Server) handleScheduleSpawn(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.schedStore == nil {
+		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+	}
+	task := req.GetString("task", "")
+	if task == "" {
+		return mcpsdk.NewToolResultText("Error: task is required"), nil
+	}
+
+	cronExpr := req.GetString("cron_expr", "")
+	if cronExpr != "" {
+		if err := session.ValidateCron(cronExpr); err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Invalid cron_expr %q: %v", cronExpr, err)), nil
+		}
+	}
+
+	runAtStr := req.GetString("run_at", "")
+	var runAt time.Time
+	if cronExpr != "" && runAtStr == "" {
+		var err error
+		runAt, err = session.CronNext(cronExpr, time.Now())
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Cron next error: %v", err)), nil
+		}
+	} else if runAtStr != "" {
+		if t, err := time.ParseInLocation("15:04", runAtStr, time.Local); err == nil {
+			now := time.Now()
+			runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, time.Local)
+		} else if t, err := time.Parse(time.RFC3339, runAtStr); err == nil {
+			runAt = t
+		} else {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Invalid run_at %q — use 'HH:MM' or RFC3339.", runAtStr)), nil
+		}
+	}
+
+	oneShot := req.GetBool("one_shot", true) // default true for spawn
+	ephemeral := req.GetBool("ephemeral", false)
+
+	sc, err := s.schedStore.AddSpawn(session.AddSpawnOptions{
+		Task:         task,
+		ProjectDir:   req.GetString("project_dir", ""),
+		Backend:      req.GetString("backend", ""),
+		LLMRef:       req.GetString("llm_ref", ""),
+		Model:        req.GetString("model", ""),
+		Effort:       req.GetString("effort", ""),
+		SessionName:  req.GetString("name", ""),
+		ScheduleName: req.GetString("schedule_name", ""),
+		CronExpr:     cronExpr,
+		RunAt:        runAt,
+		OneShot:      oneShot,
+		Ephemeral:    ephemeral,
+	})
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+
+	when := "immediately"
+	if !sc.RunAt.IsZero() {
+		when = "at " + sc.RunAt.Format("2006-01-02 15:04")
+	}
+	label := sc.ID
+	if sc.ScheduleName != "" {
+		label = sc.ID + " (" + sc.ScheduleName + ")"
+	}
+	extra := ""
+	if cronExpr != "" {
+		extra = fmt.Sprintf(" (recurring: %s)", cronExpr)
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Spawn scheduled [%s]: %q — fires %s%s.", label, task, when, extra)), nil
 }
 
 // ---- Pipeline tools --------------------------------------------------------
