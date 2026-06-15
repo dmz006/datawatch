@@ -4245,7 +4245,12 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			_ = m.schedStore.MarkDone(sc.ID, true)
 			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)
 		} else {
-			sc.SessionID = newSess.FullID
+			// GH#128: only link SessionID for new_session type. Spawn schedules must
+			// NOT store the launched session's ID — CancelBySession fires when the
+			// spawned session is deleted, which would cancel the recurring schedule.
+			if sc.Type != SchedTypeSpawn {
+				sc.SessionID = newSess.FullID
+			}
 			_ = m.schedStore.MarkDone(sc.ID, false)
 			fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)
 		}

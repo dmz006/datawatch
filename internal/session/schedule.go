@@ -531,6 +531,13 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 	defer s.mu.Unlock()
 	for _, sc := range s.entries {
 		if sc.ID == id {
+			// GH#128 — if the entry was cancelled between DuePending/DuePendingSessions
+			// and MarkDone (e.g. user cancelled while scheduler was mid-fire), respect
+			// the cancellation and do not re-arm. This prevents the race where a cron
+			// re-arm overwrites an explicit cancel.
+			if sc.State == SchedCancelled {
+				return nil
+			}
 			// BL26 — recurring schedule: bump RunAt instead of marking done,
 			// unless the entry hit its RecurUntil deadline or the run failed.
 			if !failed && sc.RecurEverySeconds > 0 {

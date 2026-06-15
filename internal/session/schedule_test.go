@@ -241,3 +241,117 @@ func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
 		t.Errorf("RunAt not updated after cron recurrence: %v", updated.RunAt)
 	}
 }
+
+// TestCancelBySessionDoesNotAffectSpawnSchedule is a regression test for GH#128
+// bug 1: spawn schedules must not be cancelled when the spawned session is deleted.
+// The bug was that manager.go set sc.SessionID = newSess.FullID on the spawn entry,
+// causing CancelBySession to cancel the re-armed schedule when the session ended.
+func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "sched-test-*.json")
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
+
+	store, _ := NewScheduleStore(tmp.Name())
+
+	// Spawn schedule has no SessionID — it creates sessions, it doesn't belong to one
+	sc, _ := store.AddSpawn(AddSpawnOptions{
+		Task:     "hourly audit",
+		CronExpr: "0 * * * *",
+		OneShot:  true,
+	})
+
+	// Simulate what the manager does after starting the spawned session:
+	// MarkDone re-arms via CronExpr (SessionID stays empty — fix applied)
+	if err := store.MarkDone(sc.ID, false); err != nil {
+		t.Fatalf("MarkDone: %v", err)
+	}
+
+	// Simulate the spawned session being deleted: CancelBySession fires
+	n := store.CancelBySession("johnnyjohnny-spawned-abc123")
+	if n != 0 {
+		t.Errorf("CancelBySession cancelled %d spawn schedule(s), want 0", n)
+	}
+
+	// Spawn schedule must still be pending (re-armed for next hour)
+	rearmed, ok := store.Get(sc.ID)
+	if !ok {
+		t.Fatal("spawn schedule gone after CancelBySession — was incorrectly cancelled")
+	}
+	if rearmed.State != SchedPending {
+		t.Errorf("State = %q after CancelBySession, want %q", rearmed.State, SchedPending)
+	}
+}
+
+// TestMarkDoneRespectsCancel is a regression test for GH#128 bug 2:
+// if a schedule is cancelled between DuePending and MarkDone (a race between
+// the scheduler tick and an explicit cancel), MarkDone must not re-arm it.
+func TestMarkDoneRespectsCancel(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "sched-test-*.json")
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
+
+	store, _ := NewScheduleStore(tmp.Name())
+
+	sc, _ := store.AddSpawn(AddSpawnOptions{
+		Task:     "recurring",
+		CronExpr: "0 * * * *",
+		OneShot:  false,
+	})
+
+	// User cancels the schedule
+	if err := store.Cancel(sc.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	// Scheduler's MarkDone arrives after the cancel (race condition)
+	if err := store.MarkDone(sc.ID, false); err != nil {
+		t.Fatalf("MarkDone after cancel: %v", err)
+	}
+
+	// Must remain cancelled — cron re-arm must NOT override the explicit cancel
+	entry, ok := store.Get(sc.ID)
+	if !ok {
+		t.Fatal("entry not found")
+	}
+	if entry.State != SchedCancelled {
+		t.Errorf("State = %q after cancel+MarkDone, want %q", entry.State, SchedCancelled)
+	}
+}
+
+// TestMarkDoneRespectsCancel_CommandType tests the same cancel race for
+// regular command schedules (non-spawn, cron-based).
+func TestMarkDoneRespectsCancel_CommandType(t *testing.T) {
+	tmp, _ := os.CreateTemp("", "sched-test-*.json")
+	os.Remove(tmp.Name()) //nolint:errcheck
+	defer os.Remove(tmp.Name()) //nolint:errcheck
+
+	store, _ := NewScheduleStore(tmp.Name())
+
+	sc, err := store.AddFull(AddOptions{
+		SessionName:  "worker",
+		Command:      "summarize",
+		CronExpr:     "0 * * * *",
+		ScheduleName: "hourly-summary",
+	})
+	if err != nil {
+		t.Fatalf("AddFull: %v", err)
+	}
+
+	// User cancels
+	if err := store.Cancel(sc.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	// Scheduler's MarkDone arrives late
+	if err := store.MarkDone(sc.ID, false); err != nil {
+		t.Fatalf("MarkDone: %v", err)
+	}
+
+	entry, ok := store.Get(sc.ID)
+	if !ok {
+		t.Fatal("entry not found")
+	}
+	if entry.State != SchedCancelled {
+		t.Errorf("State = %q after cancel+MarkDone, want %q", entry.State, SchedCancelled)
+	}
+}

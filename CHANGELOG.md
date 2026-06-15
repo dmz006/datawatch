@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.11.1 — fix(schedule): recurring spawn re-arm + cancel race (GH#128) (2026-06-15)
+
+### Fixed
+
+- **Recurring spawn schedule vanished after first fire** — `manager.go` was writing `sc.SessionID = newSess.FullID` onto the spawn schedule entry before calling `MarkDone`. After the cron re-arm, the persisted entry had the old spawned session's ID as its `SessionID`. When that session was deleted, `CancelBySession` matched the re-armed spawn schedule and cancelled it. Fix: spawn-type schedules never write their `SessionID` back to the schedule entry — spawns create sessions, they don't belong to one.
+
+- **Explicit `schedule cancel` could be overridden by a late `MarkDone` re-arm** — `MarkDone` did not check the current state before re-arming cron and interval schedules. If a user cancelled a schedule between when the scheduler read `DuePending`/`DuePendingSessions` and when it called `MarkDone`, the re-arm logic overwrote the `SchedCancelled` state back to `SchedPending`. Fix: `MarkDone` now returns immediately without modifying state if the entry is already `SchedCancelled`.
+
+### Tests
+
+- `TestCancelBySessionDoesNotAffectSpawnSchedule` — regression: `CancelBySession` with the spawned session ID must not cancel the parent spawn schedule
+- `TestMarkDoneRespectsCancel` — regression: `Cancel` then `MarkDone` (spawn/cron) must preserve `SchedCancelled`
+- `TestMarkDoneRespectsCancel_CommandType` — same cancel-race regression for regular cron command schedules
+
+---
+
 ## v8.11.0 — feat(schedule): spawn ephemeral one-shot sessions on a schedule (GH#128) (2026-06-15)
 
 ### Added
