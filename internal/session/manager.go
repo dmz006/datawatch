@@ -1467,6 +1467,11 @@ type StartOptions struct {
 	// (interactive — DATAWATCH_COMPLETE: → StateWaitingInput).
 	OneShot bool
 
+	// Subprocess — run Task as a child process (bash -c) instead of via a
+	// Claude Code tmux session. Completion is signaled by exit code.
+	// No TUI rendering, no DATAWATCH_COMPLETE: scraping required.
+	Subprocess bool
+
 	// LSPLanguage (v8.7.0) — key from cfg.LSP.Servers to activate for
 	// OpenCode backends ("go", "typescript", "python", …). Persisted on
 	// the Session and written to <projectDir>/opencode.json at launch.
@@ -1694,6 +1699,23 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		guardrailOpts.RTKEnabled = m.cfg.RTK.Enabled
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
+
+	// Subprocess mode — run the task directly as a child process.
+	// No tmux, no TUI, no DATAWATCH_COMPLETE: scraping; completion
+	// is signaled by process exit code (0 = StateComplete, else StateFailed).
+	if opt != nil && opt.Subprocess {
+		sess.Subprocess = true
+		sess.TmuxSession = ""
+		sess.BackendFamily = "subprocess"
+		if err := m.store.Save(sess); err != nil {
+			return nil, fmt.Errorf("save subprocess session: %w", err)
+		}
+		go m.runSubprocess(sess)
+		if m.onSessionStart != nil {
+			m.onSessionStart(sess)
+		}
+		return sess, nil
+	}
 
 	// Create tmux session with per-LLM console size.
 	// LLM registry values (via opts) take precedence over cfg defaults.
@@ -2503,6 +2525,55 @@ func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Lock()
 	m.taskDeliveredAt[fullID] = time.Now()
 	m.mu.Unlock()
+}
+
+// runSubprocess executes sess.Task as a child process via bash -c,
+// streaming stdout+stderr to the session log file. Transitions to
+// StateComplete on exit 0, StateFailed on non-zero exit or error.
+func (m *Manager) runSubprocess(sess *Session) {
+	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		m.subprocessFinish(sess, fmt.Errorf("open log: %w", err))
+		return
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
+
+	cmd := exec.Command("bash", "-c", sess.Task)
+	cmd.Dir = sess.ProjectDir
+	cmd.Stdout = f
+	cmd.Stderr = f
+
+	runErr := cmd.Run()
+	if runErr != nil {
+		fmt.Fprintf(f, "\n[subprocess] failed: %v\n", runErr)
+	} else {
+		fmt.Fprintf(f, "\n[subprocess] completed (exit 0)\n")
+	}
+	m.subprocessFinish(sess, runErr)
+}
+
+// subprocessFinish transitions a subprocess session to StateComplete or StateFailed.
+func (m *Manager) subprocessFinish(sess *Session, runErr error) {
+	current, ok := m.store.Get(sess.FullID)
+	if !ok {
+		return
+	}
+	oldState := current.State
+	if runErr != nil {
+		current.State = StateFailed
+	} else {
+		current.State = StateComplete
+	}
+	current.UpdatedAt = time.Now()
+	_ = m.store.Save(current)
+	if m.onStateChange != nil {
+		m.onStateChange(current, oldState)
+	}
+	if m.onSessionEnd != nil {
+		m.onSessionEnd(current)
+	}
 }
 
 // MarkChannelActivityFromText (post-BL266 / v6.11.24) — DEMOTED to
@@ -4303,6 +4374,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			Effort:             ds.Effort,
 			OneShot:            ds.OneShot,
 			EphemeralWorkspace: ds.Ephemeral,
+			Subprocess:         ds.Subprocess,
 		}
 		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 		if err != nil {
@@ -4399,6 +4471,11 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		isActive := sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited
 
 		if isActive && !tmuxAlive {
+			// Subprocess sessions have no tmux — completion is signaled by
+			// runSubprocess goroutine, not by tmux exit detection.
+			if sess.Subprocess {
+				continue
+			}
 			// Session thinks it's running but tmux is gone — verify with retry
 			time.Sleep(500 * time.Millisecond)
 			if m.tmux.SessionExists(sess.TmuxSession) {

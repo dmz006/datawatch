@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.7 — feat(spawn): subprocess mode — exit-code completion for shell tasks (GH#128) (2026-06-16)
+
+### Added
+
+- **`schedule spawn --subprocess`** — new spawn mode that runs the task directly as `bash -c <task>` instead of through a Claude Code tmux session. Completion is signaled by process exit code (0 → `StateComplete`, non-zero → `StateFailed`). No TUI, no pane-scraping, no `DATAWATCH_COMPLETE:` marker required.
+
+  Use for pure shell tasks (e.g. `imap-mcp run-rules`, `git fetch`, `backup.sh`) where exit code is the natural completion signal. LLM/reasoning tasks that need the full Claude Code context should continue using the default (TUI) spawn mode.
+
+  **Session tracking is unchanged** — the subprocess spawn creates a session record in the registry, writes stdout+stderr to the session log file, and fires `onSessionStart`/`onStateChange`/`onSessionEnd` callbacks exactly as a TUI session would. The session appears in `datawatch session list` with `backend_family=subprocess`.
+
+### Fixed
+
+- **Reconciler no longer races against subprocess sessions** — the 10s reconciler tick previously saw subprocess sessions (no tmux) as `isActive && !tmuxAlive` and would mark them `Complete` before the subprocess finished. Now guarded with `if sess.Subprocess { continue }`.
+
+---
+
 ## v8.12.6 — fix(channel): strip per-segment ANSI before HasPrefix to handle CSI between indicator rune and pattern (GH#128) (2026-06-16)
 
 ### Fixed

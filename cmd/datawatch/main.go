@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.12.6"
+var Version = "8.12.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8923,7 +8923,8 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 			sessName, _ := cmd.Flags().GetString("name")
 			oneShot, _ := cmd.Flags().GetBool("one-shot")
 			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
-			return runScheduleSpawn(cfg, task, dir, backend, llmRef, model, effort, cron, at, schedName, sessName, oneShot, ephemeral)
+			subprocess, _ := cmd.Flags().GetBool("subprocess")
+			return runScheduleSpawn(cfg, task, dir, backend, llmRef, model, effort, cron, at, schedName, sessName, oneShot, ephemeral, subprocess)
 		},
 	}
 	cmd.Flags().String("task", "", "Task prompt for the spawned session (required)")
@@ -8938,11 +8939,12 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 	cmd.Flags().String("name", "", "Human-readable name for each spawned session")
 	cmd.Flags().Bool("one-shot", true, "Auto-terminate session on DATAWATCH_COMPLETE:")
 	cmd.Flags().Bool("ephemeral", false, "Reap workspace directory when session is deleted")
+	cmd.Flags().Bool("subprocess", false, "Run task as a subprocess (bash -c); exit code signals completion. No Claude Code TUI, no DATAWATCH_COMPLETE: scraping. Recommended for pure shell tasks.")
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
 
-func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, effort, cronExpr, at, schedName, sessName string, oneShot, ephemeral bool) error {
+func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, effort, cronExpr, at, schedName, sessName string, oneShot, ephemeral, subprocess bool) error {
 	// GH#128: must go through the API so the daemon's in-memory ScheduleStore is
 	// updated. Direct file writes are overwritten on the next daemon save().
 	if task == "" {
@@ -8962,6 +8964,7 @@ func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, eff
 		"name":          sessName,
 		"one_shot":      oneShot,
 		"ephemeral":     ephemeral,
+		"subprocess":    subprocess,
 	}
 	bodyBytes, _ := json.Marshal(body)
 	baseURL := loopbackBaseURL(cfg)

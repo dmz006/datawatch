@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.12.6"
+var Version = "8.12.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6258,11 +6258,12 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			ProjectDir string `json:"project_dir"`
 			Backend    string `json:"backend"`
 			// GH#128 — spawn-specific fields
-			LLMRef    string `json:"llm_ref"`
-			Model     string `json:"model"`
-			Effort    string `json:"effort"`
-			OneShot   bool   `json:"one_shot"`
-			Ephemeral bool   `json:"ephemeral"`
+			LLMRef     string `json:"llm_ref"`
+			Model      string `json:"model"`
+			Effort     string `json:"effort"`
+			OneShot    bool   `json:"one_shot"`
+			Ephemeral  bool   `json:"ephemeral"`
+			Subprocess bool   `json:"subprocess"` // run via bash -c, exit code = completion
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -6319,6 +6320,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 				RunAt:        runAt,
 				OneShot:      req.OneShot,
 				Ephemeral:    req.Ephemeral,
+				Subprocess:   req.Subprocess,
 			})
 		case session.SchedTypeNewSession:
 			if req.Command == "" && req.Name == "" {

@@ -181,6 +181,13 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// Subprocess — when true, Task is executed directly as a child process
+	// via bash -c instead of through a Claude Code tmux session. Completion
+	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),
+	// not by DATAWATCH_COMPLETE: pane-scraping. No TUI rendering issues.
+	// Set by schedule spawn --subprocess for pure shell tasks.
+	Subprocess bool `json:"subprocess,omitempty"`
+
 	// LSPLanguage (v8.7.0) — language server preset selected at session
 	// creation. Keys match cfg.LSP.Servers entries ("go", "typescript", …).
 	// Written to <projectDir>/opencode.json at launch for OpenCode backends.
