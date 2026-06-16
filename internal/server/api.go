@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.12.4"
+var Version = "8.12.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6903,6 +6903,9 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 							fmt.Printf("[channel] task send_input for %s: %v\n", sessID, err)
 						} else {
 							fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
+							// Record delivery time so processOutputLine can suppress
+							// the 5 s task-echo window (TUI re-renders task text).
+							s.manager.MarkTaskDelivered(sessID)
 						}
 						return
 					}

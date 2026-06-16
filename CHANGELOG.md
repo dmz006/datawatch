@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.5 — fix(channel): strip TUI indicator rune + suppress task-echo false positives (GH#128) (2026-06-16)
+
+### Fixed
+
+- **`⎿ DATAWATCH_COMPLETE:` prefix now stripped before HasPrefix check** — In tool-using turns Claude Code places a Unicode visual-indicator rune (e.g. `⎿` U+237F) before the first character of the assistant-turn text block. After ANSI stripping, the CR-split segment was `⎿ DATAWATCH_COMPLETE: ...`; `TrimSpace` does not remove non-ASCII bytes, so `HasPrefix` still failed and the session remained `waiting_input`. Fix: `matchesCompletionPattern` now iterates over leading non-ASCII runes (and the whitespace following each) before applying `HasPrefix`. Plain-text responses (no indicator rune, just leading spaces) continue to work identically.
+
+- **Task-echo false positive eliminated** — The `\r`-split fix introduced in v8.12.4 inadvertently caused a false positive: if the task text itself contains the completion pattern (e.g. `"output a line starting with:\nDATAWATCH_COMPLETE: done"`), Claude Code's TUI re-renders the user input and a CR-segment starting with `  DATAWATCH_COMPLETE:` appears in the pipe-pane log within ~1 s of task delivery. `matchesCompletionPattern` fired on it, setting `StateComplete` before the LLM had run the Bash tool. Fix: `Manager` now records a `taskDeliveredAt` timestamp when `send_input` fires (`MarkTaskDelivered`); `processOutputLine` suppresses completion detection for 5 s after task delivery. Task echo appears at T+1 s; LLM API response arrives at T+10 s minimum, so 5 s safely covers the echo window without affecting real completions.
+
+  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/dmz | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
+
+---
+
 ## v8.12.4 — fix(channel): detect DATAWATCH_COMPLETE: in TUI cursor-overwrite output (GH#128) (2026-06-16)
 
 ### Fixed

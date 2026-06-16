@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
@@ -57,14 +58,31 @@ var cursorPosRe = regexp.MustCompile(`\x1b\[(\d*);(\d*)[Hf]`)
 var cursorBackRe = regexp.MustCompile(`\x1b\[(\d*)D`)
 
 // matchesCompletionPattern reports whether pat appears at the start of any
-// CR-separated visual segment in line. TUI renderers (e.g. Claude Code) use
-// bare \r to overwrite content in place, so DATAWATCH_COMPLETE: may follow a
-// \r rather than being at the very start of the full log line. Splitting on \r
-// and checking each segment preserves the "must be at start of line" semantic
-// while covering both shell (clean \n lines) and TUI (cursor-overwrite) output.
+// CR-separated visual segment in line.
+//
+// TUI renderers (e.g. Claude Code) use bare \r to overwrite content in place,
+// so DATAWATCH_COMPLETE: may follow a \r rather than being at the very start of
+// the full log line. In tool-using turns the marker is also preceded by a Unicode
+// visual-indicator rune (e.g. ⎿ U+237F, ● U+25CF) that the TUI places at the
+// start of the assistant-turn block — before the pattern text. TrimSpace alone
+// does not remove these non-ASCII bytes, so after stripping whitespace we also
+// skip any leading non-ASCII rune(s) (and any spaces that follow them) before
+// applying HasPrefix. This keeps the "must appear near the start of the visual
+// line" invariant and avoids false positives from task-echo segments where the
+// pattern appears deep inside a long line of ASCII text.
 func matchesCompletionPattern(line, pat string) bool {
 	for _, seg := range strings.Split(line, "\r") {
-		if strings.HasPrefix(strings.TrimSpace(seg), pat) {
+		seg = strings.TrimSpace(seg)
+		// Strip leading non-ASCII indicator runes emitted by the TUI (e.g. ⎿, ●)
+		// and any spaces that immediately follow them.
+		for len(seg) > 0 {
+			r, size := utf8.DecodeRuneInString(seg)
+			if r <= 127 {
+				break // ASCII: stop stripping
+			}
+			seg = strings.TrimLeft(seg[size:], " \t")
+		}
+		if strings.HasPrefix(seg, pat) {
 			return true
 		}
 	}
@@ -264,6 +282,13 @@ type Manager struct {
 	// grace window while the resumed TUI re-renders prior conversation history.
 	restartedAt map[string]time.Time
 
+	// taskDeliveredAt records when a task was delivered to a OneShot session
+	// via send_input. Used to suppress DATAWATCH_COMPLETE: detection for 5 s
+	// after delivery so the TUI's re-render of the task text itself (which may
+	// contain the pattern verbatim as instruction) does not trigger a false
+	// positive before the LLM has had time to process and respond.
+	taskDeliveredAt map[string]time.Time
+
 	// encFIFOs tracks encrypting FIFOs per session for cleanup.
 	encFIFOs map[string]*secfile.EncryptingFIFO
 
@@ -435,6 +460,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpMaxRetries:  5,
 		mcpRetryCounts:   make(map[string]int),
 		restartedAt:      make(map[string]time.Time),
+		taskDeliveredAt:  make(map[string]time.Time),
 		encKey:           key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
@@ -2460,6 +2486,17 @@ func splitSentencesForChannelClassifier(text string) []string {
 //     Complete); other signals just touch UpdatedAt
 func (m *Manager) MarkChannelActivity(fullID string) {
 	m.MarkChannelActivityFromText(fullID, "")
+}
+
+// MarkTaskDelivered records the moment a task was delivered to a OneShot
+// session via send_input. processOutputLine suppresses DATAWATCH_COMPLETE:
+// detection for 5 s after this timestamp so the TUI's re-render of the task
+// text (which may contain the pattern as a verbatim instruction) does not
+// produce a false-positive completion before the LLM has had time to respond.
+func (m *Manager) MarkTaskDelivered(fullID string) {
+	m.mu.Lock()
+	m.taskDeliveredAt[fullID] = time.Now()
+	m.mu.Unlock()
 }
 
 // MarkChannelActivityFromText (post-BL266 / v6.11.24) — DEMOTED to
@@ -5113,10 +5150,18 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				// loop. Suppress completion detection for 30 s after restart.
 				m.mu.Lock()
 				restartTime, wasRestarted := m.restartedAt[sess.FullID]
+				deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 				m.mu.Unlock()
 				if wasRestarted && time.Since(restartTime) < 30*time.Second {
 					m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 					return
+				}
+				// Task-echo suppression: for 5 s after task delivery via send_input
+				// the TUI re-renders the task text (which may include DATAWATCH_COMPLETE:
+				// verbatim as instruction text). Skip until the echo window has passed.
+				if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+					m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
+					continue
 				}
 				current, ok := m.store.Get(sess.FullID)
 				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
@@ -5321,10 +5366,15 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			// Same post-restart grace window as the structured-channel path above.
 			m.mu.Lock()
 			restartTime, wasRestarted := m.restartedAt[sess.FullID]
+			deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 			m.mu.Unlock()
 			if wasRestarted && time.Since(restartTime) < 30*time.Second {
 				m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 				return
+			}
+			if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+				m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
+				continue
 			}
 			current, ok := m.store.Get(sess.FullID)
 			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
