@@ -64,21 +64,27 @@ var cursorBackRe = regexp.MustCompile(`\x1b\[(\d*)D`)
 // so DATAWATCH_COMPLETE: may follow a \r rather than being at the very start of
 // the full log line. In tool-using turns the marker is also preceded by a Unicode
 // visual-indicator rune (e.g. ⎿ U+237F, ● U+25CF) that the TUI places at the
-// start of the assistant-turn block — before the pattern text. TrimSpace alone
-// does not remove these non-ASCII bytes, so after stripping whitespace we also
-// skip any leading non-ASCII rune(s) (and any spaces that follow them) before
-// applying HasPrefix. This keeps the "must appear near the start of the visual
-// line" invariant and avoids false positives from task-echo segments where the
-// pattern appears deep inside a long line of ASCII text.
+// start of the assistant-turn block — before the pattern text. For long/multi-field
+// completion lines the TUI inserts a cursor-column escape (e.g. \x1b[3G) between
+// the indicator rune and the pattern text with no whitespace separator. StripANSI
+// is applied per-segment (after \r-split) to remove those residual sequences before
+// the non-ASCII rune loop, because ESC (0x1B≤127) would otherwise cause the loop
+// to stop early and leave the escape in place.
 func matchesCompletionPattern(line, pat string) bool {
 	for _, seg := range strings.Split(line, "\r") {
+		// Per-segment StripANSI: the full-line strip applied before this call
+		// handles most sequences, but when an indicator rune (e.g. ●) is followed
+		// directly by a CSI escape (e.g. \x1b[3G) with no whitespace, the
+		// non-ASCII rune loop below would stop at ESC (0x1B≤127) and leave the
+		// escape in seg, causing HasPrefix to fail.
+		seg = StripANSI(strings.TrimSpace(seg))
 		seg = strings.TrimSpace(seg)
 		// Strip leading non-ASCII indicator runes emitted by the TUI (e.g. ⎿, ●)
 		// and any spaces that immediately follow them.
 		for len(seg) > 0 {
 			r, size := utf8.DecodeRuneInString(seg)
 			if r <= 127 {
-				break // ASCII: stop stripping
+				break
 			}
 			seg = strings.TrimLeft(seg[size:], " \t")
 		}

@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.6 — fix(channel): strip per-segment ANSI before HasPrefix to handle CSI between indicator rune and pattern (GH#128) (2026-06-16)
+
+### Fixed
+
+- **`●\x1b[3GDATAWATCH_COMPLETE:` now detected** — For long/multi-field completion lines Claude Code inserts a cursor-column CSI escape (`\x1b[3G`) directly between the leading indicator rune (e.g. `●` U+25CF) and the pattern text with no whitespace separator. The v8.12.5 non-ASCII rune-stripping loop stopped at ESC (0x1B ≤ 127) — treating it as ASCII — and left `\x1b[3GDATAWATCH_COMPLETE:...` in the segment, causing `HasPrefix` to fail. Fix: `matchesCompletionPattern` now calls `StripANSI` on each CR-split segment (after `TrimSpace` and before the rune loop), removing any residual CSI/SGR sequences that the full-line strip missed when they were embedded between non-ASCII runes and the pattern text.
+
+  Verified with exact session ee8e byte pattern: `●\x1b[3GDATAWATCH_COMPLETE: run-rules completed, 105 active rules, 7 messages actioned, 3 folders scanned, 2 new emails processed` — all 8 test cases pass (plain prefix, CR-split, `⎿`-rune, `●`-rune, `●+ESC[3G` direct, `CR+●+ESC[3G` long multi-field, two false-positive guards).
+
+---
+
 ## v8.12.5 — fix(channel): strip TUI indicator rune + suppress task-echo false positives (GH#128) (2026-06-16)
 
 ### Fixed
