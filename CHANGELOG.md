@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.2 — fix(channel): deliver !cmd one-shot tasks via send_input instead of channel notification (GH#128) (2026-06-15)
+
+### Fixed
+
+- **`!cmd` one-shot tasks delivered via `send_input` (GH#128)** — Bare `!shell` tasks on spawned one-shot sessions were never executed: the `!` REPL shortcut only fires when text is typed directly at the Claude Code interactive terminal prompt, not when injected via MCP channel notifications. The old path POSTed the task to the bridge `/send` endpoint, which put it through the MCP notification → LLM path — Claude would either ignore it or treat it as a chat message without triggering shell execution.
+
+  Fix: `handleChannelReady` now detects `OneShot && strings.HasPrefix(task, "!")` sessions and starts a polling goroutine that waits up to 30 s for the main prompt (no startup dialog active, `state == StateWaitingInput`), then calls `s.manager.SendInput(sessID, wrapped, "channel-shell-task")` — which uses `tmux send-keys` to type the command directly at the terminal. The task is wrapped with `; echo "DATAWATCH_COMPLETE: shell task done"` so the reaper detects completion. Non-`!cmd` tasks continue to use the channel notification path unchanged.
+
+---
+
 ## v8.12.1 — fix(channel): auto-accept skipped second startup dialog on spawned sessions (GH#128) (2026-06-15)
 
 ### Fixed
