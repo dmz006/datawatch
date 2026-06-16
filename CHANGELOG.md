@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.4 — fix(channel): detect DATAWATCH_COMPLETE: in TUI cursor-overwrite output (GH#128) (2026-06-16)
+
+### Fixed
+
+- **`DATAWATCH_COMPLETE:` detection now works for LLM response text** — Claude Code's streaming TUI renders output using ANSI cursor-movement sequences: instead of writing to a new line, it moves the cursor up several rows (`\x1b[4A`) and overwrites in place, separating visual segments with bare `\r` (CR) rather than `\n`. The `processOutputLine` function reads the pipe-pane byte stream until `\n`, strips ANSI escape sequences, then calls `strings.HasPrefix(trimmedLine, pattern)`. Because the CR-separated overwrite segments appear *after* other TUI content in the same `\n`-terminated chunk, `HasPrefix` on the whole stripped line fails even though the pattern is present.
+
+  Fix: added `matchesCompletionPattern(line, pat)` helper that splits the ANSI-stripped line on `\r` and applies `HasPrefix` to each CR-separated visual segment. Applied to both the structured-channel (`hasStructuredChannel`) and regular completion-check paths in `processOutputLine`. Shell `!cmd` output and the backend shell wrapper produce clean `\n`-terminated lines and are unaffected (single segment, same behaviour as before).
+
+  Verified end-to-end: spawned a realistic OneShot session with a 40 s LLM task. Session reached `StateComplete` in ~2 min (00:45:05 spawn → 00:46:52 complete) and tmux was killed by the reconciler. Exactly one session spawned per tick.
+
+---
+
+## v8.12.3 — fix(channel): extend send_input to all OneShot sessions + kill tmux on complete (GH#128) (2026-06-16)
+
+### Fixed
+
+- **Non-`!cmd` OneShot tasks now delivered via `send_input`** — The v8.12.2 fix only applied `send_input` delivery to tasks starting with `!`. Regular LLM tasks (e.g., `"Run imap-mcp run-rules then output DATAWATCH_COMPLETE:"`) fell through to the channel-notification path, which empirically does not trigger Claude's LLM. As a result, spawned sessions sat at `waiting_input` indefinitely, and the hourly cron accumulated one stuck session per tick (user observed 3 dead sessions overnight).
+
+  Fix: `handleChannelReady` now uses `send_input` for **all** `OneShot` sessions. For `!cmd` tasks the input is still wrapped with `; echo "DATAWATCH_COMPLETE: shell task done"`. For LLM tasks the task text is typed directly at the prompt; Claude processes it as a user message and emits `DATAWATCH_COMPLETE:` per the session's CLAUDE.md instructions.
+
+  Poll window extended from 30 s to 60 s to accommodate sessions with slower startup (model download, cold start).
+
+- **`Complete+alive` reconciler loop eliminated for OneShot sessions** — With `kill_sessions_on_exit: false` (the default), the Claude process stays alive at the `❯` prompt after `DATAWATCH_COMPLETE:` is detected and the session transitions to `StateComplete`. The `reconcileSessions` loop (every 10 s) was detecting `!isActive && tmuxAlive && StateComplete` and resuming the session back to `StateRunning`, then to `StateWaitingInput` when the idle prompt appeared — an infinite loop that parked the session at `waiting_input` forever.
+
+  Fix: `reconcileSessions` now checks `sess.OneShot` before resuming. OneShot `Complete` sessions with a live tmux are killed (500 ms delay goroutine → `tmux.KillSession`) instead of resumed.
+
+---
+
 ## v8.12.2 — fix(channel): deliver !cmd one-shot tasks via send_input instead of channel notification (GH#128) (2026-06-15)
 
 ### Fixed

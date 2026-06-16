@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.12.2-success)](https://github.com/dmz006/datawatch/releases/tag/v8.12.2)
+[![Release](https://img.shields.io/badge/release-v8.12.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.12.4)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.12.2](CHANGELOG.md) (2026-06-15)** — Delivers `!cmd` one-shot tasks via `send_input` (tmux key injection) instead of MCP channel notification. The `!` REPL shortcut only fires when typed at the terminal; the old channel-notification path never triggered shell execution. `handleChannelReady` now polls for the main prompt (up to 30 s) then calls `manager.SendInput` directly, wrapping the task with `; echo "DATAWATCH_COMPLETE: shell task done"` so the reaper detects completion. Preceded by: auto-accept sequential startup dialogs (v8.12.1), bridge task-delivery timing race (v8.12.0, GH#128).
+**[v8.12.4](CHANGELOG.md) (2026-06-16)** — Fixes `DATAWATCH_COMPLETE:` detection for LLM response text. Claude Code's TUI writes completion markers via ANSI cursor-up overwrite (`\r`-separated segments in the raw pipe-pane log), not as clean `\n`-terminated lines. The old `HasPrefix` check on the whole stripped line failed; the new `matchesCompletionPattern` helper splits on `\r` and checks each visual segment. Verified: 40 s LLM spawn → `complete` in ~2 min, tmux killed, exactly one session per tick. Preceded by: `send_input` for all OneShot LLM tasks + reconciler kill (v8.12.3), `!cmd` send_input (v8.12.2), sequential dialog auto-accept (v8.12.1, GH#128).
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.

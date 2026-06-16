@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.12.2"
+var Version = "8.12.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6873,34 +6873,42 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	}
 	targetSess := readySess
 
-	// GH#128: OneShot + bare shell task — use send_input to type the command
-	// directly at the claude terminal instead of sending via channel notification.
-	// Channel notifications are injected as LLM conversation messages, so the !cmd
-	// REPL shortcut (which only fires when typed at the interactive prompt) is never
-	// triggered. Typing via send_input hits the TUI input handler directly and
-	// executes immediately without LLM involvement.
-	if targetSess.OneShot && strings.HasPrefix(targetSess.Task, "!") {
-		wrapped := targetSess.Task + `; echo "DATAWATCH_COMPLETE: shell task done"`
+	// GH#128: ALL OneShot sessions — use send_input to type the task directly at
+	// the claude terminal. Channel notifications are injected as LLM conversation
+	// messages but empirically do not reliably trigger Claude's LLM; typing via
+	// send_input (tmux send-keys) hits the TUI input handler and fires immediately.
+	//   !cmd tasks:  wrap with "; echo DATAWATCH_COMPLETE:..." so the reaper fires
+	//                when the shell command exits (no LLM involvement needed).
+	//   LLM tasks:   type the task text directly; Claude processes it as a user
+	//                message, runs the work, and emits DATAWATCH_COMPLETE per the
+	//                session CLAUDE.md ("When done: output DATAWATCH_COMPLETE: ...").
+	if targetSess.OneShot {
+		var input string
+		if strings.HasPrefix(targetSess.Task, "!") {
+			input = targetSess.Task + `; echo "DATAWATCH_COMPLETE: shell task done"`
+		} else {
+			input = targetSess.Task
+		}
 		sessID := targetSess.FullID
 		go func() {
-			// Poll up to 30s for the session to reach the main ❯ prompt (no
+			// Poll up to 60s for the session to reach the main ❯ prompt (no
 			// startup dialogs). The auto-accept goroutines dismiss the trust
 			// dialogs, so by the time GetActiveStartupPromptInput returns "" the
 			// session is interactive and ready to receive typed input.
-			for i := 0; i < 30; i++ {
+			for i := 0; i < 60; i++ {
 				time.Sleep(time.Second)
 				if dialog := s.manager.GetActiveStartupPromptInput(sessID); dialog == "" {
 					if sess, ok := s.manager.GetSession(sessID); ok && sess.State == session.StateWaitingInput {
-						if err := s.manager.SendInput(sessID, wrapped, "channel-shell-task"); err != nil {
-							fmt.Printf("[channel] shell-task send_input for %s: %v\n", sessID, err)
+						if err := s.manager.SendInput(sessID, input, "channel-task"); err != nil {
+							fmt.Printf("[channel] task send_input for %s: %v\n", sessID, err)
 						} else {
-							fmt.Printf("[channel] shell-task delivered to %s via send_input\n", sessID)
+							fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
 						}
 						return
 					}
 				}
 			}
-			fmt.Printf("[channel] shell-task timeout waiting for main prompt on %s\n", sessID)
+			fmt.Printf("[channel] task timeout waiting for main prompt on %s\n", sessID)
 		}()
 		// Broadcast task delivery to WS clients for the channel tab
 		s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")
@@ -6917,7 +6925,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Non-!cmd tasks: forward to the channel bridge via MCP notification so the
+	// Non-OneShot tasks: forward to the channel bridge via MCP notification so the
 	// LLM receives and processes the instruction.
 	// Forward the task to the channel server.
 	payload, _ := json.Marshal(map[string]string{

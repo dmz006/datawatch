@@ -56,6 +56,21 @@ var cursorPosRe = regexp.MustCompile(`\x1b\[(\d*);(\d*)[Hf]`)
 // These can appear between overwritten words and cause concatenation.
 var cursorBackRe = regexp.MustCompile(`\x1b\[(\d*)D`)
 
+// matchesCompletionPattern reports whether pat appears at the start of any
+// CR-separated visual segment in line. TUI renderers (e.g. Claude Code) use
+// bare \r to overwrite content in place, so DATAWATCH_COMPLETE: may follow a
+// \r rather than being at the very start of the full log line. Splitting on \r
+// and checking each segment preserves the "must be at start of line" semantic
+// while covering both shell (clean \n lines) and TUI (cursor-overwrite) output.
+func matchesCompletionPattern(line, pat string) bool {
+	for _, seg := range strings.Split(line, "\r") {
+		if strings.HasPrefix(strings.TrimSpace(seg), pat) {
+			return true
+		}
+	}
+	return false
+}
+
 // StripANSI removes ANSI escape sequences from s, expanding cursor-forward
 // sequences (\x1b[NC) into N literal space characters and replacing cursor-
 // positioning sequences (column-absolute, position, backward) with a single
@@ -4368,6 +4383,16 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		}
 
 		if !isActive && tmuxAlive && (sess.State == StateComplete || sess.State == StateFailed) {
+			// GH#128: OneShot sessions that completed must NOT be resumed — the Claude
+			// process is still at the prompt but the task is done. Kill the tmux session
+			// so the process exits cleanly rather than looping complete→running→waiting.
+			if sess.OneShot {
+				go func(s *Session) {
+					time.Sleep(500 * time.Millisecond)
+					_ = m.tmux.KillSession(s.TmuxSession)
+				}(sess)
+				continue
+			}
 			// Session marked complete/failed but tmux is still alive — resume monitoring.
 			// Cancel any stale monitor first (goroutine may have exited without cleanup).
 			m.mu.Lock()
@@ -5079,7 +5104,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		// shell wrapper runs `echo` after claude exits).
 		completionLine := strings.TrimSpace(line)
 		for _, pat := range m.effectiveCompletionPatterns() {
-			if strings.HasPrefix(completionLine, pat) {
+			if matchesCompletionPattern(completionLine, pat) {
 				// Post-restart grace window: when a session is restarted with
 				// --resume, the TUI re-renders prior conversation history to the
 				// terminal. If that history contained DATAWATCH_COMPLETE: (from
@@ -5292,7 +5317,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// `line` is already StripANSI'd at function entry (line 3731).
 	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
-		if strings.HasPrefix(completionLine, pat) {
+		if matchesCompletionPattern(completionLine, pat) {
 			// Same post-restart grace window as the structured-channel path above.
 			m.mu.Lock()
 			restartTime, wasRestarted := m.restartedAt[sess.FullID]
