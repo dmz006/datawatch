@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.8 — perf(monitor): reduce tmux subprocess forks for many background sessions (2026-06-25)
+
+### Changed
+
+- **`reconcileSessions` now calls `tmux list-sessions` once per tick** — previously called `tmux has-session` once per active session (N forks per 10s tick). Now a single `ListSessions("")` call returns all live session names; per-session checks are a map lookup. For 20 sessions this reduces reconciler forks from ~40/min to ~6/min.
+
+- **`monitorOutput` liveness check moved to 30s ticker** — previously `tmux has-session` was called every 2 seconds per monitored session (two forks per check including retry). Now lives in a dedicated `livenessTicker` (30s interval), completely separate from the 2s file-drain ticker. For 20 sessions: 40 → 1.3 subprocess forks/sec.
+
+- **`TmuxAPI` interface gains `ListSessions(prefix string) ([]string, error)`** — `TmuxManager` already had a `ListSessions` method (v8.7 era, unused by the hot path); now exposed in the interface so tests can verify the reduced-fork path. `FakeTmux` returns its in-memory session map.
+
+### Fixed
+
+- Removes a class of transient false-positive state transitions where a rapidly cycling `has-session` fork under high load could race a live session and mark it complete prematurely.
+
+---
+
 ## v8.12.7 — feat(spawn): subprocess mode — exit-code completion for shell tasks (GH#128) (2026-06-16)
 
 ### Added

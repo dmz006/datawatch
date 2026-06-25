@@ -4463,11 +4463,18 @@ func (m *Manager) probeClaudeAlive(sess *Session) bool {
 }
 
 func (m *Manager) reconcileSessions(ctx context.Context) {
+	// Single tmux call for all session liveness checks — avoids N subprocess forks per tick.
+	liveNames, _ := m.tmux.ListSessions("")
+	liveMap := make(map[string]bool, len(liveNames))
+	for _, n := range liveNames {
+		liveMap[n] = true
+	}
+
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
 			continue
 		}
-		tmuxAlive := m.tmux.SessionExists(sess.TmuxSession)
+		tmuxAlive := liveMap[sess.TmuxSession]
 		isActive := sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited
 
 		if isActive && !tmuxAlive {
@@ -4827,6 +4834,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	var lastPartialDrain time.Time    // when we last drained partial (no-newline) data
 	idleCheckTicker := time.NewTicker(2 * time.Second)
 	defer idleCheckTicker.Stop()
+	livenessTicker := time.NewTicker(30 * time.Second)
+	defer livenessTicker.Stop()
 
 	// Set up fsnotify watcher for interrupt-driven file monitoring.
 	// Falls back to polling if watcher creation fails.
@@ -4885,54 +4894,6 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				}
 			}
 
-			// Check if tmux session is still alive — retry once to avoid false positives
-			if !m.tmux.SessionExists(sess.TmuxSession) {
-				time.Sleep(500 * time.Millisecond)
-				if !m.tmux.SessionExists(sess.TmuxSession) {
-					// Confirmed gone after retry
-				} else {
-					continue // transient failure, tmux is fine
-				}
-				current, ok := m.store.Get(sess.FullID)
-				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
-					oldState := current.State
-					current.State = StateComplete
-					current.UpdatedAt = time.Now()
-					_ = m.store.Save(current)
-
-					tracker := getTracker()
-					if tracker != nil {
-						if err := tracker.RecordComplete(StateComplete); err != nil {
-							fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
-						}
-					}
-
-					// Post-session project git commit
-					if m.autoGit && projGit.IsRepo() {
-						if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-							fmt.Printf("[warn] post-session commit: %v\n", err)
-						}
-						// BL10 — capture diff summary for alerts/UI badge.
-						if stat, _ := projGit.DiffStat(); !stat.IsZero() {
-							current.DiffSummary = stat.Summary
-							_ = m.SaveSession(current)
-						}
-						// BL29 — post-session checkpoint tag.
-						if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-							fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
-						}
-					}
-
-					if m.onStateChange != nil {
-						m.onStateChange(current, oldState)
-					}
-					if m.onSessionEnd != nil {
-						m.onSessionEnd(current)
-					}
-				}
-				return
-			}
-
 			// Drain any buffered partial line (prompt without trailing newline, e.g. bash "$ ").
 			// This handles interactive shells that write the prompt without a newline.
 			if reader.Buffered() > 0 && time.Since(lastPartialDrain) > 500*time.Millisecond {
@@ -4968,26 +4929,6 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			// For structured channel backends (MCP/ACP), also handle tmux death and
 			// waiting→running transitions via capture-pane.
 			if m.hasStructuredChannel(sess) {
-				// Check tmux alive
-				if !m.tmux.SessionExists(sess.TmuxSession) {
-					time.Sleep(500 * time.Millisecond)
-					if !m.tmux.SessionExists(sess.TmuxSession) {
-						current, ok := m.store.Get(sess.FullID)
-						if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
-							oldState := current.State
-							current.State = StateComplete
-							current.UpdatedAt = time.Now()
-							_ = m.store.Save(current)
-							if m.onStateChange != nil {
-								m.onStateChange(current, oldState)
-							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
-						}
-						return
-					}
-				}
 				// Use capture-pane for state detection (every idle tick = 2s)
 				capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession)
 				if capErr == nil && capture != "" {
@@ -5093,6 +5034,51 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					}
 				}
 			} // end else (velocity check passed)
+			}
+		case <-livenessTicker.C:
+			// Check if tmux session is still alive (30s interval — avoids per-session subprocess
+			// forks on the 2s drain ticker when many sessions are monitored simultaneously).
+			// Retry once to avoid false positives from transient tmux server hiccups.
+			if !m.tmux.SessionExists(sess.TmuxSession) {
+				time.Sleep(500 * time.Millisecond)
+				if !m.tmux.SessionExists(sess.TmuxSession) {
+					current, ok := m.store.Get(sess.FullID)
+					if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
+						oldState := current.State
+						current.State = StateComplete
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+
+						if !m.hasStructuredChannel(sess) {
+							tracker := getTracker()
+							if tracker != nil {
+								if err := tracker.RecordComplete(StateComplete); err != nil {
+									fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
+								}
+							}
+							if m.autoGit && projGit.IsRepo() {
+								if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+									fmt.Printf("[warn] post-session commit: %v\n", err)
+								}
+								if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+									current.DiffSummary = stat.Summary
+									_ = m.SaveSession(current)
+								}
+								if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+									fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
+								}
+							}
+						}
+
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
+						}
+						if m.onSessionEnd != nil {
+							m.onSessionEnd(current)
+						}
+					}
+					return
+				}
 			}
 		case event, ok := <-fileEvents:
 			// fsnotify: file was written to — drain all available lines.

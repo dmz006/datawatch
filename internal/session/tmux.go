@@ -26,6 +26,7 @@ type TmuxAPI interface {
 	KillSession(name string) error
 	SetEnvironment(session string, env map[string]string) error
 	PaneTTY(session string) string
+	ListSessions(prefix string) ([]string, error)
 }
 
 // TmuxManager wraps tmux operations used by the session manager.

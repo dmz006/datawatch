@@ -169,6 +169,19 @@ func (f *FakeTmux) SetEnvironment(session string, env map[string]string) error {
 // PaneTTY returns "" so WaitTypingIdle is a no-op in tests.
 func (f *FakeTmux) PaneTTY(session string) string { return "" }
 
+// ListSessions returns all fake session names that match the given prefix.
+func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var names []string
+	for name := range f.sessions {
+		if prefix == "" || len(name) >= len(prefix) && name[:len(prefix)] == prefix {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
 // WithFakeTmux swaps in a FakeTmux on the given Manager and returns it.
 // The Manager MUST NOT have running sessions at the time of swap.
 // Intended for use in tests only.
