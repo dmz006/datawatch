@@ -2536,9 +2536,9 @@ func (m *Manager) runSubprocess(sess *Session) {
 		m.subprocessFinish(sess, fmt.Errorf("open log: %w", err))
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
+	_, _ = fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
 
 	cmd := exec.Command("bash", "-c", sess.Task)
 	cmd.Dir = sess.ProjectDir
@@ -2547,9 +2547,9 @@ func (m *Manager) runSubprocess(sess *Session) {
 
 	runErr := cmd.Run()
 	if runErr != nil {
-		fmt.Fprintf(f, "\n[subprocess] failed: %v\n", runErr)
+		_, _ = fmt.Fprintf(f, "\n[subprocess] failed: %v\n", runErr)
 	} else {
-		fmt.Fprintf(f, "\n[subprocess] completed (exit 0)\n")
+		_, _ = fmt.Fprintf(f, "\n[subprocess] completed (exit 0)\n")
 	}
 	m.subprocessFinish(sess, runErr)
 }
