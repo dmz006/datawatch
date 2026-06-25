@@ -32,11 +32,19 @@ CVE-2026-33846
 CVE-2026-3833
 CVE-2026-42011
 
-# libsqlite3-0 CVE-2025-7458 — CRITICAL, no fix in bookworm
-# Integer overflow in SQLite. Used internally by the gh CLI binary;
-# not exposed via datawatch REST/MCP APIs. Only processes trusted
-# local state, not attacker-supplied SQL.
+# libsqlite3-0 — no fix in bookworm (3 CVEs, 1 CRITICAL + 2 HIGH)
+# SQLite is used internally by the gh CLI binary; not exposed via
+# datawatch REST/MCP APIs. Processes only trusted local state.
+#   CVE-2025-7458 (CRITICAL): Integer overflow in SQLite. No fix in bookworm.
+#   CVE-2026-11822 (HIGH): Memory corruption in FTS5 full-text search extension
+#     via crafted FTS5 page data (out-of-bounds read). Exploitable only against
+#     attacker-controlled SQLite databases; gh CLI processes only trusted local
+#     state (cached GitHub data), not attacker-supplied databases.
+#   CVE-2026-11824 (HIGH): Heap buffer overflow in FTS5 via crafted continuation
+#     page causing integer underflow. Same surface as CVE-2026-11822.
 CVE-2025-7458
+CVE-2026-11822
+CVE-2026-11824
 
 # curl / libcurl4 — no fix in bookworm (2 HIGH)
 #   CVE-2026-5773: Wrong file transfer via SMB protocol. SMB is not
@@ -59,11 +67,15 @@ CVE-2023-2953
 # prior container shell access.
 CVE-2025-69720
 
-# libssh2-1 CVE-2026-7598 — HIGH, no fix in bookworm
-# Integer overflow in username/password handling. libssh2 is used by
-# git for SSH transport. Only triggerable by a malicious SSH server;
-# git SSH remotes are operator-configured, not attacker-controlled.
+# libssh2-1 — no fix in bookworm (2 HIGH)
+# libssh2 is used by git for SSH transport. All SSH remotes are
+# operator-configured; no attacker-controlled SSH servers are contacted.
+#   CVE-2026-7598 (HIGH): Integer overflow in username/password handling.
+#     Only triggerable by a malicious SSH server.
+#   CVE-2026-55200 (HIGH): Out-of-bounds write via unchecked packet_length
+#     in transport.c. Same surface — requires a malicious SSH server.
 CVE-2026-7598
+CVE-2026-55200
 
 # libgcrypt20 CVE-2026-41989 — HIGH, no fix in bookworm
 # DoS / buffer overflow in gnupg crypto backend. gnupg is used for
@@ -100,14 +112,18 @@ CVE-2026-48959
 # operator-configured; no untrusted LFS servers are contacted.
 CVE-2025-26625
 
-# jq / libjq1 — no fix in bookworm (2 HIGH)
+# jq / libjq1 — no fix in bookworm (3 HIGH)
 # jq is installed as a general-purpose JSON tool for agent shell use.
 #   CVE-2026-32316 (HIGH): DoS or potential code execution via crafted JSON.
 #     jq processes JSON from operator-controlled sources (API responses, config).
 #   CVE-2026-40164 (HIGH): DoS via crafted JSON object causing excessive memory.
 #     Same surface; no untrusted JSON piped through jq by the datawatch service.
+#   CVE-2026-49839 (HIGH): heap-buffer-overflow in jq --rawfile via invalid-state
+#     reuse after string-too-long error. Only reachable via operator-invoked jq
+#     with attacker-controlled input files; no such execution path in the container.
 CVE-2026-32316
 CVE-2026-40164
+CVE-2026-49839
 
 # libexpat1 — no fix in bookworm (3 CVEs, 2 HIGH + 1 will_not_fix)
 # expat is pulled transitively by Python, dbus, and other system libs.
