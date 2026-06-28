@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.13.0"
+var Version = "8.13.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5319,7 +5319,7 @@ Return STRICT JSON:
 				sess.FullID,
 			)
 		}
-		// BL346 — publish FCM/push lifecycle events for terminal-state and start transitions.
+		// BL346 / GH#117 — publish FCM/push lifecycle events for terminal-state and start transitions.
 		// Skip oscillation AND waiting_input (NeedsInputHandler sends richer content for that).
 		if !isPromptOscillation && sess.State != session.StateWaitingInput {
 			server.PublishToTopic("session-"+sess.FullID, server.PushEvent{
@@ -5329,10 +5329,12 @@ Return STRICT JSON:
 				Click:   "/sessions/" + sess.FullID,
 				Extras: map[string]any{
 					"type":          "session_state_changed",
+					"session_id":    sess.FullID,
+					"session_name":  sess.Name,
 					"old_state":     string(old),
 					"new_state":     string(sess.State),
 					"task":          truncate(sess.Task, 100),
-					"short_summary": truncate(sess.LastResponse, 200),
+					"last_response": truncate(sess.LastResponse, 200),
 				},
 			})
 		}
@@ -5402,12 +5404,22 @@ Return STRICT JSON:
 		// + a default "alerts" topic catch-all. Mobile-app subscribes
 		// to either; daemon publishes once and both channels see it.
 		if sess != nil {
+			sessionPushExtras := map[string]any{
+				"type":         "session_state_changed",
+				"session_id":   sess.FullID,
+				"session_name": sess.Name,
+				"old_state":    "running",
+				"new_state":    "waiting_input",
+				"task":         truncate(sess.Task, 100),
+				"last_response": truncate(sess.LastResponse, 200),
+			}
 			server.PublishToTopic("session-"+sess.FullID, server.PushEvent{
 				Title:    sessionLabel(sess) + " · waiting input",
 				Message:  alertBody,
 				Priority: 4, // ntfy-compat: 1=min, 5=max — input-needed is high
 				Tags:     []string{"waiting_input", sess.BackendFamily},
 				Click:    "/sessions/" + sess.FullID,
+				Extras:   sessionPushExtras,
 			})
 			server.PublishToTopic("alerts", server.PushEvent{
 				Title:    sessionLabel(sess) + " · waiting input",
@@ -5415,6 +5427,7 @@ Return STRICT JSON:
 				Priority: 4,
 				Tags:     []string{"waiting_input", sess.BackendFamily, "session:" + sess.FullID},
 				Click:    "/sessions/" + sess.FullID,
+				Extras:   sessionPushExtras,
 			})
 		}
 		// Truncate for alert storage (keep first 2000 chars)

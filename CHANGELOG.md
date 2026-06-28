@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.1 — fix(push): add session_id/session_name/last_response to FCM lifecycle payloads (GH#117) (2026-06-27)
+
+### Fixed
+
+- **FCM push payloads now include `session_id`, `session_name`, and `last_response`** — BL346 implemented `session_state_changed` push events, but the Extras map was missing `session_id` and `session_name` (mobile needs these to correlate events). `short_summary` renamed to `last_response` to match the field name in issue #117. Also adds Extras to the `NeedsInputHandler` waiting_input push events (`session-<id>` and `alerts` topics) with the same fields. Mobile clients can now react to state changes without fetching the session list.
+
+---
+
 ## v8.13.0 — feat(config): extra_mcp_servers + fix(pwa): alert dock always updates in session-detail (2026-06-27)
 
 ### Added
