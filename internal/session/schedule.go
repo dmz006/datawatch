@@ -87,6 +87,15 @@ type ScheduledCommand struct {
 	// ScheduleName (BL353) — optional human-readable label for this schedule entry.
 	// Used for lookup and cancel by name.
 	ScheduleName string `json:"schedule_name,omitempty"`
+
+	// GH#128 run-history fields (spawn/new_session types only).
+	// ActiveSpawnID is the FullID of the last spawned session while it is still
+	// running. Cleared (via RecordFire) once the session reaches a terminal state.
+	// Used by the overlap guard in the scheduler loop.
+	ActiveSpawnID  string    `json:"active_spawn_id,omitempty"`
+	LastFireAt     time.Time `json:"last_fire_at,omitempty"`
+	LastFireResult string    `json:"last_fire_result,omitempty"` // "spawned", "skipped", "failed"
+	FireCount      int       `json:"fire_count,omitempty"`
 }
 
 // DeferredSession holds parameters for creating a new session at a scheduled time.
@@ -581,6 +590,49 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 				sc.State = SchedDone
 			}
 			sc.DoneAt = time.Now()
+			return s.save()
+		}
+	}
+	return fmt.Errorf("scheduled command %q not found", id)
+}
+
+// RecordFire updates run-history fields on a spawn/new_session schedule entry.
+// Call after MarkDone (which re-arms the cron) so the new RunAt is preserved.
+// sessionID is the FullID of the spawned session (empty on failure/skip).
+// result is "spawned", "skipped", or "failed".
+func (s *ScheduleStore) RecordFire(id, sessionID, result string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sc := range s.entries {
+		if sc.ID == id {
+			sc.ActiveSpawnID = sessionID
+			sc.LastFireAt = time.Now()
+			sc.LastFireResult = result
+			sc.FireCount++
+			return s.save()
+		}
+	}
+	return fmt.Errorf("scheduled command %q not found", id)
+}
+
+// SkipFire advances the cron RunAt without spawning (overlap guard).
+// Updates LastFireResult="skipped" and FireCount without changing ActiveSpawnID.
+func (s *ScheduleStore) SkipFire(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sc := range s.entries {
+		if sc.ID == id {
+			sc.LastFireAt = time.Now()
+			sc.LastFireResult = "skipped"
+			sc.FireCount++
+			if sc.CronExpr != "" {
+				next, err := CronNext(sc.CronExpr, time.Now())
+				if err == nil {
+					sc.RunAt = next
+				}
+			} else if sc.RecurEverySeconds > 0 {
+				sc.RunAt = time.Now().Add(time.Duration(sc.RecurEverySeconds) * time.Second)
+			}
 			return s.save()
 		}
 	}

@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.2 — feat(schedule): spawn overlap guard + run history + --shell/--path flags (GH#128) (2026-06-27)
+
+### Added
+
+- **`schedule spawn` overlap guard** — if the previous spawn for a cron schedule is still running (state not `complete`/`failed`/`killed`), the scheduler skips the new fire and advances `RunAt` to the next cron slot instead of stacking a concurrent run. Prevents resource exhaustion when a job takes longer than its cron interval.
+
+- **`schedule spawn` run history** — each spawn-type schedule entry now tracks `fire_count`, `last_fire_at`, `last_fire_result` (`spawned`/`skipped`/`failed`), and `active_spawn_id` (the FullID of the currently running spawn). `schedule list` output now includes FIRES, LAST-FIRE, and LAST-RESULT columns.
+
+- **`--shell <cmd>` flag on `schedule spawn`** — convenience alias that sets `--subprocess` automatically. Runs `cmd` via `bash -c`; no LLM required. `--task` or `--shell` (one or the other) is now sufficient.
+
+- **`--path <dir>` flag on `schedule spawn`** — alias for `--dir`; matches the syntax from the issue spec.
+
+  ```bash
+  # Exact syntax from GH#128:
+  datawatch schedule spawn \
+    --cron "0 * * * *" \
+    --path /home/dmz/workspace/imap-mcp \
+    --schedule-name imap-hourly-rules \
+    --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
+  ```
+
+---
+
 ## v8.13.1 — fix(push): add session_id/session_name/last_response to FCM lifecycle payloads (GH#117) (2026-06-27)
 
 ### Fixed

@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.13.1"
+var Version = "8.13.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8858,7 +8858,7 @@ func runScheduleList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tTASK/COMMAND")
+	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tFIRES\tLAST-FIRE\tLAST-RESULT\tTASK/COMMAND")
 	for _, sc := range entries {
 		when := "on input"
 		if !sc.RunAt.IsZero() {
@@ -8875,9 +8875,19 @@ func runScheduleList(cfg *config.Config) error {
 		if (sc.Type == session.SchedTypeNewSession || sc.Type == session.SchedTypeSpawn) && sc.DeferredSession != nil {
 			target = "spawn:" + sc.DeferredSession.Name
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fires := ""
+		lastFire := ""
+		lastResult := ""
+		if sc.FireCount > 0 {
+			fires = fmt.Sprintf("%d", sc.FireCount)
+			lastFire = sc.LastFireAt.Local().Format("01-02 15:04")
+			lastResult = sc.LastFireResult
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sc.ID, typ, target, sc.ScheduleName,
-			sc.State, when, sc.CronExpr, truncate(sc.Command, 40))
+			sc.State, when, sc.CronExpr,
+			fires, lastFire, lastResult,
+			truncate(sc.Command, 40))
 	}
 	return w.Flush()
 }
@@ -8949,7 +8959,11 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 				return err
 			}
 			task, _ := cmd.Flags().GetString("task")
+			shellCmd, _ := cmd.Flags().GetString("shell")
 			dir, _ := cmd.Flags().GetString("dir")
+			if p, _ := cmd.Flags().GetString("path"); p != "" {
+				dir = p
+			}
 			backend, _ := cmd.Flags().GetString("backend")
 			llmRef, _ := cmd.Flags().GetString("llm-ref")
 			model, _ := cmd.Flags().GetString("model")
@@ -8961,10 +8975,17 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 			oneShot, _ := cmd.Flags().GetBool("one-shot")
 			ephemeral, _ := cmd.Flags().GetBool("ephemeral")
 			subprocess, _ := cmd.Flags().GetBool("subprocess")
+			// --shell is a convenience alias: sets task + subprocess=true, no LLM needed.
+			if shellCmd != "" {
+				task = shellCmd
+				subprocess = true
+			}
 			return runScheduleSpawn(cfg, task, dir, backend, llmRef, model, effort, cron, at, schedName, sessName, oneShot, ephemeral, subprocess)
 		},
 	}
-	cmd.Flags().String("task", "", "Task prompt for the spawned session (required)")
+	cmd.Flags().String("task", "", "Task prompt for the spawned session")
+	cmd.Flags().String("shell", "", "Shell command to run (sets --subprocess automatically; no LLM required)")
+	cmd.Flags().String("path", "", "Working directory for the spawned session (alias for --dir)")
 	cmd.Flags().String("dir", "", "Working directory for the spawned session")
 	cmd.Flags().String("backend", "", "LLM backend name (e.g. 'claude')")
 	cmd.Flags().String("llm-ref", "", "Unified LLM registry reference (alternative to --backend)")
@@ -8976,8 +8997,7 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 	cmd.Flags().String("name", "", "Human-readable name for each spawned session")
 	cmd.Flags().Bool("one-shot", true, "Auto-terminate session on DATAWATCH_COMPLETE:")
 	cmd.Flags().Bool("ephemeral", false, "Reap workspace directory when session is deleted")
-	cmd.Flags().Bool("subprocess", false, "Run task as a subprocess (bash -c); exit code signals completion. No Claude Code TUI, no DATAWATCH_COMPLETE: scraping. Recommended for pure shell tasks.")
-	_ = cmd.MarkFlagRequired("task")
+	cmd.Flags().Bool("subprocess", false, "Run task as a subprocess (bash -c); exit code signals completion. No Claude Code TUI. Recommended for pure shell tasks.")
 	return cmd
 }
 
@@ -8985,7 +9005,7 @@ func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, eff
 	// GH#128: must go through the API so the daemon's in-memory ScheduleStore is
 	// updated. Direct file writes are overwritten on the next daemon save().
 	if task == "" {
-		return fmt.Errorf("--task is required")
+		return fmt.Errorf("--task or --shell is required")
 	}
 	body := map[string]any{
 		"type":          "spawn",
@@ -9192,6 +9212,17 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					fmt.Printf("[scheduler] spawn [%s] has no DeferredSession, marking failed\n", sc.ID)
 					continue
 				}
+				// Overlap guard: skip if the previous spawn is still running.
+				if sc.ActiveSpawnID != "" {
+					if prior, ok := mgr.GetSession(sc.ActiveSpawnID); ok &&
+						prior.State != session.StateComplete &&
+						prior.State != session.StateFailed &&
+						prior.State != session.StateKilled {
+						fmt.Printf("[scheduler] spawn [%s] skip: prior run %s still %s\n", sc.ID, sc.ActiveSpawnID, prior.State)
+						_ = store.SkipFire(sc.ID)
+						continue
+					}
+				}
 				opts := &session.StartOptions{
 					Name:               ds.Name,
 					Backend:            ds.Backend,
@@ -9202,13 +9233,15 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					EphemeralWorkspace: ds.Ephemeral,
 					Subprocess:         ds.Subprocess,
 				}
-				_, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
+				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {
 					_ = store.MarkDone(sc.ID, true)
+					_ = store.RecordFire(sc.ID, "", "failed")
 					fmt.Printf("[scheduler] failed to spawn session (type=%s sched=%s): %v\n", sc.Type, sc.ID, err)
 				} else {
 					_ = store.MarkDone(sc.ID, false)
-					fmt.Printf("[scheduler] spawned session (type=%s sched=%s task=%q)\n", sc.Type, sc.ID, ds.Task)
+					_ = store.RecordFire(sc.ID, sess.FullID, "spawned")
+					fmt.Printf("[scheduler] spawned session (type=%s sched=%s sess=%s task=%q)\n", sc.Type, sc.ID, sess.FullID, ds.Task)
 				}
 			}
 		}
