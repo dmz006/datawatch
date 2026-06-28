@@ -698,13 +698,16 @@ datawatch --server pi session new "fix the auth bug"
 datawatch --server prod stop --sessions
 ```
 
-### `datawatch session schedule add <session-id> <command> [--at <when>]`
+### `datawatch session schedule add <session-id> <command> [flags]`
 
-Schedule a command to be sent to a session.
+Schedule a command to be sent to an existing session.
 
 | Flag | Description |
 |---|---|
 | `--at` | When to run: `now`, `HH:MM` (24h), or RFC3339 timestamp. Default: on next input prompt |
+| `--session-name` | Target session by name instead of positional ID |
+| `--cron` | 5-field cron expression for recurring fires (e.g. `"*/5 * * * *"`) |
+| `--schedule-name` | Human-readable label for lookup and cancel |
 
 ```bash
 # Run when session next asks for input
@@ -713,17 +716,71 @@ datawatch session schedule add a3f2 "yes, continue"
 # Run at 14:30 today
 datawatch session schedule add a3f2 "run the tests" --at 14:30
 
-# Stack commands: run B after A completes
-datawatch session schedule add a3f2 "commit the changes" --at now
+# Recurring: ping the session every 5 minutes by name
+datawatch schedule add --session-name worker "status update" --cron "*/5 * * * *" --schedule-name heartbeat
 ```
+
+### `datawatch schedule spawn [flags]`
+
+Schedule a fresh ephemeral session to spawn at a time or on a cron, independent of any running session. The spawned session is automatically terminated when it outputs `DATAWATCH_COMPLETE:`.
+
+Includes **overlap guard**: if the previous spawn for this schedule is still running, the cron fire is skipped and `RunAt` advances to the next slot instead of stacking a concurrent run.
+
+| Flag | Description |
+|---|---|
+| `--task` | Task prompt for the spawned AI session |
+| `--shell` | Shell command to run (sets `--subprocess` automatically; no LLM required) |
+| `--path` | Working directory (alias for `--dir`) |
+| `--dir` | Working directory for the spawned session |
+| `--backend` | LLM backend name (e.g. `claude-code`) |
+| `--model` | Model name override |
+| `--llm-ref` | Unified LLM registry reference (alternative to `--backend`) |
+| `--effort` | Thoroughness: `quick`, `normal`, or `thorough` |
+| `--cron` | 5-field cron for recurring spawns (e.g. `"0 * * * *"` for hourly) |
+| `--at` | First fire time: `HH:MM` or RFC3339 |
+| `--schedule-name` | Name for this schedule entry (for lookup/cancel) |
+| `--name` | Human-readable name for each spawned session |
+| `--one-shot` | Auto-terminate on `DATAWATCH_COMPLETE:` (default: true) |
+| `--ephemeral` | Reap workspace directory when session is deleted |
+| `--subprocess` | Run via `bash -c`; exit code signals completion. No Claude Code TUI. |
+
+```bash
+# Pure shell job — run imap-mcp rule engine hourly (no LLM needed)
+datawatch schedule spawn \
+  --cron "0 * * * *" \
+  --path /home/user/workspace/imap-mcp \
+  --schedule-name imap-hourly-rules \
+  --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
+
+# AI task — nightly report with Claude Code
+datawatch schedule spawn \
+  --cron "0 2 * * *" \
+  --path /home/user/workspace/project \
+  --backend claude-code \
+  --schedule-name nightly-report \
+  --task "Generate a summary of today's commits and open issues"
+
+# Run once at a specific time
+datawatch schedule spawn --at 23:00 --shell "rsync -avz /data /backup"
+```
+
+`schedule list` shows run history: FIRES / LAST-FIRE / LAST-RESULT columns (values: `spawned`, `skipped`, `failed`).
 
 ### `datawatch session schedule list`
 
-List all scheduled commands.
+List all scheduled commands, including run history for spawn-type entries (FIRES, LAST-FIRE, LAST-RESULT columns).
 
-### `datawatch session schedule cancel <schedule-id>`
+### `datawatch session schedule cancel <schedule-id-or-name>`
 
-Cancel a pending scheduled command.
+Cancel a pending scheduled command by ID or schedule name.
+
+### `datawatch session send <session-id> <text>`
+
+Send text input directly to a session via the dedicated `POST /api/sessions/send` endpoint. Unlike the general command router, this bypasses text-command parsing so the text is always delivered as raw input.
+
+```bash
+datawatch session send a3f2 "yes, proceed"
+```
 
 ### `datawatch cmd add <name> <command>`
 
@@ -1022,9 +1079,10 @@ The MCP server exposes the full feature set as tools for AI clients (Cursor, Cla
 | `get_version` | Current version + latest available check |
 | `list_saved_commands` | List the saved command library |
 | `send_saved_command` | Send a named saved command to a session |
-| `schedule_add` | Schedule a command (`session_id`, `command`, optional `run_at`) |
-| `schedule_list` | List all pending scheduled commands |
-| `schedule_cancel` | Cancel a scheduled command by ID |
+| `schedule_add` | Schedule a command to an existing session (`session_id`/`session_name`, `command`, optional `run_at`, `cron_expr`, `schedule_name`) |
+| `schedule_list` | List all pending scheduled commands (includes run history for spawn entries) |
+| `schedule_cancel` | Cancel a scheduled command by ID or name |
+| `schedule_spawn` | Schedule a fresh ephemeral session spawn (`task` or `shell`, `dir`, `backend`, `cron`, `schedule_name`) |
 | `memory_remember` | Store a memory with vector embedding (`text`, optional `project_dir`) |
 | `memory_recall` | Semantic search across memories (`query`) |
 | `memory_list` | List recent memories (optional `project_dir`, `n`) |

@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
-**Last Updated**: 2026-05-25  
-**Version**: v8.7.0  
+**Last Updated**: 2026-06-27  
+**Version**: v8.13.2  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -344,10 +344,18 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ---
 
-## Recent Context (as of 2026-05-25)
+## Recent Context (as of 2026-06-27)
 
-**Version:** v8.7.0  
-**Last change:** Production OpenCode — LSP server selection + model/Ollama multi-compute (May 25)
+**Version:** v8.13.2  
+**Last changes (v8.12.9–v8.13.2):**
+
+- **v8.13.2** — `schedule spawn` overlap guard + run history (`fire_count`/`last_fire_at`/`last_fire_result`/`active_spawn_id`) + `--shell`/`--path` CLI flags (GH#128)
+- **v8.13.1** — FCM/push payload enrichment: `session_id`, `session_name`, `last_response` in `session_state_changed` and `waiting_input` push events (GH#117)
+- **v8.13.0** — `session.extra_mcp_servers` config: inject additional MCP servers into every spawned session `.mcp.json` (GH#118); alert dock always receives alerts in session-detail view (GH#120); `navigate('session-detail', …)` typo fix (4 sites)
+- **v8.12.9** — `Manager.SendInput` now applies `scheduleSettleMs` to ALL send sources (was schedule-only); `POST /api/sessions/send` dedicated endpoint; CLI `session send` uses new endpoint
+- **v8.12.x** — subprocess spawn mode for shell tasks (exit code = completion); completion pattern matching in TUI output (CR-split, non-ASCII strip, task-echo suppression)
+- **v8.11.x** — `schedule spawn` command introduced: ephemeral one-shot sessions from a cron, independent of any running session
+- **v8.10.21–v8.10.25** — TTS summarizer humanization, session new error surfacing, sanitizeForSpeech post-processor
 
 ### Known Good Patterns (from memory)
 1. **Session state machine** — FirstTick guard must skip both detection AND activity marking
@@ -357,6 +365,9 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 5. **Memory-driven development** — Always query memory before work; save patterns after discovering them
 6. **LSP selection** — Operator selects language at session creation; daemon writes opencode.json. Never auto-detect
 7. **CLAUDE_CONFIG_DIR** — Must be in tmux session env for claude-code sessions; set via hookEnv in manager.go. Sessions started before v8.6.3 won't have it — restart to fix
+8. **SendInput settle** — `scheduleSettleMs` (default 200ms) applies to ALL send sources since v8.12.9. Set >0 in config to fix Enter not delivered to React Ink TUIs
+9. **extra_mcp_servers** — `session.extra_mcp_servers` YAML field injects MCP servers into `.mcp.json` on every spawn; for non-claude-code backends via `WriteProjectMCPConfig`, for claude-code via `InjectExtrasIntoMCPConfig`
+10. **schedule spawn** — `datawatch schedule spawn --shell <cmd> --cron "0 * * * *" --path <dir> --schedule-name <name>` runs shell jobs on a cron without LLM; overlap guard prevents stacked concurrent runs; `schedule list` shows FIRES/LAST-FIRE/LAST-RESULT
 
 ### Gotchas to Avoid (from AGENT.md)
 - ❌ **No version bump without ask** — User must explicitly request release; implementation != release
@@ -365,6 +376,7 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 - ❌ **Both Version strings** — `cmd/datawatch/main.go` AND `internal/server/api.go` must match
 - ❌ **No internal IDs in user docs** — BL7, F11, etc. only in `docs/plans/`, not README/CHANGELOG
 - ❌ **Commit frequently** — One logical change = one commit (no squashing history)
+- ❌ **schedule_settle_ms** — Never name this in user docs; refer to it as "settle delay" or the `schedule_settle_ms` config key
 
 ---
 

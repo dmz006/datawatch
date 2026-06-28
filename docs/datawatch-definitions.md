@@ -211,28 +211,45 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron �
 **Creating a spawn schedule:**
 
 - **MCP:** `schedule_spawn(task="run audit", dir="/home/user/project", cron_expr="0 * * * *", name="hourly-audit", one_shot=true, ephemeral=true)`
-- **REST:** `POST /api/schedule` body: `{"type": "spawn", "task": "run audit", "project_dir": "/home/user/project", "cron_expr": "0 * * * *", "schedule_name": "hourly-audit", "one_shot": true, "ephemeral": true}`
+- **REST:** `POST /api/schedules` body: `{"type": "spawn", "task": "run audit", "project_dir": "/home/user/project", "cron_expr": "0 * * * *", "schedule_name": "hourly-audit", "one_shot": true, "ephemeral": true}`
 - **CLI:** `datawatch schedule spawn --task "run audit" --dir /home/user/project --cron "0 * * * *" --schedule-name hourly-audit --ephemeral`
+- **CLI (shell mode):** `datawatch schedule spawn --shell "run-rules --config ~/cfg.yaml" --path /home/user/project --cron "0 * * * *" --schedule-name hourly`
 - **Channel:** `schedule spawn task=run audit dir=/home/user/project cron=0 * * * * name=hourly-audit ephemeral=true`
 
 **Key parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `task` | string | required | Task prompt sent to the spawned session |
-| `dir` | string | `""` | Working directory for the session |
-| `backend` | string | `""` | LLM backend name (legacy; prefer `llm_ref`) |
+| `task` | string | — | Task prompt sent to the spawned AI session |
+| `shell` | string | — | Shell command to run (`--subprocess` auto-set; no LLM). Use `--task` or `--shell`, not both. |
+| `path` / `dir` | string | `""` | Working directory for the session (`--path` is an alias for `--dir`) |
+| `backend` | string | `""` | LLM backend name (e.g. `claude-code`); omit for `--shell` jobs |
 | `llm_ref` | string | `""` | Unified LLM registry reference (e.g. `"claude-sonnet"`) |
 | `model` | string | `""` | Model name override |
 | `effort` | string | `""` | Effort level: `quick`, `normal`, or `thorough` |
 | `name` | string | `""` | Human-readable name for this schedule entry (for lookup/cancel) |
-| `session-name` | string | `""` | Name given to the spawned session |
+| `session-name` | string | `""` | Name given to each spawned session instance |
 | `run_at` | time | computed | Explicit first fire time (ISO-8601 or `HH:MM`) |
 | `cron_expr` | string | `""` | 5-field cron for recurring spawns |
 | `one_shot` | bool | `true` | Auto-terminate session on `DATAWATCH_COMPLETE:` |
 | `ephemeral` | bool | `false` | Reap workspace directory when session is deleted |
+| `subprocess` | bool | `false` | Run via `bash -c`; exit code = completion (0=complete). Auto-set by `--shell`. |
 
-**Difference from `schedule new-session`:** `new_session` starts a session connected to the scheduler's existing session context. `spawn` starts a fully independent session with its own lifecycle, optional ephemeral workspace, and `DATAWATCH_COMPLETE:` auto-termination.
+**Overlap guard:** If the previous spawn for this schedule is still running (state not `complete`/`failed`/`killed`), the cron fire is skipped and `RunAt` advances to the next slot. This prevents stacking concurrent runs when a job takes longer than its cron interval.
+
+**Run history:** Each spawn-type schedule tracks `fire_count`, `last_fire_at`, `last_fire_result` (`spawned`/`skipped`/`failed`), and `active_spawn_id`. `schedule list` shows FIRES / LAST-FIRE / LAST-RESULT columns.
+
+**Shell jobs example (no LLM):**
+
+```bash
+datawatch schedule spawn \
+  --cron "0 * * * *" \
+  --path /home/user/workspace/imap-mcp \
+  --schedule-name imap-hourly-rules \
+  --shell "imap-mcp run-rules --config ~/workspace/cfg.yaml"
+```
+
+**Difference from `schedule new-session`:** `new_session` starts a session connected to the scheduler's existing session context. `spawn` starts a fully independent session with its own lifecycle, optional ephemeral workspace, `DATAWATCH_COMPLETE:` auto-termination, and overlap guard.
 
 **Cancelling a spawn schedule:**
 
@@ -306,6 +323,30 @@ session:
 - **CLI:** `datawatch exit-hook list/add/delete/enable/disable`
 - **Channel:** `exit_hook list/add/delete/enable/disable`
 - **PWA:** Exit Hooks section in Settings → Compute
+
+---
+
+### Extra MCP servers per session
+
+Inject additional MCP servers into every spawned session's `.mcp.json` alongside the built-in datawatch bridge. Useful for operators who want a companion tool (e.g. `imap-mcp`, a filesystem indexer, a custom API proxy) available automatically in every session without hand-editing `.mcp.json`.
+
+**Configuration (YAML):**
+
+```yaml
+session:
+  extra_mcp_servers:
+    - name: imap-mcp                         # Key in .mcp.json mcpServers block
+      command: /home/user/imap-mcp/imap-mcp  # Executable (absolute path)
+      args: []                               # Optional CLI args
+      env:                                   # Optional env vars (${VAR} expansion supported)
+        GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
+```
+
+**How it works:** At session start, `WriteProjectMCPConfig` (non-claude-code backends) or `InjectExtrasIntoMCPConfig` (claude-code) merges each extra entry into `<project_dir>/.mcp.json`. Existing operator-added entries are preserved; only entries whose names match the extras list (or the built-in `datawatch` entry) are managed.
+
+**Managing at runtime:**
+
+- **REST / MCP / CLI / comm / PWA:** use the standard config API to read or update `session.extra_mcp_servers`. See `GET /api/config` → `session.extra_mcp_servers`.
 
 ---
 
@@ -1252,6 +1293,10 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Agent result store | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.11 | ResultStore KV, optional TTL, file-backed |
 | Structured session filters | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.10.12 | SessionFilter glob/state/backend/alive, ListSessionsFiltered, format=json |
 | MCP channel bridge diagnostics | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | v8.10.16 | per-session ChannelPort registry, live /health probe, port-conflict identification, DATAWATCH_* env var documentation |
+| Scheduled session spawn (ephemeral) | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.11.0–v8.13.2 | DeferredSession, subprocess mode, overlap guard, run history, --shell/--path flags |
+| Extra MCP servers per session | [`howto/mcp-tools.md`](howto/mcp-tools.md) | v8.13.0 | session.extra_mcp_servers, WriteProjectMCPConfig, InjectExtrasIntoMCPConfig |
+| Dedicated send_input endpoint | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.12.9 | POST /api/sessions/send bypasses text-command parsing; scheduleSettleMs applies to all sources |
+| FCM push payload enrichment | [`howto/push-notifications.md`](howto/push-notifications.md) | v8.13.1 | session_id/session_name/last_response in session_state_changed and waiting_input push events |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
