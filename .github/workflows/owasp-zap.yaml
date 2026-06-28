@@ -110,12 +110,10 @@ jobs:
       - name: ZAP API scan (OpenAPI-driven)
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:8080' }}/api/"
+          # action-api-scan v0.11+: target IS the spec file/URL (api_definition removed).
+          # The daemon's server URL comes from the spec's servers[] block (localhost:8080).
+          target: 'docs/api/openapi.yaml'
           format: openapi
-          # The daemon embeds the OpenAPI spec at docs/api/openapi.yaml;
-          # checkout has the raw file. Pass the local path so ZAP
-          # doesn't have to fetch it from the daemon.
-          api_definition: 'docs/api/openapi.yaml'
           rules_file_name: '.zap/rules.tsv'
           fail_action: true
           allow_issue_writing: true
@@ -155,9 +153,8 @@ jobs:
       - name: ZAP API full active scan
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
-          target: "http://${{ inputs.target_host || 'localhost:8080' }}/api/"
+          target: 'docs/api/openapi.yaml'
           format: openapi
-          api_definition: 'docs/api/openapi.yaml'
           # -t turns active rules on (api-scan defaults to passive).
           cmd_options: '-a -j -m 10 -t'
           fail_action: false
