@@ -47,13 +47,14 @@ type MCPServerSpec struct {
 }
 
 // WriteProjectMCPConfig writes (or rewrites) `<projectDir>/.mcp.json`
-// with a single "datawatch" server entry pointing at channelJSPath.
-// Existing entries under other names are preserved so an operator can
-// hand-add their own MCP servers without losing them on the next
-// spawn.
+// with a "datawatch" server entry pointing at channelJSPath plus any
+// extras (BL344 / GH#118). Existing entries under other names are
+// preserved so an operator can hand-add their own MCP servers without
+// losing them on the next spawn.
 //
+// extras maps server-name → spec; nil/empty is a no-op for extras.
 // Returns nil with no side effect when projectDir is empty.
-func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]string) error {
+func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]string, extras map[string]MCPServerSpec) error {
 	if projectDir == "" {
 		return nil
 	}
@@ -96,6 +97,11 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 	}
 
 	cfg.MCPServers["datawatch"] = spec
+	for name, extra := range extras {
+		if name != "datawatch" {
+			cfg.MCPServers[name] = extra
+		}
+	}
 
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -105,6 +111,41 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+// InjectExtrasIntoMCPConfig merges extra MCP server entries into
+// <projectDir>/.mcp.json without touching any existing entries.
+// Used for backends (e.g. claude-code) where the "datawatch" bridge
+// is registered separately. No-op when projectDir is empty or extras
+// is nil/empty.
+func InjectExtrasIntoMCPConfig(projectDir string, extras map[string]MCPServerSpec) error {
+	if projectDir == "" || len(extras) == 0 {
+		return nil
+	}
+	path := filepath.Join(projectDir, ".mcp.json")
+	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &cfg)
+		if cfg.MCPServers == nil {
+			cfg.MCPServers = map[string]MCPServerSpec{}
+		}
+	}
+	changed := false
+	for name, spec := range extras {
+		if name == "datawatch" {
+			continue
+		}
+		cfg.MCPServers[name] = spec
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	return os.WriteFile(path, out, 0644)
 }
 
 // WriteInstanceMCPConfig rewrites `<dataDir>/.mcp.json` so it tracks the

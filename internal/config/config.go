@@ -1352,6 +1352,21 @@ type SessionConfig struct {
 		Model   string `yaml:"model"   json:"model,omitempty"`
 		Prompt  string `yaml:"prompt"  json:"prompt"`
 	} `yaml:"summarizer" json:"summarizer"`
+
+	// ExtraMCPServers (BL344 / GH#118) — additional MCP servers injected into
+	// .mcp.json on every session spawn alongside the built-in "datawatch" entry.
+	// Name is the map key in .mcp.json (e.g. "imap-mcp"). Command, Args, Env
+	// match the stdio transport spec. Entries not present in this list that were
+	// manually added to .mcp.json by the operator are preserved.
+	ExtraMCPServers []ExtraMCPServer `yaml:"extra_mcp_servers,omitempty"`
+}
+
+// ExtraMCPServer is one entry in session.extra_mcp_servers (BL344 / GH#118).
+type ExtraMCPServer struct {
+	Name    string            `yaml:"name"`
+	Command string            `yaml:"command"`
+	Args    []string          `yaml:"args,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.

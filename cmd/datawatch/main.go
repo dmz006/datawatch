@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.12.9"
+var Version = "8.13.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1206,17 +1206,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// and CLAUDE_SESSION_ID), so writing a static "datawatch" entry
 			// here would spawn a second bridge on the default port 7433,
 			// breaking multi-session setups when that port is already taken.
+			// BL344 / GH#118 — convert extra_mcp_servers config to the channel type.
+			extraMCPSpecs := make(map[string]channel.MCPServerSpec, len(cfg.Session.ExtraMCPServers))
+			for _, e := range cfg.Session.ExtraMCPServers {
+				extraMCPSpecs[e.Name] = channel.MCPServerSpec{Command: e.Command, Args: e.Args, Env: e.Env}
+			}
+
 			if sess.BackendFamily != "claude-code" {
-				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv); err != nil {
+				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv, extraMCPSpecs); err != nil {
 					debugf("BL109 .mcp.json: %v", err)
 				} else {
 					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
 				}
-			} else if sess.ProjectDir != "" {
+			} else {
 				// Remove any legacy "datawatch" global entry left by older daemon
 				// versions — it would otherwise spawn a second bridge on port 7433.
-				if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, "datawatch"); err != nil {
-					debugf("BL109 remove stale .mcp.json datawatch entry: %v", err)
+				if sess.ProjectDir != "" {
+					if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, "datawatch"); err != nil {
+						debugf("BL109 remove stale .mcp.json datawatch entry: %v", err)
+					}
+				}
+				// Inject extra MCP servers (without the datawatch entry) for claude-code.
+				if err := channel.InjectExtrasIntoMCPConfig(sess.ProjectDir, extraMCPSpecs); err != nil {
+					debugf("BL344 inject extras .mcp.json: %v", err)
 				}
 			}
 

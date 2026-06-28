@@ -875,14 +875,13 @@ function handleAlert(a) {
   state.alertUnread++;
   if (a.source === 'system' || !a.session_id) state.alertSystemUnread++;
   updateAlertBadge();
-  // Suppress toast if user is actively viewing the session this alert belongs to
-  // (configurable via Settings → suppress_active_toasts, default: true)
-  const suppressActive = state.suppressActiveToasts;
-  if (suppressActive && state.activeView === 'session-detail' && state.activeSession && a.session_id === state.activeSession) {
-    return;
-  }
+  // GH#120: always push to the alert dock regardless of which view is active.
+  // Old code suppressed alerts while viewing the source session in session-detail,
+  // which was correct when showToast showed an intrusive overlay. Now showToast =
+  // pushToAlertDock (non-intrusive floating panel), so suppressing it causes
+  // the session-detail alert pill to never update. Mute (🔕) is still respected
+  // by showToast → pushToAlertDock.
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
-  // Show concise toast — title only; full body is in the Alerts view
   const toastMsg = a.title.length > 60 ? a.title.slice(0, 57) + '…' : a.title;
   showToast(toastMsg, level, 4000);
 }
@@ -17038,7 +17037,7 @@ function renderAlertsView() {
       }
 
       // BL344 — navigate to session from alert card
-      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="navigate('session',${JSON.stringify(a.session_id)})" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
+      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="navigate('session-detail',${JSON.stringify(a.session_id)})" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
@@ -17055,7 +17054,7 @@ function renderAlertsView() {
       const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
       const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
       const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
-      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
+      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
       const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
       const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
       const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');
@@ -17271,7 +17270,7 @@ function renderAlertsView() {
       } else {
         bodyHTML = flat.map(item => {
           const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
-          const sessLink = item.sess ? `<a onclick="navigate('session',${JSON.stringify(item.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
+          const sessLink = item.sess ? `<a onclick="navigate('session-detail',${JSON.stringify(item.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
           return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
         }).join('');
       }
@@ -17287,7 +17286,7 @@ function renderAlertsView() {
         const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
         const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
         const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
-        const sessLink = (!isSystem && entry.sess) ? `<a onclick="navigate('session',${JSON.stringify(entry.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
+        const sessLink = (!isSystem && entry.sess) ? `<a onclick="navigate('session-detail',${JSON.stringify(entry.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
         const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
         return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
           <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"

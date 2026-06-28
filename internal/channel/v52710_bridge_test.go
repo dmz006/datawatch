@@ -42,7 +42,7 @@ func TestWriteProjectMCPConfig_PrefersGoBridge(t *testing.T) {
 
 	dir := t.TempDir()
 	SetBinaryHint("/opt/datawatch/datawatch-channel")
-	if err := WriteProjectMCPConfig(dir, "/should/not/be/used.js", map[string]string{"K": "V"}); err != nil {
+	if err := WriteProjectMCPConfig(dir, "/should/not/be/used.js", map[string]string{"K": "V"}, nil); err != nil {
 		t.Fatalf("WriteProjectMCPConfig: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))

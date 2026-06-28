@@ -21,7 +21,7 @@ func fakeNode(t *testing.T) {
 func TestWriteProjectMCPConfig_Empty(t *testing.T) {
 	fakeNode(t)
 	dir := t.TempDir()
-	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", map[string]string{"K": "V"}); err != nil {
+	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", map[string]string{"K": "V"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
@@ -56,7 +56,7 @@ func TestWriteProjectMCPConfig_PreservesOtherEntries(t *testing.T) {
 	raw, _ := json.Marshal(pre)
 	_ = os.WriteFile(path, raw, 0644)
 
-	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", nil); err != nil {
+	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,13 +72,13 @@ func TestWriteProjectMCPConfig_PreservesOtherEntries(t *testing.T) {
 }
 
 func TestWriteProjectMCPConfig_EmptyDir_NoOp(t *testing.T) {
-	if err := WriteProjectMCPConfig("", "/x", nil); err != nil {
+	if err := WriteProjectMCPConfig("", "/x", nil, nil); err != nil {
 		t.Errorf("empty projectDir should be a no-op, got %v", err)
 	}
 }
 
 func TestWriteProjectMCPConfig_MissingChannelJS_Errors(t *testing.T) {
-	if err := WriteProjectMCPConfig(t.TempDir(), "", nil); err == nil {
+	if err := WriteProjectMCPConfig(t.TempDir(), "", nil, nil); err == nil {
 		t.Error("expected error for empty channel.js path")
 	}
 }
@@ -87,7 +87,7 @@ func TestWriteProjectMCPConfig_Idempotent(t *testing.T) {
 	fakeNode(t)
 	dir := t.TempDir()
 	for i := 0; i < 3; i++ {
-		if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", map[string]string{"K": "V"}); err != nil {
+		if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", map[string]string{"K": "V"}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,6 +96,58 @@ func TestWriteProjectMCPConfig_Idempotent(t *testing.T) {
 	_ = json.Unmarshal(out, &cfg)
 	if len(cfg.MCPServers) != 1 {
 		t.Errorf("repeated writes left %d entries; want 1", len(cfg.MCPServers))
+	}
+}
+
+// BL344 / GH#118 — extra_mcp_servers injected alongside datawatch entry.
+func TestWriteProjectMCPConfig_InjectsExtras(t *testing.T) {
+	fakeNode(t)
+	dir := t.TempDir()
+	extras := map[string]MCPServerSpec{
+		"imap-mcp": {Command: "/usr/bin/imap-mcp", Args: []string{"run"}, Env: map[string]string{"TOKEN": "x"}},
+	}
+	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", nil, extras); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	var cfg MCPProjectConfig
+	_ = json.Unmarshal(out, &cfg)
+	if _, ok := cfg.MCPServers["datawatch"]; !ok {
+		t.Error("datawatch entry missing")
+	}
+	extra, ok := cfg.MCPServers["imap-mcp"]
+	if !ok {
+		t.Fatal("imap-mcp extra entry missing")
+	}
+	if extra.Command != "/usr/bin/imap-mcp" || extra.Env["TOKEN"] != "x" {
+		t.Errorf("imap-mcp entry wrong: %+v", extra)
+	}
+}
+
+func TestInjectExtrasIntoMCPConfig_NoDatawatchOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-write a datawatch entry.
+	pre := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{
+		"datawatch": {Command: "/bin/dw"},
+	}}
+	raw, _ := json.Marshal(pre)
+	_ = os.WriteFile(filepath.Join(dir, ".mcp.json"), raw, 0644)
+
+	extras := map[string]MCPServerSpec{
+		"datawatch": {Command: "/should/be/ignored"},
+		"extra-svc": {Command: "/bin/extra"},
+	}
+	if err := InjectExtrasIntoMCPConfig(dir, extras); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	var cfg MCPProjectConfig
+	_ = json.Unmarshal(out, &cfg)
+	if cfg.MCPServers["datawatch"].Command != "/bin/dw" {
+		t.Error("datawatch entry must not be overwritten by InjectExtras")
+	}
+	if cfg.MCPServers["extra-svc"].Command != "/bin/extra" {
+		t.Error("extra-svc entry missing or wrong")
 	}
 }
 

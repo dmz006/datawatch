@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.0 — feat(config): extra_mcp_servers + fix(pwa): alert dock always updates in session-detail (2026-06-27)
+
+### Added
+
+- **`session.extra_mcp_servers` config field (BL344 / GH#118)** — list of additional MCP servers injected into `.mcp.json` on every spawn alongside the built-in `datawatch` entry. For non-claude-code backends, extras are written via `WriteProjectMCPConfig`. For claude-code backends (where the datawatch bridge is registered separately via RegisterSessionMCP), extras are written via new `InjectExtrasIntoMCPConfig`. Existing operator-added entries are preserved. Example:
+  ```yaml
+  session:
+    extra_mcp_servers:
+      - name: imap-mcp
+        command: /home/dmz/workspace/imap-mcp/imap-mcp
+        env:
+          GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
+  ```
+
+### Fixed
+
+- **Alert dock always receives alerts in session-detail view (GH#120)** — `handleAlert` was returning early when the user was viewing the source session in session-detail, which predated the dock refactor (when `showToast` showed an intrusive overlay). Since `showToast` now equals `pushToAlertDock` (a non-intrusive floating panel), suppressing it caused the dock to never show alerts for the active session. Early return removed; mute (🔕) is still respected.
+
+- **Alerts view "Go to session" and session name links now use `session-detail`** — four call sites in `renderAlertsView` used `navigate('session', ...)` instead of `navigate('session-detail', ...)`. The unrecognized view name fell through navigate's else branch, rendering a blank screen.
+
+---
+
 ## v8.12.9 — fix(session): apply scheduleSettleMs to all send_input sources + dedicated /api/sessions/send endpoint (2026-06-27)
 
 ### Fixed
