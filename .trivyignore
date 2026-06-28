@@ -67,15 +67,17 @@ CVE-2023-2953
 # prior container shell access.
 CVE-2025-69720
 
-# libssh2-1 — no fix in bookworm (2 HIGH)
+# libssh2-1 — no fix in bookworm (3 HIGH)
 # libssh2 is used by git for SSH transport. All SSH remotes are
 # operator-configured; no attacker-controlled SSH servers are contacted.
 #   CVE-2026-7598 (HIGH): Integer overflow in username/password handling.
 #     Only triggerable by a malicious SSH server.
 #   CVE-2026-55200 (HIGH): Out-of-bounds write via unchecked packet_length
 #     in transport.c. Same surface — requires a malicious SSH server.
+#   CVE-2026-55199 (HIGH): No fix in bookworm. Same SSH server attack surface.
 CVE-2026-7598
 CVE-2026-55200
+CVE-2026-55199
 
 # libgcrypt20 CVE-2026-41989 — HIGH, no fix in bookworm
 # DoS / buffer overflow in gnupg crypto backend. gnupg is used for
