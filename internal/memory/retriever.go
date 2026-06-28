@@ -49,30 +49,53 @@ func (r *Retriever) Remember(projectDir, text string) (int64, error) {
 	return r.store.Save(projectDir, text, "", "manual", "", vec)
 }
 
+// textFallback returns memories via full-text keyword search when the embedding
+// LLM is unavailable. It logs the original embed error once at warn level.
+// Results have Similarity=0 to signal keyword-match rather than semantic rank.
+func (r *Retriever) textFallback(projectDir, query string, embedErr error) ([]Memory, error) {
+	log.Printf("[memory] embed unavailable (%v), falling back to keyword search", embedErr)
+	tsb, ok := r.store.(TextSearchableBackend)
+	if !ok {
+		return nil, fmt.Errorf("embed query: %w (no text-search fallback)", embedErr)
+	}
+	if projectDir != "" {
+		return tsb.SearchByText(projectDir, query, r.topK)
+	}
+	return tsb.SearchAllByText(query, r.topK)
+}
+
 // Recall performs semantic search across memories for a project.
 // Query is sanitized for prompt-injection patterns (v5.26.70 — QW#4)
 // before reaching the embedder.
+// When the embedder is unavailable, falls back to keyword search (Similarity=0).
 func (r *Retriever) Recall(projectDir, query string) ([]Memory, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if r.embedder == nil {
+		return r.textFallback(projectDir, query, fmt.Errorf("no embedder configured"))
+	}
 	cleaned, _ := SanitizeQuery(query)
 	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		return r.textFallback(projectDir, cleaned, err)
 	}
 	return r.store.Search(projectDir, vec, r.topK)
 }
 
 // RecallAll performs semantic search across all projects.
+// Falls back to keyword search when the embedder is unavailable.
 func (r *Retriever) RecallAll(query string) ([]Memory, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if r.embedder == nil {
+		return r.textFallback("", query, fmt.Errorf("no embedder configured"))
+	}
 	cleaned, _ := SanitizeQuery(query)
 	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		return r.textFallback("", cleaned, err)
 	}
 	return r.store.SearchAll(vec, r.topK)
 }
@@ -86,17 +109,34 @@ func (r *Retriever) RecallAll(query string) ([]Memory, error) {
 //
 // Returns ErrNamespaceUnsupported when the configured Backend isn't a
 // NamespacedBackend (e.g. PG path until pgvector lands).
+// Falls back to keyword search within the namespaces when the embedder
+// is unavailable.
 func (r *Retriever) RecallInNamespaces(query string, namespaces []string) ([]Memory, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	nb, ok := r.store.(NamespacedBackend)
+	cleaned, _ := SanitizeQuery(query)
+
+	if r.embedder == nil {
+		if tsb, ok2 := r.store.(TextSearchableBackend); ok2 {
+			log.Printf("[memory] embed unavailable (no embedder), falling back to keyword namespace search")
+			return tsb.SearchInNamespacesByText(namespaces, cleaned, r.topK)
+		}
+		if !ok {
+			return nil, ErrNamespaceUnsupported
+		}
+		return nil, fmt.Errorf("embed query: no embedder configured (no text-search fallback)")
+	}
 	if !ok {
 		return nil, ErrNamespaceUnsupported
 	}
-	cleaned, _ := SanitizeQuery(query)
 	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
+		if tsb, ok2 := r.store.(TextSearchableBackend); ok2 {
+			log.Printf("[memory] embed unavailable (%v), falling back to keyword namespace search", err)
+			return tsb.SearchInNamespacesByText(namespaces, cleaned, r.topK)
+		}
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 	return nb.SearchInNamespaces(namespaces, vec, r.topK)
@@ -132,21 +172,69 @@ func (r *Retriever) SaveLearning(projectDir, sessionID, learning string) error {
 }
 
 // SaveOutputChunks stores chunked session output for granular search.
+// When the embedder is unavailable, chunks are saved without a vector
+// so they remain full-text searchable and can be re-embedded later via
+// LazyReembed when the LLM comes back online.
 func (r *Retriever) SaveOutputChunks(projectDir, sessionID string, chunks []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	for _, chunk := range chunks {
-		vec, err := r.embedder.Embed(ctx, chunk)
-		if err != nil {
-			log.Printf("[memory] embedding chunk failed, skipping: %v", err)
-			continue
+		var vec []float32
+		if r.embedder != nil {
+			var err error
+			vec, err = r.embedder.Embed(ctx, chunk)
+			if err != nil {
+				log.Printf("[memory] embedding chunk failed, saving without vector: %v", err)
+				vec = nil
+			}
 		}
 		if _, err := r.store.Save(projectDir, chunk, "", "output_chunk", sessionID, vec); err != nil {
 			log.Printf("[memory] save chunk: %v", err)
 		}
 	}
 	return nil
+}
+
+// LazyReembed attempts to back-fill embedding vectors for memories stored
+// without one (e.g. when Ollama was offline during Save). It processes up
+// to batchSize memories per call and returns the number successfully embedded.
+// Callers should invoke this periodically after detecting that the LLM has
+// become available; it is safe to call concurrently with normal recall/save.
+func (r *Retriever) LazyReembed(batchSize int) (int, error) {
+	if r.embedder == nil {
+		return 0, nil
+	}
+	tsb, ok := r.store.(TextSearchableBackend)
+	if !ok {
+		return 0, nil
+	}
+	items, err := tsb.ListUnembedded(batchSize)
+	if err != nil || len(items) == 0 {
+		return 0, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	count := 0
+	for _, m := range items {
+		if m.Content == "" {
+			continue
+		}
+		vec, err := r.embedder.Embed(ctx, m.Content)
+		if err != nil {
+			log.Printf("[memory] lazy-reembed skip #%d: %v", m.ID, err)
+			break // embedder down — stop and retry next time
+		}
+		if err := r.store.UpdateEmbedding(m.ID, vec); err != nil {
+			log.Printf("[memory] lazy-reembed update #%d: %v", m.ID, err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		log.Printf("[memory] lazy-reembed: embedded %d/%d pending memories", count, len(items))
+	}
+	return count, nil
 }
 
 // FormatRecallResults formats search results for display in comm channels.
@@ -195,28 +283,52 @@ func FormatMemoryList(memories []Memory) string {
 // RetrieveContext searches memory for relevant context based on a task description
 // and returns a formatted context string suitable for injecting into a session.
 // Returns empty string if no relevant memories found or on error.
+// When the embedder is unavailable, falls back to keyword search with no
+// similarity threshold (all keyword matches are included).
 func (r *Retriever) RetrieveContext(projectDir, task string, topK int) string {
 	if task == "" || topK <= 0 {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
-	vec, err := r.embedder.Embed(ctx, task)
-	if err != nil {
-		log.Printf("[memory] auto-retrieve embed failed: %v", err)
+	var memories []Memory
+
+	if r.embedder != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		vec, err := r.embedder.Embed(ctx, task)
+		cancel()
+		if err != nil {
+			log.Printf("[memory] auto-retrieve embed failed: %v; trying keyword fallback", err)
+		} else {
+			memories, err = r.store.Search(projectDir, vec, topK)
+			if err != nil {
+				log.Printf("[memory] auto-retrieve search failed: %v", err)
+				memories = nil
+			}
+		}
+	}
+
+	// Keyword fallback when embed unavailable or returned nothing.
+	if len(memories) == 0 {
+		if tsb, ok := r.store.(TextSearchableBackend); ok {
+			var ferr error
+			memories, ferr = tsb.SearchByText(projectDir, task, topK)
+			if ferr != nil {
+				log.Printf("[memory] keyword fallback search failed: %v", ferr)
+				return ""
+			}
+		} else {
+			return ""
+		}
+	}
+
+	if len(memories) == 0 {
 		return ""
 	}
 
-	memories, err := r.store.Search(projectDir, vec, topK)
-	if err != nil || len(memories) == 0 {
-		return ""
-	}
-
-	// Filter to memories with reasonable similarity (>30%)
+	// For semantic results filter by similarity; for keyword results include all.
 	var relevant []Memory
 	for _, m := range memories {
-		if m.Similarity > 0.3 {
+		if m.Similarity > 0.3 || m.Similarity == 0 {
 			relevant = append(relevant, m)
 		}
 	}

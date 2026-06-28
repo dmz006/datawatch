@@ -88,24 +88,38 @@ func (s *Service) Summarize(ctx context.Context, text string) (string, error) {
 	if s.reg != nil {
 		llm, err := s.reg.Get(sc.LLMRef)
 		if err == nil && llm != nil {
+			var result string
 			switch llm.Kind {
 			case inference.KindOllama:
-				return s.callOllama(ctx, llm, fullPrompt)
+				result, err = s.callOllama(ctx, llm, fullPrompt)
 			case "openai-api", "openai", inference.KindClaude:
-				return s.callOpenAI(ctx, llm, fullPrompt)
+				result, err = s.callOpenAI(ctx, llm, fullPrompt)
 			default:
-				// For other kinds (openwebui, etc.) try Ollama protocol.
-				return s.callOllama(ctx, llm, fullPrompt)
+				result, err = s.callOllama(ctx, llm, fullPrompt)
 			}
+			if err != nil {
+				log.Printf("[summarizer] LLM call failed: %v; returning stub", err)
+				return "Summary unavailable — LLM offline.", nil
+			}
+			return result, nil
 		}
 	}
 
 	// Fallback: use cfg.Ollama.Host if configured.
 	if s.cfg.Ollama.Enabled && s.cfg.Ollama.Host != "" {
-		return s.callOllamaRaw(ctx, s.cfg.Ollama.Host, s.cfg.Ollama.Model, fullPrompt)
+		result, err := s.callOllamaRaw(ctx, s.cfg.Ollama.Host, s.cfg.Ollama.Model, fullPrompt)
+		if err != nil {
+			log.Printf("[summarizer] Ollama fallback failed: %v; returning stub", err)
+			return "Summary unavailable — LLM offline.", nil
+		}
+		return result, nil
 	}
 
-	return "", fmt.Errorf("summarizer: LLM %q not found in registry", sc.LLMRef)
+	// LLM is not reachable — return a stub so callers degrade gracefully
+	// rather than propagating an error. The stub is intentionally terse so
+	// TTS surfaces don't read a long fallback message.
+	log.Printf("[summarizer] LLM %q unavailable, returning stub summary", sc.LLMRef)
+	return "Summary unavailable — LLM offline.", nil
 }
 
 // SummarizeDual generates both a short (3-sentence notification-safe) and a
@@ -170,7 +184,8 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 				raw, err = s.callOllama(ctx, llm, fullPrompt)
 			}
 			if err != nil {
-				return "", "", err
+				log.Printf("[summarizer] dual LLM call failed: %v; returning stub", err)
+				return "Summary unavailable — LLM offline.", "", nil
 			}
 			short, long = parseDualSummary(raw)
 			log.Printf("[summarizer] dual input_len=%d raw=%q short=%q long_len=%d",
@@ -183,7 +198,8 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 	if s.cfg.Ollama.Enabled && s.cfg.Ollama.Host != "" {
 		raw, err = s.callOllamaRaw(ctx, s.cfg.Ollama.Host, s.cfg.Ollama.Model, fullPrompt)
 		if err != nil {
-			return "", "", err
+			log.Printf("[summarizer] dual Ollama fallback failed: %v; returning stub", err)
+			return "Summary unavailable — LLM offline.", "", nil
 		}
 		short, long = parseDualSummary(raw)
 		log.Printf("[summarizer] dual input_len=%d raw=%q short=%q long_len=%d",
@@ -191,7 +207,9 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 		return short, long, nil
 	}
 
-	return "", "", fmt.Errorf("summarizer: LLM %q not found in registry", sc.LLMRef)
+	// LLM is not reachable — return stubs so session metadata is always populated.
+	log.Printf("[summarizer] LLM %q unavailable for dual summary, returning stubs", sc.LLMRef)
+	return "Summary unavailable — LLM offline.", "", nil
 }
 
 // ContextLines returns the recommended number of tmux history lines to

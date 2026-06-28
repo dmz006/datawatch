@@ -68,7 +68,24 @@ type PinnableBackend interface {
 	ListPinned(projectDir string, n int) ([]Memory, error)
 }
 
+// TextSearchableBackend is an optional capability extension a Backend
+// implementation may satisfy to support keyword/full-text fallback search
+// when the embedding LLM is unavailable. SQLite Store implements all three
+// methods using LIKE queries; the PG path can add ILIKE support later.
+// Retriever falls back to these methods when Embed() fails so that memory
+// recall degrades gracefully (keyword results with Similarity=0) rather
+// than returning an error.
+type TextSearchableBackend interface {
+	SearchByText(projectDir, query string, topK int) ([]Memory, error)
+	SearchAllByText(query string, topK int) ([]Memory, error)
+	SearchInNamespacesByText(namespaces []string, query string, topK int) ([]Memory, error)
+	// ListUnembedded returns up to n memories that have no embedding vector,
+	// used by the lazy re-embed background worker in Retriever.
+	ListUnembedded(n int) ([]Memory, error)
+}
+
 // Compile-time interface checks
 var _ Backend = (*Store)(nil)
 var _ NamespacedBackend = (*Store)(nil)
 var _ PinnableBackend = (*Store)(nil)
+var _ TextSearchableBackend = (*Store)(nil)

@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-06-27  
-**Version**: v8.13.2  
+**Version**: v8.13.3  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -346,9 +346,10 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ## Recent Context (as of 2026-06-27)
 
-**Version:** v8.13.2  
-**Last changes (v8.12.9–v8.13.2):**
+**Version:** v8.13.3  
+**Last changes (v8.12.9–v8.13.3):**
 
+- **v8.13.3** — LLM-optional memory: keyword fallback in `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` when Ollama offline; lazy re-embed via `LazyReembed()`; `SaveOutputChunks` stores without vector instead of skipping; summarizer returns stub ("Summary unavailable — LLM offline.") instead of error when LLM unreachable
 - **v8.13.2** — `schedule spawn` overlap guard + run history (`fire_count`/`last_fire_at`/`last_fire_result`/`active_spawn_id`) + `--shell`/`--path` CLI flags (GH#128)
 - **v8.13.1** — FCM/push payload enrichment: `session_id`, `session_name`, `last_response` in `session_state_changed` and `waiting_input` push events (GH#117)
 - **v8.13.0** — `session.extra_mcp_servers` config: inject additional MCP servers into every spawned session `.mcp.json` (GH#118); alert dock always receives alerts in session-detail view (GH#120); `navigate('session-detail', …)` typo fix (4 sites)

@@ -824,6 +824,166 @@ func (s *Store) UpdateEmbedding(id int64, embedding []float32) error {
 	return err
 }
 
+// textQueryTokens splits a query string into lowercase keyword tokens for
+// LIKE-based fallback search. Short tokens (< 3 chars) are dropped to avoid
+// matching everything.
+func textQueryTokens(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	out := words[:0]
+	for _, w := range words {
+		if len(w) >= 3 {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// SearchByText is the full-text fallback for Recall when the embedding LLM is
+// unavailable. It tokenizes the query and returns memories whose content
+// contains any of the keywords, ordered by creation time (most recent first).
+// Similarity is set to 0 on all results to signal keyword-match, not semantic.
+func (s *Store) SearchByText(projectDir, query string, topK int) ([]Memory, error) {
+	words := textQueryTokens(query)
+	if len(words) == 0 {
+		return s.ListRecent(projectDir, topK)
+	}
+	clauses := make([]string, len(words))
+	args := make([]interface{}, 0, len(words)+2)
+	args = append(args, projectDir)
+	for i, w := range words {
+		clauses[i] = "content LIKE ?"
+		args = append(args, "%"+w+"%")
+	}
+	q := `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
+	      FROM memories WHERE project_dir = ? AND (` + strings.Join(clauses, " OR ") + `)
+	      ORDER BY created_at DESC LIMIT ?`
+	args = append(args, topK)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	var result []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
+			continue
+		}
+		s.decryptMemory(&m)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+// SearchAllByText is the cross-project full-text fallback for RecallAll.
+func (s *Store) SearchAllByText(query string, topK int) ([]Memory, error) {
+	words := textQueryTokens(query)
+	var q string
+	var args []interface{}
+	if len(words) == 0 {
+		q = `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
+		     FROM memories ORDER BY created_at DESC LIMIT ?`
+		args = []interface{}{topK}
+	} else {
+		clauses := make([]string, len(words))
+		for i, w := range words {
+			clauses[i] = "content LIKE ?"
+			args = append(args, "%"+w+"%")
+		}
+		q = `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
+		     FROM memories WHERE ` + strings.Join(clauses, " OR ") + ` ORDER BY created_at DESC LIMIT ?`
+		args = append(args, topK)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	var result []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
+			continue
+		}
+		s.decryptMemory(&m)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+// SearchInNamespacesByText is the namespace-filtered full-text fallback for
+// RecallInNamespaces.
+func (s *Store) SearchInNamespacesByText(namespaces []string, query string, topK int) ([]Memory, error) {
+	if len(namespaces) == 0 {
+		namespaces = []string{DefaultNamespace}
+	}
+	words := textQueryTokens(query)
+	nsPlaceholders := make([]string, len(namespaces))
+	args := make([]interface{}, 0, len(namespaces)+len(words)+1)
+	for i, ns := range namespaces {
+		nsPlaceholders[i] = "?"
+		args = append(args, ns)
+	}
+	nsCond := "namespace IN (" + strings.Join(nsPlaceholders, ",") + ")"
+	var q string
+	if len(words) == 0 {
+		q = `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, namespace, created_at
+		     FROM memories WHERE ` + nsCond + ` ORDER BY created_at DESC LIMIT ?`
+		args = append(args, topK)
+	} else {
+		clauses := make([]string, len(words))
+		for i, w := range words {
+			clauses[i] = "content LIKE ?"
+			args = append(args, "%"+w+"%")
+		}
+		q = `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, namespace, created_at
+		     FROM memories WHERE ` + nsCond + ` AND (` + strings.Join(clauses, " OR ") + `)
+		     ORDER BY created_at DESC LIMIT ?`
+		args = append(args, topK)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	var result []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Namespace, &m.CreatedAt); err != nil {
+			continue
+		}
+		s.decryptMemory(&m)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+// ListUnembedded returns up to n memories that have no embedding vector,
+// used by the lazy re-embed background worker.
+func (s *Store) ListUnembedded(n int) ([]Memory, error) {
+	rows, err := s.db.Query(
+		`SELECT id, project_dir, content, role FROM memories
+		 WHERE embedding IS NULL AND content != ''
+		 ORDER BY created_at ASC LIMIT ?`, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	var result []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.ProjectDir, &m.Content, &m.Role); err != nil {
+			continue
+		}
+		m.Content = s.decryptField(m.Content)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
 // SetScore sets a quality score on a memory (used for learning scoring BL53).
 func (s *Store) SetScore(id int64, score int) error {
 	// Score stored in summary field as "score:N" prefix for simplicity

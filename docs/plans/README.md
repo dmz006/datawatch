@@ -38,9 +38,9 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-06-27
+## Current state — 2026-06-28
 
-Latest release: **v8.13.2** (2026-06-27). schedule spawn overlap guard + run history + --shell/--path flags (GH#128); v8.13.1 FCM payload enrichment (GH#117); v8.13.0 extra_mcp_servers config + alert dock fix (GH#118, GH#120); v8.12.9 SendInput settle fix + /api/sessions/send.
+Latest release: **v8.13.3** (2026-06-28). LLM-optional memory: keyword fallback when Ollama offline, lazy re-embed, summarizer stub; v8.13.2 schedule spawn overlap guard + run history + --shell/--path (GH#128); v8.13.1 FCM payload enrichment (GH#117); v8.13.0 extra_mcp_servers config + alert dock fix (GH#118, GH#120).
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -54,6 +54,8 @@ Latest release: **v8.13.2** (2026-06-27). schedule spawn overlap guard + run his
 | Recently closed | BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17; BL319 ✅ v8.13.0; GH#117 ✅ v8.13.1; GH#120 ✅ v8.13.0; GH#125 ✅ v8.9.25 (already existed); GH#128 ✅ v8.13.2 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics; extra_mcp_servers injection; alert dock fix; FCM payload enrichment; schedule spawn overlap guard + run history |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn) | |
+
+v8.13.3 shipped 2026-06-28 — LLM-optional memory system: `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` now fall back to keyword/LIKE search when the embedding LLM is unavailable (Similarity=0 on fallback results). New `TextSearchableBackend` optional interface implemented by SQLite `Store` (`SearchByText`, `SearchAllByText`, `SearchInNamespacesByText`, `ListUnembedded`). `SaveOutputChunks` stores chunks without a vector instead of skipping when Ollama is offline. New `LazyReembed(batchSize)` on `Retriever` re-embeds un-vectorized memories when LLM comes back online. Summarizer `Summarize`/`SummarizeDual` return stub "Summary unavailable — LLM offline." instead of propagating errors. 234 tests.
 
 v8.13.2 shipped 2026-06-27 — GH#128 schedule spawn overlap guard + run history: `ScheduledCommand` gains `active_spawn_id`, `last_fire_at`, `last_fire_result`, `fire_count`. Scheduler skips new cron fire when prior spawn still running (not complete/failed/killed) via `SkipFire()`. `RecordFire()` persists run history after each spawn. `schedule list` shows FIRES/LAST-FIRE/LAST-RESULT columns. CLI `schedule spawn` gains `--shell <cmd>` (subprocess alias) and `--path <dir>` (alias for --dir). 401 tests.
 
