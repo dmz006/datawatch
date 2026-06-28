@@ -51,8 +51,8 @@ func TestBL34_Ask_OllamaNotConfigured(t *testing.T) {
 		strings.NewReader(`{"question":"hi"}`))
 	rr := httptest.NewRecorder()
 	s.handleAsk(rr, req)
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("want 500 when ollama.host empty, got %d", rr.Code)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("want 503 when ollama.host empty, got %d", rr.Code)
 	}
 }
 

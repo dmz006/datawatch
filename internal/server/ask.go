@@ -41,10 +41,23 @@ type AskRequest struct {
 
 // AskResponse is what we emit on success.
 type AskResponse struct {
-	Backend  string `json:"backend"`
-	Model    string `json:"model,omitempty"`
-	Answer   string `json:"answer"`
-	DurationMs int64 `json:"duration_ms"`
+	Backend    string `json:"backend"`
+	Model      string `json:"model,omitempty"`
+	Answer     string `json:"answer"`
+	DurationMs int64  `json:"duration_ms"`
+}
+
+// AskErrorResponse is emitted on 503 (LLM unavailable) and 4xx errors so
+// clients get a machine-readable body rather than a plain-text HTTP error.
+type AskErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// jsonError writes a JSON AskErrorResponse with the given HTTP status code.
+func jsonError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(AskErrorResponse{Error: msg})
 }
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
@@ -52,17 +65,17 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var req AskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		jsonError(w, http.StatusBadRequest, "bad request: "+err.Error())
 		return
 	}
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		http.Error(w, "question required", http.StatusBadRequest)
+		jsonError(w, http.StatusBadRequest, "question required")
 		return
 	}
 	if req.Backend == "" {
@@ -85,7 +98,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			case "openwebui":
 				llmName = "openwebui"
 			default:
-				http.Error(w, "unsupported backend: "+req.Backend, http.StatusBadRequest)
+				jsonError(w, http.StatusBadRequest, "unsupported backend: "+req.Backend)
 				return
 			}
 		}
@@ -99,7 +112,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 				Consumer:      "ask",
 			})
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				// 503 — LLM backend is unreachable, not a server bug.
+				jsonError(w, http.StatusServiceUnavailable, "LLM unavailable: "+err.Error())
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -126,11 +140,12 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	case "openwebui":
 		answer, err = askOpenWebUI(s, req)
 	default:
-		http.Error(w, "unsupported backend: "+req.Backend, http.StatusBadRequest)
+		jsonError(w, http.StatusBadRequest, "unsupported backend: "+req.Backend)
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// 503 — LLM backend is unreachable, not a server bug.
+		jsonError(w, http.StatusServiceUnavailable, "LLM unavailable: "+err.Error())
 		return
 	}
 
