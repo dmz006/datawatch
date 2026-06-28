@@ -8197,7 +8197,7 @@ func runSessionSend(cfg *config.Config, id, text string) error {
 	// Try dedicated send endpoint first (v8.12.9+) — bypasses text command parsing,
 	// uses scheduleSettleMs settle time, returns structured JSON error.
 	sendBody, _ := json.Marshal(map[string]string{"session_id": id, "text": text, "source": "cli"})
-	sendURL := strings.TrimRight(daemonAPIURL(cfg), "/api/command") + "/api/sessions/send"
+	sendURL := strings.TrimSuffix(daemonAPIURL(cfg), "/api/command") + "/api/sessions/send"
 	reached, err := tryDaemonRequest(cfg, sendURL, sendBody)
 	if err != nil {
 		return err
