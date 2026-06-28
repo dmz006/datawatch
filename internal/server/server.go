@@ -199,6 +199,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/delete", api.handleDeleteSession)
 	apiMux.HandleFunc("/api/sessions/start", api.handleStartSession)
 	apiMux.HandleFunc("/api/sessions/restart", api.handleRestartSession)
+	apiMux.HandleFunc("/api/sessions/send", api.handleSessionSend)
 	apiMux.HandleFunc("/api/sessions/state", api.handleSetSessionState)
 	apiMux.HandleFunc("/api/sessions/set_llm_ref", api.handleSetSessionLLMRef)
 	apiMux.HandleFunc("/api/sessions/response", api.handleSessionResponse)

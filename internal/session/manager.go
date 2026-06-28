@@ -2748,11 +2748,14 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		m.debugf("SendInput ollama conversation not active, falling back to tmux send-keys")
 	}
-	// B30: for scheduled commands, split keys + Enter with a settle delay
-	// so TUIs that are mid-render-settle (claude-code / ink) don't swallow
-	// the Enter as part of prompt setup.
+	// B30 / v8.12.9: apply scheduleSettleMs to ALL sources (not just "schedule").
+	// Claude Code's Ink TUI can swallow Enter if it arrives before the prompt
+	// component is fully settled — this affects MCP, CLI, and API sends equally.
+	// scheduleSettleMs defaults to 200ms and is configurable via
+	// session.schedule_settle_ms. Falls back to defaultSendSettle (120ms) if
+	// not configured (scheduleSettleMs == 0).
 	var sendErr error
-	if source == "schedule" && m.scheduleSettleMs > 0 {
+	if m.scheduleSettleMs > 0 {
 		sendErr = m.tmux.SendKeysWithSettle(sess.TmuxSession, input,
 			time.Duration(m.scheduleSettleMs)*time.Millisecond)
 	} else {

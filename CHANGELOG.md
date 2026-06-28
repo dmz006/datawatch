@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.12.9 — fix(session): apply scheduleSettleMs to all send_input sources + dedicated /api/sessions/send endpoint (2026-06-27)
+
+### Fixed
+
+- **`Manager.SendInput` now applies `scheduleSettleMs` to ALL sources** — previously the B30 settle delay (configurable, default 200ms) was only applied when `source == "schedule"`. Sends from MCP, CLI, API, web, and filter sources used the hardcoded `defaultSendSettle = 120ms`, which is too short for Claude Code's React Ink TUI to process the two-step literal-text + Enter sequence. Agent-to-agent sends via MCP would fill the input buffer but not deliver Enter, leaving the target session waiting. Now any `scheduleSettleMs > 0` applies to all sources.
+
+### Added
+
+- **`POST /api/sessions/send`** — dedicated REST endpoint for send_input. Body: `{"session_id": "...", "text": "...", "source": "api"}`. Returns `{"ok":true,"session_id":"..."}` or `{"ok":false,"error":"..."}`. Bypasses `/api/command` text-command parsing so agent-to-agent sends are not misinterpreted as control commands.
+
+- **CLI `send` subcommand tries new endpoint first** — `datawatch session send <id> <text>` now attempts `POST /api/sessions/send` before falling back to the pre-v8.12.9 `/api/command` format, enabling clean sends to daemons that support the new endpoint.
+
+### Tests
+
+- Replaced `TestBL89_FakeTmux_SendInput_UsesOneShotForUser` (validated old wrong behavior) with two new tests:
+  - `TestBL89_FakeTmux_SendInput_UsesSettleForAllSourcesWhenConfigured`: web/mcp/cli/api/filter all use settle path when `scheduleSettleMs=200`
+  - `TestBL89_FakeTmux_SendInput_UsesOneShotWhenSettleUnconfigured`: `scheduleSettleMs=0` → one-shot (backward-compat)
+
+---
+
 ## v8.12.8 — perf(monitor): reduce tmux subprocess forks for many background sessions (2026-06-25)
 
 ### Changed

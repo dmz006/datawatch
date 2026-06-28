@@ -38,23 +38,47 @@ func TestBL89_FakeTmux_SendInput_UsesSettleForSchedule(t *testing.T) {
 	}
 }
 
-func TestBL89_FakeTmux_SendInput_UsesOneShotForUser(t *testing.T) {
+// v8.12.9: scheduleSettleMs now applies to ALL sources (mcp, cli, api, web, etc.),
+// not just "schedule". Claude Code's Ink TUI can swallow Enter for any source.
+func TestBL89_FakeTmux_SendInput_UsesSettleForAllSourcesWhenConfigured(t *testing.T) {
+	for _, source := range []string{"web", "mcp", "cli", "api", "filter"} {
+		mgr, fake := newTestManagerWithFake(t)
+		mgr.SetScheduleSettleMs(200) // settle configured → all sources use it
+
+		_ = mgr.SaveSession(&Session{
+			ID: "bb01", FullID: "testhost-bb01", TmuxSession: "cs-bb01",
+			State: StateWaitingInput, UpdatedAt: time.Now(),
+		})
+
+		if err := mgr.SendInput("testhost-bb01", "hi", source); err != nil {
+			t.Fatalf("source=%s SendInput: %v", source, err)
+		}
+		if fake.Count("send-keys-settle") != 1 {
+			t.Errorf("source=%s: should use settle variant when scheduleSettleMs>0; got calls: %+v", source, fake.Calls)
+		}
+		if fake.Count("send-keys") != 0 {
+			t.Errorf("source=%s: should NOT use one-shot SendKeys when scheduleSettleMs>0", source)
+		}
+	}
+}
+
+func TestBL89_FakeTmux_SendInput_UsesOneShotWhenSettleUnconfigured(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
-	mgr.SetScheduleSettleMs(200) // settle configured, but source != schedule
+	// scheduleSettleMs == 0 (not configured) → falls back to SendKeys (120ms default)
 
 	_ = mgr.SaveSession(&Session{
 		ID: "bb01", FullID: "testhost-bb01", TmuxSession: "cs-bb01",
 		State: StateWaitingInput, UpdatedAt: time.Now(),
 	})
 
-	if err := mgr.SendInput("testhost-bb01", "hi", "web"); err != nil {
+	if err := mgr.SendInput("testhost-bb01", "hi", "mcp"); err != nil {
 		t.Fatalf("SendInput: %v", err)
 	}
 	if fake.Count("send-keys") != 1 {
-		t.Errorf("user path should use one-shot SendKeys; got calls: %+v", fake.Calls)
+		t.Errorf("unconfigured settle should use one-shot SendKeys; got calls: %+v", fake.Calls)
 	}
 	if fake.Count("send-keys-settle") != 0 {
-		t.Errorf("user path should NOT use settle variant")
+		t.Errorf("unconfigured settle should NOT use settle variant")
 	}
 }
 

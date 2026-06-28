@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.12.8"
+var Version = "8.12.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3554,6 +3554,56 @@ func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleSetSessionState allows manual override of a session's state.
+// POST /api/sessions/send {"session_id":"...","text":"...","source":"..."}
+// Dedicated send-input endpoint for agent-to-agent and CLI/API use.
+// Returns {"ok":true,"session_id":"..."} or {"ok":false,"error":"..."}.
+// Source defaults to "api"; CLI sets "cli", MCP callers can set "mcp".
+func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapSessionsInput) {
+		return
+	}
+	var body struct {
+		SessionID string `json:"session_id"`
+		Text      string `json:"text"`
+		Source    string `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "bad request"}) //nolint:errcheck
+		return
+	}
+	if body.SessionID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "session_id required"}) //nolint:errcheck
+		return
+	}
+	if body.Text == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "text required"}) //nolint:errcheck
+		return
+	}
+	source := body.Source
+	if source == "" {
+		source = "api"
+	}
+	if err := s.manager.SendInput(body.SessionID, body.Text, source); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session_id": body.SessionID}) //nolint:errcheck
+}
+
 // POST /api/sessions/state {"id":"...","state":"running|waiting_input|complete|killed"}
 func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {

@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.12.8"
+var Version = "8.12.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8194,8 +8194,20 @@ func runSessionStatus(cfg *config.Config, id string) error {
 }
 
 func runSessionSend(cfg *config.Config, id, text string) error {
-	// Try HTTP API first
-	reached, err := tryDaemonCommand(cfg, fmt.Sprintf("send %s: %s", id, text))
+	// Try dedicated send endpoint first (v8.12.9+) — bypasses text command parsing,
+	// uses scheduleSettleMs settle time, returns structured JSON error.
+	sendBody, _ := json.Marshal(map[string]string{"session_id": id, "text": text, "source": "cli"})
+	sendURL := strings.TrimRight(daemonAPIURL(cfg), "/api/command") + "/api/sessions/send"
+	reached, err := tryDaemonRequest(cfg, sendURL, sendBody)
+	if err != nil {
+		return err
+	}
+	if reached {
+		fmt.Printf("Input sent to session %s\n", id)
+		return nil
+	}
+	// Fall back to /api/command text format (pre-v8.12.9 daemons).
+	reached, err = tryDaemonCommand(cfg, fmt.Sprintf("send %s: %s", id, text))
 	if err != nil {
 		return err
 	}
