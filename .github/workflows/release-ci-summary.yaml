@@ -175,11 +175,14 @@ jobs:
               f"_Updated: {now}_",
           ])
 
-          # Fetch current release body
+          # Fetch current release body.
+          # Patch releases (X.Y.Z with Z>0) are not published as GH releases
+          # per release-discipline rules — only minor/major releases are.
+          # Skip gracefully instead of failing when no release exists.
           rel = gh(f"repos/{repo}/releases/tags/{tag}")
           if not rel:
-              print(f"Release {tag} not found — cannot update.")
-              raise SystemExit(1)
+              print(f"Release {tag} not found — patch release with no GH release, skipping CI summary update.")
+              raise SystemExit(0)
 
           body = rel.get("body") or ""
 
