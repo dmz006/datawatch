@@ -1212,6 +1212,10 @@ received before any task transitioned to `failed`. Written into
 for post-mortem: shows what tools ran, what output was produced, and
 what the session's state was immediately before the failure.
 
+**LLM-optional memory recall (v8.13.3)** — when the embedding LLM (Ollama) is offline or returns an error, `Recall`, `RecallAll`, `RecallInNamespaces`, and `RetrieveContext` automatically fall back to LIKE-based keyword search against the SQLite store instead of returning an error. Fallback results carry `Similarity=0` to distinguish them from semantic results. `SaveOutputChunks` stores chunks without a vector (previously skipped them), keeping them text-searchable. `LazyReembed(batchSize int)` on `Retriever` back-fills embedding vectors for un-vectorized rows when the LLM becomes available again. The session summarizer returns `"Summary unavailable — LLM offline."` instead of propagating errors. `POST /api/ask` returns HTTP 503 + JSON `{"error":"LLM unavailable:…"}` on backend connectivity failures.
+
+**TextSearchableBackend** — optional interface the SQLite `Store` implements (v8.13.3). Provides `SearchByText(projectDir, query, topK)`, `SearchAllByText(query, topK)`, `SearchInNamespacesByText(namespaces, query, topK)`, and `ListUnembedded(n)`. Used by `Retriever` as the keyword-search fallback when embedding is unavailable. The PG store does not yet implement it; callers check via type assertion before using.
+
 **persist_telemetry_on_stop** — boolean config flag under `session:`
 in `datawatch.yaml`. When `true`, the daemon calls
 `flushTelemetryToMemory()` when a `Stop` or `SubagentStop` hook fires,
@@ -1296,6 +1300,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Scheduled session spawn (ephemeral) | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.11.0–v8.13.2 | DeferredSession, subprocess mode, overlap guard, run history, --shell/--path flags |
 | Extra MCP servers per session | [`howto/mcp-tools.md`](howto/mcp-tools.md) | v8.13.0 | session.extra_mcp_servers, WriteProjectMCPConfig, InjectExtrasIntoMCPConfig |
 | Dedicated send_input endpoint | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.12.9 | POST /api/sessions/send bypasses text-command parsing; scheduleSettleMs applies to all sources |
+| LLM-optional memory recall | [`docs/memory.md`](memory.md) | v8.13.3 | `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` fall back to LIKE keyword search when Ollama offline; `LazyReembed()` back-fills vectors when LLM returns; summarizer returns stub instead of error |
 | FCM push payload enrichment | [`howto/push-notifications.md`](howto/push-notifications.md) | v8.13.1 | session_id/session_name/last_response in session_state_changed and waiting_input push events |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.

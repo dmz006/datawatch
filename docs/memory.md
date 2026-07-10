@@ -139,6 +139,25 @@ extracted learning becomes searchable context for future work.
 
 All Go-native — no Python runtime dependency. See `docs/plans/RELEASE-NOTES-v5.27.0.md` for the full alignment narrative.
 
+### v8.13.3 — LLM-optional memory (Ollama-offline resilience)
+
+| Feature | Module | Behaviour |
+|---------|--------|-----------|
+| Keyword fallback in Recall | `retriever.go` | When `Embed()` fails (Ollama offline/unreachable), `Recall`, `RecallAll`, `RecallInNamespaces`, and `RetrieveContext` fall back to LIKE-based keyword search. Results have `Similarity=0` to signal keyword-match vs. semantic rank. |
+| `TextSearchableBackend` interface | `backend.go` + `store.go` | Optional interface the SQLite `Store` satisfies: `SearchByText(projectDir, query, topK)`, `SearchAllByText(query, topK)`, `SearchInNamespacesByText(namespaces, query, topK)`, `ListUnembedded(n)`. PG store can add later without breaking anything. |
+| Save without vector | `retriever.go` | `Remember`, `SaveLearning`, `SaveSessionSummary`, and `SaveOutputChunks` already saved without a vector when embedding failed — this is unchanged. The key fix: `SaveOutputChunks` no longer *skips* chunks on embed error; it saves them as searchable text. |
+| `LazyReembed(batchSize)` | `retriever.go` | Back-fills embedding vectors for rows stored without one (`embedding IS NULL`). Call after detecting Ollama is back online. Returns count of newly embedded memories. |
+
+**Degradation model:** when Ollama is offline, memory fully degrades to keyword search rather than returning errors or empty results. When Ollama returns, call `LazyReembed` to promote keyword-only rows to semantic-searchable.
+
+```go
+// Example: periodic lazy re-embed after LLM health-check passes
+if ollamaHealthy {
+    n, _ := retriever.LazyReembed(50)   // embed up to 50 pending per tick
+    if n > 0 { log.Printf("[memory] lazy-reembed: %d rows promoted", n) }
+}
+```
+
 ## Configuration
 
 ### YAML Config

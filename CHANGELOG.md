@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.3 — feat(memory): LLM-optional recall + summarizer stub + ask 503 (2026-06-28)
+
+### Added
+
+- **LLM-optional memory recall** — `Recall`, `RecallAll`, `RecallInNamespaces`, and `RetrieveContext` now fall back to keyword/LIKE search when the embedding LLM (Ollama) is offline or returns an error. Results have `Similarity=0` to distinguish keyword matches from semantic results. No configuration needed — fallback is automatic.
+
+- **`TextSearchableBackend` interface** — optional interface on the SQLite `Store` adding `SearchByText`, `SearchAllByText`, `SearchInNamespacesByText`, and `ListUnembedded`. Enables keyword search without requiring a live embedder.
+
+- **`LazyReembed(batchSize)` on `Retriever`** — back-fills embedding vectors for memories stored without one when the LLM comes back online. Call periodically after detecting Ollama availability.
+
+- **`SaveOutputChunks` stores without vector when offline** — previously skipped chunks if embedding failed. Now saves them without a vector so they remain full-text searchable and can be re-embedded later via `LazyReembed`.
+
+### Fixed
+
+- **Summarizer returns stub on LLM error** — `Summarize` and `SummarizeDual` previously propagated network errors when Ollama/OpenWebUI was unreachable, causing HTTP 500 in the session state callback. Both methods now return `"Summary unavailable — LLM offline."` instead, keeping session metadata populated.
+
+- **`POST /api/ask` returns 503 + JSON on LLM errors** — previously returned 500 plain-text when the LLM backend was unreachable. Now returns HTTP 503 Service Unavailable with a JSON `{"error": "LLM unavailable: ..."}` body so clients can distinguish backend-offline from server bugs. All 4xx/5xx paths now emit JSON.
+
+---
+
 ## v8.13.2 — feat(schedule): spawn overlap guard + run history + --shell/--path flags (GH#128) (2026-06-27)
 
 ### Added
