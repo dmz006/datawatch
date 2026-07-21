@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.5 — sec: golang.org/x/text v0.39.0 + Go 1.25.12 (GO-2026-5970, GO-2026-5856) (2026-07-21)
+
+### Security
+
+- **GO-2026-5970** — upgraded `golang.org/x/text` from v0.37.0 to v0.39.0; fixes infinite loop on invalid input reachable via `internal/memory/normalize.go` and `pg_store.go`.
+- **GO-2026-5856** — updated `go` directive to 1.25.12; fixes ECH (Encrypted Client Hello) privacy leak in `crypto/tls`, reachable via TLS listeners and HTTP clients.
+- Cascading `golang.org/x` upgrades: crypto v0.53.0, net v0.56.0, sys v0.46.0, term v0.44.0, sync v0.21.0, tools v0.47.0, mod v0.37.0.
+
+---
+
 ## v8.13.4 — fix(update): channel binary fetched from target version, not source version (2026-07-21)
 
 ### Fixed
