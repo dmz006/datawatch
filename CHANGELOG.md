@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.4 — fix(update): channel binary fetched from target version, not source version (2026-07-21)
+
+### Fixed
+
+- **`downloadChannelBinary` version mismatch (GH#129)** — `datawatch update` and the autonomous updater both called `downloadChannelBinary` with the running binary's compile-time `Version` global as the release tag, so the channel binary was fetched from the *old* release instead of the newly installed target version. Fixed by adding a `targetVersion string` parameter to `downloadChannelBinary`. Update-path call sites now pass the resolved `latest` version; startup self-heal and `setup channel` call sites continue to pass `Version` (correct — those downloads must match the running binary).
+
+---
+
 ## v8.13.3 — feat(memory): LLM-optional recall + summarizer stub + ask 503 (2026-06-28)
 
 ### Added

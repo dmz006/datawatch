@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.13.3"
+var Version = "8.13.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -886,7 +886,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Go bridge absent — try to self-heal by downloading from the
 			// current release. Skipped when update.enabled=false (quiet mode).
 			fmt.Printf("[channel] Go bridge not found — downloading from v%s release...\n", Version)
-			if downloaded, dlErr := downloadChannelBinary(dataDirExpanded); dlErr == nil {
+			if downloaded, dlErr := downloadChannelBinary(dataDirExpanded, Version); dlErr == nil {
 				bridgeBin = downloaded
 				fmt.Printf("[channel] Go bridge installed: %s\n", bridgeBin)
 			} else {
@@ -5627,7 +5627,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 			} else {
 				// Also update the channel binary before restarting.
 				dataDirExpanded := expandHome(cfg.DataDir)
-				if _, chanErr := downloadChannelBinary(dataDirExpanded); chanErr != nil {
+				if _, chanErr := downloadChannelBinary(dataDirExpanded, latest); chanErr != nil {
 					fmt.Printf("[updater] channel binary update failed: %v\n", chanErr)
 				}
 				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
@@ -5954,13 +5954,13 @@ func extractFromZip(archivePath, target, dest string) error {
 // handler and the auto-updater goroutine racing on replaceExecutable.
 var updateMu sync.Mutex
 
-// downloadChannelBinary fetches datawatch-channel-<os>-<arch> from the same
-// GitHub release as the running daemon and saves it to <dataDir>/channel/.
-// Called at startup when BinaryPath returns "" so the Go bridge self-heals
-// without operator intervention.
-func downloadChannelBinary(dataDir string) (string, error) {
+// downloadChannelBinary fetches datawatch-channel-<os>-<arch> from the GitHub
+// release identified by targetVersion and saves it to <dataDir>/channel/.
+// Pass Version for startup self-heal and setup (download matching the running
+// binary); pass the resolved latest version for update paths (fixes GH#129).
+func downloadChannelBinary(dataDir, targetVersion string) (string, error) {
 	// Don't attempt for unversioned dev builds.
-	if Version == "" || Version == "dev" || strings.HasPrefix(Version, "0.0.0") {
+	if targetVersion == "" || targetVersion == "dev" || strings.HasPrefix(targetVersion, "0.0.0") {
 		return "", fmt.Errorf("dev build — skipping auto-download")
 	}
 	goos := runtime.GOOS
@@ -5978,13 +5978,13 @@ func downloadChannelBinary(dataDir string) (string, error) {
 	// Primary: extract datawatch-channel from the goreleaser archive (both binaries live there).
 	var archiveName, chanBin string
 	if goos == "windows" {
-		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", Version, goos, goarch)
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", targetVersion, goos, goarch)
 		chanBin = "datawatch-channel.exe"
 	} else {
-		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", Version, goos, goarch)
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", targetVersion, goos, goarch)
 		chanBin = "datawatch-channel"
 	}
-	archiveURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, archiveName)
+	archiveURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", targetVersion, archiveName)
 
 	tmpDir, err := os.MkdirTemp("", "datawatch-channel-dl-*")
 	if err != nil {
@@ -6024,14 +6024,14 @@ func downloadChannelBinary(dataDir string) (string, error) {
 	if goos == "windows" {
 		assetName += ".exe"
 	}
-	legacyURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", Version, assetName)
+	legacyURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", targetVersion, assetName)
 	resp2, err := httpClient.Get(legacyURL)
 	if err != nil {
 		return "", fmt.Errorf("download channel binary: %w", err)
 	}
 	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("channel binary not found in release v%s (tried archive and bare binary)", Version)
+		return "", fmt.Errorf("channel binary not found in release v%s (tried archive and bare binary)", targetVersion)
 	}
 	tmp := dst + ".tmp"
 	f2, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
@@ -9985,7 +9985,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		cfg, cfgErr := loadConfig()
 		if cfgErr == nil {
 			dataDir := expandHome(cfg.DataDir)
-			if chanPath, chanErr := downloadChannelBinary(dataDir); chanErr != nil {
+			if chanPath, chanErr := downloadChannelBinary(dataDir, latest); chanErr != nil {
 				fmt.Printf("[update] channel binary update failed: %v\n", chanErr)
 			} else {
 				fmt.Printf("[update] channel binary updated: %s\n", chanPath)
@@ -12051,7 +12051,7 @@ switching to the Go bridge.`,
 			}
 
 			fmt.Println("Go bridge:    not found — attempting auto-download...")
-			if downloaded, dlErr := downloadChannelBinary(dataDir); dlErr == nil {
+			if downloaded, dlErr := downloadChannelBinary(dataDir, Version); dlErr == nil {
 				fmt.Printf("Go bridge:    %s   ✓ (just downloaded)\n", downloaded)
 				fmt.Println("\nReady. Restart the daemon to pick up the Go bridge.")
 				return nil
