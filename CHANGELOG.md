@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.10 — fix(zap): add 4 new WARN-NEW findings to rules.tsv (2026-07-21)
+
+### Security
+
+- **ZAP rules.tsv updated** — 4 new WARN-NEW alert IDs added, all expected in CI:
+  - `100000` (Server Error Response) → WARN: expected when ZAP probes auth-protected endpoints without a Bearer token.
+  - `10106` (HTTP Only Site) → IGNORE: CI scan targets plain HTTP; production uses TLS at the network perimeter.
+  - `2` (Private IP Disclosure) → IGNORE: `100.x.x.x` is the documented placeholder in openapi.yaml's Tailscale server variable, not a leaked address.
+  - `90022` (Application Error Disclosure) → WARN: structured JSON error bodies are intentional API design; no stack traces exposed.
+
+---
+
 ## v8.13.9 — fix(trivy): suppress CVE-2026-39822 pending golang:1.26.5 Docker image (2026-07-21)
 
 ### Security
