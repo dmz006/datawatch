@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.13 — fix(trivy): suppress GHSA-hrxh-6v49-42gf in gh CLI binary (2026-07-21)
+
+### Security
+
+- **GHSA-hrxh-6v49-42gf suppressed in `.trivyignore`** — `google.golang.org/grpc` HIGH vulnerability (xDS RBAC and HTTP/2 vulnerabilities, fixed in v1.82.1). Trivy finds grpc v1.81.1 embedded in `/usr/bin/gh` (GitHub CLI binary from cli.github.com apt repo), not in any datawatch Go binary — confirmed absent from go.mod and go.sum. The vulnerability affects gRPC servers using xDS RBAC; `gh` uses grpc as a client for GitHub API calls only. Entry will be removed once the gh apt package ships a build using grpc ≥ v1.82.1.
+
+---
+
 ## v8.13.12 — fix(zap): change rules 100000+90022 from WARN to IGNORE to stop WARN-NEW exit-2 (2026-07-21)
 
 ### CI
