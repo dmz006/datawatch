@@ -7,6 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.15 — fix(trivy): suppress 5 new agent-gemini CVEs in .trivyignore (2026-07-21)
+
+### Security
+
+- **5 new CVEs suppressed in `.trivyignore`** for agent-gemini container findings:
+  - `CVE-2026-11940` (libpython3.11-minimal, HIGH) — tarfile filter bypass, fix_deferred in Debian bookworm. Python is tooling only; no untrusted archive extraction at runtime.
+  - `CVE-2026-13149` (npm `brace-expansion`, HIGH, fixed 2.1.2) — ReDoS. Transitive dep of gemini-cli; not exposed to untrusted web input at runtime.
+  - `CVE-2026-48815` (npm `sigstore`, HIGH, fixed 4.1.1) — unauthorized certificate acceptance. Used during npm install, not at container runtime.
+  - `CVE-2026-59873` (npm `tar`, CRITICAL, fixed 7.5.19) — DoS via gzip bomb. Transitive dep of npm used for package extraction; not invoked on untrusted archives at runtime.
+  - `CVE-2026-59874` (npm `tar`, HIGH, fixed 7.5.18) — DoS via malformed tar. Same rationale as above.
+
+---
+
 ## v8.13.14 — fix(ci): daemon restart + continue-on-error for advisory ZAP passes (2026-07-21)
 
 ### CI
