@@ -160,12 +160,14 @@ jobs:
               2>>/tmp/dw-daemon.log &
             NEW_PID=$!
             echo "DW_PID=${NEW_PID}" >> "$GITHUB_ENV"
-            for i in $(seq 1 30); do
+            for i in $(seq 1 60); do
               curl -sf "http://localhost:8080/api/health" >/dev/null 2>&1 \
                 && echo "Daemon restarted after ${i}s" && break || true
               sleep 1
             done
-            curl -sf "http://localhost:8080/api/health" >/dev/null
+            curl -sf "http://localhost:8080/api/health" >/dev/null 2>&1 || {
+              echo "Daemon failed to restart; daemon log tail:"; cat /tmp/dw-daemon.log 2>/dev/null | tail -20 || true; exit 1
+            }
           fi
 
       # ── Pass 3: diagrams.html baseline (separate so its findings

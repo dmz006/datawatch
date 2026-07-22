@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.16 — fix(ci): extend daemon restart timeout from 30s to 60s (2026-07-21)
+
+### CI
+
+- **Daemon restart wait extended to 60s** — the "Restart daemon if needed" step between ZAP Pass 2 and Pass 3 waited only 30s for the daemon to come back up; the initial startup already uses 60s as its wait budget. Exit code 7 (curl "Failed to connect") from the final health check caused the step to fail. Extended to 60s to match initial startup. Also added explicit error logging (daemon log tail) if restart times out.
+
+---
+
 ## v8.13.15 — fix(trivy): suppress 5 new agent-gemini CVEs in .trivyignore (2026-07-21)
 
 ### Security
