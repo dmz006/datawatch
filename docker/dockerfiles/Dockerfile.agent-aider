@@ -27,7 +27,8 @@ RUN install_packages \
         "litellm>=1.83.7" \
         "urllib3>=2.7.0" \
         "pyasn1>=0.6.3" \
-        "pillow>=12.2.0" && \
+        "pillow>=12.2.0" \
+        "soupsieve>=2.8.4" && \
     # linux-libc-dev (kernel headers) is pulled by build-essential for C compilation
     # of Python native extensions during pip install. All compilation is now done;
     # purge it to eliminate 100+ unfixable kernel CVEs from the Trivy scan.

@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.20 — fix(docker): upgrade soupsieve>=2.8.4 in agent-aider (2026-07-21)
+
+### Security
+
+- **agent-aider: `soupsieve>=2.8.4` added to pip upgrade list** — Trivy found `soupsieve 2.7` in agent-aider's venv with CVE-2026-49476 and CVE-2026-49477 (both HIGH: DoS via crafted CSS selector strings, fixed in 2.8.4). Added soupsieve to the existing per-dep upgrade block in Dockerfile.agent-aider (same mechanism already used for gitpython, litellm, urllib3, pyasn1, pillow).
+
+---
+
 ## v8.13.19 — fix(ci): continue-on-error on daemon restart step (2026-07-21)
 
 ### CI
