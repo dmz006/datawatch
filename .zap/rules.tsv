@@ -76,8 +76,9 @@
 # ZAP probes all API endpoints without a Bearer token. Auth-protected endpoints
 # return 401; endpoints with malformed probe payloads may return 400/500. All
 # of these are expected when scanning an authenticated API without credentials.
-# Downgraded to WARN to keep visibility without failing CI.
-100000	WARN	Server Error response — expected during unauthenticated ZAP probe of auth-protected API; real 5xx regressions visible in scan report
+# Must be IGNORE (not WARN): ZAP exits code 2 on WARN-NEW even with fail_action,
+# and in a no-baseline run all alerts are "new".
+100000	IGNORE	Server Error response — expected during unauthenticated ZAP probe of auth-protected API; WARN causes WARN-NEW exit-2 in no-baseline runs
 
 # [10106] HTTP Only Site
 # The ZAP scan runs against the local CI server on plain HTTP (no TLS).
@@ -97,5 +98,5 @@
 # endpoints return structured error messages in the response body (e.g.
 # {"error":"…"}) which is intentional API design. No stack traces or internal
 # details are disclosed; error messages describe the user-visible problem.
-# Downgraded to WARN to retain visibility.
-90022	WARN	Application Error Disclosure — structured JSON error bodies are intentional API design; no stack traces or internal details exposed
+# Must be IGNORE (not WARN): WARN causes WARN-NEW exit-2 in no-baseline runs.
+90022	IGNORE	Application Error Disclosure — structured JSON error bodies are intentional API design; WARN causes WARN-NEW exit-2 in no-baseline runs

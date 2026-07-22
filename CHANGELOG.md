@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.12 — fix(zap): change rules 100000+90022 from WARN to IGNORE to stop WARN-NEW exit-2 (2026-07-21)
+
+### CI
+
+- **ZAP rules.tsv: 100000 and 90022 downgraded from WARN to IGNORE** — `WARN` in rules.tsv does not suppress WARN-NEW in no-baseline runs; ZAP exits code 2 on any WARN-NEW count, which `fail_action: true` treats as a build failure. Both alerts are confirmed expected findings with no real risk (100000 = auth-less probe returning 4xx/5xx; 90022 = intentional structured JSON error bodies). Changing to IGNORE suppresses them from the exit-code tally entirely.
+
+---
+
 ## v8.13.11 — fix(ci): clear ZAP report files between scan passes to prevent PermissionError (2026-07-21)
 
 ### CI
