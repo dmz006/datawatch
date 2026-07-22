@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-07-21  
-**Version**: v8.13.10  
+**Version**: v8.13.20  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -344,18 +344,22 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ---
 
-## Recent Context (as of 2026-06-27)
+## Recent Context (as of 2026-07-21)
 
-**Version:** v8.13.10  
-**Last changes (v8.13.3–v8.13.10):**
+**Version:** v8.13.20  
+**Last changes (v8.13.10–v8.13.20):**
 
+- **v8.13.20** — Dockerfile.agent-aider: soupsieve>=2.8.4 added to pip upgrade block (CVE-2026-49476 + CVE-2026-49477 DoS, fixed 2.8.4)
+- **v8.13.19** — ZAP CI: continue-on-error on daemon restart step (advisory section fully non-blocking)
+- **v8.13.18** — ZAP CI: daemon restart uses kill -9 + lsof port-wait + rm -rf state dir (SIGTERM left port bound)
+- **v8.13.17** — .trivyignore: 7 libglib2.0-0 CVEs (CRITICAL+HIGH, fix_deferred) in parent-full via signal-cli
+- **v8.13.16** — ZAP CI: daemon restart timeout 30s→60s; error logging on timeout
+- **v8.13.15** — .trivyignore: 5 agent-gemini CVEs (libpython3.11 CVE-2026-11940; npm brace-expansion, sigstore, tar×2)
+- **v8.13.14** — ZAP CI: daemon health-check+restart before advisory passes; continue-on-error on passes 3-5
+- **v8.13.13** — .trivyignore: GHSA-hrxh-6v49-42gf (grpc HIGH in /usr/bin/gh, not in datawatch module graph)
+- **v8.13.12** — ZAP rules.tsv: 100000+90022 WARN→IGNORE (WARN causes WARN-NEW exit-2 in no-baseline runs)
+- **v8.13.11** — ZAP CI: rm -f cleanup between passes (Docker UID PermissionError); distinct artifact_name per pass
 - **v8.13.10** — ZAP rules.tsv: 4 new WARN-NEW alert IDs added (100000/10106/2/90022) — all expected in unauthenticated CI scan
-- **v8.13.9** — .trivyignore: CVE-2026-39822 suppressed (os.Root not in call graph; golang:1.26.5 not yet on Docker Hub)
-- **v8.13.8** — Dockerfile.stats-cluster + Dockerfile.validator: ARG GO_VERSION=1.25→1.26
-- **v8.13.7** — Dockerfile.agent-base: ARG GO_VERSION→1.26.5; go.mod→1.26.5; .trivyignore: 23 new Debian CVEs triaged
-- **v8.13.6** — Dockerfile.agent-base: ARG GO_VERSION→1.25.12 (go mod download GOTOOLCHAIN fix)
-- **v8.13.5** — Security: x/text→v0.39.0 (GO-2026-5970); go→1.25.12 (GO-2026-5856 crypto/tls ECH)
-- **v8.13.4** — GH#129 fix: `downloadChannelBinary(dataDir, targetVersion)` — update paths pass `latest`, not compile-time `Version`
 - **v8.13.3** — LLM-optional memory: keyword fallback in `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` when Ollama offline; lazy re-embed via `LazyReembed()`; `SaveOutputChunks` stores without vector instead of skipping; summarizer returns stub ("Summary unavailable — LLM offline.") instead of error when LLM unreachable
 - **v8.12.9** — `Manager.SendInput` now applies `scheduleSettleMs` to ALL send sources (was schedule-only); `POST /api/sessions/send` dedicated endpoint; CLI `session send` uses new endpoint
 - **v8.12.x** — subprocess spawn mode for shell tasks (exit code = completion); completion pattern matching in TUI output (CR-split, non-ASCII strip, task-echo suppression)

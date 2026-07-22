@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.13.10-success)](https://github.com/dmz006/datawatch/releases/tag/v8.13.10)
+[![Release](https://img.shields.io/badge/release-v8.13.20-success)](https://github.com/dmz006/datawatch/releases/tag/v8.13.20)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.13.10](CHANGELOG.md) (2026-07-21)** — Bug fix: `datawatch update` was fetching the channel binary from the old (source) version tag instead of the target version (`downloadChannelBinary` now takes an explicit `targetVersion` parameter; update paths pass `latest`). Security: `golang.org/x/text` → v0.39.0 (GO-2026-5970 infinite loop), Go toolchain → 1.26.5 (GO-2026-5856 ECH privacy leak, CVE-2026-39822 os.Root symlink), all three container builder images updated to match. ZAP rules updated for 4 new CI findings. 2394 tests.
+**[v8.13.20](CHANGELOG.md) (2026-07-21)** — CI resilience: OWASP ZAP passes now include per-pass cleanup steps (prevents Docker UID PermissionError), daemon health-check+restart before advisory passes, `continue-on-error: true` on advisory passes 3–5. Security: ZAP rules 100000 and 90022 changed WARN→IGNORE (WARN causes WARN-NEW exit-2 in no-baseline runs); new Trivy suppressions for GHSA-hrxh-6v49-42gf (grpc in gh CLI), 7 libglib2.0-0 CVEs (fix_deferred), 5 agent-gemini CVEs (libpython + npm transitive); `soupsieve>=2.8.4` upgraded in agent-aider venv. Bug fix: `downloadChannelBinary` now takes explicit `targetVersion` parameter. 2394 tests.
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.

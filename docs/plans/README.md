@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-21
 
-Latest release: **v8.13.10** (2026-07-21). GH#129 fix: `downloadChannelBinary` now takes explicit `targetVersion` — update paths no longer fetch channel binary from old version tag. Security patch chain v8.13.4–v8.13.10: x/text v0.39.0 (GO-2026-5970), Go 1.26.5 builder (GO-2026-5856, CVE-2026-39822), all three container Dockerfiles updated, 23 new Debian bookworm CVEs triaged to .trivyignore, ZAP rules.tsv updated for 4 new CI findings.
+Latest release: **v8.13.20** (2026-07-21). CI resilience patch chain v8.13.11–v8.13.20: OWASP ZAP passes now include per-pass cleanup steps (Docker UID PermissionError fix), daemon health-check+restart before advisory passes, `continue-on-error: true` on advisory passes 3–5. Security: ZAP rules 100000+90022 changed WARN→IGNORE; Trivy suppressions for GHSA-hrxh-6v49-42gf (grpc in gh CLI), 7 libglib2.0-0 CVEs, 5 agent-gemini CVEs; `soupsieve>=2.8.4` in agent-aider venv.
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,16 @@ Latest release: **v8.13.10** (2026-07-21). GH#129 fix: `downloadChannelBinary` n
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.20 shipped 2026-07-21 — soupsieve>=2.8.4 in agent-aider venv (CVE-2026-49476 + CVE-2026-49477 DoS, fixed 2.8.4).
+v8.13.19 shipped 2026-07-21 — continue-on-error on daemon restart step so advisory ZAP section is fully non-blocking.
+v8.13.18 shipped 2026-07-21 — daemon restart: kill -9 + lsof port-wait + rm -rf state dir before restart (old SIGTERM left port bound).
+v8.13.17 shipped 2026-07-21 — .trivyignore: 7 libglib2.0-0 CVEs (CRITICAL+HIGH, fix_deferred) in parent-full (transitive via signal-cli).
+v8.13.16 shipped 2026-07-21 — daemon restart timeout 30s→60s to match initial startup budget; add error logging on timeout.
+v8.13.15 shipped 2026-07-21 — .trivyignore: 5 agent-gemini CVEs (libpython3.11 + 4 npm transitive: brace-expansion, sigstore, tar×2).
+v8.13.14 shipped 2026-07-21 — ZAP: daemon health-check+restart before advisory passes; continue-on-error on passes 3-5.
+v8.13.13 shipped 2026-07-21 — .trivyignore: GHSA-hrxh-6v49-42gf (grpc HIGH in /usr/bin/gh, not in datawatch module graph).
+v8.13.12 shipped 2026-07-21 — ZAP rules.tsv: 100000+90022 WARN→IGNORE (WARN causes WARN-NEW exit-2 in no-baseline runs).
+v8.13.11 shipped 2026-07-21 — ZAP CI: rm -f cleanup between passes (Docker UID PermissionError); distinct artifact_name per pass.
 v8.13.10 shipped 2026-07-21 — ZAP rules.tsv: 4 new WARN-NEW findings added (100000 server error, 10106 HTTP-only, 2 private IP, 90022 app error) — all expected in unauthenticated CI scan.
 
 v8.13.9 shipped 2026-07-21 — .trivyignore: CVE-2026-39822 (Go os.Root symlink following) suppressed pending golang:1.26.5-bookworm Docker Hub publish. datawatch does not call os.Root (confirmed by source search; govulncheck passes).
