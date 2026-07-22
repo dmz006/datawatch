@@ -150,7 +150,7 @@ jobs:
     name: goreleaser
     needs: [govulncheck, gosec]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
@@ -176,13 +176,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: goreleaser retry (rate-limit backoff)
         if: steps.goreleaser_step.outcome == 'failure'
-        continue-on-error: true
         run: |
-          echo "goreleaser failed on first attempt; sleeping 120s for rate-limit recovery"
-          sleep 120
-          goreleaser release --clean
+          echo "goreleaser failed on first attempt; checking GitHub rate limit..."
+          RESET=$(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null || echo "")
+          if [ -n "$RESET" ]; then
+            NOW=$(date +%s)
+            WAIT=$((RESET - NOW + 30))
+            if [ "$WAIT" -gt 0 ]; then
+              echo "Rate limit resets in ${WAIT}s; sleeping..."
+              sleep "$WAIT"
+            else
+              echo "Rate limit already reset; retrying immediately"
+            fi
+          else
+            echo "Could not query rate limit; sleeping 120s"
+            sleep 120
+          fi
+          echo "Retrying goreleaser via curl installer..."
+          curl -sfL https://goreleaser.com/static/run | VERSION=v2.15.4 bash -s -- release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 # ── Stage 4: containers — base images (agent-base, validator, stats-cluster) ──
 
@@ -362,7 +376,7 @@ jobs:
 
   attach-tarball:
     name: attach stats-cluster tarball
-    needs: [build-base, build-agents]
+    needs: [goreleaser, build-base, build-agents]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

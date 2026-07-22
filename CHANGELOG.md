@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.23 — fix(ci): goreleaser retry binary + attach-tarball dependency on goreleaser (2026-07-22)
+
+### CI
+
+- **goreleaser retry: fix `goreleaser: command not found`** — the goreleaser action installs goreleaser to a path that is not in PATH for subsequent `run:` steps. The retry step used bare `goreleaser release --clean` which always failed with "command not found". Fixed by installing goreleaser fresh via the official `curl -sfL https://goreleaser.com/static/run | VERSION=v2.15.4 bash -s --` wrapper in the retry step.
+- **goreleaser retry: dynamic sleep based on rate-limit reset time** — the previous 120s fixed sleep was far too short (rate limit resets up to 21 minutes after failure). The retry now queries `gh api rate_limit` to read the exact reset timestamp and sleeps until it passes (+30s buffer), so the retry reliably fires after the limit is lifted regardless of when in the hour the failure occurred.
+- **attach-tarball: add `goreleaser` to `needs:`** — `attach-tarball` previously depended only on `build-base` and `build-agents`, creating a race: when goreleaser is delayed by rate-limit retry, `attach-tarball` starts before the GitHub release is created and `gh release upload` fails with "release not found". Adding `goreleaser` to `needs:` ensures the release exists before the upload is attempted.
+- **goreleaser job: timeout-minutes 30 → 90** — the retry can sleep up to ~60 minutes (worst-case rate-limit reset window); increased the job timeout accordingly.
+
+---
+
 ## v8.13.22 — fix(docker): goose v1.43.0 + aaif-goose URL; CVE-2026-41254 triage (2026-07-22)
 
 ### Security
