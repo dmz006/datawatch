@@ -154,7 +154,15 @@ jobs:
             echo "Daemon alive — continuing"
           else
             echo "Daemon unreachable — restarting"
-            kill "${DW_PID:-0}" 2>/dev/null || true
+            # Force-kill the old daemon so port 8080 is released before we start
+            # a new instance. SIGTERM may leave the port bound briefly; SIGKILL
+            # ensures immediate process exit. Wait up to 5 s for the port.
+            kill -9 "${DW_PID:-0}" 2>/dev/null || true
+            for j in $(seq 1 5); do
+              ! lsof -ti:8080 >/dev/null 2>&1 && break || sleep 1
+            done
+            # Clear state so the new daemon starts clean (no leftover locks/sockets)
+            rm -rf /tmp/dw-zap-data && mkdir -p /tmp/dw-zap-data
             ./datawatch start --foreground \
               --config /tmp/dw-zap-config.yaml \
               2>>/tmp/dw-daemon.log &

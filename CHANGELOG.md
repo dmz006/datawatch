@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.18 — fix(ci): force-kill old daemon + clear state before restart (2026-07-21)
+
+### CI
+
+- **Daemon restart: SIGKILL + port-wait + clean state** — the "Restart daemon if needed" step failed because the old daemon process held port 8080 open even after SIGTERM, causing the new daemon to exit immediately (port already in use). Fix: `kill -9` for immediate process exit, 5s poll for port release, `rm -rf /tmp/dw-zap-data` for clean state before the new daemon start.
+
+---
+
 ## v8.13.17 — fix(trivy): suppress 7 new libglib2.0-0 CVEs in parent-full (2026-07-21)
 
 ### Security
