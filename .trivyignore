@@ -1,4 +1,4 @@
-# Container image CVE exceptions — v8.13.7
+# Container image CVE exceptions — v8.13.9
 # Reviewed: 2026-07-21  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
@@ -314,3 +314,11 @@ CVE-2026-60000
 #   CVE-2026-58472: Arbitrary code execution or denial of service
 CVE-2026-58471
 CVE-2026-58472
+
+# Go stdlib CVE-2026-39822 — HIGH, fixed in go1.26.5 / go1.25.12
+# os.Root symlink following vulnerability. datawatch does not call os.Root
+# or os.OpenRoot anywhere in cmd/ or internal/ (verified by source search;
+# govulncheck with full call-graph reachability analysis passes cleanly).
+# golang:1.26.5-bookworm is not yet available on Docker Hub; the builder
+# image resolves to go1.26.4. Remove this entry once golang:1.26.5 ships.
+CVE-2026-39822

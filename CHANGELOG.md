@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.9 — fix(trivy): suppress CVE-2026-39822 pending golang:1.26.5 Docker image (2026-07-21)
+
+### Security
+
+- **CVE-2026-39822 suppressed in `.trivyignore`** — `os.Root` symlink following vulnerability in Go stdlib. datawatch does not call `os.Root` or `os.OpenRoot` (confirmed by source search; govulncheck with full call-graph reachability passes). `golang:1.26.5-bookworm` is not yet published on Docker Hub so the builder resolves to go1.26.4. Entry will be removed once the image ships.
+
+---
+
 ## v8.13.8 — fix(docker): stats-cluster + validator builder images updated to Go 1.26 (2026-07-21)
 
 ### Fixed
