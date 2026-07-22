@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.24 — fix(ci): CVE-2026-47063 triage; attach-tarball removes build-agents from needs (2026-07-22)
+
+### Security
+
+- **parent-full: suppress CVE-2026-47063** — openjdk-17-jre-headless HIGH (CVSS 8.0), "Enhance Jar handling" (Oracle CPU 2026-07), no fix in Debian bookworm. Same justification as CVE-2026-41254: Java is installed solely for signal-cli which connects to operator-configured Signal servers only; no untrusted JAR loading at runtime.
+
+### CI
+
+- **attach-tarball: remove `build-agents` from `needs:`** — `attach-tarball` depends only on the stats-cluster Docker image (built by `build-base`) and the GitHub release (created by `goreleaser`). Depending on `build-agents` caused the tarball job to be SKIPPED whenever any agent container failed (e.g., parent-full CVE). Changed to `needs: [goreleaser, build-base]`.
+
+---
+
 ## v8.13.23 — fix(ci): goreleaser retry binary + attach-tarball dependency on goreleaser (2026-07-22)
 
 ### CI
