@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.6 — fix(docker): agent-base builder image bumped to Go 1.25.12 (2026-07-21)
+
+### Fixed
+
+- **`Dockerfile.agent-base` GO_VERSION pin** — builder stage used `golang:1.25.11-bookworm`; with `GOTOOLCHAIN=local` and `go.mod` requiring `go 1.25.12`, `go mod download` failed inside Docker buildx. Updated `ARG GO_VERSION` to `1.25.12` to match the module minimum and resolve GO-2026-5856 (`crypto/tls` ECH privacy leak) in the container build.
+
+---
+
 ## v8.13.5 — sec: golang.org/x/text v0.39.0 + Go 1.25.12 (GO-2026-5970, GO-2026-5856) (2026-07-21)
 
 ### Security
