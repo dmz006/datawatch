@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.14 — fix(ci): daemon restart + continue-on-error for advisory ZAP passes (2026-07-21)
+
+### CI
+
+- **Daemon health-check+restart before advisory ZAP passes** — ZAP Pass 2 (OpenAPI-driven API scan) sends active probes to every endpoint in `openapi.yaml`, which can trigger the daemon to exit. Added a `Restart daemon if needed` step (with `if: always()`) between Pass 2 and Pass 3 that checks `/api/health` and restarts the binary if unreachable. Passes 3–5 now get a live target even if the daemon died mid-scan.
+- **`continue-on-error: true` on Passes 3, 4, 5** — all three are already advisory (`fail_action: false`). Adding `continue-on-error: true` ensures a Docker/runtime error (exit code 3) on these steps also doesn't block the CI gate, matching the intent of `fail_action: false`.
+
+---
+
 ## v8.13.13 — fix(trivy): suppress GHSA-hrxh-6v49-42gf in gh CLI binary (2026-07-21)
 
 ### Security

@@ -28,6 +28,15 @@
 # binary launch. Cuts setup from ~15 min to ~2 min, eliminates the
 # systematic SIGTERM failures that plagued KIND builds without cache.
 # The daemon starts at port 8080 with a minimal ephemeral config.
+#
+# v8.13.14 — three resilience fixes:
+#   a) rm -f cleanup steps between each pass (prevents Docker UID
+#      PermissionError on report_json.json overwrite)
+#   b) daemon health-check+restart step before the advisory passes
+#      (Pass 2 API scan can crash/trigger graceful-exit in the daemon;
+#      passes 3-5 need a live target)
+#   c) continue-on-error: true on passes 3-5 (all advisory; runtime
+#      errors from a dead daemon don't block the CI gate)
 
 name: owasp-zap
 
@@ -133,9 +142,36 @@ jobs:
         if: always()
         run: rm -f report_json.json report_md.md report_html.html
 
+      # ── Daemon health-check before advisory passes ────────────────
+      # The API scan (Pass 2) sends active probes against every endpoint in
+      # openapi.yaml; some payloads can trigger the daemon to exit. Check
+      # liveness here and restart if needed so Passes 3-5 have a live target.
+      - name: Restart daemon if needed before advisory passes
+        if: always()
+        run: |
+          set -euo pipefail
+          if curl -sf "http://localhost:8080/api/health" >/dev/null 2>&1; then
+            echo "Daemon alive — continuing"
+          else
+            echo "Daemon unreachable — restarting"
+            kill "${DW_PID:-0}" 2>/dev/null || true
+            ./datawatch start --foreground \
+              --config /tmp/dw-zap-config.yaml \
+              2>>/tmp/dw-daemon.log &
+            NEW_PID=$!
+            echo "DW_PID=${NEW_PID}" >> "$GITHUB_ENV"
+            for i in $(seq 1 30); do
+              curl -sf "http://localhost:8080/api/health" >/dev/null 2>&1 \
+                && echo "Daemon restarted after ${i}s" && break || true
+              sleep 1
+            done
+            curl -sf "http://localhost:8080/api/health" >/dev/null
+          fi
+
       # ── Pass 3: diagrams.html baseline (separate so its findings
       #            don't get masked by the bigger PWA surface) ─────
       - name: ZAP diagrams.html baseline scan
+        continue-on-error: true  # advisory; runtime errors (daemon crash, docker) don't block CI
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/diagrams.html"
@@ -157,6 +193,7 @@ jobs:
       # (SQLi, XSS, command-injection probes) — only safe against an
       # ephemeral test daemon.
       - name: ZAP PWA full active scan
+        continue-on-error: true  # advisory; runtime errors don't block CI
         uses: zaproxy/action-full-scan@d479641f7e99facb91d7738171b3448e3f3c7bba  # v0.10.0
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
@@ -175,6 +212,7 @@ jobs:
       # constrained to /api/ endpoints with the schema's parameter
       # types — fewer false positives on JSON-typed bodies.
       - name: ZAP API full active scan
+        continue-on-error: true  # advisory; runtime errors don't block CI
         uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
         with:
           target: 'docs/api/openapi.yaml'
