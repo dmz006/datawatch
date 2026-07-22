@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.17 — fix(trivy): suppress 7 new libglib2.0-0 CVEs in parent-full (2026-07-21)
+
+### Security
+
+- **7 new libglib2.0-0 CVEs suppressed in `.trivyignore`** for parent-full image — all `fix_deferred` in Debian bookworm, no upstream fix available:
+  - `CVE-2026-58016` (CRITICAL): integer underflow in gdbusintrospection.c
+  - `CVE-2026-58010` through `CVE-2026-58015` (HIGH): buffer over-reads, OOB reads, off-by-one, and path traversal in various GLib subsystems
+  - libglib2.0-0 is a transitive dep of signal-cli (Java D-Bus bindings) in parent-full. All require processing attacker-controlled GLib subsystem input; signal-cli connects only to operator-configured Signal servers.
+
+---
+
 ## v8.13.16 — fix(ci): extend daemon restart timeout from 30s to 60s (2026-07-21)
 
 ### CI

@@ -1,4 +1,4 @@
-# Container image CVE exceptions — v8.13.15
+# Container image CVE exceptions — v8.13.17
 # Reviewed: 2026-07-21  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
@@ -329,6 +329,28 @@ CVE-2026-39822
 # the datawatch service itself is Go. tarfile is not invoked on
 # attacker-controlled archives by any container workload at runtime.
 CVE-2026-11940
+
+# libglib2.0-0 — 7 CVEs (CRITICAL + HIGH, fix_deferred in Debian bookworm)
+# GLib C utility library; pulled as a transitive dependency of signal-cli
+# (via Java/GLib D-Bus bindings) in the parent-full image.
+# All vulnerabilities require processing attacker-controlled input via
+# GLib subsystems (D-Bus introspection, GVariant, GIOChannel, regex,
+# GKeyFile, GIO path, D-Bus auth). signal-cli connects only to
+# operator-configured Signal servers; no untrusted GLib input at runtime.
+#   CVE-2026-58016 (CRITICAL): integer underflow in gdbusintrospection.c
+#   CVE-2026-58010 (HIGH): buffer over-read in gvariant-serialiser.c
+#   CVE-2026-58011 (HIGH): out-of-bounds read in (unspecified component)
+#   CVE-2026-58012 (HIGH): buffer over-read in g_regex_replace()
+#   CVE-2026-58013 (HIGH): buffer over-read in giochannel.c
+#   CVE-2026-58014 (HIGH): off-by-one in gkeyfile.c
+#   CVE-2026-58015 (HIGH): path traversal in gdbusauthmechanismsha1.c
+CVE-2026-58016
+CVE-2026-58010
+CVE-2026-58011
+CVE-2026-58012
+CVE-2026-58013
+CVE-2026-58014
+CVE-2026-58015
 
 # npm package brace-expansion CVE-2026-13149 — HIGH, fixed in 2.1.2/1.1.16/5.0.7
 # ReDoS via crafted brace-expansion pattern string. brace-expansion is a
