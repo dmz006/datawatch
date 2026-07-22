@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.8 — fix(docker): stats-cluster + validator builder images updated to Go 1.26 (2026-07-21)
+
+### Fixed
+
+- **`Dockerfile.stats-cluster` and `Dockerfile.validator` GO_VERSION** — both used `ARG GO_VERSION=1.25` (floating minor tag), which resolves below the `go 1.26.5` minimum now required by go.mod, causing `go mod download` to fail inside buildx with `GOTOOLCHAIN=local`. Updated to `ARG GO_VERSION=1.26`.
+
+---
+
 ## v8.13.7 — sec: Go 1.26.5 builder + Trivy CVE triage for Debian bookworm (2026-07-21)
 
 ### Security

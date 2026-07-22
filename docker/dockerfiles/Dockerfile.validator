@@ -12,7 +12,7 @@
 #
 # Target size: ~25MB (scratch base + static binary).
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 ARG MINIDEB_TAG=bookworm
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS builder

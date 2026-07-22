@@ -20,7 +20,7 @@
 # Smaller "debug" variant available at Dockerfile.stats-cluster-debug
 # for emergency triage where `kubectl exec` into a shell is needed.
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 ARG MINIDEB_TAG=bookworm
 
 # ── Stage 1: builder ────────────────────────────────────────────────────
