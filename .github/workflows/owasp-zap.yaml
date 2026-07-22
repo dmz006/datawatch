@@ -105,6 +105,15 @@ jobs:
           fail_action: true
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — PWA baseline'
+          artifact_name: 'zap-pwa-baseline'
+
+      # Clear ZAP report files between passes — each pass writes to the
+      # same fixed filenames (report_json.json etc.) inside /zap/wrk/.
+      # The Docker container UID that created them may differ from the
+      # next container's UID, causing permission errors on overwrite.
+      - name: Clear ZAP reports before next pass
+        if: always()
+        run: rm -f report_json.json report_md.md report_html.html
 
       # ── Pass 2: API scan against the OpenAPI spec ────────────────
       - name: ZAP API scan (OpenAPI-driven)
@@ -118,6 +127,11 @@ jobs:
           fail_action: true
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — API scan'
+          artifact_name: 'zap-api-scan'
+
+      - name: Clear ZAP reports before next pass
+        if: always()
+        run: rm -f report_json.json report_md.md report_html.html
 
       # ── Pass 3: diagrams.html baseline (separate so its findings
       #            don't get masked by the bigger PWA surface) ─────
@@ -130,6 +144,11 @@ jobs:
           fail_action: false  # diagrams is largely static; advisory
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — diagrams.html baseline'
+          artifact_name: 'zap-diagrams-baseline'
+
+      - name: Clear ZAP reports before next pass
+        if: always()
+        run: rm -f report_json.json report_md.md report_html.html
 
       # ── Pass 4: PWA full active scan (v5.26.70) ─────────────────
       # Operator-asked: zap didn't need auth. The daemon runs without a
@@ -145,6 +164,11 @@ jobs:
           fail_action: false  # advisory until the active baseline is set
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — PWA full active scan'
+          artifact_name: 'zap-pwa-active'
+
+      - name: Clear ZAP reports before next pass
+        if: always()
+        run: rm -f report_json.json report_md.md report_html.html
 
       # ── Pass 5: API full active scan (v5.26.70) ─────────────────
       # OpenAPI-driven active scan. Same payload set as Pass 4 but
@@ -160,6 +184,7 @@ jobs:
           fail_action: false
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — API full active scan'
+          artifact_name: 'zap-api-active'
 
       - name: Stop daemon
         if: always()

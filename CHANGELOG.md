@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.11 — fix(ci): clear ZAP report files between scan passes to prevent PermissionError (2026-07-21)
+
+### CI
+
+- **OWASP ZAP PermissionError fixed** — consecutive ZAP Docker containers (passes 1–5) share the workspace but may run under different UIDs. Pass 1 wrote `report_json.json`, `report_md.md`, and `report_html.html`; Pass 2 failed with `PermissionError: [Errno 13] Permission denied: '/zap/wrk/report_json.json'` (exit code 3).
+  - Added `rm -f report_json.json report_md.md report_html.html` cleanup step (with `if: always()`) between each consecutive pair of passes.
+  - Added distinct `artifact_name` to each pass (`zap-pwa-baseline`, `zap-api-scan`, `zap-diagrams-baseline`, `zap-pwa-active`, `zap-api-active`) so report artifacts are separately addressable.
+
+---
+
 ## v8.13.10 — fix(zap): add 4 new WARN-NEW findings to rules.tsv (2026-07-21)
 
 ### Security
