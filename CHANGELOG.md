@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.21 — fix(ci): goreleaser + attach-tarball retry on rate-limit (2026-07-22)
+
+### CI
+
+- **goreleaser retry on rate-limit failure** — when rapid releases deplete the GitHub Actions installation token rate limit (1000 req/hr), goreleaser exits code 1 and binary tarballs are missing from the GitHub release. Added a retry step: if goreleaser fails, wait 120s for rate-limit recovery then retry `goreleaser release --clean`. Both the initial attempt and the retry keep `continue-on-error: true` so container builds are never blocked.
+- **attach-tarball: replace `softprops/action-gh-release` with `gh release upload` + retry loop** — the `softprops/action-gh-release` action had no retry mechanism, causing stats-cluster tarball uploads to fail when the rate limit was exhausted by earlier concurrent jobs. Replaced with a `gh release upload --clobber` shell loop (3 attempts, 90s back-off between retries).
+
+---
+
 ## v8.13.20 — fix(docker): upgrade soupsieve>=2.8.4 in agent-aider (2026-07-21)
 
 ### Security

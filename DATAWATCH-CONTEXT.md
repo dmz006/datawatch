@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
-**Last Updated**: 2026-07-21  
-**Version**: v8.13.20  
+**Last Updated**: 2026-07-22  
+**Version**: v8.13.21  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -344,11 +344,12 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ---
 
-## Recent Context (as of 2026-07-21)
+## Recent Context (as of 2026-07-22)
 
-**Version:** v8.13.20  
-**Last changes (v8.13.10–v8.13.20):**
+**Version:** v8.13.21  
+**Last changes (v8.13.10–v8.13.21):**
 
+- **v8.13.21** — release.yaml: goreleaser retry with 120s backoff; attach-tarball replaces softprops/action-gh-release with `gh release upload` + 3-attempt retry loop (90s back-off). Fixes binary tarballs missing from releases during rapid release bursts (GitHub Actions installation token rate-limit exhaustion).
 - **v8.13.20** — Dockerfile.agent-aider: soupsieve>=2.8.4 added to pip upgrade block (CVE-2026-49476 + CVE-2026-49477 DoS, fixed 2.8.4)
 - **v8.13.19** — ZAP CI: continue-on-error on daemon restart step (advisory section fully non-blocking)
 - **v8.13.18** — ZAP CI: daemon restart uses kill -9 + lsof port-wait + rm -rf state dir (SIGTERM left port bound)
