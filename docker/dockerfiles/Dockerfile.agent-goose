@@ -4,19 +4,21 @@
 # datawatch agent-goose — Block's goose agent only.
 #
 # Goose ships as a single self-contained Rust binary on GitHub
-# Releases (https://github.com/block/goose/releases). No node, no
-# python — just curl + tar + drop into /usr/local/bin. Mirrors the
-# RTK install layer from agent-base.
+# Releases. The project moved from github.com/block/goose to
+# github.com/aaif-goose/goose; use the canonical new URL to avoid
+# redirect latency and potential redirect-chain failures in CI.
+# No node, no python — just curl + tar + drop into /usr/local/bin.
+# Mirrors the RTK install layer from agent-base.
 #
-# The default GOOSE_VERSION below matches the most recent stable
-# at the moment of v5.26.42. Bump via:
+# The default GOOSE_VERSION below matches the most recent stable.
+# Bump via:
 #   docker build --build-arg GOOSE_VERSION=<x.y.z> -f Dockerfile.agent-goose .
 # The CI workflow inherits the default; operators tagging a release
 # pick up whatever the Dockerfile pins.
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
-ARG GOOSE_VERSION=1.32.0
+ARG GOOSE_VERSION=1.43.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG GOOSE_VERSION
@@ -28,7 +30,7 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
         arm64) GOOSE_ARCH="aarch64-unknown-linux-gnu" ;; \
         *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/block/goose/releases/download/v${GOOSE_VERSION}/goose-${GOOSE_ARCH}.tar.bz2" \
+    curl -fsSL "https://github.com/aaif-goose/goose/releases/download/v${GOOSE_VERSION}/goose-${GOOSE_ARCH}.tar.bz2" \
         -o /tmp/goose.tar.bz2 && \
     install_packages bzip2 && \
     # Tarball entry is "./goose" — extract everything (only one

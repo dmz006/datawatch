@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.13.21-success)](https://github.com/dmz006/datawatch/releases/tag/v8.13.21)
+[![Release](https://img.shields.io/badge/release-v8.13.22-success)](https://github.com/dmz006/datawatch/releases/tag/v8.13.22)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.13.21](CHANGELOG.md) (2026-07-22)** — CI resilience: goreleaser retry with 120s rate-limit backoff (prevents missing binary tarballs during rapid release bursts); `attach-tarball` replaced `softprops/action-gh-release` with `gh release upload` + 3-attempt retry loop (90s back-off). 2394 tests.
+**[v8.13.22](CHANGELOG.md) (2026-07-22)** — agent-goose: bump goose 1.32.0→1.43.0, update download URL to `aaif-goose/goose` (permanent repo move from `block/goose`); parent-full: suppress CVE-2026-41254 (openjdk-17-jre-headless HIGH, no fix). 2394 tests.
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.

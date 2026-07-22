@@ -1,4 +1,4 @@
-# Container image CVE exceptions — v8.13.17
+# Container image CVE exceptions — v8.13.22
 # Reviewed: 2026-07-21  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
@@ -381,3 +381,10 @@ CVE-2026-59874
 # configuration; gh uses grpc as a client for GitHub API communication only.
 # Remove once gh releases a build with grpc ≥ v1.82.1.
 GHSA-hrxh-6v49-42gf
+
+# openjdk-17-jre-headless CVE-2026-41254 — HIGH, no fix in bookworm
+# OpenJDK 17 vulnerability; fixed version not available in Debian bookworm.
+# Java is installed in parent-full solely for signal-cli (Signal messenger
+# bridge). signal-cli connects to operator-configured Signal servers only;
+# no untrusted Java class loading or deserialization occurs at runtime.
+CVE-2026-41254

@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.22 — fix(docker): goose v1.43.0 + aaif-goose URL; CVE-2026-41254 triage (2026-07-22)
+
+### Security
+
+- **agent-goose: bump goose to v1.43.0 and update repo URL** — `block/goose` permanently moved to `aaif-goose/goose` (HTTP 301). The old URL worked via redirect but was slow and fragile in Docker BuildKit arm64 QEMU builds (curl+extract completed in <2s but the `goose` binary was missing post-extract). Updated `GOOSE_VERSION` from `1.32.0` to `1.43.0` and changed the download URL to use `aaif-goose/goose` directly, eliminating the redirect hop.
+- **parent-full: suppress CVE-2026-41254** — openjdk-17-jre-headless HIGH, no fix available in Debian bookworm. OpenJDK is installed solely for signal-cli; signal-cli connects to operator-configured Signal servers only; no untrusted Java class loading occurs at runtime.
+
+---
+
 ## v8.13.21 — fix(ci): goreleaser + attach-tarball retry on rate-limit (2026-07-22)
 
 ### CI

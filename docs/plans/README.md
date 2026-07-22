@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-22
 
-Latest release: **v8.13.21** (2026-07-22). CI resilience: goreleaser retry with 120s rate-limit backoff (prevents missing binary tarballs during rapid release bursts); `attach-tarball` replaced `softprops/action-gh-release` with `gh release upload` + 3-attempt retry loop (90s back-off).
+Latest release: **v8.13.22** (2026-07-22). agent-goose: bump goose 1.32.0→1.43.0, update download URL to aaif-goose/goose (block/goose permanently moved); parent-full: suppress CVE-2026-41254 (openjdk-17 HIGH, no fix).
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.21** (2026-07-22). CI resilience: goreleaser retry with 
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.22 shipped 2026-07-22 — agent-goose bump to 1.43.0 + aaif-goose URL; CVE-2026-41254 suppressed in parent-full.
 v8.13.21 shipped 2026-07-22 — goreleaser + attach-tarball retry on rate-limit; replaces softprops/action-gh-release with gh release upload loop.
 v8.13.20 shipped 2026-07-21 — soupsieve>=2.8.4 in agent-aider venv (CVE-2026-49476 + CVE-2026-49477 DoS, fixed 2.8.4).
 v8.13.19 shipped 2026-07-21 — continue-on-error on daemon restart step so advisory ZAP section is fully non-blocking.
