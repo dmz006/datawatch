@@ -1,5 +1,5 @@
-# Container image CVE exceptions — v8.13.2
-# Reviewed: 2026-06-12  |  Re-review: each release cycle
+# Container image CVE exceptions — v8.13.7
+# Reviewed: 2026-07-21  |  Re-review: each release cycle
 # All entries are base-image (bitnami/minideb:bookworm) CVEs with no
 # upstream fix available in Debian bookworm. Trivy status column is
 # "affected" or "will_not_fix" for each.
@@ -233,3 +233,84 @@ CVE-2026-25990
 CVE-2026-3644
 CVE-2026-4224
 CVE-2026-9669
+
+# util-linux family (bsdutils, libblkid1, libmount1, libsmartcols1, util-linux) — CVE-2026-53615 (HIGH, affected, no fix in bookworm)
+# Integer overflow in libblkid partition table parsing. Exploitable only when
+# parsing attacker-controlled block device data. The container reads no raw
+# block devices; libblkid is a transitive dependency of util-linux utilities.
+CVE-2026-53615
+
+# curl / libcurl3-gnutls / libcurl4 — 4 CVEs (HIGH, fix_deferred by Debian)
+#   CVE-2026-12064: SSH host verification bypass via schemeless SFTP/SCP URLs.
+#     curl is used for operator-configured HTTPS endpoints; no SCP/SFTP usage.
+#   CVE-2026-8286: TLS configuration mismatch allowing insecure connections.
+#     Mitigated by operator-controlled endpoints and CA verification.
+#   CVE-2026-8927: Proxy auth state not cleared on redirect information leak.
+#     No HTTP proxies are configured by default in the container.
+#   CVE-2026-8932: Improper mTLS connection reuse security bypass.
+#     No mTLS is configured between agents in the default deployment.
+CVE-2026-12064
+CVE-2026-8286
+CVE-2026-8927
+CVE-2026-8932
+
+# gawk — 4 CVEs (CRITICAL + HIGH, affected, no fix in bookworm)
+# gawk is installed as a core unix utility (grep/sed/gawk toolchain).
+# The datawatch service and agent tooling do not execute gawk on
+# attacker-controlled input at runtime.
+#   CVE-2026-40468 (CRITICAL): Integer overflow in builtin.c
+#   CVE-2026-40469 (CRITICAL): DoS via integer overflow
+#   CVE-2026-40467 (HIGH): Use-after-free in io.c
+#   CVE-2026-40553 (HIGH): Buffer overflow
+CVE-2026-40468
+CVE-2026-40469
+CVE-2026-40467
+CVE-2026-40553
+
+# gzip — CVE-2026-41992 (HIGH, fix_deferred by Debian)
+# Global buffer overflow in gzip. gzip is a build/archive utility.
+# The datawatch service does not decompress gzip streams from untrusted sources.
+CVE-2026-41992
+
+# libacl1 — CVE-2026-54369 (HIGH, fix_deferred by Debian)
+# Symlink traversal via libacl privilege escalation. Exploitable only with
+# write access to a directory containing symlinks. No untrusted filesystem
+# content is mounted into the container by default.
+CVE-2026-54369
+
+# libexpat1 — 3 new CVEs (HIGH, affected, no fix in bookworm)
+# New expat CVEs in addition to those already suppressed above.
+# datawatch does not parse XML; expat is a transitive dependency.
+#   CVE-2026-56131: Lacks handler call depth tracking for namespace declarations
+#   CVE-2026-56407: Integer overflow in doProlog
+#   CVE-2026-56408: Integer overflow in copyString
+CVE-2026-56131
+CVE-2026-56407
+CVE-2026-56408
+
+# perl / perl-base / perl-modules-5.36 / libperl5.36 — 3 new CVEs (CRITICAL + HIGH)
+# Perl is a transitive dependency of git/gnupg. Not executed at runtime.
+#   CVE-2026-13221 (CRITICAL): Silently incorrect results in Perl 5.x arithmetic
+#   CVE-2026-57433 (CRITICAL): Storable signed integer overflow before 3.41
+#   CVE-2026-57432 (HIGH): Integer overflow in Perl through 5.43.10
+CVE-2026-13221
+CVE-2026-57433
+CVE-2026-57432
+
+# openssh-client — 3 CVEs (CRITICAL + HIGH, fix_deferred by Debian)
+# openssh-client is installed for git SSH transport. All SSH remotes are
+# operator-configured; no attacker-controlled SSH servers are contacted.
+#   CVE-2026-60002 (CRITICAL): Use-after-free during host key verification
+#   CVE-2026-59999 (HIGH): Security bypass via incorrect session handling
+#   CVE-2026-60000 (HIGH): DoS via excessive GSSAPI authentication rounds
+CVE-2026-60002
+CVE-2026-59999
+CVE-2026-60000
+
+# wget — 2 CVEs (HIGH, fix_deferred by Debian)
+# wget is installed as a general download utility for agent use.
+# Agent tooling downloads from operator-configured URLs only.
+#   CVE-2026-58471: Heap buffer overflow via server-supplied content
+#   CVE-2026-58472: Arbitrary code execution or denial of service
+CVE-2026-58471
+CVE-2026-58472

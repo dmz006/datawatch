@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.7 — sec: Go 1.26.5 builder + Trivy CVE triage for Debian bookworm (2026-07-21)
+
+### Security
+
+- **`Dockerfile.agent-base` GO_VERSION → 1.26.5** — `golang:1.25.12-bookworm` does not exist on Docker Hub; builds were resolving to Go 1.26.4. Updated to 1.26.5 to fix CVE-2026-39822 (`os.Root` symlink following vulnerability, fixed in Go 1.26.5).
+- **go.mod `go` directive → 1.26.5** — aligns the module minimum with the actual container toolchain.
+- **`.trivyignore` updated to v8.13.7** — 23 new Debian bookworm CVEs triaged (all `affected` or `fix_deferred` with no upstream fix available): util-linux (CVE-2026-53615), curl/libcurl (4 CVEs), gawk (4 CVEs), gzip (CVE-2026-41992), libacl1 (CVE-2026-54369), libexpat1 (3 CVEs), perl family (3 CVEs), openssh-client (3 CVEs), wget (2 CVEs).
+
+---
+
 ## v8.13.6 — fix(docker): agent-base builder image bumped to Go 1.25.12 (2026-07-21)
 
 ### Fixed

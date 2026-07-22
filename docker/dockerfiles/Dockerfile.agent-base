@@ -21,7 +21,7 @@
 #
 # Target size: ~250-300MB.
 
-ARG GO_VERSION=1.25.12
+ARG GO_VERSION=1.26.5
 ARG MINIDEB_TAG=bookworm
 ARG RTK_VERSION=0.37.0
 
@@ -33,8 +33,8 @@ ARG VERSION=dev
 # Pin toolchain to the image's Go version — prevents GOTOOLCHAIN=auto from
 # downloading a newer (potentially vulnerable) toolchain from go.dev at
 # build time. The exact patch pinned in GO_VERSION contains fixes for
-# CVE-2026-42504 (net/textproto MIME header DoS) and GO-2026-5856
-# (crypto/tls ECH privacy leak).
+# CVE-2026-42504 (net/textproto MIME header DoS), GO-2026-5856
+# (crypto/tls ECH privacy leak), and CVE-2026-39822 (os.Root symlink follow).
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
