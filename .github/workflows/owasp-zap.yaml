@@ -148,6 +148,7 @@ jobs:
       # liveness here and restart if needed so Passes 3-5 have a live target.
       - name: Restart daemon if needed before advisory passes
         if: always()
+        continue-on-error: true  # advisory; a failed restart doesn't block CI gate
         run: |
           set -euo pipefail
           if curl -sf "http://localhost:8080/api/health" >/dev/null 2>&1; then

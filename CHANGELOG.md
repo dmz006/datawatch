@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.19 — fix(ci): continue-on-error on daemon restart step (2026-07-21)
+
+### CI
+
+- **Daemon restart step: `continue-on-error: true`** — the restart step already had `if: always()` and was defensive about daemon recovery, but a restart failure (exit code 1 from timed-out health check) still blocked the CI gate. Adding `continue-on-error: true` makes the advisory-pass section (restart + passes 3-5) fully non-blocking, matching the intent of `fail_action: false` and `continue-on-error: true` on passes 3–5.
+
+---
+
 ## v8.13.18 — fix(ci): force-kill old daemon + clear state before restart (2026-07-21)
 
 ### CI
