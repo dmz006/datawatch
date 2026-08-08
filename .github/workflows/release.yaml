@@ -377,6 +377,7 @@ jobs:
   attach-tarball:
     name: attach stats-cluster tarball
     needs: [goreleaser, build-base]
+    if: ${{ needs.goreleaser.result == 'success' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.26 — fix(ci): CVE-2026-8458 triage; attach-tarball if-guard against build-base partial failures (2026-08-08)
+
+### Security
+
+- **agent-base: suppress CVE-2026-8458** — curl/libcurl HIGH (CVSS 8.0), "Unauthorized connection reuse due to a logical flaw", no fix in Debian bookworm. Affects `curl`, `libcurl4`, `libcurl3-gnutls`. curl in datawatch containers contacts only operator-configured HTTPS endpoints; no untrusted server can inject a connection for reuse.
+
+### CI
+
+- **attach-tarball: add `if:` guard** — `attach-tarball` now has `if: ${{ needs.goreleaser.result == 'success' && !cancelled() }}`. When a `build-base` matrix job fails (e.g., agent-base CVE) but `stats-cluster` succeeds, the tarball job now runs and uploads the stats-cluster image correctly. Previously, any `build-base` partial failure caused the entire `attach-tarball` job to be SKIPPED.
+
+---
+
 ## v8.13.25 — fix(ci): ZAP rule 10024 IGNORE — session_id URL param is a resource filter (2026-08-08)
 
 ### CI

@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-07-22  
-**Version**: v8.13.25  
+**Version**: v8.13.26  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -346,9 +346,10 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ## Recent Context (as of 2026-07-22)
 
-**Version:** v8.13.25  
-**Last changes (v8.13.10–v8.13.25):**
+**Version:** v8.13.26  
+**Last changes (v8.13.10–v8.13.26):**
 
+- **v8.13.26** — .trivyignore: CVE-2026-8458 (curl/libcurl HIGH CVSS 8.0, "unauthorized connection reuse", affects curl+libcurl4+libcurl3-gnutls, no fix in bookworm). release.yaml: attach-tarball gets `if: needs.goreleaser.result == 'success' && !cancelled()` so it runs even when build-base has partial failures (e.g. agent-base CVE) but stats-cluster succeeded.
 - **v8.13.25** — .zap/rules.tsv: add 10024 IGNORE (session_id URL param on /api/audit, /api/cost/usage, /api/schedules is a datawatch session filter/resource ID, not an HTTP auth token; Bearer header auth). Closed 15 stale ZAP issues GH#130–144 accumulated during July 22 ZAP CI fix chain.
 - **v8.13.24** — .trivyignore: CVE-2026-47063 (openjdk-17-jre-headless HIGH, CVSS 8.0, "Enhance Jar handling", Oracle CPU 2026-07, no fix in bookworm, parent-full/signal-cli only). release.yaml: attach-tarball now depends only on `[goreleaser, build-base]` instead of `[goreleaser, build-base, build-agents]` — stats-cluster tarball was being SKIPPED whenever any agent container failed.
 - **v8.13.23** — release.yaml: goreleaser retry now uses curl installer (not bare `goreleaser` which isn't in PATH in run: steps); sleep is dynamic based on `gh api rate_limit` reset time (+30s buffer) instead of fixed 120s; removed continue-on-error from retry step so job fails correctly if retry also fails; attach-tarball adds `goreleaser` to needs to prevent "release not found" race (tarball job no longer starts until the release exists).
