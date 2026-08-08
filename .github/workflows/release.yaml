@@ -400,9 +400,13 @@ jobs:
         run: |
           TAG="v${{ steps.ver.outputs.version }}"
           FILE="datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz"
+          REPO="${GITHUB_REPOSITORY}"
+          echo "pre-flight: TAG=$TAG FILE=$FILE REPO=$REPO"
+          gh release view "$TAG" --repo "$REPO" || echo "pre-flight: release view failed"
+          ls -lh "$FILE" || echo "pre-flight: file not found"
           for attempt in 1 2 3; do
             echo "Upload attempt $attempt of 3"
-            if gh release upload "$TAG" "$FILE" --clobber; then
+            if gh release upload "$TAG" "$FILE" --clobber --repo "$REPO"; then
               echo "Upload succeeded on attempt $attempt"
               exit 0
             fi

@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.27 — fix(ci): gh release upload --repo flag; triage 8 new CVEs in agent-gemini/aider (2026-08-08)
+
+### Security
+
+- **Triage CVE-2026-15308** — python3.11 HIGH (CPU DoS via HTML parser). Python installed in agent images for tooling compatibility; service is Go. Agent containers don't expose Python's html.parser to untrusted web content at runtime.
+- **Triage CVE-2026-14257, CVE-2026-69152** — npm brace-expansion HIGH (ReDoS). Transitive dep of @google/gemini-cli; not invoked with untrusted web input at runtime.
+- **Triage CVE-2026-69192** — npm ip-address HIGH. Transitive dep of @google/gemini-cli; no untrusted IP input processing by gemini-cli at runtime.
+- **Triage CVE-2026-69244** — aiohttp HIGH (DoS). Aider transitive dep for async HTTP; no aiohttp server exposed by datawatch service.
+- **Triage CVE-2026-59939** — httplib2 HIGH. Aider transitive dep; connects only to operator-configured LLM endpoints.
+- **Triage GHSA-6v7p-g79w-8964** — MessagePack HIGH (DoS). Aider serialization dep; not exposed to untrusted MessagePack streams.
+- **Triage CVE-2025-47273** — setuptools HIGH. Used at pip install time only; not invoked at container runtime.
+
+### CI
+
+- **attach-tarball: add `--repo "$GITHUB_REPOSITORY"`** — `gh release upload` in CI returned "release not found" despite the release existing with 10 assets. Adding explicit `--repo` prevents `gh` from using an incorrect remote detection in the CI runner environment. Added pre-flight diagnostics (`gh release view`, `ls -lh`) before the upload loop to surface failures faster.
+
+---
+
 ## v8.13.26 — fix(ci): CVE-2026-8458 triage; attach-tarball if-guard against build-base partial failures (2026-08-08)
 
 ### Security
