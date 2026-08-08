@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.25 — fix(ci): ZAP rule 10024 IGNORE — session_id URL param is a resource filter (2026-08-08)
+
+### CI
+
+- **ZAP: suppress rule 10024 (Information Disclosure - Sensitive Information in URL)** — ZAP flagged `session_id` query parameters on `/api/audit`, `/api/cost/usage`, and `/api/schedules` as potentially leaking an HTTP auth session token via URL. This is a confirmed false positive: `session_id` in datawatch is a **resource filter** identifying an AI coding session, not an HTTP authentication credential (auth uses Bearer tokens in `Authorization:` headers). Added `10024 IGNORE` to `.zap/rules.tsv`. Closed 15 stale ZAP issues (GH#130–144) that accumulated during the July 22 ZAP CI fix chain.
+
+---
+
 ## v8.13.24 — fix(ci): CVE-2026-47063 triage; attach-tarball removes build-agents from needs (2026-07-22)
 
 ### Security

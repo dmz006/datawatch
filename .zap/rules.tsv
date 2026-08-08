@@ -5,6 +5,15 @@
 # Reviewed 2026-05-27. Each IGNORE below is a documented accepted risk
 # or confirmed false positive — not a suppression of a real vulnerability.
 
+# [10024] Information Disclosure - Sensitive Information in URL
+# ZAP flags any URL containing a parameter named "session_id" as potentially
+# leaking an HTTP authentication session token via URL (browser history, logs).
+# In datawatch, `session_id` is a **resource filter** — it identifies an AI
+# coding session to filter audit logs, cost records, or schedules by. It is
+# not an authentication credential. Auth uses Bearer tokens in HTTP headers.
+# Affected endpoints: /api/audit, /api/cost/usage, /api/schedules.
+10024	IGNORE	Sensitive Information in URL — session_id is a datawatch session filter (resource ID), not an HTTP auth token; auth uses Bearer headers
+
 # [10027] Information Disclosure - Suspicious Comments
 # All developer-facing comment keywords (bug, debug, deprecated, note, todo,
 # fixme, hack, xxx) have been removed from HTML and JS comments in v8.8.5/6.

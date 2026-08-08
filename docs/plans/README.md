@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-22
 
-Latest release: **v8.13.24** (2026-07-22). fix(ci): CVE-2026-47063 triage (openjdk HIGH) + attach-tarball no longer depends on build-agents.
+Latest release: **v8.13.25** (2026-08-08). fix(ci): ZAP rule 10024 IGNORE (session_id URL param is resource filter, not auth token); 15 stale ZAP issues closed (GH#130–144).
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.24** (2026-07-22). fix(ci): CVE-2026-47063 triage (openj
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.25 shipped 2026-08-08 — ZAP rule 10024 IGNORE (session_id URL param is datawatch session filter, not HTTP auth token); closed 15 stale ZAP issues GH#130–144.
 v8.13.24 shipped 2026-07-22 — CVE-2026-47063 (openjdk HIGH) added to trivyignore; attach-tarball no longer depends on build-agents (tarball now uploads even when agent containers fail).
 v8.13.23 shipped 2026-07-22 — goreleaser retry binary (curl installer + dynamic rate-limit sleep); attach-tarball depends on goreleaser (prevents "release not found" race).
 v8.13.22 shipped 2026-07-22 — agent-goose bump to 1.43.0 + aaif-goose URL; CVE-2026-41254 suppressed in parent-full.

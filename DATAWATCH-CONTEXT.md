@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
 **Last Updated**: 2026-07-22  
-**Version**: v8.13.24  
+**Version**: v8.13.25  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -346,9 +346,10 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ## Recent Context (as of 2026-07-22)
 
-**Version:** v8.13.24  
-**Last changes (v8.13.10–v8.13.24):**
+**Version:** v8.13.25  
+**Last changes (v8.13.10–v8.13.25):**
 
+- **v8.13.25** — .zap/rules.tsv: add 10024 IGNORE (session_id URL param on /api/audit, /api/cost/usage, /api/schedules is a datawatch session filter/resource ID, not an HTTP auth token; Bearer header auth). Closed 15 stale ZAP issues GH#130–144 accumulated during July 22 ZAP CI fix chain.
 - **v8.13.24** — .trivyignore: CVE-2026-47063 (openjdk-17-jre-headless HIGH, CVSS 8.0, "Enhance Jar handling", Oracle CPU 2026-07, no fix in bookworm, parent-full/signal-cli only). release.yaml: attach-tarball now depends only on `[goreleaser, build-base]` instead of `[goreleaser, build-base, build-agents]` — stats-cluster tarball was being SKIPPED whenever any agent container failed.
 - **v8.13.23** — release.yaml: goreleaser retry now uses curl installer (not bare `goreleaser` which isn't in PATH in run: steps); sleep is dynamic based on `gh api rate_limit` reset time (+30s buffer) instead of fixed 120s; removed continue-on-error from retry step so job fails correctly if retry also fails; attach-tarball adds `goreleaser` to needs to prevent "release not found" race (tarball job no longer starts until the release exists).
 - **v8.13.22** — agent-goose: goose 1.32.0→1.43.0, URL updated from block/goose→aaif-goose/goose (permanent move; arm64 QEMU builds failed silently on old redirect). .trivyignore: CVE-2026-41254 (openjdk-17-jre-headless HIGH, no fix in bookworm, parent-full/signal-cli only).
