@@ -102,6 +102,20 @@
 # documentation placeholder, not a leaked address.
 2	IGNORE	Private IP Disclosure — 100.x.x.x is the documented placeholder for Tailscale server URL variable in openapi.yaml; not an accidental leak
 
+# [120000] Information Disclosure - Information in Browser localStorage
+# The PWA stores the operator bearer token (cs_token) and UI preferences
+# (session order, active view, filter state, font size, locale) in localStorage
+# for persistence across page reloads. Storing auth tokens in localStorage is a
+# known XSS vs. CSRF trade-off; httpOnly cookies are the alternative. In
+# datawatch's threat model:
+#   1. The app is accessible only inside the operator's Tailscale network.
+#   2. script-src CSP uses per-request nonces (v8.8.4), eliminating the primary
+#      XSS vector that would allow localStorage theft.
+#   3. The bearer token grants no more access than the Tailscale peer itself.
+# ZAP fires on any localStorage.getItem/setItem usage regardless of content
+# sensitivity. This is an accepted architectural risk, not a live vulnerability.
+120000	IGNORE	Browser localStorage — cs_token + UI prefs stored; XSS mitigated by nonce CSP; app is Tailscale-network-only; accepted risk
+
 # [90022] Application Error Disclosure
 # ZAP probes endpoints with invalid/fuzz payloads and no auth token. Some
 # endpoints return structured error messages in the response body (e.g.

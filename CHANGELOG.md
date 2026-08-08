@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.28 — fix(ci): ZAP rule 120000 IGNORE — localStorage is intentional SPA design (2026-08-08)
+
+### CI
+
+- **ZAP: suppress rule 120000 (Information Disclosure - Information in Browser localStorage)** — ZAP flags any `localStorage` read/write as potentially disclosing sensitive information. The datawatch PWA stores the operator bearer token (`cs_token`) and UI preferences in localStorage for persistence across page reloads. This is an accepted architectural risk: the app is Tailscale-network-only, `script-src` uses per-request nonces (v8.8.4) eliminating the primary XSS vector for localStorage theft, and the token grants no more access than Tailscale peer membership already provides. Added `120000 IGNORE` to `.zap/rules.tsv`. Closed GH#145, GH#146, GH#147.
+
+---
+
 ## v8.13.27 — fix(ci): gh release upload --repo flag; triage 8 new CVEs in agent-gemini/aider (2026-08-08)
 
 ### Security

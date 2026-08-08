@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-22
 
-Latest release: **v8.13.27** (2026-08-08). fix(ci): `gh release upload --repo` flag + 8 new CVE triages in agent-gemini/aider.
+Latest release: **v8.13.28** (2026-08-08). fix(ci): ZAP rule 120000 IGNORE (localStorage is intentional SPA design; nonce CSP eliminates XSS vector).
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.27** (2026-08-08). fix(ci): `gh release upload --repo` f
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.28 shipped 2026-08-08 — ZAP rule 120000 IGNORE (localStorage is intentional SPA design; XSS mitigated by nonce CSP); closed GH#145-147.
 v8.13.27 shipped 2026-08-08 — gh release upload --repo flag (fixes "release not found" in CI); 8 new CVE triages: CVE-2026-15308 (python HTML DoS), CVE-2026-14257+CVE-2026-69152 (brace-expansion ReDoS), CVE-2026-69192 (ip-address), CVE-2026-69244 (aiohttp), CVE-2026-59939 (httplib2), GHSA-6v7p-g79w-8964 (MessagePack), CVE-2025-47273 (setuptools).
 v8.13.26 shipped 2026-08-08 — CVE-2026-8458 (curl HIGH, unauthorized connection reuse) added to trivyignore; attach-tarball if-guard runs even when build-base partial failure.
 v8.13.25 shipped 2026-08-08 — ZAP rule 10024 IGNORE (session_id URL param is datawatch session filter, not HTTP auth token); closed 15 stale ZAP issues GH#130–144.
