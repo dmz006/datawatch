@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.30 — fix(docker): rtk download retry on 503 in Dockerfile.agent-base (2026-08-12)
+
+### CI
+
+- **Dockerfile.agent-base: add `--retry 5 --retry-delay 10` to rtk curl download** — The arm64 Docker build layer failed with HTTP 503 (GitHub releases service transient error) when downloading the rtk binary. Added `--retry 5 --retry-delay 10` to the curl command so transient 5xx failures auto-recover instead of failing the build.
+
+---
+
 ## v8.13.29 — fix(security): bump channel npm deps — 26 Dependabot CVEs (hono, fast-uri, ip-address, qs, body-parser) (2026-08-12)
 
 ### Security
