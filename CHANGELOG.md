@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.33 — fix(security): triage CVE-2026-58050 (libssh2-1 HIGH, no fix) (2026-08-12)
+
+### Security
+
+- **Triage CVE-2026-58050** — libssh2-1 HIGH, no fix in Debian bookworm. libssh2 is used by git for SSH transport; all SSH remotes in the container are operator-configured. Same attack surface as the three libssh2 CVEs already suppressed (CVE-2026-7598, CVE-2026-55200, CVE-2026-55199): only exploitable via a malicious SSH server, which cannot be injected into an operator-controlled deployment.
+
+---
+
 ## v8.13.32 — fix(docker): rtk download retry 5×10s→10×30s + --retry-all-errors (2026-08-12)
 
 ### CI

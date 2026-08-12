@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-22
 
-Latest release: **v8.13.32** (2026-08-12). fix(docker): rtk curl retry 10×30s + --retry-all-errors (GitHub releases sustained 503 exhausted 5×10s budget).
+Latest release: **v8.13.33** (2026-08-12). fix(security): CVE-2026-58050 (libssh2-1 HIGH, no fix, SSH server attack surface) added to trivyignore.
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.32** (2026-08-12). fix(docker): rtk curl retry 10×30s +
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.33 shipped 2026-08-12 — CVE-2026-58050 (libssh2-1 HIGH, no fix in bookworm) added to trivyignore; SSH server attack surface, operator-configured remotes only.
 v8.13.32 shipped 2026-08-12 — rtk curl retry 10×30s (5-min window) + --retry-all-errors; 5×10s was exhausted by GitHub releases sustained 503.
 v8.13.31 shipped 2026-08-12 — Trivy pin v0.70.0→v0.73.0; v0.70.0 never published, install.sh exited non-zero blocking SARIF in build-base+build-agents.
 v8.13.30 shipped 2026-08-12 — Dockerfile.agent-base: rtk curl download adds --retry 5 --retry-delay 10 (arm64 build got HTTP 503 from GitHub releases).
