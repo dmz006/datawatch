@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.29 — fix(security): bump channel npm deps — 26 Dependabot CVEs (hono, fast-uri, ip-address, qs, body-parser) (2026-08-12)
+
+### Security
+
+- **channel: bump transitive npm dependencies via `package.json` overrides** — Updated `channel/package.json` overrides and regenerated `package-lock.json` to resolve all 26 open Dependabot alerts:
+  - `hono` 4.12.19 → 4.13.1: resolves 16 CVEs (CVE-2026-47673/74/75/76, CVE-2026-54286/87/88/89/90, CVE-2026-59895/96/97, CVE-2026-69207, CVE-2026-71848/49/50). Covers CORS reflection, JWT scheme bypass, cookie injection, path traversal, Lambda adapter header merging, ReDoS, memo SSR leak, proxy hop-by-hop.
+  - `@hono/node-server` 2.0.3 → 2.1.0: resolves GHSA-frvp-7c67-39w9 (serve-static path traversal) and GHSA-9mqv-5hh9-4cgg (unauthenticated memory-leak DoS).
+  - `fast-uri` 3.1.2 → 4.1.2: resolves CVE-2026-13676, CVE-2026-16221, CVE-2026-18446 (host confusion via backslash/IDN/literal backslash in authority).
+  - `ip-address` 10.2.0 → 10.5.0: resolves CVE-2026-54272, CVE-2026-69198, CVE-2026-69192 (IPv4-mapped misclassification, CIDR suffix suppression, decimal octet decode).
+  - `qs` 6.15.0 → 6.15.3: resolves CVE-2026-8723 (DoS via `qs.stringify` crash with invalid limit). Added new override entry.
+  - `body-parser` 2.2.2 → 2.3.0: resolves CVE-2026-12590 (DoS via invalid `limit` option). Added new override entry.
+
+---
+
 ## v8.13.28 — fix(ci): ZAP rule 120000 IGNORE — localStorage is intentional SPA design (2026-08-08)
 
 ### CI

@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-07-22
 
-Latest release: **v8.13.28** (2026-08-08). fix(ci): ZAP rule 120000 IGNORE (localStorage is intentional SPA design; nonce CSP eliminates XSS vector).
+Latest release: **v8.13.29** (2026-08-12). fix(security): 26 Dependabot CVEs — channel npm overrides bumped (hono→4.13.1, @hono/node-server→2.1.0, fast-uri→4.1.2, ip-address→10.5.0, qs→6.15.3, body-parser→2.3.0).
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.28** (2026-08-08). fix(ci): ZAP rule 120000 IGNORE (loca
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.29 shipped 2026-08-12 — 26 Dependabot CVEs resolved: channel npm overrides updated (hono 4.12.19→4.13.1, @hono/node-server 2.0.3→2.1.0, fast-uri 3.1.2→4.1.2, ip-address 10.2.0→10.5.0, qs 6.15.0→6.15.3, body-parser 2.2.2→2.3.0).
 v8.13.28 shipped 2026-08-08 — ZAP rule 120000 IGNORE (localStorage is intentional SPA design; XSS mitigated by nonce CSP); closed GH#145-147.
 v8.13.27 shipped 2026-08-08 — gh release upload --repo flag (fixes "release not found" in CI); 8 new CVE triages: CVE-2026-15308 (python HTML DoS), CVE-2026-14257+CVE-2026-69152 (brace-expansion ReDoS), CVE-2026-69192 (ip-address), CVE-2026-69244 (aiohttp), CVE-2026-59939 (httplib2), GHSA-6v7p-g79w-8964 (MessagePack), CVE-2025-47273 (setuptools).
 v8.13.26 shipped 2026-08-08 — CVE-2026-8458 (curl HIGH, unauthorized connection reuse) added to trivyignore; attach-tarball if-guard runs even when build-base partial failure.
