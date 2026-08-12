@@ -246,7 +246,7 @@ jobs:
       - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin v0.70.0
+            sh -s -- -b /usr/local/bin v0.73.0
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         # Print human-readable table to the job log (non-blocking pass).
         run: |
@@ -340,7 +340,7 @@ jobs:
       - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin v0.70.0
+            sh -s -- -b /usr/local/bin v0.73.0
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         run: |
           trivy image \

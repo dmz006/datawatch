@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.31 — fix(ci): Trivy pin v0.70.0→v0.73.0 (v0.70.0 never released) (2026-08-12)
+
+### CI
+
+- **Trivy: update pinned version v0.70.0 → v0.73.0** — `v0.70.0` was pinned in the release workflow but was never published to the aquasecurity/trivy releases. The install script exited with "unable to find 'v0.70.0'", blocking the SARIF scan step in both `build-base` and `build-agents` jobs. Updated both occurrences to `v0.73.0` (current stable release).
+
+---
+
 ## v8.13.30 — fix(docker): rtk download retry on 503 in Dockerfile.agent-base (2026-08-12)
 
 ### CI
