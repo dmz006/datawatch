@@ -119,7 +119,7 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
         arm64) RTK_ARCH="aarch64-unknown-linux-gnu" ;; \
         *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac && \
-    curl -fsSL --retry 5 --retry-delay 10 \
+    curl -fsSL --retry 10 --retry-delay 30 --retry-all-errors \
         "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-${RTK_ARCH}.tar.gz" \
         -o /tmp/rtk.tar.gz && \
     tar -xzf /tmp/rtk.tar.gz -C /usr/local/bin/ rtk && \

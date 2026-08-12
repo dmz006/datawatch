@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.32 — fix(docker): rtk download retry 5×10s→10×30s + --retry-all-errors (2026-08-12)
+
+### CI
+
+- **Dockerfile.agent-base: increase rtk curl retry budget** — GitHub releases returned sustained 503s during the arm64 build layer; 5 retries at 10-second intervals (50s total window) was exhausted before the outage cleared. Increased to `--retry 10 --retry-delay 30 --retry-all-errors` (5-minute total window). `--retry-all-errors` ensures curl retries on connection-reset and timeout in addition to 5xx responses.
+
+---
+
 ## v8.13.31 — fix(ci): Trivy pin v0.70.0→v0.73.0 (v0.70.0 never released) (2026-08-12)
 
 ### CI
