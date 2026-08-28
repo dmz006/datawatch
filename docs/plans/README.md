@@ -38,14 +38,14 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-07-22
+## Current state — 2026-08-28
 
 Latest release: **v8.13.33** (2026-08-12). fix(security): CVE-2026-58050 (libssh2-1 HIGH, no fix, SSH server attack surface) added to trivyignore.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
+| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL363 — Goose full integration (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Deferred | 0 | — |
