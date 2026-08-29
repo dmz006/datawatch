@@ -19,11 +19,13 @@ func init() {
 
 // Backend runs goose in interactive TUI session mode.
 type Backend struct {
-	binary      string
-	sessionName string
-	provider    string
-	model       string
-	apiKey      string
+	binary         string
+	sessionName    string
+	provider       string
+	model          string
+	apiKey         string
+	channelEnabled bool
+	sessionFullID  string // BL363 T3 — passed to MCP server via --caller-session-id
 }
 
 // New creates a goose backend. binary defaults to "goose".
@@ -82,12 +84,14 @@ func (b *Backend) SetSessionName(name string) {
 	b.sessionName = name
 }
 
-func (b *Backend) SetProvider(p string) { b.provider = p }
-func (b *Backend) SetModel(m string)    { b.model = m }
-func (b *Backend) SetAPIKey(k string)   { b.apiKey = k }
+func (b *Backend) SetProvider(p string)        { b.provider = p }
+func (b *Backend) SetModel(m string)            { b.model = m }
+func (b *Backend) SetAPIKey(k string)           { b.apiKey = k }
+func (b *Backend) SetChannelEnabled(v bool)     { b.channelEnabled = v }
+func (b *Backend) SetSessionFullID(id string)   { b.sessionFullID = id }
 
 // gooseEnvPrefix returns the env var prefix string to prepend to commands,
-// sourced from provider/model/apiKey fields set before Launch is called.
+// sourced from provider/model/apiKey/channel fields set before Launch is called.
 func (b *Backend) gooseEnvPrefix() string {
 	var parts []string
 	if b.provider != "" {
@@ -99,6 +103,17 @@ func (b *Backend) gooseEnvPrefix() string {
 	if b.apiKey != "" && b.provider != "" {
 		envVar := providerKeyEnvVar(b.provider)
 		parts = append(parts, envVar+"="+shellQuote(b.apiKey))
+	}
+	// BL363 T3 — register datawatch as a Goose MCP extension (stdio transport).
+	// Goose reads GOOSE_MCP__<NAME>__TYPE/CMD/ARGS at startup to load MCP servers.
+	if b.channelEnabled && b.sessionFullID != "" {
+		if binaryPath, err := os.Executable(); err == nil {
+			parts = append(parts,
+				"GOOSE_MCP__DATAWATCH__TYPE=stdio",
+				"GOOSE_MCP__DATAWATCH__CMD="+shellQuote(binaryPath),
+				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote("mcp,--caller-session-id,"+b.sessionFullID),
+			)
+		}
 	}
 	if len(parts) == 0 {
 		return ""
@@ -160,10 +175,12 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 // PromptBackend runs goose in non-interactive one-shot mode (goose run --text).
 // Always requires a task prompt.
 type PromptBackend struct {
-	binary   string
-	provider string
-	model    string
-	apiKey   string
+	binary         string
+	provider       string
+	model          string
+	apiKey         string
+	channelEnabled bool
+	sessionFullID  string
 }
 
 // NewPrompt creates a goose-prompt backend for one-shot task execution.
@@ -178,9 +195,11 @@ func (b *PromptBackend) Name() string                  { return "goose-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
 
-func (b *PromptBackend) SetProvider(p string) { b.provider = p }
-func (b *PromptBackend) SetModel(m string)    { b.model = m }
-func (b *PromptBackend) SetAPIKey(k string)   { b.apiKey = k }
+func (b *PromptBackend) SetProvider(p string)      { b.provider = p }
+func (b *PromptBackend) SetModel(m string)          { b.model = m }
+func (b *PromptBackend) SetAPIKey(k string)         { b.apiKey = k }
+func (b *PromptBackend) SetChannelEnabled(v bool)   { b.channelEnabled = v }
+func (b *PromptBackend) SetSessionFullID(id string) { b.sessionFullID = id }
 
 func (b *PromptBackend) gooseEnvPrefix() string {
 	var parts []string
@@ -193,6 +212,15 @@ func (b *PromptBackend) gooseEnvPrefix() string {
 	if b.apiKey != "" && b.provider != "" {
 		envVar := providerKeyEnvVar(b.provider)
 		parts = append(parts, envVar+"="+shellQuote(b.apiKey))
+	}
+	if b.channelEnabled && b.sessionFullID != "" {
+		if binaryPath, err := os.Executable(); err == nil {
+			parts = append(parts,
+				"GOOSE_MCP__DATAWATCH__TYPE=stdio",
+				"GOOSE_MCP__DATAWATCH__CMD="+shellQuote(binaryPath),
+				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote("mcp,--caller-session-id,"+b.sessionFullID),
+			)
+		}
 	}
 	if len(parts) == 0 {
 		return ""

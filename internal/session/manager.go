@@ -1794,7 +1794,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		nb.SetSessionName(sess.Name)
 	}
 
-	// BL363 T2 — inject Goose provider/model/apikey from config into goose family backends.
+	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
 	switch backendName {
 	case "goose", "goose-prompt":
 		if p := m.cfg.Goose.Provider; p != "" {
@@ -1810,6 +1810,16 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if k := m.cfg.Goose.APIKeyRef; k != "" {
 			if sk, ok := backendObj.(interface{ SetAPIKey(string) }); ok {
 				sk.SetAPIKey(k)
+			}
+		}
+		// T3 — MCP channel: inject GOOSE_MCP__DATAWATCH__* env vars so Goose
+		// can call datawatch MCP tools (reply, memory, session management, etc.)
+		if m.cfg.Goose.ChannelEnabled {
+			if sc, ok := backendObj.(interface{ SetChannelEnabled(bool) }); ok {
+				sc.SetChannelEnabled(true)
+			}
+			if sid, ok := backendObj.(interface{ SetSessionFullID(string) }); ok {
+				sid.SetSessionFullID(sess.FullID)
 			}
 		}
 	}
@@ -3056,6 +3066,34 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// Set session name on backend
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
+	}
+
+	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).
+	switch backendName {
+	case "goose", "goose-prompt":
+		if p := m.cfg.Goose.Provider; p != "" {
+			if sp, ok := backendObj.(interface{ SetProvider(string) }); ok {
+				sp.SetProvider(p)
+			}
+		}
+		if mo := m.cfg.Goose.Model; mo != "" {
+			if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
+				sm.SetModel(mo)
+			}
+		}
+		if k := m.cfg.Goose.APIKeyRef; k != "" {
+			if sk, ok := backendObj.(interface{ SetAPIKey(string) }); ok {
+				sk.SetAPIKey(k)
+			}
+		}
+		if m.cfg.Goose.ChannelEnabled {
+			if sc, ok := backendObj.(interface{ SetChannelEnabled(bool) }); ok {
+				sc.SetChannelEnabled(true)
+			}
+			if sid, ok := backendObj.(interface{ SetSessionFullID(string) }); ok {
+				sid.SetSessionFullID(sess.FullID)
+			}
+		}
 	}
 
 	// Launch with resume support — pass the datawatch session ID as resumeID.

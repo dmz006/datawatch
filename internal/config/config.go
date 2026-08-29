@@ -622,9 +622,11 @@ type GooseConfig struct {
 	OutputMode  string `yaml:"output_mode,omitempty"`
 	InputMode   string `yaml:"input_mode,omitempty"`
 	// T2 — provider/model/key injection (BL363)
-	Provider  string `yaml:"provider,omitempty"`   // GOOSE_PROVIDER env var (e.g. "anthropic", "openai", "google", "ollama")
-	Model     string `yaml:"model,omitempty"`      // GOOSE_MODEL env var
+	Provider  string `yaml:"provider,omitempty"`    // GOOSE_PROVIDER env var (e.g. "anthropic", "openai", "google", "ollama")
+	Model     string `yaml:"model,omitempty"`       // GOOSE_MODEL env var
 	APIKeyRef string `yaml:"api_key_ref,omitempty"` // literal key OR ${secret:name} — resolved at startup
+	// T3 — MCP channel integration (BL363)
+	ChannelEnabled bool `yaml:"channel_enabled,omitempty"` // inject GOOSE_MCP__DATAWATCH__* env vars at launch
 }
 
 // GeminiConfig holds Gemini CLI LLM backend configuration.

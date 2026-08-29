@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.38 — feat(goose): BL363 T3 — MCP channel integration (v8.13.38)
+
+### Added
+
+- **Goose MCP channel integration** — when `goose.channel_enabled: true`, each Goose session receives `GOOSE_MCP__DATAWATCH__TYPE=stdio`, `GOOSE_MCP__DATAWATCH__CMD=<datawatch-binary>`, and `GOOSE_MCP__DATAWATCH__ARGS=mcp,--caller-session-id,<sessionFullID>` env vars at launch. Goose loads the datawatch MCP server as a stdio extension so sessions can call any datawatch tool (memory, session management, reply, etc.) directly from within a Goose session.
+- **`datawatch mcp --caller-session-id <id>`** — new flag on the `mcp` subcommand. When set, the MCP server records the calling session's full ID. Tools can use `callerSessionID` for session-aware routing (e.g. future `reply_to_parent` auto-routing without an explicit session ID argument).
+- **`GooseConfig.ChannelEnabled`** — `channel_enabled` YAML field (bool); gated by config so operators opt in. Settable via `config_set goose.channel_enabled true`; surfaced in config response.
+- `Backend.SetChannelEnabled` / `SetSessionFullID` and `PromptBackend.SetChannelEnabled` / `SetSessionFullID` setters — manager calls them from `m.cfg.Goose` before every launch and restart. Binary path resolved via `os.Executable()` so container/symlink deployments work transparently.
+- `mcp.Server.SetCallerSessionID(id string)` — wires the calling session ID from the `--caller-session-id` flag into the server struct for downstream tool use.
+
+---
+
 ## v8.13.37 — feat(goose): BL363 T2 — provider/model/API-key injection (v8.13.37)
 
 ### Added

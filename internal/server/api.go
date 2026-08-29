@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.13.37"
+var Version = "8.13.38"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4700,15 +4700,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"goose": map[string]interface{}{
-			"enabled":     s.cfg.Goose.Enabled,
-			"binary":      s.cfg.Goose.Binary,
-			"console_cols": s.cfg.Goose.ConsoleCols,
-			"console_rows": s.cfg.Goose.ConsoleRows,
-			"output_mode": s.cfg.Goose.OutputMode,
-			"input_mode":  s.cfg.Goose.InputMode,
-			"provider":    s.cfg.Goose.Provider,
-			"model":       s.cfg.Goose.Model,
-			"api_key_ref": s.cfg.Goose.APIKeyRef,
+			"enabled":         s.cfg.Goose.Enabled,
+			"binary":          s.cfg.Goose.Binary,
+			"console_cols":    s.cfg.Goose.ConsoleCols,
+			"console_rows":    s.cfg.Goose.ConsoleRows,
+			"output_mode":     s.cfg.Goose.OutputMode,
+			"input_mode":      s.cfg.Goose.InputMode,
+			"provider":        s.cfg.Goose.Provider,
+			"model":           s.cfg.Goose.Model,
+			"api_key_ref":     s.cfg.Goose.APIKeyRef,
+			"channel_enabled": s.cfg.Goose.ChannelEnabled,
 		},
 		"gemini": map[string]interface{}{
 			"enabled": s.cfg.Gemini.Enabled,
@@ -5352,6 +5353,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Goose.Model = toString(v)
 		case "goose.api_key_ref":
 			cfg.Goose.APIKeyRef = toString(v)
+		case "goose.channel_enabled":
+			cfg.Goose.ChannelEnabled = toBool(v)
 		case "gemini.enabled":
 			cfg.Gemini.Enabled = toBool(v)
 		case "gemini.binary":

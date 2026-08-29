@@ -97,10 +97,18 @@ type Server struct {
 	token          string // bearer token for internal API calls
 	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
 	fedPeerStore FedPeerStore
+	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
+	// the FullID of the session that launched it, enabling session-aware routing.
+	callerSessionID string
 }
 
 // SetResultStore wires a result store into the MCP server (BL360).
 func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
+
+// SetCallerSessionID stores the FullID of the session that launched this MCP
+// server (BL363 T3 — Goose channel). Tools can use it for session-aware routing
+// (e.g. reply_to_parent can look up the parent without an explicit session_id).
+func (s *Server) SetCallerSessionID(id string) { s.callerSessionID = id }
 
 // SetAgentAuditPath wires the audit file path for the agent_audit
 // MCP tool. cef=true marks the file as CEF-formatted (in which case

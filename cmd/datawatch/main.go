@@ -105,7 +105,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.13.37"
+var Version = "8.13.38"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -9424,6 +9424,9 @@ Remote AI config (SSE):
 		RunE: runMCP,
 	}
 	cmd.Flags().Bool("sse", false, "Start SSE server for remote AI clients (uses config mcp.sse_port)")
+	// BL363 T3 — Goose MCP channel: set the calling session ID so tools can
+	// self-route without requiring an explicit session_id argument.
+	cmd.Flags().String("caller-session-id", "", "FullID of the session that launched this MCP server (Goose channel use)")
 
 	// BL302 S1 — mcp resources subcommand group.
 	cmd.AddCommand(newMCPResourcesCmd())
@@ -9850,6 +9853,12 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
 	})
+
+	// BL363 T3 — Goose channel: make the calling session ID available to the MCP
+	// server so session-aware tools can self-route without an explicit argument.
+	if callerSessID, _ := cmd.Flags().GetString("caller-session-id"); callerSessID != "" {
+		mcpSrv.SetCallerSessionID(callerSessID)
+	}
 
 	sseMode, _ := cmd.Flags().GetBool("sse")
 	if sseMode {
