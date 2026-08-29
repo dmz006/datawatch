@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.39 — feat(goose): BL363 T4 — agent-goose container complete (v8.13.39)
+
+### Added
+
+- **`docker/dockerfiles/Dockerfile.agent-goose`** — pre-creates `/home/datawatch/.config/goose/` so the sessions directory exists before the first `goose session` call (avoids a race on container cold-start); adds `ENV GOOSE_CLI_THEME=plain` to prevent escape-sequence bleed in tmux pipe-pane captures (was previously required only at launch-command level; now also a container default).
+
+### Notes
+
+`Dockerfile.agent-goose` and CI wiring (`build-agents` matrix in `release.yaml` and `containers.yaml`) were added in v8.13.22. T4 closes the remaining gaps: config dir pre-creation and the `GOOSE_CLI_THEME=plain` runtime ENV.
+
+---
+
 ## v8.13.38 — feat(goose): BL363 T3 — MCP channel integration (v8.13.38)
 
 ### Added

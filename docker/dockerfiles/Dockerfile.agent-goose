@@ -44,7 +44,13 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
     # Aggressive cleanup — bzip2's apt artifacts + any stale caches
     rm -rf /var/cache/apt/* /tmp/* /root/.cache
 
+RUN mkdir -p /home/datawatch/.config/goose && \
+    chown -R datawatch:datawatch /home/datawatch/.config
+
 USER datawatch
+
+# Prevents escape-sequence bleed in tmux pipe-pane captures (BL363 T3).
+ENV GOOSE_CLI_THEME=plain
 
 LABEL datawatch.variant="agent-goose" \
       datawatch.agent="goose" \
