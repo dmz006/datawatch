@@ -1746,6 +1746,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
+	// opencode's interactive TUI uses alternate screen, which hides all output
+	// from tmux scrollback. Disable alternate-screen so the TUI renders on the
+	// main screen and scrollback works normally (same principle as ensureClaudeTUISetting).
+	switch backendName {
+	case "opencode", "opencode-acp":
+		_ = m.tmux.DisableAlternateScreen(tmuxSession)
+	}
+
 	// Pipe tmux output to tracker's output.log (encrypted if --secure)
 	if m.encKey != nil {
 		encLogPath := logFile + ".enc"
@@ -2987,6 +2995,10 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	}
 	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
+	}
+	switch backendName {
+	case "opencode", "opencode-acp":
+		_ = m.tmux.DisableAlternateScreen(sess.TmuxSession)
 	}
 
 	// Pipe output

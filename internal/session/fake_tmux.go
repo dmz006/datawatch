@@ -182,6 +182,11 @@ func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
 	return names, nil
 }
 
+// DisableAlternateScreen records the call; always succeeds in tests.
+func (f *FakeTmux) DisableAlternateScreen(session string) error {
+	return f.record("DisableAlternateScreen", session)
+}
+
 // WithFakeTmux swaps in a FakeTmux on the given Manager and returns it.
 // The Manager MUST NOT have running sessions at the time of swap.
 // Intended for use in tests only.

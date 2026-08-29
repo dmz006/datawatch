@@ -27,6 +27,7 @@ type TmuxAPI interface {
 	SetEnvironment(session string, env map[string]string) error
 	PaneTTY(session string) string
 	ListSessions(prefix string) ([]string, error)
+	DisableAlternateScreen(session string) error
 }
 
 // TmuxManager wraps tmux operations used by the session manager.
@@ -59,6 +60,14 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
 	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
 	return nil
+}
+
+// DisableAlternateScreen turns off tmux's alternate-screen feature for a session's
+// window. This prevents programs (like TUI apps) from entering the alternate screen
+// buffer, so all output lands on the main screen and tmux scrollback works normally.
+// Used for opencode sessions where the TUI would otherwise hide output from scrollback.
+func (t *TmuxManager) DisableAlternateScreen(session string) error {
+	return exec.Command("tmux", "set-window-option", "-t", session, "alternate-screen", "off").Run()
 }
 
 // SessionExists reports whether a tmux session with the given name exists.

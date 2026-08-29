@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.35 — fix(opencode): disable alternate-screen so tmux scrollback works (2026-08-29)
+
+### Fixed
+
+- **OpenCode scrollback was broken** — OpenCode's interactive TUI uses the terminal alternate-screen buffer, which tmux excludes from scrollback history. New and restarted opencode and opencode-acp sessions now have `alternate-screen off` set on their tmux window immediately after creation, so all TUI output lands on the main screen and is visible in scrollback.
+
+---
+
 ## v8.13.34 — fix(opencode): Ollama model picker + provider routing (2026-08-28)
 
 ### Fixed
