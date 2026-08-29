@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
-**Last Updated**: 2026-08-08  
-**Version**: v8.13.33  
+**Last Updated**: 2026-08-28  
+**Version**: v8.13.34  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---
@@ -344,11 +344,12 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 
 ---
 
-## Recent Context (as of 2026-07-22)
+## Recent Context (as of 2026-08-28)
 
-**Version:** v8.13.26  
-**Last changes (v8.13.10–v8.13.26):**
+**Version:** v8.13.34  
+**Last changes:**
 
+- **v8.13.34** — OpenCode new-session model picker now sends `?node=<compute_node>` derived from the selected LLM's pinned compute node (previously always queried the daemon's local default Ollama host, so remote-compute-node models never appeared). Fixed `WriteProjectConfig` (`internal/llm/backends/opencode/lsp.go`) writing a `provider.ollama.apiUrl` block OpenCode doesn't recognize — it silently ignored the block and fell back to the default model. Now writes the `npm`/`options.baseURL`/`models` shape OpenCode's generic OpenAI-compatible adapter actually expects (verified against `opencode` CLI directly), for both remote-node and local Ollama models.
 - **v8.13.26** — .trivyignore: CVE-2026-8458 (curl/libcurl HIGH CVSS 8.0, "unauthorized connection reuse", affects curl+libcurl4+libcurl3-gnutls, no fix in bookworm). release.yaml: attach-tarball gets `if: needs.goreleaser.result == 'success' && !cancelled()` so it runs even when build-base has partial failures (e.g. agent-base CVE) but stats-cluster succeeded.
 - **v8.13.25** — .zap/rules.tsv: add 10024 IGNORE (session_id URL param on /api/audit, /api/cost/usage, /api/schedules is a datawatch session filter/resource ID, not an HTTP auth token; Bearer header auth). Closed 15 stale ZAP issues GH#130–144 accumulated during July 22 ZAP CI fix chain.
 - **v8.13.24** — .trivyignore: CVE-2026-47063 (openjdk-17-jre-headless HIGH, CVSS 8.0, "Enhance Jar handling", Oracle CPU 2026-07, no fix in bookworm, parent-full/signal-cli only). release.yaml: attach-tarball now depends only on `[goreleaser, build-base]` instead of `[goreleaser, build-base, build-agents]` — stats-cluster tarball was being SKIPPED whenever any agent container failed.
@@ -383,6 +384,7 @@ File is written at session start and cleaned up at session end (`tooling.Backend
 8. **SendInput settle** — `scheduleSettleMs` (default 200ms) applies to ALL send sources since v8.12.9. Set >0 in config to fix Enter not delivered to React Ink TUIs
 9. **extra_mcp_servers** — `session.extra_mcp_servers` YAML field injects MCP servers into `.mcp.json` on every spawn; for non-claude-code backends via `WriteProjectMCPConfig`, for claude-code via `InjectExtrasIntoMCPConfig`
 10. **schedule spawn** — `datawatch schedule spawn --shell <cmd> --cron "0 * * * *" --path <dir> --schedule-name <name>` runs shell jobs on a cron without LLM; overlap guard prevents stacked concurrent runs; `schedule list` shows FIRES/LAST-FIRE/LAST-RESULT
+11. **OpenCode + Ollama provider shape** — OpenCode has no built-in Ollama provider; `{"provider":{"ollama":{"apiUrl":...}}}` in opencode.json is silently ignored. Must use the generic OpenAI-compatible adapter shape: `{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"<host>/v1"},"models":{"<name>":{}}}`. Verify any future opencode.json provider changes with `opencode models` in the target directory before trusting them.
 
 ### Gotchas to Avoid (from AGENT.md)
 - ❌ **No version bump without ask** — User must explicitly request release; implementation != release

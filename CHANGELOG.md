@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.34 — fix(opencode): Ollama model picker + provider routing (2026-08-28)
+
+### Fixed
+
+- **OpenCode new-session model picker ignored the selected LLM's compute node** — the dropdown always queried the daemon's local default Ollama host instead of `?node=<compute_node>`, so an LLM entry pinned to a remote compute node (e.g. a dedicated GPU host) never showed that host's models. The picker now derives the node from the selected LLM's first pinned compute node and refetches whenever that node changes (previously it fetched once, ever, per page load).
+- **Selecting an Ollama model for an OpenCode session didn't actually route to it** — datawatch wrote a `provider.ollama.apiUrl` block to `<projectDir>/opencode.json`, but OpenCode has no built-in Ollama provider and silently ignores that shape; the session always fell back to the default free built-in model. Now writes the provider block OpenCode actually recognizes (`npm: "@ai-sdk/openai-compatible"` + `options.baseURL` + an explicit `models` map), verified against the `opencode` CLI directly. Also fixes the same gap for local (no pinned compute node) Ollama models, which were equally broken.
+
+---
+
 ## v8.13.33 — fix(security): triage CVE-2026-58050 (libssh2-1 HIGH, no fix) (2026-08-12)
 
 ### Security

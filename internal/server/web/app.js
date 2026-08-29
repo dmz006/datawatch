@@ -5542,15 +5542,24 @@ function onSessLLMChange() {
   if (!isOpenCode && ocModelSel) ocModelSel.value = '';
   if (!isOpenCode && ocLSPSel) ocLSPSel.value = '';
   if (isOpenCode && modelSel) modelSel.value = '';
-  if (isOpenCode && ocModelSel && ocModelSel.options.length <= 1) {
-    apiFetch('/api/opencode/models').then(res => {
+  // BL305 follow-up (2026-08-28) — the LLM's pinned compute_nodes[0] must
+  // drive ?node= on this fetch, or Ollama models always come from the
+  // daemon's local default host instead of the LLM's actual compute node.
+  // Keyed by node (not a one-shot length<=1 guard) so switching between
+  // two opencode LLMs pinned to different nodes re-fetches correctly.
+  const ocNode = (llmObj && Array.isArray(llmObj.compute_nodes) && llmObj.compute_nodes[0]) || '';
+  if (isOpenCode && ocModelSel && ocModelSel.dataset.node !== ocNode) {
+    ocModelSel.dataset.node = ocNode;
+    const qs = ocNode ? ('?node=' + encodeURIComponent(ocNode)) : '';
+    apiFetch('/api/opencode/models' + qs).then(res => {
       const models = (res && Array.isArray(res.models)) ? res.models : [];
       const defaultModel = res && res.default_model;
       while (ocModelSel.options.length > 1) ocModelSel.remove(1);
       let lastProvider = '';
+      let og = null;
       models.forEach(m => {
         if (m.provider !== lastProvider) {
-          const og = document.createElement('optgroup');
+          og = document.createElement('optgroup');
           og.label = m.provider_label || (m.provider.charAt(0).toUpperCase() + m.provider.slice(1));
           ocModelSel.appendChild(og);
           lastProvider = m.provider;
@@ -5558,7 +5567,7 @@ function onSessLLMChange() {
         const opt = document.createElement('option');
         opt.value = m.id;
         opt.textContent = m.label;
-        ocModelSel.appendChild(opt);
+        (og || ocModelSel).appendChild(opt);
       });
       if (defaultModel && !ocModelSel.value) ocModelSel.value = defaultModel;
     }).catch(() => {});

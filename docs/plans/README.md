@@ -333,6 +333,8 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ## Open Bugs
 
+> **BL364** — ✅ Closed v8.13.34. OpenCode new-session model picker never sent `?node=<compute_node>` (always queried the daemon's local default Ollama host, one-shot fetch never re-ran on LLM switch) — fixed in `app.js` `onSessLLMChange()`. Separately, `WriteProjectConfig` wrote a `provider.ollama.apiUrl` block to opencode.json that OpenCode silently ignores (no built-in Ollama provider); now writes the `npm`/`options.baseURL`/`models` shape OpenCode's OpenAI-compatible adapter actually recognizes, for both remote-compute-node and local Ollama models. Verified live against the `opencode` CLI (`opencode models`).
+
 > **BL294** — ✅ Closed v7.0.0-alpha.39. Session registry race fixed: exclusive flock sidecar (`sessions.json.lock`) around `Store.persist()` via `flock_unix.go`/`flock_windows.go`; 5-second timeout prevents deadlock; ReconcileSessions boot call retained as safety net.
 
 ---

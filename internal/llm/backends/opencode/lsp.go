@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // projectConfig is the subset of opencode.json that datawatch manages.
@@ -42,10 +43,13 @@ type ProjectConfigOpts struct {
 	LSPServers map[string]LSPServer
 
 	// OllamaURL overrides the Ollama provider base URL so an Ollama model
-	// can be routed to a specific compute node.
-	// Set only when Model starts with "ollama/" and a non-local node is selected.
+	// can be routed to a specific compute node. Empty defaults to
+	// http://localhost:11434 (matches internal/llm/backends/ollama.ListModels).
+	// Only used when Model starts with "ollama/".
 	OllamaURL string
 }
+
+const defaultOllamaURL = "http://localhost:11434"
 
 // WriteProjectConfig writes <projectDir>/opencode.json with the provided
 // opts. Idempotent: reads the existing file first and merges, so
@@ -82,12 +86,29 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		}
 	}
 
-	if opts.OllamaURL != "" {
+	// OpenCode has no built-in Ollama provider — it only recognizes
+	// providers defined under "provider" using its generic openai-compatible
+	// adapter (npm + options.baseURL + an explicit models map). A bare
+	// {"apiUrl": ...} block (the old shape here) is silently ignored:
+	// `opencode models` never lists the model and the session falls back
+	// to the global default. Verified against opencode 1.18.25.
+	if modelName, ok := strings.CutPrefix(opts.Model, "ollama/"); ok {
+		baseURL := opts.OllamaURL
+		if baseURL == "" {
+			baseURL = defaultOllamaURL
+		}
 		if existing.Provider == nil {
 			existing.Provider = make(map[string]any)
 		}
 		existing.Provider["ollama"] = map[string]any{
-			"apiUrl": opts.OllamaURL,
+			"npm":  "@ai-sdk/openai-compatible",
+			"name": "Ollama",
+			"options": map[string]any{
+				"baseURL": strings.TrimSuffix(baseURL, "/") + "/v1",
+			},
+			"models": map[string]any{
+				modelName: map[string]any{},
+			},
 		}
 	}
 

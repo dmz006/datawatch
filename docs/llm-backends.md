@@ -382,11 +382,26 @@ OpenCode supports multiple AI providers. Select the model in the **New Session**
 - `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o3-mini`
 - `google/gemini-2.0-flash`, `google/gemini-1.5-pro`
 
-**Local models via Ollama** (`ollama/<model-name>`): any model pulled on your Ollama instance. Select a compute node in the session form to route to a different Ollama host.
+**Local models via Ollama** (`ollama/<model-name>`): any model pulled on the Ollama instance for the LLM's compute node — the model dropdown queries that node's live model list directly, so only models actually present there are offered. With no compute node pinned, it falls back to the daemon's local Ollama host.
 
-The selected model is written to `<projectDir>/opencode.json` at session start:
+The selected model is written to `<projectDir>/opencode.json` at session start. For a cloud model this is just the `model` field:
 ```json
 { "model": "anthropic/claude-sonnet-4-6" }
+```
+
+For an Ollama model, OpenCode has no built-in Ollama provider, so datawatch also writes a `provider.ollama` block using OpenCode's generic OpenAI-compatible adapter — this is what actually makes the model selectable and usable, not just the `model` field:
+```json
+{
+  "model": "ollama/qwen3.8:27b",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama",
+      "options": { "baseURL": "http://<compute-node-host>:11434/v1" },
+      "models": { "qwen3.8:27b": {} }
+    }
+  }
+}
 ```
 
 ### Language Server Protocol — LSP (v8.7.0)

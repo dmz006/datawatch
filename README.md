@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.13.33](CHANGELOG.md) (2026-08-12)** — fix(security): triage CVE-2026-58050 (libssh2-1 HIGH, no fix, SSH server attack surface). 2394 tests.
+**[v8.13.34](CHANGELOG.md) (2026-08-28)** — fix(opencode): new-session model picker now queries the selected LLM's compute node, and Ollama model selection actually routes to the model instead of silently falling back to the default. 2397 tests.
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
