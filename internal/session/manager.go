@@ -1794,6 +1794,26 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		nb.SetSessionName(sess.Name)
 	}
 
+	// BL363 T2 — inject Goose provider/model/apikey from config into goose family backends.
+	switch backendName {
+	case "goose", "goose-prompt":
+		if p := m.cfg.Goose.Provider; p != "" {
+			if sp, ok := backendObj.(interface{ SetProvider(string) }); ok {
+				sp.SetProvider(p)
+			}
+		}
+		if mo := m.cfg.Goose.Model; mo != "" {
+			if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
+				sm.SetModel(mo)
+			}
+		}
+		if k := m.cfg.Goose.APIKeyRef; k != "" {
+			if sk, ok := backendObj.(interface{ SetAPIKey(string) }); ok {
+				sk.SetAPIKey(k)
+			}
+		}
+	}
+
 	// v5.27.5 — per-session claude-code overrides (permission_mode,
 	// model, effort) forwarded to the backend before launch. Each
 	// setter is gated by an interface check so non-claude backends

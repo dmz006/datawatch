@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-08-29
 
-Latest release: **v8.13.36** (2026-08-29). feat(goose): BL363 T1 complete — Goose backend registered, interactive TUI, session naming/resume, goose-prompt, version normalization.
+Latest release: **v8.13.37** (2026-08-29). feat(goose): BL363 T2 complete — Goose provider/model/API-key injection via `GooseConfig.Provider`/`Model`/`APIKeyRef`; env vars prepended to every launch command; config API surfaced.
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -55,6 +55,7 @@ Latest release: **v8.13.36** (2026-08-29). feat(goose): BL363 T1 complete — Go
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.37 shipped 2026-08-29 — BL363 T2: Goose provider/model/API-key injection — `GooseConfig` gains `provider`, `model`, `api_key_ref`; `SetProvider`/`SetModel`/`SetAPIKey` setters on both backends; manager calls setters from config before launch; `providerKeyEnvVar` maps provider→env-var; config API (`goose.provider`, `goose.model`, `goose.api_key_ref`) wired.
 v8.13.36 shipped 2026-08-29 — BL363 T1: Goose backend fully functional — init() registration, binary fallback resolution, interactive TUI (`goose session`), Nameable (`--name`), Resumable (`goose session resume`), goose-prompt one-shot, version normalization, 11 unit tests.
 v8.13.35 shipped 2026-08-29 — OpenCode scrollback fix: `DisableAlternateScreen` called on tmux window after session creation for opencode/opencode-acp backends; TUI output now lands on main screen instead of alternate buffer.
 v8.13.34 shipped 2026-08-28 — OpenCode new-session model picker sends `?node=<compute_node>` (BL364); Ollama provider block corrected to openai-compatible shape OpenCode actually recognizes.

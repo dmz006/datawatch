@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.37 — feat(goose): BL363 T2 — provider/model/API-key injection (v8.13.37)
+
+### Added
+
+- **Provider/model/API-key injection for Goose backends** — `GooseConfig` gains `provider`, `model`, and `api_key_ref` YAML fields (BL363 T2). When set, `GOOSE_PROVIDER`, `GOOSE_MODEL`, and the provider-specific key env var (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `GOOSE_API_KEY` for others) are prepended to every `goose session` / `goose run` command at launch.
+- **`SetProvider` / `SetModel` / `SetAPIKey` setters** on both `Backend` (interactive) and `PromptBackend` (one-shot). Manager calls them from `m.cfg.Goose` before launch; `api_key_ref` is pre-resolved by `secrets.ResolveConfig` at daemon startup.
+- **`providerKeyEnvVar` helper** — maps provider → env var name: `anthropic→ANTHROPIC_API_KEY`, `openai→OPENAI_API_KEY`, `google/gemini→GOOGLE_API_KEY`, others→`GOOSE_API_KEY`.
+- **Config API surface** — `goose.provider`, `goose.model`, `goose.api_key_ref` settable via `/api/config` (`config_set`); surfaced in the config response.
+
+---
+
 ## v8.13.36 — feat(goose): BL363 T1 — functional Goose backend (v8.13.36)
 
 ### Added

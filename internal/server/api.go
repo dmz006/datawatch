@@ -173,7 +173,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.13.36"
+var Version = "8.13.37"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4700,12 +4700,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"goose": map[string]interface{}{
-			"enabled": s.cfg.Goose.Enabled,
-			"binary":  s.cfg.Goose.Binary,
+			"enabled":     s.cfg.Goose.Enabled,
+			"binary":      s.cfg.Goose.Binary,
 			"console_cols": s.cfg.Goose.ConsoleCols,
 			"console_rows": s.cfg.Goose.ConsoleRows,
-			"output_mode":  s.cfg.Goose.OutputMode,
-			"input_mode":   s.cfg.Goose.InputMode,
+			"output_mode": s.cfg.Goose.OutputMode,
+			"input_mode":  s.cfg.Goose.InputMode,
+			"provider":    s.cfg.Goose.Provider,
+			"model":       s.cfg.Goose.Model,
+			"api_key_ref": s.cfg.Goose.APIKeyRef,
 		},
 		"gemini": map[string]interface{}{
 			"enabled": s.cfg.Gemini.Enabled,
@@ -5343,6 +5346,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Goose.Enabled = toBool(v)
 		case "goose.binary":
 			if s := toString(v); s != "" { cfg.Goose.Binary = s }
+		case "goose.provider":
+			cfg.Goose.Provider = toString(v)
+		case "goose.model":
+			cfg.Goose.Model = toString(v)
+		case "goose.api_key_ref":
+			cfg.Goose.APIKeyRef = toString(v)
 		case "gemini.enabled":
 			cfg.Gemini.Enabled = toBool(v)
 		case "gemini.binary":
