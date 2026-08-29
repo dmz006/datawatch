@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.13.36 — feat(goose): BL363 T1 — functional Goose backend (v8.13.36)
+
+### Added
+
+- **Goose backend now registered and functional** — `init()` registration was missing; Goose sessions could never be resolved. Now `llm.Register` is called for both `goose` (interactive TUI) and `goose-prompt` (one-shot) at startup.
+- **Binary resolution fallback** — checks `~/.local/bin/goose`, `~/.config/goose/bin/goose`, `/usr/local/bin/goose` when `goose` is not on PATH.
+- **Interactive TUI mode** — `SupportsInteractiveInput() true`; launches `goose session` (or `goose session start --name <n>` when a session name is set). `GOOSE_CLI_THEME=plain` prevents escape-sequence bleed in pipe-pane captures.
+- **Session naming** (`Nameable` interface) — `SetSessionName` sanitizes colons and slashes and passes `--name` to `goose session start`.
+- **Session resume** (`Resumable` interface) — `LaunchResume` calls `goose session resume <name>` when a resume ID or session name is available; falls back to a fresh session.
+- **`goose-prompt` backend** — `PromptRequired() true`; runs `goose run --text '<task>'` followed by the `DATAWATCH_COMPLETE:` marker for one-shot sessions.
+- **Version normalization** — Goose outputs `1.43.0` without a `v` prefix; `Version()` prefixes `v` automatically.
+- **11 unit tests** covering binary resolution (PATH, absolute, fallback, not-found), version normalization, interface compliance, session name sanitization, and prompt-required enforcement.
+
+---
+
 ## v8.13.35 — fix(opencode): disable alternate-screen so tmux scrollback works (2026-08-29)
 
 ### Fixed

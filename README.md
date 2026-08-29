@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.13.35](CHANGELOG.md) (2026-08-29)** — fix(opencode): tmux scrollback now works for OpenCode sessions — alternate-screen mode disabled so TUI output lands on the main screen instead of the hidden alternate buffer. 2397 tests.
+**[v8.13.36](CHANGELOG.md) (2026-08-29)** — feat(goose): Goose backend fully operational — init() registration, binary resolution, interactive TUI, session naming/resume, goose-prompt one-shot, version normalization. 11 new tests. 2408 tests total.
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
