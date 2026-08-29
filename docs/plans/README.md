@@ -40,12 +40,12 @@ single source of truth.
 
 ## Current state — 2026-08-29
 
-Latest release: **v8.13.39** (2026-08-29). feat(goose): BL363 T4 complete — agent-goose container: `ENV GOOSE_CLI_THEME=plain` + `/home/datawatch/.config/goose/` pre-created. BL363 fully shipped.
+Latest release: **v8.14.0** (2026-08-29). feat(goose): BL363 testing gap closure — 22 unit tests (T2/T3), config-reference.yaml + Settings UI + llm-backends.md updated; minor bump retroactive for new backend. BL363 fully closed.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL363 — Goose full integration (plan filed 2026-08-28); BL365 — core security assessment (plan filed 2026-08-28) |
+| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Deferred | 0 | — |
@@ -55,7 +55,8 @@ Latest release: **v8.13.39** (2026-08-29). feat(goose): BL363 T4 complete — ag
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
-v8.13.39 shipped 2026-08-29 — BL363 T4: agent-goose container finalized — `ENV GOOSE_CLI_THEME=plain` + `/home/datawatch/.config/goose/` pre-created in Dockerfile. BL363 fully complete.
+v8.14.0 shipped 2026-08-29 — BL363 testing gap closure: 22 unit tests for T2/T3 (`providerKeyEnvVar`, `shellQuote`, `gooseEnvPrefix` all branches, all setters on both backends); config-reference.yaml updated with provider/model/api_key_ref/channel_enabled; Settings UI Goose card added to LLM_CONFIG_FIELDS; llm-backends.md goose section rewritten for T2/T3; minor version bump (8.13.x→8.14.0) retroactive for new LLM backend. BL363 ✅ closed.
+v8.13.39 shipped 2026-08-29 — BL363 T4: agent-goose container finalized — `ENV GOOSE_CLI_THEME=plain` + `/home/datawatch/.config/goose/` pre-created in Dockerfile.
 v8.13.38 shipped 2026-08-29 — BL363 T3: Goose MCP channel integration — `GooseConfig.ChannelEnabled`; `GOOSE_MCP__DATAWATCH__*` env vars injected at launch; `datawatch mcp --caller-session-id` flag; `mcp.Server.SetCallerSessionID`; config API (`goose.channel_enabled`); manager injects on both new-session and restart paths.
 v8.13.37 shipped 2026-08-29 — BL363 T2: Goose provider/model/API-key injection — `GooseConfig` gains `provider`, `model`, `api_key_ref`; `SetProvider`/`SetModel`/`SetAPIKey` setters on both backends; manager calls setters from config before launch; `providerKeyEnvVar` maps provider→env-var; config API (`goose.provider`, `goose.model`, `goose.api_key_ref`) wired.
 v8.13.36 shipped 2026-08-29 — BL363 T1: Goose backend fully functional — init() registration, binary fallback resolution, interactive TUI (`goose session`), Nameable (`--name`), Resumable (`goose session resume`), goose-prompt one-shot, version normalization, 11 unit tests.

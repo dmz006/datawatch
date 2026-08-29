@@ -264,20 +264,43 @@ session:
 
 goose:
   enabled: true
-  binary: goose       # path to goose binary; default: "goose"
+  binary: goose               # path to goose binary; default: "goose"
+
+  # Provider / model injection (BL363 T2) — datawatch injects these as
+  # GOOSE_PROVIDER and GOOSE_MODEL environment variables at session launch.
+  # When set here, goose does not need its own ~/.config/goose/config.yaml.
+  provider: anthropic         # e.g. anthropic, openai, google
+  model: claude-sonnet-4-6    # model name accepted by the provider
+
+  # API key — literal value or ${secret:name} resolved from secrets store.
+  # Injected as the provider-specific key env var (ANTHROPIC_API_KEY,
+  # OPENAI_API_KEY, GOOGLE_API_KEY, or GOOSE_API_KEY for others).
+  # Never logged. Omit if the key is already in the environment.
+  api_key_ref: ${secret:goose-api-key}
+
+  # MCP channel bridge (BL363 T3) — when true, datawatch registers itself
+  # as a Goose MCP extension via GOOSE_MCP__DATAWATCH__* env vars so Goose
+  # can call datawatch tools (memory, sessions, etc.) from within a session.
+  channel_enabled: false
 ```
 
 ### How it runs
 
 ```bash
-cd <project_dir> && goose run --text '<task>'
+# Interactive mode (goose backend)
+cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose session [--name <name>]
+
+# One-shot mode (goose-prompt backend)
+cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose run --text '<task>'
 ```
 
 ### Notes
 
-- goose has its own config (`~/.config/goose/config.yaml`) for provider and model selection
-- Interactive input is not supported via datawatch
-- goose creates its own session context per run
+- Provider, model, and API key can be injected via datawatch config (see above) — goose does **not** need its own `~/.config/goose/config.yaml` when these are set.
+- `goose` backend is interactive (full TUI); `goose-prompt` is one-shot and requires a task prompt.
+- Session resume is supported via named sessions (`--name`); datawatch tracks the name automatically.
+- `GOOSE_CLI_THEME=plain` is always injected to prevent escape-sequence bleed in tmux captures.
+- With `channel_enabled: true`, Goose can call datawatch MCP tools (memory recall, session management, etc.) from within the session — the session ID is threaded through `--caller-session-id`.
 
 ---
 

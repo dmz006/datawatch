@@ -1,7 +1,7 @@
 # DATAWATCH-CONTEXT.md — Datawatch Context & Quick Start
 
-**Last Updated**: 2026-08-28  
-**Version**: v8.13.34  
+**Last Updated**: 2026-08-29  
+**Version**: v8.14.0  
 **Load this before any session** — it contains architecture, rules, memory queries, MCP access, and common workflows.
 
 ---

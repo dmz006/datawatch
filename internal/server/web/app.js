@@ -11459,6 +11459,14 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
     { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },
   ]},
+  { id: 'goose', section: 'Goose (Block)', docs: 'howto/chat-and-llm-quickstart.md', fields: [
+    { key: 'goose.enabled', label: 'Enable Goose backend', type: 'toggle' },
+    { key: 'goose.binary', label: 'Goose binary path', type: 'text', placeholder: 'goose' },
+    { key: 'goose.provider', label: 'Provider (e.g. anthropic, openai, google)', type: 'text', placeholder: 'anthropic' },
+    { key: 'goose.model', label: 'Model (e.g. claude-sonnet-4-6)', type: 'text', placeholder: '' },
+    { key: 'goose.api_key_ref', label: 'API key (literal or ${secret:name})', type: 'text', placeholder: '${secret:goose-api-key}' },
+    { key: 'goose.channel_enabled', label: 'MCP channel bridge (connect Goose to this daemon)', type: 'toggle' },
+  ]},
   { id: 'opencode', section: 'OpenCode', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'opencode.default_model', label: 'Default model (e.g. opencode/big-pickle)', type: 'text', placeholder: 'opencode/big-pickle' },
   ]},

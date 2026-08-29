@@ -685,6 +685,17 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T41 | TS-634 | datawatch plugins browse-registry exits with usage if no registry arg | surface:cli feature:plugin-install group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
 | T41 | TS-635 | datawatch skills registry list includes community registry | surface:cli feature:community-registry group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
 | T41 | TS-636 | GET /api/skills/registries returns community as first registry entry | surface:api feature:community-registry group:community-registry-v8.1 parallel:ok | ✅ ready | — | — |
+| T42 | TS-637 | GET /api/config goose section includes provider, model, api_key_ref, channel_enabled fields | surface:api feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-638 | PUT /api/config {goose.provider:"anthropic"} round-trips: GET returns anthropic | surface:api feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-639 | PUT /api/config {goose.model:"claude-sonnet-4-6"} round-trips via GET | surface:api feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-640 | PUT /api/config {goose.channel_enabled:true} round-trips: GET returns true | surface:api feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-641 | config_set MCP tool goose.provider=openai updates config (requires allow_self_config) | surface:mcp feature:goose group:goose-bl363 conflict:selfconfig | ✅ ready | — | — |
+| T42 | TS-642 | datawatch config set goose.model gpt-4o exits 0; GET /api/config confirms value | surface:cli feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-643 | Settings UI LLM tab shows Goose (Block) section with 6 fields (enabled/binary/provider/model/api_key_ref/channel_enabled) | surface:pwa feature:goose group:goose-bl363 | ✅ ready | — | — |
+| T42 | TS-644 | goose backend unit tests: 22 tests pass (providerKeyEnvVar, shellQuote, gooseEnvPrefix all branches, setters) | surface:unit feature:goose group:goose-bl363 parallel:ok | ✅ ready | — | — |
+| T42 | TS-645 | goose session launched with provider/model set injects GOOSE_PROVIDER, GOOSE_MODEL env vars | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary |
+| T42 | TS-646 | goose-prompt session with provider+api_key_ref completes DATAWATCH_COMPLETE detection | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary + valid API key |
+| T42 | TS-647 | goose session with channel_enabled=true has GOOSE_MCP__DATAWATCH__* in env | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary |
 
 ---
 

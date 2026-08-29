@@ -364,6 +364,16 @@ goose:
   console_cols: 0
   # Terminal height
   console_rows: 0
+  # Provider to inject via GOOSE_PROVIDER (e.g. anthropic, openai, google)
+  provider: ""
+  # Model to inject via GOOSE_MODEL (e.g. claude-sonnet-4-6, gpt-4o)
+  model: ""
+  # API key (literal or ${secret:name}) injected as the provider-specific key env var.
+  # Resolved from secrets store at startup — never logged.
+  api_key_ref: ""
+  # When true, inject GOOSE_MCP__DATAWATCH__* env vars so Goose connects back
+  # to this daemon as an MCP server (stdio transport, caller-session-id threaded through).
+  channel_enabled: false
 gemini:
   # Enable Gemini CLI backend
   enabled: false
