@@ -38,14 +38,14 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-08-28
+## Current state — 2026-08-29
 
-Latest release: **v8.13.33** (2026-08-12). fix(security): CVE-2026-58050 (libssh2-1 HIGH, no fix, SSH server attack surface) added to trivyignore.
+Latest release: **v8.13.35** (2026-08-29). fix(opencode): tmux scrollback now works — alternate-screen disabled for opencode/opencode-acp sessions.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL363 — Goose full integration (plan filed 2026-08-28) |
+| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL363 — Goose full integration (plan filed 2026-08-28); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Deferred | 0 | — |
@@ -55,6 +55,8 @@ Latest release: **v8.13.33** (2026-08-12). fix(security): CVE-2026-58050 (libssh
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
+v8.13.35 shipped 2026-08-29 — OpenCode scrollback fix: `DisableAlternateScreen` called on tmux window after session creation for opencode/opencode-acp backends; TUI output now lands on main screen instead of alternate buffer.
+v8.13.34 shipped 2026-08-28 — OpenCode new-session model picker sends `?node=<compute_node>` (BL364); Ollama provider block corrected to openai-compatible shape OpenCode actually recognizes.
 v8.13.33 shipped 2026-08-12 — CVE-2026-58050 (libssh2-1 HIGH, no fix in bookworm) added to trivyignore; SSH server attack surface, operator-configured remotes only.
 v8.13.32 shipped 2026-08-12 — rtk curl retry 10×30s (5-min window) + --retry-all-errors; 5×10s was exhausted by GitHub releases sustained 503.
 v8.13.31 shipped 2026-08-12 — Trivy pin v0.70.0→v0.73.0; v0.70.0 never published, install.sh exited non-zero blocking SARIF in build-base+build-agents.
@@ -385,6 +387,34 @@ Add Matrix as a communication channel. Matrix is extensive and has multiple inte
 
 **References:** https://spec.matrix.org/latest/ · https://github.com/mautrix/go (`maunium.net/go/mautrix v0.22.0` already in `go.sum`)
 **Status:** Open — design discussion in flight (see design doc); operator answers in §11 of design doc drive the implementation plan.
+
+#### BL365 — Core security assessment: daemon, code & features (filed 2026-08-28, plan ready)
+
+Assessment-only (no fixes in scope) security review of the datawatch daemon across every
+channel — CLI, REST API, WebSocket, PWA, MCP, channel-bridge comms, DNS covert channel,
+agent bootstrap, federation, containers, eBPF observer. Loopback + Tailscale-only threat
+model (operator-confirmed); messaging treated as operator-only (untrusted-ingress deferred
+§10 F-1). Sandbox-only dynamic testing per the E2E process (2nd instance, non-default ports,
+temp data dir, dummy secrets, full teardown) — the production daemon is never touched.
+Static: gosec/govulncheck/Trivy re-triage vs `docs/security-review.md`, gitleaks, plus a
+local-model (Ollama) read-only code review of the high-risk files. Findings register in the
+plan (`SEC-###`) for later GH-issue conversion on operator request.
+
+**Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
+**Status:** Planned — ~6.5 working days, 7 phases; awaiting operator green-light.
+
+#### BL366 — Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28, plan ready)
+
+Assessment-only companion to BL365, treating datawatch-spawned LLM sessions as potentially
+hostile/compromised. Three classes: T1 prompt-injection data exfiltration (secrets, memory,
+identity; tested on ≥2 models incl. the weakest local), T2 confused-deputy overreach
+(cross-session/agent reads, config/schedule abuse, file escape), T3 container/host escape +
+credential reuse for lateral movement (messaging APIs, Tailscale, self-update). Phase 0
+builds a privilege manifest (env / MCP tools / fs / net / memory surface per session type).
+Reuses BL365's sandbox harness, evidence bar, and findings register (`HLLM-###`).
+
+**Plan doc:** [`2026-08-28-security-assessment-hostile-llm.md`](2026-08-28-security-assessment-hostile-llm.md)
+**Status:** Planned — ~6 working days; runs AFTER BL365 (builds on its authz verdicts + sandbox).
 
 ---
 
