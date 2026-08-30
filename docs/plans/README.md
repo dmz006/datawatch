@@ -47,7 +47,7 @@ Latest release: **v8.14.1** (2026-08-30). fix(security): Go 1.26.6 + cilium/ebpf
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — image/vision attachment passthrough in comms; BL369 — prompt injection hardening in autonomous executor |
+| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (comms/skills/sessions/MCP/council, configurable model); BL369 — prompt injection hardening in autonomous executor |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
@@ -203,17 +203,119 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL368 — Image/vision attachment passthrough in comms channels
+#### BL368 — Vision input system: image attachments in comms, skills, sessions, and MCP
 
-**Operator-filed 2026-08-30. Nightwire review (v2.4.0).**
+**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30.**
 
-**Current state:** The messaging router (`internal/router/router.go:890`) handles audio attachments via Whisper transcription and injects the transcript as the message text. Image and other non-audio attachments are silently dropped — they are decoded by the Signal adapter but never processed.
+---
 
-**Proposed:** Detect image MIME types (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) in the router attachment loop. When an image attachment arrives, call a vision-capable compute node via `POST /api/ask` with base64-encoded image data. Inject the returned description as prepended text before the message command (same pattern as audio transcription). Config key: `messaging.vision_backend` (defaults to the same compute node used for autonomous if set, else disabled). The PWA and Android already display image previews from session output; this closes the inbound gap.
+### Core gap
 
-**Surfaces:** Signal, Telegram (already decodes `photo` type in `telegram/backend.go:133`), and any future backend implementing the `Attachment` interface. No change to the `Backend` interface — handled entirely in the router.
+The messaging router (`internal/router/router.go:890`) handles audio attachments via Whisper transcription and injects the transcript as the message text. Image/photo attachments (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) are collected by Signal and Telegram adapters but silently dropped in the router — they never reach the session or the LLM.
 
-**Note:** `POST /api/ask` does not currently accept image_data. Either extend `/api/ask` to accept `image_data: <base64>` for vision-capable backends, or add a dedicated `POST /api/vision` endpoint. The latter is cleaner (avoids muddying the text-ask interface) and maps to a separate `vision_backend` config key.
+Audio has a dedicated transcription backend (`transcribe.Transcriber`). Vision needs the same: a first-class `VisionDescriber` service backed by a configurable model, with a clean API surface that any part of the daemon can call.
+
+---
+
+### Vision service design: `POST /api/vision`
+
+A dedicated endpoint (not an extension of `/api/ask`) keeps the vision contract clean and allows image-specific features:
+
+```
+POST /api/vision
+{
+  "image_data": "<base64>",          // required
+  "content_type": "image/png",       // required
+  "prompt": "Describe this ...",     // optional — override default_prompt
+  "backend": "ollama-gpu-1",         // optional — override vision.backend
+  "model": "llava:latest",           // optional — override vision.model
+  "max_tokens": 500                  // optional
+}
+→ { "description": "...", "model_used": "llava:latest", "backend": "ollama-gpu-1" }
+```
+
+Config block (mirrors `transcribe` config shape):
+
+```yaml
+vision:
+  enabled: false
+  backend: ""          # compute node name or adapter key (e.g. "ollama-gpu-1", "anthropic")
+  model: ""            # model name — MUST be vision-capable (e.g. "llava:latest", "gpt-4o",
+                       # "claude-sonnet-4-6", "gemini-1.5-pro"); no auto-detection
+  default_prompt: "Describe this image in technical detail, including any visible text, errors, UI elements, or code."
+  max_image_bytes: 5242880   # 5 MB hard cap before refusal
+```
+
+**Supported model families:**
+- **Ollama local**: `llava`, `llava-phi3`, `llava-llama3`, `bakllava`, `moondream`, `minicpm-v` — model must be pulled to the target compute node
+- **OpenAI-compatible**: `gpt-4o`, `gpt-4-vision-preview` — passed via existing OpenAI adapter
+- **Anthropic**: any `claude-3+` model supports vision natively
+- **Google/Gemini**: `gemini-1.5-pro`, `gemini-pro-vision`
+- **OpenCode/ACP**: passes image through if the underlying model is vision-capable
+
+Not all Ollama models support vision. The config must name the model explicitly — no auto-detection or fallback to a text-only model.
+
+**7-surface parity**: REST (`POST /api/vision`), MCP (`vision_describe` tool), CLI (`datawatch vision describe <file>`), comm channel (`vision describe <path>`), PWA (Settings → Vision tab), config YAML, `GET /api/config` + `PUT /api/config` for `vision.*` keys.
+
+---
+
+### Use cases enabled by the vision service
+
+**1. Comms channel: image → command (core BL368 feature)**
+When a Signal/Telegram/Slack/Discord operator sends an image (with or without caption), the router:
+- Detects `image/*` MIME in attachment list
+- Calls `POST /api/vision` with the image and `vision.default_prompt`
+- Prepends `[image: <description>]` to the message text before command routing
+- Same pattern as the existing audio transcription path in `router.go:890`
+
+Result: operator can photograph a screen error, send it to the daemon, and it routes to a session or creates a PRD just like a typed command.
+
+**2. Skills with vision input**
+Skills can declare `accepts_images: true` in their manifest. When the comms router identifies an image + a command that maps to a vision-accepting skill, it passes the description as a named argument. Example:
+
+```yaml
+# skill: screenshot-to-prd
+accepts_images: true
+```
+
+Operator sends: screenshot of broken UI + text `/screenshot-prd`
+Daemon: describes image → calls skill with `{{image_description}}` injected into the skill prompt template. The skill creates a PRD with "Fix the UI issue visible in the attached screenshot: ..." as the spec.
+
+**3. Session context injection**
+`start_session` / `session_send` accept `image_paths: [...]` (local file paths or URIs). The daemon describes each image via the vision service and prepends descriptions to the session's initial task or sent message. Useful for:
+- "Build this UI from mockup" — send a Figma export as JPEG alongside the task
+- "Fix this error" — attach a screenshot of the stack trace
+- Vision-capable backends (claude-code with vision MCP, goose, opencode-acp with multimodal model) receive the raw image; text-only backends receive the description
+
+**4. PRD creation from image via comms**
+Extend the `autonomous create` comms command to accept an attached image. The image is described and injected into the decompose prompt as additional context. Operator workflow: sketch an architecture diagram on paper → photograph → send to Signal with `autonomous create implement this architecture` → PRD is created with the diagram description as spec context.
+
+**5. Memory of images**
+`remember [image]` via comms: image is described and the description stored in episodic memory (same path as text `remember`). Operator can later `recall "the architecture diagram I sent Thursday"`. The stored memory entry includes a `has_image: true` flag and the original filename.
+
+**6. MCP `vision_describe` tool**
+Sessions (claude-code, aider, opencode, goose) can call `vision_describe(image_path, question, backend, model)` via MCP to analyze screenshots of their own output, parse UI test failures, or read a captured terminal frame. This gives the AI session a way to "look at" what's on screen without requiring the underlying model to be vision-capable.
+
+**7. Council with image context**
+`council run` accepts an optional `image_path`. The image is described once and the description injected into every persona's prompt. Use case: submit a UI design for multi-persona critique (security, UX, accessibility, performance perspectives). The description is shared, not the raw image, so it works with text-only council backends.
+
+**8. Alert image attachments (observer synergy)**
+Observer metrics produce time-series data. When an alert fires and a chart image is available (generated by the PWA or a plugin), the vision service can generate a one-line summary that's included in the alert message sent via comms. Config: `alerts.vision_summary: true`. Implementation: alert dispatch hook checks for a `chart_path` field on the alert, calls vision service, appends summary to outbound message.
+
+**9. BL366 verifier synergy**
+The autonomous verifier (BL366) can optionally include a screenshot from Playwright/Cypress tests alongside the git diff. If the PRD has `quality_gates.screenshot_path_glob`, the executor collects matching screenshots after each task and passes them to the vision service to describe any visual regressions before sending to the verifier.
+
+---
+
+### Implementation phases
+
+**Phase 1 (foundation):** `POST /api/vision` endpoint + `vision.*` config + 7-surface parity. Internal `VisionService` type mirroring `transcribe.Transcriber`. Unit tests.
+
+**Phase 2 (comms router):** Image detection in `router.go` attachment loop → `VisionService.Describe()` call → text injection. Covers Signal + Telegram (both already deliver image data).
+
+**Phase 3 (MCP tool + session injection):** `vision_describe` MCP tool; `image_paths` field on `start_session` / `session_send`.
+
+**Phase 4 (skills + PRD + memory + council):** Higher-level integrations that build on Phase 1–3.
 
 ---
 
