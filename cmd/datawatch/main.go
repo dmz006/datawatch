@@ -95,6 +95,7 @@ import (
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
+	visionPkg "github.com/dmz006/datawatch/internal/vision"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
 	memoryPkg "github.com/dmz006/datawatch/internal/memory"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
@@ -2299,6 +2300,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// BL368 — initialize vision describer if vision is enabled.
+	var imageVisioner visionPkg.Describer
+	if cfg.Vision.Enabled {
+		vcfg := visionPkg.Config{
+			Backend:       cfg.Vision.Backend,
+			Endpoint:      cfg.Vision.Endpoint,
+			APIKey:        cfg.Vision.APIKey,
+			Model:         cfg.Vision.Model,
+			DefaultPrompt: cfg.Vision.DefaultPrompt,
+			MaxImageBytes: cfg.Vision.MaxImageBytes,
+		}
+		v, verr := visionPkg.New(vcfg)
+		if verr != nil {
+			fmt.Printf("[vision] warning: %v — image description disabled\n", verr)
+		} else {
+			imageVisioner = v
+			backend := vcfg.Backend
+			if backend == "" {
+				backend = "ollama"
+			}
+			fmt.Printf("[vision] enabled (backend=%s, model=%s)\n", backend, vcfg.Model)
+		}
+	}
+
 	// BL102 — registry of every active comm backend by name. Workers
 	// can POST /api/proxy/comm/{name}/send and the parent looks the
 	// backend up here to forward the alert.
@@ -2319,6 +2344,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		commBackends[backend.Name()] = backend
 		if voiceTranscriber != nil {
 			r.SetTranscriber(voiceTranscriber)
+		}
+		if imageVisioner != nil {
+			r.SetVisioner(imageVisioner)
 		}
 		if remoteDispatcher != nil {
 			r.SetRemoteDispatcher(remoteDispatcher)
@@ -3424,6 +3452,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if voiceTranscriber != nil {
 			httpServer.SetVoiceTranscriber(voiceTranscriber)
 		}
+		// BL368 — vision image description.
+		if imageVisioner != nil {
+			httpServer.SetVisioner(imageVisioner)
+		}
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 
 		// v5.27.2 — subsystem reloaders. Each entry hot-reloads a
@@ -4373,6 +4405,9 @@ Return STRICT JSON:
 		})
 		if voiceTranscriber != nil {
 			testRouter.SetTranscriber(voiceTranscriber)
+		}
+		if imageVisioner != nil {
+			testRouter.SetVisioner(imageVisioner)
 		}
 		if remoteDispatcher != nil {
 			testRouter.SetRemoteDispatcher(remoteDispatcher)

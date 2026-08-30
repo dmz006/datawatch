@@ -337,6 +337,9 @@ type Config struct {
 	// Whisper transcription for voice messages from messaging backends.
 	Whisper WhisperConfig `yaml:"whisper"`
 
+	// Vision image description for image attachments from messaging backends.
+	Vision VisionConfig `yaml:"vision"`
+
 	// Named profiles for different accounts/API keys. Each profile overrides
 	// the base backend config with custom env vars, binary, or model.
 	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty"`
@@ -1747,6 +1750,39 @@ type WhisperConfig struct {
 	// for self-hosted OpenWebUI / whisper.cpp; required for the
 	// upstream OpenAI API.
 	APIKey string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+}
+
+// VisionConfig configures the optional image-description subsystem (BL368).
+// Supported backends: "ollama" (default) uses /api/generate with the images
+// field; "openai" / "openai_compat" uses /v1/chat/completions with an
+// image_url content part — covers OpenAI gpt-4o, Ollama openai-compat,
+// LM Studio, and any other OpenAI-compatible server.
+type VisionConfig struct {
+	// Enabled controls whether image attachment description is active.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Backend selects the API format. "ollama" (default) or "openai" / "openai_compat".
+	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
+
+	// Endpoint is the base URL of the vision model server (required).
+	// Ollama example: "http://localhost:11434"
+	// OpenAI example: "https://api.openai.com"
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+
+	// APIKey is the bearer credential. Optional for self-hosted; required for OpenAI.
+	APIKey string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+
+	// Model is the vision model name (required). Examples: "llava", "moondream",
+	// "gpt-4o", "llava-phi3".
+	Model string `yaml:"model" json:"model"`
+
+	// DefaultPrompt overrides the built-in prompt ("Describe this image concisely.")
+	// when non-empty. Applied when callers pass an empty prompt.
+	DefaultPrompt string `yaml:"default_prompt,omitempty" json:"default_prompt,omitempty"`
+
+	// MaxImageBytes is the maximum allowed image size before rejection.
+	// 0 defaults to 10 MB.
+	MaxImageBytes int64 `yaml:"max_image_bytes,omitempty" json:"max_image_bytes,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

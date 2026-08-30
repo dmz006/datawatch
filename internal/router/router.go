@@ -59,6 +59,7 @@ type Router struct {
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
 	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
+	visioner     Visioner                   // optional image-to-text describer (BL368)
 	remote       *proxy.RemoteDispatcher     // optional remote server dispatcher
 
 	// Memory system — optional, nil when memory is disabled
@@ -179,6 +180,15 @@ func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = 
 
 // SetTranscriber sets an optional voice-to-text transcriber for audio attachments.
 func (r *Router) SetTranscriber(t transcribe.Transcriber) { r.transcriber = t }
+
+// Visioner describes image data as text (BL368). Decoupled from internal/vision
+// to avoid circular imports.
+type Visioner interface {
+	Describe(ctx context.Context, imageData []byte, contentType, prompt string) (string, error)
+}
+
+// SetVisioner sets an optional image-to-text describer for image attachments.
+func (r *Router) SetVisioner(v Visioner) { r.visioner = v }
 
 // SetRemoteDispatcher sets the remote server dispatcher for proxy mode routing.
 func (r *Router) SetRemoteDispatcher(d *proxy.RemoteDispatcher) { r.remote = d }
@@ -909,6 +919,40 @@ func (r *Router) handleMessage(msg messaging.Message) {
 			r.send(fmt.Sprintf("[%s] Voice: %s", r.hostname, text))
 			msg.Text = text
 			break // only transcribe the first audio attachment
+		}
+	}
+
+	// Describe image attachments into text before processing (BL368)
+	if r.visioner != nil && len(msg.Attachments) > 0 {
+		for _, att := range msg.Attachments {
+			if !att.IsImage() || att.FilePath == "" {
+				continue
+			}
+			fmt.Printf("[%s] [%s] Image attachment received, describing…\n", r.hostname, msg.Backend)
+			imageData, readErr := os.ReadFile(att.FilePath)
+			_ = os.Remove(att.FilePath)
+			if readErr != nil {
+				fmt.Printf("[%s] [%s] Image read failed: %v\n", r.hostname, msg.Backend, readErr)
+				r.send(fmt.Sprintf("[%s] Image read failed: %v", r.hostname, readErr))
+				return
+			}
+			desc, descErr := r.visioner.Describe(context.Background(), imageData, att.ContentType, "")
+			if descErr != nil {
+				fmt.Printf("[%s] [%s] Image description failed: %v\n", r.hostname, msg.Backend, descErr)
+				r.send(fmt.Sprintf("[%s] Image description failed: %v", r.hostname, descErr))
+				return
+			}
+			if desc == "" {
+				r.send(fmt.Sprintf("[%s] Image attachment could not be described.", r.hostname))
+				return
+			}
+			injected := "[image: " + desc + "]"
+			if msg.Text != "" {
+				msg.Text = injected + "\n" + msg.Text
+			} else {
+				msg.Text = injected
+			}
+			break // only describe the first image attachment
 		}
 	}
 

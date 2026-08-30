@@ -18,6 +18,11 @@ func (a Attachment) IsAudio() bool {
 	return len(a.ContentType) >= 5 && a.ContentType[:5] == "audio"
 }
 
+// IsImage returns true if the attachment has an image MIME type.
+func (a Attachment) IsImage() bool {
+	return len(a.ContentType) >= 5 && a.ContentType[:5] == "image"
+}
+
 // Message represents an inbound message from any messaging backend.
 type Message struct {
 	ID          string      // opaque message ID (may be empty)

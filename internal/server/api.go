@@ -220,6 +220,9 @@ type Server struct {
 	// Issue #2 — whisper transcriber for /api/voice/transcribe.
 	transcriber transcribeSurface
 
+	// BL368 — vision describer for /api/vision/describe.
+	visioner visionSurface
+
 	// BL9 — operator audit log.
 	auditLog *audit.Log
 
@@ -4805,6 +4808,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"language":  s.cfg.Whisper.Language,
 			"venv_path": s.cfg.Whisper.VenvPath,
 		},
+		"vision": map[string]interface{}{
+			"enabled":        s.cfg.Vision.Enabled,
+			"backend":        s.cfg.Vision.Backend,
+			"endpoint":       s.cfg.Vision.Endpoint,
+			"model":          s.cfg.Vision.Model,
+			"default_prompt": s.cfg.Vision.DefaultPrompt,
+		},
 		"memory": map[string]interface{}{
 			"enabled":          s.cfg.Memory.Enabled,
 			"backend":         s.cfg.Memory.Backend,
@@ -5640,6 +5650,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Whisper.Endpoint = toString(v)
 		case "whisper.api_key":
 			cfg.Whisper.APIKey = toString(v)
+		// BL368 — vision image description config keys.
+		case "vision.enabled":
+			cfg.Vision.Enabled = toBool(v)
+		case "vision.backend":
+			cfg.Vision.Backend = toString(v)
+		case "vision.endpoint":
+			cfg.Vision.Endpoint = toString(v)
+		case "vision.api_key":
+			cfg.Vision.APIKey = toString(v)
+		case "vision.model":
+			if s := toString(v); s != "" { cfg.Vision.Model = s }
+		case "vision.default_prompt":
+			cfg.Vision.DefaultPrompt = toString(v)
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds

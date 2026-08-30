@@ -253,6 +253,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)   // issue #2
 	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe) // issue #113 alias
 	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)               // BL289 — Settings test button
+	apiMux.HandleFunc("/api/vision/describe", api.handleVisionDescribe)     // BL368
 	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)     // v8.9.5 — settings health check
 	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)  // issue #3
 	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)        // BL316 S1
@@ -854,6 +855,14 @@ func (s *HTTPServer) SetVoiceTranscriber(t interface {
 	Transcribe(ctx context.Context, audioPath string) (string, error)
 }) {
 	s.api.SetTranscriber(t)
+}
+
+// SetVisioner (BL368) wires the vision Describer for /api/vision/describe.
+// Nil disables the endpoint (503).
+func (s *HTTPServer) SetVisioner(v interface {
+	Describe(ctx context.Context, imageData []byte, contentType, prompt string) (string, error)
+}) {
+	s.api.SetVisioner(v)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.
