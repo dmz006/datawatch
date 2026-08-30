@@ -507,6 +507,26 @@ whisper:
   # Relative paths are resolved from the datawatch working directory.
   venv_path: .venv
 
+# ── Vision Image Description ──
+# Describes image attachments from messaging backends (Signal, Telegram) as text.
+# Backends: "ollama" (default, native /api/generate); "openai" / "openai_compat" (/v1/chat/completions).
+vision:
+  # Enable image attachment description
+  enabled: false
+  # Backend type: "ollama" (default) | "openai" | "openai_compat"
+  backend: ollama
+  # Base URL of the vision model server (required when enabled)
+  endpoint: http://localhost:11434
+  # Bearer credential. Optional for self-hosted; required for upstream OpenAI.
+  api_key: ""
+  # Vision model name — must be vision-capable. Examples: llava, moondream, gpt-4o, llava-phi3.
+  # No auto-detection — model must be specified explicitly.
+  model: llava
+  # Default description prompt. Leave empty to use the built-in default.
+  default_prompt: ""
+  # Maximum image size in bytes before rejection. 0 = 10 MB default.
+  max_image_bytes: 0
+
 # ── Remote Servers (Proxy Mode) ──
 # Configure remote datawatch instances for multi-machine management.
 # The proxy instance forwards commands and relays WebSocket connections.

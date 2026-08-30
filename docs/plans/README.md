@@ -47,7 +47,7 @@ Latest release: **v8.14.1** (2026-08-30). fix(security): Go 1.26.6 + cilium/ebpf
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (comms/skills/sessions/MCP/council, configurable model); BL369 — prompt injection hardening in autonomous executor |
+| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (Phase 1+2 shipped; Phase 3 MCP+session injection, Phase 4 skills/PRD/memory/council pending); BL369 — prompt injection hardening in autonomous executor |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
@@ -205,7 +205,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### BL368 — Vision input system: image attachments in comms, skills, sessions, and MCP
 
-**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30.**
+**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30. Phase 1+2 shipped (pending release). [Plan doc](2026-08-30-bl368-vision.md).**
 
 ---
 
@@ -309,13 +309,24 @@ The autonomous verifier (BL366) can optionally include a screenshot from Playwri
 
 ### Implementation phases
 
-**Phase 1 (foundation):** `POST /api/vision` endpoint + `vision.*` config + 7-surface parity. Internal `VisionService` type mirroring `transcribe.Transcriber`. Unit tests.
+**Phase 1 (foundation) — ✅ SHIPPED:**
+- `internal/vision/service.go` — `Describer` interface + `HTTPVisioner` (Ollama native `/api/generate` + OpenAI-compat `/v1/chat/completions`)
+- `VisionConfig` in `internal/config/config.go` (`vision.enabled/backend/endpoint/api_key/model/default_prompt/max_image_bytes`)
+- `POST /api/vision/describe` handler in `internal/server/vision.go` (multipart `image` + optional `prompt` field)
+- `vision.*` keys in `GET /api/config` response and `PUT /api/config` handler
+- Wired in `cmd/datawatch/main.go` — init block mirrors voice transcriber pattern; wired into all routers + HTTP server
 
-**Phase 2 (comms router):** Image detection in `router.go` attachment loop → `VisionService.Describe()` call → text injection. Covers Signal + Telegram (both already deliver image data).
+**Phase 2 (comms router) — ✅ SHIPPED:**
+- `Attachment.IsImage()` in `internal/messaging/backend.go`
+- `Visioner` interface + `SetVisioner()` in `internal/router/router.go`
+- Image attachment detection block in `processMessage` — reads file → `Describer.Describe()` → prepends `[image: <desc>]` to `msg.Text`
+- Mirrors the audio transcription block exactly (same error/empty handling, same break-on-first pattern)
 
-**Phase 3 (MCP tool + session injection):** `vision_describe` MCP tool; `image_paths` field on `start_session` / `session_send`.
+**Phase 3 (MCP tool + session injection) — pending:**
+`vision_describe` MCP tool registered in the MCP server; `image_paths: [...]` field on `start_session` / `session_send` REST and MCP surfaces.
 
-**Phase 4 (skills + PRD + memory + council):** Higher-level integrations that build on Phase 1–3.
+**Phase 4 (skills + PRD + memory + council) — pending:**
+Skills `accepts_images` manifest flag; PRD decompose with image context; `remember [image]` via comms; council `image_path` parameter; alert `chart_path` → vision summary; BL366 verifier screenshot synergy.
 
 ---
 
