@@ -16,6 +16,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Settings UI** (`LLM_CONFIG_FIELDS` in `app.js`) — new "Goose (Block)" section exposes all six goose config fields (enabled, binary, provider, model, api_key_ref, channel_enabled) as editable controls in Settings → LLM tab.
 - **`docs/llm-backends.md`** — updated goose section: full T2/T3 YAML example (provider/model/api_key_ref/channel_enabled), corrected "Notes" (provider/model now injected via env vars, not only via goose's own config.yaml), documented both backends (goose TUI + goose-prompt one-shot), session naming/resume, and MCP channel bridge.
 
+### Cumulative changes since last GH release (v8.13.33)
+
+This is the first GH release since v8.13.33. Includes all patches that shipped to main but were not individually released:
+
+- **v8.13.34** — fix(opencode): Ollama model picker routes to correct provider; provider routing fixes.
+- **v8.13.35** — fix(opencode): disable alternate-screen (`--no-alternate-screen`) so tmux scrollback captures all output.
+- **v8.13.36–v8.13.39** — feat(goose): BL363 T1–T4 (functional backend, provider/model/API-key injection, MCP channel bridge, agent-goose container).
+
 ### Version bump
 
 Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitutes a completed feature per versioning rules. Patches v8.13.36–v8.13.39 should have been a minor bump at T1; v8.14.0 corrects the versioning retroactively.
