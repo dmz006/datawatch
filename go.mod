@@ -1,10 +1,10 @@
 module github.com/dmz006/datawatch
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/bwmarrin/discordgo v0.28.1
-	github.com/cilium/ebpf v0.21.0
+	github.com/cilium/ebpf v0.22.0
 	github.com/cloudflare/circl v1.6.3
 	github.com/fsnotify/fsnotify v1.10.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
@@ -16,7 +16,7 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/prometheus/client_golang v1.23.2
 	github.com/slack-go/slack v0.23.1
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.53.0
 	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.44.0
@@ -47,7 +47,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/spf13/pflag v1.0.7 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect

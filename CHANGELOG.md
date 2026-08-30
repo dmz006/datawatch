@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.14.1 — fix(security): govulncheck — Go 1.26.6 + cilium/ebpf v0.22.0
+
+### Fixed
+
+- **Go 1.26.5 → 1.26.6**: resolves GO-2026-6090 (crypto/tls post-handshake message limit), GO-2026-6089 (net/http ReadHeaderTimeout HTTP/2), GO-2026-6088 (encoding/xml recursion depth), GO-2026-5972 (encoding/asn1 recursion depth), GO-2026-6218 (net/url quadratic complexity), GO-2026-5026 (golang.org/x/net/idna Punycode rejection).
+- **github.com/cilium/ebpf v0.21.0 → v0.22.0**: resolves GO-2026-6238 (BTF parsing integer overflow in `internal/stats/ebpf_collector.go`).
+- **github.com/spf13/cobra v1.9.1 → v1.10.2**, **pflag v1.0.7 → v1.0.10**: pulled in transitively by ebpf upgrade.
+
+Note: v8.14.0 tag was pushed but goreleaser never completed (blocked by govulncheck). v8.14.1 is the actual first GH release for the BL363 Goose feature set.
+
+---
+
 ## v8.14.0 — feat(goose): BL363 testing gap closure — unit tests, docs, Web UI settings
 
 ### Added
