@@ -11387,6 +11387,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
+    // BL366 (v8.16.0) — git-diff grounding for the verifier.
+    { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes (0=8192)', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },

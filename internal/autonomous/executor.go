@@ -58,8 +58,13 @@ type SpawnRequest struct {
 // session ID; Err is fatal (non-fatal failures should be encoded in
 // VerifyResult.OK=false from VerifyFn instead).
 type SpawnResult struct {
-	SessionID string
-	Err       error
+	SessionID  string
+	// PreTaskSHA is the git HEAD SHA captured immediately before the worker
+	// session started. The verifier uses it to produce git diff grounding
+	// evidence (BL366). Empty when ProjectDir is not a git repo or when the
+	// task is cluster-dispatched to a remote worker.
+	PreTaskSHA string
+	Err        error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -237,6 +242,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return fmt.Errorf("spawn: %w", err)
 		}
 		t.SessionID = sr.SessionID
+		t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
 		t.Status = TaskVerifying
 		_ = m.store.SaveTask(t)
 

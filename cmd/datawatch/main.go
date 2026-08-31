@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.15.0"
+var Version = "8.16.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3516,6 +3516,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationEffort:  acfgIn.VerificationEffort,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
 			SecurityScan:         acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
@@ -3669,6 +3670,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if req.RetryHint != "" {
 				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
 			}
+			// BL366 — capture git HEAD SHA before the worker runs so the
+			// verifier can diff the actual change. Failure is non-fatal.
+			var preTaskSHA string
+			if req.ProjectDir != "" {
+				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
+					preTaskSHA = strings.TrimSpace(string(out))
+				}
+			}
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
 			// declares a cluster_profile, spawn a worker via the F10
 			// agents endpoint instead of a local tmux session. The
@@ -3709,6 +3718,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = json.Unmarshal(rb, &out)
 				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
 			}
+			// local session path
 			body, _ := json.Marshal(map[string]any{
 				"task":            spec,
 				"project_dir":     req.ProjectDir,
@@ -3742,18 +3752,45 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			var out struct{ ID string `json:"id"` }
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =
 		// inherit) gives cross-backend independence per BL25 design.
 		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (autonomouspkg.VerificationResult, error) {
-			prompt := fmt.Sprintf(`Task spec:
-%s
+			// BL366 — git-diff grounding: capture the worker's actual change.
+			diffSection := ""
+			if task.PreTaskSHA != "" && prd.ProjectDir != "" {
+				diffOut, diffErr := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+					"diff", task.PreTaskSHA+"..HEAD").Output()
+				if diffErr == nil && len(diffOut) > 0 {
+					maxBytes := amgrCfg.VerifierDiffMaxBytes
+					if maxBytes <= 0 {
+						maxBytes = 8192
+					}
+					truncated := false
+					if len(diffOut) > maxBytes {
+						diffOut = diffOut[:maxBytes]
+						truncated = true
+					}
+					note := ""
+					if truncated {
+						note = " (truncated to " + fmt.Sprintf("%d", maxBytes) + " bytes)"
+					}
+					diffSection = fmt.Sprintf(`
 
-Verify whether the task was plausibly completed. Reply with STRICT JSON:
+Git diff (actual change%s):
+<diff>
+%s
+</diff>`, note, string(diffOut))
+				}
+			}
+			specPart := fmt.Sprintf("Task spec:\n<user_data>\n%s\n</user_data>", task.Spec)
+			prompt := fmt.Sprintf(`%s%s
+
+Verify whether the diff plausibly implements the spec. If no diff is present, verify on spec alone. Reply with STRICT JSON:
 {"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
-				task.Spec)
+				specPart, diffSection)
 			vbackend := amgrCfg.VerificationBackend
 			if vbackend == "" { vbackend = "ollama" }
 			// BL306: resolve named LLMs for verification backend too.

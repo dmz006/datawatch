@@ -52,6 +52,9 @@ type Config struct {
 	VerificationModel    string `json:"verification_model,omitempty"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
+	// VerifierDiffMaxBytes caps the git diff injected into the verifier
+	// prompt for evidence grounding (BL366). 0 = 8192.
+	VerifierDiffMaxBytes int    `json:"verifier_diff_max_bytes,omitempty"`
 	SecurityScan         bool   `json:"security_scan,omitempty"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRD knobs. MaxRecursionDepth

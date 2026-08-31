@@ -174,7 +174,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.15.0"
+var Version = "8.16.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4770,9 +4770,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"planning_effort":       s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
 			"verification_effort":   s.cfg.Autonomous.VerificationEffort,
-			"stale_task_seconds":    s.cfg.Autonomous.StaleTaskSeconds,
-			"auto_fix_retries":      s.cfg.Autonomous.AutoFixRetries,
-			"security_scan":         s.cfg.Autonomous.SecurityScan,
+			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
+			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
+			"security_scan":             s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":    s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 		},
 		"plugins": map[string]interface{}{
@@ -5569,6 +5570,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
 		case "autonomous.auto_fix_retries":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.AutoFixRetries = n }
+		case "autonomous.verifier_diff_max_bytes":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.VerifierDiffMaxBytes = n }
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
 		case "autonomous.per_story_approval":

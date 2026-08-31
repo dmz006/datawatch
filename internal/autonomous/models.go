@@ -342,6 +342,11 @@ type Task struct {
 	SpawnPRD   bool   `json:"spawn_prd,omitempty"`
 	ChildPRDID string `json:"child_prd_id,omitempty"`
 
+	// BL366 — git SHA captured before the worker session ran. Used by the
+	// verifier to produce a git diff of the worker's actual changes.
+	// Empty when the project has no git repo or the task is cluster-dispatched.
+	PreTaskSHA string `json:"pre_task_sha,omitempty"`
+
 	// BL191 Q6 (v5.10.0) — guardrail verdicts at the task level.
 	// Populated when Config.PerTaskGuardrails is non-empty; one entry
 	// per guardrail named in that list. Block on any block outcome.

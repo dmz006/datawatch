@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.16.0 — feat(autonomous): BL366 — Verifier Git-Diff Grounding
+
+### Added (BL366 — Verifier Git-Diff Grounding)
+
+- **`Task.PreTaskSHA`** — git HEAD SHA captured immediately before the worker session starts, threaded through `SpawnResult.PreTaskSHA` → `Task.PreTaskSHA` so the verifier sees actual code changes.
+- **`autonomous.verifier_diff_max_bytes`** — new config field (default 0 = 8192) capping the diff injected into the verifier prompt. Raise for large PRDs; lower to reduce token cost.
+- **Git-diff injection in `autonomousVerify`** — `git diff <pre_task_sha>..HEAD` is captured and injected as a `<diff>` block before the verification prompt. Falls back to spec-only verification when no diff is available (cluster dispatch, non-git project).
+
+### Configuration (BL366)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `autonomous.verifier_diff_max_bytes` | int | 0 (=8192) | Byte cap on git diff injected into verifier prompt |
+
+---
+
 ## v8.15.0 — feat(vision): BL368 — Vision Input System
 
 ### Added (BL368 — Vision Input System)

@@ -1447,6 +1447,10 @@ type AutonomousConfig struct {
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
 	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
+	// VerifierDiffMaxBytes caps the git diff injected into the verifier
+	// prompt for evidence grounding (BL366). 0 = 8192. Raise for large
+	// PRDs; lower to reduce token cost.
+	VerifierDiffMaxBytes int `yaml:"verifier_diff_max_bytes,omitempty" json:"verifier_diff_max_bytes,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`

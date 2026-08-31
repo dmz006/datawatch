@@ -596,6 +596,10 @@ autonomous:
   # Retries on verifier failure (re-prompts the same backend with the
   # verifier's findings prepended).
   auto_fix_retries: 1
+  # BL366 — bytes of git diff injected into the verifier prompt for
+  # evidence grounding. 0 = default (8192). Raise for large PRDs;
+  # lower to reduce token cost.
+  verifier_diff_max_bytes: 0
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
