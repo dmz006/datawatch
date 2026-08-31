@@ -81,7 +81,13 @@ SKILL_MD
   skills_with_images=$(echo "$skills_resp" | python3 -c "
 import json,sys
 skills = json.load(sys.stdin)
-ai_skills = [s.get('name','?') for s in skills if s.get('accepts_images')]
+# accepts_images may be at top level or nested under 'manifest'
+def accepts(s):
+    if s.get('accepts_images'):
+        return True
+    m = s.get('manifest') or {}
+    return bool(m.get('accepts_images'))
+ai_skills = [s.get('name','?') for s in skills if accepts(s)]
 print('\n'.join(ai_skills))
 " 2>/dev/null || true)
 

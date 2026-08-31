@@ -800,8 +800,12 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 		fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
 	cfgReq1.Header.Set("Content-Type", "application/json")
 	resp, err := s.webDo(cfgReq1)
-	if err != nil {
-		// Try with quoted value
+	// Retry with quoted value when raw value was rejected (bad JSON) or on transport error.
+	needRetry := err != nil || (resp != nil && resp.StatusCode == http.StatusBadRequest)
+	if needRetry {
+		if resp != nil {
+			resp.Body.Close() //nolint:errcheck
+		}
 		body = fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		cfgReq2, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
 			fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
