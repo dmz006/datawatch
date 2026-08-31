@@ -448,3 +448,74 @@ GHSA-6v7p-g79w-8964
 # runtime by the datawatch service. Fix requires aider's dependency chain
 # to update setuptools; suppress until upstream resolves.
 CVE-2025-47273
+
+# util-linux family (bsdutils, libmount1, util-linux) — CVE-2026-53613 (HIGH, affected, no fix in bookworm)
+# TOCTOU race in the mount(8) program via /proc/self/mountinfo. The agent-base
+# container never calls mount(8) directly; the binary runs as an unprivileged
+# non-root user with no mount capabilities. Not exploitable in this context.
+CVE-2026-53613
+
+# libevent-core-2.1-7 — no fix in bookworm (4 CVEs, all HIGH)
+# These CVEs affect libevent's RPC, integer handling, and DTLS subsystems.
+# libevent is a transitive dependency of openssh-client in the runtime image;
+# datawatch never exposes a libevent RPC listener, so the attack surface
+# for all four issues is absent.
+#   CVE-2026-63383: DoS via malformed RPC data.
+#   CVE-2026-63384: DoS via integer conversion.
+#   CVE-2026-63387: Off-by-one stack buffer overflow (DTLS).
+#   CVE-2026-63388: Arbitrary code execution via heap (DTLS).
+CVE-2026-63383
+CVE-2026-63384
+CVE-2026-63387
+CVE-2026-63388
+
+# libexpat1 — CVE-2026-66046 (HIGH, affected, no fix in bookworm)
+# DoS in Expat (libexpat) through 2.8.3. libexpat is a transitive dependency
+# of git and gnupg in the image; not directly invoked by the datawatch service.
+# No XML parsing of untrusted input occurs at container runtime.
+CVE-2026-66046
+
+# rsync — no fix in bookworm (14 CVEs, all HIGH, all require rsync >= 3.5.0)
+# rsync is included in the agent-base image for use as a file-sync utility
+# by autonomous agent tasks. All CVEs below require either a malicious rsync
+# server, local privilege escalation paths, or daemon mode — none of which
+# are configured in this image. The container runs rsync as a client only,
+# connecting to operator-controlled remotes.
+#   CVE-2026-53783: Directory escape via TOCTOU.
+#   CVE-2026-53784: Unauthorized file access via symlink module.
+#   CVE-2026-53785: Arbitrary file write via path traversal.
+#   CVE-2026-53789: Improper path handling.
+#   CVE-2026-53790: Command injection via multiple code paths.
+#   CVE-2026-53791: Daemon IP spoofing via PROXY protocol.
+#   CVE-2026-53793: Path confinement bypass via /./.
+#   CVE-2026-53795: Arbitrary file write via --temp-dir or symlink.
+#   CVE-2026-53802: Arbitrary file read.
+#   CVE-2026-53803: Local privilege escalation via symlink.
+#   CVE-2026-70452: Access control bypass via DNS.
+#   CVE-2026-70455: DoS via Zstandard compression.
+#   CVE-2026-70456: Heap out-of-bounds write via crafted argument.
+#   CVE-2026-70457: Out-of-bounds write in filter list.
+#   CVE-2026-70458: Memory corruption via crafted file entries.
+#   CVE-2026-70460: Path traversal.
+#   CVE-2026-70461: Information disclosure and DoS.
+#   CVE-2026-70463: Authorization bypass via auth users.
+#   CVE-2026-70464: DoS via handshake stall.
+CVE-2026-53783
+CVE-2026-53784
+CVE-2026-53785
+CVE-2026-53789
+CVE-2026-53790
+CVE-2026-53791
+CVE-2026-53793
+CVE-2026-53795
+CVE-2026-53802
+CVE-2026-53803
+CVE-2026-70452
+CVE-2026-70455
+CVE-2026-70456
+CVE-2026-70457
+CVE-2026-70458
+CVE-2026-70460
+CVE-2026-70461
+CVE-2026-70463
+CVE-2026-70464
