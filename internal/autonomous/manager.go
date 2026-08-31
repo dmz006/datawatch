@@ -172,6 +172,10 @@ type GuardrailInvocation struct {
 	UnitSpec   string
 	Guardrail  string // name from Config.PerTaskGuardrails / PerStoryGuardrails
 	ProjectDir string
+	// BL369 Layer 3 — federation trust boundary. Non-empty when the PRD
+	// originated from a remote federation peer (PRD.OwnerPeer). The
+	// guardrail prompt includes an untrusted-origin notice when set.
+	OwnerPeer string
 }
 
 // AutomatonType (BL221 v6.2.0 Phase 4) is a registered automaton type.

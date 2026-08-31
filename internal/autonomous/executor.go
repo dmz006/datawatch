@@ -539,6 +539,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		UnitTitle:  t.Title,
 		UnitSpec:   t.Spec,
 		ProjectDir: prd.ProjectDir,
+		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
@@ -585,6 +586,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		UnitTitle:  s.Title,
 		UnitSpec:   s.Description,
 		ProjectDir: prd.ProjectDir,
+		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
 	for _, g := range guardrails {
 		inv.Guardrail = g

@@ -1475,6 +1475,24 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 
 ---
 
+## Autonomous Prompt Injection Protection
+
+When using autonomous PRDs with user-supplied specs (especially via federation peers, comm channels, or operator-created tasks), enable the injection guard to detect and optionally block known prompt injection patterns before they reach the LLM:
+
+```yaml
+autonomous:
+  injection_guard: true       # log hits on every create/edit
+  block_on_injection: true    # reject suspicious input with HTTP 400 (optional)
+```
+
+**Data-boundary tags** — regardless of the guard flag, all three LLM call sites (PRD decomposition, task verification, guardrail invocation) always wrap user-supplied content in `<user_data>` XML tags and prefix prompts with a security preamble that instructs the model to treat the content as data, not instructions.
+
+**Federation trust notice** — when a PRD was submitted by a remote federation peer (`autonomous.owner_peer` is set), both the verifier and guardrail prompts include an explicit untrusted-origin notice. This applies automatically; no additional configuration is needed.
+
+**Prometheus metric** — `datawatch_injection_guard_hits_total` counts all scanner hits (raised whether blocking or warn-only) for dashboarding and alerting.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

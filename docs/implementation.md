@@ -622,6 +622,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `autonomous.default_quality_gates.test_command` | string | `""` | Shell command used to run the test suite (e.g. `go test ./...`). Run relative to the PRD's `project_dir`. |
 | `autonomous.default_quality_gates.timeout` | int | `0` | Per-run timeout in seconds for the test command. `0` = no cap. |
 | `autonomous.default_quality_gates.block_on_regression` | bool | `false` | When true, a task that introduces a test regression is marked failed and triggers an auto-fix retry cycle. |
+| `autonomous.injection_guard` | bool | `false` | Scan user-supplied PRD/task specs for prompt injection phrases at the API boundary on create and edit. Findings are always logged. |
+| `autonomous.block_on_injection` | bool | `false` | When true (requires `injection_guard: true`), requests containing injection phrases are rejected with HTTP 400 instead of warn-only. |
 
 ### Dependencies
 

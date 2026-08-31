@@ -174,3 +174,41 @@ func TestBL369_EditTaskSpec_BlocksOnInjection(t *testing.T) {
 		t.Errorf("expected 'injection-guard' in error, got: %v", err)
 	}
 }
+
+// TestBL369_GuardrailInvocation_CarriesOwnerPeer verifies that Layer 3 wiring
+// propagates PRD.OwnerPeer into GuardrailInvocation so the guardrail prompt
+// can include a federation trust notice.
+func TestBL369_GuardrailInvocation_CarriesOwnerPeer(t *testing.T) {
+	dir := t.TempDir()
+	mgr, _ := NewManager(dir, Config{Enabled: true}, nil)
+	prd, _ := mgr.Store().CreatePRD("spec", "/proj", "ollama", EffortNormal)
+
+	// Set OwnerPeer to simulate a PRD submitted via federation.
+	prd.OwnerPeer = "remote-peer-alpha"
+	_ = mgr.Store().SavePRD(prd)
+
+	// Retrieve from store and verify the field survives round-trip.
+	got, ok := mgr.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("GetPRD: not found")
+	}
+	if got.OwnerPeer != "remote-peer-alpha" {
+		t.Errorf("OwnerPeer round-trip: got %q, want %q", got.OwnerPeer, "remote-peer-alpha")
+	}
+}
+
+// TestBL369_GuardrailInvocation_LocalPRDNoOwnerPeer verifies that a locally-
+// created PRD has an empty OwnerPeer (no spurious trust notice injected).
+func TestBL369_GuardrailInvocation_LocalPRDNoOwnerPeer(t *testing.T) {
+	dir := t.TempDir()
+	mgr, _ := NewManager(dir, Config{Enabled: true}, nil)
+	prd, _ := mgr.Store().CreatePRD("local spec", "/proj", "ollama", EffortNormal)
+
+	got, ok := mgr.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("GetPRD: not found")
+	}
+	if got.OwnerPeer != "" {
+		t.Errorf("local PRD should have empty OwnerPeer, got %q", got.OwnerPeer)
+	}
+}

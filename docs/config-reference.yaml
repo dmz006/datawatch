@@ -631,6 +631,16 @@ autonomous:
     timeout: 0
     block_on_regression: false
 
+  # ── Prompt injection guard (v8.18.0) ──
+  # Scans user-supplied PRD/task specs for known prompt injection phrases
+  # (role overrides, template boundary markers, instruction-override
+  # fragments) at the API boundary on create and edit. Findings are always
+  # logged. Set block_on_injection: true to hard-reject suspicious input.
+  # Data-boundary tags (<user_data>) are always applied to LLM prompt
+  # call sites regardless of this setting.
+  injection_guard: false
+  block_on_injection: false
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured

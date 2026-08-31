@@ -5,12 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added (BL369 — Prompt Injection Hardening)
-- **Data-boundary tags** — all three LLM call sites (`decomposeFn`, `autonomousVerify`, `autonomousGuardrail`) now prefix prompts with a security preamble and wrap user-supplied content (`req.Spec`, `task.Spec`, `req.UnitTitle`, `req.UnitSpec`) in `<user_data>` XML tags. This separates user-controlled text from system instructions at the model level.
-- **`ScanForInjection(text)`** — new function in `internal/autonomous/security.go` scanning text for 11 known prompt injection patterns (role overrides, template boundary markers, instruction-override phrases, LLaMA delimiters). Used by `checkInjectionGuard()` on every PRD/task create or spec edit.
-- **`autonomous.injection_guard`** config flag — when enabled, user-supplied PRD/task specs are scanned at the API boundary on create or edit; findings are always logged. `autonomous.block_on_injection` upgrades from warn-only to hard reject (HTTP 400).
+---
+
+## v8.18.0 — feat(autonomous): Prompt Injection Hardening
+
+### Added
+- **Data-boundary tags on all LLM call sites** — `decomposeFn`, `autonomousVerify`, and `autonomousGuardrail` prompts now include a security preamble and wrap user-supplied content in `<user_data>` XML tags, separating user-controlled text from system instructions at the model level. Applies regardless of config.
+- **Input scanner at API boundary** — `ScanForInjection(text)` in `internal/autonomous/security.go` detects 11 known injection patterns (role overrides, template boundary markers, LLaMA delimiters, instruction-override phrases). Runs on every PRD/task create and spec edit when `autonomous.injection_guard: true`.
+- **`autonomous.injection_guard`** — new config flag (default `false`); enables scanner and always logs hits. Set `autonomous.block_on_injection: true` to reject suspicious input with HTTP 400 instead of warn-only.
+- **Federation trust notice** — when a PRD was submitted by a remote federation peer (`PRD.owner_peer` is set), both verifier and guardrail prompts include an explicit untrusted-origin notice. `GuardrailInvocation.OwnerPeer` carries this context from executor to the guardrail function.
 - **`datawatch_injection_guard_hits_total`** Prometheus counter.
 - **Config parity** — `injection_guard` + `block_on_injection` exposed on all 6 surfaces: YAML, Web UI, `GET/PUT /api/config`, comm channel `configure` verb, `autonomous_config_set` MCP tool, CLI `config set`.
+- 23 unit tests in `internal/autonomous/bl369_injection_test.go`.
 
 ---
 
