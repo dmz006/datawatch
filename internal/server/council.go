@@ -15,6 +15,8 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -315,6 +317,7 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 		Mode              string   `json:"mode,omitempty"`
 		Async             *bool    `json:"async,omitempty"`               // v7.0.0 S4 — default true; set false for legacy blocking behavior
 		SpawnRealSessions bool     `json:"spawn_real_sessions,omitempty"` // v7.0.0 S4.c — opt-in real coding-agent sessions per persona (default false = virtual transcript sessions)
+		ImagePath         string   `json:"image_path,omitempty"`          // BL368 Phase 4 — local image file to describe and prepend to proposal
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -323,6 +326,24 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(body.Proposal) == "" {
 		http.Error(w, "proposal required", http.StatusBadRequest)
 		return
+	}
+	// BL368 Phase 4 — if image_path provided and visioner is wired, describe and prepend.
+	if body.ImagePath != "" && s.visioner != nil {
+		imageData, readErr := os.ReadFile(body.ImagePath)
+		if readErr != nil {
+			http.Error(w, "image_path: "+readErr.Error(), http.StatusBadRequest)
+			return
+		}
+		ext := strings.ToLower(filepath.Ext(body.ImagePath))
+		mime := extToMIME(ext)
+		desc, descErr := s.visioner.Describe(r.Context(), imageData, mime, "")
+		if descErr != nil {
+			http.Error(w, "image description failed: "+descErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		if desc != "" {
+			body.Proposal = "[image: " + desc + "]\n" + body.Proposal
+		}
 	}
 	mode := council.Mode(body.Mode)
 	if mode == "" {

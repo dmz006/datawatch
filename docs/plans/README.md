@@ -47,7 +47,7 @@ Latest release: **v8.14.1** (2026-08-30). fix(security): Go 1.26.6 + cilium/ebpf
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (Phase 1–3 shipped pending release; Phase 4 skills/PRD/memory/council pending); BL369 — prompt injection hardening in autonomous executor |
+| Pending backlog | 4 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (Phase 1–4 shipped pending release; decompose image_context + alert chart_path deferred); BL369 — prompt injection hardening in autonomous executor |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
@@ -205,7 +205,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### BL368 — Vision input system: image attachments in comms, skills, sessions, and MCP
 
-**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30. Phase 1–3 shipped (pending release). [Plan doc](2026-08-30-bl368-vision.md).**
+**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30. Phase 1–4 shipped (pending release). [Plan doc](2026-08-30-bl368-vision.md).**
 
 ---
 
@@ -328,8 +328,11 @@ The autonomous verifier (BL366) can optionally include a screenshot from Playwri
 - `VisionerMCP` interface + `SetVisioner()` on MCP Server; wired into both primary and Goose channel MCP instances
 - `docs/mcp.md` updated with tool definition, parameter tables, and Vision family row
 
-**Phase 4 (skills + PRD + memory + council) — pending:**
-Skills `accepts_images` manifest flag; PRD decompose with image context; `remember [image]` via comms; council `image_path` parameter; alert `chart_path` → vision summary; BL366 verifier screenshot synergy.
+**Phase 4 (skills + memory + council) ✅ shipped (pending release):**
+- `AcceptsImages bool` (`accepts_images`) added to `internal/skills/manifest.go` `Manifest` struct — skills declare image-context readiness in SKILL.md frontmatter
+- `remember [image]` via comms: router image-injection block is now command-aware; when message starts with `remember:`, description is injected into the command body (`remember: [image: <desc>]`) so episodic memory stores it correctly
+- `POST /api/council/run` accepts optional `image_path`; file is read, described, and `[image: <desc>]` prepended to proposal before council starts
+- PRD decompose `image_context` and alert `chart_path` deferred (require interface extension); tracked in BL368 follow-up backlog
 
 ---
 

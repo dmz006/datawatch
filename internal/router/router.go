@@ -946,11 +946,23 @@ func (r *Router) handleMessage(msg messaging.Message) {
 				r.send(fmt.Sprintf("[%s] Image attachment could not be described.", r.hostname))
 				return
 			}
-			injected := "[image: " + desc + "]"
-			if msg.Text != "" {
-				msg.Text = injected + "\n" + msg.Text
+			// BL368 Phase 4 — for remember: commands, inject the image description
+			// INTO the command body so it parses correctly and stores with memory.
+			lower := strings.ToLower(strings.TrimSpace(msg.Text))
+			if strings.HasPrefix(lower, "remember:") {
+				rest := strings.TrimSpace(msg.Text[len("remember:"):])
+				if rest != "" {
+					msg.Text = "remember: [image: " + desc + "] " + rest
+				} else {
+					msg.Text = "remember: [image: " + desc + "]"
+				}
 			} else {
-				msg.Text = injected
+				injected := "[image: " + desc + "]"
+				if msg.Text != "" {
+					msg.Text = injected + "\n" + msg.Text
+				} else {
+					msg.Text = injected
+				}
 			}
 			break // only describe the first image attachment
 		}

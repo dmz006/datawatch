@@ -81,6 +81,13 @@ type Manifest struct {
 	// declaration is here so skill manifests can already opt-in.
 	SamplingHook string `yaml:"sampling_hook,omitempty" json:"sampling_hook,omitempty"`
 
+	// BL368 Phase 4 — AcceptsImages declares that this skill can receive
+	// image context injected as [image: <description>] in its task text.
+	// When true and the session is spawned with image_paths, the daemon
+	// will build image descriptions and prepend them before loading the
+	// skill's entrypoint into the session.
+	AcceptsImages bool `yaml:"accepts_images,omitempty" json:"accepts_images,omitempty"`
+
 	// Extra captures any YAML key the parser doesn't know about so they
 	// round-trip when the registry is re-synced. Per the Skills-Awareness
 	// Rule, unknown fields are surfaced (not hidden) and preserved.
