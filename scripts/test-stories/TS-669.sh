@@ -48,7 +48,7 @@ SKILL_MD
   # Register the local repo as a skills registry in the sandbox daemon
   local reg_code
   reg_code=$(api_code POST /api/skills/registries \
-    "{\"name\":\"test-vision\",\"url\":\"file://$skill_repo\",\"branch\":\"$branch\"}" \
+    "{\"name\":\"test-vision\",\"url\":\"file://$skill_repo\",\"branch\":\"$branch\",\"enabled\":true}" \
     | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   if [[ ! "$reg_code" =~ ^2 ]]; then
     skip "could not create test skills registry (HTTP $reg_code) — skills subsystem may be disabled"
