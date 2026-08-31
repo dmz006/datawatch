@@ -75,6 +75,20 @@ var (
 		Name: "datawatch_rtk_savings_percent",
 		Help: "Average RTK savings percentage",
 	})
+
+	// BL367 — autonomous quality gate metrics.
+	QualityGateRunsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_quality_gate_runs_total",
+		Help: "Total autonomous quality gate evaluations run",
+	})
+	QualityGatePassTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_quality_gate_pass_total",
+		Help: "Quality gate evaluations with no regression",
+	})
+	QualityGateRegressionTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_quality_gate_regression_total",
+		Help: "Quality gate evaluations that detected a test regression",
+	})
 )
 
 // Register registers all Prometheus metrics.
@@ -84,6 +98,7 @@ func Register() {
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,
 		RTKTokensSaved, RTKSavingsPct,
+		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
 	)
 }
 

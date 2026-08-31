@@ -1271,6 +1271,16 @@ func (m *Manager) Status() LoopStatus {
 						verdictCounts[v.Outcome]++
 					}
 				}
+				// BL367 — quality gate counters.
+				if t.QualityGateResult != nil {
+					st.QualityGateRuns++
+					if t.QualityGateResult.Regression {
+						st.QualityGateFail++
+						st.QualityGateRegressions++
+					} else {
+						st.QualityGatePass++
+					}
+				}
 			}
 		}
 	}

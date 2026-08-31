@@ -16,6 +16,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
@@ -275,6 +276,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				cmp := pipeline.CompareResults(*qgBaseline, current)
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
+				metrics.QualityGateRunsTotal.Inc()
+				if cmp.Regression {
+					metrics.QualityGateRegressionTotal.Inc()
+				} else {
+					metrics.QualityGatePassTotal.Inc()
+				}
 				if cmp.Regression && qgCfg.BlockOnRegression {
 					t.Status = TaskFailed
 					t.Error = "quality_gate_regression: " + cmp.Summary
