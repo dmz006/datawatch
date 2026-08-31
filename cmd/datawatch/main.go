@@ -3528,6 +3528,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
 			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
 			PerStoryApproval:    acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
+			// BL367 — bridge default quality gate config.
+			DefaultQualityGates: pipelinePkg.QualityGateConfig{
+				Enabled:           acfgIn.DefaultQualityGates.Enabled,
+				TestCommand:       acfgIn.DefaultQualityGates.TestCommand,
+				Timeout:           acfgIn.DefaultQualityGates.Timeout,
+				BlockOnRegression: acfgIn.DefaultQualityGates.BlockOnRegression,
+			},
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.

@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Autonomous PRD quality gates** — per-PRD test regression gating. The executor captures a test baseline before the first task runs and re-runs the configured test command after each task. Regressions are recorded on `Task.quality_gate_result`; when `block_on_regression: true`, the task is failed and enters the auto-fix retry cycle. Gate config can be set globally via `autonomous.default_quality_gates.*` (YAML / Web UI / REST / MCP / comm / CLI) or per-PRD via `quality_gates` field on `POST /api/autonomous/prds`.
+
 ---
 
 ## v8.16.0 — feat(autonomous): Verifier Git-Diff Grounding

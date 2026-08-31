@@ -620,6 +620,16 @@ autonomous:
   # verifier uses (verification_backend / verification_effort apply).
   per_task_guardrails: []
   per_story_guardrails: []
+  # BL367 — default quality gate config applied to every PRD that does not
+  # set its own quality_gates at creation time. When enabled, a test
+  # baseline is captured before the first task runs, and tests are re-run
+  # after each task completes; a regression blocks the task when
+  # block_on_regression is true. 0 timeout = no per-command cap.
+  default_quality_gates:
+    enabled: false
+    test_command: ""
+    timeout: 0
+    block_on_regression: false
 
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24

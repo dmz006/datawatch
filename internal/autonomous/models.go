@@ -6,7 +6,11 @@
 
 package autonomous
 
-import "time"
+import (
+	"time"
+
+	"github.com/dmz006/datawatch/internal/pipeline"
+)
 
 // Status enums — kept in sync with nightwire for cross-tool compat.
 
@@ -182,6 +186,13 @@ type PRD struct {
 
 	// BL331 — federation peer that originated this PRD via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
+
+	// BL367 — per-PRD quality gate config. When QualityGates.Enabled is
+	// true the executor captures a test baseline before the first task,
+	// then re-runs tests after each task completes. New failures block the
+	// task and trigger auto-fix retries (same as verifier failure). Empty
+	// value inherits autonomous.default_quality_gates from daemon config.
+	QualityGates *pipeline.QualityGateConfig `json:"quality_gates,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a
@@ -346,6 +357,10 @@ type Task struct {
 	// verifier to produce a git diff of the worker's actual changes.
 	// Empty when the project has no git repo or the task is cluster-dispatched.
 	PreTaskSHA string `json:"pre_task_sha,omitempty"`
+
+	// BL367 — quality gate result recorded after each task completes.
+	// Nil when quality gates are disabled for this PRD.
+	QualityGateResult *pipeline.QualityGateResult `json:"quality_gate_result,omitempty"`
 
 	// BL191 Q6 (v5.10.0) — guardrail verdicts at the task level.
 	// Populated when Config.PerTaskGuardrails is non-empty; one entry

@@ -580,6 +580,9 @@ type AutonomousAPI interface {
 	SetPRDGuidedMode(prdID string, guided bool) (any, error)
 	SetPRDSkills(prdID string, skills []string) (any, error)
 
+	// BL367 — per-PRD quality gate config.
+	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
+
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
 	CreateGuardrailProfile(name, description string, guardrails []string) (any, error)
@@ -5601,6 +5604,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.PerStoryGuardrails = splitCSV(s)
 			}
+		// BL367 — default quality gate config for all PRDs.
+		case "autonomous.default_quality_gates.enabled":
+			cfg.Autonomous.DefaultQualityGates.Enabled = toBool(v)
+		case "autonomous.default_quality_gates.test_command":
+			cfg.Autonomous.DefaultQualityGates.TestCommand = toString(v)
+		case "autonomous.default_quality_gates.timeout":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.DefaultQualityGates.Timeout = n
+			}
+		case "autonomous.default_quality_gates.block_on_regression":
+			cfg.Autonomous.DefaultQualityGates.BlockOnRegression = toBool(v)
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":

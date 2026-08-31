@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
 // maxDecisionsPerPRD (BL291, v5.5.0) — cap on PRD.Decisions to prevent
@@ -88,6 +89,11 @@ type Config struct {
 
 	// BL303 S2 — default skills automatically assigned to every new Automaton.
 	DefaultSkills []string `json:"default_skills,omitempty"`
+
+	// BL367 — default quality gate config for all PRDs. Per-PRD
+	// QualityGates field overrides this when set. Disabled by default
+	// (Enabled: false) to preserve v8.15.x behaviour.
+	DefaultQualityGates pipeline.QualityGateConfig `json:"default_quality_gates,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -102,6 +108,18 @@ func DefaultConfig() Config {
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
 	}
+}
+
+// resolveQualityGates (BL367) returns the quality gate config to use for
+// a PRD: per-PRD override takes precedence over the daemon-wide default.
+func (m *Manager) resolveQualityGates(prd *PRD) pipeline.QualityGateConfig {
+	if prd.QualityGates != nil {
+		return *prd.QualityGates
+	}
+	m.mu.Lock()
+	d := m.cfg.DefaultQualityGates
+	m.mu.Unlock()
+	return d
 }
 
 // GuardrailFn (BL191 Q6, v5.10.0) is the indirection that runs one
@@ -1524,6 +1542,22 @@ func (m *Manager) SetPRDSkills(prdID string, skills []string) error {
 	prd.Skills = skills
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// SetPRDQualityGates (BL367) sets per-PRD quality gate config.
+func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.QualityGates = &pipeline.QualityGateConfig{
+		Enabled:           enabled,
+		TestCommand:       testCommand,
+		Timeout:           timeout,
+		BlockOnRegression: blockOnRegression,
+	}
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
 }
 
 // SetPRDGuardrails (BL303 S2 T06) sets per-Automaton guardrail overrides.

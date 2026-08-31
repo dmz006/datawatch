@@ -575,6 +575,16 @@ func (a *API) SetPRDSkills(prdID string, skills []string) (any, error) {
 	return prd, nil
 }
 
+// SetPRDQualityGates (BL367) sets per-PRD quality gate config.
+func (a *API) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error) {
+	prd, err := a.M.SetPRDQualityGates(prdID, enabled, testCommand, timeout, blockOnRegression)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
 // ── BL303 S2 — guardrail library + profiles + per-Automaton override ──────
 
 func (a *API) GuardrailLibrary() []any {

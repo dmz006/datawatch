@@ -1475,7 +1475,13 @@ type AutonomousConfig struct {
 	// the operator calls POST /api/autonomous/prds/{id}/approve_story
 	// per story.
 	PerStoryApproval bool `yaml:"per_story_approval,omitempty" json:"per_story_approval,omitempty"`
+
+	// BL367 — default quality gate config applied to every PRD whose
+	// quality_gates field is nil. Disabled (Enabled: false) by default
+	// to preserve v8.15.x behavior. Per-PRD quality_gates field overrides.
+	DefaultQualityGates QualityGateConfig `yaml:"default_quality_gates,omitempty" json:"default_quality_gates,omitempty"`
 }
+
 
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;
 // copied here so YAML loading + /api/config exposure don't pull in

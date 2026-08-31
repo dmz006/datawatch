@@ -115,6 +115,11 @@ func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string
 // BL303 S3 T15 — on-demand guardrail invocation stub.
 func (f *fakeOrchAutonomous) InvokeGuardrailByName(string, string) (any, error) { return nil, nil }
 
+// BL367 — per-PRD quality gate config stub.
+func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool) (any, error) {
+	return nil, nil
+}
+
 // BL328 — async decompose streaming stub.
 func (f *fakeOrchAutonomous) DecomposeStreaming(string, func(int, int, any)) (any, error) {
 	return nil, nil

@@ -12,8 +12,11 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
@@ -111,6 +114,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if retries < 0 {
 		retries = 0
 	}
+	// BL367 — quality gate: capture baseline before first task runs.
+	qgCfg := m.resolveQualityGates(prd)
+	var qgBaseline *pipeline.TestResult
+	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
+		r := pipeline.RunTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
+		qgBaseline = &r
+		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
+	}
 	for _, tid := range order {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -119,7 +130,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		if t == nil {
 			continue
 		}
-		if err := m.executeOne(ctx, prd, t, spawn, verify, retries); err != nil {
+		if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
 			t.Status = TaskFailed
 			t.Error = err.Error()
 			_ = m.store.SaveTask(t)
@@ -178,7 +189,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 // Run cycle the parent went through. Recursion depth is bounded by
 // Config.MaxRecursionDepth so a runaway decomposition can't tank the
 // daemon.
-func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int) error {
+func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int, qgCfg pipeline.QualityGateConfig, qgBaseline *pipeline.TestResult) error {
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
@@ -257,6 +268,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		t.Verification = &vr
 		if vr.OK {
+			// BL367 — quality gate: run tests after verifier passes and
+			// check for regressions vs. the pre-PRD baseline.
+			if qgCfg.Enabled && qgCfg.TestCommand != "" && qgBaseline != nil && prd.ProjectDir != "" {
+				current := pipeline.RunTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
+				cmp := pipeline.CompareResults(*qgBaseline, current)
+				t.QualityGateResult = &cmp
+				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
+				if cmp.Regression && qgCfg.BlockOnRegression {
+					t.Status = TaskFailed
+					t.Error = "quality_gate_regression: " + cmp.Summary
+					_ = m.store.SaveTask(t)
+					// Fold regression summary into retry hint so the next attempt
+					// knows what broke.
+					hint = "quality gate regression: " + cmp.Summary
+					_ = m.store.SaveTask(t)
+					continue // try auto-fix retry with regression context
+				}
+			}
 			done := time.Now()
 			t.CompletedAt = &done
 			t.Status = TaskCompleted

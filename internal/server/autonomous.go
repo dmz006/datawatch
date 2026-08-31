@@ -104,6 +104,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				Type           string   `json:"type,omitempty"`        // BL221 Phase 4 — automaton type
 				GuidedMode     bool     `json:"guided_mode,omitempty"` // BL221 Phase 4 — step-by-step operator checkpoints
 				Skills         []string `json:"skills,omitempty"`      // BL221 Phase 4 — skill IDs passed to task sessions
+				// BL367 — per-PRD quality gate config (optional; nil = use manager default).
+				QualityGates *struct {
+					Enabled           bool   `json:"enabled"`
+					TestCommand       string `json:"test_command"`
+					Timeout           int    `json:"timeout"`
+					BlockOnRegression bool   `json:"block_on_regression"`
+				} `json:"quality_gates,omitempty"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -174,6 +181,15 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					if _, err := s.autonomousMgr.SetPRDSkills(prdID, req.Skills); err != nil {
 						_ = s.autonomousMgr.DeletePRD(prdID)
 						http.Error(w, "skills-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				// BL367 — per-PRD quality gate config.
+				if req.QualityGates != nil {
+					qg := req.QualityGates
+					if _, err := s.autonomousMgr.SetPRDQualityGates(prdID, qg.Enabled, qg.TestCommand, qg.Timeout, qg.BlockOnRegression); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "quality-gates-set: "+err.Error(), http.StatusBadRequest)
 						return
 					}
 				}

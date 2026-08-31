@@ -618,6 +618,10 @@ All fields in `~/.datawatch/config.yaml`:
 | `goose.api_key_ref` | string | `""` | API key (literal or `${secret:name}`) injected as the provider-specific key env var; resolved at startup |
 | `goose.channel_enabled` | bool | `false` | When true, inject `GOOSE_MCP__DATAWATCH__*` env vars so Goose connects back as an MCP client (stdio transport) |
 | `autonomous.verifier_diff_max_bytes` | int | `0` | Byte cap on the git diff injected into the verifier prompt for evidence grounding. `0` = 8192. Raise for large changesets; lower to reduce token cost. |
+| `autonomous.default_quality_gates.enabled` | bool | `false` | Master toggle for per-PRD test regression gates. When true, the executor captures a test baseline before the first task and re-runs after each task completes. |
+| `autonomous.default_quality_gates.test_command` | string | `""` | Shell command used to run the test suite (e.g. `go test ./...`). Run relative to the PRD's `project_dir`. |
+| `autonomous.default_quality_gates.timeout` | int | `0` | Per-run timeout in seconds for the test command. `0` = no cap. |
+| `autonomous.default_quality_gates.block_on_regression` | bool | `false` | When true, a task that introduces a test regression is marked failed and triggers an auto-fix retry cycle. |
 
 ### Dependencies
 

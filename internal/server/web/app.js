@@ -11402,6 +11402,11 @@ const GENERAL_CONFIG_FIELDS = [
     // the runner skips those until the operator approves each
     // individually via the per-story Approve button on the PRD card.
     { key: 'autonomous.per_story_approval', label: 'Per-story approval gate (each story needs explicit approve)', type: 'toggle' },
+    // BL367 (v8.17.0) — default quality gate config for all PRDs.
+    { key: 'autonomous.default_quality_gates.enabled', label: 'Quality gates enabled (default for all PRDs)', type: 'toggle' },
+    { key: 'autonomous.default_quality_gates.test_command', label: 'Quality gate test command', type: 'text', placeholder: 'go test ./...' },
+    { key: 'autonomous.default_quality_gates.timeout', label: 'Quality gate timeout (seconds, 0=no limit)', type: 'number', placeholder: '0' },
+    { key: 'autonomous.default_quality_gates.block_on_regression', label: 'Block task on test regression', type: 'toggle' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level

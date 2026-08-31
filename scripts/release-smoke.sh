@@ -2814,6 +2814,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "52. Autonomous default_quality_gates config round-trip (v8.17.0)"
+# Verifies the four sub-keys are readable and the enabled flag round-trips.
+DQG_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);print(str(d.get("autonomous",{}).get("default_quality_gates","missing")))' 2>/dev/null)
+if [[ "$DQG_BEFORE" == "missing" ]]; then
+  skip "autonomous.default_quality_gates not in /api/config response shape"
+else
+  ok "GET /api/config exposes autonomous.default_quality_gates"
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{"autonomous.default_quality_gates.enabled":true,"autonomous.default_quality_gates.test_command":"echo ok","autonomous.default_quality_gates.timeout":30,"autonomous.default_quality_gates.block_on_regression":false}' \
+    "$BASE/api/config" >/dev/null
+  DQG_AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+    'import json,sys;d=json.load(sys.stdin);qg=d.get("autonomous",{}).get("default_quality_gates",{});print(str(qg.get("enabled","missing")))' 2>/dev/null)
+  if [[ "$DQG_AFTER" == "True" || "$DQG_AFTER" == "true" ]]; then
+    ok "PUT /api/config sets autonomous.default_quality_gates.enabled=true"
+  else
+    ko "autonomous.default_quality_gates.enabled round-trip failed (got '$DQG_AFTER')"
+  fi
+  # Restore disabled state.
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{"autonomous.default_quality_gates.enabled":false,"autonomous.default_quality_gates.test_command":"","autonomous.default_quality_gates.timeout":0,"autonomous.default_quality_gates.block_on_regression":false}' \
+    "$BASE/api/config" >/dev/null
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
