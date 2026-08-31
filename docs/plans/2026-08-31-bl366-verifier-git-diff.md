@@ -54,6 +54,17 @@ data-boundary tag per BL369.
 - `autonomous.verifier_diff_max_bytes` config field (all 6 surfaces)
 - Unit tests
 
+### Live validation pending (next major release gate)
+
+The following are Validated=No in `docs/testing-tracker.md` and must be confirmed at the v9.0.0 release checkpoint per AGENT.md §Release testing:
+
+| Test | How to run |
+|------|-----------|
+| Verifier receives real git diff in prompt | Submit a PRD against a local git project; inspect the verifier's LLM input via daemon logs or a debug session — confirm `<diff>` block is present and references actual changed files |
+| `autonomous.verifier_diff_max_bytes=512` truncation | Set the field low, submit a PRD with a large task; confirm the diff in the verifier prompt is capped and annotated "(truncated to 512 bytes)" |
+| Cluster-dispatch graceful no-diff | With a cluster worker, run a task; verify `Task.PreTaskSHA == ""` and verifier falls back to spec-only without error |
+| Config round-trip via comm channel | `configure autonomous.verifier_diff_max_bytes=4096` via Signal/Telegram; `GET /api/config` and confirm new value |
+
 ### Phase 2 — BL366 verifier synergy with BL368 vision (deferred)
 
 If a PRD has `quality_gates.screenshot_path_glob`, collect matching screenshots after

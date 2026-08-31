@@ -2789,6 +2789,30 @@ else
   $DW_CLI tooling status >/dev/null 2>&1 && ok "datawatch tooling status exits 0" || ko "datawatch tooling status failed"
 fi
 
+H "51. Autonomous verifier_diff_max_bytes config round-trip (v8.16.0)"
+# Verifies the new config key is readable and writable via REST so a
+# regression in the dotted-key handler can't silently disable grounding.
+VDB_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);print(str(d.get("autonomous",{}).get("verifier_diff_max_bytes","missing")))' 2>/dev/null)
+if [[ "$VDB_BEFORE" == "missing" ]]; then
+  skip "autonomous.verifier_diff_max_bytes not in /api/config response shape"
+else
+  ok "GET /api/config exposes autonomous.verifier_diff_max_bytes=$VDB_BEFORE"
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{"autonomous.verifier_diff_max_bytes":4096}' "$BASE/api/config" >/dev/null
+  VDB_AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+    'import json,sys;d=json.load(sys.stdin);print(str(d.get("autonomous",{}).get("verifier_diff_max_bytes","missing")))' 2>/dev/null)
+  if [[ "$VDB_AFTER" == "4096" ]]; then
+    ok "PUT /api/config sets autonomous.verifier_diff_max_bytes to 4096"
+  else
+    ko "autonomous.verifier_diff_max_bytes round-trip failed (was $VDB_BEFORE → wanted 4096 → got $VDB_AFTER)"
+  fi
+  # Restore original value.
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"autonomous.verifier_diff_max_bytes":%s}' "${VDB_BEFORE:-0}")" \
+    "$BASE/api/config" >/dev/null
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
