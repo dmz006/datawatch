@@ -104,7 +104,7 @@ var injectionPatterns = []struct {
 	{regexp.MustCompile(`(?i)disregard\s+(all|previous|prior)\s+(instructions?|context|rules?)`), "prompt injection: 'disregard previous instructions'"},
 	{regexp.MustCompile(`(?i)forget\s+(?:everything|all)\s+(?:you|I)\s+(?:know|were|have)`), "prompt injection: 'forget everything you know'"},
 	{regexp.MustCompile(`(?i)\byou\s+are\s+now\s+(?:a\s+|an\s+)?\w`), "prompt injection: role override ('you are now ...')"},
-	{regexp.MustCompile(`(?i)\bact\s+as\s+(?:if\s+you\s+(?:are|were)\s+)?(?:a\s+|an\s+)?(?:different|new\s+)?(?:AI|assistant|model|system)\b`), "prompt injection: 'act as' role override"},
+	{regexp.MustCompile(`(?i)\bact\s+as(?:\s+\w+){0,4}\s+(?:AI|assistant|chatbot)\b`), "prompt injection: 'act as AI/assistant' role override"},
 	{regexp.MustCompile(`<\s*\|?\s*(?:im_start|im_end|system|SYS)\s*\|?\s*>`), "prompt injection: chat template boundary (<|im_start|>)"},
 	{regexp.MustCompile(`(?i)\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>`), "prompt injection: LLaMA instruction boundary marker"},
 	{regexp.MustCompile(`(?i)(?:^|\n)system:\s`), "prompt injection: spurious 'system:' role prefix"},

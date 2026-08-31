@@ -133,6 +133,25 @@ All entries are Debian bookworm `affected` or `will_not_fix`; no upstream fix av
 Re-review: each release cycle — check if Debian bookworm has published fixes for any accepted entry.
 To lower an accepted CVE once fixed: remove from `.trivyignore` and rebuild.
 
+## Prompt injection mitigations — v8.18.0 (BL369)
+
+User-controlled text flowing into LLM prompts is a class of vulnerability not covered by gosec or Trivy. The following controls were added:
+
+| Call site | File | Mitigation |
+|---|---|---|
+| `decomposeFn` — PRD spec sent to planning LLM | `cmd/datawatch/main.go` | Security preamble + `<user_data>` wrap |
+| `autonomousVerify` — task spec sent to verifier LLM | `cmd/datawatch/main.go` | Security preamble (spec already tagged) |
+| `autonomousGuardrail` — unit title+spec sent to guardrail LLM | `cmd/datawatch/main.go` | Security preamble + `<user_data>` wrap on both fields |
+
+Input scanner: `ScanForInjection(text)` in `internal/autonomous/security.go` checks PRD/task specs at create and edit boundaries against 11 known injection patterns. Enabled via `autonomous.injection_guard: true`; blocking via `autonomous.block_on_injection: true`.
+
+**Residual risk:**
+- Memory retrieval: learnings injected into decompose context are not yet scanned (scanner only runs at create/edit boundaries; stored memories can grow stale)
+- Federation peers: tasks submitted via federation are not yet tagged as untrusted in verifier/guardrail prompts (BL369 Layer 3 — pending)
+- Council persona descriptions: user-controlled and injected into debate prompts; not yet covered by the scanner
+
+**Procedural addition:** Any new LLM prompt site that interpolates user-supplied text (spec, title, description) must add a security preamble and `<user_data>` tag. Reviewers: grep for `fmt.Sprintf` calls in `cmd/datawatch/main.go` that interpolate `req.Spec`, `task.Spec`, or user-facing string fields.
+
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).

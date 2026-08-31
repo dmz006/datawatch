@@ -60,3 +60,21 @@ Interface: `POST /api/autonomous/prds` with `quality_gates`, `PUT /api/config` w
 | Per-PRD override takes precedence over manager default | Yes | No | `TestBL367_ResolveQualityGates_PerPRDOverridesDefault` | `resolveQualityGates` priority. |
 | No per-PRD config falls back to manager default | Yes | No | `TestBL367_ResolveQualityGates_FallsBackToDefault` | `cfg.DefaultQualityGates` used when `PRD.QualityGates == nil`. |
 | `Task.QualityGateResult` populated after task runs with gate enabled | Yes | No | `TestBL367_QualityGateResult_StoredOnTask` — minimal Go module, `go build .` as gate command | Live regression blocking requires a real PRD with failing tests (v9.0.0 gate). |
+
+## Autonomous Prompt Injection Hardening
+
+Added in v8.18.0 (BL369 Layer 1+2). Data-boundary tags on all 3 LLM call sites; `ScanForInjection` scanner wired at PRD/task create and spec edit boundaries.
+
+| Test case | Tested | Live-validated | Coverage details | Notes |
+|---|---|---|---|---|
+| `ScanForInjection` detects 11+ known patterns | Yes | No | `TestBL369_ScanForInjection_DetectsPatterns` (13 sub-cases: ignore-prev, disregard, forget, you-are-now, act-as, im_start, SYS, INST, system-prefix, assistant-prefix, new-instructions, override) | Pattern matching confirmed for every entry in `injectionPatterns`. |
+| Clean specs return no hits (no false positives) | Yes | No | `TestBL369_ScanForInjection_CleanInputReturnsEmpty` (5 clean task specs) | Guards against over-triggering on normal engineering language. |
+| `injection_guard:true, block_on_injection:false` — warn-only mode | Yes | No | `TestBL369_CheckInjectionGuard_WarnMode` — CreatePRD with injection phrase succeeds | Warn-only is the default; operator must opt-in to blocking. |
+| `injection_guard:true, block_on_injection:true` — block mode | Yes | No | `TestBL369_CheckInjectionGuard_BlockMode` — CreatePRD returns `injection-guard` error | HTTP 400 at REST boundary. |
+| `injection_guard:false` — disabled regardless of `block_on_injection` | Yes | No | `TestBL369_CheckInjectionGuard_Disabled` | Default config: guard off = pass-through. |
+| Clean spec always passes block mode | Yes | No | `TestBL369_CleanSpec_AlwaysPasses` | No false-positive blocking. |
+| `EditPRDFields` runs injection guard on new spec | Yes | No | `TestBL369_EditPRDFields_BlocksOnInjection` | Covers PRD spec edits, not only create. |
+| `EditTaskSpec` runs injection guard on new spec | Yes | No | `TestBL369_EditTaskSpec_BlocksOnInjection` | Covers task-level spec edits. |
+| Data-boundary tags in `decomposeFn` prompt | No | No | — | Verified by code inspection; prompt wraps `req.Spec` in `<user_data>` with preamble. Live test requires decompose call to a running LLM. |
+| Security preamble in `autonomousVerify` prompt | No | No | — | Verified by code inspection; preamble prepended to specPart+diffSection. |
+| Security preamble + tags in `autonomousGuardrail` prompt | No | No | — | Verified by code inspection; UnitTitle and UnitSpec wrapped. |
