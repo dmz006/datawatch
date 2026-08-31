@@ -23,7 +23,7 @@ _story_ts_660() {
   fi
 
   # Restore
-  api PUT /api/config '{"vision.model":"llava"}' >/dev/null 2>&1 || true
+  api PUT /api/config '{"vision.model":"Gemma3:12b"}' >/dev/null 2>&1 || true
   ok "config_set MCP tool vision.model=moondream updated config"
 }
 

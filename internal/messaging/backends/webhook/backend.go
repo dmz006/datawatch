@@ -1,12 +1,16 @@
 // Package webhook implements a generic HTTP webhook messaging.Backend.
 // POST JSON to the endpoint: {"task": "write tests", "project_dir": "/opt/myapp"}
+// Optionally include "image_url" as a base64 data URI to attach an image.
 package webhook
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -55,6 +59,10 @@ func (b *Backend) Subscribe(ctx context.Context, handler func(messaging.Message)
 type taskRequest struct {
 	Task       string `json:"task"`
 	ProjectDir string `json:"project_dir"`
+	// ImageURL is an optional base64 data URI (e.g. "data:image/png;base64,...")
+	// or a local file path. When set the image is delivered as an Attachment so
+	// the router can invoke vision description before passing the task to Claude.
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 func (b *Backend) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -82,11 +90,90 @@ func (b *Backend) handleTask(w http.ResponseWriter, r *http.Request) {
 	if req.ProjectDir != "" {
 		text = req.ProjectDir + ": " + text
 	}
+
+	var attachments []messaging.Attachment
+	if req.ImageURL != "" {
+		if att, err := decodeImageURL(req.ImageURL); err == nil {
+			attachments = append(attachments, att)
+		}
+	}
+
 	b.msgs <- messaging.Message{
-		GroupID: "webhook", Sender: r.RemoteAddr, Text: text, Backend: "webhook",
+		GroupID:     "webhook",
+		Sender:      r.RemoteAddr,
+		Text:        text,
+		Backend:     "webhook",
+		Attachments: attachments,
 	}
 	w.WriteHeader(200)
 	w.Write([]byte(`{"ok":true}` + "\n")) //nolint:errcheck
+}
+
+// decodeImageURL handles "data:<mime>;base64,<b64>" URIs and local file paths.
+// It writes the image to a temp file and returns an Attachment.
+func decodeImageURL(imageURL string) (messaging.Attachment, error) {
+	var data []byte
+	var contentType, ext string
+
+	if strings.HasPrefix(imageURL, "data:") {
+		// data:<mime>;base64,<data>
+		rest := strings.TrimPrefix(imageURL, "data:")
+		semi := strings.Index(rest, ";")
+		if semi < 0 {
+			return messaging.Attachment{}, fmt.Errorf("webhook: malformed data URI")
+		}
+		contentType = rest[:semi]
+		encoded := strings.TrimPrefix(rest[semi+1:], "base64,")
+		var err error
+		data, err = base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return messaging.Attachment{}, fmt.Errorf("webhook: base64 decode: %w", err)
+		}
+		switch contentType {
+		case "image/png":
+			ext = ".png"
+		case "image/gif":
+			ext = ".gif"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			ext = ".jpg"
+			contentType = "image/jpeg"
+		}
+	} else {
+		// Local file path
+		var err error
+		data, err = os.ReadFile(imageURL)
+		if err != nil {
+			return messaging.Attachment{}, fmt.Errorf("webhook: read image: %w", err)
+		}
+		switch {
+		case strings.HasSuffix(imageURL, ".png"):
+			contentType, ext = "image/png", ".png"
+		case strings.HasSuffix(imageURL, ".gif"):
+			contentType, ext = "image/gif", ".gif"
+		case strings.HasSuffix(imageURL, ".webp"):
+			contentType, ext = "image/webp", ".webp"
+		default:
+			contentType, ext = "image/jpeg", ".jpg"
+		}
+	}
+
+	tmp, err := os.CreateTemp("", "dw-webhook-img-*"+ext)
+	if err != nil {
+		return messaging.Attachment{}, fmt.Errorf("webhook: temp file: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return messaging.Attachment{}, fmt.Errorf("webhook: write temp: %w", err)
+	}
+	_ = tmp.Close()
+	return messaging.Attachment{
+		ContentType: contentType,
+		Filename:    "image" + ext,
+		FilePath:    tmp.Name(),
+		Size:        int64(len(data)),
+	}, nil
 }
 
 func (b *Backend) Link(deviceName string, onQR func(string)) error { return nil }

@@ -8,7 +8,7 @@ story_preflight "surface:live feature:vision group:vision conflict:ollama-llava"
 _story_ts_667() {
   # Enable vision on the sandbox daemon pointing at the test ollama
   local cfg_resp cfg_code
-  cfg_resp=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.model":"llmvision/glimpse-v1:latest"}')
+  cfg_resp=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.endpoint":"http://datawatch:11434","vision.model":"Gemma3:12b"}')
   cfg_code=$(echo "$cfg_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   if [[ ! "$cfg_code" =~ ^2 ]]; then
     skip "could not enable vision on sandbox daemon (HTTP $cfg_code)"
