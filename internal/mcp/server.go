@@ -38,6 +38,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -100,7 +101,19 @@ type Server struct {
 	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
 	// the FullID of the session that launched it, enabling session-aware routing.
 	callerSessionID string
+	// BL368 Phase 3 — vision describer for vision_describe tool and image_paths injection.
+	visioner VisionerMCP
 }
+
+// VisionerMCP is the narrow interface the MCP server needs for image description.
+// Decoupled from internal/vision to avoid circular imports.
+type VisionerMCP interface {
+	Describe(ctx context.Context, imageData []byte, contentType, prompt string) (string, error)
+}
+
+// SetVisioner wires the vision describer for the vision_describe MCP tool
+// and image_paths injection on start_session / send_input.
+func (s *Server) SetVisioner(v VisionerMCP) { s.visioner = v }
 
 // SetResultStore wires a result store into the MCP server (BL360).
 func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
@@ -237,6 +250,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolTelemetryGet(), tracked(s.handleTelemetryGet))
 	mcpSrv.AddTool(s.toolTelemetryList(), tracked(s.handleTelemetryList))
 	mcpSrv.AddTool(s.toolSendInput(), tracked(s.handleSendInput))
+	mcpSrv.AddTool(s.toolVisionDescribe(), tracked(s.handleVisionDescribe))
 	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
 	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
 	mcpSrv.AddTool(s.toolStopAllSessions(), tracked(s.handleStopAllSessions))
@@ -996,6 +1010,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolTelemetryGet, "telemetry_get"},
 		{s.toolTelemetryList, "telemetry_list"},
 		{s.toolSendInput, "send_input"},
+		{s.toolVisionDescribe, "vision_describe"},
 		{s.toolKillSession, "kill_session"},
 		{s.toolRenameSession, "rename_session"},
 		{s.toolStopAllSessions, "stop_all_sessions"},
@@ -1246,6 +1261,10 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithBoolean("kill_children_recursive",
 			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
 		),
+		mcpsdk.WithArray("image_paths",
+			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
+			mcpsdk.WithStringItems(),
+		),
 	)
 }
 
@@ -1328,6 +1347,23 @@ func (s *Server) toolSendInput() mcpsdk.Tool {
 		mcpsdk.WithString("text",
 			mcpsdk.Required(),
 			mcpsdk.Description("Text to send as input"),
+		),
+		mcpsdk.WithArray("image_paths",
+			mcpsdk.Description("BL368 — local file paths to images. Each image is described and prepended to the text as '[image: ...]'. Requires vision.enabled=true."),
+			mcpsdk.WithStringItems(),
+		),
+	)
+}
+
+func (s *Server) toolVisionDescribe() mcpsdk.Tool {
+	return mcpsdk.NewTool("vision_describe",
+		mcpsdk.WithDescription("Describe an image file using the configured vision model. Returns a natural-language description. Requires vision.enabled=true in config."),
+		mcpsdk.WithString("image_path",
+			mcpsdk.Required(),
+			mcpsdk.Description("Absolute local path to the image file (jpeg/png/webp/gif)."),
+		),
+		mcpsdk.WithString("prompt",
+			mcpsdk.Description("Override the default description prompt. Leave empty for the built-in default ('Describe this image concisely.')."),
 		),
 	)
 }
@@ -1677,6 +1713,11 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	if strings.TrimSpace(task) == "" {
 		return mcpsdk.NewToolResultText("Error: task is required"), nil
 	}
+	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
+		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
+			task = prefix + task
+		}
+	}
 	projectDir := req.GetString("project_dir", "")
 	llmRef := req.GetString("llm", "")
 	computeRef := req.GetString("compute_node", "")
@@ -1992,6 +2033,11 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 	if text == "" {
 		return mcpsdk.NewToolResultText("Error: text is required"), nil
 	}
+	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
+		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
+			text = prefix + text
+		}
+	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
@@ -2005,6 +2051,72 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending input: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Input sent to session %s.", sess.ID)), nil
+}
+
+func (s *Server) handleVisionDescribe(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.visioner == nil {
+		return mcpsdk.NewToolResultText("Error: vision not enabled — set vision.enabled=true in config"), nil
+	}
+	imagePath := req.GetString("image_path", "")
+	if imagePath == "" {
+		return mcpsdk.NewToolResultText("Error: image_path is required"), nil
+	}
+	prompt := req.GetString("prompt", "")
+
+	imageData, err := os.ReadFile(imagePath)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading image: %v", err)), nil
+	}
+	contentType := visionExtMIME(strings.ToLower(filepath.Ext(imagePath)))
+	desc, err := s.visioner.Describe(ctx, imageData, contentType, prompt)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error describing image: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(desc), nil
+}
+
+// buildImagePrefix describes each path in paths and returns a "[image N: <desc>]\n" prefix.
+// Returns "" when visioner is nil or paths is empty.
+func (s *Server) buildImagePrefix(ctx context.Context, paths []string) string {
+	if s.visioner == nil || len(paths) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, p := range paths {
+		imageData, err := os.ReadFile(p)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("[image %d: error reading file: %v]\n", i+1, err))
+			continue
+		}
+		contentType := visionExtMIME(strings.ToLower(filepath.Ext(p)))
+		desc, err := s.visioner.Describe(ctx, imageData, contentType, "")
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("[image %d: description failed: %v]\n", i+1, err))
+			continue
+		}
+		if len(paths) == 1 {
+			sb.WriteString("[image: " + desc + "]\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("[image %d: %s]\n", i+1, desc))
+		}
+	}
+	return sb.String()
+}
+
+// visionExtMIME maps a lowercase file extension to an image MIME type.
+func visionExtMIME(ext string) string {
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	default:
+		return "image/jpeg"
+	}
 }
 
 func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

@@ -233,6 +233,7 @@ shape.
 | Family | Tools |
 |--------|-------|
 | Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
+| Vision | `vision_describe` |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
@@ -332,6 +333,7 @@ Start a new AI coding session.
 | `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
 | `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
+| `image_paths` | string[] | No | Local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and prepended to the task as `[image: ...]`. Requires `vision.enabled: true`. |
 
 **Example response:**
 ```
@@ -382,11 +384,37 @@ Send a reply to a session waiting for input.
 |---|---|---|---|
 | `session_id` | string | Yes | Session ID |
 | `text` | string | Yes | Text to send as input |
+| `image_paths` | string[] | No | Local file paths to images. Each is described by the vision service and prepended to the text as `[image: ...]`. Requires `vision.enabled: true`. |
 
 **Example response:**
 ```
 Input sent to session a3f2.
 ```
+
+---
+
+### `vision_describe`
+
+Describe an image file using the configured vision model. Returns a natural-language description. Requires `vision.enabled: true` in config.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `image_path` | string | Yes | Absolute local path to the image file (jpeg/png/webp/gif) |
+| `prompt` | string | No | Override the default description prompt. Leave empty for the built-in default (`"Describe this image concisely."`). |
+
+**Example response:**
+```
+A terminal screenshot showing a Go compilation error in main.go at line 47:
+'undefined: visionPkg'. The error is highlighted in red. The terminal is
+running in a dark theme with white text.
+```
+
+**Use cases:**
+- Agents analyzing screenshots of their own output (test failures, UI regressions)
+- Reading captured terminal frames or error dialogs
+- Describing diagrams, mockups, or architecture images to pass as context to other tools
 
 ---
 

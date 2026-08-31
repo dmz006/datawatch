@@ -4989,6 +4989,9 @@ Return STRICT JSON:
 	if pipeAdapter != nil {
 		mcpSrv.SetPipelineAPI(pipeAdapter)
 	}
+	if imageVisioner != nil {
+		mcpSrv.SetVisioner(imageVisioner)
+	}
 	if cfg.Ollama.Host != "" {
 		mcpSrv.SetOllamaHost(cfg.Ollama.Host)
 	}
@@ -9893,6 +9896,18 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	// server so session-aware tools can self-route without an explicit argument.
 	if callerSessID, _ := cmd.Flags().GetString("caller-session-id"); callerSessID != "" {
 		mcpSrv.SetCallerSessionID(callerSessID)
+	}
+	// BL368 Phase 3 — wire vision describer into channel MCP server.
+	if cfg.Vision.Enabled {
+		if vcfg := (visionPkg.Config{
+			Backend: cfg.Vision.Backend, Endpoint: cfg.Vision.Endpoint,
+			APIKey: cfg.Vision.APIKey, Model: cfg.Vision.Model,
+			DefaultPrompt: cfg.Vision.DefaultPrompt, MaxImageBytes: cfg.Vision.MaxImageBytes,
+		}); vcfg.Endpoint != "" && vcfg.Model != "" {
+			if channelVisioner, verr := visionPkg.New(vcfg); verr == nil {
+				mcpSrv.SetVisioner(channelVisioner)
+			}
+		}
 	}
 
 	sseMode, _ := cmd.Flags().GetBool("sse")

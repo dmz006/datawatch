@@ -47,7 +47,7 @@ Latest release: **v8.14.1** (2026-08-30). fix(security): Go 1.26.6 + cilium/ebpf
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (Phase 1+2 shipped; Phase 3 MCP+session injection, Phase 4 skills/PRD/memory/council pending); BL369 — prompt injection hardening in autonomous executor |
+| Pending backlog | 5 | BL335 — APNs push for iOS client (GH#107); BL366 — autonomous verifier git-diff grounding; BL367 — autonomous PRD quality gates (BL28 parity); BL368 — vision input system (Phase 1–3 shipped pending release; Phase 4 skills/PRD/memory/council pending); BL369 — prompt injection hardening in autonomous executor |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
@@ -205,7 +205,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### BL368 — Vision input system: image attachments in comms, skills, sessions, and MCP
 
-**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30. Phase 1+2 shipped (pending release). [Plan doc](2026-08-30-bl368-vision.md).**
+**Operator-filed 2026-08-30. Nightwire review (v2.4.0). Expanded 2026-08-30. Phase 1–3 shipped (pending release). [Plan doc](2026-08-30-bl368-vision.md).**
 
 ---
 
@@ -322,8 +322,11 @@ The autonomous verifier (BL366) can optionally include a screenshot from Playwri
 - Image attachment detection block in `processMessage` — reads file → `Describer.Describe()` → prepends `[image: <desc>]` to `msg.Text`
 - Mirrors the audio transcription block exactly (same error/empty handling, same break-on-first pattern)
 
-**Phase 3 (MCP tool + session injection) — pending:**
-`vision_describe` MCP tool registered in the MCP server; `image_paths: [...]` field on `start_session` / `session_send` REST and MCP surfaces.
+**Phase 3 (MCP tool + session injection) — ✅ SHIPPED:**
+- `vision_describe` MCP tool: `vision_describe(image_path, prompt)` — reads file, calls vision service, returns description
+- `image_paths: string[]` on `start_session` and `send_input` — descriptions prepended to task/text as `[image: ...]`
+- `VisionerMCP` interface + `SetVisioner()` on MCP Server; wired into both primary and Goose channel MCP instances
+- `docs/mcp.md` updated with tool definition, parameter tables, and Vision family row
 
 **Phase 4 (skills + PRD + memory + council) — pending:**
 Skills `accepts_images` manifest flag; PRD decompose with image context; `remember [image]` via comms; council `image_path` parameter; alert `chart_path` → vision summary; BL366 verifier screenshot synergy.
