@@ -4785,6 +4785,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"timeout":             s.cfg.Autonomous.DefaultQualityGates.Timeout,
 				"block_on_regression": s.cfg.Autonomous.DefaultQualityGates.BlockOnRegression,
 			},
+			// BL369 — prompt injection guard.
+			"injection_guard":   s.cfg.Autonomous.InjectionGuard,
+			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
 		},
 		"plugins": map[string]interface{}{
 			"enabled":    s.cfg.Plugins.Enabled,
@@ -5622,6 +5625,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			}
 		case "autonomous.default_quality_gates.block_on_regression":
 			cfg.Autonomous.DefaultQualityGates.BlockOnRegression = toBool(v)
+		// BL369 — prompt injection guard config.
+		case "autonomous.injection_guard":
+			cfg.Autonomous.InjectionGuard = toBool(v)
+		case "autonomous.block_on_injection":
+			cfg.Autonomous.BlockOnInjection = toBool(v)
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":

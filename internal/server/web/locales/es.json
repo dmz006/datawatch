@@ -1272,5 +1272,7 @@
   "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",
   "settings_quality_gates_block_on_regression": "Block task on test regression",
   "stats_quality_gates": "Quality Gates",
+  "settings_injection_guard": "Protección contra inyección (advierte sobre specs de PRD/tarea sospechosas)",
+  "settings_block_on_injection": "Bloquear creación de PRD/tarea al detectar frases de inyección",
   "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)"
 }

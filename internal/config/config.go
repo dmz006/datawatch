@@ -1480,6 +1480,13 @@ type AutonomousConfig struct {
 	// quality_gates field is nil. Disabled (Enabled: false) by default
 	// to preserve v8.15.x behavior. Per-PRD quality_gates field overrides.
 	DefaultQualityGates QualityGateConfig `yaml:"default_quality_gates,omitempty" json:"default_quality_gates,omitempty"`
+
+	// BL369 — prompt injection guard. When InjectionGuard is true, user-
+	// supplied PRD/task specs are scanned for known injection phrases at
+	// the API boundary. Findings are always logged; BlockOnInjection
+	// causes the request to be rejected with 400 instead of warn-only.
+	InjectionGuard   bool `yaml:"injection_guard,omitempty" json:"injection_guard,omitempty"`
+	BlockOnInjection bool `yaml:"block_on_injection,omitempty" json:"block_on_injection,omitempty"`
 }
 
 

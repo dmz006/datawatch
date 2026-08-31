@@ -11407,6 +11407,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.default_quality_gates.test_command', label: t('settings_quality_gates_test_command'), type: 'text', placeholder: 'go test ./...' },
     { key: 'autonomous.default_quality_gates.timeout', label: t('settings_quality_gates_timeout'), type: 'number', placeholder: '0' },
     { key: 'autonomous.default_quality_gates.block_on_regression', label: t('settings_quality_gates_block_on_regression'), type: 'toggle' },
+    { key: 'autonomous.injection_guard', label: t('settings_injection_guard'), type: 'toggle' },
+    { key: 'autonomous.block_on_injection', label: t('settings_block_on_injection'), type: 'toggle' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level

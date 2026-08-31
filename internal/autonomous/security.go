@@ -95,6 +95,36 @@ func scanFinding(root, path string, lineNo int, msg string) string {
 	return rel + ":" + itoaInt(lineNo) + ": " + msg
 }
 
+// injectionPatterns detects known prompt injection phrases in user-supplied text.
+var injectionPatterns = []struct {
+	re  *regexp.Regexp
+	msg string
+}{
+	{regexp.MustCompile(`(?i)ignore\s+(previous|all|prior)\s+(instructions?|rules?|context)`), "prompt injection: 'ignore previous instructions'"},
+	{regexp.MustCompile(`(?i)disregard\s+(all|previous|prior)\s+(instructions?|context|rules?)`), "prompt injection: 'disregard previous instructions'"},
+	{regexp.MustCompile(`(?i)forget\s+(?:everything|all)\s+(?:you|I)\s+(?:know|were|have)`), "prompt injection: 'forget everything you know'"},
+	{regexp.MustCompile(`(?i)\byou\s+are\s+now\s+(?:a\s+|an\s+)?\w`), "prompt injection: role override ('you are now ...')"},
+	{regexp.MustCompile(`(?i)\bact\s+as\s+(?:if\s+you\s+(?:are|were)\s+)?(?:a\s+|an\s+)?(?:different|new\s+)?(?:AI|assistant|model|system)\b`), "prompt injection: 'act as' role override"},
+	{regexp.MustCompile(`<\s*\|?\s*(?:im_start|im_end|system|SYS)\s*\|?\s*>`), "prompt injection: chat template boundary (<|im_start|>)"},
+	{regexp.MustCompile(`(?i)\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>`), "prompt injection: LLaMA instruction boundary marker"},
+	{regexp.MustCompile(`(?i)(?:^|\n)system:\s`), "prompt injection: spurious 'system:' role prefix"},
+	{regexp.MustCompile(`(?i)(?:^|\n)assistant:\s`), "prompt injection: spurious 'assistant:' role prefix"},
+	{regexp.MustCompile(`(?i)new\s+instructions?:?\s*\n`), "prompt injection: 'new instructions' override block"},
+	{regexp.MustCompile(`(?i)override\s+(?:your\s+)?(?:previous\s+)?(?:instructions?|system\s+prompt|constraints?)`), "prompt injection: explicit override attempt"},
+}
+
+// ScanForInjection checks a single text string for known prompt injection phrases.
+// Returns a (possibly empty) list of human-readable warnings.
+func ScanForInjection(text string) []string {
+	var findings []string
+	for _, p := range injectionPatterns {
+		if p.re.MatchString(text) {
+			findings = append(findings, p.msg)
+		}
+	}
+	return findings
+}
+
 func itoaInt(n int) string {
 	if n == 0 {
 		return "0"

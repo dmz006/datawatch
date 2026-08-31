@@ -1284,5 +1284,7 @@
   "settings_quality_gates_test_command": "Quality gate test command",
   "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",
   "settings_quality_gates_block_on_regression": "Block task on test regression",
-  "stats_quality_gates": "Quality Gates"
+  "stats_quality_gates": "Quality Gates",
+  "settings_injection_guard": "Prompt injection guard (warn on suspicious PRD/task specs)",
+  "settings_block_on_injection": "Block PRD/task create when injection phrases detected"
 }

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (BL369 — Prompt Injection Hardening)
+- **Data-boundary tags** — all three LLM call sites (`decomposeFn`, `autonomousVerify`, `autonomousGuardrail`) now prefix prompts with a security preamble and wrap user-supplied content (`req.Spec`, `task.Spec`, `req.UnitTitle`, `req.UnitSpec`) in `<user_data>` XML tags. This separates user-controlled text from system instructions at the model level.
+- **`ScanForInjection(text)`** — new function in `internal/autonomous/security.go` scanning text for 11 known prompt injection patterns (role overrides, template boundary markers, instruction-override phrases, LLaMA delimiters). Used by `checkInjectionGuard()` on every PRD/task create or spec edit.
+- **`autonomous.injection_guard`** config flag — when enabled, user-supplied PRD/task specs are scanned at the API boundary on create or edit; findings are always logged. `autonomous.block_on_injection` upgrades from warn-only to hard reject (HTTP 400).
+- **`datawatch_injection_guard_hits_total`** Prometheus counter.
+- **Config parity** — `injection_guard` + `block_on_injection` exposed on all 6 surfaces: YAML, Web UI, `GET/PUT /api/config`, comm channel `configure` verb, `autonomous_config_set` MCP tool, CLI `config set`.
+
 ---
 
 ## v8.17.0 — feat(autonomous): PRD Quality Gates

@@ -59,6 +59,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("quality_gates_test_command", mcpsdk.Description("BL367 — default test command for quality gates (e.g. 'go test ./...')")),
 		mcpsdk.WithNumber("quality_gates_timeout", mcpsdk.Description("BL367 — default gate timeout in seconds (0 = no limit)")),
 		mcpsdk.WithBoolean("quality_gates_block_on_regression", mcpsdk.Description("BL367 — block task on regression by default")),
+		mcpsdk.WithBoolean("injection_guard", mcpsdk.Description("BL369 — scan user-supplied PRD/task specs for prompt injection phrases (warn only by default)")),
+		mcpsdk.WithBoolean("block_on_injection", mcpsdk.Description("BL369 — reject PRD/task create or edit when injection phrases are detected (requires injection_guard:true)")),
 	)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -110,6 +112,13 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if len(qg) > 0 {
 		body["default_quality_gates"] = qg
+	}
+	// BL369 — injection guard config.
+	if v := req.GetBool("injection_guard", false); v {
+		body["injection_guard"] = v
+	}
+	if v := req.GetBool("block_on_injection", false); v {
+		body["block_on_injection"] = v
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
 	if err != nil {

@@ -6,10 +6,13 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
@@ -94,6 +97,13 @@ type Config struct {
 	// QualityGates field overrides this when set. Disabled by default
 	// (Enabled: false) to preserve v8.15.x behaviour.
 	DefaultQualityGates pipeline.QualityGateConfig `json:"default_quality_gates,omitempty"`
+
+	// BL369 — prompt injection guard. When true, user-supplied text
+	// (PRD spec, task spec edits) is scanned for known injection phrases
+	// at the API boundary. Findings are always logged; with BlockOnInjection
+	// true the request is rejected with 400.
+	InjectionGuard      bool `json:"injection_guard,omitempty"`
+	BlockOnInjection    bool `json:"block_on_injection,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -108,6 +118,29 @@ func DefaultConfig() Config {
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
 	}
+}
+
+// checkInjectionGuard (BL369) scans user-supplied text for prompt injection
+// phrases. Always logs findings; returns an error only when BlockOnInjection
+// is enabled — that lets callers reject the request at the API boundary.
+func (m *Manager) checkInjectionGuard(label, text string) error {
+	m.mu.Lock()
+	guard := m.cfg.InjectionGuard
+	block := m.cfg.BlockOnInjection
+	m.mu.Unlock()
+	if !guard {
+		return nil
+	}
+	hits := ScanForInjection(text)
+	if len(hits) == 0 {
+		return nil
+	}
+	metrics.InjectionGuardHitsTotal.Inc()
+	log.Printf("[BL369] injection-guard hit in %s: %s", label, strings.Join(hits, "; "))
+	if block {
+		return fmt.Errorf("injection-guard: potentially unsafe content detected in %s (%s)", label, hits[0])
+	}
+	return nil
 }
 
 // resolveQualityGates (BL367) returns the quality gate config to use for
@@ -315,6 +348,9 @@ func (m *Manager) Store() *Store { return m.store }
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
 func (m *Manager) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD, error) {
+	if err := m.checkInjectionGuard("prd spec", spec); err != nil {
+		return nil, err
+	}
 	prd, err := m.store.CreatePRD(spec, projectDir, backend, effort)
 	if err != nil {
 		return nil, err
@@ -696,6 +732,11 @@ func (m *Manager) SetPRDProfiles(id, projectProfile, clusterProfile string) erro
 // running PRD. Records a Decision so the timeline shows the edit.
 // Use EditTaskSpec for per-task spec changes.
 func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
+	if spec != "" {
+		if err := m.checkInjectionGuard("prd spec edit", spec); err != nil {
+			return nil, err
+		}
+	}
 	prd, err := m.store.UpdatePRDFields(id, title, spec)
 	if err != nil {
 		return nil, err
@@ -719,6 +760,9 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // before approving the PRD. Only allowed in needs_review or
 // revisions_asked. Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
+	if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
+		return nil, err
+	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)

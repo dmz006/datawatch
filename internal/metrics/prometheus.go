@@ -82,6 +82,12 @@ var (
 		Help: "Total verifier calls where a git diff was injected into the prompt",
 	})
 
+	// BL369 — prompt injection guard metrics.
+	InjectionGuardHitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_injection_guard_hits_total",
+		Help: "Total user-submitted texts flagged by the prompt injection guard (BL369)",
+	})
+
 	// BL367 — autonomous quality gate metrics.
 	QualityGateRunsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "datawatch_quality_gate_runs_total",
@@ -105,6 +111,7 @@ func Register() {
 		MessagesTotal, AlertsTotal,
 		RTKTokensSaved, RTKSavingsPct,
 		VerifierDiffInjectionsTotal,
+		InjectionGuardHitsTotal,
 		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
 	)
 }

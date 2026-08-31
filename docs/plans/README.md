@@ -47,7 +47,8 @@ Latest release: **v8.14.1** (2026-08-30). fix(security): Go 1.26.6 + cilium/ebpf
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107); BL369 — prompt injection hardening in autonomous executor |
+| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
+| Active (in-progress) | 1 | BL369 — prompt injection hardening (Layer 1+2 done; Layer 3 federation trust boundary pending) |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 2 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta) |
@@ -179,7 +180,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL369 — Prompt injection hardening in autonomous executor
+#### BL369 — Prompt injection hardening in autonomous executor ⚙️ In Progress (Layer 1+2 ✅; Layer 3 pending)
 
 **Operator-filed 2026-08-30. Nightwire review (v2.5.19).**
 
