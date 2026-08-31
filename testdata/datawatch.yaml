@@ -78,7 +78,7 @@ vision:
   enabled: false
   backend: ollama
   endpoint: http://johnnyjohnny:11434
-  model: llava
+  model: llmvision/glimpse-v1:latest
   max_image_bytes: 0
 
 # Lightweight webhook backend: provides a comm responder so pipeline,

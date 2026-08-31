@@ -8,7 +8,7 @@ story_preflight "surface:live feature:vision group:vision conflict:ollama-llava"
 _story_ts_667() {
   # Enable vision on the sandbox daemon pointing at the test ollama
   local cfg_resp cfg_code
-  cfg_resp=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.model":"llava"}')
+  cfg_resp=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.model":"llmvision/glimpse-v1:latest"}')
   cfg_code=$(echo "$cfg_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   if [[ ! "$cfg_code" =~ ^2 ]]; then
     skip "could not enable vision on sandbox daemon (HTTP $cfg_code)"
@@ -30,7 +30,11 @@ _story_ts_667() {
   save_evidence TS-667 "response.json" "$body"
 
   if [[ "$code" == "503" ]]; then
-    skip "vision endpoint returned 503 — ollama/llava not reachable from sandbox daemon"
+    skip "vision endpoint returned 503 — vision not enabled or no visioner"
+    return
+  fi
+  if [[ "$code" == "502" ]]; then
+    skip "vision endpoint returned 502 — ollama vision model unavailable or crashed ($(echo "$body" | head -c 100))"
     return
   fi
   if [[ ! "$code" =~ ^2 ]]; then

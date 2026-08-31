@@ -8,7 +8,7 @@ story_preflight "surface:live feature:vision group:vision conflict:ollama-llava"
 _story_ts_670() {
   # Enable vision on sandbox daemon
   local cfg_code
-  cfg_code=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.model":"llava"}' | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+  cfg_code=$(api_code PUT /api/config '{"vision.enabled":true,"vision.backend":"ollama","vision.model":"llmvision/glimpse-v1:latest"}' | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   if [[ ! "$cfg_code" =~ ^2 ]]; then
     skip "could not enable vision on sandbox daemon (HTTP $cfg_code)"
     return
@@ -31,7 +31,7 @@ _story_ts_670() {
     "{\"proposal\":\"What is in the image?\",\"image_path\":\"$tmp_png\"}")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
-  save_evidence TS-670 "council_response.json" "$body"
+  save_evidence TS-670 "council_submit.json" "$body"
 
   if [[ "$code" == "503" ]]; then
     skip "council returned 503 — no LLM backend or vision not reachable"
@@ -41,15 +41,48 @@ _story_ts_670() {
     ko "council rejected image_path: $(echo "$body" | head -c 200)"
     return
   fi
+  if [[ "$code" == "500" ]] && echo "$body" | grep -qi "image description failed\|vision.*500\|vision.*unavailable"; then
+    skip "council returned 500 — vision backend unavailable ($(echo "$body" | head -c 120))"
+    return
+  fi
   if [[ ! "$code" =~ ^2 ]]; then
-    ko "POST /api/council/run with image_path returned HTTP $code"
+    ko "POST /api/council/run with image_path returned HTTP $code: $(echo "$body" | head -c 200)"
     return
   fi
 
-  if echo "$body" | grep -q "\[image:"; then
-    ok "council response contains [image: ...] — description was prepended to proposals"
+  # Council runs are async — poll the detail endpoint until complete (up to 60s)
+  local run_id detail_path events_path run_detail run_status
+  run_id=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+  if [[ -z "$run_id" ]]; then
+    ko "council submit returned no run id"
+    return
+  fi
+  detail_path="/api/council/runs/$run_id"
+  events_path="/api/council/runs/$run_id/events"
+
+  local deadline=$(( $(date +%s) + 60 ))
+  run_status="running"
+  while [[ "$run_status" == "running" && $(date +%s) -lt $deadline ]]; do
+    sleep 3
+    run_detail=$(api GET "$detail_path" 2>/dev/null || echo "{}")
+    run_status=$(echo "$run_detail" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
+  done
+  save_evidence TS-670 "council_detail.json" "$run_detail"
+
+  if [[ "$run_status" == "running" ]]; then
+    ko "council run $run_id did not complete within 60s"
+    return
+  fi
+
+  # Check both detail and events for [image: prefix (vision injection into proposal)
+  local events
+  events=$(api GET "$events_path" 2>/dev/null || echo "[]")
+  save_evidence TS-670 "council_events.json" "$events"
+
+  if echo "$run_detail$events" | grep -q "\[image:"; then
+    ok "council run $run_id contains [image: ...] — vision description injected into proposals"
   else
-    ko "council response did not contain [image: ...]; vision injection may not have fired"
+    ko "council run $run_id completed (status=$run_status) but [image: ...] not found in detail or events; vision injection may not have fired"
   fi
 }
 

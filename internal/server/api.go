@@ -41,6 +41,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/vision"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -4889,6 +4890,30 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigPatch(s.cfg, patch)
+	// BL368 — re-initialize visioner when vision config changes via PUT.
+	for k := range patch {
+		if strings.HasPrefix(k, "vision.") {
+			if s.cfg.Vision.Enabled {
+				v, verr := vision.New(vision.Config{
+					Backend:       s.cfg.Vision.Backend,
+					Endpoint:      s.cfg.Vision.Endpoint,
+					APIKey:        s.cfg.Vision.APIKey,
+					Model:         s.cfg.Vision.Model,
+					DefaultPrompt: s.cfg.Vision.DefaultPrompt,
+					MaxImageBytes: s.cfg.Vision.MaxImageBytes,
+				})
+				if verr != nil {
+					fmt.Fprintf(os.Stderr, "[vision] config update warning: %v\n", verr)
+					s.visioner = nil
+				} else {
+					s.visioner = v
+				}
+			} else {
+				s.visioner = nil
+			}
+			break
+		}
+	}
 	// B30: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
