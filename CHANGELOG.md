@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (BL368 — Vision Input System)
+
+- **`POST /api/vision/describe`** — new REST endpoint for on-demand image description. Multipart `image` field + optional `prompt`; returns `{description, latency_ms}`. Requires `vision.enabled: true`.
+- **`vision.*` config block** — `backend` (ollama/openai/openai_compat), `endpoint`, `api_key`, `model`, `default_prompt`, `max_image_bytes`. All keys settable via `PUT /api/config` / `config_set` MCP tool.
+- **Comms router image injection** — image/photo attachments from Signal, Telegram, etc. are read, described by the vision model, and prepended to the message text as `[image: <desc>]` before command parsing. Falls through to all comms commands.
+- **`remember: [image]` via comms** — image injection is command-aware: when message starts with `remember:`, description is injected into the command body so episodic memory stores `remember: [image: <desc>] <caption>`.
+- **`image_path` on `POST /api/council/run`** — optional field; image is described once and prepended to the proposal before all council personas receive it. Supports architecture diagram and mockup critique.
+- **MCP `vision_describe` tool** — `vision_describe(image_path, prompt)` lets agents describe images from within sessions.
+- **`image_paths: string[]` on `start_session` and `send_input` MCP** — descriptions prepended to task/text as `[image: ...]` before session spawn or input delivery.
+- **`accepts_images: bool` skill manifest field** — skills declare vision-context readiness in SKILL.md frontmatter (`accepts_images: true`). Parsed and surfaced in REST + MCP skill list.
+- **`internal/vision` package** — `Describer` interface + `HTTPVisioner` struct; ollama (`/api/generate` + images base64) and openai/openai_compat (`/v1/chat/completions` with image_url content part) backends.
+- **26 unit tests** covering vision service validation, ollama/openai happy/error paths, REST handler, skill manifest field, and command-aware router injection.
+
 ---
 
 ## v8.14.1 — fix(security): govulncheck — Go 1.26.6 + cilium/ebpf v0.22.0

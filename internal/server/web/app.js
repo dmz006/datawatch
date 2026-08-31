@@ -11479,6 +11479,15 @@ const LLM_CONFIG_FIELDS = [
     { key: 'rtk.update_check_interval', label: 'Update check interval (sec, 0=off)', type: 'number', placeholder: '86400' },
     { key: 'rtk.discover_interval', label: 'Discover interval (sec, 0=off)', type: 'number', placeholder: '0' },
   ]},
+  { id: 'vision', section: 'Vision (Image Descriptions)', docs: 'config-reference.yaml', fields: [
+    { key: 'vision.enabled', label: 'Enable vision backend (image attachment descriptions)', type: 'toggle' },
+    { key: 'vision.backend', label: 'Backend', type: 'select', options: ['ollama', 'openai', 'openai_compat'] },
+    { key: 'vision.endpoint', label: 'Endpoint URL', type: 'text', placeholder: 'http://localhost:11434' },
+    { key: 'vision.api_key', label: 'API key (required for openai; literal or ${secret:name})', type: 'text', placeholder: '${secret:openai-key}' },
+    { key: 'vision.model', label: 'Model (must be vision-capable)', type: 'text', placeholder: 'llava' },
+    { key: 'vision.default_prompt', label: 'Default prompt (overrides built-in)', type: 'text', placeholder: 'Describe this image concisely.' },
+    { key: 'vision.max_image_bytes', label: 'Max image size bytes (0 = 10 MB)', type: 'number', placeholder: '0' },
+  ]},
 ];
 
 function loadDaemonLog(offset) {

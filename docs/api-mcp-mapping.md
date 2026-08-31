@@ -234,11 +234,12 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/diagnose` | `diagnose` | Complete | Backend reachability + recent errors |
 | `GET /api/splash/info` | `splash_info` | Complete | Splash banner info |
 
-### Voice + Channel bridge
+### Voice + Vision + Channel bridge
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
 | `POST /api/voice/transcribe` | — | Not in MCP | File upload — MCP tools don't accept binary blobs. Use REST directly |
+| `POST /api/vision/describe` | `vision_describe` | Partial | REST accepts multipart file upload; MCP tool accepts a local file path. Both require `vision.enabled: true` |
 | `POST /api/channel/reply` | — | Not in MCP | Internal MCP-bridge callback (channel.js / datawatch-channel) |
 
 ### Plugin Framework

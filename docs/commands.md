@@ -272,7 +272,7 @@ Save a memory for the current project with vector embedding for semantic search.
 
 **Syntax:** `remember: <text to remember>`
 
-**Image attachment (BL368):** send `remember:` (with optional caption) alongside a photo/image. The vision service describes the image and the description is stored as the memory text: `remember: [image: <desc>] <caption>`. Requires `vision.enabled: true`.
+**Image attachment:** send `remember:` (with optional caption) alongside a photo/image. The vision service describes the image and the description is stored as the memory text: `remember: [image: <desc>] <caption>`. Requires `vision.enabled: true`.
 
 **Example:**
 ```
