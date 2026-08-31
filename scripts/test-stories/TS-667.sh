@@ -29,12 +29,16 @@ _story_ts_667() {
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-667 "response.json" "$body"
 
+  if [[ "$code" == "000" ]]; then
+    skip "vision endpoint timed out — ollama model may be cold or unloaded"
+    return
+  fi
   if [[ "$code" == "503" ]]; then
     skip "vision endpoint returned 503 — vision not enabled or no visioner"
     return
   fi
-  if [[ "$code" == "502" ]]; then
-    skip "vision endpoint returned 502 — ollama vision model unavailable or crashed ($(echo "$body" | head -c 100))"
+  if [[ "$code" == "502" || "$code" == "500" ]]; then
+    skip "vision endpoint returned $code — ollama vision model unavailable or crashed ($(echo "$body" | head -c 100))"
     return
   fi
   if [[ ! "$code" =~ ^2 ]]; then

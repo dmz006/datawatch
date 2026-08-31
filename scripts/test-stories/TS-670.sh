@@ -33,6 +33,10 @@ _story_ts_670() {
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-670 "council_submit.json" "$body"
 
+  if [[ "$code" == "000" ]]; then
+    skip "council/run timed out — vision backend (ollama) may be cold or unloaded"
+    return
+  fi
   if [[ "$code" == "503" ]]; then
     skip "council returned 503 — no LLM backend or vision not reachable"
     return

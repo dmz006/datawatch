@@ -792,17 +792,18 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	s.auditSelfConfig(key, value)
 
-	// Route through the HTTP API for proper validation and persistence
+	// Route through the HTTP API for proper validation and persistence.
+	// /api/config accepts PUT (not POST).
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	// Try as raw value first, then as string
-	cfgReq1, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+	cfgReq1, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
 		fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
 	cfgReq1.Header.Set("Content-Type", "application/json")
 	resp, err := s.webDo(cfgReq1)
 	if err != nil {
 		// Try with quoted value
 		body = fmt.Sprintf(`{"%s": "%s"}`, key, value)
-		cfgReq2, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		cfgReq2, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
 			fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
 		cfgReq2.Header.Set("Content-Type", "application/json")
 		resp, err = s.webDo(cfgReq2)
