@@ -71,6 +71,16 @@ whisper:
   language: en
   venv_path: /home/dmz/.datawatch/.venv
 
+# Vision backend — disabled by default; runner enables via PUT /api/config for TS-658+.
+# Points to the test ollama instance (port 21434 in docker-compose.test.yml;
+# port 11434 on the host network when running natively against johnnyjohnny).
+vision:
+  enabled: false
+  backend: ollama
+  endpoint: http://johnnyjohnny:11434
+  model: llava
+  max_image_bytes: 0
+
 # Lightweight webhook backend: provides a comm responder so pipeline,
 # channel-responder tests, and routing-rules tests run without Signal/Slack.
 webhook:

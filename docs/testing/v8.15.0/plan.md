@@ -2,7 +2,7 @@
 
 **Version**: v8.15.0 (pending release)  
 **Sprint**: Vision Input System — multi-backend image description  
-**Stories**: TS-648–TS-660 (13 stories, 9 automated + 4 pending live)  
+**Stories**: TS-658–TS-670 (13 stories, 9 automated + 4 pending live)  
 **Go unit tests**: 25 new (10 vision service, 6 server vision handler, 5 router injection, 4 manifest)
 
 ---
@@ -55,7 +55,7 @@ All access paths for vision config fields (enabled, backend, endpoint, api\_key,
 
 These require a running datawatch daemon with a vision backend configured.
 
-### TS-657 — ollama describe via API
+### TS-667 — ollama describe via API
 
 ```bash
 # Prerequisites: ollama running, llava pulled
@@ -72,7 +72,7 @@ curl -sF "image=@/path/to/test.png" http://localhost:8282/api/vision/describe
 # Expected: {"description":"..."} with non-empty text
 ```
 
-### TS-658 — comms image injection
+### TS-668 — comms image injection
 
 ```bash
 # Send a message with an image attachment via any comms channel that
@@ -81,7 +81,7 @@ curl -sF "image=@/path/to/test.png" http://localhost:8282/api/vision/describe
 # before or within the message text.
 ```
 
-### TS-659 — skill accepts_images injection
+### TS-669 — skill accepts_images injection
 
 ```bash
 # Create a skill with accepts_images: true in SKILL.md frontmatter.
@@ -89,7 +89,7 @@ curl -sF "image=@/path/to/test.png" http://localhost:8282/api/vision/describe
 # Verify the task text delivered to the skill contains [image: <description>].
 ```
 
-### TS-660 — council image_path
+### TS-670 — council image_path
 
 ```bash
 # POST with a local image file path

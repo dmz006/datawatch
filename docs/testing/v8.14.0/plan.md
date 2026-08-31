@@ -2,7 +2,7 @@
 
 **Version**: v8.14.0  
 **Sprint**: BL363 — Goose full integration (T1–T4 + testing gap closure)  
-**Stories**: TS-637–TS-647 (11 stories, 7 automated + 4 pending live)  
+**Stories**: TS-647–TS-657 (11 stories, 7 automated + 3 pending live; TS-637–TS-646 are PWA stories added in v8.8.0)  
 **Go unit tests**: 22 (goose package, up from 11 in v8.13.36)
 
 ---
