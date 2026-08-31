@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## v8.15.0 — feat(vision): BL368 — Vision Input System
+
 ### Added (BL368 — Vision Input System)
 
 - **`POST /api/vision/describe`** — new REST endpoint for on-demand image description. Multipart `image` field + optional `prompt`; returns `{description, latency_ms}`. Requires `vision.enabled: true`.
