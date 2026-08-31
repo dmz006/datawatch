@@ -174,7 +174,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.16.0"
+var Version = "8.17.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4778,6 +4778,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"security_scan":             s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":    s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
+			"default_quality_gates": map[string]interface{}{
+				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
+				"test_command":        s.cfg.Autonomous.DefaultQualityGates.TestCommand,
+				"timeout":             s.cfg.Autonomous.DefaultQualityGates.Timeout,
+				"block_on_regression": s.cfg.Autonomous.DefaultQualityGates.BlockOnRegression,
+			},
 		},
 		"plugins": map[string]interface{}{
 			"enabled":    s.cfg.Plugins.Enabled,

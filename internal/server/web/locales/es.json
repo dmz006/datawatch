@@ -1266,5 +1266,9 @@
   "opencode_provider_google": "Google",
   "opencode_provider_key_set": "Configurado",
   "opencode_provider_key_not_set": "No configurado",
-  "opencode_provider_save": "Guardar clave"
+  "opencode_provider_save": "Guardar clave",
+  "settings_quality_gates_enabled": "Quality gates enabled (default for all PRDs)",
+  "settings_quality_gates_test_command": "Quality gate test command",
+  "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",
+  "settings_quality_gates_block_on_regression": "Block task on test regression"
 }

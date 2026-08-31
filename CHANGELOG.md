@@ -5,8 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## v8.17.0 — feat(autonomous): PRD Quality Gates
+
 ### Added
 - **Autonomous PRD quality gates** — per-PRD test regression gating. The executor captures a test baseline before the first task runs and re-runs the configured test command after each task. Regressions are recorded on `Task.quality_gate_result`; when `block_on_regression: true`, the task is failed and enters the auto-fix retry cycle. Gate config can be set globally via `autonomous.default_quality_gates.*` (YAML / Web UI / REST / MCP / comm / CLI) or per-PRD via `quality_gates` field on `POST /api/autonomous/prds`.
+- **`PRD.quality_gates`** — optional per-PRD override for gate config; takes precedence over the daemon-wide `autonomous.default_quality_gates.*` default.
+- **`Task.quality_gate_result`** — populated after each completed task; carries pass/fail counts and the `regression` flag for observability without blocking.
 
 ---
 
