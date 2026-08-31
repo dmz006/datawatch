@@ -4798,6 +4798,16 @@ Return STRICT JSON:
 				s.MemoryKeyFP = ms.KeyFingerprint
 			})
 		}
+		// BL367 — autonomous quality gate stats in WS broadcast.
+		if autonomousMgrRef != nil {
+			amgrRef := autonomousMgrRef
+			statsCollector.SetAutonomousStatsFunc(func(s *statspkg.SystemStats) {
+				st := amgrRef.Status()
+				s.QualityGateRuns = st.QualityGateRuns
+				s.QualityGatePass = st.QualityGatePass
+				s.QualityGateFail = st.QualityGateFail
+			})
+		}
 		// Update Prometheus metrics on each stats collection
 		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
 			metricsPkg.CPUUsage.Set(s.CPULoadAvg1)

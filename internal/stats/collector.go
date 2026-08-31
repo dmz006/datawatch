@@ -108,6 +108,11 @@ type SystemStats struct {
 
 	// MCP extended stats (BL302 S1)
 	MCPStats *MCPStatsBlock `json:"mcp_stats,omitempty"`
+
+	// BL367 — autonomous quality gate aggregate stats.
+	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`
+	QualityGatePass        int `json:"quality_gate_pass,omitempty"`
+	QualityGateFail        int `json:"quality_gate_fail,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -195,6 +200,9 @@ type Collector struct {
 	// memoryStatsFn populates episodic memory metrics
 	memoryStatsFn func(*SystemStats)
 
+	// autonomousStatsFn populates autonomous quality gate metrics
+	autonomousStatsFn func(*SystemStats)
+
 	// ollamaHost is the Ollama API URL for stats polling
 	ollamaHost string
 
@@ -271,6 +279,11 @@ func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
 // SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
 func (c *Collector) SetMemoryStatsFunc(fn func(*SystemStats)) {
 	c.memoryStatsFn = fn
+}
+
+// SetAutonomousStatsFunc sets a callback that populates autonomous quality gate stats on each snapshot.
+func (c *Collector) SetAutonomousStatsFunc(fn func(*SystemStats)) {
+	c.autonomousStatsFn = fn
 }
 
 // SetOllamaHost sets the Ollama API URL for stats polling.
@@ -399,6 +412,11 @@ func (c *Collector) collect() {
 	// Episodic memory stats
 	if c.memoryStatsFn != nil {
 		c.memoryStatsFn(&s)
+	}
+
+	// BL367 — autonomous quality gate stats
+	if c.autonomousStatsFn != nil {
+		c.autonomousStatsFn(&s)
 	}
 
 	// Ollama server stats (BL71) — poll every collection cycle

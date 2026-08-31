@@ -1282,5 +1282,6 @@
   "settings_quality_gates_enabled": "Quality gates enabled (default for all PRDs)",
   "settings_quality_gates_test_command": "Quality gate test command",
   "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",
-  "settings_quality_gates_block_on_regression": "Block task on test regression"
+  "settings_quality_gates_block_on_regression": "Block task on test regression",
+  "stats_quality_gates": "Quality Gates"
 }

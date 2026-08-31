@@ -18142,6 +18142,19 @@ function renderStatsData(el, data) {
       html += `<div class="stat-card"><div class="stat-label">${t('stats_ollama_server')||'Ollama Server'}</div>
         <div style="font-size:10px;color:var(--error);">${escHtml(data.ollama_stats.error || 'offline')}</div></div>`;
     }
+    // BL367 — quality gate stats card (visible when at least one gate has run).
+    if (data.quality_gate_runs > 0) {
+      const qgPass = data.quality_gate_pass || 0;
+      const qgFail = data.quality_gate_fail || 0;
+      const qgTotal = data.quality_gate_runs || 0;
+      const passColor = qgFail > 0 ? 'var(--error)' : 'var(--success)';
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_quality_gates')||'Quality Gates'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Runs</span><span>${qgTotal}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Pass</span><span style="color:var(--success);">${qgPass}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Regressions</span><span style="color:${passColor};">${qgFail}</span></div>
+        </div></div>`;
+    }
     html += '</div>';
 
     // ── Session Statistics Card ──
