@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.16.0](CHANGELOG.md) (2026-08-31)** — BL366 Verifier Git-Diff Grounding: git diff injected into verifier prompt so the verifier sees actual code changes; `autonomous.verifier_diff_max_bytes` config cap (default 8192).
+**[v8.16.0](CHANGELOG.md) (2026-08-31)** — Autonomous verifier git-diff grounding: the verifier now receives the actual `git diff` of changes alongside the task spec, grounding verification in code. Configurable via `autonomous.verifier_diff_max_bytes` (0 = 8 KB cap).
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.

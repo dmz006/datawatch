@@ -7,15 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## v8.16.0 — feat(autonomous): BL366 — Verifier Git-Diff Grounding
+## v8.16.0 — feat(autonomous): Verifier Git-Diff Grounding
 
-### Added (BL366 — Verifier Git-Diff Grounding)
+### Added
 
 - **`Task.PreTaskSHA`** — git HEAD SHA captured immediately before the worker session starts, threaded through `SpawnResult.PreTaskSHA` → `Task.PreTaskSHA` so the verifier sees actual code changes.
-- **`autonomous.verifier_diff_max_bytes`** — new config field (default 0 = 8192) capping the diff injected into the verifier prompt. Raise for large PRDs; lower to reduce token cost.
-- **Git-diff injection in `autonomousVerify`** — `git diff <pre_task_sha>..HEAD` is captured and injected as a `<diff>` block before the verification prompt. Falls back to spec-only verification when no diff is available (cluster dispatch, non-git project).
+- **`autonomous.verifier_diff_max_bytes`** — new config field (default 0 = 8192) capping the diff injected into the verifier prompt. Raise for large changesets; lower to reduce token cost.
+- **Git-diff injection in verifier** — `git diff <pre_task_sha>..HEAD` is captured and injected as a `<diff>` block before the verification prompt. Falls back to spec-only verification when no diff is available (cluster dispatch, non-git project).
 
-### Configuration (BL366)
+### Configuration
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -23,9 +23,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## v8.15.0 — feat(vision): BL368 — Vision Input System
+## v8.15.0 — feat(vision): Vision Input System
 
-### Added (BL368 — Vision Input System)
+### Added
 
 - **`POST /api/vision/describe`** — new REST endpoint for on-demand image description. Multipart `image` field + optional `prompt`; returns `{description, latency_ms}`. Requires `vision.enabled: true`.
 - **`vision.*` config block** — `backend` (ollama/openai/openai_compat), `endpoint`, `api_key`, `model`, `default_prompt`, `max_image_bytes`. All keys settable via `PUT /api/config` / `config_set` MCP tool.
