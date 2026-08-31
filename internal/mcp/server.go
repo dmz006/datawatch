@@ -2086,19 +2086,19 @@ func (s *Server) buildImagePrefix(ctx context.Context, paths []string) string {
 	for i, p := range paths {
 		imageData, err := os.ReadFile(p)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("[image %d: error reading file: %v]\n", i+1, err))
+			fmt.Fprintf(&sb, "[image %d: error reading file: %v]\n", i+1, err)
 			continue
 		}
 		contentType := visionExtMIME(strings.ToLower(filepath.Ext(p)))
 		desc, err := s.visioner.Describe(ctx, imageData, contentType, "")
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("[image %d: description failed: %v]\n", i+1, err))
+			fmt.Fprintf(&sb, "[image %d: description failed: %v]\n", i+1, err)
 			continue
 		}
 		if len(paths) == 1 {
 			sb.WriteString("[image: " + desc + "]\n")
 		} else {
-			sb.WriteString(fmt.Sprintf("[image %d: %s]\n", i+1, desc))
+			fmt.Fprintf(&sb, "[image %d: %s]\n", i+1, desc)
 		}
 	}
 	return sb.String()
