@@ -696,6 +696,19 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T42 | TS-645 | goose session launched with provider/model set injects GOOSE_PROVIDER, GOOSE_MODEL env vars | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary |
 | T42 | TS-646 | goose-prompt session with provider+api_key_ref completes DATAWATCH_COMPLETE detection | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary + valid API key |
 | T42 | TS-647 | goose session with channel_enabled=true has GOOSE_MCP__DATAWATCH__* in env | surface:live feature:goose group:goose-bl363 conflict:goose-installed | 📋 pending-live | — | requires goose binary |
+| T43 | TS-648 | GET /api/config vision section includes enabled, backend, endpoint, api_key, model, default_prompt, max_image_bytes | surface:api feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-649 | PUT /api/config {vision.enabled:true, vision.backend:"ollama", vision.model:"llava"} round-trips via GET | surface:api feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-650 | config_set MCP tool vision.model=moondream updates config | surface:mcp feature:vision group:vision conflict:selfconfig | ✅ ready | — | — |
+| T43 | TS-651 | datawatch config set vision.backend openai exits 0; GET confirms value | surface:cli feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-652 | Settings UI LLM tab shows Vision section with 7 fields (enabled/backend/endpoint/api_key/model/default_prompt/max_image_bytes) | surface:pwa feature:vision group:vision | ✅ ready | — | — |
+| T43 | TS-653 | vision service unit tests: 10 tests pass (New validation, Describe size limit/unknown backend, ollama happy/non-200/empty, openai happy/empty-choices/non-200) | surface:unit feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-654 | POST /api/vision/describe unit tests: 6 tests pass (503 no visioner, 405 wrong method, 200+JSON, 400 missing field, 502 error, mime coverage) | surface:unit feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-655 | skills manifest unit tests: 4 tests pass (accepts_images true/false/default, no Extra leak) | surface:unit feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-656 | router vision injection unit tests: 5 tests pass (remember: injection, plain text, non-command regression) | surface:unit feature:vision group:vision parallel:ok | ✅ ready | — | — |
+| T43 | TS-657 | POST /api/vision/describe with real ollama+llava returns non-empty description for a PNG | surface:live feature:vision group:vision conflict:ollama-llava | 📋 pending-live | — | requires ollama with llava model |
+| T43 | TS-658 | send image attachment via comms channel; session output contains [image: <description>] prefix | surface:live feature:vision group:vision conflict:ollama-llava | 📋 pending-live | — | requires running daemon + vision enabled + comms channel with image support |
+| T43 | TS-659 | skill with accepts_images:true receives image context injected into task text | surface:live feature:vision group:vision conflict:ollama-llava | 📋 pending-live | — | requires running daemon + vision enabled + skill with accepts_images:true |
+| T43 | TS-660 | POST /api/council/run with image_path prepends description to all persona proposals | surface:live feature:vision group:vision conflict:ollama-llava | 📋 pending-live | — | requires running daemon + vision enabled + valid local image path |
 
 ---
 
