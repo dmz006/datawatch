@@ -833,6 +833,32 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONOK(w, updated)
 
+	// BL367 — per-PRD quality gate config.
+	case "set_quality_gates":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Enabled           bool   `json:"enabled"`
+			TestCommand       string `json:"test_command"`
+			Timeout           int    `json:"timeout"`
+			BlockOnRegression bool   `json:"block_on_regression"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
 	// BL303 S2 T06 — per-Automaton guardrail override.
 	case "guardrails":
 		if r.Method != http.MethodPut {

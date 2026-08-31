@@ -102,3 +102,30 @@ func (s *Server) handleAutonomousPRDSetSkills(_ context.Context, req mcpsdk.Call
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- autonomous_prd_set_quality_gates (BL367) ------------------------------
+
+func (s *Server) toolAutonomousPRDSetQualityGates() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_quality_gates",
+		mcpsdk.WithDescription("BL367 — set per-PRD quality gate config. Overrides the daemon-wide default for this PRD."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Enable quality gate for this PRD")),
+		mcpsdk.WithString("test_command", mcpsdk.Description("Shell command to run as the quality gate (e.g. 'go test ./...')")),
+		mcpsdk.WithNumber("timeout", mcpsdk.Description("Timeout in seconds (0 = no limit)")),
+		mcpsdk.WithBoolean("block_on_regression", mcpsdk.Description("Block and enter auto-fix cycle when regression is detected")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetQualityGates(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]any{
+		"enabled":             req.GetBool("enabled", false),
+		"test_command":        req.GetString("test_command", ""),
+		"timeout":             int(req.GetFloat("timeout", 0)),
+		"block_on_regression": req.GetBool("block_on_regression", false),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_quality_gates", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

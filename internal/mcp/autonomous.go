@@ -54,6 +54,10 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
+		mcpsdk.WithBoolean("quality_gates_enabled", mcpsdk.Description("BL367 — enable quality gates by default for all PRDs")),
+		mcpsdk.WithString("quality_gates_test_command", mcpsdk.Description("BL367 — default test command for quality gates (e.g. 'go test ./...')")),
+		mcpsdk.WithNumber("quality_gates_timeout", mcpsdk.Description("BL367 — default gate timeout in seconds (0 = no limit)")),
+		mcpsdk.WithBoolean("quality_gates_block_on_regression", mcpsdk.Description("BL367 — block task on regression by default")),
 	)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -84,6 +88,23 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if v := req.GetString(k, ""); v != "" {
 			body[k] = v
 		}
+	}
+	// BL367 — default quality gates nested under default_quality_gates.
+	qg := map[string]any{}
+	if v := req.GetBool("quality_gates_enabled", false); v {
+		qg["enabled"] = v
+	}
+	if v := req.GetString("quality_gates_test_command", ""); v != "" {
+		qg["test_command"] = v
+	}
+	if v := req.GetFloat("quality_gates_timeout", -1); v >= 0 {
+		qg["timeout"] = int(v)
+	}
+	if v := req.GetBool("quality_gates_block_on_regression", false); v {
+		qg["block_on_regression"] = v
+	}
+	if len(qg) > 0 {
+		body["default_quality_gates"] = qg
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
 	if err != nil {

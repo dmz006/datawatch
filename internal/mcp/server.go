@@ -444,6 +444,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetType(), tracked(s.handleAutonomousPRDSetType))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	mcpSrv.AddTool(s.toolGuardrailLibraryList(), tracked(s.handleGuardrailLibraryList))
 	mcpSrv.AddTool(s.toolGuardrailProfileList(), tracked(s.handleGuardrailProfileList))
