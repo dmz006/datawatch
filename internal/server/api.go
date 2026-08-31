@@ -4809,11 +4809,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"venv_path": s.cfg.Whisper.VenvPath,
 		},
 		"vision": map[string]interface{}{
-			"enabled":        s.cfg.Vision.Enabled,
-			"backend":        s.cfg.Vision.Backend,
-			"endpoint":       s.cfg.Vision.Endpoint,
-			"model":          s.cfg.Vision.Model,
-			"default_prompt": s.cfg.Vision.DefaultPrompt,
+			"enabled":          s.cfg.Vision.Enabled,
+			"backend":          s.cfg.Vision.Backend,
+			"endpoint":         s.cfg.Vision.Endpoint,
+			"api_key":          mask(s.cfg.Vision.APIKey),
+			"model":            s.cfg.Vision.Model,
+			"default_prompt":   s.cfg.Vision.DefaultPrompt,
+			"max_image_bytes":  s.cfg.Vision.MaxImageBytes,
 		},
 		"memory": map[string]interface{}{
 			"enabled":          s.cfg.Memory.Enabled,

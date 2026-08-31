@@ -59,7 +59,7 @@ accepts_images: false
 }
 
 // TS-BL368-M4: known fields don't end up in Extra
-func TestManifest_KnownFields_NotInExtra(t *testing.T) {
+func TestManifest_AcceptsImages_KnownFieldsNotInExtra(t *testing.T) {
 	yaml := `---
 name: full-skill
 description: test

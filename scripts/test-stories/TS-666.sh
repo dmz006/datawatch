@@ -7,7 +7,7 @@ story_preflight "surface:unit feature:vision group:vision parallel:ok" || return
 
 _story_ts_666() {
   local out rc
-  out=$(cd "$REPO_ROOT" && go test ./internal/router/... -run Vision -v -count=1 2>&1); rc=$?
+  out=$(cd "$REPO_ROOT" && go test ./internal/router/... -run BL368 -v -count=1 2>&1); rc=$?
   save_evidence TS-666 "test_output.txt" "$out"
 
   if [[ $rc -ne 0 ]]; then

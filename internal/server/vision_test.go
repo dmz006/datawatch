@@ -129,7 +129,7 @@ func TestVisionDescribe_VisionerError(t *testing.T) {
 }
 
 // TS-BL368-SV6: extToMIME coverage
-func TestExtToMIME(t *testing.T) {
+func TestVisionExtToMIME(t *testing.T) {
 	cases := []struct{ ext, want string }{
 		{".jpg", "image/jpeg"},
 		{".jpeg", "image/jpeg"},
