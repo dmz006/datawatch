@@ -89,6 +89,7 @@ cost_hint: medium                      # (d) resource hints
 disk_mb: 12
 verify: ./verify.sh                    # (e) verification command (post-sync)
 provides_mcp_tools: [scan_for_test_gaps]  # (f) MCP-tool declarations
+accepts_images: false                  # (g) BL368 — true if skill accepts [image: <desc>] context
 ---
 
 # Review Go Changes
@@ -96,7 +97,7 @@ provides_mcp_tools: [scan_for_test_gaps]  # (f) MCP-tool declarations
 A walk-through of how to inspect a Go diff for the patterns we care about…
 ```
 
-The parser is **tolerant of unknown fields** (per the [Skills-Awareness Rule](../AGENT.md#skills-awareness-rule-bl255-v670)): future extensions land in the `Extra` map and round-trip through sync without loss. PWA / CLI surfaces render unknown fields as raw key/value rather than hiding them.
+The parser is **tolerant of unknown fields** (per the [Skills-Awareness Rule](../AGENT.md#skills-awareness-rule-bl255-v670)): future extensions land in the `Extra` map and round-trip through sync without loss. PWA / CLI surfaces render unknown fields as raw key/value rather than hiding them. Known extension fields to date: `(a)` `compatible_with`, `(b)` `requires`, `(c)` `applies_to`, `(d)` `cost_hint`/`disk_mb`, `(e)` `verify`, `(f)` `provides_mcp_tools`, `(g)` `accepts_images` (BL368 — vision context flag).
 
 ## Resolution at session spawn (options C + D)
 

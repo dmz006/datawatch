@@ -272,10 +272,18 @@ Save a memory for the current project with vector embedding for semantic search.
 
 **Syntax:** `remember: <text to remember>`
 
+**Image attachment (BL368):** send `remember:` (with optional caption) alongside a photo/image. The vision service describes the image and the description is stored as the memory text: `remember: [image: <desc>] <caption>`. Requires `vision.enabled: true`.
+
 **Example:**
 ```
 remember: the CI pipeline requires Go 1.24 and golangci-lint must pass
 [myserver] Saved memory #4
+```
+
+**Example (image attachment):**
+```
+remember: architecture diagram [+ image attached]
+[myserver] Saved memory #5   ← stored as "remember: [image: three-tier diagram with Redis cache] architecture diagram"
 ```
 
 ---

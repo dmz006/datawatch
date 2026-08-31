@@ -15,12 +15,12 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Long-lived AI sessions** that survive daemon restarts and re-attach cleanly. xterm.js streaming in the PWA, full tmux underneath, full event history captured.
 - **Ephemeral container workers** in Docker or Kubernetes, spawned on demand with PQC bootstrap, distroless images, per-pod auth, and Tailscale mesh.
 - **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work. The **scope hierarchy** (persona-global → persona-in-project → project-shared → session-local) lets you borrow cross-agent context without polluting higher scopes, seed curated knowledge into a narrower scope, and promote session discoveries up to shared scopes with breadcrumb provenance.
-- **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper.
+- **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper; image/photo attachments described by a configurable vision backend (BL368).
 - **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell.
 - **Operator identity** — a structured self-description you write once and the daemon injects into every spawned session as the L0 wake-up layer.
 - **Algorithm Mode** — a 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) you can drive a session through with output captured at each gate.
 - **Evals Framework** — rubric-based grading suites (string / regex / binary / LLM-rubric) with capability vs regression thresholds.
-- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Async-first with SSE live-watch; AI persona wizard drafts `system_prompt` via LLM interview.
+- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Async-first with SSE live-watch; AI persona wizard drafts `system_prompt` via LLM interview. Accepts `image_path` on `POST /api/council/run` — image is described once and injected into every persona's proposal (BL368).
 - **Skill registries** — git-backed PAI-format skill manifests synced into your workspaces on demand.
 - **Secrets manager** — native AES-256-GCM store at `~/.datawatch/secrets.db` plus optional KeePass and 1Password backends; `${secret:name}` references resolve in YAML, plugin manifests, spawn-time env injection.
 - **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
@@ -815,6 +815,39 @@ Federation-level channel-address routing. Rules map an inbound channel address (
 
 See [`howto/channel-routing.md`](howto/channel-routing.md).
 
+#### Vision System (BL368)
+
+Configurable image-description backend that extends the comms router, MCP tools, skills, and Council Mode to understand image/photo attachments.
+
+**Config (`datawatch.yaml`):**
+
+```yaml
+vision:
+  enabled: false
+  backend: ollama          # "ollama" | "openai" | "openai_compat"
+  endpoint: http://localhost:11434
+  api_key: ""              # required for upstream OpenAI
+  model: llava             # must be vision-capable
+  default_prompt: ""       # defaults to "Describe this image concisely."
+  max_image_bytes: 0       # 0 = 10 MB limit
+```
+
+**How it integrates:**
+
+| Surface | Behaviour |
+|---|---|
+| **Comms router** | Image/photo attachments from Signal/Telegram/etc. are read, described, and prepended to the message text as `[image: <desc>]` before command parsing. Works with all comms commands. |
+| **`remember: [image]`** | Sending `remember:` alongside an image attachment stores the description in episodic memory: `remember: [image: <desc>] <caption>`. |
+| **`POST /api/vision/describe`** | REST endpoint for on-demand image description. Multipart `image` field + optional `prompt`. |
+| **MCP `vision_describe`** | `vision_describe(image_path, prompt)` tool — agents call it from within a session. |
+| **`start_session` / `send_input` MCP** | Accept `image_paths: string[]`; descriptions are prepended to the task/text before delivery. |
+| **`POST /api/council/run`** | Accepts optional `image_path`; image is described once and injected into every persona's proposal. |
+| **Skill manifest `accepts_images`** | Skills declare `accepts_images: true` in SKILL.md frontmatter to signal they can receive image context. |
+
+**Supported models:** llava, llava-phi3, llava-llama3, bakllava, moondream, minicpm-v (ollama); gpt-4o, gpt-4-vision-preview (openai); any OpenAI-compat endpoint.
+
+**REST:** `GET /api/config` + `PUT /api/config` expose `vision.*` keys. `POST /api/vision/describe` (multipart). All routes are bearer-authenticated.
+
 ### Settings — Compute
 
 > **v7 rename:** The "LLM" tab was renamed to "Compute" in v7.0.0 and the "Agents" tab was eliminated. All content from both tabs now lives here. If you're on a saved `cs_settings_tab=llm` or `cs_settings_tab=agents` bookmark, the PWA auto-redirects to `compute`.
@@ -1034,7 +1067,7 @@ Automaton-related cards.
 - **Identity / Telos** — same content as Settings → General → Operator identity, surfaced here too because Telos drives autonomous prioritization.
 - **Algorithm Mode** — PAI's 7-phase per-session harness (Observe → Orient → Decide → Act → Measure → Learn → Improve). This card lists active sessions, current phase, captured output per gate. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure}`.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
-- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Each run is **async** by default: `POST /api/council/run` returns `{id, events_path}` immediately; subscribe to `GET /api/council/runs/{id}/events` for SSE streaming as each persona responds round-by-round. The PWA shows collapsible live-watch cards per run. Cancel with `POST /api/council/runs/{id}/cancel`. Milestone messages (run started / round complete / consensus reached) push to all configured comm channels; `council.comm_firehose: true` also sends per-persona response previews. Config: `council.llm_ref` (which LLM to use), `council.max_parallel` (concurrent personas per round, default 2). **AI persona wizard** (v6.22.3): the + Add Persona flow can draft a `system_prompt` via LLM — answer 5 interview questions; each answer has a Refine button; result is saved to `~/.datawatch/council/personas/<name>.yaml`. Re-interview any existing persona via the 🤖 button on its row. See [`howto/council-mode.md`](howto/council-mode.md).
+- **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Each run is **async** by default: `POST /api/council/run` returns `{id, events_path}` immediately; subscribe to `GET /api/council/runs/{id}/events` for SSE streaming as each persona responds round-by-round. The PWA shows collapsible live-watch cards per run. Cancel with `POST /api/council/runs/{id}/cancel`. Milestone messages (run started / round complete / consensus reached) push to all configured comm channels; `council.comm_firehose: true` also sends per-persona response previews. Config: `council.llm_ref` (which LLM to use), `council.max_parallel` (concurrent personas per round, default 2). **Image critique (BL368):** `POST /api/council/run` accepts optional `image_path` — the file is described by the vision service and the description is prepended to the proposal before all personas receive it (requires `vision.enabled: true`). Use case: submit an architecture diagram or UI mockup for multi-persona review. **AI persona wizard** (v6.22.3): the + Add Persona flow can draft a `system_prompt` via LLM — answer 5 interview questions; each answer has a Refine button; result is saved to `~/.datawatch/council/personas/<name>.yaml`. Re-interview any existing persona via the 🤖 button on its row. See [`howto/council-mode.md`](howto/council-mode.md).
 - **Skill Registries** — git-backed PAI-format skill manifests. Connect a registry → browse → sync. Synced skills get copied into a session's `<projectDir>/.datawatch/skills/<name>/` at spawn time when listed in the session's Skills field.
 
 **See also:**
@@ -1302,6 +1335,8 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Dedicated send_input endpoint | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.12.9 | POST /api/sessions/send bypasses text-command parsing; scheduleSettleMs applies to all sources |
 | LLM-optional memory recall | [`docs/memory.md`](memory.md) | v8.13.3 | `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` fall back to LIKE keyword search when Ollama offline; `LazyReembed()` back-fills vectors when LLM returns; summarizer returns stub instead of error |
 | FCM push payload enrichment | [`howto/push-notifications.md`](howto/push-notifications.md) | v8.13.1 | session_id/session_name/last_response in session_state_changed and waiting_input push events |
+| Goose backend (BL363) | [`docs/llm-backends.md`](llm-backends.md) | v8.13.36–v8.14.0 | provider/model/api_key env-var injection (T2), MCP channel bridge (T3), `agent-goose` container (T4), `channel_enabled` config flag |
+| Vision input system (BL368) | [`docs/config-reference.yaml`](config-reference.yaml) · [`docs/mcp.md`](mcp.md) | v8.15.0 (pending) | `vision.*` config, `POST /api/vision/describe`, comms image→description injection, `vision_describe` MCP tool, `image_paths` on start_session/send_input, council `image_path`, skills `accepts_images`, `remember [image]` |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
