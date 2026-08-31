@@ -54,6 +54,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
+		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
 		mcpsdk.WithBoolean("quality_gates_enabled", mcpsdk.Description("BL367 — enable quality gates by default for all PRDs")),
 		mcpsdk.WithString("quality_gates_test_command", mcpsdk.Description("BL367 — default test command for quality gates (e.g. 'go test ./...')")),
 		mcpsdk.WithNumber("quality_gates_timeout", mcpsdk.Description("BL367 — default gate timeout in seconds (0 = no limit)")),
@@ -71,6 +72,10 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if v := req.GetFloat(k, 0); v != 0 {
 			body[k] = int(v)
 		}
+	}
+	// BL366 — verifier diff max bytes.
+	if v := req.GetFloat("verifier_diff_max_bytes", -1); v >= 0 {
+		body["verifier_diff_max_bytes"] = int(v)
 	}
 	// BL304: accept new planning_* params; also check legacy decomposition_* for back-compat.
 	for _, pair := range [][2]string{

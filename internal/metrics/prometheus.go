@@ -76,6 +76,12 @@ var (
 		Help: "Average RTK savings percentage",
 	})
 
+	// BL366 — verifier git-diff grounding metrics.
+	VerifierDiffInjectionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_verifier_diff_injections_total",
+		Help: "Total verifier calls where a git diff was injected into the prompt",
+	})
+
 	// BL367 — autonomous quality gate metrics.
 	QualityGateRunsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "datawatch_quality_gate_runs_total",
@@ -98,6 +104,7 @@ func Register() {
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,
 		RTKTokensSaved, RTKSavingsPct,
+		VerifierDiffInjectionsTotal,
 		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
 	)
 }

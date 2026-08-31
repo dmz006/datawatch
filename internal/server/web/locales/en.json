@@ -1279,6 +1279,7 @@
   "opencode_provider_key_set": "Configured",
   "opencode_provider_key_not_set": "Not set",
   "opencode_provider_save": "Save key",
+  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
   "settings_quality_gates_enabled": "Quality gates enabled (default for all PRDs)",
   "settings_quality_gates_test_command": "Quality gate test command",
   "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",

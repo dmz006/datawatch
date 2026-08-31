@@ -3784,6 +3784,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					if truncated {
 						note = " (truncated to " + fmt.Sprintf("%d", maxBytes) + " bytes)"
 					}
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
 					diffSection = fmt.Sprintf(`
 
 Git diff (actual change%s):
