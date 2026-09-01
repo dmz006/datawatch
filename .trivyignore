@@ -529,3 +529,13 @@ CVE-2026-70464
 # not an attack surface exposed by the datawatch service.
 CVE-2026-56864
 CVE-2026-56865
+
+# agent-gemini npm deps: pacote CVE-2026-9496 + tar CVE-2026-73566 (HIGH, fixed upstream)
+# pacote is npm's own package-fetching library; tar is node-tar.
+# Both are transitive dependencies of @google/gemini-cli installed by npm.
+# The gemini agent container is not internet-facing; the CVE surfaces
+# (malicious package.json fetch and crafted tar archives) are only
+# reachable via deliberate npm install-time operations, not at gemini-cli
+# runtime. Suppress pending upstream gemini-cli dependency updates.
+CVE-2026-9496
+CVE-2026-73566
