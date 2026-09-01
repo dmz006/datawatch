@@ -4860,15 +4860,13 @@ Return STRICT JSON:
 		})
 
 		daemonRestartFn := func() {
-			fmt.Printf("[daemon] Restarting daemon (v%s)...\n", Version)
-			selfPath, err2 := os.Executable()
-			if err2 == nil {
-				selfPath, _ = filepath.EvalSymlinks(selfPath)
-				fmt.Printf("[daemon] Executing: %s %v\n", selfPath, os.Args)
-				if err3 := syscall.Exec(selfPath, os.Args, os.Environ()); err3 != nil { // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
-					fmt.Printf("[daemon] syscall.Exec failed: %v\n", err3)
-				}
-			}
+			// syscall.Exec was previously used here but caused the TLS listener
+			// socket (O_CLOEXEC) to be closed during runtime_BeforeExec even when
+			// execve fails, leaving the daemon alive but headless. Use exit-only
+			// restart: the caller (handleUpdate) already logged the success message;
+			// the user/supervisor restarts the process from the updated binary.
+			fmt.Printf("[daemon] Update complete. Exiting for restart (v%s → new binary at %s).\n", Version, os.Args[0])
+			fmt.Printf("[daemon] Run: datawatch start  — or your service manager will restart automatically.\n")
 			os.Exit(0)
 		}
 		httpServer.SetRestartFunc(daemonRestartFn)

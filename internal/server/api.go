@@ -7490,19 +7490,19 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "installed",
 		})
 		s.hub.Broadcast(MsgNotification, map[string]string{
-			"message": "[update] Installed v" + latest + ". Restarting daemon…",
+			"message": "[update] Installed v" + latest + ". Daemon exiting — run `datawatch start` or wait for your service manager to restart it.",
 		})
-		// Give clients 800ms to receive the message before the process dies.
+		// Give clients 800ms to receive the message before the process exits.
 		s.hub.Broadcast(MsgUpdateProgress, map[string]any{
 			"version": latest,
 			"phase":   "restarting",
 		})
 		time.Sleep(800 * time.Millisecond)
 		if s.restartFn != nil {
-			s.restartFn()
+			s.restartFn() // calls os.Exit(0); never returns
 		}
-		// restartFn calls syscall.Exec which replaces the process; reaching here means it failed.
-		fmt.Printf("[update] restart failed — operator may need to run `datawatch stop && datawatch start`\n")
+		// Fallback if restartFn is nil.
+		fmt.Printf("[update] installed v%s — run `datawatch start` to bring the daemon back up\n", latest)
 		os.Exit(0)
 	}()
 }
