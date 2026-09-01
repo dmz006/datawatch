@@ -63,7 +63,7 @@ Interface: `POST /api/autonomous/prds` with `quality_gates`, `PUT /api/config` w
 
 ## Autonomous Prompt Injection Hardening
 
-Added in v8.18.0 (BL369 Layer 1+2). Data-boundary tags on all 3 LLM call sites; `ScanForInjection` scanner wired at PRD/task create and spec edit boundaries.
+Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection` scanner wired at PRD/task create and spec edit boundaries; federation trust notice in verifier and guardrail prompts.
 
 | Test case | Tested | Live-validated | Coverage details | Notes |
 |---|---|---|---|---|

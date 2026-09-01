@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.14.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.14.0)
+[![Release](https://img.shields.io/badge/release-v8.18.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.18.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,11 +89,15 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.18.0](CHANGELOG.md) (2026-09-01)** — Autonomous prompt injection hardening (BL369): three-layer defence — (1) data-boundary `<user_data>` XML tags on all LLM call sites (decompose, verify, guardrail), (2) `ScanForInjection` scanner at the PRD/task create and spec-edit API boundary with warn-only or blocking mode, (3) federation trust notice injected into verifier and guardrail prompts when a PRD originates from a remote peer. Enable via `autonomous.injection_guard: true`; set `autonomous.block_on_injection: true` to reject requests. Prometheus counter: `datawatch_injection_guard_hits_total`.
+**[v8.18.0](CHANGELOG.md) (2026-09-01)** — Autonomous prompt injection hardening: three-layer defence — (1) data-boundary `<user_data>` XML tags on all LLM call sites (decompose, verify, guardrail), (2) `ScanForInjection` scanner at the PRD/task create and spec-edit API boundary with warn-only or blocking mode, (3) federation trust notice injected into verifier and guardrail prompts when a PRD originates from a remote peer. Enable via `autonomous.injection_guard: true`; set `autonomous.block_on_injection: true` to reject requests. Prometheus counter: `datawatch_injection_guard_hits_total`.
 
 **[v8.17.0](CHANGELOG.md) (2026-08-31)** — Autonomous PRD quality gates: the executor captures a test baseline before the first task, re-runs tests after each task, and blocks on regression when configured. Set globally via `autonomous.default_quality_gates.*` or per-PRD at creation time.
 
 **[v8.16.0](CHANGELOG.md) (2026-08-31)** — Autonomous verifier git-diff grounding: the verifier now receives the actual `git diff` of changes alongside the task spec, grounding verification in code. Configurable via `autonomous.verifier_diff_max_bytes` (0 = 8 KB cap).
+
+**[v8.15.0](CHANGELOG.md) (2026-08-31)** — Vision input system: on-demand image description via `POST /api/vision/describe` (ollama, openai, openai_compat backends). Comms router auto-describes image/photo attachments and injects `[image: <desc>]` into messages before command parsing. Skill manifest `accepts_images` field. `image_path` on council run; `image_paths` on `start_session` and `send_input` MCP. `MCP vision_describe` tool.
+
+**[v8.14.0](CHANGELOG.md) (2026-08-31)** — Goose backend: `goose` (interactive TUI) and `goose-prompt` (one-shot) LLM backends with provider/model/API-key injection, MCP channel bridge, and `agent-goose` container. Full 6-surface config parity.
 
 - **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
 - **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
