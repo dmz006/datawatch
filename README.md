@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.18.0](CHANGELOG.md) (2026-09-01)** — Autonomous prompt injection hardening (BL369): three-layer defence — (1) data-boundary `<user_data>` XML tags on all LLM call sites (decompose, verify, guardrail), (2) `ScanForInjection` scanner at the PRD/task create and spec-edit API boundary with warn-only or blocking mode, (3) federation trust notice injected into verifier and guardrail prompts when a PRD originates from a remote peer. Enable via `autonomous.injection_guard: true`; set `autonomous.block_on_injection: true` to reject requests. Prometheus counter: `datawatch_injection_guard_hits_total`.
+
 **[v8.17.0](CHANGELOG.md) (2026-08-31)** — Autonomous PRD quality gates: the executor captures a test baseline before the first task, re-runs tests after each task, and blocks on regression when configured. Set globally via `autonomous.default_quality_gates.*` or per-PRD at creation time.
 
 **[v8.16.0](CHANGELOG.md) (2026-08-31)** — Autonomous verifier git-diff grounding: the verifier now receives the actual `git diff` of changes alongside the task spec, grounding verification in code. Configurable via `autonomous.verifier_diff_max_bytes` (0 = 8 KB cap).
@@ -286,7 +288,7 @@ Tailscale k8s sidecar injected into agent pods for private overlay networking. H
 - **PWA** — installable Android/iOS web app over Tailscale; xterm.js ANSI streaming; full Settings UI for every config knob
 - **Container workers** — Docker / Kubernetes spawn with PQC bootstrap, distroless images, per-pod auth, Tailscale mesh
 - **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards
-- **Automata (PRD-DAG orchestrator)** — autonomous PRD decomposition with verification, multi-graph dependencies, guardrails, rubric-based grading
+- **Automata (PRD-DAG orchestrator)** — autonomous PRD decomposition with verification, multi-graph dependencies, guardrails, rubric-based grading, quality gates, verifier git-diff grounding, prompt injection hardening
 - **Auto rate-limit recovery** — detects rate limits, pauses session, auto-resumes with context after reset window (persisted across daemon restarts)
 - **Docs-as-MCP-Interface** — 22 curated howtos searchable + executable through MCP: hybrid vector+BM25 index, plan-then-execute with approval-token round-trip, per-step risk gate
 - **System monitoring** — CPU, memory, disk, GPU, network, per-session resource usage; eBPF per-process TCP tracking; Prometheus `/metrics`
