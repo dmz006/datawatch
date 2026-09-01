@@ -519,3 +519,13 @@ CVE-2026-70460
 CVE-2026-70461
 CVE-2026-70463
 CVE-2026-70464
+
+# golang.org/x/mod in gh CLI binary — CVE-2026-56864 and CVE-2026-56865 (HIGH, fixed in v0.40.0)
+# Trivy detects golang.org/x/mod v0.38.0 in the GitHub CLI (gh) binary installed from
+# the GitHub apt repo (cli.github.com). The datawatch binary itself uses v0.40.0 (see go.mod).
+# We have no control over Go module versions embedded in the pre-compiled gh binary.
+# Both CVEs concern a malicious GOSUMDB being able to serve arbitrary module data. The
+# gh binary's GOSUMDB interactions are internal to CLI usage against api.github.com —
+# not an attack surface exposed by the datawatch service.
+CVE-2026-56864
+CVE-2026-56865
