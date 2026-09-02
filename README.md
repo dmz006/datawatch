@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.18.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.18.0)
+[![Release](https://img.shields.io/badge/release-v8.18.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.18.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.18.1](CHANGELOG.md) (2026-09-01)** — Fix: in-app update no longer leaves the daemon headless. The previous restart path used `syscall.Exec` from a goroutine; Go's pre-exec STW step closed the TLS listener socket before `execve` could succeed, leaving the process alive but unable to serve HTTP. Now exits cleanly so the updated binary starts fresh.
 
 **[v8.18.0](CHANGELOG.md) (2026-09-01)** — Autonomous prompt injection hardening: three-layer defence — (1) data-boundary `<user_data>` XML tags on all LLM call sites (decompose, verify, guardrail), (2) `ScanForInjection` scanner at the PRD/task create and spec-edit API boundary with warn-only or blocking mode, (3) federation trust notice injected into verifier and guardrail prompts when a PRD originates from a remote peer. Enable via `autonomous.injection_guard: true`; set `autonomous.block_on_injection: true` to reject requests. Prometheus counter: `datawatch_injection_guard_hits_total`.
 

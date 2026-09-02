@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.18.1 — fix(update): in-app update no longer leaves daemon headless after restart
+
+### Fixed
+- **In-app update restart left daemon alive but not serving** — `daemonRestartFn` called `syscall.Exec` from a goroutine. Go's `runtime_BeforeExec()` stop-the-world step causes O_CLOEXEC file descriptors (including the TLS listener on port 8443) to be closed as part of exec preparation. When `execve` failed (race with the binary rename in-flight), sockets were already gone; `runtime_AfterExec()` resumed goroutines into a headless daemon that could not serve HTTP but continued internal activity (scheduler, signal-cli, session monitoring). Replaced `syscall.Exec` with a direct `os.Exit(0)` — the updated binary is already on disk; the process exits cleanly and the service manager or user restarts it.
+- **Misleading in-app notification** — "Restarting daemon…" implied automatic restart. Updated to "Daemon exiting — run `datawatch start` or wait for your service manager to restart it."
+
+---
+
 ## v8.18.0 — feat(autonomous): Prompt Injection Hardening
 
 ### Added
