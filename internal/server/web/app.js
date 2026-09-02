@@ -1808,6 +1808,7 @@ function navigate(view, sessionId, fromPopstate) {
 
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
+    if (state.activeSession !== sessionId) _clearImageAttachment();
     state.activeSession = sessionId;
     state.activeOutputTab = 'tmux';
     backBtn.style.display = 'inline';
@@ -2878,6 +2879,7 @@ function renderSessionDetail(sessionId) {
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
+    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="Attach image or take photo" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
   view.innerHTML = `
@@ -4299,7 +4301,11 @@ window.stopArrowRepeat = function() {
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  const text = inputEl.value; // Don't trim — empty string sends Enter
+  let text = inputEl.value; // Don't trim — empty string sends Enter
+  if (state._pendingImagePath) {
+    text = (text ? text + '\n' : '') + '[image:' + state._pendingImagePath + ']';
+    _clearImageAttachment();
+  }
   const sendText = text || '\n'; // Empty input = send Enter key
 
   if (state.activeSession) {
@@ -4385,7 +4391,11 @@ function showChannelHelp() {
 function sendChannelMessage() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl || !state.activeSession) return;
-  const text = inputEl.value.trim();
+  let text = inputEl.value.trim();
+  if (state._pendingImagePath) {
+    text = (text ? text + '\n' : '') + '[image:' + state._pendingImagePath + ']';
+    _clearImageAttachment();
+  }
   if (!text) return;
   const token = localStorage.getItem('cs_token') || '';
   const headers = { 'Content-Type': 'application/json' };
@@ -4402,6 +4412,68 @@ function sendChannelMessage() {
 
 // Voice input state — one recorder at a time. Click toggles record/stop.
 state.voice = { recorder: null, chunks: [], sessionId: null };
+
+// Image attachment state — one pending image at a time.
+state._pendingImagePath = null;
+state._pendingImageName = null;
+
+function attachSessionImage() {
+  const fi = document.getElementById('sessionImageInput');
+  if (fi) fi.click();
+}
+
+function onSessionImageSelected(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const localUrl = URL.createObjectURL(file);
+  _showImagePreview(localUrl, file.name, true);
+  const fd = new FormData();
+  const uploadName = 'dw_attach_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  fd.append('file', file);
+  fd.append('path', uploadName);
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/files', { method: 'POST', headers, body: fd })
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))))
+    .then(d => {
+      state._pendingImagePath = d.path || uploadName;
+      state._pendingImageName = file.name;
+      _showImagePreview(localUrl, file.name, false);
+      URL.revokeObjectURL(localUrl);
+    })
+    .catch(e => {
+      showToast('Image upload failed: ' + String(e.message || e), 'error');
+      _clearImageAttachment();
+      URL.revokeObjectURL(localUrl);
+    });
+  input.value = '';
+}
+
+function _showImagePreview(objectUrl, name, uploading) {
+  let preview = document.getElementById('sessionImagePreview');
+  if (!preview) {
+    const bar = document.getElementById('inputBar');
+    if (!bar) return;
+    preview = document.createElement('div');
+    preview.id = 'sessionImagePreview';
+    preview.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);';
+    bar.insertBefore(preview, bar.firstChild);
+  }
+  preview.innerHTML = `<img src="${escHtml(objectUrl)}" alt="" style="width:40px;height:30px;object-fit:cover;border-radius:3px;border:1px solid var(--border);" />`
+    + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>`
+    + (uploading
+      ? `<span style="color:var(--text2);font-size:11px;">uploading…</span>`
+      : `<span style="color:var(--success,#22c55e);font-size:11px;">✓ ready</span>`)
+    + `<button class="btn-icon" onclick="_clearImageAttachment()" style="padding:2px 6px;font-size:12px;" title="Remove image">✕</button>`;
+}
+
+function _clearImageAttachment() {
+  state._pendingImagePath = null;
+  state._pendingImageName = null;
+  const preview = document.getElementById('sessionImagePreview');
+  if (preview) preview.remove();
+}
 
 // Terminal toolbar is always visible (operator 2026-04-26): the
 // tmux/channel tab + font controls + scroll button row reads cleanly
