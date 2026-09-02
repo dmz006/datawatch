@@ -58,3 +58,13 @@ docs/testing/runs/2*/
 
 # Legacy: was inside repo, now outside. Keep ignored in case stale dir exists.
 .datawatch-test/
+
+# BL365 core + hostile-LLM security assessment — sandbox data dirs (throwaway
+# daemon data dir, audit logs, .mcp.json with a throwaway admin token). The
+# *harness* (scripts/sec-assess/) and the plan docs are committed; the
+# sandboxes themselves are operator-local, contain token-ish files, and must
+# not land in git (AGENT.md "No local-environment leaks" + Security Rules).
+.sec-sandbox/
+.hllm-sandbox/
+.sec-sandbox-bin/
+artifacts/

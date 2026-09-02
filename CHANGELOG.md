@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Planned
+- **Security remediation plans (core + hostile-LLM assessment fix designs):** four
+  design documents covering every finding from the core security assessment
+  (SEC-001…024) and the hostile-LLM assessment (HLLM-001…009), grouped by root cause:
+  **A** — authz & credential scoping (fail-closed auth, per-session scoped tokens,
+  capability opt-out, credential redaction); **B** — LLM containment & confused-deputy
+  (egress control, skill/plugin verify, bridge/Twilio hardening, local-trust model with
+  isolation filed as F-2); **C** — audit fidelity & config-write integrity (actor
+  attribution, atomic token rotation, PWA docs-viewer XSS close); **D** — supply chain,
+  at-rest crypto & infra (sigstore/cosign, Argon2id OWASP params + migration, Helm
+  `securityContext`, `apiToken` default). All **planned — design only; no runtime code
+  changed in this commit.** Master index: `docs/plans/2026-09-02-security-remediation.md`.
+- **Assessment harness** — `scripts/sec-assess/sandbox.sh` (throwaway isolated daemon on
+  non-default ports, temp data dir, port-guard, wipe) committed so the assessment is
+  reproducible. The assessment data dirs themselves (`.sec-sandbox/`, `.hllm-sandbox/`)
+  are gitignored (throwaway tokens + daemon state never land in git).
+
 ---
 
 ## v8.19.0 — feat(pwa): image attachment + camera capture in session input bar
