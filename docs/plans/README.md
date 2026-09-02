@@ -627,7 +627,13 @@ plan (`SEC-###`) for later GH-issue conversion on operator request.
 **Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
 **Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; 13 findings registered, SEC-001…013) · Phase 2 next (authn/authz sandbox tests).
 
-#### BL366 — Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28, plan ready)
+#### Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
+
+> ⚠️ **Tracking-ID collision (operator resolve):** this entry was labeled `BL366` on
+> filing, but **`BL366` is already** "Autonomous verifier: git-diff grounding" (the
+> BL367/verifier line, closed v8.16.0). Per the "never reuse BL numbers" rule this entry
+> needs its own number (next free = **BL369 → recheck; use the next unused**). Re-labeled
+> `BL366-hllm` here pending renumber.
 
 Assessment-only companion to BL365, treating datawatch-spawned LLM sessions as potentially
 hostile/compromised. Three classes: T1 prompt-injection data exfiltration (secrets, memory,
@@ -638,7 +644,19 @@ builds a privilege manifest (env / MCP tools / fs / net / memory surface per ses
 Reuses BL365's sandbox harness, evidence bar, and findings register (`HLLM-###`).
 
 **Plan doc:** [`2026-08-28-security-assessment-hostile-llm.md`](2026-08-28-security-assessment-hostile-llm.md)
-**Status:** Planned — ~6 working days; runs AFTER BL365 (builds on its authz verdicts + sandbox).
+**Status:** ✅ **ASSESSED 2026-09-01** (v8.18.x). Phase 0 recon + T1/T2/T3 + C controls audit
+complete. **9 findings registered (HLLM-001…009):** 2 **CRIT** (HLLM-001 admin token in 0644
+`.mcp.json`; HLLM-002 session is full-admin principal / uniform 361-tool surface unscoped),
+6 **HIGH** (audit not LLM-attributable; unscoped secrets+memory+sessions; `allow_self_config`
+defeatable via REST; exfil control absent / refused-by-model is a mask not a control;
+peer-federation + Tailscale-ACL from a session; self-propagation/supply-chain from inside),
+1 **MEDIUM** (local sessions run as daemon uid, no container — operator's architectural call).
+All confirmed with live sandbox repro (v8.18.1 build, canary sink, throwaway token); T3.1
+container-escape deferred (no worker image). **Operator triage → issue conversion is the next
+step** (per the plan's §7 DoD item 6). Root-cause fixes: per-session scoped credential +
+capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in audit log
+(HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
+(HLLM-009, F-2).
 
 ---
 
