@@ -176,6 +176,7 @@ cleanup_all() {
         council)         curl "${curl_args[@]}" -X POST "$BASE/api/council/runs/$id/cancel" >/dev/null 2>&1 && echo "  cancelled council run $id" || echo "  (already gone) council $id" ;;
         compute-node)    curl "${curl_args[@]}" -X DELETE "$BASE/api/compute/nodes/$id" >/dev/null 2>&1 && echo "  removed compute node $id" || echo "  (already gone) compute-node $id" ;;
         llm)             curl "${curl_args[@]}" -X DELETE "$BASE/api/llms/$id" >/dev/null 2>&1 && echo "  removed llm $id" || echo "  (already gone) llm $id" ;;
+        smoke-file)      curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"path\":\"$id\"}" "$BASE/api/files" >/dev/null 2>&1 && echo "  deleted file $id" || echo "  (already gone) file $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
     done
@@ -2836,6 +2837,35 @@ else
   curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
     -d '{"autonomous.default_quality_gates.enabled":false,"autonomous.default_quality_gates.test_command":"","autonomous.default_quality_gates.timeout":0,"autonomous.default_quality_gates.block_on_regression":false}' \
     "$BASE/api/config" >/dev/null
+fi
+
+# ---------------------------------------------------------------------------
+H "53. File service upload + delete (image attachment v8.19.0)"
+SMOKE_IMG_NAME="smoke_img_$(date +%s).jpg"
+SMOKE_IMG_PATH="$HOME/$SMOKE_IMG_NAME"
+# Upload a minimal JPEG header via multipart POST /api/files.
+UPLOAD_RES=$(curl "${curl_args[@]}" -w "\n__HTTP_%{http_code}__" \
+  -F "file=@/dev/null;filename=$SMOKE_IMG_NAME;type=image/jpeg" \
+  -F "path=$SMOKE_IMG_PATH" \
+  "$BASE/api/files" 2>/dev/null)
+UPLOAD_HTTP=$(echo "$UPLOAD_RES" | grep -o '__HTTP_[0-9]*__' | tr -d '_HTTP_')
+UPLOAD_BODY=$(echo "$UPLOAD_RES" | sed 's/__HTTP_[0-9]*__//')
+if [[ "$UPLOAD_HTTP" == "200" ]]; then
+  ok "POST /api/files upload succeeded (HTTP 200)"
+  add_cleanup "smoke-file" "$SMOKE_IMG_PATH"
+  # DELETE the file.
+  DEL_RES=$(curl "${curl_args[@]}" -w "\n__HTTP_%{http_code}__" \
+    -X DELETE -H "Content-Type: application/json" \
+    -d "{\"path\":\"$SMOKE_IMG_PATH\"}" \
+    "$BASE/api/files" 2>/dev/null)
+  DEL_HTTP=$(echo "$DEL_RES" | grep -o '__HTTP_[0-9]*__' | tr -d '_HTTP_')
+  if [[ "$DEL_HTTP" == "200" ]]; then
+    ok "DELETE /api/files succeeded (HTTP 200)"
+  else
+    ko "DELETE /api/files returned HTTP $DEL_HTTP"
+  fi
+else
+  ko "POST /api/files returned HTTP $UPLOAD_HTTP body: $(echo "$UPLOAD_BODY" | head -c 120)"
 fi
 
 # ---------------------------------------------------------------------------

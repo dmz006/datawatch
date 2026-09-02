@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## v8.19.0 — feat(pwa): image attachment + camera capture in session input bar
+
+### Added
+- **Image attach button in PWA input bar** — a 📷 button appears next to the voice and schedule buttons on every active session. Tapping it opens the OS file picker; on mobile browsers (Android Chrome, Safari iOS) the system chooser offers gallery and camera options via `accept="image/*"` — no special runtime permissions required beyond the user's one-time browser grant.
+- **Upload via `/api/files`** — on file selection, the image is uploaded to the server's file-service root (multipart `POST /api/files`). A thumbnail preview with filename and upload status appears above the input field while the upload completes.
+- **`[image:<path>]` message injection** — on send, the server path is appended to the outgoing message text. Works in both tmux and channel modes. The attachment is cleared on session switch.
+- **Localization** — 4 new locale keys (`btn_attach_image`, `image_uploading`, `image_ready`, `image_upload_failed`) added to all 5 supported locales (en, fr, es, de, ja).
+- **API documentation** — `POST /api/files` (multipart upload) and `DELETE /api/files` added to `docs/api/openapi.yaml` and `docs/api/mobile-surface.md` (Android implementation spec included).
+- **Unit tests** — `TestFilesUpload_ImageFile` (JPEG upload round-trip, verifies `path`+`bytes` response and on-disk file) and `TestFilesUpload_PathTraversal` (403 on out-of-root path) added to `bl333_file_service_test.go`.
+- **Smoke coverage** — §53 in `scripts/release-smoke.sh` exercises `POST /api/files` + `DELETE /api/files` round-trip with `add_cleanup smoke-file`.
+- **Parity** — Android + iOS tracked in [datawatch-app#158](https://github.com/dmz006/datawatch-app/issues/158). Parity table updated in `docs/parity-status.md`.
+
+### Federation auth
+All file-service write operations (`POST /api/files` upload, `DELETE /api/files`) require `CapConfigWrite` federation capability. Federation peers without write permission receive 403.
+
+### Planned
+- Reolink camera skill: a future MCP skill that pulls a RTSP/HTTP snapshot from a Reolink camera and injects it as an image attachment.
+
+---
+
 ## v8.18.1 — fix(update): in-app update no longer leaves daemon headless after restart
 
 ### Fixed

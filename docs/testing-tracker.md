@@ -9,6 +9,23 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## PWA Image Attachment + File Service API
+
+Added in v8.19.0. File service: `POST /api/files` (multipart upload), `DELETE /api/files`, `GET /api/files/meta`, `GET /api/files/peers/{name}`. PWA input bar 📷 button.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `POST /api/files` multipart upload (image attachment path) — `TestFilesUpload_ImageFile` | Yes | No | `bl333_file_service_test.go` — sends JPEG header bytes, verifies `path` + `bytes` in response and file on disk | Live test: PWA → attach image → verify file lands at `$fileServiceRoot/dw_attach_*` |
+| `POST /api/files` path traversal blocked — `TestFilesUpload_PathTraversal` | Yes | No | Sends `path=/tmp/evil.txt` (outside root); expects HTTP 403 | Security boundary; `checkPathTraversal` verified in unit test |
+| `DELETE /api/files` — `TestFilesUpload_And_Delete` | Yes | No | Uploads file then deletes; confirms `os.Stat` returns `IsNotExist` | Live curl test not yet performed |
+| `GET /api/files/meta` — `TestFileMeta_Empty` | Yes | No | Fresh temp root; verifies `root`, `peers`, `discussions` fields present | Live test: Settings → Files → Storage overview |
+| `GET /api/files/peers/{name}` — `TestFilesPeer_Subdir` | Yes | No | Pre-creates `peers/test-peer/note.txt`; confirms listing returns `note.txt` entry | Live federation test not yet performed |
+| Federation auth — `CapConfigWrite` required for POST+DELETE | Yes | No | Verified in handler source (`bl333_file_service.go` lines 63, `api.go` handleFiles gate) | No unit test for auth rejection; integration test via federated smoke would confirm |
+| PWA 📷 button → upload → preview → send `[image:<path>]` | No | No | — | E2E test needed: headless browser clicks attach, selects fixture image, confirms thumbnail, sends message, confirms `[image:...]` in channel history |
+| Smoke (§53): `POST /api/files` + `DELETE /api/files` round-trip | Yes (script) | No | `scripts/release-smoke.sh §53` — `curl -F file=@/dev/null` then DELETE; checks HTTP 200 both ways | Run with `bash scripts/release-smoke.sh` against live daemon |
+
+---
+
 ## Goose Backend
 
 Added in v8.13.36–v8.14.0. Backends: `goose` (interactive TUI), `goose-prompt` (one-shot).

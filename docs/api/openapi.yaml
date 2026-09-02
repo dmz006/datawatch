@@ -320,6 +320,89 @@ paths:
           description: Path is not a directory or cannot be read
         "401":
           $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Upload a file
+      description: |
+        Upload a file to the server's file-service root (multipart/form-data).
+        The `path` field sets the destination path relative to the file-service root.
+        Requires `CapConfigWrite` federation capability.
+        Used by the PWA and Android app for image attachment in the session input bar.
+      operationId: uploadFile
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, path]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload (image, document, etc.)
+                path:
+                  type: string
+                  description: Destination filename (relative or absolute within file-service root)
+                  example: "dw_attach_1234567890_photo.jpg"
+      responses:
+        "200":
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    description: Absolute server path of the uploaded file
+                  bytes:
+                    type: integer
+                    description: Number of bytes written
+        "400":
+          description: Missing file or path field, or parse error
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Path traversal outside file-service root
+    delete:
+      summary: Delete a file
+      description: |
+        Delete a file from the server filesystem.
+        Requires `CapConfigWrite` federation capability.
+        Body: JSON `{"path": "<absolute-path>"}`.
+      operationId: deleteFile
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path:
+                  type: string
+                  description: Absolute path of the file to delete
+      responses:
+        "200":
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: string
+                    description: Path of the deleted file
+        "400":
+          description: Missing or empty path
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Path traversal outside file-service root
+        "404":
+          description: File not found
 
   /api/sessions/start:
     post:

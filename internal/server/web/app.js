@@ -2879,7 +2879,7 @@ function renderSessionDetail(sessionId) {
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
-    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="Attach image or take photo" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
+    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
   view.innerHTML = `
@@ -4443,7 +4443,7 @@ function onSessionImageSelected(input) {
       URL.revokeObjectURL(localUrl);
     })
     .catch(e => {
-      showToast('Image upload failed: ' + String(e.message || e), 'error');
+      showToast((t('image_upload_failed')||'Image upload failed') + ': ' + String(e.message || e), 'error');
       _clearImageAttachment();
       URL.revokeObjectURL(localUrl);
     });
@@ -4463,8 +4463,8 @@ function _showImagePreview(objectUrl, name, uploading) {
   preview.innerHTML = `<img src="${escHtml(objectUrl)}" alt="" style="width:40px;height:30px;object-fit:cover;border-radius:3px;border:1px solid var(--border);" />`
     + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>`
     + (uploading
-      ? `<span style="color:var(--text2);font-size:11px;">uploading…</span>`
-      : `<span style="color:var(--success,#22c55e);font-size:11px;">✓ ready</span>`)
+      ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('image_uploading')||'uploading…')}</span>`
+      : `<span style="color:var(--success,#22c55e);font-size:11px;">${escHtml(t('image_ready')||'✓ ready')}</span>`)
     + `<button class="btn-icon" onclick="_clearImageAttachment()" style="padding:2px 6px;font-size:12px;" title="Remove image">✕</button>`;
 }
 

@@ -22,6 +22,54 @@ POST   /api/voice/transcribe      # F18 — Whisper transcription (multipart upl
 GET    /api/federation/sessions   # F19 — fan-out session list across remote servers
 ```
 
+---
+
+## File Service / Image Attachment (v8.19.0)
+
+The file service API is stable and safe for mobile clients. Use it for image attachment in the session input bar (parity with the PWA 📷 button).
+
+### Upload a file (image attachment)
+
+```
+POST /api/files
+Content-Type: multipart/form-data
+Authorization: Bearer <token>
+
+fields:
+  file   — binary content of the image
+  path   — destination filename (e.g. "dw_attach_<timestamp>_photo.jpg")
+```
+
+**Response:**
+```json
+{ "path": "/home/user/dw_attach_1234567890_photo.jpg", "bytes": 204800 }
+```
+
+Use the returned `path` value. Append `[image:<path>]` to the outgoing session message text — the same format the PWA uses.
+
+### Delete a file
+
+```
+DELETE /api/files
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{ "path": "/home/user/dw_attach_1234567890_photo.jpg" }
+```
+
+**Response:** `{ "deleted": "<path>" }`
+
+### Authorization
+
+Both endpoints require `CapConfigWrite` federation capability. Operator-level bearer token satisfies this; federation peers without write permission will receive 403.
+
+### Android implementation notes
+
+- Use `ActivityResultContracts.GetContent("image/*")` for gallery, `ActivityResultContracts.TakePicture` for camera (requires `CAMERA` permission with rationale dialog).
+- Build `MultipartBody` with OkHttp or Ktor; field names match above (`file`, `path`).
+- Show thumbnail chip above the send button while pending; clear on session switch or back nav.
+- Tracked: [datawatch-app#158](https://github.com/dmz006/datawatch-app/issues/158)
+
 These are the original "datawatch-app v1.0.0 paired client" surface.
 
 ---

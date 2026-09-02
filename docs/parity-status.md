@@ -1,7 +1,7 @@
 # Client Parity Status
 
 **Standard: PWA == Android == iOS**  
-**Last updated:** v8.9.4 (2026-05-30)
+**Last updated:** v8.19.0 (2026-09-01)
 
 This table tracks the parity state of operator-visible features across all three clients.
 iOS parity standard added in v8.8.6 (issue #107 in `dmz006/datawatch`).
@@ -35,6 +35,7 @@ Legend:
 | Chrome session flag | ✅ | ❌ (tracked: app#146) | ❌ (planned) |
 | Localization (5 locales) | ✅ | ✅ | ❌ (planned) |
 | Dark / light theme | ✅ | ✅ | ❌ (planned) |
+| Image attachment in session input (📷 button) | ✅ | ❌ (tracked: app#158) | ❌ (tracked: app#158) |
 
 ## iOS Client Plan
 

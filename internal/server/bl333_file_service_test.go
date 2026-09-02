@@ -115,6 +115,80 @@ func TestFilesUpload_And_Delete(t *testing.T) {
 	}
 }
 
+// TestFilesUpload_ImageFile — multipart POST with a JPEG file returns path + bytes,
+// mirrors the PWA image-attachment flow (POST /api/files with accept="image/*").
+func TestFilesUpload_ImageFile(t *testing.T) {
+	root := t.TempDir()
+	s := bl333Server(t, root)
+
+	destPath := filepath.Join(root, "dw_attach_1234_photo.jpg")
+
+	// Minimal 1×1 JPEG header (enough to test the handler; not a valid image decode).
+	jpegData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("path", destPath); err != nil {
+		t.Fatal(err)
+	}
+	fw, err := mw.CreateFormFile("file", "photo.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write(jpegData); err != nil {
+		t.Fatal(err)
+	}
+	mw.Close() //nolint:errcheck
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	s.handleFilesUpload(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["path"] != destPath {
+		t.Errorf("path=%q want %q", resp["path"], destPath)
+	}
+	gotBytes, _ := resp["bytes"].(float64)
+	if int(gotBytes) != len(jpegData) {
+		t.Errorf("bytes=%v want %d", resp["bytes"], len(jpegData))
+	}
+	// File must exist on disk.
+	if fi, err := os.Stat(destPath); err != nil || fi.Size() != int64(len(jpegData)) {
+		t.Errorf("file on disk wrong: stat=%v size=%v", err, fi)
+	}
+}
+
+// TestFilesUpload_PathTraversal — upload attempt with a path outside the root is rejected.
+func TestFilesUpload_PathTraversal(t *testing.T) {
+	root := t.TempDir()
+	s := bl333Server(t, root)
+
+	escapePath := "/tmp/evil_file.txt"
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("path", escapePath)
+	fw, _ := mw.CreateFormFile("file", "evil.txt")
+	_, _ = fw.Write([]byte("evil"))
+	mw.Close() //nolint:errcheck
+
+	req := httptest.NewRequest(http.MethodPost, "/api/files", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	s.handleFilesUpload(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for path traversal, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 // TestFilesPeer_Subdir — GET /api/files/peers/{name} auto-creates and lists
 // the peer subdirectory.
 func TestFilesPeer_Subdir(t *testing.T) {
