@@ -632,54 +632,35 @@ function handleMessage(msg) {
               state.terminal.write(capLines2.join('\r\n'));
               state._termHasContent = true;
               state._pendingPaneCaptureRefresh = false;
+              // Seed capture history with the initial frame
+              if (!state._captureHistory) state._captureHistory = [];
+              state._captureHistory.push({ key: capLines2.join('\n'), lines: capLines2 });
             } else {
-              // v5.24.0 — when scrolled up in xterm to read earlier
-              // output, every pane_capture redraw was yanking back to
-              // the bottom (the redraw clears scrollback via \x1b[3J).
-              // Detect scroll-back via xterm's buffer and skip until
-              // operator returns to bottom.
-              //
-              // v5.26.14 — operator-reported (third iteration):
-              // "scroll mode still getting live updates from running
-              // session". v5.26.9 skipped redraws entirely in scroll
-              // mode (broke scrolling). v5.26.10 added content-aware
-              // dedupe (broke for claude-style TUIs whose status timer
-              // updates every second, defeating the dedupe and
-              // bleeding live updates into the scroll view). v5.26.14:
-              // skip redraws while in scroll mode UNLESS
-              // state._scrollPendingRefresh is true — the PageUp /
-              // PageDown buttons set the flag right before sending
-              // the scroll keystroke so exactly ONE redraw fires per
-              // operator scroll action, picking up the new tmux
-              // scroll position. Idle ticks (status timer, live
-              // output etc.) skip silently.
+              // Client-side capture history for scroll-back mode.
+              // Each unique frame is stored so the ⤒ scroll button
+              // navigates through real captured snapshots instead of
+              // relying on tmux copy-mode (which has zero history for
+              // OpenCode TUI sessions that use cursor-based in-place
+              // rendering).
+              const frameKey = capLines2.join('\n');
+              if (!state._captureHistory) state._captureHistory = [];
+              const lastKey = state._captureHistory.length > 0
+                ? state._captureHistory[state._captureHistory.length - 1].key : null;
+              if (frameKey !== lastKey) {
+                state._captureHistory.push({ key: frameKey, lines: capLines2 });
+                if (state._captureHistory.length > 300) state._captureHistory.shift();
+              }
+              // In scroll mode: preserve the frozen view — don't update display
+              if (state._scrollMode) break;
+              // xterm internal scrollback guard (user manually scrolled xterm viewport)
               const buf = state.terminal.buffer && state.terminal.buffer.active;
               if (buf) {
                 const atBottom = buf.viewportY >= buf.baseY;
-                if (!atBottom) break; // skip redraw; preserve xterm scroll position
+                if (!atBottom) break;
               }
-              // v6.11.8 — operator: "scroll mode sometimes takes 2x
-              // hits on page button to work". Root cause: a periodic
-              // pane_capture frame (claude timer tick, etc.) arrived
-              // BETWEEN the operator's PageUp click and the post-
-              // scroll capture. The single-shot flag was consumed by
-              // the wrong frame, drawing pre-scroll content; the
-              // actual post-scroll frame then arrived with the flag
-              // reset and got skipped. Fix: use a 700ms time window
-              // instead of a single-shot flag — every frame within
-              // 700ms of an operator scroll action forces redraw,
-              // covering the race regardless of frame ordering.
-              const inWindow = state._scrollPendingRefresh &&
-                Date.now() < state._scrollPendingRefresh;
-              if (state._scrollMode && !inWindow) break;
-              // Don't reset the window — let it expire naturally so
-              // multiple frames in flight all draw.
-              const frameKey = capLines2.join('\n');
               if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
               state._lastPaneFrame = frameKey;
               // Subsequent frames — clear screen + clear scrollback + home + redraw
-              // \x1b[3J clears the scrollback buffer so repeated captures don't
-              // accumulate duplicate content and cause scroll/display issues.
               state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines2.join('\r\n'));
             }
           } catch (e) {
@@ -2660,6 +2641,8 @@ function cardSendCmd(fullId, cmd) {
 function renderSessionDetail(sessionId) {
   // Reset scroll mode on re-render — prevents input bar stuck in display:none
   state._scrollMode = false;
+  state._captureHistory = [];
+  state._scrollHistoryIdx = null;
   const staleScrollBar = document.getElementById('scrollBar');
   if (staleScrollBar) staleScrollBar.remove();
 
@@ -3159,16 +3142,24 @@ function termFitToWidth() {
   });
 }
 
-// Tmux scroll mode — enter Ctrl-b [ to browse history, PageUp/Down to navigate, ESC to exit
+// Client-side scroll mode — navigates a local ring buffer of captured
+// pane snapshots. Works for all session types including OpenCode TUI
+// which uses cursor-based in-place rendering and produces zero tmux
+// scrollback history.
+function renderCaptureFrame(lines) {
+  if (!state.terminal || !lines || !lines.length) return;
+  state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + lines.join('\r\n'));
+}
+
 function toggleScrollMode() {
   if (!state.activeSession) return;
   state._scrollMode = true;
-  // v5.26.14 — request one immediate redraw so the operator sees
-  // the scroll-back position the moment they enter scroll mode.
-  // Subsequent live-update ticks are suppressed until they click
-  // PageUp / PageDown.
-  state._scrollPendingRefresh = Date.now() + 700;
-  send('command', { text: `tmux-copy-mode ${state.activeSession}` });
+  if (!state._captureHistory) state._captureHistory = [];
+  state._scrollHistoryIdx = state._captureHistory.length - 1;
+  // Show the most recent captured snapshot frozen in the terminal
+  if (state._scrollHistoryIdx >= 0) {
+    renderCaptureFrame(state._captureHistory[state._scrollHistoryIdx].lines);
+  }
   // Hide input bar, show scroll controls bar at bottom
   const inputBar = document.getElementById('inputBar');
   if (inputBar) inputBar.style.display = 'none';
@@ -3203,31 +3194,24 @@ function toggleScrollMode() {
 }
 
 function scrollPage(dir) {
-  if (!state.activeSession) return;
-  // v6.11.8 — switched flag from boolean to deadline (timestamp +
-  // 700ms) so every pane_capture frame in that window forces a
-  // redraw. Boolean was racing claude-timer-tick frames and
-  // requiring the operator to click twice to actually scroll.
-  state._scrollPendingRefresh = Date.now() + 700;
-  // v6.11.8 — switched from `sendkey ... PPage/NPage` to the new
-  // `tmux-page-up/down` daemon command which uses `tmux send-keys
-  // -X page-up/down` directly. Bypassing the keysym → key-table
-  // resolution makes page-up and page-down truly symmetric (operator:
-  // "scroll mode page up isn't the same size as page down").
-  const cmd = dir === 'up' ? 'tmux-page-up' : 'tmux-page-down';
-  send('command', { text: `${cmd} ${state.activeSession}` });
+  if (!state.activeSession || !state._scrollMode) return;
+  if (!state._captureHistory || !state._captureHistory.length) return;
+  if (state._scrollHistoryIdx == null) state._scrollHistoryIdx = state._captureHistory.length - 1;
+  if (dir === 'up') {
+    state._scrollHistoryIdx = Math.max(0, state._scrollHistoryIdx - 1);
+  } else {
+    state._scrollHistoryIdx = Math.min(state._captureHistory.length - 1, state._scrollHistoryIdx + 1);
+  }
+  const frame = state._captureHistory[state._scrollHistoryIdx];
+  if (frame) renderCaptureFrame(frame.lines);
 }
 
 function exitScrollMode() {
   if (!state.activeSession) return;
   state._scrollMode = false;
-  // Use Escape to exit tmux copy-mode (q also works but Escape is universal)
-  send('command', { text: `sendkey ${state.activeSession}: Escape` });
-  // v5.26.14 — drop the dedupe cache so the first post-exit
-  // pane_capture forces a fresh redraw of the live pane, not a
-  // skipped-as-identical from the scroll view.
+  state._scrollHistoryIdx = null;
+  // Drop dedupe cache so first live frame after exit forces a redraw
   state._lastPaneFrame = null;
-  state._scrollPendingRefresh = 0;
   restoreInputBar();
 }
 

@@ -3330,7 +3330,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .output-area .xterm {
   height: 100%;
   min-width: 100%;
-  width: fit-content;
+  width: max-content;
 }
 /* Log viewer mode for ACP/headless sessions */
 .log-viewer-mode {
