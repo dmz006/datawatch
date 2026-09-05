@@ -22,6 +22,11 @@ session:
   default_project_dir: ~
   # Restrict file browser to this directory tree (empty = no restriction)
   root_path: ""
+  # Root directory for the federated file service and PWA image uploads.
+  # Per-peer files land in <file_service_root>/peers/<name>/;
+  # per-discussion files in <file_service_root>/discussions/<id>/.
+  # Empty = falls back to root_path, then the user home directory.
+  file_service_root: ""
   # Path to the claude CLI binary
   claude_code_bin: claude
   # Enable the claude-code backend

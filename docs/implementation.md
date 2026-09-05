@@ -592,6 +592,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `signal.group_id` | string | (required) | Signal group ID in base64 format (from `signal-cli listGroups`) |
 | `signal.config_dir` | string | `~/.local/share/signal-cli` | signal-cli data directory containing account keys |
 | `signal.device_name` | string | hostname | Name shown in Signal's Linked Devices list |
+| `session.file_service_root` | string | `""` | Root directory for the federated file service and PWA image uploads. Per-peer files land in `<root>/peers/<name>/`; per-discussion files in `<root>/discussions/<id>/`. Empty = falls back to `session.root_path`, then the user home directory |
 | `session.max_sessions` | int | `10` | Maximum number of concurrent claude-code sessions |
 | `session.input_idle_timeout` | int | `10` | Seconds of idle output before declaring a session is waiting for input |
 | `session.tail_lines` | int | `20` | Default number of lines returned by `tail` and `status` commands |
