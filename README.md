@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.19.2-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.2)
+[![Release](https://img.shields.io/badge/release-v8.19.3-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.3)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.19.3](CHANGELOG.md) (2026-09-05)** — Bug fixes: PWA image attachment now runs through the vision model before reaching the session (description injected in-place, matching Signal/Telegram behavior). `file_service_root` config now defaults to `~/.datawatch/files` instead of `$HOME`.
 
 **[v8.19.2](CHANGELOG.md) (2026-09-04)** — Bug fixes: PWA session-list select-all now scopes to the filtered view (counter, selection, and bulk-delete all match what is visible); changing any filter clears the active selection. Claude workspace trust dialog auto-accepted correctly (Down+Enter instead of literal "1"). Subprocess/virtual sessions (schedule-spawn, council, agent) no longer force-fail on daemon restart.
 

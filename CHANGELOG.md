@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.3 — fix: vision injection for PWA send_input + file_service_root safe default
+
+### Fixed
+- **PWA image attachment vision processing** — sending a message with an attached image from the PWA session input bar now runs the image through the vision model before the text reaches the Claude Code session. The `[image:<path>]` tag is replaced with `[image: <description>]` so the LLM receives the visual content as natural language alongside the user's prompt, matching the existing behavior for Signal/Telegram channel attachments. Both the REST `POST /api/sessions/send` path and the WebSocket `send_input` path are covered. If the vision subsystem is disabled or the file is unreadable the tag is passed through unchanged.
+- **`file_service_root` safe default** — updated the live config to set `file_service_root: ~/.datawatch/files` so the file service and PWA file browser no longer fall back to the user's home directory (`$HOME`) when the config field is empty. Exposing the entire home tree as the service root was a needlessly wide blast radius.
+
 ## v8.19.2 — fix: PWA select-all scoped to filtered view, trust dialog accept, daemon resume
 
 ### Fixed

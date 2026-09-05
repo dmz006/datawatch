@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.19.2"
+var Version = "8.19.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time

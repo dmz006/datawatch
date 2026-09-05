@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"path/filepath"
 	"strings"
@@ -174,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.2"
+var Version = "8.19.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1667,7 +1668,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		return output
 
 	case router.CmdSend:
-		err := s.manager.SendInput(cmd.SessionID, cmd.Text, "web")
+		err := s.manager.SendInput(cmd.SessionID, s.expandImageTags(cmd.Text), "web")
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
@@ -3600,7 +3601,8 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = "api"
 	}
-	if err := s.manager.SendInput(body.SessionID, body.Text, source); err != nil {
+	text := s.expandImageTags(body.Text)
+	if err := s.manager.SendInput(body.SessionID, text, source); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck
@@ -4490,6 +4492,33 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// expandImageTags replaces [image:<path>] references in text with vision descriptions.
+// If the vision subsystem is not configured or the file cannot be read, the tag is
+// left as-is so the caller still receives the rest of the message unmodified.
+func (s *Server) expandImageTags(text string) string {
+	if s.visioner == nil || !strings.Contains(text, "[image:") {
+		return text
+	}
+	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		sub := re.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		path := strings.TrimSpace(sub[1])
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return match
+		}
+		ct := http.DetectContentType(data)
+		desc, err := s.visioner.Describe(context.Background(), data, ct, "")
+		if err != nil || desc == "" {
+			return match
+		}
+		return "[image: " + desc + "]"
+	})
 }
 
 // handleGetConfig returns a sanitized view of the current config (sensitive fields masked).
