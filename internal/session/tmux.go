@@ -28,6 +28,7 @@ type TmuxAPI interface {
 	PaneTTY(session string) string
 	ListSessions(prefix string) ([]string, error)
 	DisableAlternateScreen(session string) error
+	SendTrustPromptAccept(session string) error
 }
 
 // TmuxManager wraps tmux operations used by the session manager.
@@ -60,6 +61,17 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
 	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
 	return nil
+}
+
+// SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.
+// The dialog shows "❯ No, exit" pre-selected. Sends Down to move to
+// "Yes, I trust this folder" then Enter to confirm.
+func (t *TmuxManager) SendTrustPromptAccept(session string) error {
+	if err := exec.Command("tmux", "send-keys", "-t", session, "Down").Run(); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
 }
 
 // DisableAlternateScreen turns off tmux's alternate-screen feature for a session's

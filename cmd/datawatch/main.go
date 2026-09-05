@@ -198,7 +198,12 @@ func claudeDisclaimerResponse(line string) string {
 	case strings.Contains(lower, "trust this folder"),
 		strings.Contains(lower, "quick safety check"),
 		strings.Contains(lower, "yes, i trust"):
-		return "1\n"
+		// Trust dialog uses an arrow-key TUI ("❯ No, exit" pre-selected).
+		// Sending text input here would confirm "No, exit". The caller must
+		// use SendTrustDialogAccept (Down+Enter) instead. Return non-empty
+		// so the caller knows a trust-dialog goroutine is needed, but callers
+		// must check isTrustDialogLine before using this value as text input.
+		return "trust-dialog"
 	case strings.Contains(lower, "yes, i accept"):
 		// bypass-permissions disclaimer: "2. Yes, I accept" is option 2.
 		// Sending "2\n" selects it. Unique to the bypassPermissions flow.
@@ -207,13 +212,18 @@ func claudeDisclaimerResponse(line string) string {
 		strings.Contains(lower, "esc to cancel"),
 		strings.Contains(lower, "i am using this for local development"),
 		strings.Contains(lower, "loading development channels"):
-		// "Enter to confirm · Esc to cancel" footer. For folder-trust the
-		// pre-selected option is "Yes, I trust" (Enter accepts). For the
-		// bypass-permissions disclaimer the pre-selected option is "No, exit"
-		// — handled above by matching "yes, i accept" first.
 		return "\n"
 	}
 	return ""
+}
+
+// isTrustDialogLine reports whether line came from Claude Code's workspace-trust
+// TUI dialog. These lines need Down+Enter (arrow-key navigation), not text input.
+func isTrustDialogLine(line string) bool {
+	lower := strings.ToLower(line)
+	return strings.Contains(lower, "trust this folder") ||
+		strings.Contains(lower, "quick safety check") ||
+		strings.Contains(lower, "yes, i trust")
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -1903,16 +1913,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// reading the live pane at t+750 ms is sufficient to accept
 			// whichever prompt is actually on screen. Subsequent filter
 			// callbacks are skipped via this LoadOrStore guard.
+			triggerLine := line
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); loaded {
 				return
 			}
 			go func() {
 				defer claudeStartupAccepted.Delete(sessID)
 				time.Sleep(750 * time.Millisecond)
-				// Handle startup prompts sequentially: trust-folder → channel →
-				// bypass-permissions. Each iteration checks the live pane and
-				// sends the appropriate response. Loop exits when no known
-				// startup prompt is on screen (all accepted, or session dead).
+				// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
+				// Text input ("1\n") would confirm the wrong option. Send
+				// Down+Enter to navigate to "Yes, I trust this folder" instead.
+				if isTrustDialogLine(triggerLine) {
+					if err := mgr.SendTrustDialogAccept(sessID); err != nil {
+						fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
+					}
+					return
+				}
+				// Handle other startup prompts (bypass-permissions, channel MCP):
+				// check the live pane and send the appropriate text response.
 				for i := 0; i < 5; i++ {
 					liveResp := mgr.GetActiveStartupPromptInput(sessID)
 					if liveResp != "" {
@@ -1952,6 +1970,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fmt.Printf("[hookinstall] %s: %v\n", sess.FullID, err)
 				}
 			}
+		}
+		// Startup trust-dialog poller — fires for every new claude-code session.
+		// Startup trust-dialog poller — backup for the DetectPrompt path.
+		// The DetectPrompt path fires from the log file and is the primary
+		// handler; this poller covers the window before the log pipe is
+		// established and sessions where Claude starts faster than the
+		// filter engine can process. Polls the tmux pane every 500ms for
+		// up to 45s (Claude can take 20-30s to start in loaded environments).
+		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
+			go func(sessID string) {
+				deadline := time.Now().Add(45 * time.Second)
+				for time.Now().Before(deadline) {
+					time.Sleep(500 * time.Millisecond)
+					if mgr.IsTrustDialogShowing(sessID) {
+						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
+							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
+						}
+						return
+					}
+				}
+			}(sess.FullID)
 		}
 		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
 		if memRetriever != nil && sess.Task != "" {
@@ -5335,10 +5374,18 @@ Return STRICT JSON:
 		if claudeAutoAccept && sess.State == session.StateWaitingInput &&
 			sess.BackendFamily == "claude-code" &&
 			claudeDisclaimerResponse(sess.LastPrompt) != "" {
+			lastPrompt := sess.LastPrompt
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sess.FullID, struct{}{}); !loaded {
 				go func(sessID string) {
 					defer claudeStartupAccepted.Delete(sessID)
 					time.Sleep(750 * time.Millisecond)
+					// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
+					if isTrustDialogLine(lastPrompt) {
+						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
+							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
+						}
+						return
+					}
 					for i := 0; i < 5; i++ {
 						liveResp := mgr.GetActiveStartupPromptInput(sessID)
 						if liveResp != "" {

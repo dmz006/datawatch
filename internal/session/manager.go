@@ -3715,7 +3715,10 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 	case strings.Contains(lower, "quick safety check"),
 		strings.Contains(lower, "trust this folder"),
 		strings.Contains(lower, "yes, i trust"):
-		return "1\n"
+		// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
+		// Sending "1\n" here would type "1" and press Enter, confirming "No, exit".
+		// Callers must use SendTrustDialogAccept (Down+Enter) instead.
+		return ""
 	case strings.Contains(lower, "new mcp server found"),
 		strings.Contains(lower, "use this mcp server"):
 		return "1\n"
@@ -3724,6 +3727,34 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 		return "1\n"
 	}
 	return ""
+}
+
+// IsTrustDialogShowing returns true if the live tmux pane for the given
+// session is currently displaying Claude Code's workspace-trust dialog.
+// Used by the startup trust poller in main.go.
+func (m *Manager) IsTrustDialogShowing(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil || content == "" {
+		return false
+	}
+	lower := strings.ToLower(StripANSI(content))
+	return strings.Contains(lower, "quick safety check") ||
+		strings.Contains(lower, "trust this folder") ||
+		strings.Contains(lower, "yes, i trust")
+}
+
+// SendTrustDialogAccept accepts the workspace-trust TUI dialog for sessID
+// by delegating to tmux.SendTrustPromptAccept (Down then Enter).
+func (m *Manager) SendTrustDialogAccept(fullID string) error {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return fmt.Errorf("session %s not found", fullID)
+	}
+	return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
 }
 
 // KillAll terminates all running and waiting sessions on this host.
