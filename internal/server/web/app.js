@@ -636,12 +636,9 @@ function handleMessage(msg) {
               if (!state._captureHistory) state._captureHistory = [];
               state._captureHistory.push({ key: capLines2.join('\n'), lines: capLines2 });
             } else {
-              // Client-side capture history for scroll-back mode.
-              // Each unique frame is stored so the ⤒ scroll button
-              // navigates through real captured snapshots instead of
-              // relying on tmux copy-mode (which has zero history for
-              // OpenCode TUI sessions that use cursor-based in-place
-              // rendering).
+              // Accumulate client-side capture history (used for opencode TUI
+              // sessions that use in-place cursor rendering and produce zero
+              // tmux scrollback; shell and claude-code use tmux copy-mode).
               const frameKey = capLines2.join('\n');
               if (!state._captureHistory) state._captureHistory = [];
               const lastKey = state._captureHistory.length > 0
@@ -650,17 +647,20 @@ function handleMessage(msg) {
                 state._captureHistory.push({ key: frameKey, lines: capLines2 });
                 if (state._captureHistory.length > 300) state._captureHistory.shift();
               }
-              // In scroll mode: preserve the frozen view — don't update display
-              if (state._scrollMode) break;
-              // xterm internal scrollback guard (user manually scrolled xterm viewport)
-              const buf = state.terminal.buffer && state.terminal.buffer.active;
-              if (buf) {
-                const atBottom = buf.viewportY >= buf.baseY;
-                if (!atBottom) break;
+              if (state._scrollMode) {
+                if (state._scrollUseClientHistory) break; // client-side: freeze display
+                // Tmux copy-mode path: only redraw within the scroll refresh window
+                const inWindow = state._scrollPendingRefresh &&
+                  Date.now() < state._scrollPendingRefresh;
+                if (!inWindow) break;
+              } else {
+                // Live mode: xterm internal scrollback guard + identical-frame dedup
+                const buf = state.terminal.buffer && state.terminal.buffer.active;
+                if (buf && buf.viewportY < buf.baseY) break; // preserve xterm scroll position
+                if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
               }
-              if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
               state._lastPaneFrame = frameKey;
-              // Subsequent frames — clear screen + clear scrollback + home + redraw
+              // Clear screen + clear scrollback + home + redraw
               state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines2.join('\r\n'));
             }
           } catch (e) {
@@ -2641,8 +2641,10 @@ function cardSendCmd(fullId, cmd) {
 function renderSessionDetail(sessionId) {
   // Reset scroll mode on re-render — prevents input bar stuck in display:none
   state._scrollMode = false;
+  state._scrollUseClientHistory = false;
   state._captureHistory = [];
   state._scrollHistoryIdx = null;
+  state._scrollPendingRefresh = 0;
   const staleScrollBar = document.getElementById('scrollBar');
   if (staleScrollBar) staleScrollBar.remove();
 
@@ -3142,28 +3144,44 @@ function termFitToWidth() {
   });
 }
 
-// Client-side scroll mode — navigates a local ring buffer of captured
-// pane snapshots. Works for all session types including OpenCode TUI
-// which uses cursor-based in-place rendering and produces zero tmux
-// scrollback history.
+// Scroll mode — hybrid:
+//   - opencode TUI (backend_family 'opencode'): cursor-based in-place rendering
+//     produces zero tmux scrollback, so use the client-side capture-history ring
+//     buffer accumulated from pane_capture WS frames.
+//   - shell / claude-code / others: have real tmux scrollback, so use the
+//     tmux copy-mode path (same as the original implementation).
 function renderCaptureFrame(lines) {
   if (!state.terminal || !lines || !lines.length) return;
   state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + lines.join('\r\n'));
 }
 
+function _scrollIsOpenCodeTUI() {
+  const sess = state.sessions && state.sessions.find(
+    s => s.full_id === state.activeSession || s.id === state.activeSession);
+  return sess && (sess.backend_family || '') === 'opencode';
+}
+
 function toggleScrollMode() {
   if (!state.activeSession) return;
   state._scrollMode = true;
+  state._scrollUseClientHistory = _scrollIsOpenCodeTUI();
   if (!state._captureHistory) state._captureHistory = [];
-  state._scrollHistoryIdx = state._captureHistory.length - 1;
-  // Show the most recent captured snapshot frozen in the terminal
-  if (state._scrollHistoryIdx >= 0) {
-    renderCaptureFrame(state._captureHistory[state._scrollHistoryIdx].lines);
+
+  if (state._scrollUseClientHistory) {
+    // Client-side path: freeze on the most recent snapshot
+    state._scrollHistoryIdx = state._captureHistory.length - 1;
+    if (state._scrollHistoryIdx >= 0) {
+      renderCaptureFrame(state._captureHistory[state._scrollHistoryIdx].lines);
+    }
+  } else {
+    // Tmux copy-mode path: enter copy-mode, open refresh window for first capture
+    state._scrollPendingRefresh = Date.now() + 700;
+    send('command', { text: `tmux-copy-mode ${state.activeSession}` });
   }
+
   // Hide input bar, show scroll controls bar at bottom
   const inputBar = document.getElementById('inputBar');
   if (inputBar) inputBar.style.display = 'none';
-  // Create scroll control bar
   let scrollBar = document.getElementById('scrollBar');
   if (!scrollBar) {
     scrollBar = document.createElement('div');
@@ -3195,22 +3213,36 @@ function toggleScrollMode() {
 
 function scrollPage(dir) {
   if (!state.activeSession || !state._scrollMode) return;
-  if (!state._captureHistory || !state._captureHistory.length) return;
-  if (state._scrollHistoryIdx == null) state._scrollHistoryIdx = state._captureHistory.length - 1;
-  if (dir === 'up') {
-    state._scrollHistoryIdx = Math.max(0, state._scrollHistoryIdx - 1);
+  if (state._scrollUseClientHistory) {
+    // Client-side path: navigate the capture-history ring buffer
+    if (!state._captureHistory || !state._captureHistory.length) return;
+    if (state._scrollHistoryIdx == null) state._scrollHistoryIdx = state._captureHistory.length - 1;
+    if (dir === 'up') {
+      state._scrollHistoryIdx = Math.max(0, state._scrollHistoryIdx - 1);
+    } else {
+      state._scrollHistoryIdx = Math.min(state._captureHistory.length - 1, state._scrollHistoryIdx + 1);
+    }
+    const frame = state._captureHistory[state._scrollHistoryIdx];
+    if (frame) renderCaptureFrame(frame.lines);
   } else {
-    state._scrollHistoryIdx = Math.min(state._captureHistory.length - 1, state._scrollHistoryIdx + 1);
+    // Tmux copy-mode path: open refresh window then send the page command
+    state._scrollPendingRefresh = Date.now() + 700;
+    const cmd = dir === 'up' ? 'tmux-page-up' : 'tmux-page-down';
+    send('command', { text: `${cmd} ${state.activeSession}` });
   }
-  const frame = state._captureHistory[state._scrollHistoryIdx];
-  if (frame) renderCaptureFrame(frame.lines);
 }
 
 function exitScrollMode() {
   if (!state.activeSession) return;
+  if (!state._scrollUseClientHistory) {
+    // Tmux copy-mode: send Escape to exit, reset refresh window
+    send('command', { text: `sendkey ${state.activeSession}: Escape` });
+    state._scrollPendingRefresh = 0;
+  }
   state._scrollMode = false;
+  state._scrollUseClientHistory = false;
   state._scrollHistoryIdx = null;
-  // Drop dedupe cache so first live frame after exit forces a redraw
+  // Drop dedupe cache so first live frame after exit forces a fresh redraw
   state._lastPaneFrame = null;
   restoreInputBar();
 }
