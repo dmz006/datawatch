@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.2 — fix: PWA select-all scoped to filtered view, trust dialog accept, daemon resume
+
+### Fixed
+- **PWA session list select-all** — "☑ All (N)" button counter, selection set, and toggle ("None") now operate on the currently visible filtered view instead of all done sessions. Counter matches what the user sees regardless of active state chip, backend filter, text search, or history toggle. Changing any filter now also clears the active selection so stale IDs from the prior view cannot contaminate a bulk delete.
+- **Claude workspace trust dialog** — new sessions in untrusted directories no longer exit immediately ("No, exit" was pre-selected and the old code sent a literal "1" which confirmed it). The daemon now sends `Down`+`Enter` via tmux to navigate to "Yes, I trust the folder". Detection fires from the log stream (`pipe-pane`) rather than pane-capture, which is reliable even when the dialog renders off the visible viewport. Startup deadline extended from 20 s to 45 s to accommodate slower machines.
+- **Daemon resume: subprocess sessions no longer force-failed** — on daemon restart, `ResumeMonitors` was calling `SessionExists("")` for schedule-spawn / council / agent sessions (which have no tmux backing), which always returned false and incorrectly transitioned those sessions to `StateFailed`. Added the same `TmuxSession == ""` guard already present in `ReconcileLiveSessions` and `probeClaudeAlive`.
+
 ### Planned
 - **Security remediation plans (core + hostile-LLM assessment fix designs):** four
   design documents covering every finding from the core security assessment

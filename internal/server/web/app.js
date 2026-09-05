@@ -1981,6 +1981,9 @@ function renderSessionsView() {
     );
   }
   const visible = sortSessionsByOrder(pool);
+  // Cache the done subset of the visible (filtered) set so selectAllInactive
+  // and the select bar always operate on what the user can actually see.
+  state._visibleDone = visible.filter(s => DONE_STATES.has(s.state));
 
   const filterVal = escHtml(state.sessionFilter || '');
   // Collect unique backend types from all sessions for compact filter badges
@@ -2054,8 +2057,8 @@ function renderSessionsView() {
     <div class="session-filter-wrap" style="flex:1.1;">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
         placeholder="${t('session_filter_ph')||'Filter sessions…'}" value="${filterVal}"
-        oninput="state.sessionFilter=this.value;renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
-      ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
+        oninput="state.sessionFilter=this.value;state.selectedSessions.clear();renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
+      ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';state.selectedSessions.clear();renderSessionsView()">&#10005;</button>` : ''}
     </div>
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
@@ -2115,8 +2118,8 @@ function renderSessionsView() {
       selectBar.className = 'select-bar-fixed';
       document.body.appendChild(selectBar);
     }
-    const inactive = state.sessions.filter(s => DONE_STATES.has(s.state));
-    const allSelected = state.selectedSessions.size === inactive.length && inactive.length > 0;
+    const inactive = state._visibleDone || [];
+    const allSelected = inactive.length > 0 && inactive.every(s => state.selectedSessions.has(s.full_id));
     selectBar.innerHTML = `
       <button class="select-bar-btn" onclick="selectAllInactive()">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${inactive.length})</span></button>
       <button class="select-bar-btn select-bar-delete" onclick="deleteSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
@@ -2167,6 +2170,7 @@ function setBackendFilter(backend) {
   } else {
     state.sessionFilter = backend;
   }
+  state.selectedSessions.clear();
   renderSessionsView();
 }
 
@@ -2174,6 +2178,7 @@ function setBackendFilter(backend) {
 function setSessionStateChip(chip) {
   state.sessionStateChip = chip;
   localStorage.setItem('cs_session_state_chip', chip);
+  state.selectedSessions.clear();
   // GATE finding (operator 2026-05-10): if filter selects a historical
   // state (complete/failed/killed/cancelled/archived), auto-activate the
   // History toggle so those sessions actually become visible. Without
@@ -2248,10 +2253,10 @@ function toggleSessionSelect(fullId) {
 }
 
 function selectAllInactive() {
-  const inactive = state.sessions.filter(s => DONE_STATES.has(s.state));
-  if (state.selectedSessions.size === inactive.length) {
-    // Deselect all if all are selected
-    state.selectedSessions.clear();
+  const inactive = state._visibleDone || [];
+  const allSelected = inactive.length > 0 && inactive.every(s => state.selectedSessions.has(s.full_id));
+  if (allSelected) {
+    inactive.forEach(s => state.selectedSessions.delete(s.full_id));
   } else {
     inactive.forEach(s => state.selectedSessions.add(s.full_id));
   }
