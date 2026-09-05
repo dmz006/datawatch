@@ -76,3 +76,38 @@ func TestBL263_ResumeMonitorsSkipsRepipeForDeadTmux(t *testing.T) {
 		t.Errorf("dead-tmux session should not be re-piped; got %d repipe calls. Calls: %+v", got, fake.Calls)
 	}
 }
+
+// Regression test: a subprocess/virtual session (schedule type=spawn,
+// council, agent, etc.) has no TmuxSession — it was never tmux-backed.
+// ResumeMonitors used to call tmux.SessionExists("") for these, which is
+// always false, so any such session still StateRunning at daemon restart
+// time was force-marked StateFailed even when its own runSubprocess
+// goroutine would shortly (or already had) call subprocessFinish with a
+// clean exit. Observed in production: imap-hourly-rules schedule sessions
+// whose output.log showed "[subprocess] completed (exit 0)" were all
+// reported StateFailed by the session store after a daemon restart.
+func TestResumeMonitorsSkipsSubprocessSessions(t *testing.T) {
+	mgr, fake := newTestManagerWithFake(t)
+	_ = fake
+
+	_ = mgr.SaveSession(&Session{
+		ID: "sp01", FullID: "testhost-sp01", TmuxSession: "",
+		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
+		LogFile: "/tmp/sp01.log",
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.ResumeMonitors(ctx)
+
+	sess, ok := mgr.store.Get("testhost-sp01")
+	if !ok {
+		t.Fatalf("session vanished from store")
+	}
+	if sess.State == StateFailed {
+		t.Errorf("subprocess session with no TmuxSession was force-failed by ResumeMonitors; want state left untouched (StateRunning), got %s", sess.State)
+	}
+	if got := fake.Count("repipe"); got != 0 {
+		t.Errorf("subprocess session has no tmux pane to repipe; got %d repipe calls. Calls: %+v", got, fake.Calls)
+	}
+}

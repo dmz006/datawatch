@@ -3937,6 +3937,15 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
+		// Subprocess/virtual sessions (schedule type=spawn, council, agent, etc.)
+		// have no TmuxSession — they were never tmux-backed, so a tmux liveness
+		// check against "" always reports false and force-fails them even when
+		// the underlying subprocess is still running (or already completed
+		// successfully via subprocessFinish). Same exemption as
+		// reconcile.go:ReconcileLiveSessions and probeClaudeAlive.
+		if sess.TmuxSession == "" {
+			continue
+		}
 		// Check if tmux session still exists (retry once to handle transient failures)
 		if !m.tmux.SessionExists(sess.TmuxSession) {
 			time.Sleep(500 * time.Millisecond)
