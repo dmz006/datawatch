@@ -28,7 +28,6 @@ type TmuxAPI interface {
 	PaneTTY(session string) string
 	ListSessions(prefix string) ([]string, error)
 	DisableAlternateScreen(session string) error
-	SendTrustPromptAccept(session string) error
 }
 
 // TmuxManager wraps tmux operations used by the session manager.
@@ -213,23 +212,6 @@ func (t *TmuxManager) CapturePaneANSI(session string) (string, error) {
 // This preserves special characters and doesn't append Enter.
 func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 	return exec.Command("tmux", "send-keys", "-t", session, "-l", data).Run()
-}
-
-// SendKeyName sends a single tmux key name (e.g. "Down", "Enter", "Escape")
-// without the -l literal flag, so tmux resolves it as a named key.
-func (t *TmuxManager) SendKeyName(session, key string) error {
-	return exec.Command("tmux", "send-keys", "-t", session, key).Run()
-}
-
-// SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.
-// The dialog shows arrow-key selection with "No, exit" pre-selected (❯).
-// Sends Down to move to "Yes, I trust this folder" then Enter to confirm.
-func (t *TmuxManager) SendTrustPromptAccept(session string) error {
-	if err := exec.Command("tmux", "send-keys", "-t", session, "Down").Run(); err != nil {
-		return err
-	}
-	time.Sleep(100 * time.Millisecond)
-	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
 }
 
 // PipeOutput configures the tmux session to pipe all output to a log file.

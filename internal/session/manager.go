@@ -3687,26 +3687,18 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 	}
 }
 
-// TrustDialogSentinel is returned by GetActiveStartupPromptInput when the
-// Claude Code workspace-trust TUI dialog is on screen. The caller must use
-// SendTrustDialogAccept instead of SendInput because the dialog uses
-// arrow-key navigation (Down → "Yes, I trust this folder", Enter to confirm)
-// rather than a numbered or Enter-to-accept prompt.
-const TrustDialogSentinel = "__trust_dialog__"
-
 // GetActiveStartupPromptInput captures the live tmux pane for sessID and
-// returns the appropriate auto-accept response for whichever Claude Code
+// returns the appropriate auto-accept keystroke for whichever Claude Code
 // startup prompt is currently on screen, or "" if no known prompt is visible.
 //
 // Priority (checked in order):
 //  1. Bypass-permissions disclaimer ("Yes, I accept" + "No, exit") → "2\n"
-//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → TrustDialogSentinel
+//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → "1\n"
 //  3. MCP server trust prompt ("New MCP server found")                 → "1\n"
 //  4. Nothing recognisable                                             → ""
 //
-// TrustDialogSentinel callers must call SendTrustDialogAccept (Down+Enter).
-// Other non-empty returns are passed to SendInput as literal text.
-// "" signals the caller to skip sending entirely.
+// The "" return signals the caller to skip sending entirely — important when
+// this goroutine fires after all startup prompts have already been accepted.
 func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -3723,8 +3715,7 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 	case strings.Contains(lower, "quick safety check"),
 		strings.Contains(lower, "trust this folder"),
 		strings.Contains(lower, "yes, i trust"):
-		// Arrow-key TUI: cursor starts on "No, exit". Must send Down+Enter.
-		return TrustDialogSentinel
+		return "1\n"
 	case strings.Contains(lower, "new mcp server found"),
 		strings.Contains(lower, "use this mcp server"):
 		return "1\n"
@@ -3733,17 +3724,6 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 		return "1\n"
 	}
 	return ""
-}
-
-// SendTrustDialogAccept accepts Claude Code's workspace-trust TUI dialog by
-// sending Down (to move cursor from "No, exit" to "Yes, I trust this folder")
-// then Enter to confirm.
-func (m *Manager) SendTrustDialogAccept(fullID string) error {
-	sess, ok := m.store.Get(fullID)
-	if !ok {
-		return fmt.Errorf("session %s not found", fullID)
-	}
-	return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
 }
 
 // KillAll terminates all running and waiting sessions on this host.

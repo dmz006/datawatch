@@ -187,11 +187,6 @@ func (f *FakeTmux) DisableAlternateScreen(session string) error {
 	return f.record("DisableAlternateScreen", session)
 }
 
-// SendTrustPromptAccept records the call; always succeeds in tests.
-func (f *FakeTmux) SendTrustPromptAccept(session string) error {
-	return f.record("SendTrustPromptAccept", session)
-}
-
 // WithFakeTmux swaps in a FakeTmux on the given Manager and returns it.
 // The Manager MUST NOT have running sessions at the time of swap.
 // Intended for use in tests only.
