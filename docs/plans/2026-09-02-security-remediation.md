@@ -103,3 +103,47 @@ Both assessment plan docs (`2026-08-28-security-assessment-core.md`,
 `2026-08-28-security-assessment-hostile-llm.md`) have their finding-register **status**
 columns updated from `open`/`confirmed` → **`planned`** with a link to the fix plan above,
 so the register and the plans stay in sync.
+
+---
+
+## Addendum — Retest of hardening controls (2026-09-04)
+
+**Operator request (2026-09-04):** the register is weighted toward the
+*out-of-the-box* (empty-token / default-bind) posture. Re-test the controls that are
+actually *available and documented* (encryption, secret scopes, federation CBAC,
+container workers) via the howtos/daemon, and correct any finding that a shipped control
+already mitigates.
+
+Method: live sandbox on an isolated port (throwaway token, dummy data — production
+untouched) + a fresh `--secure` boot with a throwaway passphrase + a code read of the
+four control paths. No real secrets; teardown after each.
+
+| # | Control (howto / doc) | Retest result | Effect on register |
+|---|---|---|---|
+| 1 | **Encryption at rest** (`docs/encryption.md`, `datawatch --secure`) | **WORKS, confirmed live.** `--secure` boot → `/api/health` `encrypted:true`; `config.yaml` = `DWATCH2` (XChaCha20-Poly1305 + Argon2id); a stored secret's value is **not present as plaintext on disk** yet `/api/secrets/{name}` still returns the value to an authed caller. | **Refine SEC-023.** At-rest data *is* protected when the operator opts in to `--secure` — the assessment measured it *only* under the plaintext default, so it overstated the exposure. SEC-023's **real** residual stands (Argon2id t=1/m=64MiB below OWASP; AEAD-error→plaintext fallback in the memory store; no key zeroing) — those are genuine crypto-param/failure-mode bugs independent of `--secure` — but the headline "operator data is on disk in the clear" is **not true once `--secure` is on**. Severity should read MEDIUM as a hardening gap, not an at-rest loss. |
+| 2 | **Secret scopes** (`docs/howto/secrets-manager.md` "scoped per-plugin / caller scope") | **ENFORCED ONLY FOR `agent:`/`plugin:` callers — NOT for the LLM session path.** Code: `secrets/scope.go:27` "Operator access (CLI, REST with daemon bearer, **MCP**) is always **unrestricted and never calls CheckScope**"; `CheckScope` gates only `internal/agent`/`internal/plugin` resolution (`secrets.go:67`, `plugins.go:421`). Live: a secret scoped to `agent:other-profile` was still returned in full by `GET /api/secrets/{name}` and the MCP `secret_get`. | **Confirms HLLM-004 (does NOT mitigate).** A hostile LLM session authenticates with the admin/bridge token → it **bypasses scopes entirely**, so scoping a secret does not stop the LLM reading it. Scopes protect *other* operator subsystems (plugins, other agents) from the same secret — they are an *internal* ACL, not a *confined-LLM* boundary. This validates the Design A (per-session scoped token) root and shows scoping **cannot** close HLLM-004/005 on its own. |
+| 3 | **Federation CBAC** (`docs/howto/federation-cbac.md`) | **WORKS, confirmed live** (re-run of core T5): a `federation-peer` token gets `403 "federation peer lacks capability: secrets:read"` on `/api/secrets/{name}`; admin passes. **But** `GET /api/federation/peers` still returns raw peer tokens (`token` set, no `token_present`) — re-confirmed live. | **Confirms the T5 PASS / SEC-009 correction (CBAC is a real peer-boundary control).** **Re-confirms SEC-014** (peer-token leak) live. CBAC protects *peers from peers*; it does **not** protect an LLM session (which uses the admin token and skips CBAC) — so CBAC is not a mitigation for HLLM-004/007. |
+| 4 | **Container workers** (`docs/howto/container-workers.md`; design doc B "F-2 isolation") | **NOT a stronger security boundary than the local session.** Code: `docker_driver.go:139-145` injects `DATAWATCH_PQC_KEM_PRIV` + `DATAWATCH_PQC_SIGN_PRIV` into the container env; `k8s_driver.go:142-151` injects the same **PQC private keys** into the k8s pod env spec; **no `--cap-drop`/`--user`/`--read-only`/`no-new-privileges`** on the worker container (Docker) and **no `securityContext`** on the worker pod (k8s) — the only `drop:All` is the Tailscale sidecar. Image *is* non-root (`Dockerfile.agent-base:166 USER datawatch` — good). | **Corrects the T3.1 deferral framing.** The plan deferred "container escape" on the basis of *no worker image available* (pull denied). A code-level read shows the container adds **little isolation for the LLM threat model**: the same LLM runs inside, holding the PQC private keys in process env, with caps not dropped and (on k8s) no `readOnlyRootFilesystem`. So "put it in a container" is **weaker than the plan implies** — it is a portability/packaging story, not confinement. Design B's F-2 (gVisor/microVM + fs/net policy + cap drops) is the *only* thing that turns container workers into a boundary; the current container path does not contain the HLLM-006/009 exfil path. |
+
+### Net of the retest
+
+- **The OOTB findings (SEC-001/002, HLLM-001/002) stand and are the most severe** — they
+  describe the shipped default, and the operator can be in it without doing anything
+  wrong.
+- **Encryption (SEC-023 context) was under-stated as a risk, but the *control works*** —
+  the finding is a crypto-hardening gap, not plaintext exposure by default-on-disk.
+- **Secret scopes + federation CBAC are real controls, but for a different trust boundary
+  than the LLM threat model targets.** They gate *operator subsystems and peers*; the
+  hostile session reaches the same data with the admin token and neither control fires.
+  That is exactly the Design A/B gap — good, but it must not be cited as a mitigation.
+- **Container workers are a packaging isolation, not a containment control**, for the
+  LLM threat; the design docs are right to file F-2 as the isolation build, but the
+  current container path should not be read as "already isolated."
+
+**No findings were dropped.** Three findings get their evidence/state clarified
+(SEC-023 severity framing, SEC-014 live re-confirm); two controls (secret scopes,
+container workers) are re-classified from "available mitigations" to "available
+*packaging / internal-ACL* features that are orthogonal to the confined-LLM threat."
+The remediation plan (A/B/C/D) remains the correct fix surface; Design A's
+per-session scoped token + Design B's egress/isolation are still the load-bearing
+controls for HLLM-001/002/004/005/006/009.
