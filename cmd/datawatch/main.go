@@ -1915,7 +1915,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// startup prompt is on screen (all accepted, or session dead).
 				for i := 0; i < 5; i++ {
 					liveResp := mgr.GetActiveStartupPromptInput(sessID)
-					if liveResp != "" {
+					if liveResp == session.TrustDialogSentinel {
+						// Arrow-key TUI: send Down+Enter via key names, not literal text.
+						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
+							fmt.Printf("[claude] auto-accept trust dialog failed for %s: %v\n", sessID, err)
+							break
+						}
+					} else if liveResp != "" {
 						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
 							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
 							break
@@ -5341,7 +5347,12 @@ Return STRICT JSON:
 					time.Sleep(750 * time.Millisecond)
 					for i := 0; i < 5; i++ {
 						liveResp := mgr.GetActiveStartupPromptInput(sessID)
-						if liveResp != "" {
+						if liveResp == session.TrustDialogSentinel {
+							if err := mgr.SendTrustDialogAccept(sessID); err != nil {
+								fmt.Printf("[claude] auto-accept trust dialog failed for %s: %v\n", sessID, err)
+								break
+							}
+						} else if liveResp != "" {
 							if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
 								fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
 								break
