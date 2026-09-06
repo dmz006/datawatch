@@ -10691,7 +10691,9 @@ function renderLifecycleStrip(prd) {
   // obvious without parsing colors / chevrons.
   const currentLabels = {
     plan:    t('lifecycle_hint_plan')    || 'Next: Plan — break your spec into stories + tasks',
-    review:  t('lifecycle_hint_review')  || 'Planning… review will become available shortly',
+    review:  status === 'needs_review'
+              ? (t('lifecycle_hint_needs_review') || 'Plan ready — review the stories below and Approve / Reject / Revise')
+              : (t('lifecycle_hint_review')       || 'Planning… stories will appear here shortly'),
     approve: t('lifecycle_hint_approve') || 'Next: Review the plan and Approve / Reject / Revise',
     run:     status === 'running'
               ? (t('lifecycle_hint_running') || 'Running — Cancel below if needed')
@@ -16691,10 +16693,13 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')
     ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
     : '';
-  // Approve / Request Revision — state-driven primary action.
+  // Approve / Reject / Request Revision — state-driven primary actions.
   let approveBtn = '';
   if (status === 'needs_review' || status === 'revisions_asked') {
-    approveBtn = `<button class="btn-primary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
+    approveBtn =
+      `<button class="btn-primary prd-action-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'approve','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_approve_title')||'Approve this plan and proceed to Run')}">✓ ${escHtml(t('prd_step_approve')||'Approve')}</button>` +
+      `<button class="btn-secondary prd-action-btn" style="color:var(--error);border-color:var(--error);" onclick="prdActionPrompt(${escHtml(idJ)},'reject','reason',${escHtml(JSON.stringify(t('prd_reject_prompt')||'Rejection reason'))})" title="${escHtml(t('prd_action_reject')||'Reject')}">✗ ${escHtml(t('prd_action_reject')||'Reject')}</button>` +
+      `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
   }
   const editBtn = editMenuItems.length > 0
     ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
