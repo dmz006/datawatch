@@ -9712,8 +9712,13 @@ window.loadPRDPanel = loadPRDPanel;
 // surfaces a previously-pinned `shell` so existing PRDs don't drop
 // the assignment silently, but new picks can't choose it.
 const NON_LLM_BACKENDS = new Set(['shell']);
+// Backends that support headless /api/ask inference (planning + decompose).
+// Session-only backends (claude-code, opencode, aider, gemini, goose) spawn
+// a tmux session and cannot be called headlessly — decompose will fail if
+// one of those is selected as the PRD-level backend.
+const HEADLESS_PLANNING_KINDS = new Set(['ollama', 'openwebui']);
 
-function renderBackendSelect(id, current, onchange) {
+function renderBackendSelect(id, current, onchange, planningOnly) {
   const opts = ['<option value="">(inherit)</option>'];
   // GATE alpha.36 (operator 2026-05-10): drop shell, ensure council
   // appears in the wizard backend list. opencode-acp / opencode-prompt
@@ -9729,6 +9734,7 @@ function renderBackendSelect(id, current, onchange) {
     if (!b || !b.name) return;
     if (b.disabled === true) return;
     if (NON_LLM_BACKENDS.has(b.name)) return;
+    if (planningOnly && !HEADLESS_PLANNING_KINDS.has(b.kind || '')) return;
     seen.add(b.name);
     opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
   });
@@ -10839,7 +10845,7 @@ function openPRDCreateModal() {
           <select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select>
         </div>
         <div id="prdNewBackendRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()', true)}</div>
           <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
           <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdNewModelInner"></div></div>
         </div>
@@ -11115,9 +11121,9 @@ function openPRDSetLLMModal(prdID, current) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Tasks without a per-task override inherit these values. Empty = fall back to the global session.backend_family default.'}</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Planning (decompose) and task execution use this backend. Only ollama / openwebui support headless planning. Set per-task overrides in the task editor for session-based backends.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`, true)}</div>
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
         <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdSetModelInner"></div></div>
       </div>
@@ -11186,7 +11192,7 @@ function openPRDSettingsModal(prdID) {
             <div class="wizard-grid-mobile">
               <div class="wizard-field">
                 <label class="wizard-label">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
-                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
+                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`, true)}
               </div>
               <div class="wizard-field">
                 <label class="wizard-label">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
@@ -16069,7 +16075,7 @@ function openLaunchAutomatonWizard() {
              (e.g. claude-sonnet-4-6, "thorough"), and 3-up squeezes them. -->
         <div class="wizard-field">
           <label class="wizard-label">${escHtml(t('automata_wizard_backend'))}</label>
-          ${renderBackendSelect('wizardBackend', '', '_wizardBackendChanged()')}
+          ${renderBackendSelect('wizardBackend', '', '_wizardBackendChanged()', true)}
         </div>
         <div class="wizard-field" id="wizardModelField">
           <label class="wizard-label">${escHtml(t('automata_wizard_model')||'Model')}</label>
