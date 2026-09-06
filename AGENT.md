@@ -642,9 +642,11 @@ If/when this lands, file as its own BL with a design note. Until then, local `ma
 **After any functional change** (new feature, bug fix, behavioral change — not docs-only):
 
 1. **Bump the version** per the Versioning rules above (patch bump minimum).
-2. **Build and test**: `make cross` then `go test ./...`
-3. **Create release**: `gh release create` with all 5 binaries attached.
-4. **Verify the upgrade path**:
+2. **Test**: `go test ./...` must pass.
+3. **Build** (host-arch only for patches): `make build`. For minor/major GH releases, `make cross` instead — see §Binary-build cadence above.
+4. **Restart daemon** with the new binary and verify `datawatch version` shows the new version.
+5. **Create GH release** (only when user says "release"): `gh release create` with all 5 binaries for minor/major; patch releases do not attach cross-compiled binaries.
+6. **Verify the upgrade path** (GH releases only):
    - Confirm `datawatch update --check` reports the new version.
    - The install script should download the prebuilt binary, not fall back to source.
 
@@ -997,64 +999,114 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 
 **Smoke-cleanup safety rule (operator-flagged 2026-05-09):** smoke MUST clean up exactly what it created via `add_cleanup` — nothing more, nothing less. The `cleanup_all` switch in `scripts/release-smoke.sh` extends with one new `kind` per new entity surface; the smoke section that creates the entity calls `add_cleanup <kind> <id>` at creation time. The orphan sweep is a narrow race-condition safety net for two demonstrably-leaking patterns (`autonomous:*` + `smoke-*`); it MUST NOT be widened to new entity types or new name patterns. Mass-sweeps by name pattern are forbidden because they kill operator-initiated entities that happen to match. This rule was added after a widening to `council-*` / `llm_backend == council-virtual` killed the operator's live host session mid-run.
 
-**Per-sprint rules audit (operator-flagged 2026-05-09):** at the END of every sprint (alpha cut), before commit/tag/release, the rules audit checklist runs. **Every item must produce a literal output token in the commit message** — not a category reference. If an item doesn't apply, write `N/A — <reason>`. A missing token means the sprint isn't done.
+**Per-sprint rules audit (operator-flagged 2026-05-09, expanded 2026-09-06):** at the END of every sprint, before commit/tag/push, run ALL sections below. **Every item must produce a literal output token in the commit message.** Write `N/A — <one-line reason>` for inapplicable items. A missing token means the sprint isn't done.
 
-| # | Check | Required commit-message token |
+---
+
+### Section A — Every commit/push (no exceptions)
+
+| # | Check | Required token |
 |---|---|---|
-| 1 | AGENT.md rules re-read; list every rule that fired | `rules: <rule-name>, <rule-name>, …` |
-| 2 | Smoke `add_cleanup` extended for any new entity created by smoke | `smoke-cleanup: extended for <kind>` or `N/A` |
-| 3 | `scripts/release-smoke.sh` **extended** for any new operator-facing endpoint/behaviour | `smoke-extended: <section name>` or `N/A` |
-| 4 | `bash scripts/release-smoke.sh` passes — record exact counts from Summary line | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` |
-| 5 | Mobile-Parity Rule: datawatch-app issue filed for any operator-visible PWA change (cross-project only — internal bugs go to docs/plans, not GH) | `mobile-parity: datawatch-app#<N>` or `N/A` |
-| 6 | Localization Rule: locales × 5 updated for any new UI string | `locales: <key-name>, …` or `N/A` |
-| 7 | Locale guard test updated if new high-visibility key added (`v5280_locales_test.go::TestLocales_CommonNavKeysPresent`) | `locale-guard: added <key-name>` or `N/A` |
-| 8 | `docs/testing-tracker.md` updated for any new or changed interface/endpoint contract | `tracker: <section name>` or `N/A` |
-| 9 | Internal bugs tracked: B-number row added/updated in `docs/plans/README.md` (no GH issue for internal fixes) | `plans: B<N>` or `N/A` |
-| 10 | Configuration Parity Rule: every new feature reachable from YAML + REST + MCP + CLI + comm + PWA + mobile | `config-parity: verified` or `N/A` |
-| 11 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
-| 12 | `make build` clean (NOT `go build` — ensures `make sync-docs` runs) | `make-build: ok` |
-| 13 | Cookbook updated in plan doc | `cookbook: updated` or `N/A` |
+| A1 | AGENT.md rules re-read; list every rule that fired (not "AGENT.md reviewed" — name them) | `rules: <Rule Name>, …` |
+| A2 | `go test ./...` passes (not just compile — full test suite) | `tests: ok` |
+| A3 | Version bumped in BOTH files and strings match: `grep "var Version" cmd/datawatch/main.go internal/server/api.go` | `version: vX.Y.Z (both files)` |
+| A4 | `CHANGELOG.md` entry added under current version | `changelog: added` |
+| A5 | `README.md` current-release line updated: `**Current release: vX.Y.Z (DATE).**` | `readme: updated` |
+| A6 | `docs/plans/README.md` backlog refactor: close shipped items, clear `## Unclassified` | `backlog: refactored` |
+| A7 | No B/BL/F tracker IDs leaked into user-facing docs — grep: `grep -n "B[0-9]\+\|BL[0-9]\+\|F[0-9]\+" CHANGELOG.md README.md` | `id-check: clean` |
+| A8 | No local-env leaks in diff — grep for hostname, private IP ranges, personal email in `git diff HEAD~1` | `leak-check: clean` |
+| A9 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
+| A10 | `make build` clean (NOT `go build` — runs `make sync-docs` first so embedded PWA docs match binary) | `make-build: ok` |
+| A11 | CI runner check after push: `gh run list --limit 20` — every failure investigated; security failures escalated to operator rather than deleted | `ci: clean` or `ci: <runID> fixed` |
 
-If any token is missing from the commit message, the sprint isn't done.
+---
 
-**How to write the rules token (#1):** list by short name the AGENT.md rules you determined applied. Example: `rules: Localization Rule, Testing Tracker Rule, Mobile-Parity Rule, Error-Filing Rule`. A rule that didn't fire is omitted. This forces the agent to explicitly enumerate what it checked — not just assert "AGENT.md reviewed".
+### Section B — Conditional (fire when the trigger matches this commit)
 
-**Additional requirements for a major release (cumulative — patches inherit these too if cluster is available):**
+Write `N/A` for every row whose trigger did not fire.
 
-1. **Single-host smoke** — `tests/integration/spawn_docker.sh` end-
-   to-end (profile create → spawn → bootstrap → terminate → cleanup);
-   bonus pass with `RUN_BOOTSTRAP=1` against a real worker image.
-2. **Kubernetes smoke** — `tests/integration/spawn_k8s.sh` against a
-   reachable kubectl context (operator's testing cluster, kind, k3d,
-   or any cluster the maintainer has admin on). Validates: Helm
-   chart installs cleanly, parent reaches `/readyz`, child Pod
-   spawns + bootstraps, audit events land, terminate cleanup leaves
-   no orphaned Pods. Run with the same image tag the release will
-   ship.
-3. **Cross-feature flows** — at least one path that exercises
-   multiple newly-shipped pieces together (e.g. spawn → audit query
-   shows the event → memory_recall finds the session summary →
-   peer broker delivers a message between two workers). One real
-   flow per sprint's worth of changes.
-4. **UI smoke** — log in via web UI, walk Settings → Profiles →
-   Agents cards, verify the new feature surfaces (settings, alerts,
-   timeline). Browser automation OK; manual click-through OK; the
-   point is "an operator could find + use this".
-5. **Config-channel parity audit** — for every new config knob,
-   verify it round-trips through YAML, REST `PUT/GET /api/config`,
-   MCP `config_set`, comm `configure …`, and CLI flag (where one
-   exists).
+| # | Trigger condition | Check | Required token |
+|---|---|---|---|
+| B1 | New or changed endpoint contract (status code, response shape, route name) | `docs/testing-tracker.md` new section added | `tracker: <section name>` |
+| B2 | New user-facing string added to PWA | Locales × 5 updated (en/de/es/fr/ja) | `locales: <key-name>, …` |
+| B3 | New high-visibility locale key (nav, action, settings, operator-visible chip) | `TestLocales_CommonNavKeysPresent` `mustHave` slice updated | `locale-guard: added <key-name>` |
+| B4 | Any operator-visible PWA change (layout, behavior, API contract, affordance) | `datawatch-app` issue filed or commented | `mobile-parity: datawatch-app#<N>` |
+| B5 | Internal bug found and fixed | B-number row in `docs/plans/README.md` | `plans: B<N>` |
+| B6 | New or changed config field | Config-parity verified (YAML + REST + MCP + CLI + comm + PWA) | `config-parity: verified` |
+| B7 | New feature | Monitoring/observability wired: SystemStats + `/api/<sub>/stats` + MCP tool + Monitor card + Prometheus | `observability: added` |
+| B8 | New feature with operator-facing config or workflow | Feature docs updated: all 5 access-method rows (YAML/CLI/WebUI/REST/comm) | `access-docs: added` |
+| B9 | Any sprint | Reuse-and-Expand audit: CHANGELOG entry "Reuse audit — what existing primitive does this extend?" | `reuse-audit: <primitive or N/A>` |
+| B10 | New session/PRD/agent/comm-channel/plugin path | Skills-awareness check: does this need a skill hook? | `skills-hook: <section or N/A>` |
+| B11 | New entity type created by smoke | `add_cleanup` in smoke extended for new kind | `smoke-cleanup: extended for <kind>` |
+| B12 | New operator-facing endpoint or behaviour | `scripts/release-smoke.sh` new section added | `smoke-extended: <section name>` |
+| B13 | Multi-step or multi-day project (3+ sprints) | Live project cookbook task updated | `cookbook: updated` |
+| B14 | Security scanner finding patched (ZAP, gosec, govulncheck, CVE) | Security downstream review done: call sites mapped, end-to-end tested | `sec-downstream: reviewed` |
+| B15 | New messaging or LLM backend | Secrets-Store Rule applied: credential fields use `${secret:...}` | `secrets-store: applied` |
+| B16 | New audit-event-emitting code path | JSON-lines round-trip test + CEF format + escape test added | `audit-tests: added` |
+| B17 | New Go module dependency added | Dep noted in CHANGELOG; 72-hour rule verified; `go mod tidy` run | `deps: <module@version>` |
 
-**Document each pass:** `docs/testing.md` gets a release-checkpoint
-section per major release with: what cluster (kind/k3d/real),
-chart version, observed behaviour, screenshots/log snippets where
-relevant, and PASS/FAIL per feature. Failures block the release.
+---
 
-**Use what's available:** the operator/maintainer typically has a
-real cluster in scope (`kubectl config get-contexts` will list it).
-Prefer that over CI-only smoke when validating a release — real
-networks, real CNIs, and real storage classes surface bugs unit
-tests can't see.
+### Section C — Release testing cadence
+
+**Full smoke** (`bash scripts/release-smoke.sh`) — required for:
+- Every **minor** (X.Y.0) or **major** (X.0.0) release
+- The **first patch** in a minor that introduces a new feature
+
+**Targeted smoke** (`SMOKE_ONLY=<sections>`) — acceptable for:
+- Subsequent patches in the same minor that fix bugs or update docs only (no new feature)
+
+**Skip** — acceptable only when no daemon was changed (docs-only commit, no binary bump).
+
+Pre-release scans required for every GH release (patch, minor, or major):
+
+| # | Check | Required token |
+|---|---|---|
+| C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
+| C2 | Pre-release gosec scan: `~/go/bin/gosec -exclude="$(grep -v '^#' .gosec-exclude \| tr '\n' ',')' -fmt text -quiet ./...` — HIGH findings reviewed | `gosec: clean` or `gosec: <N> findings reviewed` |
+| C3 | Smoke run (per cadence above) — record exact Summary line counts | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` OR `smoke: SMOKE_ONLY=<sections> ok` OR `smoke: skipped (docs-only)` |
+
+---
+
+### Section D — GH releases only (user says "release" or "gh release")
+
+Patch releases: `make build` already done in A10 — no cross-compile needed. Do NOT attach binary assets to GH release page for patches.
+
+Minor/major releases only:
+
+| # | Check | Required token |
+|---|---|---|
+| D1 | `make cross` — all 5 binary assets built and attached to GH release | `make-cross: ok` |
+| D2 | Container maintenance audit: per-image rebuild decision made; Helm `Chart.yaml` `version` + `appVersion` bumped if chart changed; `## Container images` section in release notes | `containers: audited` |
+| D3 | Asset retention cleanup: `bash scripts/delete-past-minor-assets.sh` run post-release | `asset-cleanup: ok` |
+
+---
+
+### Section E — Major releases only (X.0.0)
+
+In addition to Sections A–D:
+
+| # | Check |
+|---|---|
+| E1 | LLM alias refresh: `handleClaudeModels` `aliases` + `full_names` slices updated against current Anthropic model map |
+| E2 | PAI compatibility audit: clone PAI mainline, verify parser accepts every manifest it ships |
+| E3 | Full test suite: single-host Docker smoke + k8s smoke + cross-feature flows + UI smoke; results in `docs/testing.md` |
+
+---
+
+**How to write the `rules:` token (A1):** name every AGENT.md rule section that required an action this sprint. Example: `rules: Localization Rule, Testing Tracker Rule, Mobile-Parity Rule`. Omit rules that did not fire. "AGENT.md reviewed" is not a valid token — name the rules.
+
+**Major release detail (Section E above):** the E3 full test suite includes:
+
+1. **Single-host smoke** — `tests/integration/spawn_docker.sh` end-to-end (profile create → spawn → bootstrap → terminate → cleanup); bonus pass with `RUN_BOOTSTRAP=1` against a real worker image.
+2. **Kubernetes smoke** — `tests/integration/spawn_k8s.sh` against a reachable kubectl context. Validates: Helm chart installs cleanly, parent reaches `/readyz`, child Pod spawns + bootstraps, audit events land, terminate cleanup leaves no orphaned Pods.
+3. **Cross-feature flows** — at least one path exercising multiple newly-shipped pieces together. One real flow per sprint's worth of changes.
+4. **UI smoke** — log in via web UI, walk Settings → Profiles → Agents cards, verify the new feature surfaces (settings, alerts, timeline).
+5. **Config-channel parity audit** — for every new config knob, verify round-trip through YAML, REST `PUT/GET /api/config`, MCP `config_set`, comm `configure …`, and CLI flag (where one exists).
+
+**Document each pass:** `docs/testing.md` gets a release-checkpoint section per major release with: what cluster (kind/k3d/real), chart version, observed behaviour, PASS/FAIL per feature. Failures block the release.
+
+Use the real cluster when available (`kubectl config get-contexts`) — real networks surface bugs unit tests can't see.
 
 ## Monitoring & Observability Rule
 
