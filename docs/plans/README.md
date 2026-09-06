@@ -1272,6 +1272,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | B47 | Subprocess/virtual sessions (schedule-spawn, council, agent — `TmuxSession == ""`) force-failed on daemon restart: `ResumeMonitors` called `SessionExists("")` which always returns false, transitioning them to `StateFailed`. Added the `TmuxSession == ""` guard already present in `ReconcileLiveSessions` and `probeClaudeAlive`. | v8.19.2 |
 | B48 | PWA image attachment sent `[image:<path>]` as literal text to Claude Code — vision subsystem only ran for inbound channel messages (Signal/Telegram), not for REST `POST /api/sessions/send` or WebSocket `send_input`. Added `Server.expandImageTags()`: regex-matches `[image:<path>]`, reads file, calls `visioner.Describe()`, substitutes `[image: <description>]` in-place. Both REST handler and `executeCommand` CmdSend call it. If vision disabled or file unreadable, tag passes through unchanged. | v8.19.3 |
 | B49 | `file_service_root` defaulted to `$HOME` when the config field was empty, exposing the entire home directory via the file browser API. Live config updated to `~/.datawatch/files`. | v8.19.3 |
+| B50 | `expandImageTags()` discarded the source file path after vision description — LLMs with file-access tools lost the ability to reference the original file. Replacement format changed from `[image: <desc>]` to `[image: <desc> | path: <path>]`. Fallback (vision disabled / unreadable) unchanged. | v8.19.4 |
 
 ### Features & Backlog Completed
 

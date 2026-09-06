@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.3"
+var Version = "8.19.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4517,7 +4517,7 @@ func (s *Server) expandImageTags(text string) string {
 		if err != nil || desc == "" {
 			return match
 		}
-		return "[image: " + desc + "]"
+		return "[image: " + desc + " | path: " + path + "]"
 	})
 }
 

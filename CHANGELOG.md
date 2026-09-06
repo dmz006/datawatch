@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.4 — fix: preserve file path in image tag after vision description
+
+### Fixed
+- **`expandImageTags` path preservation** — the vision-expanded image tag now includes both the description and the original file path: `[image: <description> | path: <path>]`. Previously the path was discarded after description, preventing LLMs with file-access tools from referencing the source file. Fallback behavior (vision disabled or file unreadable) is unchanged — the raw `[image:<path>]` tag passes through.
+
 ## v8.19.3 — fix: vision injection for PWA send_input + file_service_root safe default
 
 ### Fixed
