@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.8 — fix: PWA "What's it doing?" card JSON-parse crash on no-new-output
+
+### Fixed
+- **PWA session card "What's it doing?" button** (`handleSessionCurrentStatus` in `internal/server/api.go`) — when the session had **no new output since the last summary** or the new delta was **thinner than 5 lines**, the handler returned `http.Error(..., http.StatusNoContent)`. Per RFC 7231 §3.3, a 204 response must not carry a body, so Go's `net/http` dropped the message silently. The PWA's `apiFetch` helper then called `r.json()` on an empty body and surfaced to the operator as **`Failed to execute 'json' on 'Response': Unexpected end of JSON input`** — exactly the error reported on the session card. The two branches are merged and return the same 200/JSON contract as the success path with a new flag:
+  `{"current_status":"no change since last refresh","current_status_long":"","generated_at":"...","no_change":true}`
+- **PWA `apiFetch` hardening** (`internal/server/web/app.js`) — `apiFetch` now resolves 204/205 to `null` instead of calling `r.json()` on an empty body. Protects every future endpoint (local + federated, including proxied calls through `/api/proxy/<server>/...`) from the same class of browser `TypeError`.
+- **PWA `fetchCurrentStatus` UX** — a `null`/`no_change:true` response now renders as a friendly chip `"(no change since last refresh)"` (localized) instead of surfacing the JS exception.
+- **Localization** — new user-facing string `no_change_since_last_refresh` added to all five locale bundles (`en`, `de`, `es`, `fr`, `ja`). Mobile parity + native translations: datawatch-app#160.
+- **Regression tests** — `internal/server/current_status_test.go` adds `TestCurrentStatus_NoNewOutput` (pins the exact bug: status 200, non-empty JSON body, `no_change:true`) and `TestCurrentStatus_ThinDelta` (covers the second branch of the merged condition) — so `r.json()` on the response is always safe.
+
+### Compatibility
+- `GET /api/sessions/{id}/current-status` now always returns a parseable JSON body for the no-change/thin-delta cases (was 204 + empty body). Downstream consumers that special-cased `204` (the PWA did not) will still work; consumers that did `fetch().then(r => r.ok ? r.json() : ...)` will now see `{no_change:true, ...}` instead of a browser `TypeError`.
+
 ## v8.19.7 — fix: suppress 7 new base-image CVEs in Trivy scan (util-linux, libevent, libsystemd)
 
 ### Fixed

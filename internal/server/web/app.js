@@ -454,6 +454,9 @@ function send(type, data) {
 
 // apiFetch wraps fetch() with auth header and JSON response parsing.
 // Rejects with an Error whose message is the server error text on non-2xx.
+// 204 / 205 (no-content success) resolve to null — v8.19.8: RFC 7231 §3.3
+// forbids a body on 204, so the body can never arrive and r.json() throws
+// "Failed to execute 'json' on 'Response': Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -463,7 +466,11 @@ function apiFetch(path, opts = {}) {
   const srv = state.activeServer;
   const url = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
   return fetch(url, Object.assign({}, opts, { headers }))
-    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))));
+    .then(r => {
+      if (r.status === 204 || r.status === 205) return null;
+      if (r.ok) return r.json();
+      return r.text().then(t => Promise.reject(new Error(t || r.statusText)));
+    });
 }
 
 // ── Message handlers ─────────────────────────────────────────────────────────
@@ -2493,13 +2500,27 @@ function fetchCurrentStatus(fullId) {
   renderSessionsView();
   apiFetch('/api/sessions/' + encodeURIComponent(fullId) + '/current-status')
     .then(data => {
-      state.currentStatus[fullId] = {
-        text: data.current_status || '',
-        longText: data.current_status_long || '',
-        generatedAt: data.generated_at || new Date().toISOString(),
-        loading: false,
-        longExpanded: false,
-      };
+      // v8.19.8 — no-content / no-change responses (204 or no_change:true)
+      // resolve to a friendly localized "no change" chip instead of a JS
+      // exception; the server's no-change body is English so prefer the
+      // locale-bundle value.
+      if (!data || data.no_change) {
+        state.currentStatus[fullId] = {
+          text: '(' + (t('no_change_since_last_refresh') || 'no change since last refresh') + ')',
+          longText: '',
+          generatedAt: new Date().toISOString(),
+          loading: false,
+          longExpanded: false,
+        };
+      } else {
+        state.currentStatus[fullId] = {
+          text: data.current_status || '',
+          longText: data.current_status_long || '',
+          generatedAt: data.generated_at || new Date().toISOString(),
+          loading: false,
+          longExpanded: false,
+        };
+      }
       renderSessionsView();
     })
     .catch(err => {

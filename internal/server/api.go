@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.7"
+var Version = "8.19.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3396,6 +3396,9 @@ func (s *Server) handleSessionSummarize(w http.ResponseWriter, r *http.Request) 
 // GET /api/sessions/{id}/current-status
 //
 // Returns {"current_status":"...","generated_at":"..."} for running sessions.
+// When there is no new output to summarize, returns the same 200/JSON shape
+// with no_change:true (v8.19.8 — was 204 with an empty body, which surfaced
+// as "Failed to execute 'json'" in the PWA's apiFetch helper).
 // Returns 409 if the session is not running (caller should show last_response instead).
 // Returns 503 if no summarizer is configured.
 func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Request) {
@@ -3432,15 +3435,19 @@ func (s *Server) handleSessionCurrentStatus(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to read output: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if strings.TrimSpace(text) == "" {
-		http.Error(w, "no new output since last summary", http.StatusNoContent)
-		return
-	}
-	// Skip summarization when the delta is too thin; the LLM has nothing
-	// meaningful to work with and tends to generate inaccurate boilerplate.
-	// Require at least 5 non-empty lines of new output.
-	if strings.Count(strings.TrimSpace(text), "\n") < 4 {
-		http.Error(w, "insufficient new output to summarize", http.StatusNoContent)
+	// No new output (or too thin to summarize meaningfully): respond with the
+	// same JSON contract as the success path, flagged no_change, so PWA + PWS +
+	// MCP callers all get a parseable body. 204 was forbidden to carry a body
+	// (RFC 7231 §3.3) and Go silently dropped the message, surfacing as a
+	// browser JSON.parse exception on the client.
+	if strings.TrimSpace(text) == "" || strings.Count(strings.TrimSpace(text), "\n") < 4 {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"current_status":      "no change since last refresh",
+			"current_status_long": "",
+			"generated_at":        time.Now(),
+			"no_change":           true,
+		})
 		return
 	}
 	// Pass previous short summary as context so the LLM doesn't repeat it.

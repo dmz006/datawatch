@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.19.8](CHANGELOG.md) (2026-09-06)** — Bug fix: PWA "What's it doing?" button crashed with `Failed to execute 'json' on 'Response': Unexpected end of JSON input` when the session had no new output since the last summary. The handler was returning HTTP 204 with an empty body (RFC 7231 §3.3 forbids a body on 204 and Go silently drops the message), which hit the PWA's `r.json()` call. Now returns 200 with `{no_change:true, current_status:"no change since last refresh", …}` and the PWA shows a friendly chip. `apiFetch` is hardened to resolve 204/205 to `null` so any future 204 endpoint can't surface the same error. Mobile parity: datawatch-app#160.
+
 **[v8.19.7](CHANGELOG.md) (2026-09-05)** — Container scan fix: suppressed 7 new HIGH CVEs in Debian bookworm base packages (util-linux family, libevent, libsystemd0) with no upstream fix available; all follow existing suppression rationale.
 
 **[v8.19.6](CHANGELOG.md) (2026-09-05)** — Lint fix: replaced unchecked `Write`/`Close` calls in `expandImageTags` tests with `os.WriteFile`; golangci-lint errcheck now passes.

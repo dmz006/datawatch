@@ -1290,5 +1290,6 @@
   "settings_quality_gates_block_on_regression": "Block task on test regression",
   "stats_quality_gates": "Quality Gates",
   "settings_injection_guard": "Prompt injection guard (warn on suspicious PRD/task specs)",
-  "settings_block_on_injection": "Block PRD/task create when injection phrases detected"
+  "settings_block_on_injection": "Block PRD/task create when injection phrases detected",
+  "no_change_since_last_refresh": "no change since last refresh"
 }

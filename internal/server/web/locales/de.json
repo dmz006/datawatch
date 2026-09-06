@@ -1278,5 +1278,6 @@
   "stats_quality_gates": "Quality Gates",
   "settings_injection_guard": "Prompt-Injection-Schutz (warnt bei verdächtigen PRD-/Aufgaben-Specs)",
   "settings_block_on_injection": "PRD-/Aufgabenerstellung blockieren, wenn Injektionsphrasen erkannt werden",
-  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)"
+  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "no_change_since_last_refresh": "keine Änderung seit letztem Aktualisieren"
 }

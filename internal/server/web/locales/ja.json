@@ -1278,5 +1278,6 @@
   "stats_quality_gates": "Quality Gates",
   "settings_injection_guard": "プロンプトインジェクション対策（疑わしいPRD/タスク仕様を警告）",
   "settings_block_on_injection": "インジェクションフレーズ検出時にPRD/タスク作成をブロック",
-  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)"
+  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "no_change_since_last_refresh": "前回の更新以来変更なし"
 }

@@ -1278,5 +1278,6 @@
   "stats_quality_gates": "Quality Gates",
   "settings_injection_guard": "Protection contre l'injection (avertit pour les specs PRD/tâche suspects)",
   "settings_block_on_injection": "Bloquer la création PRD/tâche si des phrases d'injection sont détectées",
-  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)"
+  "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "no_change_since_last_refresh": "aucun changement depuis le dernier rafraîchissement"
 }
