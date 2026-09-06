@@ -99,6 +99,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"dialog_delete_sessions_title",
 		"autonomous_filter_templates",
 		"autonomous_fab_new",
+		// v8.19.8 — "What's it doing?" no-change chip (current-status 204→200 fix).
+		"no_change_since_last_refresh",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

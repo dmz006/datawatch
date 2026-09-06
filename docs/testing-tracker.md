@@ -104,6 +104,18 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 | Security preamble in `autonomousVerify` prompt | No | No | — | Verified by code inspection; preamble prepended to specPart+diffSection. |
 | Security preamble + tags in `autonomousGuardrail` prompt | No | No | — | Verified by code inspection; UnitTitle and UnitSpec wrapped. |
 
+## PWA Current-Status No-Change Contract (v8.19.8)
+
+`GET /api/sessions/{id}/current-status` — changed in v8.19.8 from HTTP 204 (empty body) to HTTP 200 + JSON `{"no_change":true}` on the two no-op branches (no new output; thin delta). Root cause: RFC 7231 §3.3 forbids a body on 204; Go's `net/http` silently drops it; PWA's `r.json()` threw `Unexpected end of JSON input`. `apiFetch` also hardened to resolve 204/205 → null.
+
+| Test case | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| No new output → HTTP 200 + `no_change:true` — `TestCurrentStatus_NoNewOutput` | **Yes** | No | `internal/server/current_status_test.go` — empty output store; asserts 200 + non-empty body + `no_change:true` | Pins the exact bug: 204 + empty body used to reach PWA as a `r.json()` throw |
+| Thin delta (output unchanged since last call) → HTTP 200 + `no_change:true` — `TestCurrentStatus_ThinDelta` | **Yes** | No | Same file — output identical on two consecutive calls; second returns `no_change:true` | Covers the second merged branch of the no-op condition |
+| Success path with new output → HTTP 200 + content body | No | No | — | Live test: start a session, let it produce output, poll endpoint; verify body contains session output and no `no_change` field |
+| `apiFetch` 204/205 → null guard (PWA) | No | No | Code inspection of `internal/server/web/app.js apiFetch` | Live test: any `/api/…` route returning 204 must not surface `Unexpected end of JSON input` in browser console |
+| PWA chip "(no change since last refresh)" renders on no_change response | No | No | Code inspection of `fetchCurrentStatus` in `app.js` | Live test: idle session → "What's it doing?" button → chip appears instead of error toast |
+
 ## PWA Session-List Select-All (v8.19.2)
 
 Fixed: select-all / select-none scoped to filtered visible sessions. Counter, selection set, and bulk-delete all honour the active chip + backend filter + text search + history toggle. Filter changes clear selection.

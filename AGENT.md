@@ -146,7 +146,7 @@ follow the same rule.
 3. Update `docs/operations.md` if the change affects deployment, security, or configuration
 4. Update `README.md` if adding a new interface, command, or user-visible feature
 5. Update the **documentation index** in both `README.md` and `docs/README.md` for any new doc files
-6. Update `docs/testing-tracker.md` for any new interface or backend
+6. Update `docs/testing-tracker.md` for any new interface, backend, **or changed endpoint contract** (e.g. HTTP status code change, new response field, renamed route). A contract change requires a new tracker section just as much as a new endpoint does. Record the section name in the commit message as `tracker: <section name>`.
 7. Verify no internal tracker IDs leaked into user-facing docs (see rule above)
 
 ### New LLM backend (`internal/llm/backends/<name>/`)
@@ -429,10 +429,7 @@ labels, modal titles, menu items, etc.):**
    (b) parent release that introduced them, (c) request for DE/ES/FR/JA
    translations through the same Compose-Multiplatform pipeline. Link the
    issue from the parent release notes.
-5. **Update the locale-parity tests** if the key list materially expands —
-   `internal/server/v5280_locales_test.go::TestLocales_CommonNavKeysPresent`
-   guards specific keys; add to that list when shipping new high-visibility
-   strings (nav, primary actions, settings tabs).
+5. **Update the locale-parity guard test** — `internal/server/v5280_locales_test.go::TestLocales_CommonNavKeysPresent` guards specific keys; **add every new high-visibility key** to the `mustHave` slice in that test (nav items, primary actions, settings tabs, operator-visible status chips). This is not optional when a new key ships. Record the added key in the commit message as `locale-guard: added <key-name>`. If no high-visibility key shipped, write `locale-guard: N/A`.
 
 **Iterative coverage extension** — wiring existing English-only literals through
 `t()` is always safe and welcome; do it whenever you touch a section.
@@ -1000,18 +997,27 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 
 **Smoke-cleanup safety rule (operator-flagged 2026-05-09):** smoke MUST clean up exactly what it created via `add_cleanup` — nothing more, nothing less. The `cleanup_all` switch in `scripts/release-smoke.sh` extends with one new `kind` per new entity surface; the smoke section that creates the entity calls `add_cleanup <kind> <id>` at creation time. The orphan sweep is a narrow race-condition safety net for two demonstrably-leaking patterns (`autonomous:*` + `smoke-*`); it MUST NOT be widened to new entity types or new name patterns. Mass-sweeps by name pattern are forbidden because they kill operator-initiated entities that happen to match. This rule was added after a widening to `council-*` / `llm_backend == council-virtual` killed the operator's live host session mid-run.
 
-**Per-sprint rules audit (operator-flagged 2026-05-09):** at the END of every sprint (alpha cut), before commit/tag/release, the rules audit checklist runs:
-- [ ] AGENT.md rules re-read; applicable rules listed in the sprint commit message
-- [ ] Smoke `add_cleanup` extended for any new entity created by smoke
-- [ ] Mobile-Parity Rule: datawatch-app issue (or comment) filed for any operator-visible PWA change
-- [ ] Localization Rule: locales × 5 updated for any new UI string
-- [ ] Configuration Parity Rule: every new feature reachable from YAML + REST + MCP + CLI + comm + PWA + mobile
-- [ ] `node --check internal/server/web/app.js` passes
-- [ ] `go build ./...` clean
-- [ ] `bash scripts/release-smoke.sh` passes (count recorded in commit message)
-- [ ] Cookbook updated in plan doc
+**Per-sprint rules audit (operator-flagged 2026-05-09):** at the END of every sprint (alpha cut), before commit/tag/release, the rules audit checklist runs. **Every item must produce a literal output token in the commit message** — not a category reference. If an item doesn't apply, write `N/A — <reason>`. A missing token means the sprint isn't done.
 
-If any line is empty, the sprint isn't done.
+| # | Check | Required commit-message token |
+|---|---|---|
+| 1 | AGENT.md rules re-read; list every rule that fired | `rules: <rule-name>, <rule-name>, …` |
+| 2 | Smoke `add_cleanup` extended for any new entity created by smoke | `smoke-cleanup: extended for <kind>` or `N/A` |
+| 3 | `scripts/release-smoke.sh` **extended** for any new operator-facing endpoint/behaviour | `smoke-extended: <section name>` or `N/A` |
+| 4 | `bash scripts/release-smoke.sh` passes — record exact counts from Summary line | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` |
+| 5 | Mobile-Parity Rule: datawatch-app issue (or comment) filed for any operator-visible PWA change | `mobile-parity: datawatch-app#<N>` or `N/A` |
+| 6 | Localization Rule: locales × 5 updated for any new UI string | `locales: <key-name>, …` or `N/A` |
+| 7 | Locale guard test updated if new high-visibility key added (`v5280_locales_test.go::TestLocales_CommonNavKeysPresent`) | `locale-guard: added <key-name>` or `N/A` |
+| 8 | `docs/testing-tracker.md` updated for any new or changed interface/endpoint contract | `tracker: <section name>` or `N/A` |
+| 9 | Error-Filing Rule: `gh issue create` filed against `dmz006/datawatch` for every bug fix | `gh-issue: #<N>` or `N/A` |
+| 10 | Configuration Parity Rule: every new feature reachable from YAML + REST + MCP + CLI + comm + PWA + mobile | `config-parity: verified` or `N/A` |
+| 11 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
+| 12 | `make build` clean (NOT `go build` — ensures `make sync-docs` runs) | `make-build: ok` |
+| 13 | Cookbook updated in plan doc | `cookbook: updated` or `N/A` |
+
+If any token is missing from the commit message, the sprint isn't done.
+
+**How to write the rules token (#1):** list by short name the AGENT.md rules you determined applied. Example: `rules: Localization Rule, Testing Tracker Rule, Mobile-Parity Rule, Error-Filing Rule`. A rule that didn't fire is omitted. This forces the agent to explicitly enumerate what it checked — not just assert "AGENT.md reviewed".
 
 **Additional requirements for a major release (cumulative — patches inherit these too if cluster is available):**
 
