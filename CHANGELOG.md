@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.5 — fix: image tag tests use file service root; path traversal guard in expandImageTags
+
+### Fixed
+- **`expandImageTags` path traversal guard** — image paths in `[image:<path>]` tags are now validated against `fileServiceRoot()` before the file is read, preventing arbitrary file inclusion via crafted message text. If the path falls outside the configured root the tag passes through unchanged.
+- **`expandImageTags` unit tests** — tests that create temporary image files now configure the server with `FileServiceRoot` set to the temp directory so the path traversal guard permits the test files. Corrected test expectations for `claudeDisclaimerResponse` to match the trust-dialog string introduced in v8.19.2.
+
 ## v8.19.4 — fix: preserve file path in image tag after vision description
 
 ### Fixed

@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.4"
+var Version = "8.19.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4495,20 +4495,26 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // expandImageTags replaces [image:<path>] references in text with vision descriptions.
+// Only paths within the configured file service root are read; others pass through
+// unchanged to prevent arbitrary file reads via user-supplied message text.
 // If the vision subsystem is not configured or the file cannot be read, the tag is
 // left as-is so the caller still receives the rest of the message unmodified.
 func (s *Server) expandImageTags(text string) string {
 	if s.visioner == nil || !strings.Contains(text, "[image:") {
 		return text
 	}
+	root := s.fileServiceRoot()
 	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
 	return re.ReplaceAllStringFunc(text, func(match string) string {
 		sub := re.FindStringSubmatch(match)
 		if len(sub) < 2 {
 			return match
 		}
-		path := strings.TrimSpace(sub[1])
-		data, err := os.ReadFile(path)
+		imgPath := strings.TrimSpace(sub[1])
+		if err := checkPathTraversal(root, imgPath); err != nil {
+			return match
+		}
+		data, err := os.ReadFile(imgPath) //nolint:gosec // path validated against fileServiceRoot above
 		if err != nil {
 			return match
 		}
@@ -4517,7 +4523,7 @@ func (s *Server) expandImageTags(text string) string {
 		if err != nil || desc == "" {
 			return match
 		}
-		return "[image: " + desc + " | path: " + path + "]"
+		return "[image: " + desc + " | path: " + imgPath + "]"
 	})
 }
 

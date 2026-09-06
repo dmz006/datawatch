@@ -103,3 +103,29 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 | Data-boundary tags in `decomposeFn` prompt | No | No | — | Verified by code inspection; prompt wraps `req.Spec` in `<user_data>` with preamble. Live test requires decompose call to a running LLM. |
 | Security preamble in `autonomousVerify` prompt | No | No | — | Verified by code inspection; preamble prepended to specPart+diffSection. |
 | Security preamble + tags in `autonomousGuardrail` prompt | No | No | — | Verified by code inspection; UnitTitle and UnitSpec wrapped. |
+
+## PWA Session-List Select-All (v8.19.2)
+
+Fixed: select-all / select-none scoped to filtered visible sessions. Counter, selection set, and bulk-delete all honour the active chip + backend filter + text search + history toggle. Filter changes clear selection.
+
+| Test case | Tested | Live-validated | Coverage details | Notes |
+|---|---|---|---|---|
+| Select-all uses `_visibleDone` (filtered done sessions) not `state.sessions` | No | No | Covered by code inspection; PWA JS — no automated unit test harness | Live test: PWA → filter to "failed" → click Select All → verify counter matches filtered count and not total |
+| Filter change clears active selection (chip, backend, text, clear button) | No | No | Code inspection of 4 call sites in app.js | Live test: select sessions → change state chip → verify selection clears |
+| Toggle "None" deselects only visible filtered set | No | No | Code inspection | Live test: select all filtered → click again → verify deselected only filtered, not unrelated |
+
+## PWA Image Vision Injection (v8.19.3 + v8.19.4)
+
+Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (REST + WebSocket) with `[image: <description> | path: <path>]` via the vision backend. Fallback: tag passes through unchanged if vision is disabled or file is unreadable.
+
+| Test case | Tested | Live-validated | Coverage details | Notes |
+|---|---|---|---|---|
+| No visioner → pass-through | **Yes** | No | `TestExpandImageTags_NoVisioner` in `vision_test.go` | Unit test: server has no visioner, tag unchanged |
+| No tag in text → pass-through | **Yes** | No | `TestExpandImageTags_NoTag` | Unit test |
+| File not found → pass-through | **Yes** | No | `TestExpandImageTags_FileNotFound` | Unit test: `/nonexistent/path` |
+| Visioner error → pass-through | **Yes** | No | `TestExpandImageTags_VisionerError` | Unit test: `fakeVisioner{err: timeout}` |
+| Happy path: description + path in output | **Yes** | No | `TestExpandImageTags_HappyPath` | Unit test: `[image: a red door on a white wall \| path: /tmp/...]` |
+| Empty description → pass-through | **Yes** | No | `TestExpandImageTags_EmptyDescription` | Unit test |
+| Multiple tags in one message | **Yes** | No | `TestExpandImageTags_MultipleTags` | Unit test: 2 tags both replaced |
+| PWA: upload image → attach → send → vision runs before session receives | No | No | — | Live test: PWA session → 📎 attach image → type prompt → send → check session input shows `[image: <desc> \| path: ...]` not raw path |
+| WebSocket path (WS send_input) also runs expandImageTags | No | No | Code inspection of `executeCommand` CmdSend branch | Live test: send via WebSocket with image tag |

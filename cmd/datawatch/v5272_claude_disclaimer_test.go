@@ -9,6 +9,9 @@ package main
 import "testing"
 
 func TestClaudeDisclaimerResponse_TrustFolderMenu(t *testing.T) {
+	// Trust-folder dialog uses a TUI (Down+Enter via SendTrustDialogAccept),
+	// not text input. claudeDisclaimerResponse returns "trust-dialog" so the
+	// caller knows to use the tmux key-send path, not SendInput("1\n").
 	cases := []string{
 		"❯ 1. Yes, I trust this folder",
 		"  Yes, I trust the folder",
@@ -17,8 +20,8 @@ func TestClaudeDisclaimerResponse_TrustFolderMenu(t *testing.T) {
 	}
 	for _, line := range cases {
 		got := claudeDisclaimerResponse(line)
-		if got != "1\n" {
-			t.Errorf("response(%q) = %q want %q", line, got, "1\n")
+		if got != "trust-dialog" {
+			t.Errorf("response(%q) = %q want %q", line, got, "trust-dialog")
 		}
 	}
 }
@@ -60,8 +63,8 @@ func TestClaudeDisclaimerResponse_UnrelatedReturnsEmpty(t *testing.T) {
 func TestClaudeDisclaimerResponse_CaseInsensitive(t *testing.T) {
 	// Patterns are matched case-insensitively so a claude-code
 	// release that capitalises differently still triggers.
-	if got := claudeDisclaimerResponse("TRUST THIS FOLDER"); got != "1\n" {
-		t.Errorf("uppercase: response = %q want %q", got, "1\n")
+	if got := claudeDisclaimerResponse("TRUST THIS FOLDER"); got != "trust-dialog" {
+		t.Errorf("uppercase: response = %q want %q", got, "trust-dialog")
 	}
 	if got := claudeDisclaimerResponse("LOADING DEVELOPMENT CHANNELS"); got != "\n" {
 		t.Errorf("uppercase: response = %q want %q", got, "\n")

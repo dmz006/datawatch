@@ -17,8 +17,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // fakeVisioner is a test double for visionSurface.
@@ -125,6 +128,132 @@ func TestVisionDescribe_VisionerError(t *testing.T) {
 	s.handleVisionDescribe(rr, req)
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("want 502, got %d", rr.Code)
+	}
+}
+
+// TS-v8193-EIT1: expandImageTags — no visioner → pass-through
+func TestExpandImageTags_NoVisioner(t *testing.T) {
+	s := &Server{}
+	in := "hello [image:/tmp/x.jpg] world"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("no-visioner: got %q want %q", got, in)
+	}
+}
+
+// TS-v8193-EIT2: expandImageTags — no [image:] tag → pass-through
+func TestExpandImageTags_NoTag(t *testing.T) {
+	s := &Server{visioner: &fakeVisioner{result: "irrelevant"}}
+	in := "plain text no tag"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("no-tag: got %q want %q", got, in)
+	}
+}
+
+// TS-v8193-EIT3: expandImageTags — file not found → tag passes through
+func TestExpandImageTags_FileNotFound(t *testing.T) {
+	s := &Server{visioner: &fakeVisioner{result: "should not be called"}}
+	in := "text [image:/nonexistent/path/file.jpg] end"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("missing-file: got %q want %q", got, in)
+	}
+}
+
+// TS-v8193-EIT3b: expandImageTags — path outside file service root → tag passes through (path traversal guard)
+func TestExpandImageTags_PathOutsideRoot(t *testing.T) {
+	// The file service root is resolved from s.cfg; with nil cfg it falls
+	// back to the user home dir. /etc/passwd is never within that subtree
+	// when running tests, so the traversal guard blocks the read.
+	s := &Server{visioner: &fakeVisioner{result: "should not be called"}}
+	in := "text [image:/etc/passwd] end"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("path-outside-root: got %q want %q", got, in)
+	}
+}
+
+// expandImageTagsServer builds a Server with FileServiceRoot set to root so
+// the path traversal guard permits files within that directory.
+func expandImageTagsServer(t *testing.T, root string, v visionSurface) *Server {
+	t.Helper()
+	return &Server{
+		visioner: v,
+		cfg: &config.Config{
+			Session: config.SessionConfig{
+				FileServiceRoot: root,
+			},
+		},
+	}
+}
+
+// TS-v8193-EIT4: expandImageTags — visioner error → tag passes through
+func TestExpandImageTags_VisionerError(t *testing.T) {
+	root := t.TempDir()
+	f, err := os.CreateTemp(root, "vision-test-*.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte("fake-image-data"))
+	f.Close()
+
+	s := expandImageTagsServer(t, root, &fakeVisioner{err: fmt.Errorf("timeout")})
+	in := "text [image:" + f.Name() + "] end"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("visioner-error: got %q want %q", got, in)
+	}
+}
+
+// TS-v8193-EIT5: expandImageTags — happy path → description + path preserved
+func TestExpandImageTags_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	f, err := os.CreateTemp(root, "vision-test-*.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte("fake-image-data"))
+	f.Close()
+
+	s := expandImageTagsServer(t, root, &fakeVisioner{result: "a red door on a white wall"})
+	in := "look at this [image:" + f.Name() + "] and fix it"
+	got := s.expandImageTags(in)
+	want := "look at this [image: a red door on a white wall | path: " + f.Name() + "] and fix it"
+	if got != want {
+		t.Errorf("happy-path:\ngot  %q\nwant %q", got, want)
+	}
+}
+
+// TS-v8193-EIT6: expandImageTags — empty description → tag passes through
+func TestExpandImageTags_EmptyDescription(t *testing.T) {
+	root := t.TempDir()
+	f, err := os.CreateTemp(root, "vision-test-*.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte("fake-image-data"))
+	f.Close()
+
+	s := expandImageTagsServer(t, root, &fakeVisioner{result: ""})
+	in := "[image:" + f.Name() + "]"
+	if got := s.expandImageTags(in); got != in {
+		t.Errorf("empty-desc: got %q want %q", got, in)
+	}
+}
+
+// TS-v8193-EIT7: expandImageTags — multiple tags in one message
+func TestExpandImageTags_MultipleTags(t *testing.T) {
+	root := t.TempDir()
+	f1, _ := os.CreateTemp(root, "vision-test-*.jpg")
+	f2, _ := os.CreateTemp(root, "vision-test-*.jpg")
+	f1.Write([]byte("img1"))
+	f2.Write([]byte("img2"))
+	f1.Close()
+	f2.Close()
+
+	s := expandImageTagsServer(t, root, &fakeVisioner{result: "described"})
+	in := "[image:" + f1.Name() + "] and [image:" + f2.Name() + "]"
+	got := s.expandImageTags(in)
+	exp1 := "[image: described | path: " + f1.Name() + "]"
+	exp2 := "[image: described | path: " + f2.Name() + "]"
+	if !strings.Contains(got, exp1) || !strings.Contains(got, exp2) {
+		t.Errorf("multi-tag: got %q", got)
 	}
 }
 

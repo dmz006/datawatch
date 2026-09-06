@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.19.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.4)
+[![Release](https://img.shields.io/badge/release-v8.19.5-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.5)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.19.5](CHANGELOG.md) (2026-09-05)** — Security fix: `expandImageTags` now validates image paths against `fileServiceRoot()` before reading, blocking path traversal via crafted `[image:<path>]` tags. Unit tests corrected to use a scoped `FileServiceRoot` so temp files pass the traversal guard.
 
 **[v8.19.4](CHANGELOG.md) (2026-09-05)** — Image tag now preserves the file path alongside the vision description: `[image: <description> | path: <path>]` so LLMs with file-access tools can reference the source file.
 
