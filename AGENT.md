@@ -1005,11 +1005,11 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 | 2 | Smoke `add_cleanup` extended for any new entity created by smoke | `smoke-cleanup: extended for <kind>` or `N/A` |
 | 3 | `scripts/release-smoke.sh` **extended** for any new operator-facing endpoint/behaviour | `smoke-extended: <section name>` or `N/A` |
 | 4 | `bash scripts/release-smoke.sh` passes — record exact counts from Summary line | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` |
-| 5 | Mobile-Parity Rule: datawatch-app issue (or comment) filed for any operator-visible PWA change | `mobile-parity: datawatch-app#<N>` or `N/A` |
+| 5 | Mobile-Parity Rule: datawatch-app issue filed for any operator-visible PWA change (cross-project only — internal bugs go to docs/plans, not GH) | `mobile-parity: datawatch-app#<N>` or `N/A` |
 | 6 | Localization Rule: locales × 5 updated for any new UI string | `locales: <key-name>, …` or `N/A` |
 | 7 | Locale guard test updated if new high-visibility key added (`v5280_locales_test.go::TestLocales_CommonNavKeysPresent`) | `locale-guard: added <key-name>` or `N/A` |
 | 8 | `docs/testing-tracker.md` updated for any new or changed interface/endpoint contract | `tracker: <section name>` or `N/A` |
-| 9 | Error-Filing Rule: `gh issue create` filed against `dmz006/datawatch` for every bug fix | `gh-issue: #<N>` or `N/A` |
+| 9 | Internal bugs tracked: B-number row added/updated in `docs/plans/README.md` (no GH issue for internal fixes) | `plans: B<N>` or `N/A` |
 | 10 | Configuration Parity Rule: every new feature reachable from YAML + REST + MCP + CLI + comm + PWA + mobile | `config-parity: verified` or `N/A` |
 | 11 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
 | 12 | `make build` clean (NOT `go build` — ensures `make sync-docs` runs) | `make-build: ok` |
@@ -1279,24 +1279,24 @@ genuinely cannot do.
 
 ## Error-Filing Rule
 
-**Operator-confirmed rule — 2026-05-17.**
+**Operator-confirmed rule — 2026-05-17. Scoped 2026-09-06.**
 
-When an error, bug, or defect is found during any work (testing, auditing, reviewing):
+Internal bugs found during development, auditing, or testing are tracked in `docs/plans/README.md` via B-numbers — **not** GitHub issues. Do NOT file `gh issue create` for bugs you found and fixed yourself.
 
-1. **Always file a GitHub issue** (`gh issue create`) with:
-   - Title: brief description
-   - Body: steps to reproduce, expected vs actual behavior, version found
-   - Labels: `bug` + relevant feature label
-2. **If the fix is straightforward** (≤ 30 min, localized change, no DIP needed):
-   - Fix it immediately
-   - Retest to confirm resolved
-   - Add a memory entry describing the root cause
-   - Add a rule to AGENT.md (or relevant section) describing how to avoid the bug class
-3. **If the fix is complex** (requires design, spans multiple files, uncertain scope):
-   - File the issue only; do NOT fix now
-   - Add `[complex-fix]` label to the issue
-   - Note the issue number in the current plan doc
-4. Close the filed issue with the fix commit hash when resolved.
+GitHub issues are reserved for two cases only:
+
+1. **Incoming external reports** — a contributor who is not `dmz006` files or describes a bug. Respond with a GitHub issue so they have a trackable reference.
+2. **Cross-project items** — anything requiring action in another repo (`dmz006/datawatch-app`, `dmz006/imap-mcp`, etc.). File in that repo, not here.
+
+**If the fix is straightforward** (≤ 30 min, localized change):
+- Fix immediately, record the B-number in `docs/plans/README.md`, reference it in the commit message.
+- Do not open a GH issue.
+
+**If the fix is complex** (requires design, spans multiple files):
+- Create a plan file in `docs/plans/` and add a B-number row to `docs/plans/README.md`.
+- Do not open a GH issue.
+
+The per-sprint checklist row for `gh-issue` applies only to Mobile App Sync Rule cross-project items (datawatch-app). Remove the `gh-issue` token from the checklist for purely internal fixes.
 
 ## Mobile App Sync Rule (previously "Android App Sync Rule")
 
