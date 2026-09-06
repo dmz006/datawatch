@@ -184,18 +184,22 @@ func expandImageTagsServer(t *testing.T, root string, v visionSurface) *Server {
 	}
 }
 
+// writeTempImage creates a file with the given content in root and returns its path.
+func writeTempImage(t *testing.T, root string, data []byte) string {
+	t.Helper()
+	p := root + "/vision-test.jpg"
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // TS-v8193-EIT4: expandImageTags — visioner error → tag passes through
 func TestExpandImageTags_VisionerError(t *testing.T) {
 	root := t.TempDir()
-	f, err := os.CreateTemp(root, "vision-test-*.jpg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Write([]byte("fake-image-data"))
-	f.Close()
-
+	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{err: fmt.Errorf("timeout")})
-	in := "text [image:" + f.Name() + "] end"
+	in := "text [image:" + p + "] end"
 	if got := s.expandImageTags(in); got != in {
 		t.Errorf("visioner-error: got %q want %q", got, in)
 	}
@@ -204,17 +208,11 @@ func TestExpandImageTags_VisionerError(t *testing.T) {
 // TS-v8193-EIT5: expandImageTags — happy path → description + path preserved
 func TestExpandImageTags_HappyPath(t *testing.T) {
 	root := t.TempDir()
-	f, err := os.CreateTemp(root, "vision-test-*.jpg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Write([]byte("fake-image-data"))
-	f.Close()
-
+	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{result: "a red door on a white wall"})
-	in := "look at this [image:" + f.Name() + "] and fix it"
+	in := "look at this [image:" + p + "] and fix it"
 	got := s.expandImageTags(in)
-	want := "look at this [image: a red door on a white wall | path: " + f.Name() + "] and fix it"
+	want := "look at this [image: a red door on a white wall | path: " + p + "] and fix it"
 	if got != want {
 		t.Errorf("happy-path:\ngot  %q\nwant %q", got, want)
 	}
@@ -223,15 +221,9 @@ func TestExpandImageTags_HappyPath(t *testing.T) {
 // TS-v8193-EIT6: expandImageTags — empty description → tag passes through
 func TestExpandImageTags_EmptyDescription(t *testing.T) {
 	root := t.TempDir()
-	f, err := os.CreateTemp(root, "vision-test-*.jpg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Write([]byte("fake-image-data"))
-	f.Close()
-
+	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{result: ""})
-	in := "[image:" + f.Name() + "]"
+	in := "[image:" + p + "]"
 	if got := s.expandImageTags(in); got != in {
 		t.Errorf("empty-desc: got %q want %q", got, in)
 	}
@@ -240,18 +232,19 @@ func TestExpandImageTags_EmptyDescription(t *testing.T) {
 // TS-v8193-EIT7: expandImageTags — multiple tags in one message
 func TestExpandImageTags_MultipleTags(t *testing.T) {
 	root := t.TempDir()
-	f1, _ := os.CreateTemp(root, "vision-test-*.jpg")
-	f2, _ := os.CreateTemp(root, "vision-test-*.jpg")
-	f1.Write([]byte("img1"))
-	f2.Write([]byte("img2"))
-	f1.Close()
-	f2.Close()
-
+	p1 := root + "/img1.jpg"
+	p2 := root + "/img2.jpg"
+	if err := os.WriteFile(p1, []byte("img1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p2, []byte("img2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	s := expandImageTagsServer(t, root, &fakeVisioner{result: "described"})
-	in := "[image:" + f1.Name() + "] and [image:" + f2.Name() + "]"
+	in := "[image:" + p1 + "] and [image:" + p2 + "]"
 	got := s.expandImageTags(in)
-	exp1 := "[image: described | path: " + f1.Name() + "]"
-	exp2 := "[image: described | path: " + f2.Name() + "]"
+	exp1 := "[image: described | path: " + p1 + "]"
+	exp2 := "[image: described | path: " + p2 + "]"
 	if !strings.Contains(got, exp1) || !strings.Contains(got, exp2) {
 		t.Errorf("multi-tag: got %q", got)
 	}

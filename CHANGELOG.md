@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.6 — fix: lint — checked file Write/Close errors in expandImageTags tests
+
+### Fixed
+- **`expandImageTags` tests errcheck** — replaced unchecked `f.Write()` + `f.Close()` calls with `os.WriteFile` so golangci-lint errcheck passes. Added `writeTempImage` helper to deduplicate the pattern across four tests.
+
 ## v8.19.5 — fix: image tag tests use file service root; path traversal guard in expandImageTags
 
 ### Fixed
