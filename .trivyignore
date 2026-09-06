@@ -539,3 +539,32 @@ CVE-2026-56865
 # runtime. Suppress pending upstream gemini-cli dependency updates.
 CVE-2026-9496
 CVE-2026-73566
+
+# libsystemd0 / libudev1 — CVE-2026-16742 (HIGH, no fix in bookworm)
+# systemd/udev vulnerability with no patched release in Debian bookworm.
+# libsystemd0 and libudev1 are transitive dependencies of the base image;
+# the datawatch service is a Go binary and does not use the systemd or udev
+# D-Bus APIs directly. No systemd socket activation or udev rule evaluation
+# occurs inside the running container.
+CVE-2026-16742
+
+# libevent-core-2.1-7 — CVE-2026-63382 + CVE-2026-63385 (HIGH, no fix in bookworm)
+# Two additional libevent CVEs in the same family as CVE-2026-63383/63384/
+# 63387/63388 already suppressed above. libevent is a transitive dependency
+# of openssh-client; datawatch exposes no libevent RPC, DTLS, or HTTP server
+# through this library, so the vulnerable code paths are unreachable at runtime.
+CVE-2026-63382
+CVE-2026-63385
+
+# util-linux family — CVE-2026-76642 + CVE-2026-78408/78409/78410 (HIGH, no fix in bookworm)
+# Four new CVEs in util-linux and its split packages (bsdutils, libblkid1,
+# libmount1, libsmartcols1, libuuid1, mount, util-linux-extra). All lack a
+# fixed version in Debian bookworm. These join CVE-2026-53615 and CVE-2026-53613
+# already suppressed for the same package family. The agent-base container runs
+# as an unprivileged non-root user; util-linux partition-table parsing and
+# block-device utilities are not invoked by the datawatch service or agent
+# tooling on attacker-controlled input at runtime.
+CVE-2026-76642
+CVE-2026-78408
+CVE-2026-78409
+CVE-2026-78410

@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.7 — fix: suppress 7 new base-image CVEs in Trivy scan (util-linux, libevent, libsystemd)
+
+### Fixed
+- **Container Trivy scan** — added suppressions to `.trivyignore` for 7 new HIGH CVEs in Debian bookworm base packages with no available fix: `CVE-2026-16742` (libsystemd0/libudev1), `CVE-2026-63382` + `CVE-2026-63385` (libevent-core), and `CVE-2026-76642` + `CVE-2026-78408/78409/78410` (util-linux family). All extend existing suppressed package families with matching rationale — no datawatch API surface is reachable through these components at container runtime.
+
 ## v8.19.6 — fix: lint — checked file Write/Close errors in expandImageTags tests
 
 ### Fixed

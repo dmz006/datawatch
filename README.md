@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.19.6-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.6)
+[![Release](https://img.shields.io/badge/release-v8.19.7-success)](https://github.com/dmz006/datawatch/releases/tag/v8.19.7)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.19.7](CHANGELOG.md) (2026-09-05)** — Container scan fix: suppressed 7 new HIGH CVEs in Debian bookworm base packages (util-linux family, libevent, libsystemd0) with no upstream fix available; all follow existing suppression rationale.
 
 **[v8.19.6](CHANGELOG.md) (2026-09-05)** — Lint fix: replaced unchecked `Write`/`Close` calls in `expandImageTags` tests with `os.WriteFile`; golangci-lint errcheck now passes.
 
