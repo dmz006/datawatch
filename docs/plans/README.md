@@ -45,7 +45,7 @@ Latest release: **v8.19.10** (2026-09-06). fix: autonomous task sessions were ig
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
+| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL370 — autonomous PRD max_concurrent_tasks config |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
@@ -611,6 +611,24 @@ Add Matrix as a communication channel. Matrix is extensive and has multiple inte
 
 **References:** https://spec.matrix.org/latest/ · https://github.com/mautrix/go (`maunium.net/go/mautrix v0.22.0` already in `go.sum`)
 **Status:** Open — design discussion in flight (see design doc); operator answers in §11 of design doc drive the implementation plan.
+
+#### BL370 — Autonomous PRD: max_concurrent_tasks config (filed 2026-09-06)
+
+Add a `max_concurrent_tasks` field (default 1) to the PRD and autonomous global config. Controls how many task sessions the executor may have in-flight at once. Default 1 preserves current fully-sequential behavior; operators can raise it for PRDs whose tasks are independent and whose host has spare session budget.
+
+Background: tasks currently run sequentially in topological order (one `executeOne` call at a time). However there is no visible indicator of this, and operators hit "max sessions (10) reached" failures when one-shot sessions from earlier tasks lingered in `complete` state before reap — making it appear tasks ran in parallel. Adding explicit config gives operators both visibility and control.
+
+**Scope:**
+- Add `MaxConcurrentTasks int` to `autonomous.Config` (default 1 = sequential)
+- Executor: when `MaxConcurrentTasks > 1`, fan out independent (no-dependency) tasks with a semaphore-bounded goroutine pool
+- Per-PRD override via `set_type` or a new `set_concurrency` endpoint
+- PWA: show `Concurrency: N` in PRD settings modal; allow editing
+- MCP tool param on `autonomous_prd_run` or new `autonomous_prd_set_concurrency`
+- Docs: config-reference.yaml entry
+
+**Status:** Open — awaiting sprint slot.
+
+---
 
 #### BL365 — Core security assessment: daemon, code & features (filed 2026-08-28, plan ready)
 
