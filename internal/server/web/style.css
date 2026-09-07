@@ -1699,10 +1699,14 @@ body {
   text-align: center;
   flex-shrink: 0;
 }
-.prd-task-status-glyph.status-completed { color: var(--success); }
-.prd-task-status-glyph.status-failed    { color: var(--error); }
-.prd-task-status-glyph.status-running   { color: var(--accent); }
-.prd-task-status-glyph.status-pending   { color: var(--text2); }
+.prd-task-status-glyph.status-completed     { color: var(--success); }
+.prd-task-status-glyph.status-failed        { color: var(--error); }
+.prd-task-status-glyph.status-running       { color: var(--accent); }
+.prd-task-status-glyph.status-pending       { color: var(--text2); }
+.prd-task-status-glyph.status-verifying     { color: var(--accent); animation: spin 1.5s linear infinite; }
+.prd-task-status-glyph.status-running_tests { color: var(--accent2,#8b5cf6); }
+.prd-task-status-glyph.status-blocked       { color: var(--error); }
+@keyframes spin { to { transform: rotate(360deg); } }
 .prd-task-id {
   font-size: 10px;
   color: var(--text2);

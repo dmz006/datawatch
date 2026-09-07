@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.8 — feat(autonomous): prd_id/task_id on sessions; verifying progress + glyphs
+
+### Added
+- **`prd_id` and `task_id` fields on sessions** (`internal/session/store.go`, `internal/session/manager.go`, `internal/server/api.go`, `cmd/datawatch/main.go`) — autonomous task sessions now carry the PRD and task IDs that spawned them. The autonomous spawn POST body sets both fields; the session start API accepts and propagates them through `StartOptions` into the stored session object so the PWA can filter sessions by PRD and display the active task.
+
+### Fixed
+- **Automaton detail showed "No active session record" even with an active session** (`internal/server/web/app.js`) — the PWA session filter `s.prd_id === prd.id` never matched because sessions lacked `prd_id`. Sessions now carry this field; filter works correctly.
+- **All stories showed 0% progress while a session was running** (`internal/server/web/app.js`) — the progress bar only counted `completed` tasks; `verifying` (active session in flight) contributed zero. Progress label now shows "⟳ N active" badge for tasks in `verifying` or `running_tests` state.
+- **No glyph for `verifying`, `running_tests`, or `blocked` task status** (`internal/server/web/app.js`, `internal/server/web/style.css`) — glyph map extended with ⟳ (verifying), 🧪 (running_tests), ⛔ (blocked); `status-verifying` spins via CSS `@keyframes spin`.
+
 ## v8.20.7 — fix(autonomous): opencode one-shot task prompt delivery; Start Planning UX
 
 ### Fixed

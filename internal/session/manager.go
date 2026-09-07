@@ -1494,6 +1494,12 @@ type StartOptions struct {
 	ParentID              string
 	KillChildren          bool
 	KillChildrenRecursive bool
+
+	// PRDID and TaskID link an autonomous task session to its executor so
+	// the PWA detail view can filter sessions by PRD and show which task
+	// is actively being worked on.
+	PRDID  string
+	TaskID string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1662,6 +1668,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.KillChildrenRecursive {
 		sess.KillChildrenRecursive = true
+	}
+	if opt != nil && opt.PRDID != "" {
+		sess.PRDID = opt.PRDID
+	}
+	if opt != nil && opt.TaskID != "" {
+		sess.TaskID = opt.TaskID
 	}
 
 	// Create the session tracker (git-tracked folder)

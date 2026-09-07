@@ -10040,10 +10040,12 @@ function _renderStoryReadOnlyExtras(story) {
   const tasks = story.tasks || [];
   const total = tasks.length;
   const done  = tasks.filter(t => (t.status || '') === 'completed').length;
+  const active = tasks.filter(t => ['verifying','running_tests'].includes(t.status || '')).length;
   const pct   = total > 0 ? Math.round(100 * done / total) : 0;
+  const activeLabel = active > 0 ? ` · <span style="color:var(--accent);font-weight:600;">⟳ ${active} active</span>` : '';
   const progressRow = total > 0
     ? `<div class="prd-story-progress-row">
-         <span class="prd-story-progress-label">Progress: ${done}/${total} tasks · ${pct}%</span>
+         <span class="prd-story-progress-label">Progress: ${done}/${total} tasks · ${pct}%${activeLabel}</span>
          <div class="prd-story-progress-bar"><div class="prd-story-progress-fill${pct === 100 ? ' complete' : ''}" style="width:${pct}%;"></div></div>
        </div>`
     : '';
@@ -10243,7 +10245,7 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○'})[task.status] || '';
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔'})[task.status] || '';
   const statusGlyphSpan = statusGlyph
     ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}">${statusGlyph}</span>`
     : '';
@@ -10493,7 +10495,17 @@ function prdAction(id, action, method, body) {
   // apiFetch resolves to parsed JSON (not a Response), so check resp.stream_url directly.
   if ((action === 'decompose' || action === 'plan') && method === 'POST') {
     apiFetch(url, opts).then(resp => {
-      if (resp && resp.stream_url) { _startDecomposeStream(id, resp.stream_url); showToast('Planning started…', 'success', 2000); return; }
+      if (resp && resp.stream_url) {
+        _startDecomposeStream(id, resp.stream_url);
+        showToast('Planning started…', 'success', 2000);
+        // Disable the plan button in-place immediately so it can't be double-clicked.
+        document.querySelectorAll('.prd-action-btn').forEach(function(b) {
+          if (/Start Planning|Re-plan/.test(b.textContent)) {
+            b.disabled = true; b.style.opacity = '0.45'; b.textContent = '⏳ Planning…';
+          }
+        });
+        return;
+      }
       showToast(t('prd_step_plan') || 'Plan started', 'success', 1500);
       _refreshAutomataOrPRD();
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
@@ -15540,15 +15552,15 @@ window.automataResume = function(id) {
     .then(() => { showToast('Resumed ' + id, 'info', 2000); loadAutomataPanel(); })
     .catch(e => showError('Resume failed: ' + (e.message || e)));
 };
-window.automataCancel = function(id) {
-  showConfirmModal(
-    (t('automata_confirm_cancel') || 'Cancel automaton "%1$s"?').replace('%1$s', id),
-    () => {
-      apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
-        .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
-        .catch(e => showError('Cancel failed: ' + (e.message || e)));
-    }
-  );
+window.automataCancel = function(id, status) {
+  const msg = (status === 'planning')
+    ? '⚠️ Planning is running on the server.\n\nCancelling will abort the entire automaton — the plan being generated will be discarded. The server-side planning job may continue briefly before stopping.\n\nCancel the automaton?'
+    : (t('automata_confirm_cancel') || 'Cancel automaton "%1$s"?').replace('%1$s', id);
+  showConfirmModal(msg, () => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
+      .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
+      .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  });
 };
 
 function loadAutomataPanel() {
@@ -16751,7 +16763,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     : '';
   // Cancel button — shown for any non-terminal, non-running cancellable state.
   const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')
-    ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
+    ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)},${escHtml(JSON.stringify(status))})" title="${escHtml(status === 'planning' ? 'Cancel entire automaton — planning will stop shortly on the server' : (t('automata_action_cancel_tip')||'Cancel this automaton'))}">✕ ${escHtml(status === 'planning' ? 'Cancel Automaton' : (t('automata_action_cancel')||'Cancel'))}</button>`
     : '';
   // Approve / Reject / Request Revision — state-driven primary actions.
   let approveBtn = '';

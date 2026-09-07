@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.7"
+var Version = "8.20.8"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3800,6 +3800,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"model":           req.Model,
 				"lsp_language":    req.LSPLanguage,
 				"one_shot":        true,
+				"prd_id":          req.PRDID,
+				"task_id":         req.TaskID,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",

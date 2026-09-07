@@ -181,6 +181,13 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// PRDID and TaskID link this session to the autonomous executor that
+	// spawned it. Set by the autonomousSpawn function in main.go so the
+	// PWA detail view can filter sessions by PRD and display the active
+	// task being worked on.
+	PRDID  string `json:"prd_id,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
+
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),

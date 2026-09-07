@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.20.7"
+var Version = "8.20.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3815,6 +3815,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ParentID              string `json:"parent_id,omitempty"`
 		KillChildren          bool   `json:"kill_children,omitempty"`
 		KillChildrenRecursive bool   `json:"kill_children_recursive,omitempty"`
+		// PRDID and TaskID link an autonomous task session back to its executor.
+		PRDID  string `json:"prd_id,omitempty"`
+		TaskID string `json:"task_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -4099,6 +4102,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ParentID:              req.ParentID,
 		KillChildren:          req.KillChildren,
 		KillChildrenRecursive: req.KillChildrenRecursive,
+		PRDID:                 req.PRDID,
+		TaskID:                req.TaskID,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
