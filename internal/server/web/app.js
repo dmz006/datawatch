@@ -10490,12 +10490,10 @@ function prdAction(id, action, method, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   // BL328 - decompose/plan returns 202 with stream_url; open SSE progress.
+  // apiFetch resolves to parsed JSON (not a Response), so check resp.stream_url directly.
   if ((action === 'decompose' || action === 'plan') && method === 'POST') {
-    apiFetch(url, opts).then(async resp => {
-      if (resp.status === 202) {
-        const data = await resp.json();
-        if (data.stream_url) { _startDecomposeStream(id, data.stream_url); return; }
-      }
+    apiFetch(url, opts).then(resp => {
+      if (resp && resp.stream_url) { _startDecomposeStream(id, resp.stream_url); return; }
       showToast(t('prd_step_plan') || 'Plan started', 'success', 1500);
       _refreshAutomataOrPRD();
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
@@ -16684,15 +16682,16 @@ window._toggleEditMenu = function(ev) {
   const m = document.getElementById('prdEditMenu');
   if (!m) return;
   if (m.style.display === 'block') { m.style.display = 'none'; return; }
-  const btn = ev.currentTarget;
+  const btn = ev.currentTarget || ev.target;
   const r = btn.getBoundingClientRect();
+  // Drop below the button, right-aligned to its right edge.
+  // Clamp left edge to at least 4px so it never scrolls off screen.
   m.style.display = 'block';
-  m.style.top = Math.round(r.top) + 'px';
-  // Position the menu's right edge to the LEFT edge of the button
-  // (operator: "slide out to the left, going over anything that
-  // might be to the left of the edit button").
-  m.style.right = Math.max(0, Math.round(window.innerWidth - r.left + 6)) + 'px';
+  m.style.top = (Math.round(r.bottom) + 4) + 'px';
+  m.style.bottom = '';
   m.style.left = '';
+  m.style.right = Math.max(4, Math.round(window.innerWidth - r.right)) + 'px';
+  m.style.maxWidth = (window.innerWidth - 8) + 'px';
   // Outside-click dismiss — single global handler that self-removes.
   setTimeout(() => {
     const off = (e) => { if (!m.contains(e.target) && e.target !== btn) { m.style.display = 'none'; document.removeEventListener('click', off, true); } };
@@ -16735,11 +16734,11 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   }
   // Plan button — prominent primary action for draft and revisions_asked.
   const planBtn = (status === 'draft' || status === 'revisions_asked')
-    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'decompose','POST')" title="${escHtml(t('prd_step_run_planning')||'Run planning — decompose the spec into stories and tasks')}">▶ ${escHtml(status === 'revisions_asked' ? (t('prd_btn_replan')||'Re-plan') : (t('prd_btn_start_planning')||'Start Planning'))}</button>`
+    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'decompose','POST')" title="Run planning — decompose the spec into stories and tasks">▶ ${status === 'revisions_asked' ? 'Re-plan' : 'Start Planning'}</button>`
     : '';
   // Run button — approved and ready to execute.
   const runBtn = (status === 'approved')
-    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'run','POST')" title="${escHtml(t('prd_btn_run_title')||'Execute the approved plan')}">▶ ${escHtml(t('prd_step_run')||'Run')}</button>`
+    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'run','POST')" title="Execute the approved plan">▶ Run</button>`
     : '';
   // Cancel button — shown for any non-terminal, non-running cancellable state.
   const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')

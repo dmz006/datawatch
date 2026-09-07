@@ -1108,9 +1108,10 @@ body {
   z-index: 100;
   padding: 3px 5px;
   display: flex;
-  flex-direction: row;
-  gap: 3px;
+  flex-direction: column;
+  gap: 2px;
   white-space: nowrap;
+  min-width: 160px;
 }
 .prd-edit-menu-item {
   background: transparent;
