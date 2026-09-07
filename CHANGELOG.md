@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.3 — fix(pwa): Plan button + Run button in PRD toolbar; image attachment on mobile
+
+### Fixed
+- **No obvious "Plan" button after creating an automaton** (`internal/server/web/app.js`) — the `▶ Plan` button existed only in the compact lifecycle strip (10px font, 2px padding) and was hard to notice. A prominent **▶ Start Planning** (or **▶ Re-plan** for `revisions_asked`) button now appears in the main action toolbar, styled identically to Approve/Cancel. A matching prominent **▶ Run** button is added for the `approved` state.
+- **Launch Automaton wizard execution backend filter** (`internal/server/web/app.js`) — the wizard's execution backend dropdown had `planningOnly=true`, showing only ollama/openwebui. A separate planning backend field was missing. Both issues now fixed: wizard shows all backends for execution, and a "Planning backend (decompose)" picker with `planningOnly=true` is added below it.
+- **Directory not selected caused server 400** (`internal/server/web/app.js`) — wizard submit without a project directory returned a cryptic server-side 400; now shows "Enter a project directory" toast client-side.
+- **Image attachment file picker not opening on mobile PWA** (`internal/server/web/app.js`) — `display:none` on the hidden file input blocks `.click()` on some mobile browsers. Changed to `position:fixed;top:-200px;left:-200px;width:1px;height:1px;opacity:0`.
+
 ## v8.20.2 — fix(autonomous): session wait + cleanup; create modal execution backend
 
 ### Fixed

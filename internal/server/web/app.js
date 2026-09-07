@@ -2890,7 +2890,7 @@ function renderSessionDetail(sessionId) {
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
-    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
+    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="position:fixed;top:-200px;left:-200px;width:1px;height:1px;opacity:0;overflow:hidden;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
   view.innerHTML = `
@@ -16733,6 +16733,14 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   if (!prd.is_template) {
     editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
   }
+  // Plan button — prominent primary action for draft and revisions_asked.
+  const planBtn = (status === 'draft' || status === 'revisions_asked')
+    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'decompose','POST')" title="${escHtml(t('prd_step_run_planning')||'Run planning — decompose the spec into stories and tasks')}">▶ ${escHtml(status === 'revisions_asked' ? (t('prd_btn_replan')||'Re-plan') : (t('prd_btn_start_planning')||'Start Planning'))}</button>`
+    : '';
+  // Run button — approved and ready to execute.
+  const runBtn = (status === 'approved')
+    ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'run','POST')" title="${escHtml(t('prd_btn_run_title')||'Execute the approved plan')}">▶ ${escHtml(t('prd_step_run')||'Run')}</button>`
+    : '';
   // Cancel button — shown for any non-terminal, non-running cancellable state.
   const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')
     ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
@@ -16794,7 +16802,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
+        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
       </div>
       ${(terminal && status !== 'cancelled') ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}
