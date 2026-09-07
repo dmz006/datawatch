@@ -326,20 +326,22 @@ func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_llm",
-		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Empty string = clear (fall back to global session.llm_backend)."),
+		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Empty string = clear (fall back to global session.llm_backend). v8.20.0: decomposition_profile sets the planning/decompose LLM (must be ollama/openwebui); backend sets the task-execution backend (opencode, claude-code, goose, etc.)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
-		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name (claude / claude-code / ollama / openai / etc.)")),
+		mcpsdk.WithString("backend", mcpsdk.Description("Task-execution backend (claude-code / opencode / goose / ollama / etc.)")),
 		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
 		mcpsdk.WithString("model", mcpsdk.Description("specific model name (e.g. claude-3-5-sonnet)")),
+		mcpsdk.WithString("decomposition_profile", mcpsdk.Description("Planning/decompose backend (must be an ollama or openwebui LLM); empty = use global autonomous.planning_backend")),
 	)
 }
 func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]string{
-		"backend": req.GetString("backend", ""),
-		"effort":  req.GetString("effort", ""),
-		"model":   req.GetString("model", ""),
-		"actor":   "operator",
+		"backend":               req.GetString("backend", ""),
+		"effort":                req.GetString("effort", ""),
+		"model":                 req.GetString("model", ""),
+		"decomposition_profile": req.GetString("decomposition_profile", ""),
+		"actor":                 "operator",
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_llm", body)
 	if err != nil {

@@ -678,10 +678,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Backend string `json:"backend"`
-			Effort  string `json:"effort"`
-			Model   string `json:"model"`
-			Actor   string `json:"actor"`
+			Backend              string `json:"backend"`
+			Effort               string `json:"effort"`
+			Model                string `json:"model"`
+			DecompositionProfile string `json:"decomposition_profile"`
+			Actor                string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -697,7 +698,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.Actor)
+		// v8.20.0 — validate decomposition_profile (planning LLM) separately.
+		if req.DecompositionProfile != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(req.DecompositionProfile); err != nil {
+				http.Error(w, "unknown planning LLM "+strconv.Quote(req.DecompositionProfile)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
+		}
+		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

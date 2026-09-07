@@ -11116,18 +11116,29 @@ window.openPRDEditStoryModal = openPRDEditStoryModal;
 function openPRDSetLLMModal(prdID, current) {
   // v5.26.8 — same dynamic model dropdown pattern as the New PRD and
   // Edit Task modals.
+  // v8.20.0 — split into planning backend (decomposition_profile, headless
+  // only) and execution backend (backend, any session agent).
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
-      <strong>${t('prd_set_llm_title')||'Automaton-level worker LLM'}</strong>
+      <strong>${t('prd_set_llm_title')||'Automaton LLM settings'}</strong>
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
-    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Planning (decompose) and task execution use this backend. Only ollama / openwebui support headless planning. Set per-task overrides in the task editor for session-based backends.'}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`, true)}</div>
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
-        <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdSetModelInner"></div></div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Execution backend runs task sessions (opencode, claude-code, goose, etc.). Planning backend runs decompose — must be ollama or openwebui; defaults to the global planning_backend when left empty.'}</div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Execution backend (task sessions)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
+          <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdSetModelInner"></div></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Planning backend (decompose / headless only)</div>
+        <div style="display:grid;grid-template-columns:1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (ollama / openwebui)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', '', true)}</div>
+        </div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -11140,6 +11151,7 @@ function openPRDSetLLMModal(prdID, current) {
       backend: document.getElementById('prdSetBackend').value,
       effort: document.getElementById('prdSetEffort').value,
       model: modelEl ? modelEl.value.trim() : '',
+      decomposition_profile: document.getElementById('prdSetDecompositionProfile').value,
       actor: 'operator',
     };
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
@@ -11164,12 +11176,13 @@ function openPRDSettingsModal(prdID) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID))
     .then(prd => {
       const cur = {
-        type:        prd.type || '',
-        backend:     prd.backend || '',
-        effort:      prd.effort || '',
-        model:       prd.model || '',
-        skills:      (prd.skills || []).join(', '),
-        guided_mode: !!prd.guided_mode,
+        type:                 prd.type || '',
+        backend:              prd.backend || '',
+        effort:               prd.effort || '',
+        model:                prd.model || '',
+        decomposition_profile: prd.decomposition_profile || '',
+        skills:               (prd.skills || []).join(', '),
+        guided_mode:          !!prd.guided_mode,
       };
       ensureLLMModelLists().then(() => {
         _prdMountModal(`
@@ -11193,8 +11206,8 @@ function openPRDSettingsModal(prdID) {
             </div>
             <div class="wizard-grid-mobile">
               <div class="wizard-field">
-                <label class="wizard-label">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
-                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`, true)}
+                <label class="wizard-label">${escHtml(t('prd_new_backend_label')||'Execution backend (tasks)')}</label>
+                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
               </div>
               <div class="wizard-field">
                 <label class="wizard-label">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
@@ -11204,6 +11217,11 @@ function openPRDSettingsModal(prdID) {
                 <label class="wizard-label">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
                 <div id="prdSettingsModelInner"></div>
               </div>
+            </div>
+            <div class="wizard-field">
+              <label class="wizard-label">Planning backend (decompose — ollama / openwebui)</label>
+              ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, '', true)}
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Runs headless planning only. Empty = use global planning_backend config.</div>
             </div>
             <!-- v6.13.4 — operator: "skills should be a selectable list
                  from what is installed... if no skills installed say
@@ -11236,6 +11254,7 @@ function openPRDSettingsModal(prdID) {
           const newEffort = document.getElementById('prdSettingsEffort').value;
           const modelEl = document.getElementById('prdSettingsModelInner')?.querySelector('input,select');
           const newModel = modelEl ? modelEl.value.trim() : '';
+          const newDecompositionProfile = document.getElementById('prdSettingsDecompositionProfile').value;
           // v6.13.4 — read skills from the chip-picker hidden input
           // (populated by _renderSkillChipPicker on toggle).
           const newSkills = (document.getElementById('prdSettingsSkills').value || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -11248,10 +11267,10 @@ function openPRDSettingsModal(prdID) {
               body: JSON.stringify({ type: newType, actor: 'operator' }),
             }));
           }
-          if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model) {
+          if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model || newDecompositionProfile !== cur.decomposition_profile) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
               method: 'POST', headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, actor: 'operator' }),
+              body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, decomposition_profile: newDecompositionProfile, actor: 'operator' }),
             }));
           }
           const skillsChanged = JSON.stringify(newSkills) !== JSON.stringify((prd.skills || []));

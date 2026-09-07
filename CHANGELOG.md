@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.0 — feat(autonomous): split PRD planning backend from task-execution backend
+
+### Added
+- **Split decompose vs. execution backends for autonomous PRDs** (`internal/autonomous/`, `internal/server/autonomous.go`, `internal/server/web/app.js`) — the PRD's single `backend` field was previously used for both headless planning/decompose (requires ollama/openwebui) and task-session spawning (benefits from tool-capable agents like opencode or goose). The `DecompositionProfile` struct field (defined but unconnected since v5.26.60) is now wired as the per-PRD planning LLM. Decompose and DecomposeStreaming now use `prd.DecompositionProfile`, falling back to the global `autonomous.planning_backend` config. The execution `backend` field is now purely for task sessions and accepts any backend — opencode, claude-code, goose, etc.
+- **`decomposition_profile` on `set_llm` endpoint** — `POST /api/autonomous/prds/{id}/set_llm` accepts a new optional `decomposition_profile` field, validated against the inference registry; `autonomous_prd_set_llm` MCP tool exposes the same field.
+- **PWA — two-field LLM settings** — the Set LLM modal and Settings modal now show separate pickers: "Execution backend (tasks)" (all backends, opencode/goose/claude-code available) and "Planning backend (decompose — ollama/openwebui only)". Removes the `planningOnly=true` restriction from the execution backend selectors in both modals.
+
 ## v8.19.10 — fix: autonomous task sessions use PRD's named inference-registry LLM backend
 
 ### Fixed

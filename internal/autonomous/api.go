@@ -361,8 +361,8 @@ func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (a
 	}
 	return out, err
 }
-func (a *API) SetPRDLLM(prdID, backend, effort, model, actor string) (any, error) {
-	out, err := a.M.SetPRDLLM(prdID, backend, effort, model, actor)
+func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (any, error) {
+	out, err := a.M.SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

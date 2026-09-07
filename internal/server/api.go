@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.10"
+var Version = "8.20.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -538,7 +538,7 @@ type AutonomousAPI interface {
 	InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error)
 
 	// BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
-	SetPRDLLM(prdID, backend, effort, model, actor string) (any, error)
+	SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
 
 	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD

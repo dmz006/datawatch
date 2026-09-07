@@ -398,7 +398,10 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
-	backend := prd.Backend
+	// v8.20.0 — use the per-PRD planning backend (decomposition_profile) when
+	// set; otherwise fall back to the global planning_backend config. The
+	// execution backend (Backend) is reserved for task sessions only.
+	backend := prd.DecompositionProfile
 	if backend == "" {
 		backend = m.cfg.PlanningBackend
 	}
@@ -483,7 +486,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
-	backend := prd.Backend
+	backend := prd.DecompositionProfile
 	if backend == "" {
 		backend = m.cfg.PlanningBackend
 	}
@@ -1162,7 +1165,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 // SetPRDLLM (BL203, v5.4.0) overrides the PRD-level worker LLM defaults
 // (backend / effort / model). Only allowed pre-Run. Tasks without
 // per-task overrides will inherit these.
-func (m *Manager) SetPRDLLM(prdID, backend, effort, model, actor string) (*PRD, error) {
+func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -1173,10 +1176,15 @@ func (m *Manager) SetPRDLLM(prdID, backend, effort, model, actor string) (*PRD, 
 	prd.Backend = backend
 	prd.Effort = Effort(effort)
 	prd.Model = model
+	prd.DecompositionProfile = decompositionProfile
 	prd.UpdatedAt = time.Now()
+	note := fmt.Sprintf("backend=%s effort=%s model=%s", backend, effort, model)
+	if decompositionProfile != "" {
+		note += " decomposition_profile=" + decompositionProfile
+	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
-		Note: fmt.Sprintf("backend=%s effort=%s model=%s", backend, effort, model),
+		Note: note,
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
