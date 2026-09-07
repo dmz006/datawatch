@@ -1475,6 +1475,51 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 
 ---
 
+## Autonomous PRD LLM Configuration
+
+Autonomous PRDs use two separate backends:
+
+| Role | Config | Description |
+|------|--------|-------------|
+| **Planning** (decompose) | `autonomous.planning_backend` (global) or `decomposition_profile` (per-PRD) | Runs headless LLM inference via `/api/ask`. Must be an **ollama** or **openwebui** backend. |
+| **Execution** (task sessions) | `backend` per-PRD | Spawns interactive coding sessions. Any registered backend: `opencode`, `claude-code`, `goose`, `aider`, etc. |
+
+**Global planning backend** (applies to all PRDs that don't override it):
+
+```yaml
+autonomous:
+  planning_backend: "ollama-datawatch"   # must be ollama or openwebui kind
+  planning_effort: "thorough"
+```
+
+**Per-PRD settings** — use the PWA Settings modal (Settings button on any PRD in the detail view), or the MCP tool:
+
+```
+autonomous_prd_set_llm(
+  id="<prd-id>",
+  backend="opencode",            # task execution (any session backend)
+  decomposition_profile="",      # planning (empty = use global planning_backend)
+  effort="thorough"
+)
+```
+
+Or the REST API:
+
+```bash
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"backend":"opencode","decomposition_profile":"","effort":"thorough"}'
+```
+
+**Typical setup for opencode-based PRDs:**
+
+1. Configure a global planning backend (ollama) in `config.yaml`
+2. Create the PRD
+3. In the PWA Settings modal, set "Execution backend" to `opencode`, leave "Planning backend" blank
+4. Decompose → Review → Approve → Run — decompose uses ollama, tasks spawn opencode sessions with file access
+
+---
+
 ## Autonomous Prompt Injection Protection
 
 When using autonomous PRDs with user-supplied specs (especially via federation peers, comm channels, or operator-created tasks), enable the injection guard to detect and optionally block known prompt injection patterns before they reach the LLM:

@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.20.0](CHANGELOG.md) (2026-09-06)** — Feature: autonomous PRD planning backend is now independent from task-execution backend. Set `decomposition_profile` per-PRD (via Settings modal or `set_llm` API) to choose which ollama/openwebui LLM runs decompose; leave it empty to use the global `autonomous.planning_backend` default. The execution `backend` field now accepts any session agent — opencode, goose, claude-code, etc. — and is no longer filtered to headless-only backends. PWA Settings modal shows two separate pickers. Android parity tracked in [datawatch-app#162](https://github.com/dmz006/datawatch-app/issues/162).
+
 **[v8.19.10](CHANGELOG.md) (2026-09-06)** — Bug fix: autonomous PRD task sessions were silently spawning with `claude-code` instead of the operator-configured LLM backend (e.g. `ollama-datawatch`). Root cause: the session manager's legacy `llm.Get()` only knows fixed kind strings and returned "unknown" for named inference-registry entries, causing a silent fallback to the manager default. `handleStartSession` now resolves named inference-registry backends to their kind string when `req.LLM` is unset.
 
 **[v8.19.9](CHANGELOG.md) (2026-09-06)** — Bug fix: PRD backend picker now filters to planning-capable backends only (ollama/openwebui); session-only backends (opencode, claude-code, etc.) are hidden from PRD-level selectors because decompose requires headless LLM inference. Approve and Reject buttons restored to the PRD detail view for `needs_review` state (dropped during a prior header restructure); lifecycle hint now correctly reflects "plan ready — review stories" instead of "planning in progress" when a review is pending.

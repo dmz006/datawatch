@@ -584,8 +584,11 @@ autonomous:
   poll_interval_seconds: 30
   # Per-PRD in-flight worker cap.
   max_parallel_tasks: 3
-  # LLM backend used for the planning call (empty = inherit session.llm_backend).
-  # BL304: renamed from decomposition_backend; old key still accepted on read.
+  # LLM backend used for the planning/decompose call (empty = inherit session.llm_backend).
+  # Must be an ollama or openwebui backend — headless /api/ask is required for decompose.
+  # Old key "decomposition_backend" is still accepted on read.
+  # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm
+  # or the PWA Settings modal. Empty per-PRD value falls back to this global setting.
   planning_backend: ""
   # BL25 verifier backend. Empty = inherit. Set to a different backend
   # (e.g. ollama when planning backend is claude-code) for cross-backend

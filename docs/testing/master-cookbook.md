@@ -138,7 +138,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T3 | TS-022 | GET /api/autonomous/prds/{id}/children empty array | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-023 | PUT /api/autonomous/prds/{id} title update | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-024 | POST /api/autonomous/prds/{id}/decompose | surface:api feature:automata conflict:llm | ✅ ready | — | — |
-| T3 | TS-025 | POST /api/autonomous/prds/{id}/set_llm round-trip | surface:api feature:automata | ✅ ready | — | — |
+| T3 | TS-025 | POST /api/autonomous/prds/{id}/set_llm round-trip (backend + decomposition_profile) | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-026 | Project profile create + attach to Automaton | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-027 | Cluster profile create + attach to Automaton | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-028 | PUT /api/autonomous/config per_story_approval round-trip | surface:api feature:automata feature:config | ✅ ready | — | — |

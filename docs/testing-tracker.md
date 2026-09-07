@@ -104,6 +104,24 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 | Security preamble in `autonomousVerify` prompt | No | No | — | Verified by code inspection; preamble prepended to specPart+diffSection. |
 | Security preamble + tags in `autonomousGuardrail` prompt | No | No | — | Verified by code inspection; UnitTitle and UnitSpec wrapped. |
 
+## Autonomous PRD Split Planning/Execution Backend (v8.20.0)
+
+Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, used by Decompose/DecomposeStreaming) from the task-execution backend (`backend`, used by autonomous task session spawning). `Decompose()` now resolves: `prd.DecompositionProfile` → `manager.cfg.PlanningBackend`. The execution `backend` field accepts any registered backend (opencode, goose, claude-code, etc.).
+
+`POST /api/autonomous/prds/{id}/set_llm` — extended with `decomposition_profile` field (validated against inference registry).
+
+| Test case | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `Decompose()` uses `DecompositionProfile` when set | No | No | — | Unit test needed: PRD with non-empty `DecompositionProfile` → decomposeFn called with that backend, not `prd.Backend`. |
+| `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | No | No | — | Unit test needed: PRD with empty `DecompositionProfile`, cfg.PlanningBackend set → decomposeFn called with cfg value. |
+| `SetPRDLLM` persists `DecompositionProfile` field | No | No | — | Unit test needed: verify `prd.DecompositionProfile` set after call; decision log includes `decomposition_profile=<value>`. |
+| `set_llm` endpoint: unknown `decomposition_profile` returns 400 | No | No | — | Unit test needed: POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
+| `set_llm` endpoint: valid `decomposition_profile` returns 200 | No | No | — | Unit test needed: POST with known inference-registry name → 200, field persisted. |
+| `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | No | No | — | Code inspection confirmed; live test requires PRD run with mismatched backends. |
+| PWA Settings modal — execution backend picker shows all session backends | No | No | — | Manual: open Settings on a PRD; verify opencode, goose, claude-code appear; no planningOnly filter. |
+| PWA Settings modal — planning backend picker filters to ollama/openwebui | No | No | — | Manual: "Planning backend" picker should not show opencode, claude-code, goose. |
+| **LIVE** round-trip: set `decomposition_profile` + `backend` separately, verify PRD fields | No | No | — | POST `set_llm` with `backend=opencode, decomposition_profile=ollama-datawatch`; GET PRD → confirm both fields. |
+
 ## PWA Current-Status No-Change Contract (v8.19.8)
 
 `GET /api/sessions/{id}/current-status` — changed in v8.19.8 from HTTP 204 (empty body) to HTTP 200 + JSON `{"no_change":true}` on the two no-op branches (no new output; thin delta). Root cause: RFC 7231 §3.3 forbids a body on 204; Go's `net/http` silently drops it; PWA's `r.json()` threw `Unexpected end of JSON input`. `apiFetch` also hardened to resolve 204/205 → null.

@@ -552,7 +552,7 @@ The "+" FAB on the Automata view launches a wizard.
 - **Decisions** — every state-changing event for this Automaton; click any row to expand the raw `details` payload. Filter by source (operator / autonomous / scan / etc.).
 - **Scan** — Run Scan kicks off a verifier sweep against the spec; shows pass/fail across SAST / secrets / deps / LLM grader. History persists.
 
-The header strip carries Status badge + Settings (`openPRDSettingsModal` — type, backend, effort, model, skills, guided mode), Request Revision, Clone to Template, Delete.
+The header strip carries Status badge + Settings (`openPRDSettingsModal` — type, execution backend, planning backend / decomposition profile, effort, model, skills, guided mode), Request Revision, Clone to Template, Delete.
 
 **See also:**
 [howto/autonomous-planning](howto/autonomous-planning.md) ·
