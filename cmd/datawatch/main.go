@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.5"
+var Version = "8.20.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -231,6 +231,13 @@ func isTrustDialogLine(line string) bool {
 // rapid succession at session start (trust-folder, MCP, bypass); we gate
 // on this map so only ONE goroutine is spawned per startup sequence.
 var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
+
+// opencodeTaskDelivered guards one-shot opencode TUI task delivery. Opencode
+// TUI sessions don't call /api/channel/ready (no channel bridge JS), so the
+// handleChannelReady task-delivery goroutine never fires. The state-change
+// handler watches for waiting_input on one-shot opencode sessions and sends
+// the task via send_input exactly once per session.
+var opencodeTaskDelivered sync.Map // key: sessID (string) → struct{}{}
 
 var (
 	cfgPath    string
@@ -5442,6 +5449,29 @@ Return STRICT JSON:
 						time.Sleep(500 * time.Millisecond)
 					}
 				}(sess.FullID)
+			}
+		}
+		// v8.20.7 — deliver task to one-shot opencode TUI sessions via send_input.
+		// Opencode TUI doesn't have a channel bridge that calls /api/channel/ready,
+		// so handleChannelReady's task-delivery goroutine never fires for these
+		// sessions. Watch for waiting_input on a one-shot opencode session and send
+		// the task directly, mirroring the OneShot path in handleChannelReady.
+		if sess.State == session.StateWaitingInput &&
+			sess.BackendFamily == "opencode" &&
+			sess.OneShot && sess.Task != "" {
+			if _, alreadyDelivered := opencodeTaskDelivered.LoadOrStore(sess.FullID, struct{}{}); !alreadyDelivered {
+				sessID := sess.FullID
+				task := sess.Task
+				go func() {
+					time.Sleep(time.Second) // let TUI input handler settle
+					if err := mgr.SendInput(sessID, task, "channel-task"); err != nil {
+						fmt.Printf("[opencode-task] send_input failed for %s: %v\n", sessID, err)
+						opencodeTaskDelivered.Delete(sessID)
+					} else {
+						fmt.Printf("[opencode-task] task delivered to %s via send_input\n", sessID)
+						mgr.MarkTaskDelivered(sessID)
+					}
+				}()
 			}
 		}
 		// alpha.34d #281 — universal hook-event emit covering ALL session

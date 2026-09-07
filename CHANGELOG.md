@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.7 — fix(autonomous): opencode one-shot task prompt delivery; Start Planning UX
+
+### Fixed
+- **Opencode TUI autonomous task sessions never received their task prompt** (`cmd/datawatch/main.go`) — the daemon's one-shot task delivery path lives in `handleChannelReady`, which fires when the MCP channel bridge calls `POST /api/channel/ready`. Claude-code sessions do this via their embedded channel bridge JS; opencode TUI sessions have no such bridge and never call that endpoint, so the session started but sat idle at the "Ask anything…" prompt indefinitely. The autonomous loop stalled waiting for the session to complete. Fix: added a `SetStateChangeHandler` hook that watches for `BackendFamily=="opencode" && OneShot && Task!=""` sessions entering `waiting_input`, then delivers the task via `send_input` (same mechanism as the claude-code one-shot path). A `sync.Map` guard ensures exactly one delivery per session.
+
+## v8.20.6 — fix(pwa): Start Planning button disables in-place; Cancel button planning warning
+
+### Fixed
+- **Start Planning button stayed active while planning ran** (`internal/server/web/app.js`) — clicking ▶ Start Planning kicked off decompose but the button remained clickable; a second click would re-trigger decompose. Button now disables in-place immediately on success (`disabled=true`, `opacity:0.45`, label changes to "⏳ Planning…").
+- **Cancel button gave no indication it would abort the whole automaton, not just planning** (`internal/server/web/app.js`) — during `planning` state the Cancel button now shows "✕ Cancel Automaton" and the confirm dialog warns explicitly that the server-side planning job will continue briefly and the generated plan will be discarded.
+
 ## v8.20.5 — fix(autonomous): decompose/verify/guardrail named-LLM routing
 
 ### Fixed
