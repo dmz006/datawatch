@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.21.3 — fix(session): restart screen capture for recovered one-shot sessions on daemon start
+
+### Fixed
+- **One-shot session DATAWATCH_COMPLETE: never detected after daemon restart** (`cmd/datawatch/main.go`) — `StartScreenCapture` (the pane-watcher goroutine) was only called when a PWA client subscribed to the session screen via API. On daemon restart, recovered one-shot sessions in `waiting_input` or `running` state had no active pane-watcher, so the completion marker was never detected regardless of what was in the pane. A startup goroutine (fires 3 s after initialization) now calls `StartScreenCapture` for every recovered one-shot session that is still active, ensuring completion detection resumes automatically without requiring a browser connection.
+
+## v8.21.2 — fix(session): don't skip first-tick detection for one-shot sessions after daemon restart
+
+### Fixed
+- **DATAWATCH_COMPLETE: not detected on first pane capture after daemon restart** (`internal/session/manager.go`) — the pane-watcher skipped state detection on `firstTick` to avoid spurious alerts from stale pane content. After a daemon restart with a static pane (no new output), the first tick would update `lastCapture` from "" to current content and set `firstTick = false` before detection could run; subsequent ticks saw no content change and detection never fired. Fixed by falling through to detection on the first tick for one-shot sessions. (Note: this fix is complementary to v8.21.3 — it handles the case when `StartScreenCapture` is eventually called.)
+
+## v8.21.1 — fix(session): extend DATAWATCH_COMPLETE scan to all visible lines for one-shot sessions
+
+### Fixed
+- **DATAWATCH_COMPLETE: missed when scrolled above the last 5 lines** (`internal/session/manager.go`) — the visible scan at both pane-watcher check sites was limited to 5 lines from the bottom. For opencode one-shot sessions where a progress spinner renders several status lines after the completion marker, the marker could be 10+ lines above the footer and never detected. Both sites now scan all visible lines (`visibleScanLimit = len(capLines)`) for one-shot sessions; non-one-shot sessions retain the original 5-line limit.
+
 ## v8.21.0 — feat(autonomous): session-based PRD decomposer with real codebase access
 
 ### Added
