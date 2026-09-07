@@ -10493,7 +10493,7 @@ function prdAction(id, action, method, body) {
   // apiFetch resolves to parsed JSON (not a Response), so check resp.stream_url directly.
   if ((action === 'decompose' || action === 'plan') && method === 'POST') {
     apiFetch(url, opts).then(resp => {
-      if (resp && resp.stream_url) { _startDecomposeStream(id, resp.stream_url); return; }
+      if (resp && resp.stream_url) { _startDecomposeStream(id, resp.stream_url); showToast('Planning started…', 'success', 2000); return; }
       showToast(t('prd_step_plan') || 'Plan started', 'success', 1500);
       _refreshAutomataOrPRD();
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
@@ -10514,9 +10514,17 @@ function _startDecomposeStream(prdID, streamUrl) {
     container = document.createElement('div');
     container.id = containerId;
     container.style.cssText = 'padding:8px 12px;margin:4px 0;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;border-radius:4px;font-size:12px;color:var(--text);';
-    const prdEl = document.querySelector('[data-prd-id="' + prdID + '"]') || document.querySelector('#prd-' + prdID);
-    if (prdEl && prdEl.parentNode) prdEl.parentNode.insertBefore(container, prdEl.nextSibling);
-    else { const l = document.getElementById('automata-list') || document.getElementById('prd-list'); if (l) l.prepend(container); }
+    // Try detail view toolbar slot first, then fall back to list view.
+    const detailBody = document.getElementById('automataDetailBody');
+    if (detailBody) {
+      const toolbar = detailBody.querySelector('.prd-detail-toolbar');
+      if (toolbar) toolbar.insertAdjacentElement('afterend', container);
+      else detailBody.prepend(container);
+    } else {
+      const prdEl = document.querySelector('[data-prd-id="' + prdID + '"]') || document.querySelector('#prd-' + prdID);
+      if (prdEl && prdEl.parentNode) prdEl.parentNode.insertBefore(container, prdEl.nextSibling);
+      else { const l = document.getElementById('automata-list') || document.getElementById('prd-list'); if (l) l.prepend(container); }
+    }
   }
   const spin = '<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:4px;">&#10227;</span>';
   container.innerHTML = spin + (t('decompose_in_progress') || 'Decomposing PRD...');
@@ -10527,7 +10535,7 @@ function _startDecomposeStream(prdID, streamUrl) {
     if (pollIv) return;
     pollIv = setInterval(() => {
       apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/decompose/status')
-        .then(r => r.json()).then(d => { render(d); if (d.status === 'complete' || d.status === 'error') { clearInterval(pollIv); pollIv = null; } }).catch(() => {});
+        .then(d => { render(d); if (d.status === 'complete' || d.status === 'error') { clearInterval(pollIv); pollIv = null; } }).catch(() => {});
     }, 5000);
   }
   function render(d) {
@@ -16677,15 +16685,16 @@ window._loadPRDActiveSessionCard = function(prd) {
 // the menu in viewport coords (escapes the tab body's overflow:hidden
 // scroll) so it overlays freely above any tab/scroll bounds. Outside-
 // click dismisses.
-window._toggleEditMenu = function(ev) {
+window._toggleEditMenu = function(ev, btn) {
   ev.stopPropagation();
+  btn = btn || ev.currentTarget || ev.target;
   const m = document.getElementById('prdEditMenu');
   if (!m) return;
   if (m.style.display === 'block') { m.style.display = 'none'; return; }
-  const btn = ev.currentTarget || ev.target;
+  // Move to document.body to escape any transform/overflow stacking context.
+  if (m.parentNode !== document.body) document.body.appendChild(m);
   const r = btn.getBoundingClientRect();
   // Drop below the button, right-aligned to its right edge.
-  // Clamp left edge to at least 4px so it never scrolls off screen.
   m.style.display = 'block';
   m.style.top = (Math.round(r.bottom) + 4) + 'px';
   m.style.bottom = '';
@@ -16757,7 +16766,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     ? `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'reset_to_draft','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_reset_to_draft_title')||'Reset to draft so you can reconfigure the backend and re-decompose')}">↺ ${escHtml(t('prd_btn_reset_to_draft')||'Reset to Draft')}</button>`
     : '';
   const editBtn = editMenuItems.length > 0
-    ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
+    ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event,this)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
     : '';
   const deleteBtn = (status !== 'running')
     ? `<button class="btn-icon prd-delete-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑</button>`

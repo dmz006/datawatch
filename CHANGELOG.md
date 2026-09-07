@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.4 — fix(pwa): Start Planning feedback + Edit menu on desktop + poll bug
+
+### Fixed
+- **"Start Planning" showed no feedback** (`internal/server/web/app.js`) — clicking the ▶ Start Planning button started decompose on the server but the progress container was only inserted into list-view elements (not present in the detail view), so the UI appeared frozen. Fixed: progress container now inserts after the toolbar in the detail view body; a "Planning started…" toast gives immediate feedback; the SSE fallback `poll()` had a double-JSON parse bug (`apiFetch` already returns parsed JSON but `.then(r => r.json())` was called again) — removed the spurious `.then`.
+- **Edit (⋯ Edit) button did nothing on desktop browser** (`internal/server/web/app.js`) — the dropdown menu is `position:fixed` but any ancestor with `transform`, `filter`, or `perspective` creates a new containing block that traps fixed children. Moved the menu element to `document.body` on open to escape all stacking contexts; also pass `this` explicitly from the onclick so the button reference is always available.
+
 ## v8.20.3 — fix(pwa): Plan button + Run button in PRD toolbar; image attachment on mobile
 
 ### Fixed
