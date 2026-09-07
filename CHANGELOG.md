@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.9 — fix(pwa): PRD backend filter + Approve/Reject buttons in needs_review
+
+### Fixed
+- **PRD backend picker** (`internal/server/web/app.js`) — PRD-level backend selectors (new PRD form, set-LLM modal, settings modal, wizard) now filter to planning-capable backends only via a new `planningOnly` parameter on `renderBackendSelect`. A new `HEADLESS_PLANNING_KINDS` constant (`Set(['ollama', 'openwebui'])`) gates the filter. Session-only backends (opencode, claude-code, aider, gemini, goose) were silently failing decompose with `planning backend has kind "X" which does not support headless planning via /api/ask`. Per-task backend overrides remain unfiltered since tasks execute in full sessions.
+- **PRD Approve + Reject buttons missing in `needs_review`** (`internal/server/web/app.js`) — `_renderDetailHeader` was restructured in a prior release and only preserved "Request Revision" for the `needs_review`/`revisions_asked` toolbar, dropping Approve and Reject. All three action buttons are restored: green Approve (`prdAction` POST `approve`), red Reject (`prdActionPrompt` `reject`), and amber Request Revision (`prdActionPrompt` `request_revision`).
+- **Misleading lifecycle hint during plan review** (`internal/server/web/app.js`) — `renderLifecycleStrip` showed "Planning… review will become available shortly" even after decompose completed and stories were ready to review. The hint is now conditional: `needs_review` shows "Plan ready — review the stories below and Approve / Reject / Revise"; all other `review`-step states show the original in-progress message.
+
 ## v8.19.8 — fix: PWA "What's it doing?" card JSON-parse crash on no-new-output
 
 ### Fixed
