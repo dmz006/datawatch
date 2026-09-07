@@ -2188,7 +2188,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 					}
-					// Check for completion — only last 5 non-empty lines.
+					// Check for completion — last 5 non-empty visible lines.
 					// Use HasPrefix per-line to avoid false positives from command
 					// echoes (e.g. "echo 'DATAWATCH_COMPLETE: ...'").
 					completionDetected := false
@@ -2203,6 +2203,27 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 						if completionDetected { break }
+					}
+					// v8.20.11 — for one-shot TUI sessions, the completion marker may
+					// have been pushed into the scrollback by a progress animation
+					// before the watcher fired (e.g. opencode's ⬝■ spinner). If the
+					// visible scan missed it, re-check the last 50 scrollback lines.
+					if !completionDetected && current.OneShot {
+						if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 50); sbErr == nil {
+							sbLines := strings.Split(StripANSI(sb), "\n")
+							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 50; i-- {
+								l := strings.TrimSpace(sbLines[i])
+								if l == "" { continue }
+								checked++
+								for _, pat := range m.effectiveCompletionPatterns() {
+									if strings.HasPrefix(l, pat) {
+										completionDetected = true
+										break
+									}
+								}
+								if completionDetected { break }
+							}
+						}
 					}
 					if completionDetected {
 						if current.State == StateRunning || current.State == StateWaitingInput {
@@ -5066,7 +5087,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if matchedLine != "" {
 							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
-						// Check for completion — only check last 5 non-empty lines.
+						// Check for completion — last 5 non-empty visible lines.
 						// Use HasPrefix per-line to avoid false positives from command echoes.
 						completionFound := false
 						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < 5; ci-- {
@@ -5080,6 +5101,24 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 								}
 							}
 							if completionFound { break }
+						}
+						// v8.20.11 — scrollback fallback for one-shot sessions.
+						if !completionFound && current.OneShot {
+							if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 50); sbErr == nil {
+								sbLines := strings.Split(StripANSI(sb), "\n")
+								for ci, cc := len(sbLines)-1, 0; ci >= 0 && cc < 50; ci-- {
+									cl := strings.TrimSpace(sbLines[ci])
+									if cl == "" { continue }
+									cc++
+									for _, pat := range m.effectiveCompletionPatterns() {
+										if strings.HasPrefix(cl, pat) {
+											completionFound = true
+											break
+										}
+									}
+									if completionFound { break }
+								}
+							}
 						}
 						if completionFound && (current.State == StateRunning || current.State == StateWaitingInput) {
 							oldState := current.State

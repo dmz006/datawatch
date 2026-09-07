@@ -143,6 +143,17 @@ func (f *FakeTmux) CapturePaneLiveTail(session string) (string, error) {
 	return f.Pane[session], nil
 }
 
+// CapturePaneScrollback (v8.20.11) — fake returns the same content as
+// CapturePaneLiveTail; the fake doesn't model scrollback depth.
+func (f *FakeTmux) CapturePaneScrollback(session string, lines int) (string, error) {
+	if err := f.record("capture-scrollback", session); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Pane[session], nil
+}
+
 func (f *FakeTmux) PipeOutput(session, logFile string) error {
 	return f.record("pipe", session, logFile)
 }

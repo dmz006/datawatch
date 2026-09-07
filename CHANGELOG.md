@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.11 — fix(autonomous): scrollback scan for DATAWATCH_COMPLETE on one-shot TUI sessions
+
+### Fixed
+- **DATAWATCH_COMPLETE: not detected when TUI progress animation renders after the completion line** (`internal/session/manager.go`, `internal/session/tmux.go`) — the pane-watcher scanned only the last 5 visible lines via `CapturePaneLiveTail` (no `-S` flag). After opencode outputs `DATAWATCH_COMPLETE:`, its ⬝■ progress animation renders several more lines and the completion marker is pushed into the scrollback buffer above the visible area. The 3-second watcher then scanned visible-only content, missed the marker, and the session stayed in `waiting_input` indefinitely. Fix: added `CapturePaneScrollback(session, lines)` to `TmuxAPI` (uses `capture-pane -S -{lines}`) and both completion-check sites now fall back to a 50-line scrollback scan when the visible check misses the marker and `OneShot=true`. Non-one-shot sessions are unaffected.
+
 ## v8.20.10 — fix(autonomous): generalize one-shot task delivery to all TUI backends
 
 ### Fixed

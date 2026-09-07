@@ -19,7 +19,8 @@ type TmuxAPI interface {
 	SendKeysLiteral(session, data string) error
 	ResizePane(session string, cols, rows int) error
 	CapturePaneVisible(session string) (string, error)
-	CapturePaneLiveTail(session string) (string, error) // v5.27.6 — state detection
+	CapturePaneLiveTail(session string) (string, error)      // v5.27.6 — state detection
+	CapturePaneScrollback(session string, lines int) (string, error) // v8.20.11 — scrollback for one-shot completion
 	CapturePaneANSI(session string) (string, error)
 	PipeOutput(session, logFile string) error
 	RepipeOutput(session, logFile string) error // BL263 / v6.11.9 — re-establish after daemon restart
@@ -173,6 +174,18 @@ func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 // operator-friendly scroll behaviour is the right shape for that path.
 func (t *TmuxManager) CapturePaneLiveTail(session string) (string, error) {
 	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// CapturePaneScrollback (v8.20.11) captures the last `lines` lines of pane
+// output INCLUDING scrollback history. Used for DATAWATCH_COMPLETE: detection
+// on one-shot TUI sessions where the completion marker may have been pushed
+// above the visible area by a progress animation before the watcher fired.
+func (t *TmuxManager) CapturePaneScrollback(session string, lines int) (string, error) {
+	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-S", fmt.Sprintf("-%d", lines), "-t", session).Output()
 	if err != nil {
 		return "", err
 	}
