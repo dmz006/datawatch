@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.21.0"
+var Version = "8.21.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2090,6 +2090,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.NotifyPaneCapture(sess.FullID, lines)
 		}
 	})
+	// v8.21.3: On startup, restart screen capture for one-shot sessions that were
+	// active when the daemon was previously restarted. Without this, DATAWATCH_COMPLETE:
+	// is never detected for sessions whose pane-watcher goroutine was killed.
+	go func() {
+		time.Sleep(3 * time.Second)
+		for _, s := range mgr.ListSessions() {
+			if s.OneShot && s.TmuxSession != "" &&
+				(s.State == session.StateRunning || s.State == session.StateWaitingInput) {
+				fmt.Printf("[recovery] starting screen capture for one-shot session %s (state=%s)\n", s.FullID, s.State)
+				mgr.StartScreenCapture(context.Background(), s.FullID, 500)
+			}
+		}
+	}()
 	mgr.SetOnChatMessage(func(sessionID, role, content string, streaming bool) {
 		if httpServer != nil {
 			httpServer.NotifyChatMessage(sessionID, role, content, streaming)
