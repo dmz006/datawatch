@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.10 — fix(autonomous): generalize one-shot task delivery to all TUI backends
+
+### Fixed
+- **One-shot PRD task delivery only worked for opencode, not goose / aider / other TUI backends** (`cmd/datawatch/main.go`) — the `SetStateChangeHandler` delivery block was guarded by `BackendFamily == "opencode"` so any other TUI backend assigned as the PRD task executor would start a session, sit idle at its prompt, and never receive the task. The condition is now a deny-list: all backends except `claude-code` (has channel bridge), `opencode-acp` (uses ACP structured API), and `subprocess` (shell task wrapping) receive the task via `send_input` when they reach `waiting_input` with `one_shot=true`. Renamed `opencodeTaskDelivered` sync.Map → `tuiTaskDelivered`; log prefix changed from `[opencode-task]` to `[tui-task]`.
+
 ## v8.20.9 — fix(autonomous): opencode completion detection + session filter + sprint status
 
 ### Fixed

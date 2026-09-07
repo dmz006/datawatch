@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.9"
+var Version = "8.20.10"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -232,12 +232,13 @@ func isTrustDialogLine(line string) bool {
 // on this map so only ONE goroutine is spawned per startup sequence.
 var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
 
-// opencodeTaskDelivered guards one-shot opencode TUI task delivery. Opencode
-// TUI sessions don't call /api/channel/ready (no channel bridge JS), so the
-// handleChannelReady task-delivery goroutine never fires. The state-change
-// handler watches for waiting_input on one-shot opencode sessions and sends
-// the task via send_input exactly once per session.
-var opencodeTaskDelivered sync.Map // key: sessID (string) → struct{}{}
+// tuiTaskDelivered guards one-shot TUI task delivery. TUI sessions (opencode,
+// goose, aider, …) don't call /api/channel/ready (no channel bridge JS), so
+// handleChannelReady's task-delivery goroutine never fires. The state-change
+// handler watches for waiting_input on one-shot TUI sessions and delivers the
+// task via send_input exactly once per session. Excluded: claude-code (channel
+// bridge), opencode-acp (ACP structured API), subprocess (shell task wrapping).
+var tuiTaskDelivered sync.Map // key: sessID (string) → struct{}{}
 
 var (
 	cfgPath    string
@@ -5453,29 +5454,33 @@ Return STRICT JSON:
 				}(sess.FullID)
 			}
 		}
-		// v8.20.7 — deliver task to one-shot opencode TUI sessions via send_input.
-		// Opencode TUI doesn't have a channel bridge that calls /api/channel/ready,
-		// so handleChannelReady's task-delivery goroutine never fires for these
-		// sessions. Watch for waiting_input on a one-shot opencode session and send
-		// the task directly, mirroring the OneShot path in handleChannelReady.
-		if sess.State == session.StateWaitingInput &&
-			sess.BackendFamily == "opencode" &&
-			sess.OneShot && sess.Task != "" {
-			if _, alreadyDelivered := opencodeTaskDelivered.LoadOrStore(sess.FullID, struct{}{}); !alreadyDelivered {
+		// v8.20.10 — deliver task to all one-shot TUI sessions via send_input.
+		// TUI backends (opencode, goose, aider, …) don't call /api/channel/ready
+		// (no channel bridge JS), so handleChannelReady's task-delivery goroutine
+		// never fires. Watch for waiting_input on any one-shot TUI session and
+		// deliver the task via send_input exactly once, mirroring the OneShot path
+		// in handleChannelReady. Excluded: claude-code (channel bridge),
+		// opencode-acp (ACP structured API), subprocess (shell task wrapping).
+		isTUITask := sess.State == session.StateWaitingInput &&
+			sess.OneShot && sess.Task != "" &&
+			sess.BackendFamily != "claude-code" &&
+			sess.BackendFamily != "opencode-acp" &&
+			sess.BackendFamily != "subprocess" &&
+			sess.BackendFamily != ""
+		if isTUITask {
+			if _, alreadyDelivered := tuiTaskDelivered.LoadOrStore(sess.FullID, struct{}{}); !alreadyDelivered {
 				sessID := sess.FullID
-				// v8.20.9 — append the DATAWATCH_COMPLETE: convention so the
-				// manager's pane-watcher can detect task completion and transition
-				// the session to StateComplete (triggering autonomousVerify).
-				// Opencode doesn't know this convention from its own context;
-				// we must include it explicitly in the send_input payload.
+				backendFamily := sess.BackendFamily
+				// Append DATAWATCH_COMPLETE: convention so the manager's pane-watcher
+				// can detect task completion and transition to StateComplete.
 				task := sess.Task + "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
 				go func() {
 					time.Sleep(time.Second) // let TUI input handler settle
 					if err := mgr.SendInput(sessID, task, "channel-task"); err != nil {
-						fmt.Printf("[opencode-task] send_input failed for %s: %v\n", sessID, err)
-						opencodeTaskDelivered.Delete(sessID)
+						fmt.Printf("[tui-task] send_input failed for %s (%s): %v\n", sessID, backendFamily, err)
+						tuiTaskDelivered.Delete(sessID)
 					} else {
-						fmt.Printf("[opencode-task] task delivered to %s via send_input\n", sessID)
+						fmt.Printf("[tui-task] task delivered to %s (%s) via send_input\n", sessID, backendFamily)
 						mgr.MarkTaskDelivered(sessID)
 					}
 				}()
