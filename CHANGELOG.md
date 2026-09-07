@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.19.10 — fix: autonomous task sessions use PRD's named inference-registry LLM backend
+
+### Fixed
+- **Autonomous task sessions ignoring configured LLM backend** (`internal/server/api.go`) — when an autonomous PRD has a named v7 inference-registry backend (e.g. `ollama-datawatch`) and its tasks are spawned, the executor sends `backend: "ollama-datawatch"` to `/api/sessions/start`. The session manager's legacy `llm.Get()` only knows fixed kind strings (`"ollama"`, `"openwebui"`, `"claude-code"`, …) and returned `"unknown LLM backend"` for the named entry, causing the manager to **silently fall through to its default backend (`claude-code`)** — so all autonomous task sessions ran with Claude even though the PRD was configured for ollama. The fix resolves `req.Backend` through the inference registry when `req.LLM` is unset: if the backend name matches an inference-registry entry, its `Kind` string replaces `req.Backend` before the session manager sees it, and the first `ComputeNode` is wired through for Ollama URL resolution.
+
 ## v8.19.9 — fix(pwa): PRD backend filter + Approve/Reject buttons in needs_review
 
 ### Fixed

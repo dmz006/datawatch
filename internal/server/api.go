@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.19.9"
+var Version = "8.19.10"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3878,6 +3878,22 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	} else if req.ComputeNode != "" {
 		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
 		return
+	}
+	// v8.19.10 — Named v7 inference-registry LLMs (e.g. "ollama-datawatch")
+	// arrive via req.Backend when the autonomous executor spawns task sessions
+	// (it sends backend, not llm). The session manager's legacy llm.Get() only
+	// knows fixed kind strings ("ollama", "openwebui", "claude-code", …) and
+	// silently falls back to its default (claude-code) when the named entry is
+	// not found. Translate named inference-registry backends to their kind here
+	// so the manager receives the correct kind string.
+	if req.LLM == "" && req.Backend != "" && s.inferenceReg != nil {
+		if entry, err := s.inferenceReg.Get(req.Backend); err == nil && entry != nil && !entry.Disabled {
+			resolvedLLMRef = entry.Name
+			req.Backend = string(entry.Kind)
+			if len(entry.ComputeNodes) > 0 && resolvedComputeNodeRef == "" {
+				resolvedComputeNodeRef = entry.ComputeNodes[0]
+			}
+		}
 	}
 	// v8.7.1 — resolve Ollama URL from compute node for ollama/* model sessions.
 	// Stored on the session so the preLaunch hook can write it to opencode.json.
