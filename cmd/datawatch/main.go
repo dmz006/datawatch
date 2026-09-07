@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.8"
+var Version = "8.20.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5463,7 +5463,12 @@ Return STRICT JSON:
 			sess.OneShot && sess.Task != "" {
 			if _, alreadyDelivered := opencodeTaskDelivered.LoadOrStore(sess.FullID, struct{}{}); !alreadyDelivered {
 				sessID := sess.FullID
-				task := sess.Task
+				// v8.20.9 — append the DATAWATCH_COMPLETE: convention so the
+				// manager's pane-watcher can detect task completion and transition
+				// the session to StateComplete (triggering autonomousVerify).
+				// Opencode doesn't know this convention from its own context;
+				// we must include it explicitly in the send_input payload.
+				task := sess.Task + "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
 				go func() {
 					time.Sleep(time.Second) // let TUI input handler settle
 					if err := mgr.SendInput(sessID, task, "channel-task"); err != nil {

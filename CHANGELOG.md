@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.9 — fix(autonomous): opencode completion detection + session filter + sprint status
+
+### Fixed
+- **Opencode one-shot sessions never signalled completion to the autonomous executor** (`cmd/datawatch/main.go`) — the task delivered via `send_input` had no `DATAWATCH_COMPLETE:` instruction, so the manager's pane-watcher never saw the completion marker and the session sat in `waiting_input` indefinitely. The `autonomousVerify` poll loop would wait forever. Fix: append the `DATAWATCH_COMPLETE:` convention explicitly to the task text before delivering it to opencode.
+- **"No active session record" warning persisted even when a matched session existed** (`internal/server/web/app.js`) — the active-session filter only checked `s.prd_id === prd.id`, which failed for sessions started before v8.20.8 (no `prd_id` field). The filter now also checks against `task.session_id` values from the PRD's story tasks, so any session whose ID was recorded by the autonomous executor as the task's worker session is correctly matched.
+- **Session Status tab showed no Sprint/Automata context for PRD task sessions** (`internal/server/hook_events.go`) — the sprint card only populated from external hook payloads (`sprint=…`), which opencode never emits. The `/api/sessions/{id}/status` handler now synthesizes sprint data from the linked PRD (`sprint_id`, `title`, `status`, `task_id`) when the session has `prd_id` set and the board has no existing sprint data.
+
 ## v8.20.8 — feat(autonomous): prd_id/task_id on sessions; verifying progress + glyphs
 
 ### Added

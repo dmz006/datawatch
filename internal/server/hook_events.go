@@ -454,6 +454,33 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	board := globalHookStore.board(sid)
+	// v8.20.9 — if the session is a PRD task session and the board has no
+	// sprint data yet, synthesize sprint context from the PRD so the Status
+	// tab shows Automata info without requiring hook payloads from the agent.
+	if board.Sprint == nil && s.manager != nil && s.autonomousMgr != nil {
+		if sess, ok := s.manager.GetSession(sid); ok && sess.PRDID != "" {
+			if prdRaw, ok := s.autonomousMgr.GetPRD(sess.PRDID); ok {
+				if b, err := json.Marshal(prdRaw); err == nil {
+					var prdMap map[string]any
+					if json.Unmarshal(b, &prdMap) == nil {
+						sprint := map[string]any{
+							"sprint_id": sess.PRDID,
+							"title":     prdMap["title"],
+							"status":    prdMap["status"],
+							"automata":  prdMap["title"],
+						}
+						if sess.TaskID != "" {
+							sprint["task_id"] = sess.TaskID
+						}
+						// Make a copy of the board so we don't mutate the global store.
+						boardCopy := *board
+						boardCopy.Sprint = sprint
+						board = &boardCopy
+					}
+				}
+			}
+		}
+	}
 	writeJSONOK(w, board)
 }
 

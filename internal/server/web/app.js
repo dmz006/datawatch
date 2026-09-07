@@ -16600,7 +16600,16 @@ window._loadPRDActiveSessionCard = function(prd) {
   if (!slot) return;
   apiFetch('/api/sessions').then(allSessions => {
     const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
-    const matches = list.filter(s => (s.prd_id || s.parent_prd_id) === prd.id);
+    // v8.20.9 — also match by task.session_id so pre-v8.20.8 sessions (which
+    // lack prd_id) are still found if their ID appears in a task record.
+    const taskSessionIds = new Set();
+    (prd.story || []).forEach(story => {
+      (story.tasks || []).forEach(task => { if (task.session_id) taskSessionIds.add(task.session_id); });
+    });
+    const matches = list.filter(s => {
+      const fid = s.full_id || s.id;
+      return (s.prd_id || s.parent_prd_id) === prd.id || taskSessionIds.has(fid);
+    });
     if (matches.length === 0) {
       // GATE alpha.36 (operator 2026-05-10): no session yet — surface
       // the gap as a COLLAPSIBLE card (operator: hide/collapse if no
