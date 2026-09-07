@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.5 — fix(autonomous): decompose/verify/guardrail named-LLM routing
+
+### Fixed
+- **Decompose (Start Planning) routing through localhost instead of the configured compute node** (`cmd/datawatch/main.go`) — `decomposeFn`, `verifyFn`, and the guardrail fn all called `resolveAskBackend(registryName)` which returned the LLM's `kind` string (e.g. `"openwebui"`). That kind string was sent as `backend:` to `/api/ask`, which couldn't find an LLM literally named `"openwebui"` (the registry entry is `"openwebui-datawatch"`), fell to the legacy path, and used `s.cfg.OpenWebUI.URL = "http://localhost:3000"`. Fix: when the raw backend name differs from the resolved kind (i.e. it's a named LLM), also set `llm: rawBackend` so `/api/ask` routes through the v7 dispatcher with the correct compute node address (`http://datawatch:3000`).
+
 ## v8.20.4 — fix(pwa): Start Planning feedback + Edit menu on desktop + poll bug
 
 ### Fixed

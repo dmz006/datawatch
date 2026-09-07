@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.4"
+var Version = "8.20.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3651,6 +3651,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"question": decomposeQuestion,
 				"backend":  backend,
 			}
+			// When rawBackend was a registry LLM name (not a bare kind string),
+			// send it as "llm" so /api/ask uses the v7 dispatcher path which
+			// resolves the correct compute node (e.g. datawatch-openai with
+			// address http://datawatch:3000). Without this, the dispatcher maps
+			// the bare kind "openwebui" back to a legacy LLM named "openwebui"
+			// which doesn't exist, falls through to s.cfg.OpenWebUI.URL
+			// (http://localhost:3000), and fails with connection refused.
+			if rawBackend != backend && rawBackend != "" {
+				askBody["llm"] = rawBackend
+			}
 			// Prefer explicitly configured model, then the resolved LLM model.
 			planModel := amgrCfg.PlanningModel
 			if planModel == "" {
@@ -3891,6 +3901,9 @@ Verify whether the diff plausibly implements the spec. If no diff is present, ve
 				"question": prompt,
 				"backend":  vkind,
 			}
+			if vbackend != vkind && vbackend != "" {
+				askBody["llm"] = vbackend
+			}
 			if verifyModel != "" {
 				askBody["model"] = verifyModel
 			}
@@ -3952,6 +3965,9 @@ Reply with STRICT JSON:
 			askBody := map[string]any{
 				"question": prompt,
 				"backend":  gkind,
+			}
+			if gbackend != gkind && gbackend != "" {
+				askBody["llm"] = gbackend
 			}
 			if guardrailModel != "" {
 				askBody["model"] = guardrailModel
