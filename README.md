@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.20.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.20.0)
+[![Release](https://img.shields.io/badge/release-v8.20.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.20.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.20.1](CHANGELOG.md) (2026-09-06)** — Fix: cancelled PRDs now show a **↺ Reset to Draft** button, Settings/Edit Spec options, and expose `POST /api/autonomous/prds/{id}/reset_to_draft` + `autonomous_prd_reset_to_draft` MCP tool. Restores the ability to reconfigure a cancelled PRD's backend and re-decompose without cloning.
 
 **[v8.20.0](CHANGELOG.md) (2026-09-06)** — Feature: autonomous PRD planning backend is now independent from task-execution backend. Set `decomposition_profile` per-PRD (via Settings modal or `set_llm` API) to choose which ollama/openwebui LLM runs decompose; leave it empty to use the global `autonomous.planning_backend` default. The execution `backend` field now accepts any session agent — opencode, goose, claude-code, etc. — and is no longer filtered to headless-only backends. PWA Settings modal shows two separate pickers. Android parity tracked in [datawatch-app#162](https://github.com/dmz006/datawatch-app/issues/162).
 

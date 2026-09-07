@@ -16684,7 +16684,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   // editable list — operator hit a planning-stuck PRD and couldn't get
   // to Edit Spec / Settings. Allow editing during planning too (the
   // operator may need to fix the spec or change LLM/effort to unblock).
-  const editable = (status === 'draft' || status === 'planning' || status === 'needs_review' || status === 'revisions_asked');
+  const editable = (status === 'draft' || status === 'planning' || status === 'needs_review' || status === 'revisions_asked' || status === 'cancelled');
   const terminal = ['completed','cancelled','archived'].includes(status);
   // GATE alpha.36 (operator 2026-05-10): action buttons regrouped into
   // two rows with clear roles:
@@ -16720,6 +16720,10 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       `<button class="btn-secondary prd-action-btn" style="color:var(--error);border-color:var(--error);" onclick="prdActionPrompt(${escHtml(idJ)},'reject','reason',${escHtml(JSON.stringify(t('prd_reject_prompt')||'Rejection reason'))})" title="${escHtml(t('prd_action_reject')||'Reject')}">✗ ${escHtml(t('prd_action_reject')||'Reject')}</button>` +
       `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
   }
+  // v8.20.1 — Reset to Draft button for cancelled PRDs.
+  const resetToDraftBtn = (status === 'cancelled')
+    ? `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'reset_to_draft','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_reset_to_draft_title')||'Reset to draft so you can reconfigure the backend and re-decompose')}">↺ ${escHtml(t('prd_btn_reset_to_draft')||'Reset to Draft')}</button>`
+    : '';
   const editBtn = editMenuItems.length > 0
     ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
     : '';
@@ -16765,10 +16769,10 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${cancelBtn}${approveBtn}${buttons.join('')}
+        ${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
       </div>
-      ${terminal ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}
+      ${(terminal && status !== 'cancelled') ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}
     </div>
   `;
 }

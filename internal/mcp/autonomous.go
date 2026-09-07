@@ -227,6 +227,22 @@ func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToo
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDResetToDraft() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_reset_to_draft",
+		mcpsdk.WithDescription("v8.20.1 — reset a cancelled PRD to draft so it can be reconfigured and re-decomposed."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDResetToDraft(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator"})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reset_to_draft", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- BL191 (v5.2.0) review/approve/reject/edit-task/instantiate ----------
 
 func (s *Server) toolAutonomousPRDApprove() mcpsdk.Tool {

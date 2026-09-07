@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.20.0"
+var Version = "8.20.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -513,6 +513,9 @@ type AutonomousAPI interface {
 	// the orchestrator handler to enrich graph nodes with per-node
 	// ObserverSummary. Returns nil for unknown PRDs.
 	SessionIDsForPRD(prdID string) []string
+
+	// v8.20.1 — reset a cancelled PRD back to draft for re-run.
+	ResetToDraft(id, actor string) (any, error)
 
 	// BL221 (v6.2.0) — archive a terminal PRD (sets status to archived).
 	Archive(id string) (any, error)

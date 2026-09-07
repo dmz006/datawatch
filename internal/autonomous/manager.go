@@ -623,6 +623,36 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	return updated, nil
 }
 
+// ResetToDraft (v8.20.1) resets a cancelled PRD back to draft so the
+// operator can reconfigure the backend and re-decompose. Stories and
+// tasks are cleared so the next Decompose starts fresh. Only allowed
+// on PRDCancelled; all other statuses are rejected.
+func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(id)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", id)
+	}
+	if prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is not cancelled; only cancelled PRDs can be reset to draft", id, prd.Status)
+	}
+	now := time.Now()
+	prd.Status = PRDDraft
+	prd.Story = nil
+	prd.ApprovedBy = ""
+	prd.ApprovedAt = nil
+	prd.RejectionReason = ""
+	prd.UpdatedAt = now
+	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+		At: now, Kind: "reset_to_draft", Actor: actor,
+		Note: fmt.Sprintf("reset from cancelled by %s", actor),
+	}))
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(id)
+	return updated, nil
+}
+
 // Archive moves a terminal PRD (completed/rejected/cancelled) to
 // PRDArchived status so it disappears from the active list without
 // being permanently deleted.

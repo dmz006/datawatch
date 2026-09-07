@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.1 — fix(autonomous): cancelled PRD restart — Reset to Draft + Settings access
+
+### Fixed
+- **Cancelled PRDs had no restart path** (`internal/autonomous/manager.go`, `internal/server/autonomous.go`, `internal/server/web/app.js`) — when an operator cancelled a running PRD (e.g., to fix the backend configuration), the detail view only offered "Clone to Template" in the Edit menu; Settings was hidden and there was no way to reset and re-run. This release adds:
+  - `ResetToDraft` manager method — transitions `cancelled → draft`, clears stories/tasks, preserves spec + backend settings; operator can then re-decompose with the corrected configuration.
+  - `POST /api/autonomous/prds/{id}/reset_to_draft` REST endpoint.
+  - `autonomous_prd_reset_to_draft` MCP tool.
+  - PWA: Settings and Edit Spec buttons now appear for cancelled PRDs (so the operator can fix the backend before resetting). A new amber **↺ Reset to Draft** button appears on the cancelled PRD toolbar.
+
 ## v8.20.0 — feat(autonomous): split PRD planning backend from task-execution backend
 
 ### Added

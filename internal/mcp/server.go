@@ -421,6 +421,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDDecompose(), tracked(s.handleAutonomousPRDDecompose))
 	mcpSrv.AddTool(s.toolAutonomousPRDRun(), tracked(s.handleAutonomousPRDRun))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancel(), tracked(s.handleAutonomousPRDCancel))
+	mcpSrv.AddTool(s.toolAutonomousPRDResetToDraft(), tracked(s.handleAutonomousPRDResetToDraft))
 	// BL191 (v5.2.0) review/approve gate + templates.
 	mcpSrv.AddTool(s.toolAutonomousPRDApprove(), tracked(s.handleAutonomousPRDApprove))
 	mcpSrv.AddTool(s.toolAutonomousPRDReject(), tracked(s.handleAutonomousPRDReject))

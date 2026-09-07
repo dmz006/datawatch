@@ -260,6 +260,14 @@ func (a *API) Cancel(id string) error {
 	return nil
 }
 
+func (a *API) ResetToDraft(id, actor string) (any, error) {
+	out, err := a.M.ResetToDraft(id, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
+}
+
 // BL191 Q1 (v5.2.0) — review/approve/reject/edit-task surfaces.
 // v5.24.0 — every mutating wrapper emits a PRD update so the PWA
 // can refresh the Autonomous tab over WS without operator action.
