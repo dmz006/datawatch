@@ -1960,6 +1960,16 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 
 	go m.monitorOutput(monCtx, sess, projGit)
+	// v8.21.4: one-shot sessions need pane-watcher for DATAWATCH_COMPLETE: detection.
+	// StartScreenCapture is normally called by PWA subscribers, but one-shot sessions
+	// run autonomously with no browser connection. Start it at creation so completion
+	// is detected regardless of whether any client is subscribed.
+	if sess.OneShot && sess.TmuxSession != "" {
+		go func() {
+			time.Sleep(2 * time.Second) // let the TUI initialize before first capture
+			m.StartScreenCapture(monCtx, sess.FullID, 500)
+		}()
+	}
 
 	if m.onSessionStart != nil {
 		m.onSessionStart(sess)
@@ -2022,16 +2032,20 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						m.onScreenCapture(sess, lines)
 					}
 
-					// Skip state detection on the first tick — this is the
-					// initial baseline capture when a client connects/reconnects.
-					// Running detection here would generate spurious alerts for
-					// prompts that are already visible on screen. Also skip
-					// activity marking (MarkChannelEvent) on first tick to avoid
-					// spurious waiting_input → running → waiting_input cycles
-					// when a client subscribes to a waiting session.
+					// Skip state detection on the first tick for interactive
+					// sessions — this is the initial baseline capture when a
+					// client connects/reconnects. Running detection here would
+					// generate spurious alerts for prompts already on screen and
+					// cause waiting_input → running → waiting_input cycles.
+					// v8.21.1: one-shot sessions are NOT skipped on first tick —
+					// after a daemon restart the LLM may have already output
+					// DATAWATCH_COMPLETE: on a static pane; we must scan it now
+					// or the session will never be detected as complete.
 					if firstTick {
 						firstTick = false
-						continue
+						if !current.OneShot {
+							continue
+						}
 					}
 
 					// BL266 / v6.11.24 — pane content changed counts as
@@ -2188,11 +2202,17 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 					}
-					// Check for completion — last 5 non-empty visible lines.
+					// Check for completion. For one-shot sessions scan ALL visible
+					// lines — TUI footers (opencode spinner, status bar) push the
+					// marker above the bottom 5 lines before the watcher fires.
+					// For interactive sessions limit to 5 to avoid false positives
+					// from older turns still on screen.
 					// Use HasPrefix per-line to avoid false positives from command
 					// echoes (e.g. "echo 'DATAWATCH_COMPLETE: ...'").
 					completionDetected := false
-					for i, checked := len(capLines)-1, 0; i >= 0 && checked < 5; i-- {
+					visibleScanLimit := 5
+					if current.OneShot { visibleScanLimit = len(capLines) }
+					for i, checked := len(capLines)-1, 0; i >= 0 && checked < visibleScanLimit; i-- {
 						l := strings.TrimSpace(capLines[i])
 						if l == "" { continue }
 						checked++
@@ -3162,6 +3182,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	m.restartedAt[sess.FullID] = time.Now()
 	m.mu.Unlock()
 	go m.monitorOutput(monCtx, sess, projGit)
+	if sess.OneShot && sess.TmuxSession != "" {
+		go func() {
+			time.Sleep(2 * time.Second)
+			m.StartScreenCapture(monCtx, sess.FullID, 500)
+		}()
+	}
 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
@@ -5087,10 +5113,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if matchedLine != "" {
 							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
-						// Check for completion — last 5 non-empty visible lines.
-						// Use HasPrefix per-line to avoid false positives from command echoes.
+						// Check for completion — scan all visible lines for one-shot
+						// sessions; limit to 5 for interactive ones (same rationale as
+						// the main pane-watcher site above).
 						completionFound := false
-						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < 5; ci-- {
+						visibleScanLimitCh := 5
+						if current.OneShot { visibleScanLimitCh = len(capLines) }
+						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < visibleScanLimitCh; ci-- {
 							cl := strings.TrimSpace(capLines[ci])
 							if cl == "" { continue }
 							cc++

@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.21.4 — fix(session): start screen capture at one-shot session creation time
+
+### Fixed
+- **DATAWATCH_COMPLETE: never detected for newly spawned one-shot sessions** (`internal/session/manager.go`) — the v8.21.3 startup recovery only started `StartScreenCapture` for sessions that existed when the daemon restarted. Sessions spawned fresh by the autonomous executor (after daemon startup) had no pane-watcher and relied solely on `monitorOutput`'s log-file scan, which did not reliably pick up the completion marker from opencode's TUI output. Added a 2 s delayed `StartScreenCapture` goroutine in the primary session creation path and the session-resume path, conditioned on `sess.OneShot && sess.TmuxSession != ""`. One-shot sessions now always have a pane-watcher from birth, making completion detection daemon-restart-proof and spawn-order-independent.
+
 ## v8.21.3 — fix(session): restart screen capture for recovered one-shot sessions on daemon start
 
 ### Fixed
