@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.21.0 — feat(autonomous): session-based PRD decomposer with real codebase access
+
+### Added
+- **Session-based PRD decomposer (Option B)** (`internal/autonomous/decompose.go`, `cmd/datawatch/main.go`) — when a PRD's `decomposition_profile` (or the global `planning_backend` config) resolves to a session-capable backend (`claude-code`, `opencode`, `goose`, etc.), `Decompose` now spawns a one-shot coding session instead of calling the stateless `/api/ask` endpoint. The session receives a task prompt instructing it to explore the actual codebase with full tool access, then write structured JSON to `.decompose-output.json` in the project directory. After the session completes (detected via the existing `DATAWATCH_COMPLETE:` pane-watcher mechanism), the daemon reads the output file and parses it with `ParsePlanning`. This eliminates hallucinated file paths and task specs that don't match the existing codebase — the LLM can `Read`, `Grep`, and `Bash` before writing the plan. Ask-compatible backends (`ollama`, `openwebui`) continue to use the existing `/api/ask` path unchanged.
+- **`DecomposeRequest.ProjectDir`** — new field passed from `PRD.ProjectDir` so the session-based decompose knows where to run and where to write the output file.
+- **`PlanningPromptSession`** (`internal/autonomous/decompose.go`) — new prompt constant for the session-based decompose path; instructs the LLM to explore the project first, write raw JSON to the output file, and signal completion.
+
 ## v8.20.11 — fix(autonomous): scrollback scan for DATAWATCH_COMPLETE on one-shot TUI sessions
 
 ### Fixed

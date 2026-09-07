@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.11"
+var Version = "8.21.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3636,6 +3636,104 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Raw adapter type string (not in named registry).
 			return raw, "", nil
 		}
+		// decomposeFnSession spawns a one-shot coding session (claude-code,
+		// opencode, goose, …) to decompose a PRD. The session reads the
+		// codebase with real tool access, writes structured JSON to a temp
+		// file, then outputs DATAWATCH_COMPLETE: so the pane-watcher can
+		// detect completion. v8.21.0 / Option B.
+		decomposeFnSession := func(req autonomouspkg.DecomposeRequest, backend string) (string, error) {
+			if req.ProjectDir == "" {
+				return "", fmt.Errorf("session-based decompose requires project_dir on the PRD (set it with autonomous_prd_set_llm or at PRD creation)")
+			}
+			outputFile := filepath.Join(req.ProjectDir, ".decompose-output.json")
+			_ = os.Remove(outputFile) // clear stale output from a prior attempt
+
+			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, outputFile, req.Spec)
+
+			body, _ := json.Marshal(map[string]any{
+				"task":        sessionTask,
+				"project_dir": req.ProjectDir,
+				"backend":     backend,
+				"name":        "autonomous:decompose",
+				"one_shot":    true,
+			})
+
+			timeout := 20 * time.Minute
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				loopbackBaseURL(cfg)+"/api/sessions/start",
+				bytes.NewReader(body))
+			if err != nil {
+				return "", err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return "", fmt.Errorf("decompose session start: %w", err)
+			}
+			rb, _ := io.ReadAll(resp.Body)
+			resp.Body.Close() //nolint:errcheck
+			if resp.StatusCode != http.StatusOK {
+				return "", fmt.Errorf("decompose session start: %s — %s", resp.Status, string(rb))
+			}
+			var startOut struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(rb, &startOut)
+			if startOut.ID == "" {
+				return "", fmt.Errorf("decompose session start: no id in response: %s", string(rb))
+			}
+			fmt.Printf("[decompose-session] spawned %s (backend=%s, output=%s)\n", startOut.ID, backend, outputFile)
+
+			// Poll for session completion.
+			tick := time.NewTicker(3 * time.Second)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return "", fmt.Errorf("decompose session %s timed out after 20m", startOut.ID)
+				case <-tick.C:
+					pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+						loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
+					if err != nil {
+						continue
+					}
+					if cfg.Server.Token != "" {
+						pollReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+					}
+					pollResp, err := http.DefaultClient.Do(pollReq)
+					if err != nil {
+						continue
+					}
+					pollBody, _ := io.ReadAll(pollResp.Body)
+					pollResp.Body.Close() //nolint:errcheck
+
+					var s struct {
+						State string `json:"state"`
+					}
+					if err := json.Unmarshal(pollBody, &s); err != nil {
+						continue
+					}
+					switch s.State {
+					case "complete":
+						content, err := os.ReadFile(outputFile)
+						if err != nil {
+							return "", fmt.Errorf("decompose session %s completed but output file %s not found: %w", startOut.ID, outputFile, err)
+						}
+						fmt.Printf("[decompose-session] %s complete, read %d bytes from %s\n", startOut.ID, len(content), outputFile)
+						return string(content), nil
+					case "failed", "killed", "cancelled":
+						return "", fmt.Errorf("decompose session %s ended with state %q", startOut.ID, s.State)
+					}
+				}
+			}
+		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			rawBackend := amgrCfg.PlanningBackend
 			if rawBackend == "" {
@@ -3644,6 +3742,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if rawBackend == "" {
 				rawBackend = "ollama"
 			}
+
+			// Resolve backend kind via registry to decide which path to use.
+			resolvedKind := rawBackend
+			if autonomousInferenceReg != nil {
+				if llm, regErr := autonomousInferenceReg.Get(rawBackend); regErr == nil && !llm.Disabled {
+					resolvedKind = string(llm.Kind)
+				}
+			}
+			// Session-capable backends (claude-code, opencode, goose, aider, …)
+			// get a one-shot coding session with real file access (Option B).
+			if !askCompatible(resolvedKind) {
+				return decomposeFnSession(req, rawBackend)
+			}
+
 			backend, resolvedModel, resolveErr := resolveAskBackend(rawBackend)
 			if resolveErr != nil {
 				return "", resolveErr

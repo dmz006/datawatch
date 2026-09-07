@@ -67,11 +67,60 @@ Feature request:
 %s
 `
 
+// PlanningPromptSession is the task delivered to a one-shot coding session
+// when decompose_backend is a session-capable backend (claude-code, opencode …).
+// First %s = absolute path of the JSON output file.
+// Second %s = the raw PRD spec (feature request text).
+const PlanningPromptSession = `You are decomposing a feature request into a structured Product Requirements Document.
+
+This is a coding project. Before writing the plan, explore the actual codebase:
+read relevant source files to understand the existing architecture and patterns,
+check what already exists so tasks don't duplicate existing work, and identify
+the actual file paths that will need to change.
+
+After exploring, write the decomposition as raw JSON to this file:
+%s
+
+The JSON must follow this schema exactly:
+{
+  "title": "<short feature title>",
+  "stories": [
+    {
+      "title": "<story title>",
+      "description": "<one-paragraph description>",
+      "files": ["<repo-relative path>", "..."],
+      "depends_on": [],
+      "tasks": [
+        {
+          "title": "<task title>",
+          "spec": "<concrete instructions for one worker session — include file paths and context from your exploration>",
+          "files": ["<repo-relative path>", "..."],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- depends_on lists either story or task titles that must complete first.
+- Each task spec must be self-contained — the worker won't see other tasks.
+- Aim for 1-3 stories per PRD, 1-5 tasks per story. Prefer fewer, well-scoped tasks.
+- Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
+
+Feature request:
+%s
+
+When you have written the JSON to the file above, output exactly this line as your final message:
+DATAWATCH_COMPLETE: decomposition written
+`
+
 // DecomposeRequest captures the LLM call inputs.
 type DecomposeRequest struct {
-	Spec     string
-	Backend  string // empty = caller default
-	Effort   Effort
+	Spec       string
+	Backend    string // empty = caller default
+	Effort     Effort
+	ProjectDir string // for session-based decompose path
 }
 
 // DecomposeFn is the indirection that lets tests inject a fake LLM

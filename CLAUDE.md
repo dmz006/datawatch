@@ -7,7 +7,7 @@
 echo "[$(date '+%H:%M:%S')] start" && <command>; echo "[$(date '+%H:%M:%S')] done"
 
 # Chain of commands (use ; before the final timestamp so it always prints):
-echo "[$(date '+%H:%M:%S')] start" && rtk go build ./... && rtk go test ./...; echo "[$(date '+%H:%M:%S')] done"
+echo "[$(date '+%H:%M:%S')] start" && go build -o datawatch ./cmd/datawatch/ && rtk go test ./...; echo "[$(date '+%H:%M:%S')] done"
 
 # Long-running (also show elapsed):
 T=$(date +%s); echo "[$(date '+%H:%M:%S')] start" && <command>; echo "[$(date '+%H:%M:%S')] done ($(( $(date +%s) - T ))s)"
