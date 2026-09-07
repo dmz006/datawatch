@@ -10847,10 +10847,11 @@ function openPRDCreateModal() {
           <select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select>
         </div>
         <div id="prdNewBackendRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()', true)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Execution backend'}</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
           <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
           <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdNewModelInner"></div></div>
         </div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_planning_label')||'Planning backend (decompose — ollama/openwebui only, empty = global default)'}</label>${renderBackendSelect('prdNewDecompositionProfile', '', '', true)}</div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
           <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_create')||'Create'}</button>
@@ -10903,6 +10904,7 @@ function openPRDCreateModal() {
       // list is available for the selected backend.
       const modelEl = document.getElementById('prdNewModelInner')?.querySelector('input,select');
       const model = modelEl ? modelEl.value.trim() : '';
+      const decompositionProfile = document.getElementById('prdNewDecompositionProfile')?.value || '';
       apiFetch('/api/autonomous/prds', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -10910,10 +10912,10 @@ function openPRDCreateModal() {
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
-        if (model || body.backend || body.effort) {
+        if (model || body.backend || body.effort || decompositionProfile) {
           return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prd.id) + '/set_llm', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ backend: body.backend, effort: body.effort, model, actor: 'operator' }),
+            body: JSON.stringify({ backend: body.backend, effort: body.effort, model, decomposition_profile: decompositionProfile, actor: 'operator' }),
           });
         }
       }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })

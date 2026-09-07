@@ -106,7 +106,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.20.1"
+var Version = "8.20.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3811,6 +3811,35 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// against the session summary. verification_backend (empty =
 		// inherit) gives cross-backend independence per BL25 design.
 		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (autonomouspkg.VerificationResult, error) {
+			// v8.20.2 — wait for the spawned session to reach a terminal
+			// state before verifying. Previously verify fired immediately
+			// after spawn, so the verifier saw no git diff and the session
+			// kept running indefinitely after the PRD completed.
+			if task.SessionID != "" && mgr != nil {
+				tick := time.NewTicker(3 * time.Second)
+				defer tick.Stop()
+			waitLoop:
+				for {
+					select {
+					case <-ctx.Done():
+						break waitLoop
+					case <-tick.C:
+						s, ok := mgr.GetSession(task.SessionID)
+						if !ok {
+							// Session not yet visible in the store; keep waiting.
+							continue
+						}
+						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+							break waitLoop
+						}
+					}
+				}
+				// Best-effort kill so the tmux pane doesn't linger.
+				if s, ok := mgr.GetSession(task.SessionID); ok &&
+					s.State != session.StateKilled {
+					_ = mgr.Kill(task.SessionID)
+				}
+			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			diffSection := ""
 			if task.PreTaskSHA != "" && prd.ProjectDir != "" {

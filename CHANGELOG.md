@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.20.2 — fix(autonomous): session wait + cleanup; create modal execution backend
+
+### Fixed
+- **Autonomous task sessions were not being cleaned up after PRD completion** (`cmd/datawatch/main.go`) — `autonomousVerify` fired immediately after spawning the worker session, before the session had a chance to do any work. The verifier saw no git diff, returned `ok:true` by default, and the session was left running indefinitely. Sessions accumulated until manually killed. Fix: `autonomousVerify` now polls `session.Manager.GetSession` every 3 seconds until the spawned session reaches `StateComplete`, `StateFailed`, or `StateKilled` (or the context is cancelled), then best-effort kills it to clean up the tmux pane.
+- **New Automaton modal showed only ollama/openwebui in the Backend dropdown** (`internal/server/web/app.js`) — the execution backend picker in `openPRDCreateModal` had `planningOnly=true`, hiding opencode/goose/claude-code from the list. Removed the filter from the execution backend field. A separate "Planning backend (decompose)" field with `planningOnly=true` is now shown alongside it. The `decomposition_profile` from this field is included in the `set_llm` call on PRD creation.
+
 ## v8.20.1 — fix(autonomous): cancelled PRD restart — Reset to Draft + Settings access
 
 ### Fixed

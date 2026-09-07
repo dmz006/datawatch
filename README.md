@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.20.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.20.1)
+[![Release](https://img.shields.io/badge/release-v8.20.2-success)](https://github.com/dmz006/datawatch/releases/tag/v8.20.2)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.20.2](CHANGELOG.md) (2026-09-06)** — Fix: autonomous sessions now wait for task completion before verifying and are killed afterwards (prevents session accumulation). New Automaton modal now shows all backends (opencode, goose, etc.) in the execution backend field with a separate planning backend picker.
 
 **[v8.20.1](CHANGELOG.md) (2026-09-06)** — Fix: cancelled PRDs now show a **↺ Reset to Draft** button, Settings/Edit Spec options, and expose `POST /api/autonomous/prds/{id}/reset_to_draft` + `autonomous_prd_reset_to_draft` MCP tool. Restores the ability to reconfigure a cancelled PRD's backend and re-decompose without cloning.
 
