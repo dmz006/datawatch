@@ -16097,8 +16097,12 @@ function openLaunchAutomatonWizard() {
              each on their own row — model + effort labels can run long
              (e.g. claude-sonnet-4-6, "thorough"), and 3-up squeezes them. -->
         <div class="wizard-field">
-          <label class="wizard-label">${escHtml(t('automata_wizard_backend'))}</label>
-          ${renderBackendSelect('wizardBackend', '', '_wizardBackendChanged()', true)}
+          <label class="wizard-label">${escHtml(t('automata_wizard_backend')||'Execution backend (tasks)')}</label>
+          ${renderBackendSelect('wizardBackend', '', '_wizardBackendChanged()')}
+        </div>
+        <div class="wizard-field">
+          <label class="wizard-label" style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_planning_label')||'Planning backend (decompose — ollama/openwebui only, empty = global default)')}</label>
+          ${renderBackendSelect('wizardDecompositionProfile', '', '', true)}
         </div>
         <div class="wizard-field" id="wizardModelField">
           <label class="wizard-label">${escHtml(t('automata_wizard_model')||'Model')}</label>
@@ -16261,9 +16265,17 @@ function _wizardSubmit() {
   const profileSel = document.getElementById('wizardProfile')?.value;
   const usingProfile = profileSel && profileSel !== '__dir__';
   const projectProfile = usingProfile ? profileSel : '';
-  const projectDir = usingProfile ? '' : ((window.newSessionState && newSessionState.selectedDir) || '');
+  let projectDir = '';
+  if (!usingProfile) {
+    const sel = (typeof newSessionState !== 'undefined' && newSessionState.selectedDir) || '';
+    const disp = document.getElementById('selectedDirDisplay');
+    const dispTxt = disp ? disp.textContent.trim() : '';
+    projectDir = sel || (dispTxt && dispTxt !== '~/' ? dispTxt : '');
+    if (!projectDir) { showToast('Enter a project directory', 'error', 2500); return; }
+  }
   const backend = document.getElementById('wizardBackend')?.value || '';
   const effort  = document.getElementById('wizardEffort')?.value || '';
+  const decompositionProfile = document.getElementById('wizardDecompositionProfile')?.value || '';
 
   const guidedMode = document.getElementById('wizardGuidedMode')?.checked || false;
   const body = {
@@ -16282,6 +16294,17 @@ function _wizardSubmit() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  }).then(prd => {
+    if (!prd || !prd.id) return prd;
+    if (backend || effort || decompositionProfile) {
+      const modelEl = document.getElementById('wizardModelField')?.querySelector('input,select');
+      const model = modelEl ? modelEl.value.trim() : '';
+      return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prd.id) + '/set_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backend, effort, model, decomposition_profile: decompositionProfile, actor: 'operator' }),
+      }).then(() => prd);
+    }
+    return prd;
   }).then(prd => {
     _prdCloseModal();
     showToast('Automaton created', 'success', 1500);
