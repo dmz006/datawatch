@@ -848,6 +848,37 @@ vision:
 
 **REST:** `GET /api/config` + `PUT /api/config` expose `vision.*` keys. `POST /api/vision/describe` (multipart). All routes are bearer-authenticated.
 
+#### Web Search (SearXNG)
+
+Self-hosted web search integration that injects a `web_search` MCP tool into opencode and goose agent sessions. Queries are proxied through an operator-configured [SearXNG](https://searxng.github.io/searxng/) instance.
+
+**Config (`datawatch.yaml`):**
+
+```yaml
+web_search:
+  enabled: false
+  provider: searxng          # only "searxng" supported
+  url: ""                    # base URL of the SearXNG instance (required when enabled)
+  engine: bing               # use "bing" — others are CAPTCHA/rate-limited
+  num_results: 10
+```
+
+**How it integrates:**
+
+| Surface | Behaviour |
+|---|---|
+| **opencode sessions** | `web_search` added to `extraMCPSpecs` → injected into `.datawatch/.mcp.json` at session start. |
+| **goose sessions** | `GOOSE_MCP__WEB_SEARCH__TYPE/CMD/ARGS` env vars set on the goose process. |
+| **Skill** | `web-search-guidance` skill written to `<projectDir>/.datawatch/skills/web-search-guidance/` with query guidance, engine availability notes, and result interpretation tips. |
+| **Monitor tab** | Web Search card shows enabled state, queries/errors counters, and last-query timestamp. |
+| **MCP tool** | `web_search_stats` tool returns configuration and counters. |
+
+**REST:** `GET /api/config` exposes `web_search.*` keys. `PATCH /api/config` accepts `web_search.enabled`, `web_search.url`, `web_search.engine`, `web_search.num_results`. `GET /api/web_search/stats` returns runtime stats.
+
+**MCP sub-server:** `datawatch mcp-search --url <url> --engine bing` runs the stdio MCP server that provides the `web_search` tool to agents.
+
+**Engine note:** Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting immediately. Set `engine: bing` in config (the default).
+
 ### Settings — Compute
 
 > **v7 rename:** The "LLM" tab was renamed to "Compute" in v7.0.0 and the "Agents" tab was eliminated. All content from both tabs now lives here. If you're on a saved `cs_settings_tab=llm` or `cs_settings_tab=agents` bookmark, the PWA auto-redirects to `compute`.

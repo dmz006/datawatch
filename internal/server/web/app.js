@@ -11640,6 +11640,12 @@ const LLM_CONFIG_FIELDS = [
   { id: 'opencode', section: 'OpenCode', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'opencode.default_model', label: 'Default model (e.g. opencode/big-pickle)', type: 'text', placeholder: 'opencode/big-pickle' },
   ]},
+  { id: 'web_search', section: 'Web Search (SearXNG)', docs: 'howto/chat-and-llm-quickstart.md', fields: [
+    { key: 'web_search.enabled', label: t('settings_web_search_enabled') || 'Enable web search injection', type: 'toggle' },
+    { key: 'web_search.url', label: t('settings_web_search_url') || 'SearXNG URL', type: 'text', placeholder: 'http://searxng.example.com:3001' },
+    { key: 'web_search.engine', label: t('settings_web_search_engine') || 'Engine (comma-separated)', type: 'text', placeholder: 'bing' },
+    { key: 'web_search.num_results', label: t('settings_web_search_num_results') || 'Default results per query (1–20)', type: 'number', placeholder: '10' },
+  ]},
   { id: 'rtk', section: 'RTK (Token Savings)', docs: 'rtk-integration.md', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
     { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
@@ -18353,6 +18359,18 @@ function renderStatsData(el, data) {
     } else if (data.ollama_stats) {
       html += `<div class="stat-card"><div class="stat-label">${t('stats_ollama_server')||'Ollama Server'}</div>
         <div style="font-size:10px;color:var(--error);">${escHtml(data.ollama_stats.error || 'offline')}</div></div>`;
+    }
+    // BL372 — web search stats card (always visible when enabled, hidden otherwise).
+    if (data.web_search_enabled) {
+      const wqTotal = data.web_search_queries_total || 0;
+      const weTotal = data.web_search_errors_total || 0;
+      const wEngineColor = data.web_search_engine ? 'var(--success)' : 'var(--text2)';
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_web_search')||'Web Search'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('web_search_queries')||'Queries'}</span><span>${wqTotal}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('web_search_errors')||'Errors'}</span><span style="color:${weTotal>0?'var(--error)':'var(--text)'};">${weTotal}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Engine</span><span style="color:${wEngineColor};">${escHtml(data.web_search_engine||'—')}</span></div>
+        </div></div>`;
     }
     // BL367 — quality gate stats card (visible when at least one gate has run).
     if (data.quality_gate_runs > 0) {

@@ -427,6 +427,11 @@ type Config struct {
 	// already exists for that name — operator runtime edits win).
 	// Schema: see internal/compute/node.go::Node.
 	ComputeNodes []ComputeNodeYAML `yaml:"compute_nodes,omitempty" json:"compute_nodes,omitempty"`
+
+	// WebSearch (BL372) — web search MCP injection for opencode and goose sessions.
+	// When enabled, auto-injects `datawatch mcp-search` as an MCP server so agents
+	// have a `web_search` tool backed by the configured SearXNG instance.
+	WebSearch WebSearchConfig `yaml:"web_search,omitempty" json:"web_search,omitempty"`
 }
 
 // SmokeConfig controls smoke-run cross-instance reporting (#54).
@@ -630,6 +635,26 @@ type GooseConfig struct {
 	APIKeyRef string `yaml:"api_key_ref,omitempty"` // literal key OR ${secret:name} — resolved at startup
 	// T3 — MCP channel integration (BL363)
 	ChannelEnabled bool `yaml:"channel_enabled,omitempty"` // inject GOOSE_MCP__DATAWATCH__* env vars at launch
+}
+
+// WebSearchConfig holds web search MCP injection configuration (BL372).
+// When Enabled is true, datawatch injects a `mcp-search` stdio MCP server
+// into opencode and goose sessions, giving agents a `web_search` tool that
+// proxies queries to the configured SearXNG instance.
+type WebSearchConfig struct {
+	// Enabled turns on web search injection for opencode and goose sessions.
+	Enabled bool `yaml:"enabled"`
+	// Provider is the search provider type. Only "searxng" is supported today.
+	Provider string `yaml:"provider,omitempty"`
+	// URL is the SearXNG base URL, e.g. http://searxng.example.com:3001
+	// Required when Enabled is true. Never use a private hostname here;
+	// configure via YAML / REST / UI and keep default as an example placeholder.
+	URL string `yaml:"url,omitempty"`
+	// Engine is the SearXNG engine list (comma-separated) to pass in ?engines=
+	// Default: "bing". brave/duckduckgo/startpage may be rate-limited.
+	Engine string `yaml:"engine,omitempty"`
+	// NumResults is the default number of results to return (1–20). Default 10.
+	NumResults int `yaml:"num_results,omitempty"`
 }
 
 // GeminiConfig holds Gemini CLI LLM backend configuration.
@@ -2161,6 +2186,16 @@ func applyDefaults(cfg *Config) {
 		if wd, err := os.Getwd(); err == nil {
 			cfg.Session.RootPath = wd
 		}
+	}
+	// BL372 — web search defaults.
+	if cfg.WebSearch.Provider == "" {
+		cfg.WebSearch.Provider = "searxng"
+	}
+	if cfg.WebSearch.Engine == "" {
+		cfg.WebSearch.Engine = "bing"
+	}
+	if cfg.WebSearch.NumResults == 0 {
+		cfg.WebSearch.NumResults = 10
 	}
 	// BL304 — migrate legacy decomposition_* YAML keys → planning_* Go fields.
 	// Old configs that set decomposition_backend/effort/model still work.

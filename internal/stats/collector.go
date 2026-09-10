@@ -113,6 +113,14 @@ type SystemStats struct {
 	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`
 	QualityGatePass        int `json:"quality_gate_pass,omitempty"`
 	QualityGateFail        int `json:"quality_gate_fail,omitempty"`
+
+	// BL372 — web search MCP injection stats.
+	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
+	WebSearchProvider     string    `json:"web_search_provider,omitempty"`
+	WebSearchURL          string    `json:"web_search_url,omitempty"`
+	WebSearchQueriesTotal int64     `json:"web_search_queries_total,omitempty"`
+	WebSearchErrorsTotal  int64     `json:"web_search_errors_total,omitempty"`
+	WebSearchLastQueryAt  time.Time `json:"web_search_last_query_at,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -203,6 +211,9 @@ type Collector struct {
 	// autonomousStatsFn populates autonomous quality gate metrics
 	autonomousStatsFn func(*SystemStats)
 
+	// webSearchStatsFn populates web search stats (BL372)
+	webSearchStatsFn func(*SystemStats)
+
 	// ollamaHost is the Ollama API URL for stats polling
 	ollamaHost string
 
@@ -284,6 +295,11 @@ func (c *Collector) SetMemoryStatsFunc(fn func(*SystemStats)) {
 // SetAutonomousStatsFunc sets a callback that populates autonomous quality gate stats on each snapshot.
 func (c *Collector) SetAutonomousStatsFunc(fn func(*SystemStats)) {
 	c.autonomousStatsFn = fn
+}
+
+// SetWebSearchStatsFunc sets a callback that populates web search stats on each snapshot (BL372).
+func (c *Collector) SetWebSearchStatsFunc(fn func(*SystemStats)) {
+	c.webSearchStatsFn = fn
 }
 
 // SetOllamaHost sets the Ollama API URL for stats polling.
@@ -417,6 +433,11 @@ func (c *Collector) collect() {
 	// BL367 — autonomous quality gate stats
 	if c.autonomousStatsFn != nil {
 		c.autonomousStatsFn(&s)
+	}
+
+	// BL372 — web search stats
+	if c.webSearchStatsFn != nil {
+		c.webSearchStatsFn(&s)
 	}
 
 	// Ollama server stats (BL71) — poll every collection cycle

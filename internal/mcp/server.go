@@ -86,6 +86,10 @@ type Server struct {
 	promptServer *MCPPromptServer
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
+	// webSearchEnabled and webSearchURL/Engine are used for the web_search_stats tool (BL372).
+	webSearchEnabled bool
+	webSearchURL     string
+	webSearchEngine  string
 	// webPort for internal API calls (config, stats)
 	webPort int
 	// pipelineAPI provides pipeline operations (nil when not available)
@@ -923,6 +927,32 @@ func (s *Server) SetOllamaHost(host string) {
 			return s.handleOllamaStats(ctx, req)
 		})
 	}
+}
+
+// SetWebSearchConfig enables the web_search_stats MCP tool (BL372).
+func (s *Server) SetWebSearchConfig(enabled bool, url, engine string) {
+	s.webSearchEnabled = enabled
+	s.webSearchURL = url
+	s.webSearchEngine = engine
+	s.srv.AddTool(s.toolWebSearchStats(), func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return s.handleWebSearchStats(ctx, req)
+	})
+}
+
+func (s *Server) toolWebSearchStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("web_search_stats",
+		mcpsdk.WithDescription("Get web search MCP injection status and statistics for this daemon."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleWebSearchStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	data, _ := json.MarshalIndent(map[string]interface{}{
+		"enabled":  s.webSearchEnabled,
+		"url":      s.webSearchURL,
+		"engine":   s.webSearchEngine,
+	}, "", "  ")
+	return mcpsdk.NewToolResultText(string(data)), nil
 }
 
 // ToolDocAnnotations mirrors the relevant fields of mcpsdk.ToolAnnotation for

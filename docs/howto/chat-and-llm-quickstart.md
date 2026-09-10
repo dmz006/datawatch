@@ -244,6 +244,31 @@ channels:
   [`channel-state-engine.md`](channel-state-engine.md) — wait 15 s for the gap watcher to flip,
   or check that LCE is bumping.
 
+## Web Search (SearXNG)
+
+Agent sessions (opencode, goose) can search the web when `web_search` is configured. Queries are proxied through a self-hosted [SearXNG](https://searxng.github.io/searxng/) instance. Use the `bing` engine — other engines trigger CAPTCHA or rate-limiting in default SearXNG installs.
+
+**Quick setup:**
+
+```yaml
+# datawatch.yaml
+web_search:
+  enabled: true
+  url: http://searxng.example.com:3001
+  engine: bing          # only bing works reliably
+  num_results: 10
+```
+
+Or via REST:
+```bash
+curl -s -X PATCH http://localhost:8080/api/config \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"web_search.enabled":true,"web_search.url":"http://searxng.example.com:3001"}'
+```
+
+Once enabled, new opencode and goose sessions receive a `web_search` tool and a `web-search-guidance` skill. The Monitor tab shows live query/error counters.
+
 ## Linked references
 
 - See also: [`llm-registry.md`](llm-registry.md) for full LLM registry management.

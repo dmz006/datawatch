@@ -1,6 +1,6 @@
 # BL372 — Web Search MCP Injection for Agent Backends
 
-**Date:** 2026-09-10 · **Version:** v8.21.4 · **Status:** Draft · **Priority:** Medium
+**Date:** 2026-09-10 · **Version:** v8.22.0 · **Status:** Completed · **Priority:** Medium
 
 ## Problem
 

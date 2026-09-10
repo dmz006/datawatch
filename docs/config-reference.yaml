@@ -532,6 +532,22 @@ vision:
   # Maximum image size in bytes before rejection. 0 = 10 MB default.
   max_image_bytes: 0
 
+# ── Web Search (SearXNG) ──
+# Inject a web_search MCP tool into opencode and goose agent sessions.
+# The tool proxies queries through a self-hosted SearXNG instance.
+# Access: YAML | REST PATCH /api/config | Web UI Settings > LLM > Web Search.
+web_search:
+  # Set to true to enable the web_search MCP tool injection.
+  enabled: false
+  # Search provider. Currently only "searxng" is supported.
+  provider: searxng
+  # Base URL of the SearXNG instance (required when enabled).
+  url: ""
+  # SearXNG engine to use. Use "bing" — other engines are CAPTCHA/rate-limited.
+  engine: bing
+  # Maximum number of search results to return per query.
+  num_results: 10
+
 # ── Remote Servers (Proxy Mode) ──
 # Configure remote datawatch instances for multi-machine management.
 # The proxy instance forwards commands and relays WebSocket connections.

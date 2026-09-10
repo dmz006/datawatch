@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.21.4"
+var Version = "8.22.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3092,6 +3092,22 @@ func (s *Server) handleOllamaStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(olStats) //nolint:errcheck
 }
 
+// handleWebSearchStats returns web search stats (BL372).
+// GET /api/web_search/stats
+func (s *Server) handleWebSearchStats(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAnalyticsRead) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"enabled":       s.cfg.WebSearch.Enabled,
+		"provider":      s.cfg.WebSearch.Provider,
+		"url":           s.cfg.WebSearch.URL,
+		"engine":        s.cfg.WebSearch.Engine,
+		"num_results":   s.cfg.WebSearch.NumResults,
+	})
+}
+
 // handleSessionResponse returns the last captured LLM response for a session.
 // GET /api/sessions/response?id=<session_id>
 func (s *Server) handleSessionResponse(w http.ResponseWriter, r *http.Request) {
@@ -4823,6 +4839,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
 			"default_backend": s.cfg.Pipeline.DefaultBackend,
 		},
+		"web_search": map[string]interface{}{
+			"enabled":     s.cfg.WebSearch.Enabled,
+			"provider":    s.cfg.WebSearch.Provider,
+			"url":         s.cfg.WebSearch.URL,
+			"engine":      s.cfg.WebSearch.Engine,
+			"num_results": s.cfg.WebSearch.NumResults,
+		},
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator must be
 		// in the GET response too. Without them the PWA and mobile
 		// Settings cards render empty fields on reload even though
@@ -5612,6 +5635,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Pipeline.MaxParallel = n }
 		case "pipeline.default_backend":
 			cfg.Pipeline.DefaultBackend = toString(v)
+		// BL372 — web search config
+		case "web_search.enabled":
+			cfg.WebSearch.Enabled = toBool(v)
+		case "web_search.url":
+			cfg.WebSearch.URL = toString(v)
+		case "web_search.engine":
+			if s := toString(v); s != "" { cfg.WebSearch.Engine = s }
+		case "web_search.num_results":
+			if n, ok := toInt(v); ok && n > 0 { cfg.WebSearch.NumResults = n }
 		case "whisper.enabled":
 			cfg.Whisper.Enabled = toBool(v)
 		case "whisper.model":

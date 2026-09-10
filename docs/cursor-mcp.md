@@ -140,6 +140,8 @@ Selected core tools:
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
 | `channel_info` | Channel bridge status for the current session |
 | `channel_diagnostics` | Full MCP channel bridge health — all sessions, bridge kind/path, per-session liveness, hints (BL362) |
+| `vision_describe` | Describe an image file using the configured vision model (requires `vision.enabled: true`) |
+| `web_search_stats` | Web search configuration and stats — provider, URL, engine, query/error counters (requires `web_search.enabled: true`) |
 
 ## Example Usage in Cursor
 

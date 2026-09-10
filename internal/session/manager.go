@@ -1834,6 +1834,18 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				sid.SetSessionFullID(sess.FullID)
 			}
 		}
+		// BL372 — inject web search MCP server when enabled.
+		if m.cfg.WebSearch.Enabled && m.cfg.WebSearch.URL != "" {
+			if sw, ok := backendObj.(interface{ SetWebSearchEnabled(bool) }); ok {
+				sw.SetWebSearchEnabled(true)
+			}
+			if su, ok := backendObj.(interface{ SetWebSearchURL(string) }); ok {
+				su.SetWebSearchURL(m.cfg.WebSearch.URL)
+			}
+			if se, ok := backendObj.(interface{ SetWebSearchEngine(string) }); ok {
+				se.SetWebSearchEngine(m.cfg.WebSearch.Engine)
+			}
+		}
 	}
 
 	// v5.27.5 — per-session claude-code overrides (permission_mode,
@@ -3145,6 +3157,18 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			}
 			if sid, ok := backendObj.(interface{ SetSessionFullID(string) }); ok {
 				sid.SetSessionFullID(sess.FullID)
+			}
+		}
+		// BL372 — inject web search MCP server when enabled.
+		if m.cfg.WebSearch.Enabled && m.cfg.WebSearch.URL != "" {
+			if sw, ok := backendObj.(interface{ SetWebSearchEnabled(bool) }); ok {
+				sw.SetWebSearchEnabled(true)
+			}
+			if su, ok := backendObj.(interface{ SetWebSearchURL(string) }); ok {
+				su.SetWebSearchURL(m.cfg.WebSearch.URL)
+			}
+			if se, ok := backendObj.(interface{ SetWebSearchEngine(string) }); ok {
+				se.SetWebSearchEngine(m.cfg.WebSearch.Engine)
 			}
 		}
 	}

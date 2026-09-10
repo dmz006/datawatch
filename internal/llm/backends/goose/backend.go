@@ -19,13 +19,16 @@ func init() {
 
 // Backend runs goose in interactive TUI session mode.
 type Backend struct {
-	binary         string
-	sessionName    string
-	provider       string
-	model          string
-	apiKey         string
-	channelEnabled bool
-	sessionFullID  string // BL363 T3 — passed to MCP server via --caller-session-id
+	binary           string
+	sessionName      string
+	provider         string
+	model            string
+	apiKey           string
+	channelEnabled   bool
+	sessionFullID    string // BL363 T3 — passed to MCP server via --caller-session-id
+	webSearchEnabled bool   // BL372 — inject GOOSE_MCP__WEB_SEARCH__* when true
+	webSearchURL     string // BL372 — SearXNG base URL
+	webSearchEngine  string // BL372 — engine list (e.g. "bing")
 }
 
 // New creates a goose backend. binary defaults to "goose".
@@ -84,11 +87,14 @@ func (b *Backend) SetSessionName(name string) {
 	b.sessionName = name
 }
 
-func (b *Backend) SetProvider(p string)        { b.provider = p }
-func (b *Backend) SetModel(m string)            { b.model = m }
-func (b *Backend) SetAPIKey(k string)           { b.apiKey = k }
-func (b *Backend) SetChannelEnabled(v bool)     { b.channelEnabled = v }
-func (b *Backend) SetSessionFullID(id string)   { b.sessionFullID = id }
+func (b *Backend) SetProvider(p string)           { b.provider = p }
+func (b *Backend) SetModel(m string)               { b.model = m }
+func (b *Backend) SetAPIKey(k string)              { b.apiKey = k }
+func (b *Backend) SetChannelEnabled(v bool)        { b.channelEnabled = v }
+func (b *Backend) SetSessionFullID(id string)      { b.sessionFullID = id }
+func (b *Backend) SetWebSearchEnabled(v bool)      { b.webSearchEnabled = v }     // BL372
+func (b *Backend) SetWebSearchURL(url string)      { b.webSearchURL = url }       // BL372
+func (b *Backend) SetWebSearchEngine(engine string) { b.webSearchEngine = engine } // BL372
 
 // gooseEnvPrefix returns the env var prefix string to prepend to commands,
 // sourced from provider/model/apiKey/channel fields set before Launch is called.
@@ -112,6 +118,20 @@ func (b *Backend) gooseEnvPrefix() string {
 				"GOOSE_MCP__DATAWATCH__TYPE=stdio",
 				"GOOSE_MCP__DATAWATCH__CMD="+shellQuote(binaryPath),
 				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote("mcp,--caller-session-id,"+b.sessionFullID),
+			)
+		}
+	}
+	// BL372 — inject web search MCP server when enabled.
+	if b.webSearchEnabled && b.webSearchURL != "" {
+		if binaryPath, err := os.Executable(); err == nil {
+			engine := b.webSearchEngine
+			if engine == "" {
+				engine = "bing"
+			}
+			parts = append(parts,
+				"GOOSE_MCP__WEB_SEARCH__TYPE=stdio",
+				"GOOSE_MCP__WEB_SEARCH__CMD="+shellQuote(binaryPath),
+				"GOOSE_MCP__WEB_SEARCH__ARGS="+shellQuote("mcp-search,--url,"+b.webSearchURL+",--engine,"+engine),
 			)
 		}
 	}
@@ -175,12 +195,15 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 // PromptBackend runs goose in non-interactive one-shot mode (goose run --text).
 // Always requires a task prompt.
 type PromptBackend struct {
-	binary         string
-	provider       string
-	model          string
-	apiKey         string
-	channelEnabled bool
-	sessionFullID  string
+	binary           string
+	provider         string
+	model            string
+	apiKey           string
+	channelEnabled   bool
+	sessionFullID    string
+	webSearchEnabled bool   // BL372
+	webSearchURL     string // BL372
+	webSearchEngine  string // BL372
 }
 
 // NewPrompt creates a goose-prompt backend for one-shot task execution.
@@ -195,11 +218,14 @@ func (b *PromptBackend) Name() string                  { return "goose-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
 
-func (b *PromptBackend) SetProvider(p string)      { b.provider = p }
-func (b *PromptBackend) SetModel(m string)          { b.model = m }
-func (b *PromptBackend) SetAPIKey(k string)         { b.apiKey = k }
-func (b *PromptBackend) SetChannelEnabled(v bool)   { b.channelEnabled = v }
-func (b *PromptBackend) SetSessionFullID(id string) { b.sessionFullID = id }
+func (b *PromptBackend) SetProvider(p string)            { b.provider = p }
+func (b *PromptBackend) SetModel(m string)               { b.model = m }
+func (b *PromptBackend) SetAPIKey(k string)              { b.apiKey = k }
+func (b *PromptBackend) SetChannelEnabled(v bool)        { b.channelEnabled = v }
+func (b *PromptBackend) SetSessionFullID(id string)      { b.sessionFullID = id }
+func (b *PromptBackend) SetWebSearchEnabled(v bool)      { b.webSearchEnabled = v }      // BL372
+func (b *PromptBackend) SetWebSearchURL(url string)      { b.webSearchURL = url }        // BL372
+func (b *PromptBackend) SetWebSearchEngine(e string)     { b.webSearchEngine = e }       // BL372
 
 func (b *PromptBackend) gooseEnvPrefix() string {
 	var parts []string
@@ -219,6 +245,20 @@ func (b *PromptBackend) gooseEnvPrefix() string {
 				"GOOSE_MCP__DATAWATCH__TYPE=stdio",
 				"GOOSE_MCP__DATAWATCH__CMD="+shellQuote(binaryPath),
 				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote("mcp,--caller-session-id,"+b.sessionFullID),
+			)
+		}
+	}
+	// BL372 — inject web search MCP server when enabled.
+	if b.webSearchEnabled && b.webSearchURL != "" {
+		if binaryPath, err := os.Executable(); err == nil {
+			engine := b.webSearchEngine
+			if engine == "" {
+				engine = "bing"
+			}
+			parts = append(parts,
+				"GOOSE_MCP__WEB_SEARCH__TYPE=stdio",
+				"GOOSE_MCP__WEB_SEARCH__CMD="+shellQuote(binaryPath),
+				"GOOSE_MCP__WEB_SEARCH__ARGS="+shellQuote("mcp-search,--url,"+b.webSearchURL+",--engine,"+engine),
 			)
 		}
 	}

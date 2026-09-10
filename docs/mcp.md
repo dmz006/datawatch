@@ -234,6 +234,7 @@ shape.
 |--------|-------|
 | Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
 | Vision | `vision_describe` |
+| Web Search | `web_search_stats` |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
@@ -416,6 +417,29 @@ running in a dark theme with white text.
 - Agents analyzing screenshots of their own output (test failures, UI regressions)
 - Reading captured terminal frames or error dialogs
 - Describing diagrams, mockups, or architecture images to pass as context to other tools
+
+---
+
+### `web_search_stats`
+
+Return the current web search configuration and runtime statistics for this datawatch instance. Requires `web_search.enabled: true` in config.
+
+**Parameters:** none
+
+**Example response:**
+```json
+{
+  "enabled": true,
+  "provider": "searxng",
+  "url": "http://searxng.example.com:3001",
+  "engine": "bing"
+}
+```
+
+**Use cases:**
+- Confirming that web search injection is active before querying
+- Checking which SearXNG instance and engine are in use
+- Verifying configuration changes took effect (REST PATCH then this tool)
 
 ---
 

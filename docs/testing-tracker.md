@@ -159,3 +159,24 @@ Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (R
 | Multiple tags in one message | **Yes** | No | `TestExpandImageTags_MultipleTags` | Unit test: 2 tags both replaced |
 | PWA: upload image → attach → send → vision runs before session receives | No | No | — | Live test: PWA session → 📎 attach image → type prompt → send → check session input shows `[image: <desc> \| path: ...]` not raw path |
 | WebSocket path (WS send_input) also runs expandImageTags | No | No | Code inspection of `executeCommand` CmdSend branch | Live test: send via WebSocket with image tag |
+
+## `datawatch mcp-search` interface (v8.22.0)
+
+Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries to a SearXNG instance and exposes a single `web_search` tool. Injected automatically into opencode and goose sessions when `web_search.enabled: true`.
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| `frameScanner` — Content-Length framed stdin parser | **Yes** | No | `TestFrameScanner` in `internal/mcp/search/server_test.go` | Verifies correct extraction of framed JSON bodies |
+| `sendMsg` — framed stdout writer | **Yes** | No | `TestSendMsg` | Verifies `Content-Length: N\r\n\r\n<body>` wire format |
+| `handle()` — `ping` method | **Yes** | No | `TestHandlePing` | Returns empty result |
+| `handle()` — `tools/list` method | **Yes** | No | `TestHandleToolsList` | Returns `web_search` tool in result array |
+| `handle()` — `tools/call web_search` no URL | **Yes** | No | `TestHandleToolsCallNoURL` | Returns error content when URL not configured |
+| `searxngSearch()` — SearXNG HTTP proxy | **Yes** | No | `TestSearxngSearch` (httptest.NewServer) | Verifies title/URL/snippet extraction, result capping |
+| `ConfigFromEnv()` — env var parsing | **Yes** | No | `TestConfigFromEnv` | DATAWATCH_WEB_SEARCH_URL/ENGINE/NUM_RESULTS |
+| opencode injection — `extraMCPSpecs["web_search"]` | No | No | Code inspection of `cmd/datawatch/main.go` | Live: start an opencode session with web_search.enabled, confirm .datawatch/.mcp.json contains web_search entry |
+| goose injection — `GOOSE_MCP__WEB_SEARCH__*` env vars | No | No | Code inspection of `internal/llm/backends/goose/backend.go` | Live: start a goose session, inspect env for GOOSE_MCP__WEB_SEARCH__TYPE |
+| Skill injection — `web-search-guidance` SKILL.md | No | No | — | Live: confirm `.datawatch/skills/web-search-guidance/SKILL.md` created at session start |
+| REST `GET /api/web_search/stats` | No | No | — | Live: curl with bearer token, verify JSON response |
+| MCP `web_search_stats` tool | No | No | — | Live: from connected MCP session, call `web_search_stats` |
+| Monitor card — web search stats visible | No | No | — | Live: enable web_search, reload Monitor tab, confirm card appears |
+| Web UI Settings — web_search section | No | No | — | Live: Settings > LLM > Web Search, toggle enabled, save, confirm GET /api/config reflects change |

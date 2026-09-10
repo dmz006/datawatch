@@ -1291,5 +1291,13 @@
   "stats_quality_gates": "Quality Gates",
   "settings_injection_guard": "Prompt injection guard (warn on suspicious PRD/task specs)",
   "settings_block_on_injection": "Block PRD/task create when injection phrases detected",
-  "no_change_since_last_refresh": "no change since last refresh"
+  "no_change_since_last_refresh": "no change since last refresh",
+  "settings_web_search_enabled": "Enable web search injection (opencode + goose sessions)",
+  "settings_web_search_url": "SearXNG URL (e.g. http://searxng.example.com:3001)",
+  "settings_web_search_engine": "Search engine (comma-separated, default: bing)",
+  "settings_web_search_num_results": "Default results per query (1–20)",
+  "stats_web_search": "Web Search",
+  "web_search_queries": "Queries",
+  "web_search_errors": "Errors",
+  "web_search_last_query": "Last query"
 }

@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.22.0 — feat(web-search): SearXNG MCP tool injection for opencode and goose sessions
+
+### Added
+- **Web search tool for agent sessions** — when `web_search.enabled: true` and a SearXNG URL is configured, a `web_search` MCP tool is automatically injected into opencode sessions (via `extraMCPSpecs` → `.datawatch/.mcp.json`) and goose sessions (via `GOOSE_MCP__WEB_SEARCH__*` env vars). Agents can call `web_search(query)` to retrieve up to `web_search.num_results` results (title, URL, snippet) from the configured SearXNG instance.
+- **`datawatch mcp-search` sub-command** — stdio MCP server (`internal/mcp/search/`) that proxies queries to SearXNG and implements the `web_search` tool. Runs as a child process; spawned automatically for each session.
+- **`web-search-guidance` skill** — injected to `<projectDir>/.datawatch/skills/web-search-guidance/` at session start to give agents query-writing guidance and engine-availability context.
+- **Config fields**: `web_search.enabled` (bool), `web_search.provider` (default `searxng`), `web_search.url` (required), `web_search.engine` (default `bing`), `web_search.num_results` (default 10). All fields accessible via YAML, REST PATCH `/api/config`, and Web UI Settings > LLM > Web Search.
+- **Monitor tab card** — Web Search stats card shows enabled state, query/error counters, and last-query timestamp when web search is active.
+- **`GET /api/web_search/stats`** REST endpoint — returns current web search configuration and runtime stats.
+- **`web_search_stats` MCP tool** — returns enabled state, provider, URL, and engine from connected MCP sessions.
+
+### Notes
+- Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting. The default engine is `bing`.
+- The MCP sub-server reads `DATAWATCH_WEB_SEARCH_URL`, `DATAWATCH_WEB_SEARCH_ENGINE`, and `DATAWATCH_WEB_SEARCH_NUM_RESULTS` env vars; these are set by the parent daemon and never written to logs.
+
 ## v8.21.4 — fix(session): start screen capture at one-shot session creation time
 
 ### Fixed

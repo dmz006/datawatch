@@ -625,6 +625,11 @@ All fields in `~/.datawatch/config.yaml`:
 | `autonomous.default_quality_gates.block_on_regression` | bool | `false` | When true, a task that introduces a test regression is marked failed and triggers an auto-fix retry cycle. |
 | `autonomous.injection_guard` | bool | `false` | Scan user-supplied PRD/task specs for prompt injection phrases at the API boundary on create and edit. Findings are always logged. |
 | `autonomous.block_on_injection` | bool | `false` | When true (requires `injection_guard: true`), requests containing injection phrases are rejected with HTTP 400 instead of warn-only. |
+| `web_search.enabled` | bool | `false` | Inject a `web_search` MCP tool into opencode and goose sessions via SearXNG. |
+| `web_search.provider` | string | `searxng` | Search provider. Only `"searxng"` is supported. |
+| `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
+| `web_search.engine` | string | `bing` | SearXNG engine to use. Only `bing` is reliable; others trigger CAPTCHA/rate-limiting. |
+| `web_search.num_results` | int | `10` | Maximum results returned per query. |
 
 ### Dependencies
 

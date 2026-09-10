@@ -74,6 +74,7 @@ import (
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
+	mcpsearchpkg "github.com/dmz006/datawatch/internal/mcp/search"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
 	emailmsg "github.com/dmz006/datawatch/internal/messaging/backends/email"
 	"github.com/dmz006/datawatch/internal/messaging/backends/imapmcp"
@@ -106,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.21.4"
+var Version = "8.22.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -281,6 +282,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newPipelineCliCmd(),
 		newKGCliCmd(),
 		newMCPCmd(),
+		newMCPSearchCmd(), // BL372 — web search stdio MCP server
 		newBackendCmd(),
 		newVersionCmd(),
 		newAboutCmd(),
@@ -1218,6 +1220,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
+			// BL372 — inject built-in web-search-guidance skill when web search is enabled.
+			if cfg.WebSearch.Enabled && cfg.WebSearch.URL != "" && sess.ProjectDir != "" {
+				if err := injectWebSearchSkill(sess.ProjectDir); err != nil {
+					debugf("BL372 web search skill inject: %v", err)
+				}
+			}
+
 			// BL109 — write a per-session .mcp.json into the project
 			// dir for non-claude-code backends (the standard discovery
 			// file those backends honour). claude-code gets its bridge
@@ -1229,6 +1238,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			extraMCPSpecs := make(map[string]channel.MCPServerSpec, len(cfg.Session.ExtraMCPServers))
 			for _, e := range cfg.Session.ExtraMCPServers {
 				extraMCPSpecs[e.Name] = channel.MCPServerSpec{Command: e.Command, Args: e.Args, Env: e.Env}
+			}
+			// BL372 — inject web search MCP server for opencode/goose/claude-code when enabled.
+			if cfg.WebSearch.Enabled && cfg.WebSearch.URL != "" {
+				if binaryPath, err := os.Executable(); err == nil {
+					wsEnv := map[string]string{
+						"DATAWATCH_WEB_SEARCH_URL":    cfg.WebSearch.URL,
+						"DATAWATCH_WEB_SEARCH_ENGINE": cfg.WebSearch.Engine,
+					}
+					if cfg.WebSearch.NumResults > 0 {
+						wsEnv["DATAWATCH_WEB_SEARCH_NUM_RESULTS"] = strconv.Itoa(cfg.WebSearch.NumResults)
+					}
+					extraMCPSpecs["web_search"] = channel.MCPServerSpec{
+						Command: binaryPath,
+						Args:    []string{"mcp-search"},
+						Env:     wsEnv,
+					}
+				}
 			}
 
 			if sess.BackendFamily != "claude-code" {
@@ -5047,6 +5073,12 @@ Return STRICT JSON:
 				s.QualityGateFail = st.QualityGateFail
 			})
 		}
+		// BL372 — wire web search stats into the collector.
+		statsCollector.SetWebSearchStatsFunc(func(s *statspkg.SystemStats) {
+			s.WebSearchEnabled = cfg.WebSearch.Enabled
+			s.WebSearchProvider = cfg.WebSearch.Provider
+			s.WebSearchURL = cfg.WebSearch.URL
+		})
 		// Update Prometheus metrics on each stats collection
 		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
 			metricsPkg.CPUUsage.Set(s.CPULoadAvg1)
@@ -5286,6 +5318,8 @@ Return STRICT JSON:
 	if cfg.Ollama.Host != "" {
 		mcpSrv.SetOllamaHost(cfg.Ollama.Host)
 	}
+	// BL372 — register web_search_stats MCP tool.
+	mcpSrv.SetWebSearchConfig(cfg.WebSearch.Enabled, cfg.WebSearch.URL, cfg.WebSearch.Engine)
 	if memRetriever != nil {
 		mcpSrv.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
 		// KG MCP wiring — use unified adapter
@@ -9804,6 +9838,44 @@ Remote AI config (SSE):
 	cmd.AddCommand(newMCPElicitCmd())
 	// BL302 S4 — mcp prompts subcommand group.
 	cmd.AddCommand(newMCPPromptsCmd())
+	return cmd
+}
+
+// newMCPSearchCmd returns the `datawatch mcp-search` subcommand (BL372).
+// It runs a minimal stdio MCP server exposing the web_search tool backed by SearXNG.
+// Injected into opencode and goose sessions when web_search.enabled is true.
+func newMCPSearchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "mcp-search",
+		Short: "Run the web search stdio MCP server (SearXNG proxy)",
+		Long: `Starts a stdio MCP server exposing a web_search tool backed by a SearXNG instance.
+
+Config via environment variables (set automatically by the daemon):
+  DATAWATCH_WEB_SEARCH_URL         SearXNG base URL (required)
+  DATAWATCH_WEB_SEARCH_ENGINE      engine list, default: bing
+  DATAWATCH_WEB_SEARCH_NUM_RESULTS default result count, default: 10
+
+Or via flags (flags override env vars):
+  --url        SearXNG base URL
+  --engine     engine list
+  --num-results  default result count`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg := mcpsearchpkg.ConfigFromEnv()
+			if u, _ := cmd.Flags().GetString("url"); u != "" {
+				cfg.URL = u
+			}
+			if e, _ := cmd.Flags().GetString("engine"); e != "" {
+				cfg.Engine = e
+			}
+			if n, _ := cmd.Flags().GetInt("num-results"); n > 0 {
+				cfg.NumResults = n
+			}
+			return mcpsearchpkg.Run(cfg)
+		},
+	}
+	cmd.Flags().String("url", "", "SearXNG base URL (overrides DATAWATCH_WEB_SEARCH_URL)")
+	cmd.Flags().String("engine", "", "Engine list (overrides DATAWATCH_WEB_SEARCH_ENGINE)")
+	cmd.Flags().Int("num-results", 0, "Default result count (overrides DATAWATCH_WEB_SEARCH_NUM_RESULTS)")
 	return cmd
 }
 
@@ -14637,3 +14709,63 @@ func newResultCmd() *cobra.Command {
 	cmd.AddCommand(putCmd, getCmd, listCmd, deleteCmd)
 	return cmd
 }
+
+// injectWebSearchSkill writes the built-in web-search-guidance skill into the
+// project's .datawatch/skills/ directory (BL372). Idempotent — skips if present.
+func injectWebSearchSkill(projectDir string) error {
+	if projectDir == "" {
+		return nil
+	}
+	dir := filepath.Join(projectDir, ".datawatch", "skills", "web-search-guidance")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "SKILL.md")
+	if _, err := os.Stat(path); err == nil {
+		return nil // already present
+	}
+	return os.WriteFile(path, []byte(webSearchGuidanceSkill), 0644)
+}
+
+const webSearchGuidanceSkill = `---
+name: web-search-guidance
+description: Guidance for using the web_search MCP tool effectively in this session.
+version: 1.0.0
+---
+
+# Web Search Guidance
+
+This session has a **web_search** MCP tool available via the SearXNG proxy.
+
+## Using the tool
+
+` + "```" + `
+web_search(query="<your query>", num_results=10)
+` + "```" + `
+
+- **query**: Natural-language or keyword search query.
+- **num_results**: How many results to return (1–20). Default 10.
+
+## Engine availability
+
+The default engine is **bing**. Other engines (duckduckgo, brave, startpage) may
+return zero results due to rate-limiting or CAPTCHAs in many deployments.
+If you receive empty results, do not switch engines — retry with a refined query.
+
+## Effective queries
+
+- Be specific: prefer "Go context cancellation pattern 2025" over "Go context"
+- Use quotes for exact phrases: ` + `"content-length framing mcp stdio"` + `
+- Add site: for authoritative sources: "site:pkg.go.dev context.WithTimeout"
+- Combine terms: "SearXNG docker compose arm64 2024"
+
+## Reading results
+
+Each result has:
+- **Title** — page heading
+- **URL** — source link (cite this in your answer)
+- **Snippet** — up to 400 chars of page content
+
+Always cite your sources. If a snippet is truncated, note that further detail
+is at the URL.
+`
