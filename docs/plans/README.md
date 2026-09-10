@@ -45,7 +45,7 @@ Latest release: **v8.20.11** (2026-09-07). fix(autonomous): pane-watcher scrollb
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL370 — autonomous PRD max_concurrent_tasks config |
+| Open features | 4 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL370 — autonomous PRD max_concurrent_tasks config; BL372 — web search MCP injection for opencode/goose (plan 2026-09-10) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
