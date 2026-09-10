@@ -1,8 +1,8 @@
 # Harness Research — Examples Catalog
 
-**Date:** 2026-09-07 · **Status:** Draft · **Companion:** `methodology.md`, `synthesis.md`
+**Date:** 2026-09-10 · **Status:** Draft · **Companion:** `methodology.md`, `synthesis.md`
 
-16 publicly visible AI harnesses meeting the inclusion criteria from `methodology.md` (public, functional, documented, ≥1 of: eval loop, orchestration, guardrails, observability, routing). Stars verified via GitHub API on 2026-09-07.
+16 publicly visible AI harnesses meeting the inclusion criteria from `methodology.md` (public, functional, documented, ≥1 of: eval loop, orchestration, guardrails, observability, routing). Stars and repo URLs re-verified via GitHub API on 2026-09-10.
 
 ---
 
@@ -62,8 +62,8 @@
 
 | Field | Value |
 |---|---|
-| **URL** | https://github.com/explodinggradients/ragas |
-| **License / Stars** | Apache-2.0 · 15.6k★ |
+| **URL** | https://github.com/vibrantlabsai/ragas (moved from `explodinggradients/ragas`, 301) |
+| **License / Stars** | Apache-2.0 · 15.7k★ |
 | **Primary function** | RAG pipeline evaluation — measures answer faithfulness, answer relevancy, context precision/recall, and context entity recall without ground-truth answers (reference-free) |
 | **Stack** | Python; LangChain / LlamaIndex integration; OpenAI/Anthropic/local judge models; Hugging Face datasets for benchmark corpora |
 | **Data flow** | RAG output (question + answer + retrieved contexts) → decompose into claims → LLM-as-judge scoring per metric → composite RAGAS score. Integrations with LangChain callbacks capture RAG traces automatically. |
@@ -222,7 +222,7 @@
 | 2 | lm-evaluation-harness | Benchmark eval | 13.9k | MIT |
 | 3 | openai/evals | Eval framework | 19.4k | MIT |
 | 4 | DeepEval | RAG/chat eval | 18.2k | Apache-2.0 |
-| 5 | RAGAS | RAG metrics | 15.6k | Apache-2.0 |
+| 5 | RAGAS | RAG metrics | 15.7k | Apache-2.0 |
 | 6 | Guardrails AI | Input/output validation | 7.4k | Apache-2.0 |
 | 7 | DSPy | Prompt optimization | 37.8k | MIT |
 | 8 | LangGraph | Agent orchestration | 41.2k | MIT |
