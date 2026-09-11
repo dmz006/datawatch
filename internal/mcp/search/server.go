@@ -97,7 +97,7 @@ func searxngSearch(cfg Config, query string, limit int) ([]searchResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("searxng request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var data struct {
 		Results []struct {

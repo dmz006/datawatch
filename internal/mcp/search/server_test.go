@@ -99,7 +99,7 @@ func TestSearxngSearch(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[{"title":"Test","url":"https://example.com","content":"A test result."}]}`)
+		_, _ = fmt.Fprint(w, `{"results":[{"title":"Test","url":"https://example.com","content":"A test result."}]}`)
 	}))
 	defer srv.Close()
 
