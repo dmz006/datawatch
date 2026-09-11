@@ -22,6 +22,7 @@ LLM_ONLY=(
     dashboard       # PWA-only view; navigation not callable from MCP — reference/conceptual doc
     compute-routing     # reference doc explaining routing modes; configuration is via compute node CRUD (covered by compute-nodes howto)
     federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
+    discussion-scopes   # conceptual reference for WAL-backed discussion memory model; operator steps via memory_* MCP tools
 )
 
 ERRORS=0
