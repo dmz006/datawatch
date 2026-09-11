@@ -180,3 +180,22 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | MCP `web_search_stats` tool | No | No | — | Live: from connected MCP session, call `web_search_stats` |
 | Monitor card — web search stats visible | No | No | — | Live: enable web_search, reload Monitor tab, confirm card appears |
 | Web UI Settings — web_search section | No | No | — | Live: Settings > LLM > Web Search, toggle enabled, save, confirm GET /api/config reflects change |
+
+## v8.23.0 — PRD Task Session Visibility + Reset (2026-09-10)
+
+| Test Condition | Unit | Live | Test ID / Location | Notes |
+|---|---|---|---|---|
+| `ResetTask` — happy path: failed task in running PRD resets to pending | No | No | — | Manual: set task status=failed, call ResetTask, verify status="" error="" session_id="" |
+| `ResetTask` — blocked task resets | No | No | — | Same as above with status=blocked |
+| `ResetTask` — task not found returns error | No | No | — | Call with nonexistent task_id; expect error |
+| `ResetTask` — PRD not running returns error | No | No | — | Call while PRD status=approved; expect error |
+| `ResetTask` — completed task cannot be reset | No | No | — | status=completed; expect error |
+| REST `POST /api/autonomous/prds/{id}/reset_task` 200 | No | No | — | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
+| REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
+| MCP `autonomous_prd_reset_task` | No | No | — | Live: call from MCP session, verify task reset |
+| PWA task row — session link chip visible when task.session_id set | No | No | — | Live: PRD with completed task; verify → chip in task header |
+| PWA task row — error panel visible in expanded body when task.error set | No | No | — | Live: failed task; expand; verify red error panel |
+| PWA task row — verification summary visible when task.verification set | No | No | — | Live: failed/completed task; expand; verify verif panel |
+| PWA task row — Retry button visible for failed task in running PRD | No | No | — | Live: running PRD + failed task; verify ↺ Retry button |
+| PWA task row — Retry button absent for completed task | No | No | — | Confirm no ↺ button on status=completed rows |
+| PWA Retry button — click calls reset_task and shows toast | No | No | — | Click ↺; verify toast "Task reset"; verify task row refreshes |

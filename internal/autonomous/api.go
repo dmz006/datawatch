@@ -307,6 +307,13 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	}
 	return out, err
 }
+func (a *API) ResetTask(prdID, taskID, actor string) (any, error) {
+	out, err := a.M.ResetTask(prdID, taskID, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error) {
 	out, err := a.M.EditStory(prdID, storyID, newTitle, newDescription, actor)
 	if err == nil {

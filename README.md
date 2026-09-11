@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.23.0](CHANGELOG.md) (2026-09-10)** — Feature: autonomous PRD task session visibility, error display, and retry control. Task rows now show a `→ session` link, error message, and verifier summary when expanded. Failed/blocked tasks show a `↺ Retry` button. New `POST /api/autonomous/prds/{id}/reset_task` endpoint + `autonomous_prd_reset_task` MCP tool + `autonomous reset-task` comm command.
+
 **[v8.22.0](CHANGELOG.md) (2026-09-10)** — Feature: SearXNG web search MCP tool injection for opencode and goose sessions. Set `web_search.enabled: true` + `web_search.url` to give agents a `web_search` tool with Bing engine. New `datawatch mcp-search` sub-command runs the stdio MCP server. Monitor tab adds a Web Search stats card. See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 **[v8.21.4](CHANGELOG.md) (2026-09-06)** — Fix: autonomous sessions now wait for task completion before verifying and are killed afterwards (prevents session accumulation). New Automaton modal now shows all backends (opencode, goose, etc.) in the execution backend field with a separate planning backend picker.

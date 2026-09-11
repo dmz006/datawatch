@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.22.0"
+var Version = "8.23.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -525,6 +525,8 @@ type AutonomousAPI interface {
 	Reject(id, actor, reason string) (any, error)
 	RequestRevision(id, actor, note string) (any, error)
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
+	// v8.23.0 — reset a failed/blocked task to pending for retry.
+	ResetTask(prdID, taskID, actor string) (any, error)
 	// v5.26.32 — story title + description edit (parallels
 	// EditTaskSpec; same gate: needs_review / revisions_asked).
 	EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error)

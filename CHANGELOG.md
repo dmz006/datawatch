@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.23.0 — feat(autonomous): PRD task session visibility, error display, and retry control
+
+### Added
+- **Task session link** — each autonomous task row in the PRD detail panel now shows a `→ <id>` chip when a worker session exists. Clicking it navigates directly to the session detail view (tmux output, chat, status).
+- **Task error display** — failed tasks now show their error message in the expanded body, highlighted with a red left-border panel. Previously the `✗` glyph gave no detail.
+- **Verification summary** — when a task has a verification result, the expanded body shows the verifier's summary, severity, and individual issue list (color-coded pass/fail).
+- **Task retry button** — failed or blocked tasks show a `↺ Retry` button (visible while the PRD is running). Clicking it calls the new `POST /api/autonomous/prds/{id}/reset_task` endpoint, resetting the task to pending so the autonomous loop picks it up on the next tick.
+- **`POST /api/autonomous/prds/{id}/reset_task`** — new REST endpoint. Body: `{task_id, actor?}`. Resets a failed or blocked task: clears status, error, session_id, verification, retry_count, timestamps. Only allowed while PRD is `running`.
+- **`autonomous_prd_reset_task` MCP tool** — `id` + `task_id` → resets the task for retry.
+- **`autonomous reset-task <prd-id> <task-id>` comm-channel command** — chat/Telegram/Signal surface for the same action.
+
 ## v8.22.0 — feat(web-search): SearXNG MCP tool injection for opencode and goose sessions
 
 ### Added

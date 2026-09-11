@@ -2915,6 +2915,26 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "56. PRD task reset endpoint (v8.23.0)"
+# Find the smoke PRD created earlier in this run (if any) to test reset_task.
+# If SMOKE_PRD_ID is set by a prior section, use it; otherwise skip gracefully.
+if [[ -n "${SMOKE_PRD_ID:-}" ]]; then
+  # Find a failed task in the smoke PRD; try a known bad task or skip.
+  RT_STATUS=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" \
+    -X POST "${BASE}/api/autonomous/prds/${SMOKE_PRD_ID}/reset_task" \
+    -H "Content-Type: application/json" \
+    -d '{"task_id":"__nonexistent__","actor":"smoke"}' 2>/dev/null || echo "000")
+  case "$RT_STATUS" in
+    400) ok "POST /api/autonomous/prds/{id}/reset_task: 400 for nonexistent task (expected)" ;;
+    401|403) skip "S56 — reset_task: auth required" ;;
+    000) skip "S56 — reset_task: daemon not reachable" ;;
+    *) ko "POST /api/autonomous/prds/{id}/reset_task returned $RT_STATUS (expected 400)" ;;
+  esac
+else
+  skip "S56 — reset_task: no smoke PRD available (skipped earlier sections)"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

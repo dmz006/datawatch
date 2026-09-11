@@ -401,6 +401,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous edit-task", prettyJSON(out))
+	case "reset-task", "reset_task":
+		if len(args) < 3 {
+			r.reply("autonomous reset-task failed", "usage: autonomous reset-task <prd-id> <task-id>")
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"task_id": args[2], "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/reset_task", string(body))
+		if err != nil {
+			r.reply("autonomous reset-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous reset-task", prettyJSON(out))
 	case "set-llm", "set_llm":
 		if len(args) < 3 {
 			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> <backend> [effort] [model]")

@@ -892,6 +892,25 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/reset_task:
+    post:
+      summary: Reset a failed or blocked task back to pending for retry
+      operationId: autonomousPRDResetTask
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id: {type: string, description: Task ID to reset}
+                actor: {type: string, description: Actor identity (default operator)}
+      responses:
+        "200": {description: Updated PRD}
+        "400": {description: Task not failed/blocked or PRD not running}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings

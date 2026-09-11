@@ -10243,6 +10243,15 @@ function renderTask(prd, story, task, editable) {
   const verdicts = task.verdicts && task.verdicts.length
     ? `<span class="prd-task-verdicts">${renderVerdicts(task.verdicts)}</span>`
     : '';
+  // v8.23.0 — session link: click navigates to the worker session.
+  const sessionLink = task.session_id
+    ? `<span class="prd-task-session-link" onclick="event.stopPropagation();navigate('session-detail','${escHtml(task.session_id)}')" title="${t('prd_task_view_session')||'View worker session'}">&rarr; ${escHtml(task.session_id.slice(0,4))}</span>`
+    : '';
+  // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
+  const canRetry = (task.status === 'failed' || task.status === 'blocked') && prd.status === 'running';
+  const retryBtn = canRetry
+    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
+    : '';
 
   // Status glyph for the collapsed header row.
   const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔'})[task.status] || '';
@@ -10273,8 +10282,25 @@ function renderTask(prd, story, task, editable) {
            ${task.files_touched.map(f => `<code class="prd-task-touched-chip">${escHtml(f)}</code>`).join('')}
          </div>`
       : '';
+    // v8.23.0 — error + verification details in expanded view.
+    const errRow = task.error
+      ? `<div class="prd-task-error"><span class="prd-task-error-label">&#9888; ${t('prd_task_error')||'Error'}:</span> ${escHtml(task.error)}</div>`
+      : '';
+    let verifRow = '';
+    if (task.verification) {
+      const vsum = task.verification.summary || '';
+      const vok  = task.verification.ok;
+      const vsev = task.verification.severity || '';
+      const issues = (task.verification.issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
+      verifRow = `<div class="prd-task-verif ${vok ? 'verif-ok' : 'verif-fail'}">
+        <span class="prd-task-verif-label">${vok ? '&#10003;' : '&#10007;'} ${t('prd_task_verification')||'Verification'}${vsev ? ' (' + escHtml(vsev) + ')' : ''}:</span>
+        ${vsum ? `<span class="prd-task-verif-summary">${escHtml(vsum)}</span>` : ''}
+        ${issues ? `<ul class="prd-task-verif-issues">${issues}</ul>` : ''}
+      </div>`;
+    }
     expandedBody = `<div class="prd-task-expanded-body">
       ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
+      ${errRow}${verifRow}
       ${filesP}${filesT}
     </div>`;
   }
@@ -10285,13 +10311,26 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${spawnBadge}${childLink}${verdicts}
+      ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}
       <span class="prd-task-header-spacer"></span>
-      ${editIcons}
+      ${retryBtn}${editIcons}
     </div>
     ${expandedBody}
   </div>`;
 }
+
+// v8.23.0 — reset a failed/blocked task so the loop retries it.
+function prdResetTask(prdID, taskID) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/reset_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, actor: 'operator' }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_task_reset_ok')) || 'Task reset — autonomous loop will retry.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_task_reset_fail')) || 'Reset failed: ' + e.message, 'error'));
+}
+window.prdResetTask = prdResetTask;
 
 // v6.13.9 — toggle expanded state for a task; re-renders the parent
 // PRD detail panel so the chevron + body flip in place.

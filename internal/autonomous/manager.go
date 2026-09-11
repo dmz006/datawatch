@@ -836,6 +836,56 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	return updated, nil
 }
 
+// ResetTask (v8.23.0) resets a failed or blocked task back to pending so
+// the autonomous loop will retry it. Only allowed while the PRD is running.
+// Clears status, error, session_id, verification, and retry_count.
+func (m *Manager) ResetTask(prdID, taskID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDRunning {
+		return nil, fmt.Errorf("prd %q status %q is not running; reset_task only applies to running PRDs", prdID, prd.Status)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID == taskID {
+				if t.Status != TaskFailed && t.Status != TaskBlocked {
+					return nil, fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried", taskID, t.Status)
+				}
+				t.Status = ""
+				t.Error = ""
+				t.SessionID = ""
+				t.Verification = nil
+				t.RetryCount = 0
+				t.StartedAt = nil
+				t.CompletedAt = nil
+				t.UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "reset_task", Actor: actor,
+		Note: fmt.Sprintf("task=%s reset to pending for retry", taskID),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // EditStory (v5.26.32) lets the operator rewrite an LLM-decomposed
 // story's title + description before approving the PRD. Mirrors
 // EditTaskSpec — only allowed in needs_review or revisions_asked,
