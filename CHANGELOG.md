@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.24.1 — fix(autonomous): ExecutionBackend config fallback for opencode PRD runs
+
+### Added
+- **`execution_backend` autonomous config field** — a new `execution_backend` field in the autonomous `Config` struct (REST: `PUT /api/autonomous/config`, YAML: `autonomous.execution_backend`) sets the backend used for all PRD task sessions when neither the task nor the PRD has an explicit `backend` override. Allows operators to pin all autonomous tasks to `opencode` (or any other backend) without having to set it per-PRD.
+
+### Fixed
+- After `reset_to_draft`, the PRD's `backend` field was cleared, causing the executor to fall through to the global `session.llm_backend` default (typically `claude-code`) instead of the intended backend. The new `execution_backend` config fallback closes this gap: task backend resolution now checks task → PRD → `cfg.ExecutionBackend` → global default.
+
+### Internal
+- PRD `0fb4e302` re-run confirmed: session `75c4` logged `[opencode] wrote project config (model=ollama/qwen3.8:27b)`, verifying the fix end-to-end.
+
 ## v8.24.0 — feat(autonomous): PRD model field propagation, cancel kills task sessions
 
 ### Added

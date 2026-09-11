@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.22.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.22.0)
+[![Release](https://img.shields.io/badge/release-v8.24.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.24.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.24.1](CHANGELOG.md) (2026-09-11)** — Fix: autonomous tasks now fall back to the `execution_backend` autonomous config field when neither the task nor the PRD specifies a backend. Closes the gap where `reset_to_draft` cleared the PRD's backend field, causing tasks to silently use `claude-code` instead of the intended backend (e.g. `opencode`).
 
 **[v8.24.0](CHANGELOG.md) (2026-09-11)** — Fix: autonomous PRD sessions now use the operator-specified model instead of always falling back to the global default. The `model` field is accepted in PRD create (REST + MCP) and propagates through every task session. PRD cancel now also terminates in-flight task sessions. See [CHANGELOG.md](CHANGELOG.md) for full details.
 

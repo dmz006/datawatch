@@ -203,11 +203,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		_ = m.store.SaveTask(t)
 
 		// BL203 (v5.4.0) — most-specific LLM override wins. Per-task fields
-		// take precedence over PRD-level fields; SpawnFn applies the
-		// session.llm_backend global default when both are empty.
+		// take precedence over PRD-level fields; cfg.ExecutionBackend is the
+		// autonomous-level fallback before the global session.llm_backend default.
 		backend := t.Backend
 		if backend == "" {
 			backend = prd.Backend
+		}
+		if backend == "" {
+			backend = m.cfg.ExecutionBackend
 		}
 		effort := t.Effort
 		if effort == "" {

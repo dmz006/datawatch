@@ -606,6 +606,11 @@ autonomous:
   # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm
   # or the PWA Settings modal. Empty per-PRD value falls back to this global setting.
   planning_backend: ""
+  # Fallback backend for autonomous task sessions. Task backend resolution
+  # checks (1) task.backend, (2) prd.backend, (3) this field, (4) the global
+  # session.llm_backend. Set to "opencode" to ensure all autonomous tasks run
+  # via opencode even after a reset_to_draft clears the PRD's backend field.
+  execution_backend: ""
   # BL25 verifier backend. Empty = inherit. Set to a different backend
   # (e.g. ollama when planning backend is claude-code) for cross-backend
   # independence.

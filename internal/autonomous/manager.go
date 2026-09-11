@@ -46,6 +46,10 @@ type Config struct {
 	// Old key "decomposition_backend" still accepted via SetConfig migration.
 	PlanningBackend     string `json:"planning_backend,omitempty"`
 	VerificationBackend string `json:"verification_backend,omitempty"`
+	// ExecutionBackend is the fallback backend used when a task and its
+	// parent PRD both have an empty Backend field. Empty string means
+	// fall through to the global session.llm_backend default.
+	ExecutionBackend string `json:"execution_backend,omitempty"`
 	// BL304: renamed from DecompositionEffort; JSON key updated to planning_effort.
 	PlanningEffort     string `json:"planning_effort,omitempty"`
 	VerificationEffort string `json:"verification_effort,omitempty"`
