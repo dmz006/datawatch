@@ -2872,9 +2872,9 @@ fi
 H "54. Current-status no-change contract (v8.19.8)"
 # GET /api/sessions/{id}/current-status on an idle session must return 200 + JSON
 # with no_change:true — not 204 with empty body (RFC 7231 §3.3 / B54).
-if [[ -n "$SMOKE_SESS_ID" ]]; then
+if [[ -n "${SMOKE_SESS_ID:-}" ]]; then
   CS_RES=$(curl "${curl_args[@]}" -s -w "\n__HTTP_%{http_code}__" \
-    "$BASE/api/sessions/$SMOKE_SESS_ID/current-status" 2>/dev/null)
+    "$BASE/api/sessions/${SMOKE_SESS_ID}/current-status" 2>/dev/null)
   CS_HTTP=$(echo "$CS_RES" | grep -o '__HTTP_[0-9]*__' | tr -d '_HTTP_')
   CS_BODY=$(echo "$CS_RES" | sed 's/__HTTP_[0-9]*__//')
   if [[ "$CS_HTTP" == "200" ]]; then
