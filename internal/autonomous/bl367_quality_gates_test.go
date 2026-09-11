@@ -20,7 +20,7 @@ import (
 func TestBL367_SetPRDQualityGates_Persisted(t *testing.T) {
 	dir := t.TempDir()
 	mgr, _ := NewManager(dir, Config{Enabled: true, AutoFixRetries: 0}, nil)
-	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", EffortNormal)
+	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", "", EffortNormal)
 
 	updated, err := mgr.SetPRDQualityGates(prd.ID, true, "go test ./...", 60, true)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestBL367_ResolveQualityGates_PerPRDOverridesDefault(t *testing.T) {
 	}, nil)
 
 	// Create PRD via the manager's own store so it's visible in-memory.
-	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", EffortNormal)
+	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", "", EffortNormal)
 	_, err := mgr.SetPRDQualityGates(prd.ID, true, "cargo test", 30, false)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates: %v", err)
@@ -112,7 +112,7 @@ func TestBL367_ResolveQualityGates_FallsBackToDefault(t *testing.T) {
 	}, nil)
 
 	// Create PRD with no per-PRD quality gates.
-	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", EffortNormal)
+	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", "", EffortNormal)
 	p, ok := mgr.Store().GetPRD(prd.ID)
 	if !ok {
 		t.Fatal("PRD not found")
@@ -137,7 +137,7 @@ func TestBL367_QualityGateResult_StoredOnTask(t *testing.T) {
 
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	prd, _ := st.CreatePRD("test prd", projDir, "claude-code", EffortNormal)
+	prd, _ := st.CreatePRD("test prd", projDir, "claude-code", "", EffortNormal)
 	_ = st.SetStories(prd.ID, []Story{{
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "build it"}},

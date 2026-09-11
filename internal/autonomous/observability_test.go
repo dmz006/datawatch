@@ -9,10 +9,10 @@ import (
 
 func TestStatus_ChildPRDsAndMaxDepth(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	root, _ := m.CreatePRD("root", "/p", "claude", EffortNormal)
-	c1, _ := m.Store().CreatePRDWithParent("c1", "/p", "claude", EffortNormal, root.ID, "t1", 1)
-	_, _ = m.Store().CreatePRDWithParent("gc1", "/p", "claude", EffortNormal, c1.ID, "t2", 2)
-	_, _ = m.Store().CreatePRDWithParent("c2", "/p", "claude", EffortNormal, root.ID, "t3", 1)
+	root, _ := m.CreatePRD("root", "/p", "claude", "", EffortNormal)
+	c1, _ := m.Store().CreatePRDWithParent("c1", "/p", "claude", "", EffortNormal, root.ID, "t1", 1)
+	_, _ = m.Store().CreatePRDWithParent("gc1", "/p", "claude", "", EffortNormal, c1.ID, "t2", 2)
+	_, _ = m.Store().CreatePRDWithParent("c2", "/p", "claude", "", EffortNormal, root.ID, "t3", 1)
 
 	st := m.Status()
 	if st.ChildPRDsTotal != 3 {
@@ -26,7 +26,7 @@ func TestStatus_ChildPRDsAndMaxDepth(t *testing.T) {
 func TestStatus_BlockedPRDsCount(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	for _, s := range []PRDStatus{PRDDraft, PRDBlocked, PRDBlocked, PRDCompleted} {
-		p, _ := m.CreatePRD("p", "/p", "claude", EffortNormal)
+		p, _ := m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 		p.Status = s
 		_ = m.Store().SavePRD(p)
 	}
@@ -38,7 +38,7 @@ func TestStatus_BlockedPRDsCount(t *testing.T) {
 
 func TestStatus_VerdictCountsRollup(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("p", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 	stories := []Story{{
 		ID:    "s1",
 		Title: "S1",
@@ -76,7 +76,7 @@ func TestStatus_VerdictCountsRollup(t *testing.T) {
 
 func TestStatus_NoVerdictsLeavesMapNil(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	_, _ = m.CreatePRD("p", "/p", "claude", EffortNormal)
+	_, _ = m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 
 	st := m.Status()
 	if st.VerdictCounts != nil {

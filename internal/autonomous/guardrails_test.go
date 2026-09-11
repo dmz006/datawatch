@@ -27,7 +27,7 @@ func TestPerTaskGuardrails_NoConfigured_NoOp(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking) // would block if invoked
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},
@@ -54,7 +54,7 @@ func TestPerTaskGuardrails_AllPass_AppendsVerdicts(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailAlwaysPass)
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},
@@ -89,7 +89,7 @@ func TestPerTaskGuardrails_Block_HaltsPRD(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{
@@ -124,7 +124,7 @@ func TestPerStoryGuardrails_FireAfterAllTasksDone(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailAlwaysPass)
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{
@@ -156,7 +156,7 @@ func TestPerStoryGuardrails_Block_HaltsPRD(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},
@@ -182,7 +182,7 @@ func TestPerTaskGuardrails_NoFnWired_SilentNoOp(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	// Intentionally no SetGuardrail call.
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},

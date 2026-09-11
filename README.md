@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.24.0](CHANGELOG.md) (2026-09-11)** — Fix: autonomous PRD sessions now use the operator-specified model instead of always falling back to the global default. The `model` field is accepted in PRD create (REST + MCP) and propagates through every task session. PRD cancel now also terminates in-flight task sessions. See [CHANGELOG.md](CHANGELOG.md) for full details.
+
 **[v8.23.0](CHANGELOG.md) (2026-09-10)** — Feature: autonomous PRD task session visibility, error display, and retry control. Task rows now show a `→ session` link, error message, and verifier summary when expanded. Failed/blocked tasks show a `↺ Retry` button. New `POST /api/autonomous/prds/{id}/reset_task` endpoint + `autonomous_prd_reset_task` MCP tool + `autonomous reset-task` comm command.
 
 **[v8.22.0](CHANGELOG.md) (2026-09-10)** — Feature: SearXNG web search MCP tool injection for opencode and goose sessions. Set `web_search.enabled: true` + `web_search.url` to give agents a `web_search` tool with Bing engine. New `datawatch mcp-search` sub-command runs the stdio MCP server. Monitor tab adds a Web Search stats card. See [CHANGELOG.md](CHANGELOG.md) for full details.

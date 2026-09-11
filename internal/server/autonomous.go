@@ -100,6 +100,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				ProjectProfile string   `json:"project_profile,omitempty"` // v5.26.19 — F10 project profile name; resolves to git URL + branch + clone target
 				ClusterProfile string   `json:"cluster_profile,omitempty"` // v5.26.19 — F10 cluster profile name; dispatches worker to /api/agents instead of local tmux
 				Backend        string   `json:"backend,omitempty"`
+				Model          string   `json:"model,omitempty"`
 				Effort         string   `json:"effort,omitempty"`
 				Type           string   `json:"type,omitempty"`        // BL221 Phase 4 — automaton type
 				GuidedMode     bool     `json:"guided_mode,omitempty"` // BL221 Phase 4 — step-by-step operator checkpoints
@@ -128,7 +129,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "project_dir or project_profile required", http.StatusBadRequest)
 				return
 			}
-			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Effort)
+			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

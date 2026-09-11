@@ -11,7 +11,7 @@ import (
 
 func TestApprove_FromNeedsReview(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "do"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -34,7 +34,7 @@ func TestApprove_FromNeedsReview(t *testing.T) {
 
 func TestApprove_RefusesIfWrongStatus(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	if _, err := m.Approve(prd.ID, "alice", ""); err == nil {
 		t.Fatal("expected approve to refuse on draft status")
 	}
@@ -42,7 +42,7 @@ func TestApprove_RefusesIfWrongStatus(t *testing.T) {
 
 func TestReject_StopsTheLine(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	prd.Status = PRDNeedsReview
 	_ = m.Store().SavePRD(prd)
 
@@ -60,7 +60,7 @@ func TestReject_StopsTheLine(t *testing.T) {
 
 func TestRequestRevision_Bumps_Counter(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	prd.Status = PRDNeedsReview
 	_ = m.Store().SavePRD(prd)
 
@@ -79,7 +79,7 @@ func TestRequestRevision_Bumps_Counter(t *testing.T) {
 
 func TestEditTaskSpec_RewritesAndAudits(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1", Spec: "old"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -104,7 +104,7 @@ func TestEditTaskSpec_RewritesAndAudits(t *testing.T) {
 // refuses after approve.
 func TestEditStory_RewritesAndAudits(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S-old", Description: "desc-old"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -127,7 +127,7 @@ func TestEditStory_RewritesAndAudits(t *testing.T) {
 func TestEditStory_TitleOnlyKeepsDescription(t *testing.T) {
 	// Empty newDescription must NOT clear an existing description.
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S-old", Description: "preserve me"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -142,7 +142,7 @@ func TestEditStory_TitleOnlyKeepsDescription(t *testing.T) {
 
 func TestEditStory_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -157,7 +157,7 @@ func TestEditStory_RefusesAfterApprove(t *testing.T) {
 // Phase 3 (v5.26.60) — per-story execution profile + approval gate.
 func TestSetStoryProfile_RewritesAndAudits(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -179,7 +179,7 @@ func TestSetStoryProfile_RewritesAndAudits(t *testing.T) {
 
 func TestSetStoryProfile_EmptyClears(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", ExecutionProfile: "old"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -194,7 +194,7 @@ func TestSetStoryProfile_EmptyClears(t *testing.T) {
 
 func TestSetStoryProfile_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -206,7 +206,7 @@ func TestSetStoryProfile_RefusesAfterApprove(t *testing.T) {
 
 func TestApproveStory_TransitionsAndAudits(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Status: StoryAwaitingApproval}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -231,7 +231,7 @@ func TestApproveStory_TransitionsAndAudits(t *testing.T) {
 
 func TestApproveStory_RefusesBeforePRDApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -243,7 +243,7 @@ func TestApproveStory_RefusesBeforePRDApprove(t *testing.T) {
 
 func TestRejectStory_BlocksAndRequiresReason(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -268,7 +268,7 @@ func TestRejectStory_BlocksAndRequiresReason(t *testing.T) {
 // Phase 4 (v5.26.64) — file association.
 func TestSetStoryFiles_RewritesAndCaps(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -296,7 +296,7 @@ func TestSetStoryFiles_RewritesAndCaps(t *testing.T) {
 
 func TestSetStoryFiles_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -308,7 +308,7 @@ func TestSetStoryFiles_RefusesAfterApprove(t *testing.T) {
 
 func TestSetTaskFiles_RewritesAndAudits(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDNeedsReview
@@ -332,7 +332,7 @@ func TestRecordTaskFilesTouched_PostSpawnNoLock(t *testing.T) {
 	// Daemon-internal hook fires after worker session ends — no
 	// lock-after-approve gate.
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDRunning
@@ -350,7 +350,7 @@ func TestRecordTaskFilesTouched_PostSpawnNoLock(t *testing.T) {
 
 func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1", Spec: "old"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	prd.Status = PRDApproved
@@ -364,7 +364,7 @@ func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 
 func TestInstantiateTemplate_SubstitutesVars(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	tmpl, _ := m.CreatePRD("Add {{feature}} card to Settings", "/p", "claude", EffortNormal)
+	tmpl, _ := m.CreatePRD("Add {{feature}} card to Settings", "/p", "claude", "", EffortNormal)
 	tmpl.Title = "{{feature}} card template"
 	tmpl.IsTemplate = true
 	tmpl.TemplateVars = []TemplateVar{{Name: "feature", Required: true}}
@@ -393,7 +393,7 @@ func TestInstantiateTemplate_SubstitutesVars(t *testing.T) {
 
 func TestInstantiateTemplate_RequiredVarMissing(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	tmpl, _ := m.CreatePRD("Add {{x}} card", "/p", "", "")
+	tmpl, _ := m.CreatePRD("Add {{x}} card", "/p", "", "", "")
 	tmpl.IsTemplate = true
 	tmpl.TemplateVars = []TemplateVar{{Name: "x", Required: true}}
 	_ = m.Store().SavePRD(tmpl)
@@ -405,7 +405,7 @@ func TestInstantiateTemplate_RequiredVarMissing(t *testing.T) {
 
 func TestInstantiateTemplate_AppliesDefaults(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	tmpl, _ := m.CreatePRD("Greet {{who}}", "/p", "", "")
+	tmpl, _ := m.CreatePRD("Greet {{who}}", "/p", "", "", "")
 	tmpl.IsTemplate = true
 	tmpl.TemplateVars = []TemplateVar{{Name: "who", Default: "world"}}
 	_ = m.Store().SavePRD(tmpl)

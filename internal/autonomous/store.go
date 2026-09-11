@@ -48,15 +48,15 @@ func NewStore(dataDir string) (*Store, error) {
 }
 
 // CreatePRD generates an ID, persists, and returns the new PRD.
-func (s *Store) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD, error) {
-	return s.CreatePRDWithParent(spec, projectDir, backend, effort, "", "", 0)
+func (s *Store) CreatePRD(spec, projectDir, backend, model string, effort Effort) (*PRD, error) {
+	return s.CreatePRDWithParent(spec, projectDir, backend, model, effort, "", "", 0)
 }
 
 // CreatePRDWithParent (BL191 Q4, v5.9.0) is the recursion-aware sibling
 // of CreatePRD. parentPRDID + parentTaskID are empty strings + depth=0
 // for root PRDs; child PRDs spawned by Task.SpawnPRD set them so the
 // genealogy tree is queryable and the recursion-depth check has data.
-func (s *Store) CreatePRDWithParent(spec, projectDir, backend string, effort Effort, parentPRDID, parentTaskID string, depth int) (*PRD, error) {
+func (s *Store) CreatePRDWithParent(spec, projectDir, backend, model string, effort Effort, parentPRDID, parentTaskID string, depth int) (*PRD, error) {
 	if strings.TrimSpace(spec) == "" {
 		return nil, fmt.Errorf("spec required")
 	}
@@ -67,6 +67,7 @@ func (s *Store) CreatePRDWithParent(spec, projectDir, backend string, effort Eff
 		Spec:         spec,
 		ProjectDir:   projectDir,
 		Backend:      backend,
+		Model:        model,
 		Effort:       effort,
 		Status:       PRDDraft,
 		CreatedAt:    time.Now(),

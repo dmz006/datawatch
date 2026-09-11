@@ -2909,7 +2909,12 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 func (m *Manager) Kill(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return fmt.Errorf("session %s not found", fullID)
+		// Accept short 4-char hex IDs (e.g. from Task.SessionID).
+		if sess, ok = m.store.GetByShortID(fullID); ok {
+			fullID = sess.FullID
+		} else {
+			return fmt.Errorf("session %s not found", fullID)
+		}
 	}
 
 	// Cancel the monitor goroutine and clean up encrypting FIFO

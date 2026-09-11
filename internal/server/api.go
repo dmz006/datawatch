@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.23.0"
+var Version = "8.24.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -496,7 +496,7 @@ type AutonomousAPI interface {
 	Config() any
 	SetConfig(any) error
 	Status() any
-	CreatePRD(spec, projectDir, backend, effort string) (any, error)
+	CreatePRD(spec, projectDir, backend, model, effort string) (any, error)
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)

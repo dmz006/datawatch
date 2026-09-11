@@ -103,8 +103,8 @@ func (a *API) SetConfig(v any) error {
 
 func (a *API) Status() any { return a.M.Status() }
 
-func (a *API) CreatePRD(spec, projectDir, backend, effort string) (any, error) {
-	prd, err := a.M.CreatePRD(spec, projectDir, backend, Effort(effort))
+func (a *API) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
+	prd, err := a.M.CreatePRD(spec, projectDir, backend, model, Effort(effort))
 	if err == nil && prd != nil {
 		a.M.EmitPRDUpdate(prd.ID)
 	}
@@ -251,7 +251,8 @@ func (a *API) Cancel(id string) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
-	a.cancelRun(id) // v5.26.16 — stop the executor goroutine first
+	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
+	a.M.killPRDSessions(prd) // kill any task sessions still running
 	prd.Status = PRDCancelled
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err

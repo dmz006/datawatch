@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.24.0 — feat(autonomous): PRD model field propagation, cancel kills task sessions
+
+### Added
+- **`model` field in PRD create** — `POST /api/autonomous/prds` and `autonomous_prd_create` MCP tool now accept an optional `model` field (e.g. `ollama/qwen3.8:27b`, `opencode/big-pickle`). The model propagates through the store, manager, executor, and opencode session config so every task session uses the operator-specified model instead of the global default.
+- **Model inheritance in child PRDs** — recursive child PRDs inherit the parent PRD's model when no explicit model is given. Task-level `Model` override is preserved if set.
+- **Cancel kills task sessions** — `DELETE /api/autonomous/prds/{id}` (cancel) now terminates all in-flight task sessions for the PRD, not just the executor goroutine. `session.Manager.Kill` now accepts short 4-char hex session IDs (as stored in `Task.SessionID`) in addition to full session IDs.
+- **Smoke §7ai** — two new sub-tests: (1) model field round-trip: create PRD with `model=smoke-model-sentinel`, GET it back, assert round-trip; (2) cancel kills sessions: after §7b's PRD cancel, assert no task sessions remain running.
+
+### Fixed
+- Autonomous PRD sessions always used the global default model (`opencode/big-pickle` or equivalent) regardless of what model was configured. Root cause: the create API had no `model` field, so `prd.Model` was always empty and the executor fell through to `cfg.OpenCode.DefaultModel`.
+- PRD cancel left in-flight `opencode` sessions running after the executor goroutine exited.
+- `session.Manager.Kill` rejected short 4-char hex IDs (the form stored in `Task.SessionID`), making the kill-on-cancel path silently fail.
+
+### Internal
+- AGENT.md Testing Requirements: smoke must run against an isolated sandbox daemon, never the production instance.
+- §7b now exports `SMOKE_PRD_ID` so §7ai's cancel-kills-sessions sub-test can assert on the right PRD.
+
 ## v8.23.0 — feat(autonomous): PRD task session visibility, error display, and retry control
 
 ### Added

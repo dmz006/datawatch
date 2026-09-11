@@ -31,7 +31,7 @@ func TestRecurse_SpawnPRD_ChildCompletesParentTask(t *testing.T) {
 	cfg.AutoApproveChildren = true
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
-	parent, _ := m.CreatePRD("parent spec", "/p", "claude", EffortNormal)
+	parent, _ := m.CreatePRD("parent spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(parent.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{
@@ -83,7 +83,7 @@ func TestRecurse_DepthLimit_RefusesAtMax(t *testing.T) {
 
 	// Parent is at depth=2 (already at the limit). Spawning would land
 	// the child at depth 3 which exceeds MaxRecursionDepth=2.
-	parent, _ := m.CreatePRD("at-limit spec", "/p", "claude", EffortNormal)
+	parent, _ := m.CreatePRD("at-limit spec", "/p", "claude", "", EffortNormal)
 	parent.Depth = 2
 	_ = m.Store().SetStories(parent.ID, []Story{{
 		Title: "S",
@@ -111,7 +111,7 @@ func TestRecurse_DepthZero_DisablesRecursion(t *testing.T) {
 	cfg.MaxRecursionDepth = 0
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
-	parent, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	parent, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(parent.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "child", Spec: "more", SpawnPRD: true}},
@@ -137,7 +137,7 @@ func TestRecurse_AutoApproveOff_BlocksParent(t *testing.T) {
 	cfg.AutoApproveChildren = false
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
-	parent, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	parent, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	_ = m.Store().SetStories(parent.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "child", Spec: "more", SpawnPRD: true}},
@@ -163,10 +163,10 @@ func TestRecurse_AutoApproveOff_BlocksParent(t *testing.T) {
 
 func TestStore_ListChildPRDs_SortsByCreatedAt(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	parent, _ := st.CreatePRD("parent", "/p", "claude", EffortNormal)
-	c1, _ := st.CreatePRDWithParent("c1", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
-	c2, _ := st.CreatePRDWithParent("c2", "/p", "claude", EffortNormal, parent.ID, "task2", 1)
-	_, _ = st.CreatePRDWithParent("orphan", "/p", "claude", EffortNormal, "different-parent", "", 1)
+	parent, _ := st.CreatePRD("parent", "/p", "claude", "", EffortNormal)
+	c1, _ := st.CreatePRDWithParent("c1", "/p", "claude", "", EffortNormal, parent.ID, "task1", 1)
+	c2, _ := st.CreatePRDWithParent("c2", "/p", "claude", "", EffortNormal, parent.ID, "task2", 1)
+	_, _ = st.CreatePRDWithParent("orphan", "/p", "claude", "", EffortNormal, "different-parent", "", 1)
 
 	kids := st.ListChildPRDs(parent.ID)
 	if len(kids) != 2 {

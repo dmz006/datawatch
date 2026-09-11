@@ -981,7 +981,9 @@ When in doubt, run smoke. Cost is low; coverage is the point. The autonomous dec
 
 **Required for every minor/major release + first patch of a new feature:**
 
-Run `./scripts/release-smoke.sh` against the running daemon. The script exercises:
+**Always run smoke on an isolated sandbox daemon — NEVER against the production instance.** `release-smoke.sh` starts its own fresh test daemon with a temporary data directory and random port; it never touches the production daemon or its data. Do not point the smoke script at the production instance by overriding `DATAWATCH_BIN`, `SMOKE_PORT`, or `SMOKE_TLS_PORT` to match the production daemon. If an ad-hoc targeted check is needed against a live system, use a dedicated secondary sandbox instance (e.g. a second daemon started with a separate `--config` and `--data-dir`), never `~/.datawatch`.
+
+Run `./scripts/release-smoke.sh` (no `BASE` override). The script exercises:
 
 - `/api/health` + version
 - `/api/backends` shape
@@ -1064,7 +1066,7 @@ Pre-release scans required for every GH release (patch, minor, or major):
 |---|---|---|
 | C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
 | C2 | Pre-release gosec scan: `~/go/bin/gosec -exclude="$(grep -v '^#' .gosec-exclude \| tr '\n' ',')' -fmt text -quiet ./...` — HIGH findings reviewed | `gosec: clean` or `gosec: <N> findings reviewed` |
-| C3 | Smoke run (per cadence above) — record exact Summary line counts | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` OR `smoke: SMOKE_ONLY=<sections> ok` OR `smoke: skipped (docs-only)` |
+| C3 | Smoke run (per cadence above) on an isolated sandbox daemon (never production) — record exact Summary line counts | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` OR `smoke: SMOKE_ONLY=<sections> ok` OR `smoke: skipped (docs-only)` |
 
 ---
 

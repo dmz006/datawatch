@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.23.0"
+var Version = "8.24.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4186,6 +4186,10 @@ Reply with STRICT JSON:
 					payload["deleted"] = true
 				}
 				httpServer.BroadcastPRDUpdate(payload)
+			})
+			// Wire session killer so Cancel also terminates running task sessions.
+			amgr.SetSessionKillerFn(func(sessionID string) error {
+				return mgr.Kill(sessionID)
 			})
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)

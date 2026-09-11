@@ -90,7 +90,7 @@ func TestAutonomousManager_PlanningBackend_UsedInDecompose(t *testing.T) {
 
 	// Create a PRD without an explicit backend so the manager falls back
 	// to cfg.PlanningBackend.
-	prd, err := m.CreatePRD("build something", t.TempDir(), "", EffortNormal)
+	prd, err := m.CreatePRD("build something", t.TempDir(), "", "", EffortNormal)
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}

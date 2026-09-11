@@ -148,6 +148,7 @@ func (s *Server) toolAutonomousPRDCreate() mcpsdk.Tool {
 		mcpsdk.WithString("spec", mcpsdk.Required(), mcpsdk.Description("Free-text feature description")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("Project directory the PRD targets (defaults to operator default)")),
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend override")),
+		mcpsdk.WithString("model", mcpsdk.Description("LLM model override (e.g. ollama/qwen3.8:27b, opencode/big-pickle). Applied to every task session.")),
 		mcpsdk.WithString("effort", mcpsdk.Description("BL41 effort hint (low/medium/high/max)")),
 	)
 }
@@ -156,6 +157,7 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 		"spec":        req.GetString("spec", ""),
 		"project_dir": req.GetString("project_dir", ""),
 		"backend":     req.GetString("backend", ""),
+		"model":       req.GetString("model", ""),
 		"effort":      req.GetString("effort", ""),
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)

@@ -448,7 +448,11 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		effort = parent.Effort
 	}
 
-	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, effort, parent.ID, t.ID, parent.Depth+1)
+	model := t.Model
+	if model == "" {
+		model = parent.Model
+	}
+	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
 		t.Status = TaskFailed
 		t.Error = "spawn child PRD: " + err.Error()

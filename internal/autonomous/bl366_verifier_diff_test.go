@@ -33,7 +33,7 @@ func capturedSHA(dst *string) VerifyFn {
 func TestBL366_PreTaskSHA_ThreadedToVerifier(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	prd, _ := st.CreatePRD("add feature", "/proj", "claude-code", EffortNormal)
+	prd, _ := st.CreatePRD("add feature", "/proj", "claude-code", "", EffortNormal)
 	_ = st.SetStories(prd.ID, []Story{{
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "implement it"}},
@@ -65,7 +65,7 @@ func TestBL366_PreTaskSHA_ThreadedToVerifier(t *testing.T) {
 func TestBL366_PreTaskSHA_StoredOnTask(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	prd, _ := st.CreatePRD("feature", "/proj", "", "")
+	prd, _ := st.CreatePRD("feature", "/proj", "", "", "")
 	_ = st.SetStories(prd.ID, []Story{{
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "do it"}},
@@ -109,7 +109,7 @@ func TestBL366_PreTaskSHA_StoredOnTask(t *testing.T) {
 func TestBL366_PreTaskSHA_EmptyWhenNoSHA(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	prd, _ := st.CreatePRD("feature", "", "", "")
+	prd, _ := st.CreatePRD("feature", "", "", "", "")
 	_ = st.SetStories(prd.ID, []Story{{
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "do it"}},

@@ -21,7 +21,7 @@ func (f *fakeResolver) HasClusterProfile(name string) bool { return f.clusters[n
 func TestSetPRDProfiles_ValidatesProjectName(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	m.SetProfileResolver(&fakeResolver{projects: map[string]bool{"webapp": true}})
-	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	err := m.SetPRDProfiles(prd.ID, "ghost", "")
 	if err == nil || !strings.Contains(err.Error(), "project profile") {
@@ -39,7 +39,7 @@ func TestSetPRDProfiles_ValidatesProjectName(t *testing.T) {
 func TestSetPRDProfiles_ValidatesClusterName(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	m.SetProfileResolver(&fakeResolver{clusters: map[string]bool{"prod-east": true}})
-	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	err := m.SetPRDProfiles(prd.ID, "", "ghost-cluster")
 	if err == nil || !strings.Contains(err.Error(), "cluster profile") {
@@ -57,7 +57,7 @@ func TestSetPRDProfiles_ValidatesClusterName(t *testing.T) {
 func TestSetPRDProfiles_RefusesRunningPRD(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	m.SetProfileResolver(&fakeResolver{projects: map[string]bool{"webapp": true}})
-	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	prd.Status = PRDRunning
 	_ = m.Store().SavePRD(prd)
 
@@ -72,7 +72,7 @@ func TestSetPRDProfiles_NoResolverSkipsValidation(t *testing.T) {
 	// Lets unit tests + transitional setups proceed without the F10
 	// stores; runtime will fail at spawn time if the profile is wrong.
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	if err := m.SetPRDProfiles(prd.ID, "any-name", "any-cluster"); err != nil {
 		t.Errorf("no-resolver path rejected: %v", err)
@@ -85,7 +85,7 @@ func TestSetPRDProfiles_NoResolverSkipsValidation(t *testing.T) {
 
 func TestSetPRDProfiles_RecordsDecision(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.Store().CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	pre := len(prd.Decisions)
 
 	if err := m.SetPRDProfiles(prd.ID, "webapp", "prod-east"); err != nil {

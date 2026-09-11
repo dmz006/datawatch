@@ -589,6 +589,8 @@ print(json.dumps({"pre_spawn": fails_pre_spawn, "post_spawn": fails_post_spawn, 
           # Cancel any in-flight executor goroutine via DELETE (cancel,
           # not hard-delete; cleanup_all takes care of hard-delete).
           curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$PR" >/dev/null 2>&1
+          # Expose to §7ai cancel-kills-sessions sub-test.
+          SMOKE_PRD_ID="$PR"
         else
           ko "run-lifecycle: run rejected: $RN"
         fi
@@ -1695,6 +1697,55 @@ if echo "$AGG_PRDS" | python3 -c 'import json,sys; d=json.load(sys.stdin); asser
   ok "prds/aggregated: returns array"
 else
   ko "prds/aggregated: unexpected: ${AGG_PRDS:0:120}"
+fi
+
+H "7ai. PRD model field persistence + cancel kills sessions"
+# v8.23.x — Two regressions this section guards:
+# 1. autonomous_prd_create lacked a model field so sessions always fell
+#    back to cfg.OpenCode.DefaultModel instead of the operator's choice.
+# 2. PRD cancel did not kill in-flight task sessions; they kept running.
+if [[ "$A_ENABLED" != "yes" ]]; then
+  skip "autonomous disabled; skipping PRD model + cancel tests"
+else
+  # Model field round-trip (no LLM required).
+  PRD_M=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" \
+    -d "{\"spec\":\"smoke model test\",\"project_dir\":\"/tmp\",\"model\":\"smoke-model-sentinel\"}" \
+    "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
+  if [[ -z "$PRD_M" ]]; then
+    ko "PRD create with model field: create failed"
+  else
+    add_cleanup prd "$PRD_M"
+    M_GOT=$(curl "${curl_args[@]}" -s "$BASE/api/autonomous/prds/$PRD_M" | \
+      python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("model",""))' 2>/dev/null || echo "")
+    if [[ "$M_GOT" == "smoke-model-sentinel" ]]; then
+      ok "PRD model field persists through create"
+    else
+      ko "PRD model field not persisted: got '$M_GOT' want 'smoke-model-sentinel'"
+    fi
+    curl "${curl_args[@]}" -s -X DELETE "$BASE/api/autonomous/prds/$PRD_M" >/dev/null 2>&1
+  fi
+
+  # Cancel kills sessions — requires a spawned task session.
+  # Reuse SMOKE_PRD_ID from §7b if available; it already ran + has sessions.
+  if [[ -n "${SMOKE_PRD_ID:-}" ]]; then
+    # Check that no task session from the cancelled PRD is still running.
+    LIVE_SESS=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+prd_sessions = []
+for s in d.get('sessions', []):
+    if s.get('prd_id') == '$SMOKE_PRD_ID' and s.get('state') in ('running','waiting_input','rate_limited'):
+        prd_sessions.append(s.get('id'))
+print(','.join(prd_sessions))
+" 2>/dev/null || echo "")
+    if [[ -z "$LIVE_SESS" ]]; then
+      ok "cancel kills sessions: no live task sessions remain after PRD cancel"
+    else
+      ko "cancel kills sessions: session(s) still running after PRD cancel: $LIVE_SESS"
+    fi
+  else
+    skip "cancel kills sessions: no smoke PRD from §7b available"
+  fi
 fi
 
 H "8. Observer peer register + push + cross-host aggregator"

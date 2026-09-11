@@ -230,6 +230,11 @@ type Manager struct {
 	// SpawnRequest.ContextPrepend. Nil = no plugin context injected.
 	contextFn func(prdType string) string
 
+	// sessionKillerFn — when set, Cancel calls this for each task
+	// session that is still running at the time of cancellation.
+	// Injected from main.go to avoid a circular import on session.Manager.
+	sessionKillerFn func(sessionID string) error
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -261,6 +266,36 @@ func (m *Manager) SetContextFn(fn func(prdType string) string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.contextFn = fn
+}
+
+// SetSessionKillerFn wires the session-kill callback used by Cancel to
+// terminate any task sessions still running when a PRD is cancelled.
+// Injected from main.go; nil disables the kill (sessions age out normally).
+func (m *Manager) SetSessionKillerFn(fn func(sessionID string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionKillerFn = fn
+}
+
+// killPRDSessions iterates every task in prd and calls sessionKillerFn for
+// each non-empty SessionID. Best-effort — errors are logged but not returned.
+func (m *Manager) killPRDSessions(prd *PRD) {
+	m.mu.Lock()
+	fn := m.sessionKillerFn
+	m.mu.Unlock()
+	if fn == nil || prd == nil {
+		return
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			sid := prd.Story[si].Tasks[ti].SessionID
+			if sid != "" {
+				if err := fn(sid); err != nil {
+					log.Printf("[autonomous] cancel: kill session %s: %v", sid, err)
+				}
+			}
+		}
+	}
 }
 
 // SetGuardrail wires the per-story / per-task guardrail indirection
@@ -351,11 +386,11 @@ func (m *Manager) Store() *Store { return m.store }
 
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
-func (m *Manager) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD, error) {
+func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effort) (*PRD, error) {
 	if err := m.checkInjectionGuard("prd spec", spec); err != nil {
 		return nil, err
 	}
-	prd, err := m.store.CreatePRD(spec, projectDir, backend, effort)
+	prd, err := m.store.CreatePRD(spec, projectDir, backend, model, effort)
 	if err != nil {
 		return nil, err
 	}
@@ -1306,7 +1341,7 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 		}
 		return out
 	}
-	newPRD, err := m.store.CreatePRD(subst(tmpl.Spec), tmpl.ProjectDir, tmpl.Backend, tmpl.Effort)
+	newPRD, err := m.store.CreatePRD(subst(tmpl.Spec), tmpl.ProjectDir, tmpl.Backend, tmpl.Model, tmpl.Effort)
 	if err != nil {
 		return nil, err
 	}
@@ -1493,7 +1528,7 @@ func (m *Manager) InstantiateFromTemplateStore(templateID string, vars map[strin
 	if err != nil {
 		return nil, err
 	}
-	return m.store.CreatePRD(spec, projectDir, backend, effort)
+	return m.store.CreatePRD(spec, projectDir, backend, "", effort)
 }
 
 // ── BL221 (v6.2.0) Phase 3 — scan framework ──────────────────────────────
@@ -1594,7 +1629,7 @@ func (m *Manager) CreateFixPRD(prdID string) (*PRD, error) {
 		return nil, fmt.Errorf("no findings to fix in prd %q", prdID)
 	}
 	spec := scan.BuildFixSpec(result.Findings)
-	child, err := m.store.CreatePRD(spec, prd.ProjectDir, prd.Backend, prd.Effort)
+	child, err := m.store.CreatePRD(spec, prd.ProjectDir, prd.Backend, prd.Model, prd.Effort)
 	if err != nil {
 		return nil, err
 	}

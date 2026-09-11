@@ -19,7 +19,7 @@ func TestStore_CreatePRD_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	prd, err := st.CreatePRD("add login", "/proj", "claude-code", EffortNormal)
+	prd, err := st.CreatePRD("add login", "/proj", "claude-code", "", EffortNormal)
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestStore_CreatePRD_RoundTrip(t *testing.T) {
 func TestStore_CreatePRD_RejectsEmptySpec(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	if _, err := st.CreatePRD("   ", "/proj", "", ""); err == nil {
+	if _, err := st.CreatePRD("   ", "/proj", "", "", ""); err == nil {
 		t.Fatalf("want error for empty spec")
 	}
 }
@@ -48,7 +48,7 @@ func TestStore_CreatePRD_RejectsEmptySpec(t *testing.T) {
 func TestStore_SetStories_AssignsIDs(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
-	prd, _ := st.CreatePRD("spec", "/p", "", "")
+	prd, _ := st.CreatePRD("spec", "/p", "", "", "")
 	stories := []Story{{
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "do thing"}},
@@ -149,7 +149,7 @@ func TestManager_DecomposeWiresParsedStoriesIntoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	prd, _ := m.CreatePRD("build login", "/p", "claude-code", EffortNormal)
+	prd, _ := m.CreatePRD("build login", "/p", "claude-code", "", EffortNormal)
 	got, err := m.Decompose(prd.ID)
 	if err != nil {
 		t.Fatalf("Decompose: %v", err)
@@ -166,7 +166,7 @@ func TestManager_DecomposeWiresParsedStoriesIntoStore(t *testing.T) {
 func TestManager_StatusCounts(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := NewManager(dir, DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	prd.Status = PRDActive
 	_ = m.Store().SavePRD(prd)
 	_ = m.Store().SetStories(prd.ID, []Story{{
@@ -187,7 +187,7 @@ func TestManager_StatusCounts(t *testing.T) {
 func TestExecutor_RunsTasksInDependencyOrder(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := NewManager(dir, DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	tasks := []Task{
 		{Title: "first", Spec: "1"},
 		{Title: "second", Spec: "2"},
@@ -226,7 +226,7 @@ func TestExecutor_RetryOnVerifyFailure(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.AutoFixRetries = 2
 	m, _ := NewManager(dir, cfg, nil)
-	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},

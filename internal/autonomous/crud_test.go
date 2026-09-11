@@ -11,7 +11,7 @@ import (
 
 func TestStore_DeletePRD_RemovesFromMap(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	prd, _ := st.CreatePRD("delete me", "/p", "claude", EffortNormal)
+	prd, _ := st.CreatePRD("delete me", "/p", "claude", "", EffortNormal)
 
 	if err := st.DeletePRD(prd.ID); err != nil {
 		t.Fatalf("DeletePRD: %v", err)
@@ -23,10 +23,10 @@ func TestStore_DeletePRD_RemovesFromMap(t *testing.T) {
 
 func TestStore_DeletePRD_RemovesDescendants(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	parent, _ := st.CreatePRD("parent", "/p", "claude", EffortNormal)
-	child, _ := st.CreatePRDWithParent("child", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
-	gchild, _ := st.CreatePRDWithParent("grandchild", "/p", "claude", EffortNormal, child.ID, "taskN", 2)
-	unrelated, _ := st.CreatePRD("unrelated", "/p", "claude", EffortNormal)
+	parent, _ := st.CreatePRD("parent", "/p", "claude", "", EffortNormal)
+	child, _ := st.CreatePRDWithParent("child", "/p", "claude", "", EffortNormal, parent.ID, "task1", 1)
+	gchild, _ := st.CreatePRDWithParent("grandchild", "/p", "claude", "", EffortNormal, child.ID, "taskN", 2)
+	unrelated, _ := st.CreatePRD("unrelated", "/p", "claude", "", EffortNormal)
 
 	if err := st.DeletePRD(parent.ID); err != nil {
 		t.Fatalf("DeletePRD: %v", err)
@@ -50,7 +50,7 @@ func TestStore_DeletePRD_NotFoundIsError(t *testing.T) {
 
 func TestManager_DeletePRD_RefusesRunning(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("running", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("running", "/p", "claude", "", EffortNormal)
 	prd.Status = PRDRunning
 	_ = m.Store().SavePRD(prd)
 
@@ -70,8 +70,8 @@ func TestManager_DeletePRD_RefusesRunning(t *testing.T) {
 // PRD that no longer existed.
 func TestManager_DeletePRD_RefusesRunningDescendant(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", EffortNormal)
-	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
+	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", "", EffortNormal)
+	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", "", EffortNormal, parent.ID, "task1", 1)
 	child.Status = PRDRunning
 	_ = m.Store().SavePRD(child)
 
@@ -93,8 +93,8 @@ func TestManager_DeletePRD_RefusesRunningDescendant(t *testing.T) {
 
 func TestManager_DeletePRD_AcceptsCancelledDescendant(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", EffortNormal)
-	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
+	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", "", EffortNormal)
+	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", "", EffortNormal, parent.ID, "task1", 1)
 	child.Status = PRDCancelled
 	_ = m.Store().SavePRD(child)
 
@@ -111,7 +111,7 @@ func TestManager_DeletePRD_AcceptsCancelledDescendant(t *testing.T) {
 
 func TestStore_UpdatePRDFields_Title(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	prd, _ := st.CreatePRD("original spec", "/p", "claude", EffortNormal)
+	prd, _ := st.CreatePRD("original spec", "/p", "claude", "", EffortNormal)
 
 	updated, err := st.UpdatePRDFields(prd.ID, "New Title", "")
 	if err != nil {
@@ -127,7 +127,7 @@ func TestStore_UpdatePRDFields_Title(t *testing.T) {
 
 func TestStore_UpdatePRDFields_Spec(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	prd, _ := st.CreatePRD("s1", "/p", "claude", EffortNormal)
+	prd, _ := st.CreatePRD("s1", "/p", "claude", "", EffortNormal)
 	prd.Title = "T1"
 	_ = st.SavePRD(prd)
 
@@ -145,7 +145,7 @@ func TestStore_UpdatePRDFields_Spec(t *testing.T) {
 
 func TestStore_UpdatePRDFields_RefusesRunning(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
-	prd, _ := st.CreatePRD("s1", "/p", "claude", EffortNormal)
+	prd, _ := st.CreatePRD("s1", "/p", "claude", "", EffortNormal)
 	prd.Status = PRDRunning
 	_ = st.SavePRD(prd)
 
@@ -156,7 +156,7 @@ func TestStore_UpdatePRDFields_RefusesRunning(t *testing.T) {
 
 func TestManager_EditPRDFields_AppendsDecision(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("orig", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("orig", "/p", "claude", "", EffortNormal)
 
 	beforeCount := len(prd.Decisions)
 	updPRD, err := m.EditPRDFields(prd.ID, "Edited Title", "edited spec", "alice")

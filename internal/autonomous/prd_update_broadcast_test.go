@@ -42,7 +42,7 @@ func (c *capture) lastID() string {
 
 func TestEmitPRDUpdate_FiresWithCurrentPRD(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("p", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 
 	c := &capture{}
 	m.SetOnPRDUpdate(c.add)
@@ -77,14 +77,14 @@ func TestEmitPRDUpdate_NilForMissingPRD(t *testing.T) {
 
 func TestEmitPRDUpdate_NoCallbackWhenUnset(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("p", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 	// Don't call SetOnPRDUpdate. Must not panic.
 	m.EmitPRDUpdate(prd.ID)
 }
 
 func TestSetOnPRDUpdate_LastWriterWins(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("p", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("p", "/p", "claude", "", EffortNormal)
 
 	first := &capture{}
 	second := &capture{}

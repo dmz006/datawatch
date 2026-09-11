@@ -107,7 +107,7 @@ func TestDeleteGuardrailProfile_NotFound(t *testing.T) {
 
 func TestSetPRDGuardrails_ExplicitFields(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	updated, err := m.SetPRDGuardrails(prd.ID, "", []string{"sast-scan"}, []string{"deps-scan"})
 	if err != nil {
@@ -123,7 +123,7 @@ func TestSetPRDGuardrails_ExplicitFields(t *testing.T) {
 
 func TestSetPRDGuardrails_NamedProfile(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	updated, err := m.SetPRDGuardrails(prd.ID, "strict-profile", nil, nil)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestResolveGuardrails_ExplicitBeatsProfile(t *testing.T) {
 	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
 
 	// PRD with explicit + profile.
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	prd.GuardrailProfile = p.ID
 	prd.PerTaskGuardrails = []string{"explicit-g"}
 	_ = m.Store().SavePRD(prd)
@@ -172,7 +172,7 @@ func TestResolveGuardrails_ProfileBeatsGlobal(t *testing.T) {
 
 	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	prd.GuardrailProfile = p.ID
 	_ = m.Store().SavePRD(prd)
 	prd, _ = m.Store().GetPRD(prd.ID)
@@ -188,7 +188,7 @@ func TestResolveGuardrails_GlobalFallback(t *testing.T) {
 	cfg.PerTaskGuardrails = []string{"global-g"}
 	m, _ := NewManager(t.TempDir(), cfg, nil)
 
-	prd, _ := m.CreatePRD("spec", "/p", "claude", EffortNormal)
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
 	result := m.resolveGuardrails(prd, "task")
 	if len(result) != 1 || result[0] != "global-g" {
