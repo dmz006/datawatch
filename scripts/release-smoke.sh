@@ -2893,6 +2893,25 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "55. Web search config round-trip (v8.22.0)"
+WS_CFG=$(curl -s -o /dev/null -w "%{http_code}" "${BASE}/api/web_search/stats" -H "Authorization: Bearer ${TOKEN}")
+case "$WS_CFG" in
+  200) ok "GET /api/web_search/stats returns 200" ;;
+  401|403) skip "S55 — GET /api/web_search/stats: auth required (token not set)" ;;
+  *) fail "GET /api/web_search/stats returned $WS_CFG" ;;
+esac
+
+WS_GET=$(curl -s "${BASE}/api/config" -H "Authorization: Bearer ${TOKEN}" 2>/dev/null)
+if echo "$WS_GET" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "web_search" in d' 2>/dev/null; then
+  ok "GET /api/config contains web_search section"
+else
+  case "$WS_CFG" in
+    401|403) skip "S55 — config web_search key: auth required" ;;
+    *) fail "GET /api/config missing web_search section" ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

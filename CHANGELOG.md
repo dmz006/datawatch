@@ -20,6 +20,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting. The default engine is `bing`.
 - The MCP sub-server reads `DATAWATCH_WEB_SEARCH_URL`, `DATAWATCH_WEB_SEARCH_ENGINE`, and `DATAWATCH_WEB_SEARCH_NUM_RESULTS` env vars; these are set by the parent daemon and never written to logs.
 
+### Reuse audit
+Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-servers feature) for opencode sessions. Extends the existing `gooseEnvPrefix()` env-injection pattern for goose sessions. Uses the existing `SetXxxStatsFunc` callback pattern from the stats collector. Uses the existing skills injection path (`injectXxxSkill`) introduced for vision. No new primitives introduced.
+
 ## v8.21.4 — fix(session): start screen capture at one-shot session creation time
 
 ### Fixed

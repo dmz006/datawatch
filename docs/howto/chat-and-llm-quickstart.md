@@ -246,6 +246,25 @@ channels:
 
 ## Web Search (SearXNG)
 
+Agent sessions (opencode, goose) can search the web when `web_search` is configured. All five access methods are supported:
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `web_search:` section (see below) |
+| **CLI** | `datawatch config set web_search.enabled true` / `datawatch config set web_search.url http://…` |
+| **Web UI** | Settings → LLM → Web Search (SearXNG) |
+| **REST API** | `PATCH /api/config` with `{"web_search.enabled": true, "web_search.url": "http://…"}` |
+| **Comm channel** | `configure web_search.enabled=true` / `configure web_search.url=http://…` |
+
+**Where to see web search activity:**
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Monitor tab → Web Search card (queries, errors, engine) |
+| **REST API** | `GET /api/web_search/stats` |
+| **MCP** | `web_search_stats` tool |
+| **Prometheus** | `datawatch_web_search_queries_total`, `datawatch_web_search_errors_total` |
+
 Agent sessions (opencode, goose) can search the web when `web_search` is configured. Queries are proxied through a self-hosted [SearXNG](https://searxng.github.io/searxng/) instance. Use the `bing` engine — other engines trigger CAPTCHA or rate-limiting in default SearXNG installs.
 
 **Quick setup:**

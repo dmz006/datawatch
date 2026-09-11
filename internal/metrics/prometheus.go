@@ -101,6 +101,16 @@ var (
 		Name: "datawatch_quality_gate_regression_total",
 		Help: "Quality gate evaluations that detected a test regression",
 	})
+
+	// Web Search (SearXNG) metrics.
+	WebSearchQueriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_web_search_queries_total",
+		Help: "Total web search queries proxied to SearXNG",
+	})
+	WebSearchErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_web_search_errors_total",
+		Help: "Total web search queries that returned an error",
+	})
 )
 
 // Register registers all Prometheus metrics.
@@ -113,6 +123,7 @@ func Register() {
 		VerifierDiffInjectionsTotal,
 		InjectionGuardHitsTotal,
 		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
+		WebSearchQueriesTotal, WebSearchErrorsTotal,
 	)
 }
 
