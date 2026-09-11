@@ -975,7 +975,7 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of BL24 PRD IDs
+      summary: Create a graph from a set of PRD IDs
       operationId: orchestratorGraphCreate
       tags: [Orchestrator]
       requestBody:
@@ -1838,7 +1838,7 @@ paths:
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
-      summary: Import a single orphan session from disk (BL94)
+      summary: Import a single orphan session from disk
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
@@ -1860,7 +1860,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
-      summary: List orphan session directories on disk that are missing from the registry (BL93)
+      summary: List orphan session directories on disk that are missing from the registry
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
@@ -1874,7 +1874,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
-      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
+      summary: List running sessions stuck longer than session.stale_timeout_seconds
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -1891,7 +1891,7 @@ paths:
   # Agents
   /api/agents:
     get:
-      summary: List ephemeral agent workers (F10 sprint 3+)
+      summary: List ephemeral agent workers
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
@@ -1903,7 +1903,7 @@ paths:
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
-      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
+      summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -1914,7 +1914,7 @@ paths:
   # Channel
   /api/channel/diagnostics:
     get:
-      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness (BL362)
+      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness
       operationId: channelDiagnostics
       tags: [Channel]
       responses:
@@ -1937,7 +1937,7 @@ paths:
   # Devices
   /api/devices:
     get:
-      summary: List registered devices (F17 mobile registry)
+      summary: List registered devices
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -1950,7 +1950,7 @@ paths:
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
-      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
+      summary: "List device aliases for `new: @<alias>:` routing"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -2137,7 +2137,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
-      summary: Single-shot LLM ask — no session, no tmux (BL34)
+      summary: Single-shot LLM ask — no session, no tmux
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -2154,14 +2154,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
-      summary: Quick-response assistant (BL42) — uses the configured assistant backend
+      summary: Quick-response assistant — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
-      summary: Query the operator-action audit log (BL9)
+      summary: Query the operator-action audit log
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -2174,7 +2174,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cooldown:
     get:
-      summary: Current global rate-limit cooldown state (BL30)
+      summary: Current global rate-limit cooldown state
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2186,25 +2186,25 @@ paths:
       responses: {"200": {description: OK}}
   /api/diagnose:
     get:
-      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
-      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
+      summary: Aggregate analytics — session counts, backend distribution, cost summary
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
-      summary: Hot config reload (BL17) — equivalent to SIGHUP
+      summary: Hot config reload — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
-      summary: Project overview — git status + sessions + stats (BL35)
+      summary: Project overview — git status + sessions + stats
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -2322,7 +2322,7 @@ paths:
 
   /api/projects:
     get:
-      summary: List project aliases (BL27)
+      summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2334,7 +2334,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/templates:
     get:
-      summary: List session-start templates (BL5)
+      summary: List session-start templates
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}

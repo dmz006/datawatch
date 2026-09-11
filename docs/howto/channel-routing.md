@@ -203,7 +203,7 @@ assist("add a routing rule for telegram group -1001234567890 to nas-peer")
 
 ## 3 — The comms-channel-agent capability group
 
-BL331 adds a 14th builtin federation capability group: `comms-channel-agent`.
+This release adds a 14th builtin federation capability group: `comms-channel-agent`.
 It grants `comm:read + comm:write` — the same surface as `comm-bridge` from
 v8.2.0, but semantically distinct: use `comms-channel-agent` for peers that
 act as channel-routing agents, and `comm-bridge` for generic push/notification

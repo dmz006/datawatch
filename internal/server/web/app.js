@@ -5487,7 +5487,7 @@ function renderNewSessionView() {
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
             <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;" title="${t('kill_children_recursive_tip')||'When killed, also kill all descendant sessions recursively (BL351)'}">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;" title="${t('kill_children_recursive_tip')||'When killed, also kill all descendant sessions recursively'}">
             <input type="checkbox" id="killChildrenRecursiveToggle" /> ${t('kill_children_recursive_label')||'Kill children recursively'}
           </label>
         </div>
@@ -7195,7 +7195,7 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
-                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors (BL331)" /></div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors" /></div>
               </div>
               <div style="display:flex;gap:6px;">
                 <button class="btn-secondary" style="font-size:11px;" onclick="submitFedPeerForm()">Save</button>

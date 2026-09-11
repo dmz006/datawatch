@@ -133,7 +133,7 @@ By default, sub-agents run independently and survive their parent. Two modes:
 - **CLI:** `datawatch session new "task" --kill-children`
 - **Channel:** `new: kill_children=true: task description`
 
-*Recursive (all descendants — BL351):* set `kill_children_recursive=true`. Kills grandchildren and deeper regardless of their own settings.
+*Recursive (all descendants):* set `kill_children_recursive=true`. Kills grandchildren and deeper regardless of their own settings.
 - **MCP:** `start_session(task="...", kill_children_recursive=true)`
 - **REST:** `{"task": "...", "kill_children_recursive": true}`
 - **CLI:** `datawatch session new "task" --kill-children-recursive`
@@ -145,12 +145,12 @@ By default, sub-agents run independently and survive their parent. Two modes:
 - **MCP:** `session_children(session_id="pp01")` — lists child sessions with state and task.
 - **REST:** `GET /api/sessions/{id}/children` — JSON array of child sessions.
 - **REST tree:** `GET /api/sessions?tree=1` — full session forest as nested tree.
-- **REST aggregated:** `GET /api/sessions/aggregated?parent_id=<id>` — children across all federation peers (BL352).
+- **REST aggregated:** `GET /api/sessions/aggregated?parent_id=<id>` — children across all federation peers.
 - **CLI:** `datawatch session children <id>` — local children; `--all-servers` for federation peers.
 - **Session list:** child sessions show `↳ child of [<parent-id>]` in all list views.
 - **PWA Tree view:** toggle "Tree" in Sessions toolbar to group sessions by parent/child lineage with orphan indicators.
 
-**Orphaned sessions (BL350):**
+**Orphaned sessions:**
 
 Sessions whose `parent_id` references a session that no longer exists.
 
@@ -159,7 +159,7 @@ Sessions whose `parent_id` references a session that no longer exists.
 - **CLI:** `datawatch session orphaned` or `datawatch session list --orphaned`
 - **Channel:** `session orphaned`
 
-**Self-session discovery (BL349):**
+**Self-session discovery:**
 
 Agents that need to know their own session ID without relying on `$CLAUDE_SESSION_ID`.
 
@@ -1011,7 +1011,7 @@ The agent worker fleet — Docker locally OR Kubernetes-spawned per-session pods
 
 Headscale-first (self-hosted), commercial Tailscale supported. Status card shows current node + advertised routes; Configuration accepts pre-auth keys or OAuth device flow. ACL Generator builds a Tailscale ACL from current node tags + agent fleet membership.
 
-#### Push Notifications (v8.2.0, BL346 lifecycle events v8.10.3)
+#### Push Notifications (v8.2.0)
 
 UnifiedPush + ntfy registration and fan-out. The card shows:
 
@@ -1024,7 +1024,7 @@ CLI: `datawatch push list | test [--id <id>] [--message <m>] | unregister [--id 
 
 UnifiedPush auto-discovery: `GET /.well-known/unifiedpush` returns `{"version":1,"unifiedpush":{"gateway":"/api/push/notify"}}`.
 
-**BL346 — `session_state_changed` lifecycle events (v8.10.3):** The daemon publishes a push event to topic `session-<fullID>` on every non-oscillation, non-waiting-input state transition. Payload `extras` contains `{type: "session_state_changed", old_state, new_state, task, short_summary}`. Allows mobile apps and subscribers to display contextual notifications (e.g. "Session foo — complete").
+**`session_state_changed` lifecycle events (v8.10.3):** The daemon publishes a push event to topic `session-<fullID>` on every non-oscillation, non-waiting-input state transition. Payload `extras` contains `{type: "session_state_changed", old_state, new_state, task, short_summary}`. Allows mobile apps and subscribers to display contextual notifications (e.g. "Session foo — complete").
 
 See [`howto/push-setup.md`](howto/push-setup.md) · [`howto/push-notifications.md`](howto/push-notifications.md).
 
@@ -1135,7 +1135,7 @@ Use `permission_mode: "plan"` to spawn a session that can analyse code but not m
 
 **See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md)
 
-#### MCP Channel Bridge Diagnostics (BL362, v8.10.16)
+#### MCP Channel Bridge Diagnostics (v8.10.16)
 
 When sessions fail to connect or MCP errors appear with no clear cause, this surface exposes the full diagnostic picture:
 
@@ -1394,8 +1394,8 @@ Comms + LLM:
 - [`howto/voice-input.md`](howto/voice-input.md) — transcription backends
 - [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md) — alert dock, per-channel delivery, push notifications
 - [`howto/push-notifications.md`](howto/push-notifications.md) — UnifiedPush registration, ntfy-compat SSE streams
-- [`howto/push-setup.md`](howto/push-setup.md) — BL330 register/unregister/notify API, Android integration (v8.2.0)
-- [`howto/channel-routing.md`](howto/channel-routing.md) — BL331 channel-address federation: route channel messages to peers, owner_peer attribution (v8.3.0)
+- [`howto/push-setup.md`](howto/push-setup.md) — register/unregister/notify API, Android integration (v8.2.0)
+- [`howto/channel-routing.md`](howto/channel-routing.md) — channel-address federation: route channel messages to peers, owner_peer attribution (v8.3.0)
 - [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
 - [`howto/mcp-resources.md`](howto/mcp-resources.md) — 21 URI-addressed live resources
 - [`howto/mcp-prompts.md`](howto/mcp-prompts.md) — 10 prompt slash commands with live context injection
@@ -1421,8 +1421,8 @@ Infrastructure:
 - [`howto/llm-registry.md`](howto/llm-registry.md) — named LLM registry, per-node model lists, failover routing
 - [`howto/ollama-marketplace.md`](howto/ollama-marketplace.md) — browse and pull models from the embedded Ollama catalog
 - [`howto/guardrail-library.md`](howto/guardrail-library.md) — SAST/secrets/deps/LLM grader scan profiles
-- [`howto/file-service.md`](howto/file-service.md) — BL333 federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
-- [`howto/discussion-scopes.md`](howto/discussion-scopes.md) — BL332 discussion scopes: WAL-backed per-discussion memory, participant sync, conflict resolution (v8.4.0)
+- [`howto/file-service.md`](howto/file-service.md) — federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
+- [`howto/discussion-scopes.md`](howto/discussion-scopes.md) — discussion scopes: WAL-backed per-discussion memory, participant sync, conflict resolution (v8.4.0)
 - [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 

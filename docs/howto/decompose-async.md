@@ -20,7 +20,7 @@ exec_steps:
 ---
 # How-to: Async PRD decompose with SSE streaming
 
-Starting with v8.2.0 (BL328), `POST /api/autonomous/prds/{id}/decompose`
+Starting with v8.2.0, `POST /api/autonomous/prds/{id}/decompose`
 returns **202 Accepted** immediately. Stories stream back via server-sent
 events as the LLM produces them, so the client never hits a timeout.
 
