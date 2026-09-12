@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.25.0 — feat(automata/pwa): BL373 automata UI improvements — bug fixes, status graphs, spec expand, action bar
+## v8.25.0 — feat(automata/pwa): automata UI improvements — bug fixes, status graphs, spec expand, action bar
 
 ### Fixed
 - **BUG-A: Task click in automata list collapses open "Stories & tasks" panel** — Clicking a task inside the "Stories & tasks" `<details>` in the automata list card triggered `_prdToggleTask` → `loadAutomataPanel`, which re-rendered the entire list and collapsed all open panels. Fixed by rendering the list card's stories/tasks tree using `renderDetailStoriesTree` (CSS toggle, no reload) instead of `renderStory`.

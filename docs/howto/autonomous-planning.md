@@ -144,20 +144,26 @@ datawatch autonomous delete $PRD_ID
 3. The automaton appears in the list with status `planning`. Click it to
    open the detail view.
 4. Detail view 4-tab layout:
-   - **Overview** — spec + status + persistent toolbar (Edit Spec,
-     Settings, Request Revision, Clone to Template, Delete).
+   - **Overview** — spec + status + persistent toolbar.
    - **Stories** — per-story state + Edit / Profile / Files /
-     Approve / Reject. Each task under a story exposes Edit / LLM /
-     Files.
+     Approve / Reject. Click the ▶ triangle to expand a story's
+     tasks inline; click again to collapse. First click works
+     immediately — no navigation required.
    - **Decisions** — every state-changing event with expandable
      `details` payload.
    - **Scan** — Run Scan + history.
+   The detail header also shows the **initial spec** (expandable —
+   click "show full" if the spec exceeds 280 characters).
 5. When `status: needs_review`, click **Approve** in the toolbar (or
    per-story approve in the Stories tab — see
    [`autonomous-review-approve.md`](autonomous-review-approve.md)).
-6. Click **Run** in the toolbar. The status transitions to `running`;
-   tasks spawn sessions; the per-story progress bar fills.
-7. To cancel mid-run: **Cancel** in the toolbar. To archive when
+6. Click **Run** in the toolbar. The status transitions to `running`.
+   While running or decomposing the header shows **status graphs**:
+   a ✓/✗ decompose indicator, total story + task counts, and a
+   per-story progress bar (X/Y tasks, %) with async CPU%/RSS data
+   from active compute envelopes.
+7. To cancel mid-run: **Cancel** is always visible in the toolbar for
+   non-cancelled automata (including while running). To archive when
    complete: **Archive**.
 
 ## Other channels

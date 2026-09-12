@@ -548,11 +548,11 @@ The "+" FAB on the Automata view launches a wizard.
 4-tab layout reached by clicking any Automaton row.
 
 - **Overview** — PRD spec + current status + persistent toolbar (Edit Spec, Settings, Request Revision, Clone to Template, Delete).
-- **Stories** — per-story state + Edit / Profile / Files / Approve / Reject. Each task under a story exposes Edit / LLM / Files.
+- **Stories** — per-story state + Edit / Profile / Files / Approve / Reject. Each task under a story exposes a triangle/expand button; click once to expand inline — the expanded state persists until clicked again.
 - **Decisions** — every state-changing event for this Automaton; click any row to expand the raw `details` payload. Filter by source (operator / autonomous / scan / etc.).
 - **Scan** — Run Scan kicks off a verifier sweep against the spec; shows pass/fail across SAST / secrets / deps / LLM grader. History persists.
 
-The header strip carries Status badge + Settings (`openPRDSettingsModal` — type, execution backend, planning backend / decomposition profile, effort, model, skills, guided mode), Request Revision, Clone to Template, Delete.
+The header strip carries the **initial spec** (expandable — first 280 characters shown; click "show full" to reveal the complete spec inline, "collapse" to restore); **Status badge**; **Status graphs** (visible while running or decomposing — shows ✓/✗ decompose indicator, total story + task counts, per-story progress bars with X/Y tasks and %, and async CPU%/RSS from active compute envelopes); **Settings** (`openPRDSettingsModal` — type, execution backend, planning backend / decomposition profile, effort, model, skills, guided mode); **Cancel** (always visible for non-cancelled automata, including while running); **Request Revision**; **Clone to Template**; **Delete**; and **⋯ Edit** dropdown (Edit Spec, View Sessions, and other state-appropriate actions).
 
 **See also:**
 [howto/autonomous-planning](howto/autonomous-planning.md) ·

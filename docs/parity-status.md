@@ -26,6 +26,9 @@ Legend:
 | Push notifications (APNs) | N/A | N/A | ❌ (BL item — next minor) |
 | Alert list + mark read | ✅ | ✅ | ❌ (planned) |
 | Autonomous PRD list + actions | ✅ | 🔶 | ❌ (planned) |
+| Automaton spec expand (show full / collapse) | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
+| Automaton status graphs (progress bars + CPU/RSS) | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
+| Automaton cancel button visible during running state | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
 | Memory recall | ✅ | 🔶 | ❌ (planned) |
 | Council run + results | ✅ | 🔶 | ❌ (planned) |
 | Monitor tab (stats) | ✅ | 🔶 | ❌ (planned) |

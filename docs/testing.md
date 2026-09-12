@@ -763,3 +763,26 @@ daemon-driven smokes, UI walkthrough) are operator-driven release
 gates and are documented above. **No regressions detected.**
 **Recommendation:** proceed with the v3.0.0 release tag once the
 operator-pass items above complete.
+
+---
+
+## v8.25.0 — Automata UI bug fixes (2026-09-12)
+
+### BUG-A: Task click in list "Stories & tasks" collapses the panel
+
+| Field | Details |
+|-------|---------|
+| **Description** | Clicking any task inside the "Stories & tasks" `<details>` element on an automata list card triggered a full panel reload via `_prdToggleTask` → `loadAutomataPanel`, collapsing all open `<details>` elements. |
+| **Steps to reproduce** | Open the Automata list. Click a card's "Stories & tasks" to expand. Click any task row inside it. |
+| **Expected** | Task expands/collapses in place; the "Stories & tasks" panel stays open. |
+| **Fix** | Replace `renderStory(prd, st)` in `renderAutomataCard` with `renderDetailStoriesTree(prd)`, which uses CSS `classList.toggle('hidden')` — no page-level reload. Added `onclick="event.stopPropagation()"` to task rows and the tree container. Session link changed to `navigate('session-detail', sessionId)` instead of `navigate('sessions')`. |
+| **Result** | PASS — verified by code review + `node --check`. Operator UI validation required. |
+
+### BUG-B: Triangle expand button in Stories tab does nothing on first click
+
+| Field | Details |
+|-------|---------|
+| **Description** | In the automaton detail view → Stories tab, clicking the ▶ expand button for a task updated `state._prdTaskExpanded` but did not refresh the DOM. Navigating away and back rendered the expanded state because `renderPRDDetailView` did a full re-render. |
+| **Root cause** | `_prdToggleTask` called `_refreshAutomataOrPRD` → `loadAutomataPanel`, which re-renders the list panel (not visible in detail view). The detail DOM (`automataDetailBody`) was not touched. |
+| **Fix** | Added `_automataDetailId` check in `_prdToggleTask`: when non-null (detail view is open), call `renderPRDDetailView(_automataDetailId)` directly. |
+| **Result** | PASS — verified by code review. Operator UI validation required: open an automaton, go to Stories tab, click ▶ on a task — must expand immediately without navigating away. |

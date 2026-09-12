@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.25.0](CHANGELOG.md) (2026-09-12)** — Automata UI: spec expand in detail header (no more hard truncation), status graphs showing per-story progress bars + CPU/RSS during runs, cancel button visible in all running states, "View Sessions" in action dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
+
 **[v8.24.2](CHANGELOG.md) (2026-09-12)** — Fix: story status transitions (in_progress/completed) now set by executor; PRD active-session card no longer shows stale killed/failed sessions; progress indicator now shows during `verifying` state.
 
 **[v8.24.1](CHANGELOG.md) (2026-09-11)** — Fix: autonomous tasks now fall back to the `execution_backend` autonomous config field when neither the task nor the PRD specifies a backend. Closes the gap where `reset_to_draft` cleared the PRD's backend field, causing tasks to silently use `claude-code` instead of the intended backend (e.g. `opencode`).
