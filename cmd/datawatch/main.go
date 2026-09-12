@@ -3600,6 +3600,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationModel:   acfgIn.VerificationModel,
 			PlanningEffort:      acfgIn.PlanningEffort,
 			VerificationEffort:  acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds: acfgIn.PlanningTimeoutSeconds,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
@@ -3698,6 +3699,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			})
 
 			timeout := 20 * time.Minute
+			if req.TimeoutSeconds > 0 {
+				timeout = time.Duration(req.TimeoutSeconds) * time.Second
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
@@ -3829,7 +3833,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				askBody["model"] = planModel
 			}
 			body, _ := json.Marshal(askBody)
-			// GATE alpha.36 #286: timeout scales with PRD effort (#48).
+			// Timeout: operator config (autonomous.planning_timeout_seconds)
+			// overrides the effort-scaled default. Without an override:
 			// high/max → 15 min; quick/low → 2 min; default → 5 min.
 			// Roll-back-to-draft fires on timeout so operator can retry.
 			decomposeTimeout := 5 * time.Minute
@@ -3838,6 +3843,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				decomposeTimeout = 15 * time.Minute
 			case autonomouspkg.EffortQuick, autonomouspkg.EffortLow:
 				decomposeTimeout = 2 * time.Minute
+			}
+			if req.TimeoutSeconds > 0 {
+				decomposeTimeout = time.Duration(req.TimeoutSeconds) * time.Second
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), decomposeTimeout)
 			defer cancel()

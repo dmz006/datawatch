@@ -121,6 +121,10 @@ type DecomposeRequest struct {
 	Backend    string // empty = caller default
 	Effort     Effort
 	ProjectDir string // for session-based decompose path
+	// TimeoutSeconds, when > 0, overrides the effort-scaled default
+	// timeout used by decomposeFn (5 min normal, 15 min high/max).
+	// Set from autonomous.planning_timeout_seconds config.
+	TimeoutSeconds int
 }
 
 // DecomposeFn is the indirection that lets tests inject a fake LLM

@@ -218,6 +218,16 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 }
 
 func (d *Dispatcher) callOnce(ctx context.Context, adapter Adapter, node *compute.Node, llm *LLM, req Request) (Response, error) {
+	// Apply per-LLM timeout when the operator has set one AND the caller
+	// hasn't already supplied a tighter deadline. This makes llm.timeout_seconds
+	// actually take effect — previously ResolveTimeout was computed but never used.
+	if to := ResolveTimeout(llm); to > 0 {
+		if dl, ok := ctx.Deadline(); !ok || time.Until(dl) > to {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, to)
+			defer cancel()
+		}
+	}
 	start := time.Now()
 	resp, err := adapter.Infer(ctx, node, llm, req)
 	resp.DurationMs = time.Since(start).Milliseconds()

@@ -57,6 +57,11 @@ type Config struct {
 	// backend fields above. Empty = backend default.
 	// BL304: renamed from DecompositionModel; JSON key updated to planning_model.
 	PlanningModel string `json:"planning_model,omitempty"`
+	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
+	// used during PRD decomposition (default: 120s quick/low, 300s normal,
+	// 900s high/max). Set to 0 to use the effort-scaled defaults.
+	// Exposed as autonomous.planning_timeout_seconds in config.
+	PlanningTimeoutSeconds int `json:"planning_timeout_seconds,omitempty"`
 	VerificationModel    string `json:"verification_model,omitempty"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
@@ -454,7 +459,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	_ = m.store.SavePRD(prd)
 
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir})
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		// Roll back to draft so the operator can re-trigger.
 		prd.Status = PRDDraft
@@ -539,7 +544,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	_ = m.store.SavePRD(prd)
 
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir})
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()

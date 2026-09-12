@@ -1468,6 +1468,10 @@ type AutonomousConfig struct {
 	// accepted on read for back-compat, never written.
 	DecompositionModelLegacy string `yaml:"decomposition_model,omitempty" json:"-"`
 	VerificationModel        string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
+	// during PRD decomposition. 0 = use effort-scaled defaults
+	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.
+	PlanningTimeoutSeconds int `yaml:"planning_timeout_seconds,omitempty" json:"planning_timeout_seconds,omitempty"`
 	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.

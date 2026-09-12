@@ -4864,6 +4864,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"planning_effort":       s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
 			"verification_effort":   s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds": s.cfg.Autonomous.PlanningTimeoutSeconds,
 			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
 			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
@@ -5679,6 +5680,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Autonomous.PlanningModel = toString(v)
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
+		case "autonomous.planning_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PlanningTimeoutSeconds = n }
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
 		case "autonomous.auto_fix_retries":
