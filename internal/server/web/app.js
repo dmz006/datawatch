@@ -3819,29 +3819,29 @@ function renderSessionStats(sessionId) {
   const sess = state.sessions.find(s => s.full_id === sessionId);
   const _fetchStatsOnce = () => {
     const cnRef = sess && sess.compute_node_ref;
-    const p1 = apiFetch(‘/api/observer/envelopes’);
+    const p1 = apiFetch('/api/observer/envelopes');
     const p2 = cnRef
-      ? apiFetch(‘/api/compute/nodes/’ + encodeURIComponent(cnRef) + ‘/detail’).catch(() => null)
+      ? apiFetch('/api/compute/nodes/' + encodeURIComponent(cnRef) + '/detail').catch(() => null)
       : Promise.resolve(null);
     Promise.all([p1, p2]).then(([d, cnDetail]) => {
-      if (state.activeSession !== sessionId || (state.activeOutputTab !== ‘stats’ && state.activeOutputTab !== ‘status’)) return;
+      if (state.activeSession !== sessionId || (state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status')) return;
       const envelopes = (d && d.envelopes) || [];
-      let env = envelopes.find(e => e.kind === ‘session’ && e.id === ‘session:’ + sessionId);
-      let labelHint = t(‘session_stats_process_title’) || ‘Process Stats’;
+      let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
+      let labelHint = t('session_stats_process_title') || 'Process Stats';
       if (!env && sess && sess.backend_family) {
-        env = envelopes.find(e => e.kind === ‘backend’ && (e.id === ‘backend:’ + sess.backend_family || e.id === ‘backend:’ + sess.backend_family + ‘-docker’));
-        if (env) labelHint = (t(‘session_stats_backend_title’) || ‘Backend Stats’) + ‘ — ‘ + env.label;
+        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
+        if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
       }
       renderSessionStatsInner(area, env, labelHint, sessionId, sess, cnDetail);
     }).catch(() => {
-      area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t(‘session_detail_stats_no_data’)||’No process stats yet — observer plugin may be off, or the next 5 s sample hasn\’t arrived. Enable observer.plugin_enabled to populate.’)}</div>`;
+      area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('session_detail_stats_no_data')||'No process stats yet — observer plugin may be off, or the next 5 s sample hasn\'t arrived. Enable observer.plugin_enabled to populate.')}</div>`;
     });
   };
   _fetchStatsOnce();
   // Schedule a refresh every 5 s while the tab stays open.
   if (state._statsTabPoll) clearInterval(state._statsTabPoll);
   state._statsTabPoll = setInterval(() => {
-    if ((state.activeOutputTab !== ‘stats’ && state.activeOutputTab !== ‘status’) || state.activeSession !== sessionId) {
+    if ((state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status') || state.activeSession !== sessionId) {
       clearInterval(state._statsTabPoll);
       state._statsTabPoll = null;
       return;
@@ -8914,7 +8914,7 @@ window.openComputeAddPanel = function(existingNode) {
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
         <select id="computeNewObserverPeer" class="form-select" onchange="_computeObserverChanged()"><option value="">${escHtml(t('compute_observer_none')||'(none)')}</option></select>
-        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_observer_hint_v2')||'Picks a registered datawatch-stats observer. Monitoring endpoint + hardware are inferred from the observer’s heartbeat.')}</div>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_observer_hint_v2')||'Picks a registered datawatch-stats observer. Monitoring endpoint + hardware are inferred from the observer\'s heartbeat.')}</div>
       </div>
       <div id="computeHardwareSection" class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('compute_hardware_section')||'Hardware (auto-detect via observer or set manually)')}</div>
@@ -24451,7 +24451,7 @@ window.councilOpenPersonasView = function() {
       </details>`;
     const body = `
       <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">
-        ${escHtml(t('council_personas_modal_hint')||'Edit any persona YAML directly at ~/.datawatch/council/personas/<name>.yaml. The Add form below writes a new YAML there. Removing a persona deletes its YAML AND records the name so daemon restarts don’t recreate it; restore a default later via the CLI.')}
+        ${escHtml(t('council_personas_modal_hint')||'Edit any persona YAML directly at ~/.datawatch/council/personas/<name>.yaml. The Add form below writes a new YAML there. Removing a persona deletes its YAML AND records the name so daemon restarts don\'t recreate it; restore a default later via the CLI.')}
       </div>
       ${rows || '<em>no personas loaded</em>'}
       ${addForm}`;
