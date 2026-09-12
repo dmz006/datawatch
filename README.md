@@ -89,7 +89,9 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.25.2](CHANGELOG.md) (2026-09-12)** — Fix: PRD decompose SSE no longer times out on large plans — new `autonomous.planning_timeout_seconds` config overrides the hardcoded effort-scaled limit. Dispatcher per-LLM `timeout_seconds` now actually enforced.
+**[v8.25.4](CHANGELOG.md) (2026-09-12)** — Observatory peer resources panel (live GPU/CPU/mem per peer), collapsible channel diagnostics, session stats compute node rich card with sparklines, and Automata Progress tab GPU/CPU live card.
+
+**[v8.25.3](CHANGELOG.md) (2026-09-12)** — nvidia-smi and tegrastats GPU probes for Shape B (datawatch-stats) peers on NVIDIA Thor/Jetson hosts.
 
 **[v8.24.2](CHANGELOG.md) (2026-09-12)** — Fix: story status transitions (in_progress/completed) now set by executor; PRD active-session card no longer shows stale killed/failed sessions; progress indicator now shows during `verifying` state.
 

@@ -3955,11 +3955,11 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetai
       if (cnHost.cpu_pct > 0) {
         const cpuHist = _statsPushHist(sessionId, 'cn_cpu', cnHost.cpu_pct);
         const cpuColor = cnHost.cpu_pct >= 90 ? 'var(--error)' : cnHost.cpu_pct >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
-        nodeRows += row('Node CPU', cnHost.cpu_pct.toFixed(1)+'%', _sparkline(cpuHist, 60, 14, cpuColor));
+        nodeRows += row(t('obs_cn_node_cpu')||'Node CPU', cnHost.cpu_pct.toFixed(1)+'%', _sparkline(cpuHist, 60, 14, cpuColor));
       }
       if (cnHost.mem_used_bytes && cnHost.mem_total_bytes) {
         const memPct = Math.round(cnHost.mem_used_bytes / cnHost.mem_total_bytes * 100);
-        nodeRows += row('Node Mem', fmtBytes(cnHost.mem_used_bytes)+' / '+fmtBytes(cnHost.mem_total_bytes)+' ('+memPct+'%)');
+        nodeRows += row(t('obs_cn_node_mem')||'Node Mem', fmtBytes(cnHost.mem_used_bytes)+' / '+fmtBytes(cnHost.mem_total_bytes)+' ('+memPct+'%)');
       }
     }
     let gpuRows = '';
@@ -3967,35 +3967,35 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetai
       const gpuLabel = cnGPUs.length > 1 ? `GPU ${i}` : 'GPU';
       if (g.util_pct > 0) {
         const uHist = _statsPushHist(sessionId, 'cn_gpu_util_'+i, g.util_pct);
-        gpuRows += row(gpuLabel+' util', g.util_pct.toFixed(0)+'%', _sparkline(uHist, 60, 14, 'var(--accent2,#60a5fa)'));
+        gpuRows += row(gpuLabel+' '+(t('obs_cn_gpu_util')||'util'), g.util_pct.toFixed(0)+'%', _sparkline(uHist, 60, 14, 'var(--accent2,#60a5fa)'));
       }
       if (g.temp_c) {
         const tHist = _statsPushHist(sessionId, 'cn_gpu_temp_'+i, g.temp_c);
         const tColor = g.temp_c >= 80 ? 'var(--error)' : g.temp_c >= 60 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
-        gpuRows += row(gpuLabel+' temp', g.temp_c.toFixed(1)+'°C', _sparkline(tHist, 60, 14, tColor));
+        gpuRows += row(gpuLabel+' '+(t('obs_cn_gpu_temp')||'temp'), g.temp_c.toFixed(1)+'°C', _sparkline(tHist, 60, 14, tColor));
       }
-      if (g.power_w) gpuRows += row(gpuLabel+' power', g.power_w.toFixed(1)+' W');
+      if (g.power_w) gpuRows += row(gpuLabel+' '+(t('obs_cn_gpu_power')||'power'), g.power_w.toFixed(1)+' W');
       if (g.mem_used_bytes && g.mem_total_bytes) {
         const gpuMemPct = Math.round(g.mem_used_bytes / g.mem_total_bytes * 100);
         const mHist = _statsPushHist(sessionId, 'cn_gpu_mem_'+i, gpuMemPct);
-        gpuRows += row(gpuLabel+' VRAM', fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes)+' ('+gpuMemPct+'%)', _sparkline(mHist, 60, 14, 'rgba(96,165,250,0.8)'));
+        gpuRows += row(gpuLabel+' '+(t('obs_cn_gpu_vram')||'VRAM'), fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes)+' ('+gpuMemPct+'%)', _sparkline(mHist, 60, 14, 'rgba(96,165,250,0.8)'));
       }
     });
     let ollamaRows = '';
     if (ollamaEnv) {
       if (ollamaEnv.cpu_pct > 0) {
         const oh = _statsPushHist(sessionId, 'cn_ollama_cpu', ollamaEnv.cpu_pct);
-        ollamaRows += row('ollama CPU', ollamaEnv.cpu_pct.toFixed(1)+'%', _sparkline(oh, 60, 14, 'var(--accent,#a855f7)'));
+        ollamaRows += row(t('obs_cn_ollama_cpu')||'ollama CPU', ollamaEnv.cpu_pct.toFixed(1)+'%', _sparkline(oh, 60, 14, 'var(--accent,#a855f7)'));
       }
-      if (ollamaEnv.rss_bytes > 0) ollamaRows += row('ollama RSS', fmtBytes(ollamaEnv.rss_bytes));
+      if (ollamaEnv.rss_bytes > 0) ollamaRows += row(t('obs_cn_ollama_rss')||'ollama RSS', fmtBytes(ollamaEnv.rss_bytes));
     }
     const hasData = nodeRows || gpuRows || ollamaRows;
-    const noDataMsg = hasData ? '' : `<div style="color:var(--text2);font-size:12px;">No live data — observer peer not pushing or compute node has no monitoring endpoint configured.</div>`;
-    computeCard = card(`${t('stats_card_compute_node')||'Compute Node'} — ${sess.compute_node_ref}`, `
+    const noDataMsg = hasData ? '' : `<div style="color:var(--text2);font-size:12px;">${escHtml(t('obs_cn_no_data_long')||'No live data — observer peer not pushing or compute node has no monitoring endpoint configured.')}</div>`;
+    computeCard = card(`${t('obs_cn_card_title')||'Compute Node'} — ${sess.compute_node_ref}`, `
       ${noDataMsg}
       ${nodeRows}
       ${gpuRows ? `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.55;margin:6px 0 2px;">${cnGPUs.length > 0 ? escHtml(cnGPUs[0].name || 'GPU') : 'GPU'}</div>${gpuRows}` : ''}
-      ${ollamaRows ? `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.55;margin:6px 0 2px;">Ollama</div>${ollamaRows}` : ''}
+      ${ollamaRows ? `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.55;margin:6px 0 2px;">${escHtml(t('obs_cn_ollama_label')||'Ollama')}</div>${ollamaRows}` : ''}
       <div style="margin-top:8px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_cn')||'Open Compute Node →')}</a></div>
     `);
   }
@@ -16923,7 +16923,7 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
     if (!cnDetail) {
       if (cnRef) {
         cnDiv.style.display = '';
-        cnDiv.innerHTML = `<span style="font-size:11px;color:var(--text2);">Compute Node — ${escHtml(cnRef)}: no live data</span>`;
+        cnDiv.innerHTML = `<span style="font-size:11px;color:var(--text2);">${escHtml(t('obs_cn_card_title')||'Compute Node')} — ${escHtml(cnRef)}: ${escHtml(t('obs_cn_no_data')||'no live data')}</span>`;
       }
       return;
     }
@@ -16934,7 +16934,7 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
       return (b / 1024).toFixed(0) + ' KB';
     };
     const prdId = prd.id || 'prd';
-    let html = `<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Compute Node — ${escHtml(cnRef)}</div>`;
+    let html = `<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('obs_cn_card_title')||'Compute Node')} — ${escHtml(cnRef)}</div>`;
     html += '<div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;">';
 
     // Host CPU chip.
@@ -16947,13 +16947,13 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
       const memTotal = cnDetail.host.mem_total_bytes || 0;
       const memPct = memTotal > 0 ? Math.round(memUsed / memTotal * 100) : 0;
       html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;">`;
-      html += `<span style="color:${cpuColor};">CPU ${Math.round(cpu)}%</span>`;
+      html += `<span style="color:${cpuColor};">${escHtml(t('obs_cn_node_cpu')||'Node CPU')} ${Math.round(cpu)}%</span>`;
       if (hist.length > 1) html += ` <span style="opacity:0.7;">${_sparkline(hist)}</span>`;
       html += `</span>`;
       if (memTotal > 0) {
         const memColor = memPct >= 90 ? 'var(--error,#ef4444)' : memPct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--text2)';
         html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;color:${memColor};">`;
-        html += `Mem ${fmtB(memUsed)}/${fmtB(memTotal)} (${memPct}%)</span>`;
+        html += `${escHtml(t('obs_cn_node_mem')||'Node Mem')} ${fmtB(memUsed)}/${fmtB(memTotal)} (${memPct}%)</span>`;
       }
     }
 
@@ -16976,14 +16976,14 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
       const gpuLabel = g.name ? escHtml(g.name) : `GPU ${gi}`;
       html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--accent,#3b82f6)33;border-radius:4px;padding:2px 6px;white-space:nowrap;">`;
       html += `<span style="color:var(--accent,#3b82f6);font-weight:600;">${gpuLabel}</span> `;
-      html += `<span>util ${Math.round(util)}%</span>`;
+      html += `<span>${escHtml(t('obs_cn_gpu_util')||'util')} ${Math.round(util)}%</span>`;
       if (utilHist.length > 1) html += ` ${_sparkline(utilHist)}`;
       if (temp > 0) { html += ` <span style="color:${tempColor};">${temp.toFixed(1)}°C</span>`; if (tempHist.length > 1) html += ` ${_sparkline(tempHist)}`; }
       if (pw > 0) html += ` <span style="color:var(--text2);">${pw.toFixed(1)}W</span>`;
       html += `</span>`;
       if (vramTotal > 0) {
         html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--accent,#3b82f6)22;border-radius:4px;padding:2px 6px;white-space:nowrap;color:${vramColor};">`;
-        html += `VRAM ${fmtB(vramUsed)}/${fmtB(vramTotal)} (${vramPct}%)`;
+        html += `${escHtml(t('obs_cn_gpu_vram')||'VRAM')} ${fmtB(vramUsed)}/${fmtB(vramTotal)} (${vramPct}%)`;
         if (memHist.length > 1) html += ` ${_sparkline(memHist)}`;
         html += `</span>`;
       }
@@ -17003,7 +17003,7 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
         const oHist = (window._sessionStatsHistory[prdId] || {})['prd_cn_ollama_cpu'] || [];
         if (oCpu > 0 || oRss > 0) {
           html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;color:var(--text2);">`;
-          html += `ollama`;
+          html += escHtml(t('obs_cn_ollama_label')||'Ollama');
           if (oCpu > 0) { html += ` CPU ${Math.round(oCpu)}%`; if (oHist.length > 1) html += ` ${_sparkline(oHist)}`; }
           if (oRss > 0) html += ` RSS ${oRss.toFixed(0)} MB`;
           html += `</span>`;
@@ -18094,7 +18094,7 @@ function loadPeerResourceOverview() {
   apiFetch('/api/observer/peers').then(data => {
     const peers = (data && data.peers) || [];
     if (!peers.length) {
-      el.innerHTML = '<span style="opacity:0.6;">no peers registered</span>';
+      el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_peer_no_peers')||'no peers registered')}</span>`;
       return;
     }
     // Fetch snapshots in parallel; tolerate individual failures.
@@ -21399,7 +21399,7 @@ function renderObserverView() {
           <!-- Live peer resource summary — GPU/CPU/mem for each attached peer -->
           <div id="peerResourceBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
-              <span>Peer Resources</span>
+              <span>${escHtml(t('obs_peer_resources')||'Peer Resources')}</span>
               <span class="live-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
             </div>
             <div id="peerResourceList" style="font-size:12px;padding:0 12px 6px;color:var(--text2);">Loading…</div>

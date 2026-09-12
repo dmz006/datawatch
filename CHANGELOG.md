@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.4 — feat(ui): Observatory peer resources, compute node stats, and automata GPU/CPU view
+
+### Added
+- **Observatory — Peer Resources panel** — New live-refreshing block at the top of the Observatory view shows GPU/CPU/memory per registered observer peer. Each peer row displays: status dot (live/stale/no-data), shape tag, host CPU% chip with sparkline (colour-coded at 70/90%), host Mem used/total, and per-GPU chips for util%, temperature (colour-coded at 60/80°C), power W, and VRAM used/total%. Refreshes every 8 s while the Observatory tab is active.
+- **Observatory — Collapsible Channel Bridge & Diagnostics** — `CHANNEL BRIDGE` and `CHANNEL BRIDGE DIAGNOSTICS` sections now default to collapsed with a ▶ chevron toggle. Diagnostics hints are wrapped in a `<details>` summary showing the hint count so they no longer flood the entire Observatory page.
+- **Session stats — Compute node rich card** — When a session's `compute_node_ref` is set, the stats panel fetches `/api/compute/nodes/{name}/detail` every 5 s and renders: Node CPU% (sparkline), Node Mem used/total/pct, GPU util% (sparkline), GPU temp (sparkline, colour-coded), GPU power W, VRAM used/total/pct (sparkline), and ollama process CPU%/RSS from peer envelopes. Previously only showed a static name label.
+- **Automata Progress tab — Compute node GPU/CPU card** — When any active task session uses a `compute_node_ref`, the Automata PRD Progress tab now shows a live compute resource card below the story progress bars. Fetches `/api/compute/nodes/{name}/detail` every 5 s. Displays same GPU/CPU metrics as the session stats card with sparklines.
+- **Locale keys** — 15 new i18n keys (`obs_peer_resources`, `obs_cn_card_title`, `obs_cn_no_data`, `obs_cn_no_data_long`, `obs_cn_node_cpu`, `obs_cn_node_mem`, `obs_cn_gpu_util`, `obs_cn_gpu_temp`, `obs_cn_gpu_power`, `obs_cn_gpu_vram`, `obs_cn_ollama_label`, `obs_cn_ollama_cpu`, `obs_cn_ollama_rss`, `obs_peer_no_peers`) added to all five locale files (en/de/es/fr/ja).
+
 ## v8.25.3 — feat(observer): nvidia-smi and tegrastats GPU probes for Shape B peers
 
 ### Added

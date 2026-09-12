@@ -110,6 +110,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automata_sg_stories",
 		"automata_sg_tasks",
 		"automata_sg_no_stories",
+		// v8.25.4 — Observatory peer resources + compute node stats cards.
+		"obs_peer_resources",
+		"obs_cn_card_title",
+		"obs_cn_no_data",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
