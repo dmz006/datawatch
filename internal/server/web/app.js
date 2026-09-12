@@ -10337,7 +10337,14 @@ window.prdResetTask = prdResetTask;
 function _prdToggleTask(taskID) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   state._prdTaskExpanded[taskID] = !state._prdTaskExpanded[taskID];
-  if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  // BL373 BUG-B: when inside the detail view, re-render it directly so
+  // the expand state is reflected immediately. _refreshAutomataOrPRD calls
+  // loadAutomataPanel (the list) which doesn't update the detail view DOM.
+  if (_automataDetailId && typeof renderPRDDetailView === 'function') {
+    renderPRDDetailView(_automataDetailId);
+  } else if (typeof _refreshAutomataOrPRD === 'function') {
+    _refreshAutomataOrPRD();
+  }
 }
 window._prdToggleTask = _prdToggleTask;
 
@@ -15586,7 +15593,7 @@ function renderAutomataCard(prd) {
       </div>
     </div>
     <details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
-      <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+      <div style="margin-top:6px;" onclick="event.stopPropagation()">${renderDetailStoriesTree(prd) || '<em style="color:var(--text2);">no stories yet</em>'}</div>
     </details>
   </div>`;
 }
@@ -16442,12 +16449,12 @@ function renderDetailStoriesTree(prd) {
       const icon = _taskStatusIcon(sts);
       const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
-        ? `<span class="prd-task-session" onclick="navigate('sessions');setTimeout(()=>_highlightSession(${escHtml(JSON.stringify(t.session_id))}),300)" title="Go to session">→ session</span>`
+        ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
       const childPRD = t.child_prd_id
         ? `<span class="prd-task-session" onclick="renderPRDDetailView(${escHtml(JSON.stringify(t.child_prd_id))})" title="Open child automaton">↳ child automaton</span>`
         : '';
-      return `<div class="prd-task-row">
+      return `<div class="prd-task-row" onclick="event.stopPropagation()">
         <span class="prd-task-icon" style="color:${iconColor};">${icon}</span>
         <span class="prd-task-title">${escHtml(t.title || t.Title || '(task ' + (ti+1) + ')')}</span>
         <span class="prd-task-status">${escHtml(sts)}</span>
@@ -16643,6 +16650,11 @@ function _renderDetailContent(prd) {
   if (['planning','decomposing','running'].includes(prd.status || '')) {
     _loadPRDActiveSessionCard(prd);
   }
+  // BL373 UI-2+3 — status graphs (story/task progress + compute stats).
+  // Show during running and decomposing so operator can see progress at a glance.
+  if (['decomposing','running'].includes(prd.status || '')) {
+    _renderStatusGraphs(prd);
+  }
 }
 
 window._loadPRDActiveSessionCard = function(prd) {
@@ -16743,6 +16755,100 @@ window._loadPRDActiveSessionCard = function(prd) {
   }).catch(() => { slot.style.display = 'none'; });
 };
 
+// BL373 UI-2+3 — Status graphs: decompose indicator, story/task progress bars,
+// and async compute stats (CPU%/RSS) via /api/observer/envelopes.
+// Called from _renderDetailContent when status is 'running' or 'decomposing'.
+window._renderStatusGraphs = function(prd) {
+  const slot = document.getElementById('prdStatusGraphsSlot');
+  if (!slot) return;
+  const stories = prd.stories || [];
+  const totalTasks = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  const decomposed = stories.length > 0;
+
+  // Per-story progress: count done/failed/cancelled/skipped as finished
+  const terminalTaskStates = new Set(['done','failed','cancelled','skipped']);
+  const storyRows = stories.map((st, idx) => {
+    const tasks = st.tasks || [];
+    const done = tasks.filter(tk => terminalTaskStates.has(tk.status || '')).length;
+    const total = tasks.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const barColor = pct === 100 ? 'var(--success,#22c55e)' : 'var(--accent2,#60a5fa)';
+    const stTitle = escHtml(st.title || ('Story ' + (idx + 1)));
+    const stStatus = st.status || '';
+    const statusDot = stStatus === 'completed' ? '✓' : stStatus === 'in_progress' ? '▶' : '·';
+    const statusColor = stStatus === 'completed' ? 'var(--success,#22c55e)' : stStatus === 'in_progress' ? 'var(--accent,#3b82f6)' : 'var(--text2)';
+    return `<div class="prd-sg-story" data-story-idx="${idx}" style="margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px;">
+        <span style="color:${statusColor};min-width:14px;text-align:center;">${statusDot}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${stTitle}">${stTitle}</span>
+        <span style="font-variant-numeric:tabular-nums;opacity:0.8;">${done}/${total}</span>
+        <span style="font-variant-numeric:tabular-nums;min-width:30px;text-align:right;font-weight:600;">${pct}%</span>
+      </div>
+      <div style="height:6px;background:var(--bg3,#1f2937);border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.4s;"></div>
+      </div>
+      <div class="prd-sg-compute" data-story-idx="${idx}" style="font-size:10px;color:var(--text2);margin-top:2px;min-height:12px;"></div>
+    </div>`;
+  });
+
+  slot.style.display = 'block';
+  slot.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
+      <span style="font-weight:600;color:var(--text);">${escHtml(t('automata_sg_progress')||'Progress')}</span>
+      <span style="color:${decomposed ? 'var(--success,#22c55e)' : 'var(--warning,#f59e0b)'};">
+        ${decomposed ? '✓' : '✗'} ${escHtml(t('automata_sg_decomposed')||'Decomposed')}
+      </span>
+      <span style="color:var(--text2);">${stories.length} ${escHtml(t('automata_sg_stories')||'stories')}</span>
+      <span style="color:var(--text2);">${totalTasks} ${escHtml(t('automata_sg_tasks')||'tasks')}</span>
+    </div>
+    ${storyRows.join('') || `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_sg_no_stories')||'No stories yet — decomposition in progress…')}</div>`}
+  </div>`;
+
+  // Kick off async compute enrichment (non-blocking).
+  _loadStatusGraphsCompute(prd, slot);
+};
+
+window._loadStatusGraphsCompute = function(prd, slotEl) {
+  if (!slotEl) return;
+  // Collect active task session IDs keyed by story index so we can match envelopes.
+  const stories = prd.stories || [];
+  const storySessionIds = stories.map(st => {
+    const ids = new Set();
+    (st.tasks || []).forEach(tk => { if (tk.session_id) ids.add(tk.session_id); });
+    return ids;
+  });
+
+  apiFetch('/api/observer/envelopes').then(env => {
+    if (!env || !Array.isArray(env.envelopes || env)) return;
+    const envList = env.envelopes || env;
+    // Map session_id → envelope metrics
+    const bySession = {};
+    envList.forEach(e => {
+      if (e.session_id) bySession[e.session_id] = e;
+    });
+    stories.forEach((st, idx) => {
+      if (storySessionIds[idx].size === 0) return;
+      const computeEl = slotEl.querySelector(`.prd-sg-compute[data-story-idx="${idx}"]`);
+      if (!computeEl) return;
+      // Aggregate CPU% and RSS across all task sessions for this story
+      let cpuSum = 0, rssSum = 0, count = 0;
+      storySessionIds[idx].forEach(sid => {
+        const e = bySession[sid];
+        if (!e) return;
+        if (typeof e.cpu_pct === 'number') { cpuSum += e.cpu_pct; count++; }
+        if (typeof e.rss_mb === 'number') rssSum += e.rss_mb;
+      });
+      if (count === 0) return;
+      const avgCpu = Math.round(cpuSum / count);
+      const totalRss = Math.round(rssSum);
+      const parts = [];
+      if (avgCpu > 0) parts.push(`CPU ${avgCpu}%`);
+      if (totalRss > 0) parts.push(`${totalRss} MB`);
+      if (parts.length > 0) computeEl.textContent = parts.join(' · ');
+    });
+  }).catch(() => {}); // Envelopes are best-effort; silently ignore failures.
+};
+
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
 // BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
 // The audit confirmed the previous implementation IS consistent; operator's
@@ -16824,6 +16930,8 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   if (!prd.is_template) {
     editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
   }
+  // BL373 UI-5 — view sessions shortcut always available.
+  editMenuItems.push(`<button class="prd-edit-menu-item" onclick="document.getElementById('prdEditMenu').style.display='none';navigate('sessions');" title="${escHtml(t('automata_actions_view_sessions')||'View all sessions for this automaton in the Sessions list')}">→ ${escHtml(t('automata_actions_view_sessions')||'View Sessions')}</button>`);
   // Plan button — prominent primary action for draft and revisions_asked.
   const planBtn = (status === 'draft' || status === 'revisions_asked')
     ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'decompose','POST')" title="Run planning — decompose the spec into stories and tasks">▶ ${status === 'revisions_asked' ? 'Re-plan' : 'Start Planning'}</button>`
@@ -16832,8 +16940,8 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const runBtn = (status === 'approved')
     ? `<button class="btn-primary prd-action-btn" style="background:var(--accent,#3b82f6);color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'run','POST')" title="Execute the approved plan">▶ Run</button>`
     : '';
-  // Cancel button — shown for any non-terminal, non-running cancellable state.
-  const cancelBtn = (!terminal && status !== 'running' && status !== 'cancelled')
+  // Cancel button — shown for any non-terminal cancellable state (including running).
+  const cancelBtn = (!terminal && status !== 'cancelled')
     ? `<button class="btn-secondary prd-action-btn" onclick="automataCancel(${escHtml(idJ)},${escHtml(JSON.stringify(status))})" title="${escHtml(status === 'planning' ? 'Cancel entire automaton — planning will stop shortly on the server' : (t('automata_action_cancel_tip')||'Cancel this automaton'))}">✕ ${escHtml(status === 'planning' ? 'Cancel Automaton' : (t('automata_action_cancel')||'Cancel'))}</button>`
     : '';
   // Approve / Reject / Request Revision — state-driven primary actions.
@@ -16889,9 +16997,13 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <code>${escHtml(id)}</code>
         ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
       </div>
-      ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) + '…' : specSnippet)}</div>` : ''}
+      ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
+        <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
+        ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}
+      </div>` : ''}
       <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
+      <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>

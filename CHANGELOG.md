@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.0 — feat(automata/pwa): BL373 automata UI improvements — bug fixes, status graphs, spec expand, action bar
+
+### Fixed
+- **BUG-A: Task click in automata list collapses open "Stories & tasks" panel** — Clicking a task inside the "Stories & tasks" `<details>` in the automata list card triggered `_prdToggleTask` → `loadAutomataPanel`, which re-rendered the entire list and collapsed all open panels. Fixed by rendering the list card's stories/tasks tree using `renderDetailStoriesTree` (CSS toggle, no reload) instead of `renderStory`.
+- **BUG-B: Triangle expand button in Stories tab does nothing on first click** — `_prdToggleTask` called `_refreshAutomataOrPRD` → `loadAutomataPanel` (which re-renders the list panel, not the detail view). State updated but DOM did not. Fixed by detecting `_automataDetailId` and calling `renderPRDDetailView` directly when in detail view.
+
+### Added
+- **Spec expand in detail header** — Initial prompt shown in detail header is no longer hard-truncated to 280 chars. Text over 280 chars now shows "show full" inline link to expand, and "collapse" to restore.
+- **Status graphs panel** — When status is `running` or `decomposing`, a progress card appears below the active session card showing: ✓/✗ decompose indicator, total story and task counts, per-story progress bars (X/Y tasks, % complete), and async CPU%/RSS data fetched from `/api/observer/envelopes`.
+- **Cancel button during running state** — Cancel was previously hidden when status was `running` (it only appeared in the active session card). Now always visible in the toolbar for non-cancelled, non-terminal automata.
+- **View Sessions in action dropdown** — "→ View Sessions" added to the ⋯ Edit dropdown.
+
 ## v8.24.2 — fix(autonomous/pwa): story status transitions + stale session card + progress indicator
 
 ### Fixed

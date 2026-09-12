@@ -101,6 +101,15 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"autonomous_fab_new",
 		// v8.19.8 — "What's it doing?" no-change chip (current-status 204→200 fix).
 		"no_change_since_last_refresh",
+		// v8.25.0 BL373 — automata UI improvements: spec expand, status graphs, view sessions.
+		"automata_spec_show_full",
+		"automata_spec_hide",
+		"automata_actions_view_sessions",
+		"automata_sg_progress",
+		"automata_sg_decomposed",
+		"automata_sg_stories",
+		"automata_sg_tasks",
+		"automata_sg_no_stories",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
