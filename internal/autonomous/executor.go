@@ -131,6 +131,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		if t == nil {
 			continue
 		}
+		// Mark the owning story in_progress when its first task begins.
+		if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
+			s.Status = StoryInProgress
+			_ = m.store.SavePRD(prd)
+		}
 		if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
 			t.Status = TaskFailed
 			t.Error = err.Error()
@@ -146,6 +151,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				latest.Status = PRDBlocked
 				_ = m.store.SavePRD(latest)
 				return nil
+			}
+			// Roll up story status to completed when all its tasks are done.
+			if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
+				s.Status = StoryCompleted
+				_ = m.store.SavePRD(latest)
 			}
 			prd = latest
 		}
@@ -348,6 +358,18 @@ func lookupTask(prd *PRD, id string) *Task {
 		for j := range prd.Story[i].Tasks {
 			if prd.Story[i].Tasks[j].ID == id {
 				return &prd.Story[i].Tasks[j]
+			}
+		}
+	}
+	return nil
+}
+
+// lookupStoryByTaskID returns the Story that owns the given task ID.
+func lookupStoryByTaskID(prd *PRD, taskID string) *Story {
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			if prd.Story[i].Tasks[j].ID == taskID {
+				return &prd.Story[i]
 			}
 		}
 	}

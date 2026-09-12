@@ -221,6 +221,35 @@ func TestExecutor_RunsTasksInDependencyOrder(t *testing.T) {
 	}
 }
 
+func TestExecutor_StoryStatusTransitions(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir, DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{
+		{Title: "S1", Tasks: []Task{{Title: "T1", Spec: "task1"}}},
+		{Title: "S2", Tasks: []Task{{Title: "T2", Spec: "task2"}}},
+	})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+
+	spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "s-" + req.TaskID}, nil
+	}
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true, Summary: "ok"}, nil
+	}
+	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	for i, s := range got.Story {
+		if s.Status != StoryCompleted {
+			t.Errorf("story[%d] %q status = %q, want %q", i, s.Title, s.Status, StoryCompleted)
+		}
+	}
+}
+
 func TestExecutor_RetryOnVerifyFailure(t *testing.T) {
 	dir := t.TempDir()
 	cfg := DefaultConfig()

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.24.2 — fix(autonomous/pwa): story status transitions + stale session card + progress indicator
+
+### Fixed
+- **Story status never set** — `StoryInProgress` and `StoryCompleted` were defined but never assigned in the autonomous executor. Stories always showed blank status in the UI regardless of whether their tasks were running or complete. The executor now sets `in_progress` when a story's first task begins and `completed` when all tasks in the story finish.
+- **Stale sessions in PRD active-session card** — `_loadPRDActiveSessionCard` in the PWA iterated `prd.story` (undefined, always empty) instead of `prd.stories`, causing `taskSessionIds` to be empty. All sessions matching `prd_id` were shown, including killed/failed sessions from previous decompositions. Fixed by iterating `prd.stories` and filtering out terminal-state sessions (killed/complete/failed/cancelled) unless explicitly linked to a current task.
+- **Progress indicator hidden during `verifying` state** — `renderCurrentPosition` only checked `status === 'in_progress'`, but tasks transition to `verifying` within ~1s of spawning and stay there for the full session duration. Fixed to also match `verifying` (shows ⟳ icon) and `running_tests` (shows 🧪 icon).
+
 ## v8.24.1 — fix(autonomous): ExecutionBackend config fallback for opencode PRD runs
 
 ### Added

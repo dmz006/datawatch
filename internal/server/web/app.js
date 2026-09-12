@@ -15501,8 +15501,13 @@ function renderCurrentPosition(prd) {
     const st = stories[si];
     const tasks = st.tasks || [];
     for (let ti = 0; ti < tasks.length; ti++) {
-      if (tasks[ti].status === 'in_progress') {
-        return `<div style="font-size:10px;color:var(--accent);margin-top:2px;">▶ Story ${si+1}: ${escHtml(st.title||'?')} · Task ${ti+1}: ${escHtml(tasks[ti].title||'?')}</div>`;
+      // in_progress = session spawned; verifying = session done, verifier running;
+      // running_tests = quality-gate tests running. All three are "active" states.
+      const tst = tasks[ti].status || '';
+      if (tst === 'in_progress' || tst === 'verifying' || tst === 'running_tests') {
+        const stateIcon = tst === 'verifying' ? '⟳' : tst === 'running_tests' ? '🧪' : '▶';
+        const stateLabel = tst === 'verifying' ? ' (verifying)' : tst === 'running_tests' ? ' (testing)' : '';
+        return `<div style="font-size:10px;color:var(--accent);margin-top:2px;">${stateIcon} Story ${si+1}: ${escHtml(st.title||'?')} · Task ${ti+1}: ${escHtml(tasks[ti].title||'?')}${stateLabel}</div>`;
       }
     }
   }
@@ -16647,13 +16652,25 @@ window._loadPRDActiveSessionCard = function(prd) {
     const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
     // v8.20.9 — also match by task.session_id so pre-v8.20.8 sessions (which
     // lack prd_id) are still found if their ID appears in a task record.
+    // Build set of session IDs referenced by the *current* task records only.
+    // prd.stories (not prd.story) is the correct field name from the API.
     const taskSessionIds = new Set();
-    (prd.story || []).forEach(story => {
+    (prd.stories || []).forEach(story => {
       (story.tasks || []).forEach(task => { if (task.session_id) taskSessionIds.add(task.session_id); });
     });
+    // Only show sessions that are non-terminal (running/waiting/verifying)
+    // OR are referenced by a current task record. Stale killed/failed sessions
+    // from previous decompositions share the same prd_id but have old task IDs
+    // and should not pollute the active session card.
+    const terminalStates = new Set(['killed','complete','failed','cancelled']);
     const matches = list.filter(s => {
       const fid = s.full_id || s.id;
-      return (s.prd_id || s.parent_prd_id) === prd.id || taskSessionIds.has(fid);
+      const matchesPrd = (s.prd_id || s.parent_prd_id) === prd.id;
+      const matchesTask = taskSessionIds.has(fid);
+      if (!matchesPrd && !matchesTask) return false;
+      // Exclude terminal sessions unless they are a current task session
+      if (terminalStates.has(s.state) && !matchesTask) return false;
+      return true;
     });
     if (matches.length === 0) {
       // GATE alpha.36 (operator 2026-05-10): no session yet — surface
