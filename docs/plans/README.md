@@ -40,9 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-12
 
-Latest release: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements — spec expand (show full / collapse), status graphs (per-story progress bars + async CPU%/RSS from observer), cancel button always visible in toolbar, "View Sessions" in ⋯ Edit dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
+Latest release: **v8.25.1** (2026-09-12). fix(autonomous): configurable planning timeout + dispatcher per-LLM timeout. New `autonomous.planning_timeout_seconds` config field overrides the hardcoded effort-scaled decompose context (was 5 min normal / 15 min high / 2 min quick), preventing PRD decompose SSE timeouts on large Ollama plans. Dispatcher `callOnce` now applies per-LLM `timeout_seconds` via `ResolveTimeout` (was computed but unused).
 
-Previous: **v8.24.2** (2026-09-12). fix(autonomous/pwa): story status transitions + stale session card + progress indicator. Includes v8.24.0 (PRD model field propagation + cancel kills task sessions) and v8.24.1 (ExecutionBackend config fallback for opencode PRD runs).
+Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements — spec expand (show full / collapse), status graphs (per-story progress bars + async CPU%/RSS from observer), cancel button always visible in toolbar, "View Sessions" in ⋯ Edit dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
 
 | Bucket | Count | Notes |
 |---|---|---|

@@ -11591,6 +11591,7 @@ const GENERAL_CONFIG_FIELDS = [
     // change.
     { key: 'autonomous.planning_backend', label: 'Planning backend', type: 'llm_backend', pairedModelKey: 'autonomous.planning_model' },
     { key: 'autonomous.planning_model', label: 'Planning model', type: 'llm_model', backendKey: 'autonomous.planning_backend' },
+    { key: 'autonomous.planning_timeout_seconds', label: 'Planning timeout (sec, 0=effort default)', type: 'number', placeholder: '0' },
     { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },

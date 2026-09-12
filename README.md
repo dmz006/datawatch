@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.25.0](CHANGELOG.md) (2026-09-12)** — Automata UI: spec expand in detail header (no more hard truncation), status graphs showing per-story progress bars + CPU/RSS during runs, cancel button visible in all running states, "View Sessions" in action dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
+**[v8.25.1](CHANGELOG.md) (2026-09-12)** — Fix: PRD decompose SSE no longer times out on large plans — new `autonomous.planning_timeout_seconds` config overrides the hardcoded effort-scaled limit. Dispatcher per-LLM `timeout_seconds` now actually enforced.
 
 **[v8.24.2](CHANGELOG.md) (2026-09-12)** — Fix: story status transitions (in_progress/completed) now set by executor; PRD active-session card no longer shows stale killed/failed sessions; progress indicator now shows during `verifying` state.
 

@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.1 — fix(autonomous): configurable planning timeout + dispatcher per-LLM timeout
+
+### Fixed
+- **PRD decompose SSE timeout** — `decomposeFn` applied a hardcoded effort-scaled context (5 min normal, 15 min high/max, 2 min quick/low) that cancelled the Ollama/OpenWebUI HTTP call before large PRDs finished planning. Operator can now set `autonomous.planning_timeout_seconds` to override the default.
+- **Dispatcher per-LLM timeout never applied** — `ResolveTimeout(llm)` was computed but unused in `callOnce`. Per-LLM `timeout_seconds` now enforces the configured deadline.
+
+### Added
+- **`autonomous.planning_timeout_seconds` config field** — Configurable via YAML (`autonomous.planning_timeout_seconds`), REST `PUT /api/autonomous/config` (`planning_timeout_seconds`), and REST `PUT /api/config` (key `autonomous.planning_timeout_seconds`). Overrides the effort-scaled decompose timeout when set. Returned by `GET /api/config` and `GET /api/autonomous/config`.
+
 ## v8.25.0 — feat(automata/pwa): automata UI improvements — bug fixes, status graphs, spec expand, action bar
 
 ### Fixed
