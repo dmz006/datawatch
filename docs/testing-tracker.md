@@ -199,3 +199,19 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | PWA task row — Retry button visible for failed task in running PRD | No | No | — | Live: running PRD + failed task; verify ↺ Retry button |
 | PWA task row — Retry button absent for completed task | No | No | — | Confirm no ↺ button on status=completed rows |
 | PWA Retry button — click calls reset_task and shows toast | No | No | — | Click ↺; verify toast "Task reset"; verify task row refreshes |
+
+## v8.25.3 — GPU Observer Probes: tegrastats + nvidia-smi (Shape B)
+
+Added in v8.25.3. `internal/observer/gpu_tegrastats.go` and `internal/observer/gpu_smi.go` wire GPU utilization, temperature, memory, and power into `snap.GPU` via `Collector.SetGPUFn`. `cmd/datawatch-stats/main.go` selects tegrastats first, falls back to nvidia-smi. Handles both classic Jetson format (`GR3D_FREQ`) and NVIDIA Thor/GB10 SoC format (no GR3D_FREQ, lowercase `gpu@`, `VDD_GPU` power field).
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| `NewTegraStatsProbe` — returns nil when `tegrastats` not in PATH | No | No | — | No unit test; exits cleanly via `exec.LookPath`. Live: run on host without tegrastats, confirm probe nil. |
+| `parseTegraStatsLine` — classic Jetson format (`GR3D_FREQ X%`) | No | No | — | Unit test needed: input `"RAM 1024/4096MB GR3D_FREQ 45%@1300 GPU@65.5C"` → util_pct=45, temp_c=65.5. |
+| `parseTegraStatsLine` — Thor format (no GR3D_FREQ, lowercase `gpu@`, `VDD_GPU`) | No | No | — | Unit test needed: Thor line `"RAM 69178/125772MB ... gpu@35.25C ... VDD_GPU 2376mW/2376mW"` → util_pct=0, temp_c=35.25, power_w=2.376. |
+| `parseTegraStatsLine` — returns nil when no GPU temp found | No | No | — | Unit test needed: line with no `gpu@` field → nil (line not a valid GPU stats line). |
+| `parseSMIOutput` — `[N/A]` fields become 0 (Tegra unified memory) | No | No | — | Unit test needed: `"0, Tegra GPU, [N/A], [N/A], [N/A], 45.0"` → mem_used=0, mem_total=0, temp_c=45.0. |
+| `parseSMIOutput` — discrete GPU values | No | No | — | Unit test needed: `"0, RTX 4090, 85, 24576, 4096, 72.0"` → util_pct=85, temp_c=72.0. |
+| `Collector.SetGPUFn` — wired into `collect()` before v1 aliases | No | No | — | Code inspection of `internal/observer/collector.go`; `snap.GPU` populated when `gpuFn != nil`. Unit test needed. |
+| tegrastats selected over nvidia-smi when both present | No | No | — | Code inspection of `cmd/datawatch-stats/main.go` if/else if block. Live: confirm tegrastats wins on host with both. |
+| **LIVE** Thor tegrastats → `snap.GPU` populated | No | **Yes** | `compute_node_detail("datawatch")` via MCP: `gpu:[{name:"Tegra GPU", vendor:"nvidia", util_pct:0, mem_used_bytes:72524759040, mem_total_bytes:131881500672, power_w:2.376, temp_c:35.187}]` | Confirmed 2026-09-12 on NVIDIA Thor GB10 SoC. Required case-insensitive `(?i)gpu@` regex fix. |
