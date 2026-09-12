@@ -3817,38 +3817,36 @@ function renderSessionStats(sessionId) {
   if (!area || !sessionId) return;
   area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('loading')||'Loading…')}</div>`;
   const sess = state.sessions.find(s => s.full_id === sessionId);
-  apiFetch('/api/observer/envelopes').then(d => {
-    if (state.activeSession !== sessionId || (state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status')) return;
-    const envelopes = (d && d.envelopes) || [];
-    let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
-    let labelHint = t('session_stats_process_title') || 'Process Stats';
-    if (!env && sess && sess.backend_family) {
-      env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
-      if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
-    }
-    renderSessionStatsInner(area, env, labelHint, sessionId, sess);
-  }).catch(() => {
-    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('session_detail_stats_no_data')||'No process stats yet — observer plugin may be off, or the next 5 s sample hasn’t arrived. Enable observer.plugin_enabled to populate.')}</div>`;
-  });
+  const _fetchStatsOnce = () => {
+    const cnRef = sess && sess.compute_node_ref;
+    const p1 = apiFetch(‘/api/observer/envelopes’);
+    const p2 = cnRef
+      ? apiFetch(‘/api/compute/nodes/’ + encodeURIComponent(cnRef) + ‘/detail’).catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([p1, p2]).then(([d, cnDetail]) => {
+      if (state.activeSession !== sessionId || (state.activeOutputTab !== ‘stats’ && state.activeOutputTab !== ‘status’)) return;
+      const envelopes = (d && d.envelopes) || [];
+      let env = envelopes.find(e => e.kind === ‘session’ && e.id === ‘session:’ + sessionId);
+      let labelHint = t(‘session_stats_process_title’) || ‘Process Stats’;
+      if (!env && sess && sess.backend_family) {
+        env = envelopes.find(e => e.kind === ‘backend’ && (e.id === ‘backend:’ + sess.backend_family || e.id === ‘backend:’ + sess.backend_family + ‘-docker’));
+        if (env) labelHint = (t(‘session_stats_backend_title’) || ‘Backend Stats’) + ‘ — ‘ + env.label;
+      }
+      renderSessionStatsInner(area, env, labelHint, sessionId, sess, cnDetail);
+    }).catch(() => {
+      area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t(‘session_detail_stats_no_data’)||’No process stats yet — observer plugin may be off, or the next 5 s sample hasn\’t arrived. Enable observer.plugin_enabled to populate.’)}</div>`;
+    });
+  };
+  _fetchStatsOnce();
   // Schedule a refresh every 5 s while the tab stays open.
   if (state._statsTabPoll) clearInterval(state._statsTabPoll);
   state._statsTabPoll = setInterval(() => {
-    if ((state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status') || state.activeSession !== sessionId) {
+    if ((state.activeOutputTab !== ‘stats’ && state.activeOutputTab !== ‘status’) || state.activeSession !== sessionId) {
       clearInterval(state._statsTabPoll);
       state._statsTabPoll = null;
       return;
     }
-    apiFetch('/api/observer/envelopes').then(d => {
-      if (state.activeSession !== sessionId || (state.activeOutputTab !== 'stats' && state.activeOutputTab !== 'status')) return;
-      const envelopes = (d && d.envelopes) || [];
-      let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
-      let labelHint = t('session_stats_process_title') || 'Process Stats';
-      if (!env && sess && sess.backend_family) {
-        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
-        if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
-      }
-      renderSessionStatsInner(area, env, labelHint, sessionId, sess);
-    }).catch(() => {});
+    _fetchStatsOnce();
   }, 5000);
 }
 
@@ -3878,7 +3876,7 @@ function _sparkline(values, width = 80, height = 20, color = 'var(--accent2)') {
   return `<svg width="${width}" height="${height}" style="vertical-align:middle;"><polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts}"/></svg>`;
 }
 
-function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
+function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetail) {
   const fmtBytes = b => {
     if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
     if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
@@ -3943,14 +3941,61 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
   // ── COMPUTE NODE card (conditional on sess.compute_node_ref) ────────────
   let computeCard = '';
   if (sess && sess.compute_node_ref) {
-    const cn = escHtml(sess.compute_node_ref);
-    const escCN = escHtml(JSON.stringify(sess.compute_node_ref));
-    let gpuRow = '';
-    if (env && env.gpu_pct > 0) gpuRow += row('GPU', env.gpu_pct.toFixed(1)+'%');
-    if (env && env.gpu_mem_bytes > 0) gpuRow += row('GPU Mem', fmtBytes(env.gpu_mem_bytes));
-    computeCard = card(t('stats_card_compute_node')||'Compute Node', `
-      ${row(t('stats_field_name')||'Name', sess.compute_node_ref)}
-      ${gpuRow}
+    const cnHost = (cnDetail && cnDetail.host) || null;
+    const cnGPUs = (cnDetail && cnDetail.gpu) || [];
+    const cnEnvs = (cnDetail && cnDetail.envelopes) || [];
+    // Find ollama process envelope in peer snapshot
+    const ollamaEnv = cnEnvs.find(e =>
+      (e.label || '').toLowerCase().includes('ollama') ||
+      (e.id || '').toLowerCase().includes('ollama') ||
+      (e.kind === 'backend' && (e.id || '').toLowerCase().includes('ollama'))
+    );
+    let nodeRows = '';
+    if (cnHost) {
+      if (cnHost.cpu_pct > 0) {
+        const cpuHist = _statsPushHist(sessionId, 'cn_cpu', cnHost.cpu_pct);
+        const cpuColor = cnHost.cpu_pct >= 90 ? 'var(--error)' : cnHost.cpu_pct >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+        nodeRows += row('Node CPU', cnHost.cpu_pct.toFixed(1)+'%', _sparkline(cpuHist, 60, 14, cpuColor));
+      }
+      if (cnHost.mem_used_bytes && cnHost.mem_total_bytes) {
+        const memPct = Math.round(cnHost.mem_used_bytes / cnHost.mem_total_bytes * 100);
+        nodeRows += row('Node Mem', fmtBytes(cnHost.mem_used_bytes)+' / '+fmtBytes(cnHost.mem_total_bytes)+' ('+memPct+'%)');
+      }
+    }
+    let gpuRows = '';
+    cnGPUs.forEach((g, i) => {
+      const gpuLabel = cnGPUs.length > 1 ? `GPU ${i}` : 'GPU';
+      if (g.util_pct > 0) {
+        const uHist = _statsPushHist(sessionId, 'cn_gpu_util_'+i, g.util_pct);
+        gpuRows += row(gpuLabel+' util', g.util_pct.toFixed(0)+'%', _sparkline(uHist, 60, 14, 'var(--accent2,#60a5fa)'));
+      }
+      if (g.temp_c) {
+        const tHist = _statsPushHist(sessionId, 'cn_gpu_temp_'+i, g.temp_c);
+        const tColor = g.temp_c >= 80 ? 'var(--error)' : g.temp_c >= 60 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+        gpuRows += row(gpuLabel+' temp', g.temp_c.toFixed(1)+'°C', _sparkline(tHist, 60, 14, tColor));
+      }
+      if (g.power_w) gpuRows += row(gpuLabel+' power', g.power_w.toFixed(1)+' W');
+      if (g.mem_used_bytes && g.mem_total_bytes) {
+        const gpuMemPct = Math.round(g.mem_used_bytes / g.mem_total_bytes * 100);
+        const mHist = _statsPushHist(sessionId, 'cn_gpu_mem_'+i, gpuMemPct);
+        gpuRows += row(gpuLabel+' VRAM', fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes)+' ('+gpuMemPct+'%)', _sparkline(mHist, 60, 14, 'rgba(96,165,250,0.8)'));
+      }
+    });
+    let ollamaRows = '';
+    if (ollamaEnv) {
+      if (ollamaEnv.cpu_pct > 0) {
+        const oh = _statsPushHist(sessionId, 'cn_ollama_cpu', ollamaEnv.cpu_pct);
+        ollamaRows += row('ollama CPU', ollamaEnv.cpu_pct.toFixed(1)+'%', _sparkline(oh, 60, 14, 'var(--accent,#a855f7)'));
+      }
+      if (ollamaEnv.rss_bytes > 0) ollamaRows += row('ollama RSS', fmtBytes(ollamaEnv.rss_bytes));
+    }
+    const hasData = nodeRows || gpuRows || ollamaRows;
+    const noDataMsg = hasData ? '' : `<div style="color:var(--text2);font-size:12px;">No live data — observer peer not pushing or compute node has no monitoring endpoint configured.</div>`;
+    computeCard = card(`${t('stats_card_compute_node')||'Compute Node'} — ${sess.compute_node_ref}`, `
+      ${noDataMsg}
+      ${nodeRows}
+      ${gpuRows ? `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.55;margin:6px 0 2px;">${cnGPUs.length > 0 ? escHtml(cnGPUs[0].name || 'GPU') : 'GPU'}</div>${gpuRows}` : ''}
+      ${ollamaRows ? `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.55;margin:6px 0 2px;">Ollama</div>${ollamaRows}` : ''}
       <div style="margin-top:8px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_cn')||'Open Compute Node →')}</a></div>
     `);
   }
@@ -16803,15 +16848,25 @@ window._renderStatusGraphs = function(prd) {
       <span style="color:var(--text2);">${totalTasks} ${escHtml(t('automata_sg_tasks')||'tasks')}</span>
     </div>
     ${storyRows.join('') || `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_sg_no_stories')||'No stories yet — decomposition in progress…')}</div>`}
+    <div id="prdSgComputeResources" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;display:none;"></div>
   </div>`;
 
   // Kick off async compute enrichment (non-blocking).
   _loadStatusGraphsCompute(prd, slot);
+
+  // Live-refresh compute stats every 5s while slot is in the DOM.
+  if (window._prdSgComputeInterval) clearInterval(window._prdSgComputeInterval);
+  window._prdSgComputeInterval = setInterval(() => {
+    if (!document.getElementById('prdStatusGraphsSlot')) {
+      clearInterval(window._prdSgComputeInterval);
+      return;
+    }
+    _loadStatusGraphsCompute(prd, slot);
+  }, 5000);
 };
 
 window._loadStatusGraphsCompute = function(prd, slotEl) {
   if (!slotEl) return;
-  // Collect active task session IDs keyed by story index so we can match envelopes.
   const stories = prd.stories || [];
   const storySessionIds = stories.map(st => {
     const ids = new Set();
@@ -16819,35 +16874,146 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
     return ids;
   });
 
-  apiFetch('/api/observer/envelopes').then(env => {
-    if (!env || !Array.isArray(env.envelopes || env)) return;
-    const envList = env.envelopes || env;
-    // Map session_id → envelope metrics
-    const bySession = {};
-    envList.forEach(e => {
-      if (e.session_id) bySession[e.session_id] = e;
-    });
-    stories.forEach((st, idx) => {
-      if (storySessionIds[idx].size === 0) return;
-      const computeEl = slotEl.querySelector(`.prd-sg-compute[data-story-idx="${idx}"]`);
-      if (!computeEl) return;
-      // Aggregate CPU% and RSS across all task sessions for this story
-      let cpuSum = 0, rssSum = 0, count = 0;
-      storySessionIds[idx].forEach(sid => {
-        const e = bySession[sid];
-        if (!e) return;
-        if (typeof e.cpu_pct === 'number') { cpuSum += e.cpu_pct; count++; }
-        if (typeof e.rss_mb === 'number') rssSum += e.rss_mb;
+  // Find compute_node_ref from any active task session in the PRD.
+  let cnRef = null;
+  const allSessionIds = new Set();
+  storySessionIds.forEach(ids => ids.forEach(id => allSessionIds.add(id)));
+  if (allSessionIds.size > 0 && state.sessions) {
+    for (const sid of allSessionIds) {
+      const sess = state.sessions[sid];
+      if (sess && sess.compute_node_ref) { cnRef = sess.compute_node_ref; break; }
+    }
+  }
+
+  const p1 = apiFetch('/api/observer/envelopes').catch(() => null);
+  const p2 = cnRef
+    ? apiFetch('/api/compute/nodes/' + encodeURIComponent(cnRef) + '/detail').catch(() => null)
+    : Promise.resolve(null);
+
+  Promise.all([p1, p2]).then(([env, cnDetail]) => {
+    // Per-story CPU/RSS enrichment from local envelopes.
+    if (env) {
+      const envList = env.envelopes || (Array.isArray(env) ? env : []);
+      const bySession = {};
+      envList.forEach(e => { if (e.session_id) bySession[e.session_id] = e; });
+      stories.forEach((st, idx) => {
+        if (storySessionIds[idx].size === 0) return;
+        const computeEl = slotEl.querySelector(`.prd-sg-compute[data-story-idx="${idx}"]`);
+        if (!computeEl) return;
+        let cpuSum = 0, rssSum = 0, count = 0;
+        storySessionIds[idx].forEach(sid => {
+          const e = bySession[sid];
+          if (!e) return;
+          if (typeof e.cpu_pct === 'number') { cpuSum += e.cpu_pct; count++; }
+          if (typeof e.rss_mb === 'number') rssSum += e.rss_mb;
+        });
+        if (count === 0) return;
+        const avgCpu = Math.round(cpuSum / count);
+        const totalRss = Math.round(rssSum);
+        const parts = [];
+        if (avgCpu > 0) parts.push(`CPU ${avgCpu}%`);
+        if (totalRss > 0) parts.push(`${totalRss} MB`);
+        if (parts.length > 0) computeEl.textContent = parts.join(' · ');
       });
-      if (count === 0) return;
-      const avgCpu = Math.round(cpuSum / count);
-      const totalRss = Math.round(rssSum);
-      const parts = [];
-      if (avgCpu > 0) parts.push(`CPU ${avgCpu}%`);
-      if (totalRss > 0) parts.push(`${totalRss} MB`);
-      if (parts.length > 0) computeEl.textContent = parts.join(' · ');
+    }
+
+    // Compute node GPU/CPU card.
+    const cnDiv = slotEl.querySelector('#prdSgComputeResources');
+    if (!cnDiv) return;
+    if (!cnDetail) {
+      if (cnRef) {
+        cnDiv.style.display = '';
+        cnDiv.innerHTML = `<span style="font-size:11px;color:var(--text2);">Compute Node — ${escHtml(cnRef)}: no live data</span>`;
+      }
+      return;
+    }
+    cnDiv.style.display = '';
+    const fmtB = b => {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB';
+      return (b / 1024).toFixed(0) + ' KB';
+    };
+    const prdId = prd.id || 'prd';
+    let html = `<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Compute Node — ${escHtml(cnRef)}</div>`;
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;">';
+
+    // Host CPU chip.
+    if (cnDetail.host) {
+      const cpu = typeof cnDetail.host.cpu_pct === 'number' ? cnDetail.host.cpu_pct : 0;
+      _statsPushHist(prdId, 'prd_cn_cpu', cpu);
+      const hist = (window._sessionStatsHistory[prdId] || {})['prd_cn_cpu'] || [];
+      const cpuColor = cpu >= 90 ? 'var(--error,#ef4444)' : cpu >= 70 ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+      const memUsed = cnDetail.host.mem_used_bytes || 0;
+      const memTotal = cnDetail.host.mem_total_bytes || 0;
+      const memPct = memTotal > 0 ? Math.round(memUsed / memTotal * 100) : 0;
+      html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;">`;
+      html += `<span style="color:${cpuColor};">CPU ${Math.round(cpu)}%</span>`;
+      if (hist.length > 1) html += ` <span style="opacity:0.7;">${_sparkline(hist)}</span>`;
+      html += `</span>`;
+      if (memTotal > 0) {
+        const memColor = memPct >= 90 ? 'var(--error,#ef4444)' : memPct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+        html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;color:${memColor};">`;
+        html += `Mem ${fmtB(memUsed)}/${fmtB(memTotal)} (${memPct}%)</span>`;
+      }
+    }
+
+    // GPU chips.
+    (cnDetail.gpu || []).forEach((g, gi) => {
+      const util = typeof g.util_pct === 'number' ? g.util_pct : 0;
+      const temp = typeof g.temp_c === 'number' ? g.temp_c : 0;
+      const pw = typeof g.power_w === 'number' ? g.power_w : 0;
+      const vramUsed = g.mem_used_bytes || 0;
+      const vramTotal = g.mem_total_bytes || 0;
+      const vramPct = vramTotal > 0 ? Math.round(vramUsed / vramTotal * 100) : 0;
+      _statsPushHist(prdId, `prd_cn_gpu_util_${gi}`, util);
+      _statsPushHist(prdId, `prd_cn_gpu_temp_${gi}`, temp);
+      _statsPushHist(prdId, `prd_cn_gpu_mem_${gi}`, vramPct);
+      const utilHist = (window._sessionStatsHistory[prdId] || {})[`prd_cn_gpu_util_${gi}`] || [];
+      const tempHist = (window._sessionStatsHistory[prdId] || {})[`prd_cn_gpu_temp_${gi}`] || [];
+      const memHist  = (window._sessionStatsHistory[prdId] || {})[`prd_cn_gpu_mem_${gi}`] || [];
+      const tempColor = temp >= 80 ? 'var(--error,#ef4444)' : temp >= 60 ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+      const vramColor = vramPct >= 90 ? 'var(--error,#ef4444)' : vramPct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+      const gpuLabel = g.name ? escHtml(g.name) : `GPU ${gi}`;
+      html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--accent,#3b82f6)33;border-radius:4px;padding:2px 6px;white-space:nowrap;">`;
+      html += `<span style="color:var(--accent,#3b82f6);font-weight:600;">${gpuLabel}</span> `;
+      html += `<span>util ${Math.round(util)}%</span>`;
+      if (utilHist.length > 1) html += ` ${_sparkline(utilHist)}`;
+      if (temp > 0) { html += ` <span style="color:${tempColor};">${temp.toFixed(1)}°C</span>`; if (tempHist.length > 1) html += ` ${_sparkline(tempHist)}`; }
+      if (pw > 0) html += ` <span style="color:var(--text2);">${pw.toFixed(1)}W</span>`;
+      html += `</span>`;
+      if (vramTotal > 0) {
+        html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--accent,#3b82f6)22;border-radius:4px;padding:2px 6px;white-space:nowrap;color:${vramColor};">`;
+        html += `VRAM ${fmtB(vramUsed)}/${fmtB(vramTotal)} (${vramPct}%)`;
+        if (memHist.length > 1) html += ` ${_sparkline(memHist)}`;
+        html += `</span>`;
+      }
     });
-  }).catch(() => {}); // Envelopes are best-effort; silently ignore failures.
+
+    // ollama process from envelopes (match by cnRef label or ollama in id).
+    if (env) {
+      const envList = env.envelopes || (Array.isArray(env) ? env : []);
+      const ollamaEnv = envList.find(e =>
+        (e.label && e.label.toLowerCase().includes('ollama')) ||
+        (e.process_id && String(e.process_id).toLowerCase().includes('ollama'))
+      );
+      if (ollamaEnv) {
+        const oCpu = typeof ollamaEnv.cpu_pct === 'number' ? ollamaEnv.cpu_pct : 0;
+        const oRss = typeof ollamaEnv.rss_mb === 'number' ? ollamaEnv.rss_mb : 0;
+        _statsPushHist(prdId, 'prd_cn_ollama_cpu', oCpu);
+        const oHist = (window._sessionStatsHistory[prdId] || {})['prd_cn_ollama_cpu'] || [];
+        if (oCpu > 0 || oRss > 0) {
+          html += `<span style="background:var(--bg3,var(--bg2));border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;color:var(--text2);">`;
+          html += `ollama`;
+          if (oCpu > 0) { html += ` CPU ${Math.round(oCpu)}%`; if (oHist.length > 1) html += ` ${_sparkline(oHist)}`; }
+          if (oRss > 0) html += ` RSS ${oRss.toFixed(0)} MB`;
+          html += `</span>`;
+        }
+      }
+    }
+
+    html += '</div>';
+    cnDiv.innerHTML = html;
+  });
 };
 
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
@@ -17825,6 +17991,8 @@ function loadStatsPanel() {
   loadChannelBridge();
   // BL362 — per-session bridge diagnostics (ports + live probes).
   loadChannelDiagnostics();
+  // Live peer resource overview (GPU/CPU per attached peer).
+  loadPeerResourceOverview();
 }
 
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
@@ -17897,14 +18065,98 @@ function loadChannelDiagnostics() {
       });
     }
     if (Array.isArray(d.hints) && d.hints.length) {
-      html += '<div style="margin-top:6px;color:var(--warning);font-size:11px;">Hints:</div>';
+      html += `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--warning);font-size:11px;font-weight:600;list-style:none;display:flex;align-items:center;gap:4px;"><span>⚠ ${d.hints.length} hint${d.hints.length>1?'s':''}</span></summary>`;
       d.hints.forEach(h => {
-        html += `<div style="opacity:0.85;font-size:11px;">• ${escHtml(h)}</div>`;
+        html += `<div style="opacity:0.85;font-size:11px;padding:2px 0 0 12px;">• ${escHtml(h)}</div>`;
       });
+      html += '</details>';
     }
     el.innerHTML = html;
   }).catch(() => { el.textContent = 'unavailable'; });
 }
+
+// Toggle helper for collapsible Observatory sections.
+function _togObsSection(bodyId, chevronId) {
+  const body = document.getElementById(bodyId);
+  const chev = document.getElementById(chevronId);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (chev) chev.style.transform = open ? '' : 'rotate(90deg)';
+}
+window._togObsSection = _togObsSection;
+
+// Live peer resource overview: fetches peer list then snapshots each peer in
+// parallel, rendering GPU temp/power/mem and host CPU at a glance.
+function loadPeerResourceOverview() {
+  const el = document.getElementById('peerResourceList');
+  if (!el) return;
+  apiFetch('/api/observer/peers').then(data => {
+    const peers = (data && data.peers) || [];
+    if (!peers.length) {
+      el.innerHTML = '<span style="opacity:0.6;">no peers registered</span>';
+      return;
+    }
+    // Fetch snapshots in parallel; tolerate individual failures.
+    Promise.all(peers.map(p =>
+      apiFetch('/api/observer/peers/' + encodeURIComponent(p.name) + '/stats')
+        .then(snap => ({ peer: p, snap }))
+        .catch(() => ({ peer: p, snap: null }))
+    )).then(results => {
+      const fmtBytes = b => {
+        if (!b) return '—';
+        if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
+        if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
+        if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
+        return b+' B';
+      };
+      const now = Date.now();
+      const rows = results.map(({ peer, snap }) => {
+        const lastPush = peer.last_push_at ? new Date(peer.last_push_at).getTime() : 0;
+        const ageMs = lastPush ? (now - lastPush) : Infinity;
+        const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
+        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:5px;flex-shrink:0;"></span>`;
+        const host = (snap && snap.host) || null;
+        const gpus = (snap && snap.gpu) || [];
+        // CPU/mem from host
+        let hostChips = '';
+        if (host) {
+          if (host.cpu_pct > 0) hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">CPU ${host.cpu_pct.toFixed(0)}%</span>`;
+          if (host.mem_used_bytes && host.mem_total_bytes) {
+            const memPct = Math.round(host.mem_used_bytes / host.mem_total_bytes * 100);
+            hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">Mem ${fmtBytes(host.mem_used_bytes)} / ${fmtBytes(host.mem_total_bytes)} (${memPct}%)</span>`;
+          }
+        }
+        // GPU chips
+        let gpuChips = '';
+        gpus.forEach(g => {
+          if (g.temp_c) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">GPU ${g.temp_c.toFixed(1)}°C</span>`;
+          if (g.power_w) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">${g.power_w.toFixed(1)} W</span>`;
+          if (g.mem_used_bytes && g.mem_total_bytes) {
+            const gpuPct = Math.round(g.mem_used_bytes / g.mem_total_bytes * 100);
+            gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">VRAM ${fmtBytes(g.mem_used_bytes)} (${gpuPct}%)</span>`;
+          }
+          if (g.util_pct > 0) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">util ${g.util_pct.toFixed(0)}%</span>`;
+        });
+        const noData = !hostChips && !gpuChips;
+        const chips = noData ? '<span style="opacity:0.5;font-size:10px;">no snapshot</span>' : (hostChips + gpuChips);
+        const shapeTag = `<span style="opacity:0.45;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 3px;margin-right:4px;">${escHtml((peer.shape||'?').toLowerCase())}</span>`;
+        return `<div style="padding:4px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;min-width:90px;flex-shrink:0;">${dot}${shapeTag}<strong style="font-size:12px;">${escHtml(peer.name)}</strong></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;">${chips}</div>
+        </div>`;
+      }).join('');
+      el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
+    });
+  }).catch(() => { el.innerHTML = '<span style="opacity:0.6;">unavailable</span>'; });
+}
+window.loadPeerResourceOverview = loadPeerResourceOverview;
+
+// Also refresh peer resource overview on the 8s observer interval.
+setInterval(() => {
+  if (state.activeView !== 'observer') return;
+  if (document.getElementById('peerResourceList')) loadPeerResourceOverview();
+}, 8000);
 
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
 // Shows configured / capability / kprobe-loaded with honest messages
@@ -21144,6 +21396,14 @@ function renderObserverView() {
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
             <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
+          <!-- Live peer resource summary — GPU/CPU/mem for each attached peer -->
+          <div id="peerResourceBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+              <span>Peer Resources</span>
+              <span class="live-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
+            </div>
+            <div id="peerResourceList" style="font-size:12px;padding:0 12px 6px;color:var(--text2);">Loading…</div>
+          </div>
           <div id="observerPeersBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
               <span>Federated peers</span>
@@ -21158,19 +21418,25 @@ function renderObserverView() {
             <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
           </div>
           <div id="channelBridgeBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="_togObsSection('channelBridgeBody','channelBridgeChevron')">
+              <span id="channelBridgeChevron" style="font-size:9px;transition:transform 0.15s;">▶</span>
               <span>MCP channel bridge</span>
-              <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">help</a>
+              <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;" onclick="event.stopPropagation()">help</a>
             </div>
-            <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="channelBridgeBody" style="display:none;">
+              <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
           </div>
           <!-- BL362 — Channel bridge diagnostics: per-session ports + live probes -->
           <div id="channelDiagBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="_togObsSection('channelDiagBody','channelDiagChevron')">
+              <span id="channelDiagChevron" style="font-size:9px;transition:transform 0.15s;">▶</span>
               <span>Channel bridge diagnostics</span>
-              <button onclick="loadChannelDiagnostics()" style="font-size:10px;padding:1px 6px;background:var(--btn-bg,var(--surface2));border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2);">refresh</button>
+              <button onclick="event.stopPropagation();loadChannelDiagnostics()" style="font-size:10px;padding:1px 6px;background:var(--btn-bg,var(--surface2));border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2);">refresh</button>
             </div>
-            <div id="channelDiagStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="channelDiagBody" style="display:none;">
+              <div id="channelDiagStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
           </div>
           <!-- BL241 — Communication backends live status -->
           <div id="commBackendsBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
