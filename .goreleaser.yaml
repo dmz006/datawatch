@@ -25,6 +25,20 @@ builds:
       - goos: windows
         goarch: arm64
 
+  - id: datawatch-stats
+    main: ./cmd/datawatch-stats/
+    binary: datawatch-stats
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
   - id: datawatch-channel
     main: ./cmd/datawatch-channel/
     binary: datawatch-channel

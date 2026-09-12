@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.2 — fix(ci): add datawatch-stats to goreleaser for linux/darwin arm64+amd64
+
+### Added
+- **`datawatch-stats` goreleaser build** — Shape B standalone observer peer binary now built and published for `linux/darwin × amd64/arm64` on every release. Previously only a Docker container (`stats-cluster`) was published (amd64-only). Enables `install/install-stats.sh` to download a prebuilt binary on arm64 hosts (e.g. `aarch64` servers).
+- **`install/install-stats.sh`** — new installer for Shape B observer peers. Downloads the correct arch binary from the GitHub release, installs to `~/.local/bin/datawatch-stats`, and optionally sets up a systemd user (or system) service pointed at a parent datawatch instance.
+
 ## v8.25.1 — fix(autonomous): configurable planning timeout + dispatcher per-LLM timeout
 
 ### Fixed
