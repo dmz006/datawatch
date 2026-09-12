@@ -38,11 +38,11 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-09-10
+## Current state — 2026-09-12
 
-Latest release: **v8.23.0** (2026-09-10). feat(autonomous): PRD task session link, error panel, verification summary, and Retry button in PWA task rows. New `POST /api/autonomous/prds/{id}/reset_task` endpoint + `autonomous_prd_reset_task` MCP tool + `autonomous reset-task` comm command to reset failed/blocked tasks without cancelling the whole PRD.
+Latest release: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements — spec expand (show full / collapse), status graphs (per-story progress bars + async CPU%/RSS from observer), cancel button always visible in toolbar, "View Sessions" in ⋯ Edit dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
 
-Previous: **v8.22.0** (2026-09-10). feat(web-search): SearXNG web search MCP tool injection for opencode and goose sessions. `web_search.enabled`+`url` config injects `web_search` tool and `web-search-guidance` skill into agent sessions. New `datawatch mcp-search` stdio sub-server, Monitor tab card, REST stats endpoint, MCP `web_search_stats` tool.
+Previous: **v8.24.2** (2026-09-12). fix(autonomous/pwa): story status transitions + stale session card + progress indicator. Includes v8.24.0 (PRD model field propagation + cancel kills task sessions) and v8.24.1 (ExecutionBackend config fallback for opencode PRD runs).
 
 | Bucket | Count | Notes |
 |---|---|---|
