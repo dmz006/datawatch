@@ -722,6 +722,22 @@ The following items are excluded from automated runs. Gaps are documented, not h
 
 ---
 
+## T44 — v8.25.0 Automata UI improvements (BUG-A, BUG-B, spec expand, status graphs, cancel, View Sessions)
+
+| T-Sprint | Story ID | Description | Tags | Status | Notes |
+|---|---|---|---|---|---|
+| T44 | TS-671 | PWA: automata list "Stories & tasks" task click does not collapse panel (BUG-A) | surface:pwa feature:automata conflict:pwa | 📋 pending | Open automata list → expand "Stories & tasks" on a card → click a task row → panel must remain open |
+| T44 | TS-672 | PWA: automata detail Stories tab task expand works on first click (BUG-B) | surface:pwa feature:automata conflict:pwa | 📋 pending | Open automaton detail → Stories tab → click ▶ triangle on a task → must expand immediately without navigating away |
+| T44 | TS-673 | PWA: automata detail header spec expand — "show full" shows complete spec inline | surface:pwa feature:automata conflict:pwa | 📋 pending | Create automaton with spec > 280 chars → open detail → header shows truncated spec + "show full" link → click "show full" → full spec appears; "collapse" restores truncated view |
+| T44 | TS-674 | API: GET /api/autonomous/prds/{id} — stories field present and each story has status field (TS-700 regression guard) | surface:api feature:automata | ✅ ready | Covered by autonomous_story_status_test.go TS-700/TS-701; listed here for master-cookbook traceability |
+| T44 | TS-675 | PWA: automata detail header status graphs visible when status=running | surface:pwa feature:automata conflict:pwa | 📋 pending | Create + decompose + approve + run an automaton (requires LLM) → while running: header shows progress card with decompose indicator, story count, task count, per-story progress bars |
+| T44 | TS-676 | PWA: automata detail status graphs compute row populated when observer envelope present | surface:api feature:automata feature:compute | 📋 pending | Status graphs row shows CPU%/RSS for active story when GET /api/observer/envelopes returns matching session_id |
+| T44 | TS-677 | PWA: automata detail Cancel button visible in toolbar when status=running | surface:pwa feature:automata conflict:pwa | 📋 pending | While automaton is running: Cancel button must be visible in the persistent header toolbar (not only in the active session card) |
+| T44 | TS-678 | PWA: automata detail ⋯ Edit dropdown contains "View Sessions" item | surface:pwa feature:automata conflict:pwa | 📋 pending | Open any automaton detail → click ⋯ Edit → dropdown must contain "→ View Sessions" item |
+| T44 | TS-679 | Locale: all 8 new v8.25.0 keys present in all 5 bundles (TestLocales guard) | surface:unit feature:locale | ✅ ready | Covered by v5280_locales_test.go mustHave slice — automata_sg_*, automata_spec_*, automata_actions_view_sessions |
+
+---
+
 ## Bug Workflow
 
 When a test fails, follow this workflow. The runner does steps 1–2 automatically.
