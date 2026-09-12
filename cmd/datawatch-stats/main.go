@@ -170,6 +170,20 @@ func main() {
 		dcgm.Start(ctx)
 	}
 
+	// GPU probe: tegrastats (Jetson/Tegra) takes priority; falls back
+	// to nvidia-smi (discrete GPU hosts). Both nil-safe — returns nil
+	// when the tool isn't in PATH, and we skip SetGPUFn entirely so
+	// snap.GPU stays empty on hosts with no GPU tooling.
+	if tp := observer.NewTegraStatsProbe(5 * time.Second); tp != nil {
+		tp.Start(ctx)
+		col.SetGPUFn(tp.Latest)
+		fmt.Fprintln(os.Stderr, "[stats] GPU probe: tegrastats → snap.GPU")
+	} else if sp := observer.NewSMIProbe(5 * time.Second); sp != nil {
+		sp.Start(ctx)
+		col.SetGPUFn(sp.Latest)
+		fmt.Fprintln(os.Stderr, "[stats] GPU probe: nvidia-smi → snap.GPU")
+	}
+
 	// BL173 task 4 — k8s metrics-server scrape for Shape C. Nil when
 	// not running inside a pod (KUBERNETES_SERVICE_HOST unset).
 	if strings.ToUpper(*shape) == "C" {

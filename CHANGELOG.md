@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.3 — feat(observer): nvidia-smi and tegrastats GPU probes for Shape B peers
+
+### Added
+- **`internal/observer/gpu_smi.go`** — `SMIProbe`: background poller using `nvidia-smi --query-gpu=...` CSV output. Populates `snap.GPU[]` with util%, memory (MiB→bytes), and temperature for each GPU. Degrades cleanly when `nvidia-smi` is not in PATH (returns nil).
+- **`internal/observer/gpu_tegrastats.go`** — `TegraStatsProbe`: background poller using `tegrastats --interval 500` (killed by context timeout after first line). Handles two output formats: classic Jetson (GR3D_FREQ / GPU@T) and NVIDIA Thor/GB10 (no GR3D_FREQ / gpu@T / VDD_GPU power). Populates util%, unified memory (RAM field), temperature, and power_w.
+- **`SetGPUFn` on Collector** — pluggable `func() []GPU` hook wired into `collect()` before the v1 aliases; Shape A/B/C hosts with no GPU probe see `snap.GPU` as nil/absent (omitempty).
+- **`cmd/datawatch-stats/main.go`** — tegrastats probe started first (Jetson/Tegra priority), falls back to nvidia-smi on discrete-GPU hosts; logged at startup.
+
+### Notes
+- On NVIDIA Thor (GB10) unified-memory SoCs, `tegrastats` reports system RAM as the GPU memory pool (no discrete VRAM), GPU temperature from `gpu@T.TC`, power from `VDD_GPU XmW`, and GPU util% = 0 (GR3D_FREQ absent in Thor format).
+- CAP_BPF must be re-granted on any manually deployed binary (`sudo setcap cap_bpf+eip ~/.local/bin/datawatch-stats`); CI goreleaser builds are unaffected.
+
 ## v8.25.2 — fix(ci): add datawatch-stats to goreleaser for linux/darwin arm64+amd64
 
 ### Added

@@ -53,6 +53,10 @@ type Collector struct {
 	// BL180 Phase 1 — ollama runtime tap. Nil = disabled (no
 	// observer.ollama_tap.endpoint configured).
 	ollamaTap *OllamaTap
+
+	// gpuFn is an optional provider for snap.GPU. Wired in Shape B/C
+	// via SetGPUFn (nvidia-smi or tegrastats probe). Nil = no GPU data.
+	gpuFn func() []GPU
 }
 
 // NewCollector returns a Collector with defaults filled in.
@@ -80,6 +84,10 @@ func (c *Collector) SetBackendHealthFn(fn BackendHealthFn) { c.backendHealth = f
 // SetClusterNodesFn wires the Shape C k8s-metrics scraper output (or
 // any other source) into snap.Cluster.Nodes. nil clears.
 func (c *Collector) SetClusterNodesFn(fn ClusterNodesFn) { c.clusterNodes = fn }
+
+// SetGPUFn wires an external GPU probe (e.g. SMIProbe.Latest or
+// TegraStatsProbe.Latest) into snap.GPU. nil clears.
+func (c *Collector) SetGPUFn(fn func() []GPU) { c.gpuFn = fn }
 
 // Start kicks a background goroutine that collects on every tick
 // until Stop is called. Also runs one synchronous collection so
@@ -288,6 +296,10 @@ func (c *Collector) collect() *StatsResponse {
 		},
 		Envelopes:       envelopes,
 		SampledAtUnixMs: now.UnixMilli(),
+	}
+
+	if c.gpuFn != nil {
+		snap.GPU = c.gpuFn()
 	}
 
 	// v1 aliases so old clients still parse.

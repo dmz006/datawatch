@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-09-12
 
-Latest release: **v8.25.2** (2026-09-12). fix(autonomous): configurable planning timeout + dispatcher per-LLM timeout. New `autonomous.planning_timeout_seconds` config field overrides the hardcoded effort-scaled decompose context (was 5 min normal / 15 min high / 2 min quick), preventing PRD decompose SSE timeouts on large Ollama plans. Dispatcher `callOnce` now applies per-LLM `timeout_seconds` via `ResolveTimeout` (was computed but unused).
+Latest release: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GPU probes for Shape B peers. `SMIProbe` (nvidia-smi CSV) and `TegraStatsProbe` (tegrastats, handles both classic Jetson GR3D_FREQ and NVIDIA Thor gpu@T/VDD_GPU formats) now populate `snap.GPU[]` — temp, memory, power, util% — in the observer peer StatsResponse. `SetGPUFn` hook added to Collector; tegrastats takes priority on Jetson/Tegra hosts.
 
 Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements — spec expand (show full / collapse), status graphs (per-story progress bars + async CPU%/RSS from observer), cancel button always visible in toolbar, "View Sessions" in ⋯ Edit dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
 
