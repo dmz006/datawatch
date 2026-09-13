@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.25.7"
+var Version = "8.25.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -747,7 +747,11 @@ func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 	nodeOverride := false
 	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
 		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
-			url = n.Address
+			addr := n.Address
+			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+				addr = "http://" + addr
+			}
+			url = addr
 			nodeOverride = true
 		}
 	}
@@ -1108,7 +1112,11 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 	}
 	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
 		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
-			host = n.Address
+			addr := n.Address
+			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+				addr = "http://" + addr
+			}
+			host = addr
 		}
 	}
 	models, err := ollama.ListModels(host)
@@ -1172,7 +1180,11 @@ func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 	}
 	if nodeName := r.URL.Query().Get("node"); nodeName != "" && s.computeReg != nil {
 		if n, err := s.computeReg.Get(nodeName); err == nil && n != nil && n.Address != "" {
-			host = n.Address
+			addr := n.Address
+			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+				addr = "http://" + addr
+			}
+			host = addr
 		}
 	}
 	if ollamaModels, err := ollama.ListModels(host); err == nil {

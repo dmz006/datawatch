@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-13
 
-Latest release: **v8.25.7** (2026-09-13). fix(autonomous): defensive http:// scheme guard for compute node Ollama URLs — scheme-less node address (e.g. `127.0.0.1:53106`) no longer produces unparseable `baseURL` in opencode.json. Guard in both api.go and lsp.go. `"cannot be parsed as a URL"` added to SSE stall patterns for auto-kill. New PRD E2E test suite (6 tests: full lifecycle, approval gate, spawn error, multi-story, retry exhaustion, dependency order).
+Latest release: **v8.25.8** (2026-09-13). fix(compute): scheme normalization moved to storage layer — `Node.Validate()` now prepends `http://` to bare `host:port` addresses before persisting, covering all write paths (REST API, MCP, CLI, PWA, Android). `EnsureFromStatsPeer` also normalizes RemoteAddr on stats-peer push. Belt-and-suspenders guards added to the three `n.Address` read sites in api.go. 4 new registry normalization tests.
+
+Previous: **v8.25.7** (2026-09-13). fix(autonomous): defensive http:// scheme guard for compute node Ollama URLs — scheme-less node address (e.g. `127.0.0.1:53106`) no longer produces unparseable `baseURL` in opencode.json. Guard in both api.go and lsp.go. `"cannot be parsed as a URL"` added to SSE stall patterns for auto-kill. New PRD E2E test suite (6 tests: full lifecycle, approval gate, spawn error, multi-story, retry exhaustion, dependency order).
 
 Previous: **v8.25.6** (2026-09-13). fix(autonomous): memory checkpointing appended to every task spec — CHECKPOINT.md (file checkpoint, survives daemon restarts) + memory_remember MCP call (survives session restarts), both written every 5–10 min by the worker.
 

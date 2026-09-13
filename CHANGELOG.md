@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.8 — fix(compute): normalize http:// scheme at storage layer across all clients
+
+### Fixed
+- **Scheme normalization moved to storage layer** — `Node.Validate()` now calls `n.Normalize()` first, which prepends `http://` to any scheme-less `Address` before it reaches the registry. This means every write path (REST API `POST /api/compute/nodes`, `PUT /api/compute/nodes/:name`, MCP `compute_node_add`/`compute_node_update`, CLI `compute node add/update`, PWA compute node form, Android app) automatically normalizes the address — no per-client fix needed.
+- **`Registry.EnsureFromStatsPeer` normalizes `RemoteAddr`** — Stats-peer auto-create/refresh now normalizes `peerAddr` (always a bare `host:port` from `http.Request.RemoteAddr`) to `http://host:port` before comparing or storing. Previously all auto-created nodes from stats-peer pushes had scheme-less addresses in the registry.
+- **Three remaining `n.Address` consumers in `api.go` now guard scheme** — `handleOpenWebUIModels` (line ~750), `handleOllamaModels` (line ~1111), and `handleOpenCodeModels` Ollama section (line ~1175) each add a belt-and-suspenders `http://` guard when reading from the registry, protecting against pre-v8.25.8 nodes.json files that already have scheme-less addresses stored.
+
+### Added
+- **`normalizeAddress(addr string) string`** — package-private helper in `internal/compute/node.go`; exported logic via `Node.Normalize()`.
+- **4 new tests** in `internal/compute/registry_test.go`: `TestNormalizeAddress`, `TestNodeValidate_NormalizesAddress`, `TestRegistryAdd_NormalizesAddress`, `TestEnsureFromStatsPeer_NormalizesAddress`.
+
 ## v8.25.7 — fix(autonomous): defensive http:// scheme guard for compute node Ollama URLs
 
 ### Fixed

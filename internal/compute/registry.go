@@ -168,9 +168,10 @@ func (r *Registry) Delete(name string) error {
 // sensible defaults (kind=remote, max_concurrent_models=1, etc.).
 // Returns the existing or newly-created Node.
 //
-// peerAddr is the http.Request RemoteAddr (host:port form is OK; we
-// store as-is so operator can refine).
+// peerAddr is the http.Request RemoteAddr (host:port form is common);
+// it is normalized to carry an http:// scheme before storing.
 func (r *Registry) EnsureFromStatsPeer(peerName, peerAddr, shape string) (*Node, bool, error) {
+	peerAddr = normalizeAddress(peerAddr) // ensure http:// before compare/store
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if existing, ok := r.nodes[peerName]; ok {

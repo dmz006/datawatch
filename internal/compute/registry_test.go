@@ -145,9 +145,9 @@ func TestRegistryEnsureFromStatsPeer(t *testing.T) {
 	if created2 {
 		t.Fatalf("second peer push should not auto-create")
 	}
-	// Address change should refresh.
+	// Address change should refresh (normalized to http:// on store).
 	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.6:9001", "B")
-	if n3.Address != "10.0.0.6:9001" {
+	if n3.Address != "http://10.0.0.6:9001" {
 		t.Fatalf("address refresh: %s", n3.Address)
 	}
 	// v7.0.0-alpha.23: Shape C now flagged via AutoTag "shape:cluster"
@@ -205,6 +205,68 @@ func TestNodeAllowsConsumer(t *testing.T) {
 		if got := n.AllowsConsumer(tc.c); got != tc.want {
 			t.Errorf("case %d: AllowsConsumer(%q) = %v, want %v", i, tc.c, got, tc.want)
 		}
+	}
+}
+
+// TestNormalizeAddress covers the scheme-normalization helper added in v8.25.8.
+func TestNormalizeAddress(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"http://host:11434", "http://host:11434"},
+		{"https://host:11434", "https://host:11434"},
+		{"host:11434", "http://host:11434"},
+		{"127.0.0.1:53106", "http://127.0.0.1:53106"},
+		{"datawatch:11434", "http://datawatch:11434"},
+	}
+	for _, tc := range cases {
+		if got := normalizeAddress(tc.in); got != tc.want {
+			t.Errorf("normalizeAddress(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestNodeValidate_NormalizesAddress verifies that Validate mutates a
+// scheme-less Address to http:// so the stored node is always valid for
+// use as a URL base. This is the v8.25.8 regression guard.
+func TestNodeValidate_NormalizesAddress(t *testing.T) {
+	n := &Node{Name: "gpu-1", Kind: KindRemote, Address: "gpu-1:11434"}
+	if err := n.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if n.Address != "http://gpu-1:11434" {
+		t.Errorf("Address = %q, want http://gpu-1:11434", n.Address)
+	}
+}
+
+// TestRegistryAdd_NormalizesAddress verifies that Add normalizes a scheme-less
+// address before persisting so all downstream consumers receive a valid URL.
+func TestRegistryAdd_NormalizesAddress(t *testing.T) {
+	r := newTestRegistry(t)
+	n := &Node{Name: "gpu-1", Kind: KindRemote, Address: "gpu-1:11434"}
+	if err := r.Add(n); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	got, _ := r.Get("gpu-1")
+	if got.Address != "http://gpu-1:11434" {
+		t.Errorf("stored Address = %q, want http://gpu-1:11434", got.Address)
+	}
+}
+
+// TestEnsureFromStatsPeer_NormalizesAddress verifies that scheme-less RemoteAddr
+// strings from incoming stats-peer pushes are stored with http:// prefix.
+func TestEnsureFromStatsPeer_NormalizesAddress(t *testing.T) {
+	r := newTestRegistry(t)
+	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.5:9001", "B")
+	if err != nil {
+		t.Fatalf("EnsureFromStatsPeer: %v", err)
+	}
+	if n.Address != "http://10.0.0.5:9001" {
+		t.Errorf("Address = %q, want http://10.0.0.5:9001", n.Address)
+	}
+	// Update via second push — should also normalize.
+	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.6:9001", "B")
+	if n2.Address != "http://10.0.0.6:9001" {
+		t.Errorf("refreshed Address = %q, want http://10.0.0.6:9001", n2.Address)
 	}
 }
 

@@ -323,9 +323,28 @@ func (n *Node) WithAddress(addr string) *Node {
 	return &cp
 }
 
+// normalizeAddress ensures addr carries an http:// scheme. Bare "host:port"
+// strings — common from RemoteAddr, pasted Ollama addresses, and pre-v8.25.8
+// nodes.json files — become "http://host:port". HTTPS addresses are unchanged.
+func normalizeAddress(addr string) string {
+	if addr == "" || strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return addr
+	}
+	return "http://" + addr
+}
+
+// Normalize mutates n to canonicalize fields that tolerate common operator
+// mistakes: ensures Address has an http:// or https:// scheme when none is
+// present. Called by Validate so registry Add/Update always store clean values.
+func (n *Node) Normalize() {
+	n.Address = normalizeAddress(n.Address)
+}
+
 // Validate returns the first reason this Node is malformed, or nil.
+// Calls Normalize first so the caller receives a cleaned node on success.
 // Called by registry CRUD before persisting.
 func (n *Node) Validate() error {
+	n.Normalize()
 	if strings.TrimSpace(n.Name) == "" {
 		return errors.New("compute node: name required")
 	}
