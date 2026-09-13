@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.25.5"
+var Version = "8.25.6"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3916,6 +3916,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if req.RetryHint != "" {
 				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
 			}
+			// v8.25.6 — memory checkpointing: append checkpoint protocol to
+			// every task spec so the worker saves progress periodically.
+			// Two mechanisms run independently:
+			//   1. CHECKPOINT.md in the project dir — survives daemon restarts.
+			//   2. memory_remember MCP call — survives session restarts.
+			// Workers that don't support MCP tools still write the file.
+			spec += "\n\n---\n" +
+				"CHECKPOINT PROTOCOL (required every 5–10 minutes of work):\n" +
+				"1. Write/update CHECKPOINT.md in the working directory with:\n" +
+				"   - Timestamp, task title, steps completed, current step, steps remaining.\n" +
+				"2. If the memory_remember MCP tool is available, call it:\n" +
+				"   memory_remember(\"task checkpoint\", \"<title>: done=<X>, now=<Y>, remaining=<Z>\")\n" +
+				"These checkpoints let work resume from the last save point if this session is reset.\n" +
+				"---"
 			// BL366 — capture git HEAD SHA before the worker runs so the
 			// verifier can diff the actual change. Failure is non-fatal.
 			var preTaskSHA string

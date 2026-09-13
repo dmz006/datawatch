@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.6 — fix(autonomous): memory checkpointing injected into every task spec
+
+### Added
+- **Task memory checkpointing** — `autonomousSpawn` now appends a `CHECKPOINT PROTOCOL` section to every task spec before dispatching the worker session. Workers are instructed to, every 5–10 minutes: (1) write/update `CHECKPOINT.md` in the project directory with timestamp, task title, completed steps, current step, and remaining steps; (2) call `memory_remember` MCP tool if available with a compact progress summary. The file checkpoint survives daemon restarts; the MCP checkpoint survives session restarts. Both run independently so at least one succeeds regardless of backend.
+
 ## v8.25.5 — fix(autonomous): SSE stall detection, auto-retry, and PRD watchdog
 
 ### Added
