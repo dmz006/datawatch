@@ -58,16 +58,36 @@ builds:
         goarch: arm64
 
 archives:
-  - id: default
+  - id: datawatch
+    builds: [datawatch]
     format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "datawatch_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - CHANGELOG.md
       - docs/
+
+  - id: datawatch-stats
+    builds: [datawatch-stats]
+    format: tar.gz
+    name_template: "datawatch-stats_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - CHANGELOG.md
+
+  - id: datawatch-channel
+    builds: [datawatch-channel]
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "datawatch-channel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - CHANGELOG.md
 
 checksum:
   name_template: "checksums.txt"
