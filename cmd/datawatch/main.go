@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.25.4"
+var Version = "8.25.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -885,6 +885,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Declared here so the existing SetOnSessionEnd callback can
 	// reference it without an init-order tangle.
 	var f10PRHook func(sess *session.Session)
+
+	// autonomousSSEStallPatterns lists pane output fragments that indicate
+	// opencode has lost its Ollama SSE connection and will not self-terminate.
+	// Scanned every ~30s inside the autonomousVerify wait loop; on match the
+	// session is killed so the executor's retry path fires.
+	autonomousSSEStallPatterns := []string{
+		"SSE Timeout",
+		"SSE error",
+		"SSE connection",
+		"connection refused",
+		"dial tcp: lookup",
+		"context deadline exceeded",
+		"failed to connect to ollama",
+		"no such host",
+	}
+	_ = autonomousSSEStallPatterns // used inside autonomousVerify closure below
 
 	// Phase 4 follow-up (v5.26.67) — post-session diff callback for
 	// autonomous PRD task spawns. Declared here so onSessionEnd can
@@ -3997,12 +4013,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if task.SessionID != "" && mgr != nil {
 				tick := time.NewTicker(3 * time.Second)
 				defer tick.Stop()
+				var stallErr error
+				waitTick := 0
 			waitLoop:
 				for {
 					select {
 					case <-ctx.Done():
 						break waitLoop
 					case <-tick.C:
+						waitTick++
 						s, ok := mgr.GetSession(task.SessionID)
 						if !ok {
 							// Session not yet visible in the store; keep waiting.
@@ -4011,12 +4030,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
 							break waitLoop
 						}
+						// Every ~30s scan scrollback for SSE stall patterns that
+						// indicate opencode's Ollama connection timed out and the
+						// session will never self-terminate.
+						if waitTick%10 == 9 && s.TmuxSession != "" {
+							if sb, sbErr := mgr.CapturePaneScrollback(s.FullID, 300); sbErr == nil && sb != "" {
+								for _, pat := range autonomousSSEStallPatterns {
+									if strings.Contains(sb, pat) {
+										log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
+											task.SessionID, task.PRDID, task.ID, pat)
+										_ = mgr.Kill(task.SessionID)
+										stallErr = fmt.Errorf("opencode SSE stall detected (%q); retrying task", pat)
+										break waitLoop
+									}
+								}
+							}
+						}
 					}
 				}
 				// Best-effort kill so the tmux pane doesn't linger.
 				if s, ok := mgr.GetSession(task.SessionID); ok &&
 					s.State != session.StateKilled {
 					_ = mgr.Kill(task.SessionID)
+				}
+				if stallErr != nil {
+					return autonomouspkg.VerificationResult{}, stallErr
 				}
 			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
@@ -4201,6 +4239,54 @@ Reply with STRICT JSON:
 			})
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			// PRD/automata watchdog — scans every 60 s for autonomous task
+			// sessions that have been in a non-terminal state for >5 min and
+			// whose scrollback contains an SSE stall pattern. Kills the
+			// session so the verify wait loop's retry path can fire.
+			go func() {
+				watchTick := time.NewTicker(60 * time.Second)
+				defer watchTick.Stop()
+				for range watchTick.C {
+					if mgr == nil {
+						continue
+					}
+					prds := amgr.Store().ListPRDs()
+					for _, prd := range prds {
+						if prd.Status != autonomouspkg.PRDRunning {
+							continue
+						}
+						for _, story := range prd.Story {
+							for _, task := range story.Tasks {
+								if task.Status != autonomouspkg.TaskInProgress || task.SessionID == "" {
+									continue
+								}
+								s, ok := mgr.GetSession(task.SessionID)
+								if !ok || s.State == session.StateComplete ||
+									s.State == session.StateFailed ||
+									s.State == session.StateKilled {
+									continue
+								}
+								// Only probe sessions running >5 min.
+								if time.Since(s.CreatedAt) < 5*time.Minute {
+									continue
+								}
+								sb, sbErr := mgr.CapturePaneScrollback(s.FullID, 300)
+								if sbErr != nil || sb == "" {
+									continue
+								}
+								for _, pat := range autonomousSSEStallPatterns {
+									if strings.Contains(sb, pat) {
+										log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
+											prd.ID, task.ID, task.SessionID, pat)
+										_ = mgr.Kill(task.SessionID)
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+			}()
 			// BL221 (v6.2.0) Phase 3 — wire scan grader + rule editor via
 			// POST /api/ask loopback (Option C: same pattern as decomposeFn).
 			askFn := func(prompt string) (string, error) {

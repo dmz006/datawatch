@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.5 — fix(autonomous): SSE stall detection, auto-retry, and PRD watchdog
+
+### Added
+- **SSE stall detection in autonomous task wait loop** — `autonomousVerify` in `cmd/datawatch/main.go` now scans the spawned session's tmux scrollback every ~30 s for opencode SSE timeout patterns (`"SSE Timeout"`, `"SSE error"`, `"SSE connection"`, `"connection refused"`, `"context deadline exceeded"`, `"failed to connect to ollama"`, `"dial tcp: lookup"`, `"no such host"`). On match the session is killed and the executor's retry path fires automatically, so stalled opencode tasks recover without operator intervention.
+- **PRD/automata watchdog goroutine** — a background goroutine (60 s tick) scans all running PRDs for `in_progress` task sessions that have been alive >5 min and whose scrollback contains a stall pattern. Kills the session and logs at `[automata-watchdog]` level so the verify wait loop can retry.
+- **`Manager.CapturePaneScrollback(fullID, lines)`** — new public helper on `session.Manager` wrapping `tmux.CapturePaneScrollback`. Used by both the wait loop and the watchdog. Returns `("", nil)` for virtual/agent sessions with no tmux pane.
+
+### Changed
+- `autonomousVerify` wait loop (`cmd/datawatch/main.go`) — now tracks tick count; stall scan runs on every 10th tick (~30 s). Stall detection kills the session and returns a descriptive error to the executor so the task is retried with a `RetryHint` prepended.
+
 ## v8.25.4 — feat(ui): Observatory peer resources, compute node stats, and automata GPU/CPU view
 
 ### Added

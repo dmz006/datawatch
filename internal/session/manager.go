@@ -2744,6 +2744,24 @@ func (m *Manager) CapturePaneANSI(fullID string) (string, error) {
 	return m.tmux.CapturePaneANSI(sess.TmuxSession)
 }
 
+// CapturePaneScrollback returns the last `lines` lines of a session's tmux
+// scrollback. Used by the autonomous watchdog to detect stall patterns (e.g.
+// "SSE Timeout") in one-shot opencode sessions. Returns ("", nil) for
+// sessions with no tmux pane (virtual/agent sessions).
+func (m *Manager) CapturePaneScrollback(fullID string, lines int) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session not found: %s", fullID)
+		}
+	}
+	if sess.TmuxSession == "" {
+		return "", nil
+	}
+	return m.tmux.CapturePaneScrollback(sess.TmuxSession, lines)
+}
+
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
 // Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
 func (m *Manager) SendRawKeys(fullID, data string) error {
