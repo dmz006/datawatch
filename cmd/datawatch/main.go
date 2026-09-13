@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.25.6"
+var Version = "8.25.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -899,6 +899,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		"context deadline exceeded",
 		"failed to connect to ollama",
 		"no such host",
+		"cannot be parsed as a URL",
 	}
 	_ = autonomousSSEStallPatterns // used inside autonomousVerify closure below
 

@@ -38,9 +38,11 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-09-12
+## Current state — 2026-09-13
 
-Latest release: **v8.25.6** (2026-09-13). fix(autonomous): memory checkpointing appended to every task spec — CHECKPOINT.md (file checkpoint, survives daemon restarts) + memory_remember MCP call (survives session restarts), both written every 5–10 min by the worker.
+Latest release: **v8.25.7** (2026-09-13). fix(autonomous): defensive http:// scheme guard for compute node Ollama URLs — scheme-less node address (e.g. `127.0.0.1:53106`) no longer produces unparseable `baseURL` in opencode.json. Guard in both api.go and lsp.go. `"cannot be parsed as a URL"` added to SSE stall patterns for auto-kill. New PRD E2E test suite (6 tests: full lifecycle, approval gate, spawn error, multi-story, retry exhaustion, dependency order).
+
+Previous: **v8.25.6** (2026-09-13). fix(autonomous): memory checkpointing appended to every task spec — CHECKPOINT.md (file checkpoint, survives daemon restarts) + memory_remember MCP call (survives session restarts), both written every 5–10 min by the worker.
 
 Previous: **v8.25.5** (2026-09-13). fix(autonomous): SSE stall detection in autonomousVerify wait loop — scrollback scanned every ~30 s for opencode SSE timeout/connection patterns; stalled session killed and executor retry fires automatically. Background PRD watchdog goroutine (60 s tick) kills stalled task sessions on running PRDs. `Manager.CapturePaneScrollback` public helper added.
 

@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.7 — fix(autonomous): defensive http:// scheme guard for compute node Ollama URLs
+
+### Fixed
+- **Scheme-less compute node address causes immediate URL parse failure** — When `~/.datawatch/compute/nodes.json` contains an address without an `http://` prefix (e.g. `"127.0.0.1:53106"` or `"host:11434"`), `lsp.go` would write `"baseURL": "host:11434/v1"` into `opencode.json`. opencode rejects this immediately with `"cannot be parsed as a URL"`, leaving the session in `waiting_input` and the PRD stalled indefinitely. Now guarded in two places: `internal/server/api.go` strips the address from the compute registry before storing on the session; `internal/llm/backends/opencode/lsp.go` guards again before writing opencode config so `WriteProjectConfig` is safe regardless of caller.
+
+### Added
+- **SSE stall pattern `"cannot be parsed as a URL"`** — Added to `autonomousSSEStallPatterns` in `cmd/datawatch/main.go` so future URL config regressions are auto-killed and retried rather than silently stalling.
+- **`TestWriteProjectConfig_OllamaProvider_SchemelessURL`** — Unit test in `internal/llm/backends/opencode/lsp_test.go` verifying that a scheme-less `OllamaURL` (e.g. `"datawatch:11434"`) produces a parseable `baseURL` (`http://datawatch:11434/v1`) in the generated `opencode.json`.
+- **PRD E2E test suite** (`internal/autonomous/prd_e2e_test.go`) — Six end-to-end tests covering the full PRD lifecycle for use during debugging:
+  - `TestPRDE2E_FullLifecycle` — create → decompose → approve → run → PRDCompleted
+  - `TestPRDE2E_RunRejectsUnapprovedPRD` — status gate prevents spawning un-approved work
+  - `TestPRDE2E_SpawnErrorFailsTask` — spawn-side errors land task in TaskFailed, PRD not completed
+  - `TestPRDE2E_MultiStoryOrdering` — two stories with three tasks all complete
+  - `TestPRDE2E_RetryExhaustedFails` — verify-fail after all retries marks task failed, PRD not completed
+  - `TestPRDE2E_DependencyOrderRespected` — two tasks with explicit dependency run in correct order
+
 ## v8.25.6 — fix(autonomous): memory checkpointing injected into every task spec
 
 ### Added

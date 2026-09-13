@@ -97,6 +97,11 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		if baseURL == "" {
 			baseURL = defaultOllamaURL
 		}
+		// Guard against scheme-less addresses (e.g. "host:11434" with no "http://")
+		// which opencode rejects immediately as an unparseable URL.
+		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+			baseURL = "http://" + baseURL
+		}
 		if existing.Provider == nil {
 			existing.Provider = make(map[string]any)
 		}

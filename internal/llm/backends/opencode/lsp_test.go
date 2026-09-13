@@ -78,6 +78,35 @@ func TestWriteProjectConfig_OllamaProvider_DefaultLocalURL(t *testing.T) {
 	}
 }
 
+// TestWriteProjectConfig_OllamaProvider_SchemelessURL verifies that a compute
+// node address stored without an "http://" scheme (e.g. "datawatch:11434") is
+// auto-corrected to a valid URL so opencode never sees an unparseable baseURL.
+// This mirrors the root cause of the v8.25.6 session-stall bug where the node
+// address "127.0.0.1:53106" produced "127.0.0.1:53106/v1" which opencode
+// immediately rejected, leaving every autonomous session in waiting_input.
+func TestWriteProjectConfig_OllamaProvider_SchemelessURL(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteProjectConfig(dir, ProjectConfigOpts{
+		Model:     "ollama/qwen3.8:27b",
+		OllamaURL: "datawatch:11434", // no http:// scheme
+	}); err != nil {
+		t.Fatalf("WriteProjectConfig: %v", err)
+	}
+	cfg := readProjectConfig(t, dir)
+	ollama, ok := cfg.Provider["ollama"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider.ollama missing: %#v", cfg.Provider)
+	}
+	opts, ok := ollama["options"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider.ollama.options missing: %#v", ollama)
+	}
+	got, _ := opts["baseURL"].(string)
+	if got != "http://datawatch:11434/v1" {
+		t.Errorf("baseURL = %q, want http://datawatch:11434/v1 (scheme-less must be auto-corrected)", got)
+	}
+}
+
 // TestWriteProjectConfig_NonOllamaModel_NoProviderBlock ensures cloud/free
 // builtin models (anthropic/*, opencode/*) never get an ollama provider
 // block written — only "ollama/" prefixed models do.

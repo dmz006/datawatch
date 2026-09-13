@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.25.6"
+var Version = "8.25.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3924,7 +3924,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	var resolvedOllamaURL string
 	if resolvedComputeNodeRef != "" && s.computeReg != nil && strings.HasPrefix(req.Model, "ollama/") {
 		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Address != "" {
-			resolvedOllamaURL = n.Address
+			addr := n.Address
+			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+				addr = "http://" + addr
+			}
+			resolvedOllamaURL = addr
 		}
 	}
 	// BL5 — apply template defaults BEFORE per-request overrides.
