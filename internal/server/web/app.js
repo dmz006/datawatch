@@ -11294,6 +11294,7 @@ function openPRDSettingsModal(prdID) {
         decomposition_profile: prd.decomposition_profile || '',
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
+        max_concurrent_tasks: prd.max_concurrent_tasks || 0,
       };
       ensureLLMModelLists().then(() => {
         _prdMountModal(`
@@ -11346,6 +11347,12 @@ function openPRDSettingsModal(prdID) {
               </div>
               <input id="prdSettingsSkills" type="hidden" value="${escHtml(cur.skills)}" />
             </div>
+            <!-- BL370 — per-PRD task concurrency. 0 = use global config default (sequential if not set). -->
+            <div class="wizard-field" style="margin-top:2px;">
+              <label class="wizard-label">${escHtml(t('prd_settings_concurrency_label')||'Max concurrent tasks (0 = global default)')}</label>
+              <input type="number" id="prdSettingsConcurrency" class="form-input" min="0" max="32" value="${cur.max_concurrent_tasks}" placeholder="0" style="width:80px;" />
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">0 or 1 = sequential · 2+ = fan out independent tasks in parallel</div>
+            </div>
             <!-- v6.13.2 — operator: "guided mode is weirdly right justified
                  but checkbox is left". Switched to a single .wizard-checkbox-row
                  with the iOS-style switch (per the global mobile-first
@@ -11370,6 +11377,7 @@ function openPRDSettingsModal(prdID) {
           // (populated by _renderSkillChipPicker on toggle).
           const newSkills = (document.getElementById('prdSettingsSkills').value || '').split(',').map(s => s.trim()).filter(Boolean);
           const newGuided = !!document.getElementById('prdSettingsGuidedMode').checked;
+          const newConcurrency = parseInt(document.getElementById('prdSettingsConcurrency').value || '0', 10) || 0;
 
           const calls = [];
           if (newType !== cur.type) {
@@ -11395,6 +11403,12 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_guided_mode', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ guided_mode: newGuided, actor: 'operator' }),
+            }));
+          }
+          if (newConcurrency !== cur.max_concurrent_tasks) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_concurrency', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ max_concurrent_tasks: newConcurrency }),
             }));
           }
           if (calls.length === 0) { _prdCloseModal(); return; }
@@ -17318,6 +17332,7 @@ function _renderDetailOverview(prd) {
       ${prd.project_dir ? `<dt>${escHtml(t('automata_detail_project'))}</dt><dd>${escHtml(prd.project_dir)}</dd>` : ''}
       ${prd.depth     ? `<dt>${escHtml(t('automata_detail_depth'))}</dt><dd>${prd.depth}</dd>` : ''}
       ${prd.guided_mode ? `<dt>${escHtml(t('automata_detail_guided_mode'))}</dt><dd>✓</dd>` : ''}
+      ${prd.max_concurrent_tasks > 1 ? `<dt>${escHtml(t('automata_detail_concurrency')||'Concurrency')}</dt><dd>${prd.max_concurrent_tasks} tasks</dd>` : ''}
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>

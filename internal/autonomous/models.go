@@ -193,6 +193,11 @@ type PRD struct {
 	// task and trigger auto-fix retries (same as verifier failure). Empty
 	// value inherits autonomous.default_quality_gates from daemon config.
 	QualityGates *pipeline.QualityGateConfig `json:"quality_gates,omitempty"`
+
+	// BL370 — per-PRD task concurrency override. When > 0 overrides
+	// autonomous.max_concurrent_tasks for this specific PRD. 0 = use
+	// the global default (effectively 1 = sequential).
+	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a

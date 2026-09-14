@@ -894,6 +894,29 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONOK(w, updated)
 
+	// BL370 — per-PRD max_concurrent_tasks override.
+	case "set_concurrency":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			MaxConcurrentTasks int `json:"max_concurrent_tasks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDConcurrency(id, req.MaxConcurrentTasks)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
 	// BL367 — per-PRD quality gate config.
 	case "set_quality_gates":
 		if r.Method != http.MethodPost {

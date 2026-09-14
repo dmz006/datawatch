@@ -85,8 +85,9 @@ type SpawnFn func(ctx context.Context, req SpawnRequest) (SpawnResult, error)
 type VerifyFn func(ctx context.Context, prd *PRD, task *Task) (VerificationResult, error)
 
 // Run walks the PRD and runs every task to completion (or failure).
-// Honors task DependsOn for ordering; runs unblocked tasks
-// sequentially in v1 (max-parallel comes from the loop, not from here).
+// Honors task DependsOn for ordering. When prd.MaxConcurrentTasks (or
+// cfg.MaxConcurrentTasks) is > 1, independent tasks are fanned out with
+// a semaphore-bounded goroutine pool.
 func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify VerifyFn) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -127,41 +128,155 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		qgBaseline = &r
 		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
 	}
-	for _, tid := range order {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		t := lookupTask(prd, tid)
-		if t == nil {
-			continue
-		}
-		// Mark the owning story in_progress when its first task begins.
-		if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-			s.Status = StoryInProgress
-			_ = m.store.SavePRD(prd)
-		}
-		if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
-			t.Status = TaskFailed
-			t.Error = err.Error()
-			_ = m.store.SaveTask(t)
-			// continue to next task — caller decides whether to abort the PRD
-		}
-		// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
-		// per-task guardrail block verdict, halt the walk so the
-		// operator can review before more tasks run.
-		latest, _ := m.store.GetPRD(prdID)
-		if latest != nil {
-			if lt := lookupTask(latest, tid); lt != nil && lt.Status == TaskBlocked {
-				latest.Status = PRDBlocked
-				_ = m.store.SavePRD(latest)
-				return nil
+
+	// BL370 — resolve concurrency limit: per-PRD overrides global config.
+	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
+	m.mu.Lock()
+	globalConc := m.cfg.MaxConcurrentTasks
+	m.mu.Unlock()
+	concurrency := prd.MaxConcurrentTasks
+	if concurrency <= 0 {
+		concurrency = globalConc
+	}
+	if concurrency <= 1 {
+		// Sequential path (default) — unchanged behaviour.
+		for _, tid := range order {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			// Roll up story status to completed when all its tasks are done.
-			if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
-				s.Status = StoryCompleted
-				_ = m.store.SavePRD(latest)
+			t := lookupTask(prd, tid)
+			if t == nil {
+				continue
 			}
-			prd = latest
+			// Mark the owning story in_progress when its first task begins.
+			if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
+				s.Status = StoryInProgress
+				_ = m.store.SavePRD(prd)
+			}
+			if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
+				t.Status = TaskFailed
+				t.Error = err.Error()
+				_ = m.store.SaveTask(t)
+			}
+			// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
+			// per-task guardrail block verdict, halt the walk so the
+			// operator can review before more tasks run.
+			latest, _ := m.store.GetPRD(prdID)
+			if latest != nil {
+				if lt := lookupTask(latest, tid); lt != nil && lt.Status == TaskBlocked {
+					latest.Status = PRDBlocked
+					_ = m.store.SavePRD(latest)
+					return nil
+				}
+				// Roll up story status to completed when all its tasks are done.
+				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
+					s.Status = StoryCompleted
+					_ = m.store.SavePRD(latest)
+				}
+				prd = latest
+			}
+		}
+	} else {
+		// BL370 — concurrent path: goroutine pool bounded by concurrency.
+		// Coordinator goroutine is the only writer to completedIDs/inFlight;
+		// worker goroutines each own their task pointer (no shared writes).
+		type taskResult struct {
+			tid string
+			err error
+		}
+		results := make(chan taskResult, len(order))
+		completedIDs := make(map[string]bool, len(order))
+		inFlight := make(map[string]bool, concurrency)
+
+		isReady := func(tid string) bool {
+			t := lookupTask(prd, tid)
+			if t == nil || completedIDs[tid] || inFlight[tid] {
+				return false
+			}
+			for _, dep := range t.DependsOn {
+				if !completedIDs[dep] {
+					return false
+				}
+			}
+			return true
+		}
+
+		launch := func() {
+			for _, tid := range order {
+				if len(inFlight) >= concurrency {
+					break
+				}
+				if completedIDs[tid] || inFlight[tid] {
+					continue
+				}
+				if !isReady(tid) {
+					continue
+				}
+				t := lookupTask(prd, tid)
+				if t == nil {
+					continue
+				}
+				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
+					s.Status = StoryInProgress
+					_ = m.store.SavePRD(prd)
+				}
+				inFlight[tid] = true
+				capturedPRD := prd // goroutine captures the prd at launch time
+				go func(tid string, t *Task) {
+					err := m.executeOne(ctx, capturedPRD, t, spawn, verify, retries, qgCfg, qgBaseline)
+					results <- taskResult{tid, err}
+				}(tid, t)
+			}
+		}
+
+		remaining := len(order)
+		launch()
+
+		for remaining > 0 {
+			if len(inFlight) == 0 {
+				// No ready tasks and nothing in-flight — dependency deadlock
+				// should not happen with a valid topo sort.
+				break
+			}
+			select {
+			case <-ctx.Done():
+				// Drain in-flight goroutines before returning.
+				for len(inFlight) > 0 {
+					r := <-results
+					delete(inFlight, r.tid)
+				}
+				return ctx.Err()
+			case r := <-results:
+				delete(inFlight, r.tid)
+				remaining--
+				if r.err != nil {
+					if t := lookupTask(prd, r.tid); t != nil {
+						t.Status = TaskFailed
+						t.Error = r.err.Error()
+						_ = m.store.SaveTask(t)
+					}
+				}
+				completedIDs[r.tid] = true
+				latest, _ := m.store.GetPRD(prdID)
+				if latest != nil {
+					if lt := lookupTask(latest, r.tid); lt != nil && lt.Status == TaskBlocked {
+						latest.Status = PRDBlocked
+						_ = m.store.SavePRD(latest)
+						// Drain remaining goroutines.
+						for len(inFlight) > 0 {
+							dr := <-results
+							delete(inFlight, dr.tid)
+						}
+						return nil
+					}
+					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
+						s.Status = StoryCompleted
+						_ = m.store.SavePRD(latest)
+					}
+					prd = latest
+				}
+				launch()
+			}
 		}
 	}
 	// BL191 Q6 (v5.10.0) — fire per-story guardrails after each story's

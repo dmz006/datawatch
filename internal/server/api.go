@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.25.12"
+var Version = "8.26.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -585,6 +585,9 @@ type AutonomousAPI interface {
 	SetPRDType(prdID, typ string) (any, error)
 	SetPRDGuidedMode(prdID string, guided bool) (any, error)
 	SetPRDSkills(prdID string, skills []string) (any, error)
+
+	// BL370 — per-PRD max_concurrent_tasks override.
+	SetPRDConcurrency(prdID string, n int) (any, error)
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)

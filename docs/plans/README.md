@@ -61,7 +61,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — |
-| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL370 — autonomous PRD max_concurrent_tasks config |
+| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
@@ -650,7 +650,14 @@ Background: tasks currently run sequentially in topological order (one `executeO
 - MCP tool param on `autonomous_prd_run` or new `autonomous_prd_set_concurrency`
 - Docs: config-reference.yaml entry
 
-**Status:** Open — awaiting sprint slot.
+**Implementation (v8.26.0):**
+- `MaxConcurrentTasks int` added to `autonomous.Config` (JSON: `max_concurrent_tasks`, default 0 = sequential) and to the `PRD` struct for per-automaton override.
+- `Manager.SetPRDConcurrency(prdID string, n int) error` — updates the field; wired through `api.go` and exposed as `POST /api/autonomous/prds/{id}/set_concurrency` (`{max_concurrent_tasks: N}`).
+- `AutonomousAPI.SetPRDConcurrency` added to the server interface.
+- `executor.Run`: sequential path (concurrency ≤ 1) unchanged; concurrent path uses a goroutine-pool with a `select`-driven results channel; each task goroutine captures its own `prd` snapshot at launch time; coordinator serializes blocked-check and story-rollup after each result.
+- PWA settings modal: `Max concurrent tasks` number input added to the Automaton Settings form; saves via the new `set_concurrency` endpoint. PRD overview meta section shows `Concurrency: N tasks` when N > 1.
+
+**Status:** ✅ Closed — implemented v8.26.0 (2026-09-13). All builds + tests green.
 
 ---
 

@@ -591,6 +591,16 @@ func (a *API) SetPRDSkills(prdID string, skills []string) (any, error) {
 	return prd, nil
 }
 
+// SetPRDConcurrency (BL370) sets per-PRD max_concurrent_tasks override.
+func (a *API) SetPRDConcurrency(prdID string, n int) (any, error) {
+	if err := a.M.SetPRDConcurrency(prdID, n); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
 // SetPRDQualityGates (BL367) sets per-PRD quality gate config.
 func (a *API) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error) {
 	prd, err := a.M.SetPRDQualityGates(prdID, enabled, testCommand, timeout, blockOnRegression)

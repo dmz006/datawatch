@@ -113,6 +113,13 @@ type Config struct {
 	// true the request is rejected with 400.
 	InjectionGuard      bool `json:"injection_guard,omitempty"`
 	BlockOnInjection    bool `json:"block_on_injection,omitempty"`
+
+	// BL370 — task concurrency. MaxConcurrentTasks controls how many task
+	// sessions the executor may have in-flight simultaneously. Default 1
+	// preserves the existing sequential behaviour. Values > 1 fan out
+	// independent (no-dependency) tasks up to the specified limit. Per-PRD
+	// MaxConcurrentTasks overrides this global default.
+	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -1730,6 +1737,21 @@ func (m *Manager) SetPRDSkills(prdID string, skills []string) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	prd.Skills = skills
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// SetPRDConcurrency (BL370) sets the per-PRD max_concurrent_tasks override.
+// n <= 0 clears the override (falls back to global config).
+func (m *Manager) SetPRDConcurrency(prdID string, n int) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	if n < 0 {
+		n = 0
+	}
+	prd.MaxConcurrentTasks = n
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
 }
