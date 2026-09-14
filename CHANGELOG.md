@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.4 — fix(autonomous): sequential executor re-runs terminal tasks on restart
+
+### Fixed
+- **Executor re-runs completed/failed/cancelled tasks on restart** — when the PRD executor goroutine was restarted via `/run`, it iterated all tasks in topological order without checking whether each task had already reached a terminal state. Completed tasks were re-spawned and failed tasks were re-attempted without operator intent. The sequential loop now skips any task whose status is `completed`, `failed`, or `cancelled`, and pre-loads `failedIDs` for skipped-failed tasks so dependency propagation still works correctly.
+
 ## v8.27.3 — fix(autonomous): add "provider response headers" to SSE stall watchdog patterns
 
 ### Fixed

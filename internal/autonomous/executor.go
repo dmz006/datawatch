@@ -150,6 +150,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if t == nil {
 				continue
 			}
+			// Skip tasks already in a terminal state (completed/failed/cancelled)
+			// so executor restarts don't re-run finished work.
+			if isTaskTerminal(t.Status) {
+				if t.Status == TaskFailed {
+					failedIDs[tid] = true
+				}
+				continue
+			}
 			// Skip tasks whose dependencies failed — propagate failure forward.
 			var depFailed string
 			for _, dep := range t.DependsOn {
