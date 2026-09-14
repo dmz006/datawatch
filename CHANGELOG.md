@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.3 — fix(autonomous): add "provider response headers" to SSE stall watchdog patterns
+
+### Fixed
+- **Watchdog blind to "provider response headers" timeouts** — when the ollama backend accepted the TCP connection but never sent HTTP response headers (cold-start overload on large models), opencode sessions spun on the activity indicator indefinitely. The `autonomousSSEStallPatterns` list now includes `"provider response headers"` so the built-in watchdog goroutine detects and kills these stalled sessions.
+
 ## v8.27.2 — fix(autonomous): executor continues past failed tasks; story/PRD never roll up on failure
 
 ### Fixed
