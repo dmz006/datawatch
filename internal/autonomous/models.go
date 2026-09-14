@@ -30,6 +30,7 @@ const (
 	PRDCancelled       PRDStatus = "cancelled"        // BL191 — operator cancelled an in-flight Run
 	PRDArchived        PRDStatus = "archived"
 	PRDBlocked         PRDStatus = "blocked"          // BL191 Q6 — a guardrail returned `block`; awaits operator action
+	PRDFailed          PRDStatus = "failed"           // one or more tasks failed after all retries; PRD did not complete
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.

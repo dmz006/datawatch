@@ -139,7 +139,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		concurrency = globalConc
 	}
 	if concurrency <= 1 {
-		// Sequential path (default) — unchanged behaviour.
+		// Sequential path (default) — tasks run in dependency order.
+		// failedIDs tracks tasks that failed so dependents can be skipped.
+		failedIDs := make(map[string]bool)
 		for _, tid := range order {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -148,27 +150,50 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if t == nil {
 				continue
 			}
-			// Mark the owning story in_progress when its first task begins.
-			if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-				s.Status = StoryInProgress
-				_ = m.store.SavePRD(prd)
+			// Skip tasks whose dependencies failed — propagate failure forward.
+			var depFailed string
+			for _, dep := range t.DependsOn {
+				if failedIDs[dep] {
+					depFailed = dep
+					break
+				}
 			}
-			if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
+			if depFailed != "" {
 				t.Status = TaskFailed
-				t.Error = err.Error()
+				t.Error = "dependency " + depFailed + " failed"
 				_ = m.store.SaveTask(t)
+				failedIDs[tid] = true
+			} else {
+				// Mark the owning story in_progress when its first task begins.
+				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
+					s.Status = StoryInProgress
+					_ = m.store.SavePRD(prd)
+				}
+				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
+					t.Status = TaskFailed
+					t.Error = err.Error()
+					_ = m.store.SaveTask(t)
+				}
 			}
-			// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
-			// per-task guardrail block verdict, halt the walk so the
-			// operator can review before more tasks run.
+			// Re-read authoritative status: executeOne returns nil even after
+			// exhausting retries (it saves TaskFailed itself), so we must
+			// inspect the stored record rather than relying on the error return.
 			latest, _ := m.store.GetPRD(prdID)
 			if latest != nil {
-				if lt := lookupTask(latest, tid); lt != nil && lt.Status == TaskBlocked {
-					latest.Status = PRDBlocked
-					_ = m.store.SavePRD(latest)
-					return nil
+				if lt := lookupTask(latest, tid); lt != nil {
+					if lt.Status == TaskFailed {
+						failedIDs[tid] = true
+					}
+					// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
+					// per-task guardrail block verdict, halt the walk so the
+					// operator can review before more tasks run.
+					if lt.Status == TaskBlocked {
+						latest.Status = PRDBlocked
+						_ = m.store.SavePRD(latest)
+						return nil
+					}
 				}
-				// Roll up story status to completed when all its tasks are done.
+				// Roll up story status when all its tasks reached a terminal state.
 				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
 					s.Status = StoryCompleted
 					_ = m.store.SavePRD(latest)
@@ -178,7 +203,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 	} else {
 		// BL370 — concurrent path: goroutine pool bounded by concurrency.
-		// Coordinator goroutine is the only writer to completedIDs/inFlight;
+		// Coordinator goroutine is the only writer to completedIDs/failedIDs/inFlight;
 		// worker goroutines each own their task pointer (no shared writes).
 		type taskResult struct {
 			tid string
@@ -186,7 +211,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 		results := make(chan taskResult, len(order))
 		completedIDs := make(map[string]bool, len(order))
+		failedIDs := make(map[string]bool, len(order))
 		inFlight := make(map[string]bool, concurrency)
+		remaining := len(order)
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
@@ -199,6 +226,35 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 			}
 			return true
+		}
+
+		// autoFailDeps marks any pending tasks whose deps are in failedIDs as
+		// TaskFailed immediately, so they don't stall the coordinator loop.
+		autoFailDeps := func() {
+			for _, tid := range order {
+				if completedIDs[tid] || inFlight[tid] {
+					continue
+				}
+				t := lookupTask(prd, tid)
+				if t == nil {
+					continue
+				}
+				var depFailed string
+				for _, dep := range t.DependsOn {
+					if failedIDs[dep] {
+						depFailed = dep
+						break
+					}
+				}
+				if depFailed != "" {
+					t.Status = TaskFailed
+					t.Error = "dependency " + depFailed + " failed"
+					_ = m.store.SaveTask(t)
+					failedIDs[tid] = true
+					completedIDs[tid] = true
+					remaining--
+				}
+			}
 		}
 
 		launch := func() {
@@ -229,7 +285,6 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 		}
 
-		remaining := len(order)
 		launch()
 
 		for remaining > 0 {
@@ -255,19 +310,26 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						t.Error = r.err.Error()
 						_ = m.store.SaveTask(t)
 					}
+					failedIDs[r.tid] = true
 				}
 				completedIDs[r.tid] = true
 				latest, _ := m.store.GetPRD(prdID)
 				if latest != nil {
-					if lt := lookupTask(latest, r.tid); lt != nil && lt.Status == TaskBlocked {
-						latest.Status = PRDBlocked
-						_ = m.store.SavePRD(latest)
-						// Drain remaining goroutines.
-						for len(inFlight) > 0 {
-							dr := <-results
-							delete(inFlight, dr.tid)
+					if lt := lookupTask(latest, r.tid); lt != nil {
+						// executeOne may have stored TaskFailed with nil error return.
+						if lt.Status == TaskFailed {
+							failedIDs[r.tid] = true
 						}
-						return nil
+						if lt.Status == TaskBlocked {
+							latest.Status = PRDBlocked
+							_ = m.store.SavePRD(latest)
+							// Drain remaining goroutines.
+							for len(inFlight) > 0 {
+								dr := <-results
+								delete(inFlight, dr.tid)
+							}
+							return nil
+						}
 					}
 					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
 						s.Status = StoryCompleted
@@ -275,6 +337,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 					prd = latest
 				}
+				autoFailDeps()
 				launch()
 			}
 		}
@@ -295,18 +358,24 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			return nil
 		}
 	}
-	// Roll up PRD status: completed if every task is completed.
+	// Roll up PRD status: completed/failed once every task is in a terminal state.
 	allDone := true
+	anyFailed := false
 	for _, s := range prd.Story {
 		for _, t := range s.Tasks {
-			if t.Status != TaskCompleted {
+			if !isTaskTerminal(t.Status) {
 				allDone = false
-				break
+			} else if t.Status != TaskCompleted {
+				anyFailed = true
 			}
 		}
 	}
 	if allDone {
-		prd.Status = PRDCompleted
+		if anyFailed {
+			prd.Status = PRDFailed
+		} else {
+			prd.Status = PRDCompleted
+		}
 	}
 	return m.store.SavePRD(prd)
 }
@@ -763,12 +832,20 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 	return blocked, nil
 }
 
+// isTaskTerminal returns true for states from which a task will not
+// transition further without operator intervention.
+func isTaskTerminal(s TaskStatus) bool {
+	return s == TaskCompleted || s == TaskFailed || s == TaskCancelled
+}
+
+// storyAllTasksDone returns true when every task in the story has reached
+// a terminal state (completed, failed, or cancelled).
 func storyAllTasksDone(s *Story) bool {
 	if len(s.Tasks) == 0 {
 		return false
 	}
 	for _, t := range s.Tasks {
-		if t.Status != TaskCompleted {
+		if !isTaskTerminal(t.Status) {
 			return false
 		}
 	}

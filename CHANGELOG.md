@@ -3,6 +3,15 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.2 — fix(autonomous): executor continues past failed tasks; story/PRD never roll up on failure
+
+### Fixed
+- **Executor continues past failed tasks** — after a task exhausted all `AutoFixRetries`, `executeOne` set `TaskFailed` and returned `nil` (not an error), so the sequential loop's `if err != nil` check never fired and the next task was dispatched regardless of the prior failure. The executor now re-reads the task's authoritative status from the store after each `executeOne` call and stops advancing dependent tasks.
+- **Dependent tasks run despite failed dependency** — neither the sequential nor concurrent executor tracked which tasks had failed. Tasks whose `DependsOn` list included a failed task were still dispatched. Both paths now maintain a `failedIDs` set; any task whose dependency appears in that set is immediately marked `TaskFailed` with a "dependency X failed" message rather than being launched.
+- **Story status never rolls up when tasks fail** — `storyAllTasksDone` only returned true when every task was `TaskCompleted`. Failed or cancelled tasks left stories permanently in `in_progress`. The function now treats `failed` and `cancelled` as terminal states so stories (and PRDs) close out correctly.
+- **PRD status stays `running` forever after task failures** — the final PRD rollup used the same `TaskCompleted`-only check. PRDs now roll up to the new `PRDFailed` status when all tasks are terminal but at least one failed, and to `PRDCompleted` only when all tasks completed successfully.
+- **New `PRDFailed` status** — added `PRDFailed = "failed"` constant to `models.go`; the UI, `autonomous_status`, and MCP tools surface it correctly because they use the `PRDStatus` string value.
+
 ## v8.27.1 — fix(autonomous): watchdog misses verifying/running_tests tasks; remove insecure spawned watchdog schedule
 
 ### Fixed
