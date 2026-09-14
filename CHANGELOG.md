@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.8 — fix(files): attachment upload always 403 (bare path rejected by traversal guard)
+
+### Fixed
+- **`POST /api/files` returns 403 for all PWA image attachments** — `handleFilesUpload` received a bare filename (`dw_attach_<ts>_<rand>_<name>`) with no directory component. `checkPathTraversal` compared the relative path against the absolute file service root and always rejected it ("path outside service root"), causing the PWA to show an upload error and clear the preview. Fix: bare filenames (not absolute, not `~`-prefixed) are now joined to the file service root before the traversal check, so they are placed correctly without requiring the client to know the server's configured root path.
+
 ## v8.27.7 — fix(pwa): attachment disappears after upload; add multi-file support
 
 ### Fixed

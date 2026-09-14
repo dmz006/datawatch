@@ -121,6 +121,12 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		destPath = filepath.Join(home, destPath[1:])
 	}
 	root := s.fileServiceRoot()
+	// Bare filenames (no directory component, not absolute) are placed in the
+	// file service root so the PWA attachment uploader doesn't need to know the
+	// server's configured root path.
+	if !filepath.IsAbs(destPath) {
+		destPath = filepath.Join(root, destPath)
+	}
 	if err := checkPathTraversal(root, destPath); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
