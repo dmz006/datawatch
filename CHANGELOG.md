@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.11 — fix(pwa): image attachments not processed by Claude Code sessions
+
+### Fixed
+- **`[image:path]` sent as literal text, AI ignores it** — `expandImageTags` only ran when a vision backend was configured (`s.visioner != nil`); with no backend, the `[image:/abs/path]` token passed through unchanged as plain text. Claude Code sessions don't understand this format and produced no response to the image. Fix: when no vision backend is configured, `[image:path]` is now converted to `@path` (Claude Code's file-reference notation) before being sent to the tmux session, allowing Claude Code to read and process the image via its own vision pipeline.
+
 ## v8.27.10 — fix(pwa): block send while image still uploading; uploading indicator
 
 ### Fixed

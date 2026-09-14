@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.27.10"
+var Version = "8.27.11"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4571,11 +4571,19 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // expandImageTags replaces [image:<path>] references in text with vision descriptions.
 // Only paths within the configured file service root are read; others pass through
 // unchanged to prevent arbitrary file reads via user-supplied message text.
-// If the vision subsystem is not configured or the file cannot be read, the tag is
-// left as-is so the caller still receives the rest of the message unmodified.
+// If the vision subsystem is not configured, [image:path] is converted to @path so
+// that Claude Code sessions can use the @ file-reference notation to read the image
+// directly via their own vision pipeline.
+// If the file cannot be read or described, the tag is left as-is.
 func (s *Server) expandImageTags(text string) string {
-	if s.visioner == nil || !strings.Contains(text, "[image:") {
+	if !strings.Contains(text, "[image:") {
 		return text
+	}
+	if s.visioner == nil {
+		// No server-side vision backend — convert to @ notation so Claude Code
+		// sessions pick up the image via their built-in file-reading capability.
+		re := regexp.MustCompile(`\[image:([^\]]+)\]`)
+		return re.ReplaceAllString(text, "@$1")
 	}
 	root := s.fileServiceRoot()
 	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
