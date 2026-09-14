@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.11 — fix(autonomous): enforce strict contract on all guardrail and verifier LLM responses
+
+### Fixed
+- **Autonomous PRD guardrail unparseable response now blocks** — previously, if the guardrail LLM returned malformed JSON, the PRD would still advance (outcome defaulted to `"warn"`). Now defaults to `"block"` with severity `"medium"`, preventing false-positive advancement on broken guardrail output.
+- **Orchestrator guardrail unparseable response now blocks** — same pattern in the orchestrator path: malformed guardrail response now produces `outcome: "block"` instead of `"warn"`. Empty `Outcome` field after parse also defaults to `"block"` instead of `"warn"`.
+- **Scan grader unparseable response now fails** — `scanGrader` LLM parse failure and empty `Verdict` field both now return `"fail"` rather than `"warn"`, ensuring scan results without a clear verdict are treated as failures.
+
+These fixes complete the enforcement hardening started in v8.25.10, which fixed the verifier (empty diff = fail, unparseable verifier response = fail). All LLM-response parse paths in the autonomous subsystem now fail safe rather than defaulting to pass.
+
 ## v8.25.8 — fix(compute): normalize http:// scheme at storage layer across all clients
 
 ### Fixed

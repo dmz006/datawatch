@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.25.10"
+var Version = "8.25.11"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4230,11 +4230,11 @@ Reply with STRICT JSON:
 			rb, _ := io.ReadAll(resp.Body)
 			var ask struct{ Answer string `json:"answer"` }
 			_ = json.Unmarshal(rb, &ask)
-			// Permissive parse — unparseable LLM output becomes a "warn"
-			// so the PRD still advances on best-effort.
+			// v8.25.11: unparseable guardrail response is a block, not a pass.
+			// Failing safe here prevents PRD from advancing on malformed output.
 			gv := autonomouspkg.GuardrailVerdict{
-				Outcome: "warn", Severity: "info",
-				Summary:   "guardrail: unparseable response",
+				Outcome: "block", Severity: "medium",
+				Summary:   "guardrail: unparseable LLM response — cannot verify compliance",
 				VerdictAt: time.Now(),
 			}
 			_ = json.Unmarshal([]byte(ask.Answer), &gv)
@@ -4379,11 +4379,11 @@ Respond ONLY with a JSON object: {"verdict": "pass"|"warn"|"fail", "notes": "<br
 					Notes   string `json:"notes"`
 				}
 				if err := json.Unmarshal([]byte(answer), &resp); err != nil {
-					// Tolerate non-JSON — treat as notes
-					return "warn", answer, nil
+					// v8.25.11: unparseable scan grader response = fail, not warn.
+					return "fail", "scan grader: unparseable LLM response", nil
 				}
 				if resp.Verdict == "" {
-					resp.Verdict = "warn"
+					resp.Verdict = "fail"
 				}
 				return resp.Verdict, resp.Notes, nil
 			}
@@ -4621,13 +4621,14 @@ Return STRICT JSON:
 				rb, _ := io.ReadAll(resp.Body)
 				var ask struct{ Answer string `json:"answer"` }
 				_ = json.Unmarshal(rb, &ask)
+				// v8.25.11: unparseable orchestrator guardrail response is a block.
 				v := orchestratorpkg.Verdict{
-					Outcome: "warn", Severity: "info",
-					Summary: fmt.Sprintf("%s: unparseable LLM response", req.Guardrail),
+					Outcome: "block", Severity: "medium",
+					Summary: fmt.Sprintf("%s: unparseable LLM response — cannot verify compliance", req.Guardrail),
 				}
 				_ = json.Unmarshal([]byte(ask.Answer), &v)
 				if v.Outcome == "" {
-					v.Outcome = "warn"
+					v.Outcome = "block"
 				}
 				return v, nil
 			}

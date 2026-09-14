@@ -89,7 +89,7 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.25.6](CHANGELOG.md) (2026-09-13)** — Memory checkpointing injected into every autonomous task spec (CHECKPOINT.md + memory_remember MCP every 5–10 min); SSE stall kill + PRD watchdog (v8.25.5).
+**[v8.25.11](CHANGELOG.md) (2026-09-13)** — All guardrail and scan-grader LLM-response parse failures now block/fail rather than warn, completing the verifier enforcement hardening from v8.25.10.
 
 **[v8.25.5](CHANGELOG.md) (2026-09-13)** — Autonomous SSE stall detection: scrollback scan every 30 s kills stalled opencode sessions for auto-retry; PRD watchdog goroutine monitors all running PRDs every 60 s.
 
