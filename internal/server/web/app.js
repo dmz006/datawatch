@@ -2890,7 +2890,7 @@ function renderSessionDetail(sessionId) {
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
-    + (isActive ? `<button class="btn-icon" onclick="attachSessionImage()" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;">&#128247;</button><input type="file" id="sessionImageInput" accept="image/*" style="position:fixed;top:-200px;left:-200px;width:1px;height:1px;opacity:0;overflow:hidden;" onchange="onSessionImageSelected(this)" />` : '')
+    + (isActive ? `<label for="sessionImageInput" class="btn-icon" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;cursor:pointer;">&#128247;</label><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
   view.innerHTML = `
@@ -4541,11 +4541,14 @@ function _showImagePreview(objectUrl, name, uploading) {
   let preview = document.getElementById('sessionImagePreview');
   if (!preview) {
     const bar = document.getElementById('inputBar');
-    if (!bar) return;
+    if (!bar || !bar.parentNode) return;
     preview = document.createElement('div');
     preview.id = 'sessionImagePreview';
-    preview.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);';
-    bar.insertBefore(preview, bar.firstChild);
+    // Insert BEFORE inputBar so the preview renders as a full-width strip
+    // above the command row. (Inserting inside the row flex container made
+    // it appear squished alongside the text input on all viewports.)
+    preview.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2);border-top:1px solid var(--border);font-size:12px;color:var(--text2);';
+    bar.parentNode.insertBefore(preview, bar);
   }
   preview.innerHTML = `<img src="${escHtml(objectUrl)}" alt="" style="width:40px;height:30px;object-fit:cover;border-radius:3px;border:1px solid var(--border);" />`
     + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>`

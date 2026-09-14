@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.6 — fix(pwa): image attachment broken on Android; preview renders inside flex row
+
+### Fixed
+- **Image attachment does not open file picker on Android** — the camera button triggered a programmatic `.click()` on a `position:fixed;top:-200px` off-screen file input. Negative-positioned fixed elements can fail to fire the file picker on Android Chrome. Replaced with a `<label for="sessionImageInput">` element so the browser handles the file picker activation natively — the correct cross-platform approach requiring no JavaScript intermediary.
+- **Attachment preview renders inside the command bar row** — `_showImagePreview` inserted the preview as the first child of `inputBar`, which is `display:flex` (horizontal row). This made the preview a squished flex item to the left of the text field rather than a full-width strip above it. Preview is now inserted as a sibling immediately before `inputBar` so it renders as its own row, visually separated by `border-top`.
+
 ## v8.27.5 — feat(guardrail): per-guardrail block approval endpoint (GH#153)
 
 ### Added
