@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.9 — fix(pwa): image attachment not sent in channel-mode sessions
+
+### Fixed
+- **Attached image stays in preview, not sent** — channel-mode sessions with the tmux tab active route the send button through `sendSessionInputDirect()`. This function had no attachment handling and also had an early `if (!text) return` that blocked image-only sends entirely. All three send paths (`sendSessionInput`, `sendChannelMessage`, `sendSessionInputDirect`) now build and clear `_pendingAttachments` before dispatching.
+
 ## v8.27.8 — fix(files): attachment upload always 403 (bare path rejected by traversal guard)
 
 ### Fixed

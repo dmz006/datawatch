@@ -4417,7 +4417,12 @@ function sendSessionInput() {
 function sendSessionInputDirect() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl || !state.activeSession) return;
-  const text = inputEl.value.trim();
+  let text = inputEl.value.trim();
+  if (state._pendingAttachments && state._pendingAttachments.length) {
+    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (tags) text = (text ? text + '\n' : '') + tags;
+    _clearAllAttachments();
+  }
   if (!text) return;
   send('command', { text: `send ${state.activeSession}: ${text}` });
   inputEl.value = '';
