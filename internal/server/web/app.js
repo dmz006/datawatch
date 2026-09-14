@@ -10304,51 +10304,50 @@ function renderTask(prd, story, task, editable) {
     ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}">${statusGlyph}</span>`
     : '';
 
-  // Expanded body: spec text + files-planned row + files-touched row.
-  let expandedBody = '';
-  if (isExpanded) {
-    const hasTaskFiles = task.files && task.files.length;
-    const hasTaskTouched = task.files_touched && task.files_touched.length;
-    const filesP = hasTaskFiles
+  // Expanded body: always rendered in DOM (hidden when collapsed) so
+  // _prdToggleTask can flip state with a pure DOM operation rather than
+  // re-rendering the whole PRD detail view.
+  const hasTaskFiles = task.files && task.files.length;
+  const hasTaskTouched = task.files_touched && task.files_touched.length;
+  const filesP = hasTaskFiles
+    ? `<div class="prd-task-files">
+         <span class="prd-task-files-label">Files:</span>
+         ${task.files.map(f => `<code class="prd-task-file-chip">${escHtml(f)}</code>`).join('')}
+         ${editable ? `<button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+       </div>`
+    : (editable
       ? `<div class="prd-task-files">
            <span class="prd-task-files-label">Files:</span>
-           ${task.files.map(f => `<code class="prd-task-file-chip">${escHtml(f)}</code>`).join('')}
-           ${editable ? `<button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+           <button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Add planned files">&#128193;</button>
          </div>`
-      : (editable
-        ? `<div class="prd-task-files">
-             <span class="prd-task-files-label">Files:</span>
-             <button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Add planned files">&#128193;</button>
-           </div>`
-        : '');
-    const filesT = hasTaskTouched
-      ? `<div class="prd-task-touched">
-           <span class="prd-task-touched-label">&#9989; Touched:</span>
-           ${task.files_touched.map(f => `<code class="prd-task-touched-chip">${escHtml(f)}</code>`).join('')}
-         </div>`
-      : '';
-    // v8.23.0 — error + verification details in expanded view.
-    const errRow = task.error
-      ? `<div class="prd-task-error"><span class="prd-task-error-label">&#9888; ${t('prd_task_error')||'Error'}:</span> ${escHtml(task.error)}</div>`
-      : '';
-    let verifRow = '';
-    if (task.verification) {
-      const vsum = task.verification.summary || '';
-      const vok  = task.verification.ok;
-      const vsev = task.verification.severity || '';
-      const issues = (task.verification.issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
-      verifRow = `<div class="prd-task-verif ${vok ? 'verif-ok' : 'verif-fail'}">
-        <span class="prd-task-verif-label">${vok ? '&#10003;' : '&#10007;'} ${t('prd_task_verification')||'Verification'}${vsev ? ' (' + escHtml(vsev) + ')' : ''}:</span>
-        ${vsum ? `<span class="prd-task-verif-summary">${escHtml(vsum)}</span>` : ''}
-        ${issues ? `<ul class="prd-task-verif-issues">${issues}</ul>` : ''}
-      </div>`;
-    }
-    expandedBody = `<div class="prd-task-expanded-body">
-      ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
-      ${errRow}${verifRow}
-      ${filesP}${filesT}
+      : '');
+  const filesT = hasTaskTouched
+    ? `<div class="prd-task-touched">
+         <span class="prd-task-touched-label">&#9989; Touched:</span>
+         ${task.files_touched.map(f => `<code class="prd-task-touched-chip">${escHtml(f)}</code>`).join('')}
+       </div>`
+    : '';
+  // v8.23.0 — error + verification details in expanded view.
+  const errRow = task.error
+    ? `<div class="prd-task-error"><span class="prd-task-error-label">&#9888; ${t('prd_task_error')||'Error'}:</span> ${escHtml(task.error)}</div>`
+    : '';
+  let verifRow = '';
+  if (task.verification) {
+    const vsum = task.verification.summary || '';
+    const vok  = task.verification.ok;
+    const vsev = task.verification.severity || '';
+    const issues = (task.verification.issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
+    verifRow = `<div class="prd-task-verif ${vok ? 'verif-ok' : 'verif-fail'}">
+      <span class="prd-task-verif-label">${vok ? '&#10003;' : '&#10007;'} ${t('prd_task_verification')||'Verification'}${vsev ? ' (' + escHtml(vsev) + ')' : ''}:</span>
+      ${vsum ? `<span class="prd-task-verif-summary">${escHtml(vsum)}</span>` : ''}
+      ${issues ? `<ul class="prd-task-verif-issues">${issues}</ul>` : ''}
     </div>`;
   }
+  const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
+    ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
+    ${errRow}${verifRow}
+    ${filesP}${filesT}
+  </div>`;
 
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
@@ -10377,14 +10376,22 @@ function prdResetTask(prdID, taskID) {
 }
 window.prdResetTask = prdResetTask;
 
-// v6.13.9 — toggle expanded state for a task; re-renders the parent
-// PRD detail panel so the chevron + body flip in place.
+// v6.13.9 — toggle expanded state for a task. Does an in-place DOM
+// operation to avoid re-rendering the entire PRD detail view.
 function _prdToggleTask(taskID) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   state._prdTaskExpanded[taskID] = !state._prdTaskExpanded[taskID];
-  // BL373 BUG-B: when inside the detail view, re-render it directly so
-  // the expand state is reflected immediately. _refreshAutomataOrPRD calls
-  // loadAutomataPanel (the list) which doesn't update the detail view DOM.
+  const row = document.querySelector('.prd-task-row[data-task-id="' + CSS.escape(taskID) + '"]');
+  if (row) {
+    const expanded = state._prdTaskExpanded[taskID];
+    row.classList.toggle('expanded', expanded);
+    const chevron = row.querySelector('.prd-task-chevron');
+    if (chevron) chevron.textContent = expanded ? '▾' : '▸';
+    const body = row.querySelector('.prd-task-expanded-body');
+    if (body) body.hidden = !expanded;
+    return;
+  }
+  // Fallback: row not in DOM (e.g. stories tab not rendered yet) — full re-render.
   if (_automataDetailId && typeof renderPRDDetailView === 'function') {
     renderPRDDetailView(_automataDetailId);
   } else if (typeof _refreshAutomataOrPRD === 'function') {
@@ -16715,115 +16722,198 @@ function _renderDetailContent(prd) {
   if (['decomposing','running'].includes(prd.status || '')) {
     _renderStatusGraphs(prd);
   }
-  // BL380 — session resource stats card in overview tab (CPU/GPU/mem per active task session).
-  if (tab === 'overview') _loadPRDSessionResources(prd);
+  // BL380 — resource stats now embedded in the active session card rows, not a separate slot.
 }
 
+// BL380 — Enhanced active session card: shows story/task context per session
+// and embeds CPU/GPU/RAM resource bars. Refreshes every 5 seconds.
 window._loadPRDActiveSessionCard = function(prd) {
   const slot = document.getElementById('prdActiveSessionCard');
   if (!slot) return;
-  apiFetch('/api/sessions').then(allSessions => {
-    const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
-    // v8.20.9 — also match by task.session_id so pre-v8.20.8 sessions (which
-    // lack prd_id) are still found if their ID appears in a task record.
-    // Build set of session IDs referenced by the *current* task records only.
-    // prd.stories (not prd.story) is the correct field name from the API.
-    const taskSessionIds = new Set();
-    (prd.stories || []).forEach(story => {
-      (story.tasks || []).forEach(task => { if (task.session_id) taskSessionIds.add(task.session_id); });
-    });
-    // Only show sessions that are non-terminal (running/waiting/verifying)
-    // OR are referenced by a current task record. Stale killed/failed sessions
-    // from previous decompositions share the same prd_id but have old task IDs
-    // and should not pollute the active session card.
-    const terminalStates = new Set(['killed','complete','failed','cancelled']);
-    const matches = list.filter(s => {
-      const fid = s.full_id || s.id;
-      const matchesPrd = (s.prd_id || s.parent_prd_id) === prd.id;
-      const matchesTask = taskSessionIds.has(fid);
-      if (!matchesPrd && !matchesTask) return false;
-      // Exclude terminal sessions unless they are a current task session
-      if (terminalStates.has(s.state) && !matchesTask) return false;
-      return true;
-    });
-    if (matches.length === 0) {
-      // GATE alpha.36 (operator 2026-05-10): no session yet — surface
-      // the gap as a COLLAPSIBLE card (operator: hide/collapse if no
-      // activity). Defaults open the first time, includes a Cancel
-      // action so the operator can reset stuck planning state. Full
-      // failed-state handling tracked in #291. Hidden entirely when
-      // status isn't actually active anymore (caller already gates,
-      // but defensive).
-      if (!['planning','decomposing','running'].includes(prd.status || '')) {
-        slot.style.display = 'none';
-        return;
+  if (window._prdActiveSessionInterval) clearInterval(window._prdActiveSessionInterval);
+
+  const fmtB = b => {
+    if (!b) return '0 B';
+    if (b >= 1073741824) return (b/1073741824).toFixed(1)+' GB';
+    if (b >= 1048576)    return (b/1048576).toFixed(0)+' MB';
+    return (b/1024).toFixed(0)+' KB';
+  };
+  const bar = (label, val, max, color, extraLabel) => {
+    const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
+    return `<div style="margin-bottom:3px;"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:1px;"><span>${escHtml(label)}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div></div></div>`;
+  };
+  const renderResourceBars = detail => {
+    if (!detail) return '';
+    const cpuPct = detail.cpu && detail.cpu.pct != null ? detail.cpu.pct
+                 : detail.host && detail.host.cpu_pct != null ? detail.host.cpu_pct : null;
+    const memUsed  = (detail.mem && detail.mem.used_bytes)  || (detail.host && detail.host.mem_used_bytes)  || 0;
+    const memTotal = (detail.mem && detail.mem.total_bytes) || (detail.host && detail.host.mem_total_bytes) || 0;
+    let html = '';
+    if (cpuPct != null) {
+      const c = typeof cpuPct === 'number' ? cpuPct : 0;
+      const cc = c >= 90 ? 'var(--error,#ef4444)' : c >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+      html += bar(t('prd_res_cpu')||'CPU', c, 100, cc, Math.round(c)+'%');
+    }
+    if (memUsed && memTotal) {
+      const mp = Math.round(memUsed/memTotal*100);
+      html += bar(t('prd_res_ram')||'RAM', memUsed, memTotal, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(memUsed)+' / '+fmtB(memTotal));
+    }
+    (detail.gpu || []).forEach((g, gi) => {
+      const multi = (detail.gpu||[]).length > 1;
+      if (g.util_pct != null) {
+        const gc = g.util_pct >= 80 ? 'var(--error,#ef4444)' : 'var(--accent2,#60a5fa)';
+        const gLabel = multi ? 'GPU '+(gi+1)+' '+(t('obs_cn_gpu_util')||'util') : 'GPU '+(t('obs_cn_gpu_util')||'util');
+        const gExtra = Math.round(g.util_pct)+'%'+(g.temp_c ? ' '+Math.round(g.temp_c)+'°C' : '')+(g.power_w ? ' '+g.power_w.toFixed(0)+'W' : '');
+        html += bar(gLabel, g.util_pct, 100, gc, gExtra);
       }
-      // During 'planning' (decompose in flight) there is no dedicated session —
-      // decompose is a synchronous server call. Show a calm decomposing indicator
-      // instead of the "broken/no session" warning so operators aren't alarmed.
-      if (prd.status === 'planning') {
-        slot.style.display = 'block';
-        const spin = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px;">⟳</span>';
-        slot.innerHTML = `<div style="padding:8px 12px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">${spin}${escHtml(t('decompose_in_progress')||'Decomposing PRD...')}</div>`;
-        return;
+      if (g.mem_total_bytes > 0) {
+        const vLabel = multi ? 'GPU '+(gi+1)+' '+(t('obs_cn_gpu_vram')||'VRAM') : 'GPU '+(t('obs_cn_gpu_vram')||'VRAM');
+        html += bar(vLabel, g.mem_used_bytes||0, g.mem_total_bytes, 'var(--accent2,#60a5fa)', fmtB(g.mem_used_bytes||0)+' / '+fmtB(g.mem_total_bytes));
       }
-      slot.style.display = 'block';
-      const idJStr = JSON.stringify(prd.id || '');
-      slot.innerHTML = `<details class="prd-stuck-warning" open style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:12px;color:var(--text2);">
-        <summary style="cursor:pointer;padding:8px 12px;font-weight:600;color:var(--warning,#f59e0b);list-style:none;display:flex;align-items:center;gap:6px;">
-          <span>⚠ ${escHtml(t('prd_no_active_session_title')||'No active session record')}</span>
-          <span style="margin-left:auto;font-size:10px;opacity:0.6;font-weight:400;">${escHtml(t('prd_collapse_hint')||'click to collapse')}</span>
-        </summary>
-        <div style="padding:0 12px 10px 12px;">
-          <div style="margin-bottom:8px;">${escHtml(t('prd_no_active_session_hint')||'Status looks active but no spawned session was found. The LLM call may have failed silently.')}</div>
-          <div style="margin-bottom:6px;font-size:11px;"><strong>${escHtml(t('prd_unstick_label')||'Unstick')}:</strong> ${escHtml(t('prd_unstick_steps')||'Cancel below, then re-trigger Plan from the lifecycle strip after verifying the LLM\'s compute node is reachable in Compute Nodes.')}</div>
-          <button class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="event.stopPropagation();automataCancel(${escHtml(idJStr)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>
-        </div>
-      </details>`;
+    });
+    return html;
+  };
+
+  // Build session-id → {story, task} lookup from PRD task records.
+  const sessionTaskMap = {};
+  (prd.stories || []).forEach(story => {
+    (story.tasks || []).forEach(task => {
+      if (task.session_id) sessionTaskMap[task.session_id] = { story, task };
+    });
+  });
+
+  // Resolve compute nodes from backend registry (cached per call).
+  let _backendsCache = null;
+  const getBackendNodes = (backendName) => {
+    const p = _backendsCache ? Promise.resolve(_backendsCache) : apiFetch('/api/backends').then(d => { _backendsCache = d; return d; });
+    return p.then(data => {
+      const llms = data && data.llm ? data.llm : [];
+      const entry = llms.find(l => l.name === backendName);
+      return entry && entry.compute_nodes && entry.compute_nodes.length ? entry.compute_nodes : [];
+    }).catch(() => []);
+  };
+  const fetchNodeDetail = ref => apiFetch('/api/compute/nodes/' + encodeURIComponent(ref) + '/detail').catch(() => null);
+  const fetchLocalStats = () => apiFetch('/api/stats').then(d => {
+    if (!d) return null;
+    const gpu = [];
+    if (d.gpu_name) gpu.push({ util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
+    return { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu };
+  }).catch(() => null);
+
+  function renderAndSchedule() {
+    if (!document.getElementById('prdActiveSessionCard')) {
+      clearInterval(window._prdActiveSessionInterval);
       return;
     }
-    // Active session(s) found — render compact card with state + hook
-    // status. Use first match for the inline card; full list lives in
-    // the future Sessions sub-tab (#290).
-    Promise.all(matches.slice(0, 3).map(s => {
-      const fid = s.full_id || s.id;
-      return apiFetch('/api/sessions/' + encodeURIComponent(fid) + '/status')
-        .then(b => ({ sess: s, board: b }))
-        .catch(() => ({ sess: s, board: null }));
-    })).then(rows => {
-      slot.style.display = 'block';
-      slot.innerHTML = rows.map(({ sess, board }) => {
-        const fid = sess.full_id || sess.id;
-        const stateClass = `state-badge-${sess.state || 'unknown'}`;
-        const isActive = !['killed','complete','failed'].includes(sess.state);
-        const animClass = (sess.state === 'running') ? 'state-badge-running' : '';
-        const hookDot = board && board.hook_health
-          ? (board.hook_health === 'alive'
-              ? `<span style="color:var(--success);font-size:11px;" title="Hooks alive">●</span>`
-              : board.hook_health === 'stale'
-                ? `<span style="color:var(--warning);font-size:11px;" title="Hooks stale (>5 min)">●</span>`
-                : `<span style="color:var(--text2);font-size:11px;" title="No hooks">●</span>`)
-          : '';
-        const focus = board && board.last_event
-          ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(board.last_event.event)}${board.last_event.tool ? ' · ' + escHtml(board.last_event.tool) : ''}</div>`
-          : '';
-        const stats = board && board.tests
-          ? `<span style="margin-left:10px;font-size:11px;"><span style="color:var(--success);">${board.tests.pass||0}✓</span> / <span style="color:var(--error);">${board.tests.fail||0}✗</span></span>`
-          : '';
-        return `<div class="prd-active-session-row" style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;cursor:pointer;margin-top:4px;" onclick="navigate('session-detail','${escHtml(fid)}')">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;">
-            <span class="state ${stateClass} ${animClass}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(sess.state || 'unknown')}</span>
-            <code style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);padding:1px 6px;border-radius:4px;">${escHtml(sess.id || fid.split('-').pop())}</code>
-            <span style="opacity:0.8;">${escHtml(sess.name || sess.task || '')}</span>
-            ${hookDot}
-            ${stats}
-            <span style="margin-left:auto;font-size:11px;opacity:0.6;">→</span>
+    apiFetch('/api/sessions').then(allSessions => {
+      const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
+      const taskSessionIds = new Set(Object.keys(sessionTaskMap));
+      const terminalStates = new Set(['killed','complete','failed','cancelled']);
+      const matches = list.filter(s => {
+        const fid = s.full_id || s.id;
+        const matchesPrd = (s.prd_id || s.parent_prd_id) === prd.id;
+        const matchesTask = taskSessionIds.has(fid);
+        if (!matchesPrd && !matchesTask) return false;
+        if (terminalStates.has(s.state) && !matchesTask) return false;
+        return true;
+      });
+
+      if (matches.length === 0) {
+        if (!['planning','decomposing','running'].includes(prd.status || '')) {
+          slot.style.display = 'none';
+          return;
+        }
+        if (prd.status === 'planning') {
+          slot.style.display = 'block';
+          const spin = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px;">⟳</span>';
+          // Planning: also show compute node stats for the decomposition backend.
+          const decompBackend = prd.decomposition_profile || prd.backend;
+          const statsP = decompBackend
+            ? getBackendNodes(decompBackend).then(nodes => nodes.length ? fetchNodeDetail(nodes[0]) : fetchLocalStats())
+            : fetchLocalStats();
+          statsP.then(detail => {
+            const resBars = renderResourceBars(detail);
+            slot.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin-top:4px;">
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);">${spin}<span>${escHtml(t('decompose_in_progress')||'Decomposing PRD...')}</span></div>
+              ${resBars ? `<div style="margin-top:8px;">${resBars}</div>` : ''}
+            </div>`;
+          });
+          return;
+        }
+        slot.style.display = 'block';
+        const idJStr = JSON.stringify(prd.id || '');
+        slot.innerHTML = `<details class="prd-stuck-warning" open style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:12px;color:var(--text2);">
+          <summary style="cursor:pointer;padding:8px 12px;font-weight:600;color:var(--warning,#f59e0b);list-style:none;display:flex;align-items:center;gap:6px;">
+            <span>⚠ ${escHtml(t('prd_no_active_session_title')||'No active session record')}</span>
+            <span style="margin-left:auto;font-size:10px;opacity:0.6;font-weight:400;">${escHtml(t('prd_collapse_hint')||'click to collapse')}</span>
+          </summary>
+          <div style="padding:0 12px 10px 12px;">
+            <div style="margin-bottom:8px;">${escHtml(t('prd_no_active_session_hint')||'Status looks active but no spawned session was found. The LLM call may have failed silently.')}</div>
+            <div style="margin-bottom:6px;font-size:11px;"><strong>${escHtml(t('prd_unstick_label')||'Unstick')}:</strong> ${escHtml(t('prd_unstick_steps')||'Cancel below, then re-trigger Plan from the lifecycle strip after verifying the LLM\'s compute node is reachable in Compute Nodes.')}</div>
+            <button class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="event.stopPropagation();automataCancel(${escHtml(idJStr)})" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>
           </div>
-          ${focus}
-        </div>`;
-      }).join('');
-    });
-  }).catch(() => { slot.style.display = 'none'; });
+        </details>`;
+        return;
+      }
+
+      // Fetch status board + compute node detail for each matched session.
+      Promise.all(matches.slice(0, 3).map(s => {
+        const fid = s.full_id || s.id;
+        const boardP = apiFetch('/api/sessions/' + encodeURIComponent(fid) + '/status').catch(() => null);
+        // Resolve compute node: live session compute_node_ref > backend lookup > local stats.
+        const cnRef = (typeof state !== 'undefined' && state.sessions && state.sessions[fid])
+          ? state.sessions[fid].compute_node_ref : (s.compute_node_ref || null);
+        const detailP = cnRef
+          ? fetchNodeDetail(cnRef)
+          : (function() {
+              const bkName = (sessionTaskMap[fid] && sessionTaskMap[fid].task.backend) || prd.backend;
+              if (!bkName) return fetchLocalStats();
+              return getBackendNodes(bkName).then(nodes => nodes.length ? fetchNodeDetail(nodes[0]) : fetchLocalStats());
+            })();
+        return Promise.all([boardP, detailP]).then(([board, detail]) => ({ sess: s, board, detail }));
+      })).then(rows => {
+        slot.style.display = 'block';
+        slot.innerHTML = rows.map(({ sess, board, detail }) => {
+          const fid = sess.full_id || sess.id;
+          const stateClass = `state-badge-${sess.state || 'unknown'}`;
+          const animClass = (sess.state === 'running') ? 'state-badge-running' : '';
+          const hookDot = board && board.hook_health
+            ? (board.hook_health === 'alive'
+                ? `<span style="color:var(--success);font-size:11px;" title="Hooks alive">●</span>`
+                : board.hook_health === 'stale'
+                  ? `<span style="color:var(--warning);font-size:11px;" title="Hooks stale (>5 min)">●</span>`
+                  : `<span style="color:var(--text2);font-size:11px;" title="No hooks">●</span>`)
+            : '';
+          const testStats = board && board.tests
+            ? `<span style="font-size:11px;"><span style="color:var(--success);">${board.tests.pass||0}✓</span> / <span style="color:var(--error);">${board.tests.fail||0}✗</span></span>`
+            : '';
+          const focus = board && board.last_event
+            ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(board.last_event.event)}${board.last_event.tool ? ' · ' + escHtml(board.last_event.tool) : ''}</div>`
+            : '';
+          // Story + task context for this session.
+          const ctx = sessionTaskMap[fid];
+          const ctxLine = ctx
+            ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml((ctx.story.title||'')+(ctx.task.title?' · '+ctx.task.title:''))}"><span style="opacity:0.6;">${escHtml(ctx.story.title||ctx.story.id||'')}</span>${ctx.task.title ? ` <span style="opacity:0.4;">·</span> <span>${escHtml(ctx.task.title)}</span>` : ''}</div>`
+            : '';
+          const resBars = renderResourceBars(detail);
+          return `<div class="prd-active-session-row" style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin-top:4px;" onclick="navigate('session-detail','${escHtml(fid)}')" style="cursor:pointer;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;cursor:pointer;">
+              <span class="state ${stateClass} ${animClass}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(sess.state || 'unknown')}</span>
+              <code style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);padding:1px 6px;border-radius:4px;">${escHtml(sess.id || fid.split('-').pop())}</code>
+              <span style="opacity:0.8;">${escHtml(sess.name || '')}</span>
+              ${hookDot}${testStats}
+              <span style="margin-left:auto;font-size:11px;opacity:0.6;">→</span>
+            </div>
+            ${ctxLine}${focus}
+            ${resBars ? `<div style="margin-top:7px;">${resBars}</div>` : ''}
+          </div>`;
+        }).join('');
+      });
+    }).catch(() => { slot.style.display = 'none'; });
+  }
+
+  renderAndSchedule();
+  window._prdActiveSessionInterval = setInterval(renderAndSchedule, 5000);
 };
 
 // BL373 UI-2+3 — Status graphs: decompose indicator, story/task progress bars,
@@ -17041,13 +17131,11 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
   });
 };
 
-// BL380 — CPU/GPU/memory stats card in PRD overview tab for active task sessions.
-// Fetches compute node detail by resolving the backend's compute_nodes from
-// /api/backends (added in this patch). During 'planning' status, resolves the
-// decomposition backend (prd.decomposition_profile || prd.backend). During task
-// running, tries live session compute_node_ref first, then falls back to
-// prd.backend. Local-only backends fall back to /api/stats. Refreshes every 5s.
+// BL380 — formerly a standalone resource stats card; now resource bars are embedded
+// directly in _loadPRDActiveSessionCard rows. This function is kept as a no-op stub
+// so any stale call sites don't throw.
 window._loadPRDSessionResources = function(prd) {
+  return; // resources now live inside _loadPRDActiveSessionCard
   const slotId = 'prdSessionResources_' + (prd.id || '');
   const slot = document.getElementById(slotId);
   if (!slot) return;
@@ -17378,7 +17466,6 @@ function _renderDetailOverview(prd) {
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
-    ${(activeTasks.length > 0 || ['planning', 'running'].includes(prd.status || '')) ? `<div id="prdSessionResources_${escHtml(prd.id||'')}" style="margin:8px 0;"></div>` : ''}
     ${totalTasks > 0 ? `<div class="prd-detail-progress" style="margin-top:10px;">
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>

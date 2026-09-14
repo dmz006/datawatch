@@ -1742,6 +1742,22 @@ body {
   gap: 2px;
 }
 .prd-task-header-spacer { flex: 1; min-width: 4px; }
+/* Narrow phone: stack title + badges onto their own full-width row below the id/controls row. */
+@media (max-width: 520px) {
+  .prd-task-title {
+    order: 10;
+    flex-basis: 100%;
+    word-break: break-word;
+    padding-left: 28px; /* align under task-id, past chevron+glyph */
+  }
+  .prd-task-llm-badge,
+  .prd-task-spawn-badge,
+  .prd-task-child-link,
+  .prd-task-verdicts {
+    order: 11;
+  }
+  .prd-task-header-spacer { display: none; }
+}
 .prd-task-expanded-body {
   padding: 0 8px 8px 24px;
   border-top: 1px dashed var(--border);
