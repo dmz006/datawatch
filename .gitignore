@@ -19,6 +19,7 @@ internal/stats/bpf/vmlinux.h
 # F10: container build env (registry creds + IPs)
 .env.build
 dist/
+/datawatch-stats
 
 # Local-environment leak prevention (AGENT.md "No local-environment
 # leaks in git" rule). Operator-specific values stay out of the repo.

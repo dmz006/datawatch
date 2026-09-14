@@ -662,9 +662,16 @@ Two related gaps:
 
 2. **Local system GPU** — the local datawatch instance's own GPU is not showing in the session cards (Associated Cards) and PRD progress views. The GPU metrics from the local system are tracked (if at all) via the observer peer for the local host, but they are not wired into the session card or PRD views.
 
-**Scope:** Investigate `datawatch-stats` agent config on the compute host; ensure `SMIProbe` or `TegraStatsProbe` is returning data; wire local-system GPU into session card and PRD GPU/CPU card introduced in v8.25.4.
+**Root cause (confirmed 2026-09-13):**
+- The Thor host has no `GR3D_FREQ` field in `tegrastats` output, so `TegraStatsProbe.util_pct` is always 0. NVML (libnvidia-ml.so) reports utilisation natively on Thor.
+- The daemon's `obsCollector.SetGPUFn` hook existed but was never called at startup → local GPU missing from all built-in observer stats.
 
-**Status:** Open — awaiting sprint slot.
+**Fix (v8.26.0 / commit a723fcc1):**
+- Added `NVMLProbe` in `internal/observer/gpu_nvml_linux.go` — loads `libnvidia-ml.so` at runtime via `purego`/dlopen, no CGO. Probe priority: NVML > TegraStats > SMI in both `datawatch-stats` and daemon.
+- Wired GPU probe onto `obsCollector` before `Start()` in `cmd/datawatch/main.go`.
+- Deployed new `datawatch-stats` binary to compute host `datawatch`; service restart pending operator action (`sudo systemctl restart datawatch-stats` on `datawatch` host).
+
+**Status:** Implemented — pending service restart on remote host to activate NVML probe.
 
 ---
 
