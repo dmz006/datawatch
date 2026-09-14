@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.25.12 — fix(autonomous): verifier detects newly created untracked files
+
+### Fixed
+- **Verifier hard-fail on tasks that create new files** — when a PRD task's only output is one or more newly created files (not yet tracked by git), `git diff <pre-task-SHA>..HEAD` returns empty, which since v8.25.10 caused an immediate hard fail with "no output". The verifier now captures the list of untracked files (`git ls-files --others --exclude-standard`) at spawn time, stores it in `Task.PreTaskUntrackedFiles`, and compares post-task to detect truly new files. New files are included in the verifier prompt as a `<new_files>` section so the LLM can assess them directly.
+- **`SpawnResult.PreTaskUntrackedFiles`** — new field populated by `autonomousSpawn`; persisted into `Task` by the executor so the verifier has it available at check time.
+
 ## v8.25.11 — fix(autonomous): enforce strict contract on all guardrail and verifier LLM responses
 
 ### Fixed

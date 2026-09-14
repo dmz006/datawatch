@@ -357,6 +357,10 @@ type Task struct {
 	// verifier to produce a git diff of the worker's actual changes.
 	// Empty when the project has no git repo or the task is cluster-dispatched.
 	PreTaskSHA string `json:"pre_task_sha,omitempty"`
+	// v8.25.12 — untracked file list (git ls-files --others --exclude-standard)
+	// captured alongside PreTaskSHA. Verifier uses this to detect newly created
+	// files that are not tracked by git (e.g. new documentation, new test fixtures).
+	PreTaskUntrackedFiles []string `json:"pre_task_untracked_files,omitempty"`
 
 	// BL367 — quality gate result recorded after each task completes.
 	// Nil when quality gates are disabled for this PRD.

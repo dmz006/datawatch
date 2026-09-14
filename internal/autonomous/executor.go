@@ -68,6 +68,10 @@ type SpawnResult struct {
 	// evidence (BL366). Empty when ProjectDir is not a git repo or when the
 	// task is cluster-dispatched to a remote worker.
 	PreTaskSHA string
+	// PreTaskUntrackedFiles is the list of untracked files (git ls-files --others)
+	// captured alongside PreTaskSHA. Used by the verifier to detect newly created
+	// files that are not yet tracked by git (v8.25.12).
+	PreTaskUntrackedFiles []string
 	Err        error
 }
 
@@ -267,7 +271,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return fmt.Errorf("spawn: %w", err)
 		}
 		t.SessionID = sr.SessionID
-		t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
+		t.PreTaskSHA = sr.PreTaskSHA                             // BL366: persisted for verifier diff grounding
+		t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles       // v8.25.12: detect newly created untracked files
 		t.Status = TaskVerifying
 		_ = m.store.SaveTask(t)
 

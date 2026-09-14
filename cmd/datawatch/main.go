@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.25.11"
+var Version = "8.25.12"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3933,10 +3933,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"---"
 			// BL366 — capture git HEAD SHA before the worker runs so the
 			// verifier can diff the actual change. Failure is non-fatal.
+			// v8.25.12 — also capture untracked files so verifier can detect
+			// newly created files that aren't yet tracked by git.
 			var preTaskSHA string
+			var preTaskUntrackedFiles []string
 			if req.ProjectDir != "" {
 				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
 					preTaskSHA = strings.TrimSpace(string(out))
+				}
+				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir,
+					"ls-files", "--others", "--exclude-standard").Output(); err == nil {
+					for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+						if f != "" {
+							preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
+						}
+					}
 				}
 			}
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
@@ -4015,7 +4026,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			var out struct{ ID string `json:"id"` }
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =
@@ -4086,12 +4097,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						VerifiedAt: time.Now(),
 					}, nil
 				}
-				if len(diffOut) == 0 {
-					// No changes detected — task ran but wrote nothing. Hard fail so
-					// AutoFixRetries can trigger a re-run rather than silently advancing.
+				// v8.25.12 — detect newly created untracked files (e.g. new docs, test
+				// fixtures) that don't appear in git diff because they haven't been committed.
+				// Build a set of pre-task untracked files for O(1) lookup.
+				preUntracked := make(map[string]struct{}, len(task.PreTaskUntrackedFiles))
+				for _, f := range task.PreTaskUntrackedFiles {
+					preUntracked[f] = struct{}{}
+				}
+				var newUntrackedFiles []string
+				if curOut, err := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+					"ls-files", "--others", "--exclude-standard").Output(); err == nil {
+					for _, f := range strings.Split(strings.TrimSpace(string(curOut)), "\n") {
+						if f != "" {
+							if _, existed := preUntracked[f]; !existed {
+								newUntrackedFiles = append(newUntrackedFiles, f)
+							}
+						}
+					}
+				}
+				if len(diffOut) == 0 && len(newUntrackedFiles) == 0 {
+					// No tracked changes, no new untracked files — task produced nothing.
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
-						Summary:    "verifier: no changes detected (diff empty against pre-task SHA); task produced no output",
+						Summary:    "verifier: no changes detected (diff empty and no new files); task produced no output",
 						VerifiedAt: time.Now(),
 					}, nil
 				}
@@ -4099,22 +4127,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if maxBytes <= 0 {
 					maxBytes = 8192
 				}
-				truncated := false
-				if len(diffOut) > maxBytes {
-					diffOut = diffOut[:maxBytes]
-					truncated = true
-				}
-				note := ""
-				if truncated {
-					note = " (truncated to " + fmt.Sprintf("%d", maxBytes) + " bytes)"
-				}
-				metricsPkg.VerifierDiffInjectionsTotal.Inc()
-				diffSection = fmt.Sprintf(`
+				if len(diffOut) > 0 {
+					truncated := false
+					if len(diffOut) > maxBytes {
+						diffOut = diffOut[:maxBytes]
+						truncated = true
+					}
+					note := ""
+					if truncated {
+						note = " (truncated to " + fmt.Sprintf("%d", maxBytes) + " bytes)"
+					}
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
+					diffSection = fmt.Sprintf(`
 
 Git diff (actual change%s):
 <diff>
 %s
 </diff>`, note, string(diffOut))
+				}
+				if len(newUntrackedFiles) > 0 {
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
+					diffSection += fmt.Sprintf(`
+
+New files created (not yet committed):
+<new_files>
+%s
+</new_files>`, strings.Join(newUntrackedFiles, "\n"))
+				}
 			}
 			// BL369 — security preamble + data-boundary tag + Layer 3 federation trust notice.
 			specPart := fmt.Sprintf("Task spec:\n<user_data>\n%s\n</user_data>", task.Spec)
