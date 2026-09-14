@@ -122,6 +122,15 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_btn_reset_to_draft",
 		"prd_btn_reset_to_draft_title",
 		"prd_reject_prompt",
+		// v8.27.0 BL382 — cancel story/task + requeue task affordances.
+		"prd_requeue_task",
+		"prd_requeue_task_label",
+		"prd_cancel_task",
+		"prd_cancel_task_confirm",
+		"prd_cancel_task_ok",
+		"prd_cancel_story",
+		"prd_cancel_story_confirm",
+		"prd_cancel_story_ok",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

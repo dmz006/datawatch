@@ -114,6 +114,11 @@ type SystemStats struct {
 	QualityGatePass        int `json:"quality_gate_pass,omitempty"`
 	QualityGateFail        int `json:"quality_gate_fail,omitempty"`
 
+	// BL382 — cancel/requeue lifecycle operation totals.
+	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
+	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
+	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
+
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
 	WebSearchProvider     string    `json:"web_search_provider,omitempty"`

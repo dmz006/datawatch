@@ -10049,6 +10049,13 @@ function renderStory(prd, story) {
     ? _renderStoryReadOnlyExtras(story)
     : '';
 
+  // BL382 — cancel story button (visible when PRD is running + story not terminal).
+  const terminalStory = ['completed','cancelled','failed'].includes(story.status || '');
+  const canCancelStory = prd.status === 'running' && !terminalStory;
+  const cancelStoryBtn = canCancelStory
+    ? `<button class="prd-story-cancel-btn" onclick="event.stopPropagation();prdCancelStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title||'')})" title="${(window._t&&window._t('prd_cancel_story'))||'Cancel this story'}">✕ Cancel</button>`
+    : '';
+
   // 2(b) — "Files:" text label + 📂 button.
   const hasFiles = story.files && story.files.length;
   const filesPlannedRow = hasFiles
@@ -10068,7 +10075,7 @@ function renderStory(prd, story) {
       <strong class="prd-story-title">${escHtml(story.title || story.id)}</strong>
       ${statusPill}${profPill}
       <span class="prd-story-header-spacer"></span>
-      ${arBtns}${editIcons}
+      ${cancelStoryBtn}${arBtns}${editIcons}
     </div>
     ${verdictsRow}
     ${desc}
@@ -10293,9 +10300,18 @@ function renderTask(prd, story, task, editable) {
     ? `<span class="prd-task-session-link" onclick="event.stopPropagation();navigate('session-detail','${escHtml(task.session_id)}')" title="${t('prd_task_view_session')||'View worker session'}">&rarr; ${escHtml(task.session_id.slice(0,4))}</span>`
     : '';
   // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
+  // BL382 — also add cancel-task (pending/in_progress) + requeue (completed/cancelled).
   const canRetry = (task.status === 'failed' || task.status === 'blocked') && prd.status === 'running';
+  const canCancelTask = ['pending','in_progress','running','verifying','running_tests'].includes(task.status||'') && prd.status === 'running';
+  const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && prd.status === 'running';
   const retryBtn = canRetry
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
+    : '';
+  const cancelTaskBtn = canCancelTask && editable
+    ? `<button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdCancelTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.title||'')})" title="${t('prd_cancel_task')||'Cancel this task'}">✕</button>`
+    : '';
+  const requeueBtn = canRequeue && editable
+    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdRequeueTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_requeue_task')||'Re-run this task'}">&#8635; ${t('prd_requeue_task_label')||'Re-run'}</button>`
     : '';
 
   // Status glyph for the collapsed header row.
@@ -10357,7 +10373,7 @@ function renderTask(prd, story, task, editable) {
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}
       <span class="prd-task-header-spacer"></span>
-      ${retryBtn}${editIcons}
+      ${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
     ${expandedBody}
   </div>`;
@@ -10375,6 +10391,47 @@ function prdResetTask(prdID, taskID) {
   }).catch(e => showToast((window._t && window._t('prd_task_reset_fail')) || 'Reset failed: ' + e.message, 'error'));
 }
 window.prdResetTask = prdResetTask;
+
+// BL382 — requeue a completed/cancelled task (reset with force=true).
+function prdRequeueTask(prdID, taskID) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/reset_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, actor: 'operator', force: true }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_task_requeue_ok')) || 'Task re-queued.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_task_requeue_fail')) || 'Re-queue failed: ' + e.message, 'error'));
+}
+window.prdRequeueTask = prdRequeueTask;
+
+// BL382 — cancel a single task.
+function prdCancelTask(prdID, taskID, title) {
+  if (!confirm((window._t && window._t('prd_cancel_task_confirm')) || ('Cancel task "' + (title||taskID) + '"?'))) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/cancel_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, actor: 'operator', reason: 'operator cancelled' }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_cancel_task_ok')) || 'Task cancelled.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_cancel_task_fail')) || 'Cancel failed: ' + e.message, 'error'));
+}
+window.prdCancelTask = prdCancelTask;
+
+// BL382 — cancel a story and all its pending/in-progress tasks.
+function prdCancelStory(prdID, storyID, title) {
+  if (!confirm((window._t && window._t('prd_cancel_story_confirm')) || ('Cancel story "' + (title||storyID) + '" and all remaining tasks?'))) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/cancel_story', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_id: storyID, actor: 'operator', reason: 'operator cancelled' }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_cancel_story_ok')) || 'Story cancelled.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_cancel_story_fail')) || 'Cancel failed: ' + e.message, 'error'));
+}
+window.prdCancelStory = prdCancelStory;
 
 // v6.13.9 — toggle expanded state for a task. Does an in-place DOM
 // operation to avoid re-rendering the entire PRD detail view.

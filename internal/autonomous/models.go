@@ -67,6 +67,7 @@ const (
 	StoryCompleted         StoryStatus = "completed"
 	StoryBlocked           StoryStatus = "blocked"
 	StoryFailed            StoryStatus = "failed"
+	StoryCancelled         StoryStatus = "cancelled" // BL382 — operator-cancelled via cancel_story
 )
 
 type TaskStatus string
@@ -465,4 +466,9 @@ type LoopStatus struct {
 	QualityGatePass        int `json:"quality_gate_pass,omitempty"`        // gate ran and no regression
 	QualityGateFail        int `json:"quality_gate_fail,omitempty"`        // gate ran and regression detected
 	QualityGateRegressions int `json:"quality_gate_regressions,omitempty"` // alias for fail for clarity
+
+	// BL382 — cancel/requeue lifecycle operation totals (across all stored PRDs).
+	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
+	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
+	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
 }

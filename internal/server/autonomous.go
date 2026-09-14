@@ -654,7 +654,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "reset_task":
 		// v8.23.0 — operator resets a failed/blocked task to pending so
 		// the autonomous loop retries it without cancelling the whole PRD.
-		// Body: {task_id, actor?}.
+		// BL382 — force=true also requeues completed/cancelled tasks.
+		// Body: {task_id, actor?, force?}.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -665,6 +666,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			TaskID string `json:"task_id"`
 			Actor  string `json:"actor"`
+			Force  bool   `json:"force"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -677,9 +679,85 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.ResetTask(id, req.TaskID, req.Actor)
+		updated, err := s.autonomousMgr.ResetTask(id, req.TaskID, req.Actor, req.Force)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			status := http.StatusBadRequest
+			if len(err.Error()) > 4 && err.Error()[:4] == "409:" {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "cancel_story":
+		// BL382 — cancel an individual story without cancelling the whole PRD.
+		// Body: {story_id, actor?, reason?}.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			Actor   string `json:"actor"`
+			Reason  string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.CancelStory(id, req.StoryID, req.Actor, req.Reason)
+		if err != nil {
+			status := http.StatusBadRequest
+			if len(err.Error()) > 4 && err.Error()[:4] == "409:" {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "cancel_task":
+		// BL382 — cancel an individual task without cancelling its story or PRD.
+		// Body: {task_id, actor?, reason?}.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID string `json:"task_id"`
+			Actor  string `json:"actor"`
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.CancelTask(id, req.TaskID, req.Actor, req.Reason)
+		if err != nil {
+			status := http.StatusBadRequest
+			if len(err.Error()) > 4 && err.Error()[:4] == "409:" {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		writeJSONOK(w, updated)

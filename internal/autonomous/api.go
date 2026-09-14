@@ -308,8 +308,22 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	}
 	return out, err
 }
-func (a *API) ResetTask(prdID, taskID, actor string) (any, error) {
-	out, err := a.M.ResetTask(prdID, taskID, actor)
+func (a *API) ResetTask(prdID, taskID, actor string, force bool) (any, error) {
+	out, err := a.M.ResetTask(prdID, taskID, actor, force)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) CancelStory(prdID, storyID, actor, reason string) (any, error) {
+	out, err := a.M.CancelStory(prdID, storyID, actor, reason)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) CancelTask(prdID, taskID, actor, reason string) (any, error) {
+	out, err := a.M.CancelTask(prdID, taskID, actor, reason)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

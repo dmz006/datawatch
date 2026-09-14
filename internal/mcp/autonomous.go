@@ -327,18 +327,64 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reset_task",
-		mcpsdk.WithDescription("v8.23.0 — reset a failed or blocked task back to pending so the autonomous loop retries it. PRD must be running."),
+		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked task to pending so the autonomous loop retries it. BL382: pass force=true to requeue a completed or cancelled task."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
+		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (not just failed/blocked)")),
 	)
 }
 func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]string{
+	body, _ := json.Marshal(map[string]any{
 		"task_id": req.GetString("task_id", ""),
 		"actor":   "operator",
+		"force":   req.GetBool("force", false),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reset_task", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDCancelStory() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_cancel_story",
+		mcpsdk.WithDescription("BL382 — cancel an individual story without cancelling the whole PRD. In-progress task sessions are killed. Returns 409 if the story is already in a terminal state."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to cancel")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Optional cancellation reason")),
+	)
+}
+func (s *Server) handleAutonomousPRDCancelStory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id": req.GetString("story_id", ""),
+		"reason":   req.GetString("reason", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/cancel_story", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDCancelTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_cancel_task",
+		mcpsdk.WithDescription("BL382 — cancel an individual task without cancelling its story or PRD. The running session (if any) is killed. Returns 409 if the task is already in a terminal state."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to cancel")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Optional cancellation reason")),
+	)
+}
+func (s *Server) handleAutonomousPRDCancelTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id": req.GetString("task_id", ""),
+		"reason":  req.GetString("reason", ""),
+		"actor":   "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/cancel_task", body)
 	if err != nil {
 		return nil, err
 	}

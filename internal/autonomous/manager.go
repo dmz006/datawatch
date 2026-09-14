@@ -890,7 +890,9 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 // ResetTask (v8.23.0) resets a failed or blocked task back to pending so
 // the autonomous loop will retry it. Only allowed while the PRD is running.
 // Clears status, error, session_id, verification, and retry_count.
-func (m *Manager) ResetTask(prdID, taskID, actor string) (*PRD, error) {
+// ResetTask resets a failed/blocked task to pending for retry.
+// BL382: force=true also requeues completed or cancelled tasks.
+func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -903,8 +905,13 @@ func (m *Manager) ResetTask(prdID, taskID, actor string) (*PRD, error) {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
-				if t.Status != TaskFailed && t.Status != TaskBlocked {
-					return nil, fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried", taskID, t.Status)
+				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked
+				isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
+				if !isRetryable && !isRequeue {
+					if force {
+						return nil, fmt.Errorf("task %q status %q cannot be requeued even with force=true; only completed or cancelled tasks qualify", taskID, t.Status)
+					}
+					return nil, fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
 				}
 				t.Status = ""
 				t.Error = ""
@@ -925,11 +932,127 @@ func (m *Manager) ResetTask(prdID, taskID, actor string) (*PRD, error) {
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "reset_task", Actor: actor,
-		Note: fmt.Sprintf("task=%s reset to pending for retry", taskID),
-	})
+	now := time.Now()
+	prd.UpdatedAt = now
+	kind := "reset_task"
+	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
+	if force {
+		kind = "requeue_task"
+		note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
+	}
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor, Note: note})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// CancelStory (BL382) — operator cancels a single story without cancelling the whole PRD.
+// The story is marked cancelled; any in-progress tasks for that story have their sessions killed.
+// Returns 409 if the story is already in a terminal state.
+func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	terminalStory := map[StoryStatus]bool{
+		StoryCompleted: true, StoryFailed: true, StoryCancelled: true,
+	}
+	now := time.Now()
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			if terminalStory[prd.Story[si].Status] {
+				return nil, fmt.Errorf("409: story %q is already in terminal state %q", storyID, prd.Story[si].Status)
+			}
+			// Kill any running task sessions for this story.
+			m.mu.Lock()
+			fn := m.sessionKillerFn
+			m.mu.Unlock()
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.SessionID != "" && fn != nil {
+					if err := fn(t.SessionID); err != nil {
+						log.Printf("[autonomous] cancel_story: kill session %s: %v", t.SessionID, err)
+					}
+				}
+				if t.Status != TaskCompleted && t.Status != TaskCancelled {
+					t.Status = TaskCancelled
+					t.UpdatedAt = now
+				}
+			}
+			prd.Story[si].Status = StoryCancelled
+			prd.Story[si].UpdatedAt = now
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	note := fmt.Sprintf("story=%s cancelled", storyID)
+	if reason != "" {
+		note += ": " + reason
+	}
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_story", Actor: actor, Note: note})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// CancelTask (BL382) — operator cancels a single task without cancelling its story or PRD.
+// Returns 409 if the task is already in a terminal state.
+func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	terminalTask := map[TaskStatus]bool{
+		TaskCompleted: true, TaskCancelled: true,
+	}
+	now := time.Now()
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID == taskID {
+				if terminalTask[t.Status] {
+					return nil, fmt.Errorf("409: task %q is already in terminal state %q", taskID, t.Status)
+				}
+				// Kill the session if it's running.
+				if t.SessionID != "" {
+					m.mu.Lock()
+					fn := m.sessionKillerFn
+					m.mu.Unlock()
+					if fn != nil {
+						if err := fn(t.SessionID); err != nil {
+							log.Printf("[autonomous] cancel_task: kill session %s: %v", t.SessionID, err)
+						}
+					}
+				}
+				t.Status = TaskCancelled
+				t.UpdatedAt = now
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	note := fmt.Sprintf("task=%s cancelled", taskID)
+	if reason != "" {
+		note += ": " + reason
+	}
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_task", Actor: actor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -1468,6 +1591,20 @@ func (m *Manager) Status() LoopStatus {
 						st.QualityGatePass++
 					}
 				}
+				// BL382 — cancelled task count.
+				if t.Status == TaskCancelled {
+					st.TasksCancelled++
+				}
+			}
+			// BL382 — cancelled story count.
+			if s.Status == StoryCancelled {
+				st.StoriesCancelled++
+			}
+		}
+		// BL382 — requeued task count from decision log.
+		for _, d := range p.Decisions {
+			if d.Kind == "requeue_task" {
+				st.TasksRequeued++
 			}
 		}
 	}

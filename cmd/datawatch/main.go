@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.26.1"
+var Version = "8.27.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5256,6 +5256,10 @@ Return STRICT JSON:
 				s.QualityGateRuns = st.QualityGateRuns
 				s.QualityGatePass = st.QualityGatePass
 				s.QualityGateFail = st.QualityGateFail
+				// BL382 — cancel/requeue lifecycle counters.
+				s.StoriesCancelled = st.StoriesCancelled
+				s.TasksCancelled = st.TasksCancelled
+				s.TasksRequeued = st.TasksRequeued
 			})
 		}
 		// BL372 — wire web search stats into the collector.

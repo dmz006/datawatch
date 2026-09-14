@@ -3,6 +3,21 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.0 — feat(autonomous): cancel story/task, requeue task, active session resource bars
+
+### Added
+- **`cancel_story` operator action** — cancel an individual story (and all its non-completed tasks) while a PRD is running. Kills any in-progress task session. Available via `POST /api/autonomous/prds/{id}/cancel_story`, MCP tool `autonomous_prd_cancel_story`, and a new ✕ Cancel button on story cards in the PRD detail view.
+- **`cancel_task` operator action** — cancel a single task (pending or in-progress) while a PRD is running. Kills the task's session if one is active. Available via `POST /api/autonomous/prds/{id}/cancel_task`, MCP tool `autonomous_prd_cancel_task`, and a new ✕ button on task rows.
+- **`requeue_task` action (force reset)** — re-run a completed or cancelled task by resetting it to pending. `reset_task` now accepts a `force: true` field; when set, completed/cancelled tasks are eligible. Available via `POST /api/autonomous/prds/{id}/reset_task` with `force: true`, MCP tool `autonomous_prd_reset_task` with `force` boolean, and a new ↺ Re-run button on task rows.
+- **Active session resource bars in story card** — PRD Overview no longer shows a separate session-resources section. CPU/RAM/GPU bars and story/task context are now embedded directly in each running session row within the active story card.
+- **`StoryCancelled` status** — new story status constant; stories cancelled via `cancel_story` are marked `cancelled`.
+- **Observability counters** — `stories_cancelled`, `tasks_cancelled`, `tasks_requeued` added to `GET /api/autonomous/status` and the periodic stats snapshot.
+- **Locale support** — cancel/requeue labels added to all 5 locales (en/de/es/fr/ja).
+
+### Fixed
+- **Task expand/collapse full re-render** — `_prdToggleTask` now does an in-place DOM toggle (`classList.toggle`, `body.hidden`) with no PRD detail view re-render. Falls back to re-render only when the row is not in the DOM.
+- **Narrow phone screen task title overlap** — at ≤520px the task title now stacks below the ID/controls row via CSS `order` property, preventing overlap with the status glyph and action buttons.
+
 ## v8.26.1 — fix(observer): peer stats grid reads wrong field paths; GPU power/temp now separate rows
 
 ### Fixed
