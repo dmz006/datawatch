@@ -63,7 +63,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
+| Pending backlog | 2 | BL335 — APNs push for iOS client (GH#107); BL381 — per-story LLM config + multi-LLM concurrent execution |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
@@ -678,7 +678,7 @@ Two related gaps:
 - Wired GPU probe onto `obsCollector` before `Start()` in `cmd/datawatch/main.go`.
 - Deployed new `datawatch-stats` binary to compute host `datawatch`; service restart pending operator action (`sudo systemctl restart datawatch-stats` on `datawatch` host).
 
-**Status:** Implemented — pending service restart on remote host to activate NVML probe.
+**Status:** Implemented — binary staged at `/tmp/datawatch-stats-new` on `datawatch` host. Run `sudo cp /tmp/datawatch-stats-new /usr/local/bin/datawatch-stats && sudo systemctl restart datawatch-stats` to activate NVML probe.
 
 ---
 
@@ -709,6 +709,22 @@ When a PRD has active task sessions running, the PRD status view should show a r
 - Called from `_renderDetailContent` whenever the overview tab is rendered.
 
 **Status:** ✅ Closed — implemented v8.26.0 (2026-09-13). All builds green.
+
+---
+
+#### BL381 — Per-story LLM config + multi-story concurrent execution with different LLMs (filed 2026-09-13)
+
+Stories currently have no LLM override fields — only Tasks (`backend`/`effort`/`model`) and PRDs do. This means you cannot say "Story 1 uses claude-opus, Story 2 uses llama3 via ollama." You have to set each task individually.
+
+**Scope:**
+- Add `Backend`, `Effort`, `Model` fields to the `Story` struct in `autonomous/models.go`
+- Resolution order: per-task → per-story → per-PRD → global config (task inherits from story when unset; story inherits from PRD when unset)
+- Expose per-story LLM picker in the PWA story editor modal
+- No executor changes needed: BL370's concurrent goroutine pool already fans independent tasks out in parallel; tasks from Story A (claude-opus) and Story B (llama3) will run concurrently once both stories have tasks in the ready state
+
+**Not in scope:** Cross-story `DependsOn` — the existing topo-sort handles cross-story task dependencies already. If Story B's first task lists Story A's last task in its DependsOn, the executor waits correctly.
+
+**Status:** Pending — filed 2026-09-13. Targeting v8.27.0 (next minor after v8.26.0 tag + CI).
 
 ---
 
