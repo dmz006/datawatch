@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.27.0"
+var Version = "8.27.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4328,7 +4328,10 @@ Reply with STRICT JSON:
 						}
 						for _, story := range prd.Story {
 							for _, task := range story.Tasks {
-								if task.Status != autonomouspkg.TaskInProgress || task.SessionID == "" {
+								active := task.Status == autonomouspkg.TaskInProgress ||
+									task.Status == autonomouspkg.TaskVerifying ||
+									task.Status == autonomouspkg.TaskRunningTests
+								if !active || task.SessionID == "" {
 									continue
 								}
 								s, ok := mgr.GetSession(task.SessionID)

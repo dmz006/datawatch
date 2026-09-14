@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.1 — fix(autonomous): watchdog misses verifying/running_tests tasks; remove insecure spawned watchdog schedule
+
+### Fixed
+- **Automata watchdog blind to `verifying`/`running_tests` tasks** — the built-in watchdog goroutine only scanned tasks in `in_progress` state for SSE stall patterns. Tasks stuck in `verifying` or `running_tests` (where the opencode session has an active SSE stream but the LLM backend timed out) were never detected and never killed, leaving them stuck until manual operator intervention. The watchdog now covers all three active task states.
+- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/dmz/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
+
 ## v8.27.0 — feat(autonomous): cancel story/task, requeue task, active session resource bars
 
 ### Added
