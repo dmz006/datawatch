@@ -4393,7 +4393,11 @@ function sendSessionInput() {
   if (!inputEl) return;
   let text = inputEl.value; // Don't trim — empty string sends Enter
   if (state._pendingAttachments.length) {
-    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (state._pendingAttachments.some(a => !a.path)) {
+      showToast(t('image_wait_upload') || 'Wait for image upload to finish', 'info');
+      return;
+    }
+    const tags = state._pendingAttachments.map(a => '[image:' + a.path + ']').join('\n');
     if (tags) text = (text ? text + '\n' : '') + tags;
     _clearAllAttachments();
   }
@@ -4419,7 +4423,11 @@ function sendSessionInputDirect() {
   if (!inputEl || !state.activeSession) return;
   let text = inputEl.value.trim();
   if (state._pendingAttachments && state._pendingAttachments.length) {
-    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (state._pendingAttachments.some(a => !a.path)) {
+      showToast(t('image_wait_upload') || 'Wait for image upload to finish', 'info');
+      return;
+    }
+    const tags = state._pendingAttachments.map(a => '[image:' + a.path + ']').join('\n');
     if (tags) text = (text ? text + '\n' : '') + tags;
     _clearAllAttachments();
   }
@@ -4489,7 +4497,11 @@ function sendChannelMessage() {
   if (!inputEl || !state.activeSession) return;
   let text = inputEl.value.trim();
   if (state._pendingAttachments.length) {
-    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (state._pendingAttachments.some(a => !a.path)) {
+      showToast(t('image_wait_upload') || 'Wait for image upload to finish', 'info');
+      return;
+    }
+    const tags = state._pendingAttachments.map(a => '[image:' + a.path + ']').join('\n');
     if (tags) text = (text ? text + '\n' : '') + tags;
     _clearAllAttachments();
   }
@@ -4568,7 +4580,7 @@ function _refreshAttachmentPreview() {
     + `<img src="${escHtml(a.objectUrl)}" alt="" style="width:28px;height:22px;object-fit:cover;border-radius:2px;flex-shrink:0;" />`
     + `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">${escHtml(a.name)}</span>`
     + (a.uploading
-      ? `<span style="color:var(--text2);font-size:10px;flex-shrink:0;">…</span>`
+      ? `<span style="color:var(--warning,#f59e0b);font-size:10px;flex-shrink:0;animation:dw-pulse 1s infinite;">⏫</span>`
       : `<span style="color:var(--success,#22c55e);font-size:10px;flex-shrink:0;">✓</span>`)
     + `<button class="btn-icon" onclick="_removeAttachment(${i})" style="padding:0 2px;font-size:11px;line-height:1;flex-shrink:0;" title="Remove">✕</button>`
     + `</span>`

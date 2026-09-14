@@ -3,6 +3,14 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.10 — fix(pwa): block send while image still uploading; uploading indicator
+
+### Fixed
+- **Sending before upload completes silently drops the image** — if the user tapped send while the file was still uploading (`entry.path` still null), the attachment was cleared and nothing was included in the message. All three send paths now check for in-progress uploads and show a "Wait for image upload to finish" toast instead of proceeding.
+
+### Improved
+- Uploading chip now shows a pulsing ⏫ amber icon instead of a static `…` so the upload state is visually distinct on Android from the ✓ ready state.
+
 ## v8.27.9 — fix(pwa): image attachment not sent in channel-mode sessions
 
 ### Fixed

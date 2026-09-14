@@ -2232,6 +2232,13 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   from { opacity: 0.55; }
   to   { opacity: 1.0; }
 }
+@keyframes dw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="dw-pulse"] { animation: none !important; }
+}
 @media (prefers-reduced-motion: reduce) {
   .state-badge-running { animation: none; opacity: 1; }
 }
