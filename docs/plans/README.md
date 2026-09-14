@@ -678,7 +678,7 @@ Two related gaps:
 - Wired GPU probe onto `obsCollector` before `Start()` in `cmd/datawatch/main.go`.
 - Deployed new `datawatch-stats` binary to compute host `datawatch`; service restart pending operator action (`sudo systemctl restart datawatch-stats` on `datawatch` host).
 
-**Status:** Implemented — binary staged at `/tmp/datawatch-stats-new` on `datawatch` host. Run `sudo cp /tmp/datawatch-stats-new /usr/local/bin/datawatch-stats && sudo systemctl restart datawatch-stats` to activate NVML probe.
+**Status:** ✅ Closed — implemented v8.26.0 (2026-09-13). NVML probe active on `datawatch` host — GPU util 97%, power 39.5 W, temp 68°C confirmed via `/api/observer/peers/datawatch/stats`. Binary deployed to `~/.local/bin/datawatch-stats` via user systemd service (no root required).
 
 ---
 
