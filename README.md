@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.26.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.26.0)
+[![Release](https://img.shields.io/badge/release-v8.26.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.26.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.26.1](CHANGELOG.md) (2026-09-13)** — Fix: Observer peer stats grid now correctly reads CPU%, RAM, and GPU power/temperature from the v2 stats format. GPU temperature and power render as dedicated bar rows; CPU bar label includes load averages.
 
 **[v8.26.0](CHANGELOG.md) (2026-09-13)** — NVML direct-binding GPU probe (no CGO) in datawatch-stats; per-system resource grid in Observer tab; CPU/GPU/memory stats card in PRD overview during active task execution; semaphore-bounded concurrent task executor with per-PRD and global `max_concurrent_tasks` config.
 

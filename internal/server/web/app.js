@@ -18228,27 +18228,26 @@ function loadPeerResourceOverview() {
         const ageMs = lastPush ? (now - lastPush) : Infinity;
         const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
         const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:5px;flex-shrink:0;"></span>`;
-        const host = (snap && snap.host) || null;
+        const cpu = (snap && snap.cpu) || null;
+        const mem = (snap && snap.mem) || null;
         const gpus = (snap && snap.gpu) || [];
-        // CPU/mem from host
+        // CPU/mem chips from v2 stats fields (snap.cpu / snap.mem)
         let hostChips = '';
-        if (host) {
-          if (host.cpu_pct > 0) hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">CPU ${host.cpu_pct.toFixed(0)}%</span>`;
-          if (host.mem_used_bytes && host.mem_total_bytes) {
-            const memPct = Math.round(host.mem_used_bytes / host.mem_total_bytes * 100);
-            hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">Mem ${fmtBytes(host.mem_used_bytes)} / ${fmtBytes(host.mem_total_bytes)} (${memPct}%)</span>`;
-          }
+        if (cpu && cpu.pct > 0) hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">CPU ${cpu.pct.toFixed(0)}%</span>`;
+        if (mem && mem.used_bytes && mem.total_bytes) {
+          const memPct = Math.round(mem.used_bytes / mem.total_bytes * 100);
+          hostChips += `<span style="background:var(--bg3,#1f2937);border-radius:4px;padding:1px 6px;font-variant-numeric:tabular-nums;">Mem ${fmtBytes(mem.used_bytes)} / ${fmtBytes(mem.total_bytes)} (${memPct}%)</span>`;
         }
         // GPU chips
         let gpuChips = '';
         gpus.forEach(g => {
-          if (g.temp_c) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">GPU ${g.temp_c.toFixed(1)}°C</span>`;
+          if (g.util_pct > 0) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">GPU ${g.util_pct.toFixed(0)}%</span>`;
+          if (g.temp_c) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">${g.temp_c.toFixed(0)}°C</span>`;
           if (g.power_w) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">${g.power_w.toFixed(1)} W</span>`;
           if (g.mem_used_bytes && g.mem_total_bytes) {
             const gpuPct = Math.round(g.mem_used_bytes / g.mem_total_bytes * 100);
             gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">VRAM ${fmtBytes(g.mem_used_bytes)} (${gpuPct}%)</span>`;
           }
-          if (g.util_pct > 0) gpuChips += `<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:4px;padding:1px 6px;color:var(--accent2,#60a5fa);font-variant-numeric:tabular-nums;">util ${g.util_pct.toFixed(0)}%</span>`;
         });
         const noData = !hostChips && !gpuChips;
         const chips = noData ? '<span style="opacity:0.5;font-size:10px;">no snapshot</span>' : (hostChips + gpuChips);
@@ -18333,29 +18332,38 @@ function loadSystemStatsGrid() {
           const dot = lastPush
             ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)')
             : 'var(--text2)';
-          const host = (snap && snap.host) || {};
+          const cpu = (snap && snap.cpu) || null;
+          const mem = (snap && snap.mem) || null;
           const gpus = (snap && snap.gpu) || [];
           let cpuHtml = '', memHtml = '', gpuHtml = '';
-          if (host.cpu_pct != null) {
-            const c = host.cpu_pct;
+          if (cpu && cpu.pct != null) {
+            const c = cpu.pct;
             const cColor = c > 80 ? 'var(--error)' : c > 50 ? 'var(--warning)' : 'var(--success)';
-            cpuHtml = bar('CPU', c, 100, cColor, c.toFixed(1)+'%');
+            const loadStr = cpu.load1 != null
+              ? c.toFixed(0)+'% · '+cpu.load1.toFixed(2)+'/'+cpu.load5.toFixed(2)+'/'+cpu.load15.toFixed(2)
+              : c.toFixed(1)+'%';
+            cpuHtml = bar('CPU', c, 100, cColor, loadStr);
           }
-          if (host.mem_used_bytes && host.mem_total_bytes) {
-            const mp = Math.round(host.mem_used_bytes/host.mem_total_bytes*100);
-            memHtml = bar('RAM', host.mem_used_bytes, host.mem_total_bytes, mp>85?'var(--error)':'var(--accent)',
-              fmtBytes(host.mem_used_bytes)+' / '+fmtBytes(host.mem_total_bytes));
+          if (mem && mem.used_bytes && mem.total_bytes) {
+            const mp = Math.round(mem.used_bytes/mem.total_bytes*100);
+            memHtml = bar('RAM', mem.used_bytes, mem.total_bytes, mp>85?'var(--error)':'var(--accent)',
+              fmtBytes(mem.used_bytes)+' / '+fmtBytes(mem.total_bytes));
           }
           gpus.forEach(g => {
+            const gLabel = gpus.length > 1 ? 'GPU '+g.name : 'GPU';
             if (g.util_pct != null) {
               const gc = g.util_pct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
-              const label = gpus.length > 1 ? 'GPU '+g.name+' util' : 'GPU util';
-              const extra = g.util_pct.toFixed(0)+'%'+(g.temp_c?' '+g.temp_c.toFixed(0)+'°C':'')+(g.power_w?' '+g.power_w.toFixed(0)+'W':'');
-              gpuHtml += bar(label, g.util_pct, 100, gc, extra);
+              gpuHtml += bar(gLabel+' util', g.util_pct, 100, gc, g.util_pct.toFixed(0)+'%');
+            }
+            if (g.temp_c != null) {
+              const tc = g.temp_c >= 80 ? 'var(--error)' : g.temp_c >= 60 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+              gpuHtml += bar(gLabel+' temp', g.temp_c, 100, tc, g.temp_c.toFixed(0)+'°C');
+            }
+            if (g.power_w != null) {
+              gpuHtml += `<div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:10px;"><span style="color:var(--text2);">${escHtml(gLabel+' power')}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${g.power_w.toFixed(1)} W</span></div>`;
             }
             if (g.mem_used_bytes && g.mem_total_bytes) {
-              const vLabel = gpus.length > 1 ? 'GPU '+g.name+' VRAM' : 'GPU VRAM';
-              gpuHtml += bar(vLabel, g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
+              gpuHtml += bar(gLabel+' VRAM', g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
                 fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes));
             }
           });

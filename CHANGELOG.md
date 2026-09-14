@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.26.1 — fix(observer): peer stats grid reads wrong field paths; GPU power/temp now separate rows
+
+### Fixed
+- **Observer peer stats grid — CPU and RAM always blank** — `loadSystemStatsGrid` and `loadPeerResourceOverview` read `snap.host.cpu_pct` and `snap.host.mem_used_bytes` but the v2 stats API puts these at `snap.cpu.pct` and `snap.mem.used_bytes`. Both functions now read the correct paths so CPU and RAM bars render for all observer peers.
+- **GPU power and temperature shown as text suffix only** — in `loadSystemStatsGrid` power and temp were appended as text to the GPU util bar label. They now render as dedicated rows: a colour-coded temperature bar (green < 60°C, amber ≥ 60°C, red ≥ 80°C) and a power label row. CPU bar label now includes the 1/5/15-minute load averages from `snap.cpu.load1/load5/load15`.
+
 ## v8.26.0 — feat: NVML GPU probe, observer stats grid, PRD resource card, concurrent task executor
 
 ### Added
