@@ -17123,16 +17123,21 @@ window._loadPRDSessionResources = function(prd) {
       const valid = (Array.isArray(results) ? results : []).filter(r => r && r.detail);
       if (!valid.length) { el.innerHTML = ''; return; }
       const cards = valid.map(({ ref, detail }) => {
-        const host = detail.host || {};
+        // Normalize two formats: compute-node detail (detail.cpu.pct, detail.mem.*)
+        // and the synthetic local-stats object (detail.host.cpu_pct, detail.host.mem_*).
+        const cpuPct = detail.cpu && detail.cpu.pct != null ? detail.cpu.pct
+                     : detail.host && detail.host.cpu_pct != null ? detail.host.cpu_pct : null;
+        const memUsed  = (detail.mem && detail.mem.used_bytes)  || (detail.host && detail.host.mem_used_bytes)  || 0;
+        const memTotal = (detail.mem && detail.mem.total_bytes) || (detail.host && detail.host.mem_total_bytes) || 0;
         let cpuHtml = '', memHtml = '', gpuHtml = '';
-        if (host.cpu_pct != null) {
-          const c = typeof host.cpu_pct === 'number' ? host.cpu_pct : 0;
+        if (cpuPct != null) {
+          const c = typeof cpuPct === 'number' ? cpuPct : 0;
           const cColor = c >= 90 ? 'var(--error,#ef4444)' : c >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
           cpuHtml = bar(t('prd_res_cpu')||'CPU', c, 100, cColor, Math.round(c)+'%');
         }
-        if (host.mem_used_bytes && host.mem_total_bytes) {
-          const mp = Math.round(host.mem_used_bytes/host.mem_total_bytes*100);
-          memHtml = bar(t('prd_res_ram')||'RAM', host.mem_used_bytes, host.mem_total_bytes, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(host.mem_used_bytes)+' / '+fmtB(host.mem_total_bytes));
+        if (memUsed && memTotal) {
+          const mp = Math.round(memUsed/memTotal*100);
+          memHtml = bar(t('prd_res_ram')||'RAM', memUsed, memTotal, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(memUsed)+' / '+fmtB(memTotal));
         }
         (detail.gpu || []).forEach((g, gi) => {
           const multi = (detail.gpu||[]).length > 1;
