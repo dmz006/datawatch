@@ -9,6 +9,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **NVML direct-binding GPU probe** — `NVMLProbe` in `internal/observer/gpu_nvml_linux.go` loads `libnvidia-ml.so` at runtime via `purego`/dlopen with no CGO and no build-time NVML headers. Probe priority is NVML > TegraStats > SMI in both `datawatch-stats` and the daemon's built-in observer.
 - **Daemon GPU probe wiring** — `cmd/datawatch/main.go` now calls `obsCollector.SetGPUFn` before `Start()`, giving the daemon's local observer GPU stats (the hook existed but was never called).
 - **New dependency**: `github.com/ebitengine/purego v0.11.0` — zero-CGO C function calling via dlopen/purego for NVML; used only on Linux.
+- **Observer per-system stats grid** — the Observer tab now shows a live CPU/RAM/GPU bar card for every observed system (local + all federated peers), auto-refreshing every 8 seconds.
+- **PRD session resource stats card** — the PRD Overview tab now shows a compact CPU/RAM/GPU bar card for each active task session's compute node, auto-refreshing every 5 seconds. Appears when any task is in `running`, `verifying`, or `running_tests` state.
 
 ### Fixed
 - **Thor GPU utilisation always 0** — `tegrastats` on NVIDIA Thor/GB10 has no `GR3D_FREQ` field so `TegraStatsProbe` always reported `util_pct: 0`. NVML reports utilisation natively on Thor and is now preferred.

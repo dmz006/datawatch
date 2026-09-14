@@ -16701,6 +16701,8 @@ function _renderDetailContent(prd) {
   if (['decomposing','running'].includes(prd.status || '')) {
     _renderStatusGraphs(prd);
   }
+  // BL380 — session resource stats card in overview tab (CPU/GPU/mem per active task session).
+  if (tab === 'overview') _loadPRDSessionResources(prd);
 }
 
 window._loadPRDActiveSessionCard = function(prd) {
@@ -17016,6 +17018,96 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
   });
 };
 
+// BL380 — CPU/GPU/memory stats card in PRD overview tab for active task sessions.
+// Fetches compute node detail for sessions with compute_node_ref, falls back to
+// local /api/stats. Renders compact bar cards, refreshes every 5s.
+window._loadPRDSessionResources = function(prd) {
+  const slotId = 'prdSessionResources_' + (prd.id || '');
+  const slot = document.getElementById(slotId);
+  if (!slot) return;
+  const stories = prd.stories || [];
+  const activeTasks = stories.flatMap(s => (s.tasks || []).filter(t =>
+    t.session_id && ['running', 'verifying', 'running_tests'].includes(t.status || '')
+  ));
+  if (!activeTasks.length) { slot.innerHTML = ''; return; }
+
+  const fmtB = b => {
+    if (!b) return '0 B';
+    if (b >= 1073741824) return (b/1073741824).toFixed(1)+' GB';
+    if (b >= 1048576)    return (b/1048576).toFixed(0)+' MB';
+    return (b/1024).toFixed(0)+' KB';
+  };
+  const bar = (label, val, max, color, extraLabel) => {
+    const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
+    return `<div style="margin-bottom:3px;"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;"><span>${escHtml(label)}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span></div><div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div></div></div>`;
+  };
+
+  function refresh() {
+    if (!document.getElementById(slotId)) { clearInterval(window._prdSessionResInterval); return; }
+    const sessionIds = [...new Set(activeTasks.map(t => t.session_id))];
+    const cnRefs = new Set();
+    sessionIds.forEach(sid => {
+      const sess = (typeof state !== 'undefined' && state.sessions) ? state.sessions[sid] : null;
+      if (sess && sess.compute_node_ref) cnRefs.add(sess.compute_node_ref);
+    });
+
+    let fetchP;
+    if (cnRefs.size > 0) {
+      fetchP = Promise.all([...cnRefs].map(ref =>
+        apiFetch('/api/compute/nodes/' + encodeURIComponent(ref) + '/detail')
+          .then(d => d ? { ref, detail: d } : null)
+          .catch(() => null)
+      ));
+    } else {
+      fetchP = apiFetch('/api/stats').then(d => {
+        if (!d) return [];
+        const gpu = [];
+        if (d.gpu_name) gpu.push({ name: d.gpu_name, util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
+        return [{ ref: 'local', detail: { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu } }];
+      }).catch(() => []);
+    }
+
+    fetchP.then(results => {
+      const el = document.getElementById(slotId);
+      if (!el) return;
+      const valid = (Array.isArray(results) ? results : []).filter(r => r && r.detail);
+      if (!valid.length) { el.innerHTML = ''; return; }
+      const cards = valid.map(({ ref, detail }) => {
+        const host = detail.host || {};
+        let cpuHtml = '', memHtml = '', gpuHtml = '';
+        if (host.cpu_pct != null) {
+          const c = typeof host.cpu_pct === 'number' ? host.cpu_pct : 0;
+          const cColor = c >= 90 ? 'var(--error,#ef4444)' : c >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+          cpuHtml = bar('CPU', c, 100, cColor, Math.round(c)+'%');
+        }
+        if (host.mem_used_bytes && host.mem_total_bytes) {
+          const mp = Math.round(host.mem_used_bytes/host.mem_total_bytes*100);
+          memHtml = bar('RAM', host.mem_used_bytes, host.mem_total_bytes, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(host.mem_used_bytes)+' / '+fmtB(host.mem_total_bytes));
+        }
+        (detail.gpu || []).forEach((g, gi) => {
+          if (g.util_pct != null) {
+            const gc = g.util_pct >= 80 ? 'var(--error,#ef4444)' : 'var(--accent2,#60a5fa)';
+            const gLabel = (detail.gpu||[]).length > 1 ? 'GPU '+(gi+1)+' util' : 'GPU util';
+            const gExtra = Math.round(g.util_pct)+'%'+(g.temp_c ? ' '+Math.round(g.temp_c)+'°C' : '')+(g.power_w ? ' '+g.power_w.toFixed(0)+'W' : '');
+            gpuHtml += bar(gLabel, g.util_pct, 100, gc, gExtra);
+          }
+          if (g.mem_total_bytes > 0) {
+            const vLabel = (detail.gpu||[]).length > 1 ? 'GPU '+(gi+1)+' VRAM' : 'GPU VRAM';
+            gpuHtml += bar(vLabel, g.mem_used_bytes||0, g.mem_total_bytes, 'var(--accent2,#60a5fa)', fmtB(g.mem_used_bytes||0)+' / '+fmtB(g.mem_total_bytes));
+          }
+        });
+        const body = cpuHtml + memHtml + gpuHtml;
+        return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;min-width:120px;flex:1;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(ref)}</div>${body||`<span style="font-size:10px;color:var(--text2);">no live data</span>`}</div>`;
+      });
+      el.innerHTML = `<div style="margin:8px 0 10px;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(t('prd_session_resources')||'Active Session Resources')}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${cards.join('')}</div></div>`;
+    });
+  }
+
+  if (window._prdSessionResInterval) clearInterval(window._prdSessionResInterval);
+  refresh();
+  window._prdSessionResInterval = setInterval(refresh, 5000);
+};
+
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
 // BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
 // The audit confirmed the previous implementation IS consistent; operator's
@@ -17211,6 +17303,10 @@ function _renderDetailOverview(prd) {
   const doneStories = stories.filter(s => (s.status || s.Status) === 'completed').length;
   const pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
   const pctFill = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  // BL380 — detect tasks with active session_ids for the resource stats slot.
+  const activeTasks = stories.flatMap(s => (s.tasks || []).filter(t =>
+    t.session_id && ['running', 'verifying', 'running_tests'].includes(t.status || '')
+  ));
   // v6.13.8 — lifecycle strip moved to the persistent header (always
   // visible across sub-tabs), so the Overview body no longer renders
   // its own copy.
@@ -17225,6 +17321,7 @@ function _renderDetailOverview(prd) {
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
+    ${activeTasks.length > 0 ? `<div id="prdSessionResources_${escHtml(prd.id||'')}" style="margin:8px 0;"></div>` : ''}
     ${totalTasks > 0 ? `<div class="prd-detail-progress" style="margin-top:10px;">
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>

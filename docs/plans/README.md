@@ -63,7 +63,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 | Open bugs | 0 | — |
 | Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL370 — autonomous PRD max_concurrent_tasks config |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 4 | BL335 — APNs push for iOS client (GH#107); BL378 — GPU load missing for compute host `datawatch` in datawatch-stats + local system GPU missing from session/PRD cards; BL379 — Observer tab per-system stats card (one card per system: local + federated + datawatch-stats hosts); BL380 — CPU/GPU/memory stats card in PRD status view for all active sessions |
+| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
@@ -681,7 +681,12 @@ The Observer tab currently shows a single "System Statistics" card. It should sh
 
 **Scope:** PWA Observer tab layout — enumerate all known stat sources (local observer, federation peers, datawatch-stats registered hosts), render one `system-stats` card per source labeled by hostname/alias. Follow the sparkline pattern from the Observatory peer resources panel (v8.25.4).
 
-**Status:** Open — awaiting sprint slot.
+**Implementation (v8.26.0):**
+- Added `loadSystemStatsGrid()` in `app.js` — fetches `/api/stats` for the local card and `/api/observer/peers` + `/api/observer/peers/{name}/stats` for each peer in parallel. Renders a CSS auto-fit grid of bar-style cards (CPU/RAM/GPU), each labeled by hostname. Local card gets a "local" badge; peers get a staleness live-dot (green <15s, amber <60s, red stale).
+- Inserted the grid `<div id="perSystemGrid">` above the existing stats panel in the Observer tab HTML.
+- Auto-refreshes every 8s via the same interval that refreshes peer resources.
+
+**Status:** ✅ Closed — implemented v8.26.0 (2026-09-13). All builds green.
 
 ---
 
@@ -691,7 +696,12 @@ When a PRD has active task sessions running, the PRD status view should show a r
 
 **Scope:** PRD detail view — add a `prd-session-resources` card rendered when any task is in `verifying`/`running_tests` state. Poll the observer stats for the compute node associated with each active session. Mirrors the existing session-stats compute node card (v8.25.4) but aggregated per PRD.
 
-**Status:** Open — awaiting sprint slot.
+**Implementation (v8.26.0):**
+- `_renderDetailOverview` detects tasks with `session_id` in `running`/`verifying`/`running_tests` states and injects a `prdSessionResources_{prd.id}` placeholder div above the progress bar.
+- `_loadPRDSessionResources(prd)` (new) fetches `/api/compute/nodes/{ref}/detail` for each active session's `compute_node_ref` (falls back to local `/api/stats` when no ref). Renders compact CPU/RAM/GPU bar cards, auto-refreshes every 5s while the slot is in the DOM.
+- Called from `_renderDetailContent` whenever the overview tab is rendered.
+
+**Status:** ✅ Closed — implemented v8.26.0 (2026-09-13). All builds green.
 
 ---
 
