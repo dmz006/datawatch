@@ -10767,7 +10767,7 @@ function renderLifecycleStrip(prd) {
     if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ ${t('prd_step_approve')||'Approve'}</button>`;
     if (cls === 'current') {
       const approveAct = `prdAction(${idJ},'approve','POST',{actor:'operator'})`;
-      const rejectAct  = `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`;
+      const rejectAct  = `prdActionPrompt(${idJ},'reject','reason',${JSON.stringify(t('prd_reject_prompt')||'Rejection reason')})`;
       const reviseAct  = `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`;
       return `<button class="lifecycle-step-btn current clickable" onclick="${approveAct}" title="${t('prd_step_approve')||'Approve'}">${t('prd_step_approve')||'Approve'}</button>` +
              `<button class="lifecycle-step-btn danger clickable" style="margin-left:2px;" onclick="${rejectAct}" title="${t('prd_action_reject')||'Reject'}">✗</button>` +
@@ -16758,6 +16758,15 @@ window._loadPRDActiveSessionCard = function(prd) {
         slot.style.display = 'none';
         return;
       }
+      // During 'planning' (decompose in flight) there is no dedicated session —
+      // decompose is a synchronous server call. Show a calm decomposing indicator
+      // instead of the "broken/no session" warning so operators aren't alarmed.
+      if (prd.status === 'planning') {
+        slot.style.display = 'block';
+        const spin = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px;">⟳</span>';
+        slot.innerHTML = `<div style="padding:8px 12px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">${spin}${escHtml(t('decompose_in_progress')||'Decomposing PRD...')}</div>`;
+        return;
+      }
       slot.style.display = 'block';
       const idJStr = JSON.stringify(prd.id || '');
       slot.innerHTML = `<details class="prd-stuck-warning" open style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:12px;color:var(--text2);">
@@ -17033,8 +17042,11 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
 };
 
 // BL380 — CPU/GPU/memory stats card in PRD overview tab for active task sessions.
-// Fetches compute node detail for sessions with compute_node_ref, falls back to
-// local /api/stats. Renders compact bar cards, refreshes every 5s.
+// Fetches compute node detail by resolving the backend's compute_nodes from
+// /api/backends (added in this patch). During 'planning' status, resolves the
+// decomposition backend (prd.decomposition_profile || prd.backend). During task
+// running, tries live session compute_node_ref first, then falls back to
+// prd.backend. Local-only backends fall back to /api/stats. Refreshes every 5s.
 window._loadPRDSessionResources = function(prd) {
   const slotId = 'prdSessionResources_' + (prd.id || '');
   const slot = document.getElementById(slotId);
@@ -17043,7 +17055,8 @@ window._loadPRDSessionResources = function(prd) {
   const activeTasks = stories.flatMap(s => (s.tasks || []).filter(t =>
     t.session_id && ['running', 'verifying', 'running_tests'].includes(t.status || '')
   ));
-  if (!activeTasks.length) { slot.innerHTML = ''; return; }
+  const isPlanning = prd.status === 'planning';
+  if (!activeTasks.length && !isPlanning) { slot.innerHTML = ''; return; }
 
   const fmtB = b => {
     if (!b) return '0 B';
@@ -17056,10 +17069,25 @@ window._loadPRDSessionResources = function(prd) {
     return `<div style="margin-bottom:3px;"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;"><span>${escHtml(label)}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span></div><div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:2px;transition:width 0.3s;"></div></div></div>`;
   };
 
+  const localStatsFetch = () => apiFetch('/api/stats').then(d => {
+    if (!d) return [];
+    const gpu = [];
+    if (d.gpu_name) gpu.push({ name: d.gpu_name, util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
+    return [{ ref: t('server_local_label')||'Local', detail: { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu } }];
+  }).catch(() => []);
+
+  const cnDetailFetch = refs => Promise.all([...refs].map(ref =>
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(ref) + '/detail')
+      .then(d => d ? { ref, detail: d } : null)
+      .catch(() => null)
+  ));
+
   function refresh() {
     if (!document.getElementById(slotId)) { clearInterval(window._prdSessionResInterval); return; }
-    const sessionIds = [...new Set(activeTasks.map(t => t.session_id))];
+
+    // Try to get compute_node_ref from live state.sessions first.
     const cnRefs = new Set();
+    const sessionIds = [...new Set(activeTasks.map(t => t.session_id))];
     sessionIds.forEach(sid => {
       const sess = (typeof state !== 'undefined' && state.sessions) ? state.sessions[sid] : null;
       if (sess && sess.compute_node_ref) cnRefs.add(sess.compute_node_ref);
@@ -17067,18 +17095,26 @@ window._loadPRDSessionResources = function(prd) {
 
     let fetchP;
     if (cnRefs.size > 0) {
-      fetchP = Promise.all([...cnRefs].map(ref =>
-        apiFetch('/api/compute/nodes/' + encodeURIComponent(ref) + '/detail')
-          .then(d => d ? { ref, detail: d } : null)
-          .catch(() => null)
-      ));
+      // Live sessions already carry compute_node_ref — use them directly.
+      fetchP = cnDetailFetch(cnRefs);
     } else {
-      fetchP = apiFetch('/api/stats').then(d => {
-        if (!d) return [];
-        const gpu = [];
-        if (d.gpu_name) gpu.push({ name: d.gpu_name, util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
-        return [{ ref: 'local', detail: { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu } }];
-      }).catch(() => []);
+      // Resolve compute nodes from the backend registry.
+      // During planning: show the decomposition backend's compute node.
+      // During task running: show the execution backend's compute node.
+      const backendName = isPlanning
+        ? (prd.decomposition_profile || prd.backend)
+        : prd.backend;
+      if (!backendName) {
+        fetchP = localStatsFetch();
+      } else {
+        fetchP = apiFetch('/api/backends').then(data => {
+          const llms = data && data.llm ? data.llm : [];
+          const entry = llms.find(l => l.name === backendName);
+          const nodes = entry && entry.compute_nodes && entry.compute_nodes.length ? entry.compute_nodes : [];
+          if (nodes.length === 0) return localStatsFetch();
+          return cnDetailFetch(new Set(nodes));
+        }).catch(() => localStatsFetch());
+      }
     }
 
     fetchP.then(results => {
@@ -17092,26 +17128,27 @@ window._loadPRDSessionResources = function(prd) {
         if (host.cpu_pct != null) {
           const c = typeof host.cpu_pct === 'number' ? host.cpu_pct : 0;
           const cColor = c >= 90 ? 'var(--error,#ef4444)' : c >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-          cpuHtml = bar('CPU', c, 100, cColor, Math.round(c)+'%');
+          cpuHtml = bar(t('prd_res_cpu')||'CPU', c, 100, cColor, Math.round(c)+'%');
         }
         if (host.mem_used_bytes && host.mem_total_bytes) {
           const mp = Math.round(host.mem_used_bytes/host.mem_total_bytes*100);
-          memHtml = bar('RAM', host.mem_used_bytes, host.mem_total_bytes, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(host.mem_used_bytes)+' / '+fmtB(host.mem_total_bytes));
+          memHtml = bar(t('prd_res_ram')||'RAM', host.mem_used_bytes, host.mem_total_bytes, mp >= 85 ? 'var(--error,#ef4444)' : 'var(--accent)', fmtB(host.mem_used_bytes)+' / '+fmtB(host.mem_total_bytes));
         }
         (detail.gpu || []).forEach((g, gi) => {
+          const multi = (detail.gpu||[]).length > 1;
           if (g.util_pct != null) {
             const gc = g.util_pct >= 80 ? 'var(--error,#ef4444)' : 'var(--accent2,#60a5fa)';
-            const gLabel = (detail.gpu||[]).length > 1 ? 'GPU '+(gi+1)+' util' : 'GPU util';
+            const gLabel = multi ? 'GPU '+(gi+1)+' '+(t('obs_cn_gpu_util')||'util') : 'GPU '+(t('obs_cn_gpu_util')||'util');
             const gExtra = Math.round(g.util_pct)+'%'+(g.temp_c ? ' '+Math.round(g.temp_c)+'°C' : '')+(g.power_w ? ' '+g.power_w.toFixed(0)+'W' : '');
             gpuHtml += bar(gLabel, g.util_pct, 100, gc, gExtra);
           }
           if (g.mem_total_bytes > 0) {
-            const vLabel = (detail.gpu||[]).length > 1 ? 'GPU '+(gi+1)+' VRAM' : 'GPU VRAM';
+            const vLabel = multi ? 'GPU '+(gi+1)+' '+(t('obs_cn_gpu_vram')||'VRAM') : 'GPU '+(t('obs_cn_gpu_vram')||'VRAM');
             gpuHtml += bar(vLabel, g.mem_used_bytes||0, g.mem_total_bytes, 'var(--accent2,#60a5fa)', fmtB(g.mem_used_bytes||0)+' / '+fmtB(g.mem_total_bytes));
           }
         });
         const body = cpuHtml + memHtml + gpuHtml;
-        return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;min-width:120px;flex:1;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(ref)}</div>${body||`<span style="font-size:10px;color:var(--text2);">no live data</span>`}</div>`;
+        return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;min-width:120px;flex:1;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(ref)}</div>${body||`<span style="font-size:10px;color:var(--text2);">${escHtml(t('obs_cn_no_data')||'no live data')}</span>`}</div>`;
       });
       el.innerHTML = `<div style="margin:8px 0 10px;"><div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(t('prd_session_resources')||'Active Session Resources')}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${cards.join('')}</div></div>`;
     });
@@ -17336,7 +17373,7 @@ function _renderDetailOverview(prd) {
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
-    ${activeTasks.length > 0 ? `<div id="prdSessionResources_${escHtml(prd.id||'')}" style="margin:8px 0;"></div>` : ''}
+    ${(activeTasks.length > 0 || ['planning', 'running'].includes(prd.status || '')) ? `<div id="prdSessionResources_${escHtml(prd.id||'')}" style="margin:8px 0;"></div>` : ''}
     ${totalTasks > 0 ? `<div class="prd-detail-progress" style="margin-top:10px;">
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>

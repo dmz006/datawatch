@@ -2196,12 +2196,13 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type backendInfo struct {
-		Name           string `json:"name"`
-		Available      bool   `json:"available"`
-		Enabled        bool   `json:"enabled"`
-		PromptRequired bool   `json:"prompt_required,omitempty"`
-		SupportsResume bool   `json:"supports_resume,omitempty"`
-		Version        string `json:"version,omitempty"`
+		Name           string   `json:"name"`
+		Available      bool     `json:"available"`
+		Enabled        bool     `json:"enabled"`
+		PromptRequired bool     `json:"prompt_required,omitempty"`
+		SupportsResume bool     `json:"supports_resume,omitempty"`
+		Version        string   `json:"version,omitempty"`
+		ComputeNodes   []string `json:"compute_nodes,omitempty"`
 	}
 
 	// BL305 (v7.0.0) — when the LLM registry is present, it is the
@@ -2223,6 +2224,7 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 				Enabled:        true,
 				Available:      true,
 				PromptRequired: s.llmPromptRequired(string(l.Kind)),
+				ComputeNodes:   l.ComputeNodes,
 			})
 		}
 		// Include any old-style compiled-in backends not yet migrated.

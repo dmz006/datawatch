@@ -114,6 +114,14 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"obs_peer_resources",
 		"obs_cn_card_title",
 		"obs_cn_no_data",
+		// v8.26.0 BL380 — PRD session resource card locale completeness.
+		"prd_session_resources",
+		"prd_res_cpu",
+		"prd_res_ram",
+		"prd_btn_approve_title",
+		"prd_btn_reset_to_draft",
+		"prd_btn_reset_to_draft_title",
+		"prd_reject_prompt",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
