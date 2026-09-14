@@ -127,6 +127,9 @@ func (f *fakeOrchAutonomous) DecomposeStreaming(string, func(int, int, any)) (an
 	return nil, nil
 }
 
+// BL370 — per-PRD concurrency stub.
+func (f *fakeOrchAutonomous) SetPRDConcurrency(string, int) (any, error) { return nil, nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {
