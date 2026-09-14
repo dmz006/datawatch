@@ -2742,6 +2742,16 @@ else
   ok "guardrail profile create+delete via MCP round-trip"
 fi
 
+H "43b. Per-guardrail block approval endpoint (GH#153)"
+# POST /api/sessions/{id}/guardrail/{name}/approve
+# A non-existent session must return 404 with the guardrail-not-found message.
+GA_HTTP=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST \
+  -H "Content-Type: application/json" -d '{}' \
+  "$BASE/api/sessions/smoke-nonexistent-sid/guardrail/smoke-test-guardrail/approve" 2>/dev/null || echo "000")
+[[ "$GA_HTTP" == "404" ]] \
+  && ok "POST /api/sessions/{id}/guardrail/{name}/approve → 404 on unknown session" \
+  || ko "guardrail approve endpoint wiring unexpected HTTP $GA_HTTP (expected 404)"
+
 H "44. LLM registry via MCP"
 LR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
   -d '{"tool":"llm_list","args":{}}' "$BASE/api/mcp/call" || true)

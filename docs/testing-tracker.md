@@ -215,3 +215,17 @@ Added in v8.25.3. `internal/observer/gpu_tegrastats.go` and `internal/observer/g
 | `Collector.SetGPUFn` — wired into `collect()` before v1 aliases | No | No | — | Code inspection of `internal/observer/collector.go`; `snap.GPU` populated when `gpuFn != nil`. Unit test needed. |
 | tegrastats selected over nvidia-smi when both present | No | No | — | Code inspection of `cmd/datawatch-stats/main.go` if/else if block. Live: confirm tegrastats wins on host with both. |
 | **LIVE** Thor tegrastats → `snap.GPU` populated | No | **Yes** | `compute_node_detail("datawatch")` via MCP: `gpu:[{name:"Tegra GPU", vendor:"nvidia", util_pct:0, mem_used_bytes:72524759040, mem_total_bytes:131881500672, power_w:2.376, temp_c:35.187}]` | Confirmed 2026-09-12 on NVIDIA Thor GB10 SoC. Required case-insensitive `(?i)gpu@` regex fix. |
+
+## v8.27.5 — Per-guardrail block approval endpoint (GH#153)
+
+Added in v8.27.5. `POST /api/sessions/{id}/guardrail/{name}/approve` marks a single named guardrail verdict as operator-approved. Returns `{guardrail, approved, session_unblocked, telemetry}`. `HookGuardrailVerdict` gains `approved` (bool) and `approval_note` (string) fields. `session_guardrail_approve` MCP tool added.
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — happy path | No | No | — | Live: run session_guardrail_run to add a block verdict; POST approve/{name}; verify response `session_unblocked: true`. |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | No | No | — | Live: POST approve/nonexistent; expect 404 "guardrail not found in session telemetry". |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | No | No | — | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. |
+| `session_unblocked: false` when other block verdicts remain | No | No | — | Live: add two block verdicts; approve one; verify `session_unblocked: false`. |
+| `session_guardrail_approve` MCP tool | No | No | — | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
+| `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | No | No | — | Verify new fields appear in telemetry response after approve call. |
+| WebSocket hub broadcasts on approve | No | No | — | Connect WS client; approve verdict; verify hub.BroadcastHookUpdate fired. |

@@ -60,9 +60,11 @@ type TelemetryTask struct {
 
 // HookGuardrailVerdict — one guardrail result from the hook payload.
 type HookGuardrailVerdict struct {
-	Guardrail string `json:"guardrail"`
-	Outcome   string `json:"outcome"` // pass | warn | block
-	Summary   string `json:"summary,omitempty"`
+	Guardrail    string `json:"guardrail"`
+	Outcome      string `json:"outcome"` // pass | warn | block
+	Summary      string `json:"summary,omitempty"`
+	Approved     bool   `json:"approved,omitempty"`
+	ApprovalNote string `json:"approval_note,omitempty"`
 }
 
 // SessionTelemetry — structured telemetry derived from hook payloads.
@@ -307,6 +309,42 @@ func (s *hookEventStore) appendVerdict(sessionID string, v HookGuardrailVerdict)
 	}
 	b.Telemetry.GuardrailVerdicts = append(b.Telemetry.GuardrailVerdicts, v)
 	b.Telemetry.UpdatedAt = time.Now().UTC()
+}
+
+// approveVerdict marks a named guardrail verdict as operator-approved.
+// Returns the updated telemetry, whether the named guardrail was found,
+// and whether all blocking verdicts are now approved (session unblocked).
+// GH#153 — Android Auto BL33 per-guardrail approval.
+func (s *hookEventStore) approveVerdict(sessionID, guardrailName, note string) (*SessionTelemetry, bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.state[sessionID]
+	if !ok || b.Telemetry == nil {
+		return nil, false, false
+	}
+	found := false
+	for i := range b.Telemetry.GuardrailVerdicts {
+		if b.Telemetry.GuardrailVerdicts[i].Guardrail == guardrailName {
+			b.Telemetry.GuardrailVerdicts[i].Approved = true
+			b.Telemetry.GuardrailVerdicts[i].ApprovalNote = note
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, false, false
+	}
+	// Session is unblocked when no un-approved block verdicts remain.
+	unblocked := true
+	for _, v := range b.Telemetry.GuardrailVerdicts {
+		if v.Outcome == "block" && !v.Approved {
+			unblocked = false
+			break
+		}
+	}
+	b.Telemetry.UpdatedAt = time.Now().UTC()
+	cp := *b.Telemetry
+	return &cp, true, unblocked
 }
 
 func (s *hookEventStore) board(sessionID string) *SessionStatusBoard {
@@ -565,6 +603,56 @@ func (s *Server) handleSessionGuardrail(w http.ResponseWriter, r *http.Request) 
 		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))
 	}
 	writeJSONOK(w, rawVerdict)
+}
+
+// handleSessionGuardrailApprove — POST /api/sessions/{id}/guardrail/{name}/approve
+// Marks the named guardrail verdict as operator-approved so the session can
+// proceed. Approval is scoped to the current session run (in-memory only).
+// GH#153 — Android Auto BL33 per-guardrail block approval.
+func (s *Server) handleSessionGuardrailApprove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
+	// Path: /api/sessions/{id}/guardrail/{name}/approve
+	rest := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	rest = strings.TrimSuffix(rest, "/approve")
+	slash := strings.LastIndex(rest, "/guardrail/")
+	if slash < 0 {
+		http.Error(w, "malformed path", http.StatusBadRequest)
+		return
+	}
+	sid := rest[:slash]
+	guardrailName := rest[slash+len("/guardrail/"):]
+	if sid == "" || guardrailName == "" {
+		http.Error(w, "session id and guardrail name required", http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		Note string `json:"note,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	tel, found, unblocked := globalHookStore.approveVerdict(sid, guardrailName, body.Note)
+	if !found {
+		http.Error(w, "guardrail not found in session telemetry: "+guardrailName, http.StatusNotFound)
+		return
+	}
+	if s.hub != nil {
+		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))
+	}
+	writeJSONOK(w, map[string]any{
+		"guardrail":         guardrailName,
+		"approved":          true,
+		"session_unblocked": unblocked,
+		"telemetry":         tel,
+	})
 }
 
 // flushTelemetryToMemory serializes a session's structured telemetry to

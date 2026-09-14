@@ -9,6 +9,7 @@
 //   guardrail_profile_delete     — delete a profile
 //   per_automaton_guardrails_set — set per-Automaton guardrail overrides
 //   session_guardrail_run        — run a named guardrail on a session (S3 T15)
+//   session_guardrail_approve    — approve a single blocked guardrail verdict (GH#153)
 
 package mcp
 
@@ -183,6 +184,29 @@ func (s *Server) handleSessionGuardrailRun(_ context.Context, req mcpsdk.CallToo
 	name := req.GetString("name", "")
 	body := map[string]any{"name": name}
 	data, err := s.proxyJSON(http.MethodPost, "/api/sessions/"+sid+"/guardrail", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+// ── session_guardrail_approve (GH#153) ────────────────────────────────────
+
+func (s *Server) toolSessionGuardrailApprove() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_guardrail_approve",
+		mcpsdk.WithDescription("Approve a single blocked guardrail verdict for a session. Returns updated telemetry and whether the session is now fully unblocked. GH#153 — Android Auto BL33."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID.")),
+		mcpsdk.WithString("guardrail", mcpsdk.Required(), mcpsdk.Description("Guardrail name to approve (must exist in session telemetry verdicts).")),
+		mcpsdk.WithString("note", mcpsdk.Description("Optional operator note for the approval record.")),
+	)
+}
+
+func (s *Server) handleSessionGuardrailApprove(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	sid := req.GetString("session_id", "")
+	guardrail := req.GetString("guardrail", "")
+	note := req.GetString("note", "")
+	body := map[string]any{"note": note}
+	data, err := s.proxyJSON(http.MethodPost, "/api/sessions/"+sid+"/guardrail/"+guardrail+"/approve", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}

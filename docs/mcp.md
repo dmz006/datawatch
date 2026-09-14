@@ -281,6 +281,11 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`result_put/get/list/delete`** (BL360) — structured named-result store for agents to share outputs without out-of-band coordination.
 - **`channel_info`** (BL216) — daemon's resolved MCP bridge kind (go|js), path, ready state, stale .mcp.json detection. Read-only.
 - **`channel_diagnostics`** (BL362) — per-session bridge ports, live `/health` probe results, and actionable remediation hints. Use when sessions fail to connect or MCP errors appear with no clear cause.
+- **`guardrail_library_list`** (BL303 S2) — list all registered guardrails (built-in scan guardrails + skill-contributed).
+- **`guardrail_profile_list/create/get/update/delete`** (BL303 S2) — manage named guardrail profiles (named sets of guardrails that can be applied to sessions or PRDs).
+- **`per_automaton_guardrails_set`** (BL303 S2) — override guardrail profile and per-task/per-story guardrails for a specific PRD.
+- **`session_guardrail_run`** (BL303 S3) — run a named guardrail against a session's project directory; appends the verdict to the session's telemetry. Parameters: `session_id`, `name` (guardrail library name, e.g. `sast-scan`).
+- **`session_guardrail_approve`** (v8.27.5, GH#153) — approve a single blocked guardrail verdict so the session can proceed. Parameters: `session_id`, `guardrail` (guardrail name in telemetry, required), `note` (optional). Returns `{guardrail, approved, session_unblocked, telemetry}`. Use when a block verdict was a false positive; approval is scoped to the current session run (in-memory only). See also `POST /api/sessions/{id}/guardrail/{name}/approve`.
 
 
 

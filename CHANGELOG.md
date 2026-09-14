@@ -3,6 +3,18 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.5 — feat(guardrail): per-guardrail block approval endpoint (GH#153)
+
+### Added
+- **`POST /api/sessions/{id}/guardrail/{name}/approve`** — approves a single blocked guardrail verdict by name. The session is considered unblocked when no un-approved `block` verdicts remain. Returns `{guardrail, approved, session_unblocked, telemetry}`. Approval is in-memory and scoped to the current session run. Returns 404 if the named guardrail is not in the session's telemetry verdicts.
+- **`HookGuardrailVerdict`** gains `approved` (bool) and `approval_note` (string) fields — visible in `GET /api/sessions/{id}/telemetry` and in live WebSocket hook-update broadcasts.
+- **`session_guardrail_approve` MCP tool** — `session_id`, `guardrail` (required), `note` (optional).
+
+### Reuse
+- `approveVerdict` reuses the existing `hookEventStore` mutex + `state` map pattern from `appendVerdict`; no new locking primitive needed.
+- MCP tool delegates entirely to `proxyJSON` (same pattern as `session_guardrail_run`); no MCP-layer business logic duplicated.
+- WebSocket broadcast reuses `hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))` already present on every other telemetry-mutating handler.
+
 ## v8.27.4 — fix(autonomous): sequential executor re-runs terminal tasks on restart
 
 ### Fixed

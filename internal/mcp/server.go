@@ -461,7 +461,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolGuardrailProfileUpdate(), tracked(s.handleGuardrailProfileUpdate))
 	mcpSrv.AddTool(s.toolGuardrailProfileDelete(), tracked(s.handleGuardrailProfileDelete))
 	mcpSrv.AddTool(s.toolPerAutomatonGuardrailsSet(), tracked(s.handlePerAutomatonGuardrailsSet))
-	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun)) // BL303 S3 T15
+	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun))       // BL303 S3 T15
+	mcpSrv.AddTool(s.toolSessionGuardrailApprove(), tracked(s.handleSessionGuardrailApprove)) // GH#153
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1105,6 +1106,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGuardrailProfileDelete, "guardrail_profile_delete"},
 		{s.toolPerAutomatonGuardrailsSet, "per_automaton_guardrails_set"},
 		{s.toolSessionGuardrailRun, "session_guardrail_run"},
+		{s.toolSessionGuardrailApprove, "session_guardrail_approve"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		// BL350 — orphan lineage listing
