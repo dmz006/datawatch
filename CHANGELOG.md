@@ -3,6 +3,15 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.27.7 — fix(pwa): attachment disappears after upload; add multi-file support
+
+### Fixed
+- **Attachment preview disappears after upload** — SSE re-renders called `renderSessionDetail` which replaced the entire view HTML, destroying the preview DOM element. `state._pendingImagePath` survived in memory but the visual strip was gone so the image appeared unattached. Fix: attachment state is now an array of objects (`state._pendingAttachments`) whose `objectUrl` blob references are kept alive until send/remove; `renderSessionDetail` calls `_refreshAttachmentPreview()` at the end of every render to restore the strip if attachments are pending.
+- **Blob URL revoked before re-render could use it** — `URL.revokeObjectURL` was called immediately after upload success, making the thumbnail unrestorable after any re-render. Now revoked only on `_removeAttachment` or `_clearAllAttachments` (send/clear).
+
+### Added
+- **Multi-file attachment** — the file input now has the `multiple` attribute; selecting multiple images queues them all, each uploads concurrently, and all are appended as `[image:path]` tokens on send. Each pending file shows its own thumbnail chip with an individual remove button.
+
 ## v8.27.6 — fix(pwa): image attachment broken on Android; preview renders inside flex row
 
 ### Fixed

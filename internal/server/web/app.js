@@ -2890,7 +2890,7 @@ function renderSessionDetail(sessionId) {
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive && state._whisperEnabled ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
-    + (isActive ? `<label for="sessionImageInput" class="btn-icon" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;cursor:pointer;">&#128247;</label><input type="file" id="sessionImageInput" accept="image/*" style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
+    + (isActive ? `<label for="sessionImageInput" class="btn-icon" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;cursor:pointer;">&#128247;</label><input type="file" id="sessionImageInput" accept="image/*" multiple style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
   view.innerHTML = `
@@ -3089,6 +3089,9 @@ function renderSessionDetail(sessionId) {
     const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
     if (!isTouch) inputEl.focus();
   }
+
+  // Restore attachment preview if files were pending before this re-render.
+  if (state._pendingAttachments && state._pendingAttachments.length) _refreshAttachmentPreview();
 }
 
 function startTermConnectWatchdog(sessionId) {
@@ -4389,9 +4392,10 @@ function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
   let text = inputEl.value; // Don't trim — empty string sends Enter
-  if (state._pendingImagePath) {
-    text = (text ? text + '\n' : '') + '[image:' + state._pendingImagePath + ']';
-    _clearImageAttachment();
+  if (state._pendingAttachments.length) {
+    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (tags) text = (text ? text + '\n' : '') + tags;
+    _clearAllAttachments();
   }
   const sendText = text || '\n'; // Empty input = send Enter key
 
@@ -4479,9 +4483,10 @@ function sendChannelMessage() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl || !state.activeSession) return;
   let text = inputEl.value.trim();
-  if (state._pendingImagePath) {
-    text = (text ? text + '\n' : '') + '[image:' + state._pendingImagePath + ']';
-    _clearImageAttachment();
+  if (state._pendingAttachments.length) {
+    const tags = state._pendingAttachments.filter(a => a.path).map(a => '[image:' + a.path + ']').join('\n');
+    if (tags) text = (text ? text + '\n' : '') + tags;
+    _clearAllAttachments();
   }
   if (!text) return;
   const token = localStorage.getItem('cs_token') || '';
@@ -4500,70 +4505,88 @@ function sendChannelMessage() {
 // Voice input state — one recorder at a time. Click toggles record/stop.
 state.voice = { recorder: null, chunks: [], sessionId: null };
 
-// Image attachment state — one pending image at a time.
-state._pendingImagePath = null;
-state._pendingImageName = null;
-
-function attachSessionImage() {
-  const fi = document.getElementById('sessionImageInput');
-  if (fi) fi.click();
-}
+// Attachment state — multiple pending files supported.
+// Each entry: { path, name, objectUrl, uploading }
+// objectUrl is kept alive until send/remove so re-renders can restore the preview strip.
+state._pendingAttachments = [];
 
 function onSessionImageSelected(input) {
-  const file = input && input.files && input.files[0];
-  if (!file) return;
-  const localUrl = URL.createObjectURL(file);
-  _showImagePreview(localUrl, file.name, true);
-  const fd = new FormData();
-  const uploadName = 'dw_attach_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  fd.append('file', file);
-  fd.append('path', uploadName);
-  const token = localStorage.getItem('cs_token') || '';
-  const headers = {};
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/files', { method: 'POST', headers, body: fd })
-    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))))
-    .then(d => {
-      state._pendingImagePath = d.path || uploadName;
-      state._pendingImageName = file.name;
-      _showImagePreview(localUrl, file.name, false);
-      URL.revokeObjectURL(localUrl);
-    })
-    .catch(e => {
-      showToast((t('image_upload_failed')||'Image upload failed') + ': ' + String(e.message || e), 'error');
-      _clearImageAttachment();
-      URL.revokeObjectURL(localUrl);
-    });
+  const files = input && input.files;
+  if (!files || !files.length) return;
+  Array.from(files).forEach(file => {
+    const localUrl = URL.createObjectURL(file);
+    const entry = { path: null, name: file.name, objectUrl: localUrl, uploading: true };
+    state._pendingAttachments.push(entry);
+    _refreshAttachmentPreview();
+    const fd = new FormData();
+    const uploadName = 'dw_attach_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    fd.append('file', file);
+    fd.append('path', uploadName);
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = {};
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    fetch('/api/files', { method: 'POST', headers, body: fd })
+      .then(r => r.ok ? r.json() : r.text().then(txt => Promise.reject(new Error(txt || r.statusText))))
+      .then(d => {
+        entry.path = d.path || uploadName;
+        entry.uploading = false;
+        _refreshAttachmentPreview();
+      })
+      .catch(e => {
+        showToast((t('image_upload_failed') || 'Image upload failed') + ': ' + String(e.message || e), 'error');
+        const idx = state._pendingAttachments.indexOf(entry);
+        if (idx >= 0) state._pendingAttachments.splice(idx, 1);
+        URL.revokeObjectURL(localUrl);
+        _refreshAttachmentPreview();
+      });
+  });
   input.value = '';
 }
 
-function _showImagePreview(objectUrl, name, uploading) {
+function _refreshAttachmentPreview() {
+  const bar = document.getElementById('inputBar');
+  if (!bar || !bar.parentNode) return;
   let preview = document.getElementById('sessionImagePreview');
+  if (!state._pendingAttachments.length) {
+    if (preview) preview.remove();
+    return;
+  }
   if (!preview) {
-    const bar = document.getElementById('inputBar');
-    if (!bar || !bar.parentNode) return;
     preview = document.createElement('div');
     preview.id = 'sessionImagePreview';
-    // Insert BEFORE inputBar so the preview renders as a full-width strip
-    // above the command row. (Inserting inside the row flex container made
-    // it appear squished alongside the text input on all viewports.)
-    preview.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2);border-top:1px solid var(--border);font-size:12px;color:var(--text2);';
+    // Sibling before inputBar — renders as a full-width strip above the command row.
+    preview.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 8px;background:var(--bg2);border-top:1px solid var(--border);font-size:12px;color:var(--text2);';
     bar.parentNode.insertBefore(preview, bar);
   }
-  preview.innerHTML = `<img src="${escHtml(objectUrl)}" alt="" style="width:40px;height:30px;object-fit:cover;border-radius:3px;border:1px solid var(--border);" />`
-    + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>`
-    + (uploading
-      ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('image_uploading')||'uploading…')}</span>`
-      : `<span style="color:var(--success,#22c55e);font-size:11px;">${escHtml(t('image_ready')||'✓ ready')}</span>`)
-    + `<button class="btn-icon" onclick="_clearImageAttachment()" style="padding:2px 6px;font-size:12px;" title="Remove image">✕</button>`;
+  preview.innerHTML = state._pendingAttachments.map((a, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3,var(--bg));border:1px solid var(--border);border-radius:4px;padding:2px 4px 2px 2px;max-width:160px;">`
+    + `<img src="${escHtml(a.objectUrl)}" alt="" style="width:28px;height:22px;object-fit:cover;border-radius:2px;flex-shrink:0;" />`
+    + `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">${escHtml(a.name)}</span>`
+    + (a.uploading
+      ? `<span style="color:var(--text2);font-size:10px;flex-shrink:0;">…</span>`
+      : `<span style="color:var(--success,#22c55e);font-size:10px;flex-shrink:0;">✓</span>`)
+    + `<button class="btn-icon" onclick="_removeAttachment(${i})" style="padding:0 2px;font-size:11px;line-height:1;flex-shrink:0;" title="Remove">✕</button>`
+    + `</span>`
+  ).join('');
 }
 
-function _clearImageAttachment() {
-  state._pendingImagePath = null;
-  state._pendingImageName = null;
+function _removeAttachment(idx) {
+  const a = state._pendingAttachments[idx];
+  if (!a) return;
+  URL.revokeObjectURL(a.objectUrl);
+  state._pendingAttachments.splice(idx, 1);
+  _refreshAttachmentPreview();
+}
+
+function _clearAllAttachments() {
+  state._pendingAttachments.forEach(a => URL.revokeObjectURL(a.objectUrl));
+  state._pendingAttachments = [];
   const preview = document.getElementById('sessionImagePreview');
   if (preview) preview.remove();
 }
+
+// Alias for session-switch clear (referenced at line ~1799).
+function _clearImageAttachment() { _clearAllAttachments(); }
 
 // Terminal toolbar is always visible (operator 2026-04-26): the
 // tmux/channel tab + font controls + scroll button row reads cleanly
