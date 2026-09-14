@@ -18158,6 +18158,121 @@ setInterval(() => {
   if (document.getElementById('peerResourceList')) loadPeerResourceOverview();
 }, 8000);
 
+// BL379 — per-system stats grid: local host as first card, then one card
+// per observer peer. Each card shows CPU / RAM / GPU util / GPU VRAM bars
+// so all systems can be compared at a glance.
+function loadSystemStatsGrid() {
+  const el = document.getElementById('perSystemGrid');
+  if (!el) return;
+  const fmtBytes = b => {
+    if (!b) return '—';
+    if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
+    if (b >= 1e9)  return (b/1e9).toFixed(1)+' GB';
+    if (b >= 1e6)  return (b/1e6).toFixed(1)+' MB';
+    return b+' B';
+  };
+  const bar = (label, val, max, color, extraLabel) => {
+    const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
+    return `<div style="margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;">
+        <span>${escHtml(label)}</span>
+        <span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span>
+      </div>
+      <div style="height:5px;background:var(--bg);border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
+      </div>
+    </div>`;
+  };
+  const sysCard = (name, isLocal, dot, cpuHtml, memHtml, gpuHtml) => `
+    <div style="background:var(--surface1,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
+        <span style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>
+        ${isLocal ? `<span style="font-size:9px;padding:1px 5px;background:var(--accent);color:#fff;border-radius:3px;flex-shrink:0;">local</span>` : ''}
+      </div>
+      ${cpuHtml}${memHtml}${gpuHtml}
+    </div>`;
+
+  const localP = apiFetch('/api/stats').then(d => {
+    if (!d || !d.timestamp) return null;
+    const cpuPct = d.cpu_cores > 0 ? Math.min(100, Math.round(100*d.cpu_load_avg_1/d.cpu_cores)) : 0;
+    const cpuColor = cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)';
+    const memPct = d.mem_total > 0 ? Math.round(d.mem_used/d.mem_total*100) : 0;
+    let gpuHtml = '';
+    if (d.gpu_name) {
+      const gColor = d.gpu_util_pct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
+      gpuHtml += bar('GPU util', d.gpu_util_pct, 100, gColor, d.gpu_util_pct+'% '+d.gpu_temp+'°C');
+      if (d.gpu_mem_total_mb > 0) gpuHtml += bar('GPU VRAM', d.gpu_mem_used_mb, d.gpu_mem_total_mb, 'var(--accent2,#60a5fa)', d.gpu_mem_used_mb+'/'+d.gpu_mem_total_mb+' MB');
+    }
+    return { name: d.hostname || 'local', isLocal: true, dot: 'var(--success,#10b981)',
+      cpuHtml: bar('CPU', d.cpu_load_avg_1, d.cpu_cores, cpuColor, d.cpu_load_avg_1.toFixed(2)+'/'+d.cpu_cores+' cores'),
+      memHtml: bar('RAM', d.mem_used, d.mem_total, memPct > 85 ? 'var(--error)' : 'var(--accent)', fmtBytes(d.mem_used)+' / '+fmtBytes(d.mem_total)),
+      gpuHtml };
+  }).catch(() => null);
+
+  const peersP = apiFetch('/api/observer/peers').then(data => {
+    const peers = (data && data.peers) || [];
+    return Promise.all(peers.map(p =>
+      apiFetch('/api/observer/peers/'+encodeURIComponent(p.name)+'/stats')
+        .then(snap => {
+          const now = Date.now();
+          const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
+          const ageMs = lastPush ? (now - lastPush) : Infinity;
+          const dot = lastPush
+            ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)')
+            : 'var(--text2)';
+          const host = (snap && snap.host) || {};
+          const gpus = (snap && snap.gpu) || [];
+          let cpuHtml = '', memHtml = '', gpuHtml = '';
+          if (host.cpu_pct != null) {
+            const c = host.cpu_pct;
+            const cColor = c > 80 ? 'var(--error)' : c > 50 ? 'var(--warning)' : 'var(--success)';
+            cpuHtml = bar('CPU', c, 100, cColor, c.toFixed(1)+'%');
+          }
+          if (host.mem_used_bytes && host.mem_total_bytes) {
+            const mp = Math.round(host.mem_used_bytes/host.mem_total_bytes*100);
+            memHtml = bar('RAM', host.mem_used_bytes, host.mem_total_bytes, mp>85?'var(--error)':'var(--accent)',
+              fmtBytes(host.mem_used_bytes)+' / '+fmtBytes(host.mem_total_bytes));
+          }
+          gpus.forEach(g => {
+            if (g.util_pct != null) {
+              const gc = g.util_pct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
+              const label = gpus.length > 1 ? 'GPU '+g.name+' util' : 'GPU util';
+              const extra = g.util_pct.toFixed(0)+'%'+(g.temp_c?' '+g.temp_c.toFixed(0)+'°C':'')+(g.power_w?' '+g.power_w.toFixed(0)+'W':'');
+              gpuHtml += bar(label, g.util_pct, 100, gc, extra);
+            }
+            if (g.mem_used_bytes && g.mem_total_bytes) {
+              const vLabel = gpus.length > 1 ? 'GPU '+g.name+' VRAM' : 'GPU VRAM';
+              gpuHtml += bar(vLabel, g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
+                fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes));
+            }
+          });
+          return { name: p.name, isLocal: false, dot,
+            cpuHtml: cpuHtml || '', memHtml: memHtml || '', gpuHtml: gpuHtml || '' };
+        })
+        .catch(() => ({ name: p.name, isLocal: false, dot: 'var(--text2)', cpuHtml:'', memHtml:'', gpuHtml:'' }))
+    ));
+  }).catch(() => []);
+
+  Promise.all([localP, peersP]).then(([local, peers]) => {
+    const cards = [];
+    if (local) cards.push(sysCard(local.name, true, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
+    peers.forEach(p => cards.push(sysCard(p.name, false, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
+    if (!cards.length) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:4px;">${cards.join('')}</div>`;
+  });
+}
+window.loadSystemStatsGrid = loadSystemStatsGrid;
+
+// Auto-refresh the per-system grid on the same 8s cycle as peer resources.
+setInterval(() => {
+  if (state.activeView !== 'observer') return;
+  if (document.getElementById('perSystemGrid')) loadSystemStatsGrid();
+}, 8000);
+
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
 // Shows configured / capability / kprobe-loaded with honest messages
 // so the operator knows whether a `datawatch setup ebpf` actually
@@ -21383,7 +21498,10 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('stats', 'System Statistics', 'flow/observer-flow.md')}
         <div id="settings-sec-stats" style="${secContent('stats')}">
-          <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
+          <!-- BL379 — per-system stats grid: local + all observer peers, one card each -->
+          <div id="perSystemGrid" style="padding:8px 8px 0;"></div>
+          <!-- Local system detail (CPU/mem/disk/sessions/etc.) -->
+          <div id="statsPanel" style="border-top:1px solid var(--border);margin-top:4px;"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
           <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
             <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
@@ -21571,6 +21689,7 @@ function renderObserverView() {
 
   // Fire all the card loaders that used to run when Settings → Monitor
   // painted. Each is independent and tolerates a missing target div.
+  loadSystemStatsGrid(); // BL379 — per-system grid (local + observer peers)
   loadStatsPanel();
   listMemories();
   loadSchedulesList();
