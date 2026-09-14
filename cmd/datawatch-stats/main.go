@@ -170,11 +170,13 @@ func main() {
 		dcgm.Start(ctx)
 	}
 
-	// GPU probe: tegrastats (Jetson/Tegra) takes priority; falls back
-	// to nvidia-smi (discrete GPU hosts). Both nil-safe — returns nil
-	// when the tool isn't in PATH, and we skip SetGPUFn entirely so
-	// snap.GPU stays empty on hosts with no GPU tooling.
-	if tp := observer.NewTegraStatsProbe(5 * time.Second); tp != nil {
+	// GPU probe priority: NVML (direct lib, fixes Thor util=0) > tegrastats > nvidia-smi.
+	// All probes are nil-safe — NewXxxProbe returns nil when unavailable.
+	if np := observer.NewNVMLProbe(5 * time.Second); np != nil {
+		np.Start(ctx)
+		col.SetGPUFn(np.Latest)
+		fmt.Fprintln(os.Stderr, "[stats] GPU probe: nvml → snap.GPU")
+	} else if tp := observer.NewTegraStatsProbe(5 * time.Second); tp != nil {
 		tp.Start(ctx)
 		col.SetGPUFn(tp.Latest)
 		fmt.Fprintln(os.Stderr, "[stats] GPU probe: tegrastats → snap.GPU")

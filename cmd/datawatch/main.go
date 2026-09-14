@@ -4765,6 +4765,21 @@ Return STRICT JSON:
 				}
 				return total, running, waiting, rl, perBackend
 			})
+			// GPU probe: NVML > tegrastats > nvidia-smi (parity with datawatch-stats).
+			// Wired here so the daemon's built-in observer reports local GPU stats.
+			if np := observerpkg.NewNVMLProbe(5 * time.Second); np != nil {
+				np.Start(context.Background())
+				obsCollector.SetGPUFn(np.Latest)
+				fmt.Printf("[observer] GPU probe: nvml\n")
+			} else if tp := observerpkg.NewTegraStatsProbe(5 * time.Second); tp != nil {
+				tp.Start(context.Background())
+				obsCollector.SetGPUFn(tp.Latest)
+				fmt.Printf("[observer] GPU probe: tegrastats\n")
+			} else if sp := observerpkg.NewSMIProbe(5 * time.Second); sp != nil {
+				sp.Start(context.Background())
+				obsCollector.SetGPUFn(sp.Latest)
+				fmt.Printf("[observer] GPU probe: nvidia-smi\n")
+			}
 			obsCollector.Start(context.Background())
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
 			obsCollectorRef = obsCollector // S14b: wire into alert-rules evaluator
