@@ -256,6 +256,12 @@ type Manager struct {
 	// from applicable scopes. Nil = seeding silently skipped.
 	memorySeedFn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemorySeedConfig) error
 
+	// memoryHarvestFn (BL386 Phase 2) — when set, called after each task
+	// reaches TaskCompleted when the PRD's MemoryHarvestConfig.Enabled=true.
+	// Promotes session-local memories to story-shared or prd-shared.
+	// Nil = harvest silently skipped.
+	memoryHarvestFn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemoryHarvestConfig) error
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -305,6 +311,15 @@ func (m *Manager) SetMemorySeedFn(fn func(ctx context.Context, sessionID, prdID,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memorySeedFn = fn
+}
+
+// SetMemoryHarvestFn (BL386 Phase 2) wires the harvest-on-completion callback.
+// Called after each task completes when the PRD's MemoryHarvestConfig.Enabled=true.
+// Nil disables harvest (no-op; no error).
+func (m *Manager) SetMemoryHarvestFn(fn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemoryHarvestConfig) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryHarvestFn = fn
 }
 
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
@@ -1483,6 +1498,25 @@ func (m *Manager) SetMemorySeed(prdID string, cfg MemorySeedConfig, actor string
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_memory_seed", Actor: actor,
 		Note: fmt.Sprintf("enabled=%v max_per_scope=%d", cfg.Enabled, cfg.MaxPerScope),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetMemoryHarvest (BL386 Phase 2) updates the PRD's harvest-on-completion config.
+func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.MemoryHarvest = cfg
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_memory_harvest", Actor: actor,
+		Note: fmt.Sprintf("enabled=%v promote_to=%s max=%d", cfg.Enabled, cfg.PromoteTo, cfg.Max),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

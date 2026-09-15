@@ -418,6 +418,16 @@ func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFil
 	return out, err
 }
 
+// SetMemoryHarvest (BL386 Phase 2) updates the PRD's harvest-on-completion config.
+func (a *API) SetMemoryHarvest(prdID string, enabled bool, promoteTo string, roleFilter []string, max int, actor string) (any, error) {
+	cfg := MemoryHarvestConfig{Enabled: enabled, PromoteTo: promoteTo, RoleFilter: roleFilter, Max: max}
+	out, err := a.M.SetMemoryHarvest(prdID, cfg, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

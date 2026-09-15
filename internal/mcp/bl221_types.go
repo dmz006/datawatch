@@ -162,3 +162,38 @@ func (s *Server) handleAutonomousPRDSetMemorySeed(_ context.Context, req mcpsdk.
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- autonomous_prd_set_memory_harvest (BL386 Phase 2) --------------------
+
+func (s *Server) toolAutonomousPRDSetMemoryHarvest() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_memory_harvest",
+		mcpsdk.WithDescription("BL386 Phase 2 — set per-PRD harvest-on-completion config. When enabled, session-local memories are promoted to story-shared (or prd-shared) after each task completes."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Enable harvest-on-completion for this PRD")),
+		mcpsdk.WithString("promote_to", mcpsdk.Description("Target scope: story-shared (default), prd-shared, or project-shared")),
+		mcpsdk.WithString("role_filter", mcpsdk.Description("Comma-separated role names to harvest (empty = all roles)")),
+		mcpsdk.WithNumber("max", mcpsdk.Description("Maximum memories to harvest per task (default 50)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetMemoryHarvest(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	var roleFilter []string
+	if rf := req.GetString("role_filter", ""); rf != "" {
+		for _, r := range splitCSV(rf) {
+			if r != "" {
+				roleFilter = append(roleFilter, r)
+			}
+		}
+	}
+	body, _ := json.Marshal(map[string]any{
+		"enabled":     req.GetBool("enabled", false),
+		"promote_to":  req.GetString("promote_to", ""),
+		"role_filter": roleFilter,
+		"max":         int(req.GetFloat("max", 0)),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_memory_harvest", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

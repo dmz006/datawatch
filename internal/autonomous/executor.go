@@ -539,6 +539,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				t.Status = TaskBlocked
 				return m.store.SaveTask(t)
 			}
+			// BL386 Phase 2 — harvest session-local memories after task completes.
+			if t.SessionID != "" && prd.MemoryHarvest.Enabled {
+				m.mu.Lock()
+				harvestFn := m.memoryHarvestFn
+				m.mu.Unlock()
+				if harvestFn != nil {
+					if herr := harvestFn(ctx, t.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemoryHarvest); herr != nil {
+						log.Printf("[autonomous] harvest: session=%s: %v", t.SessionID, herr)
+					}
+				}
+			}
 			return m.store.SaveTask(t)
 		}
 		hint = vr.Summary

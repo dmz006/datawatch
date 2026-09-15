@@ -205,6 +205,11 @@ type PRD struct {
 	// seeds each spawned task's session-local scope from project-shared,
 	// prd-shared, and story-shared before the task begins work.
 	MemorySeed MemorySeedConfig `json:"memory_seed,omitempty"`
+
+	// BL386 Phase 2 — harvest on task completion. When Enabled, the executor
+	// promotes session-local memories to story-shared (or prd-shared) after
+	// each task reaches TaskCompleted.
+	MemoryHarvest MemoryHarvestConfig `json:"memory_harvest,omitempty"`
 }
 
 // MemorySeedConfig (BL386 Phase 1) controls warm-start seeding at task spawn.
@@ -213,6 +218,15 @@ type MemorySeedConfig struct {
 	Enabled     bool     `json:"enabled,omitempty"`
 	MaxPerScope int      `json:"max_per_scope,omitempty"` // default 20 when Enabled
 	RoleFilter  []string `json:"role_filter,omitempty"`   // empty = all roles
+}
+
+// MemoryHarvestConfig (BL386 Phase 2) controls harvest-on-completion.
+// Zero value = disabled; no behavior change from pre-BL386 code.
+type MemoryHarvestConfig struct {
+	Enabled    bool     `json:"enabled,omitempty"`
+	PromoteTo  string   `json:"promote_to,omitempty"`  // "story-shared" | "prd-shared" | "project-shared"; default "story-shared"
+	RoleFilter []string `json:"role_filter,omitempty"` // empty = all roles
+	Max        int      `json:"max,omitempty"`         // default 50 when Enabled
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a

@@ -555,6 +555,9 @@ type AutonomousAPI interface {
 	// BL386 Phase 1 — per-PRD warm-start seed config.
 	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, actor string) (any, error)
 
+	// BL386 Phase 2 — per-PRD harvest-on-completion config.
+	SetMemoryHarvest(prdID string, enabled bool, promoteTo string, roleFilter []string, max int, actor string) (any, error)
+
 	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD
 	// tasks. Empty list when none.
 	ListChildPRDs(prdID string) []any

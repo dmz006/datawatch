@@ -127,6 +127,14 @@ func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool)
 	return nil, nil
 }
 
+// BL386 — per-PRD memory lifecycle config stubs.
+func (f *fakeOrchAutonomous) SetMemorySeed(string, bool, int, []string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetMemoryHarvest(string, bool, string, []string, int, string) (any, error) {
+	return nil, nil
+}
+
 // BL328 — async decompose streaming stub.
 func (f *fakeOrchAutonomous) DecomposeStreaming(string, func(int, int, any)) (any, error) {
 	return nil, nil
