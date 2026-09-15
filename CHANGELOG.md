@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.4 — fix(acp): SSE reconnect loop for opencode-acp stream drops
+
+### Fixed
+- **ACP SSE silent disconnect** — `streamEventsOnce` (formerly `streamEvents`) would silently exit when the SSE stream dropped (TCP timeout, opencode HTTP restart), leaving the session deaf to all state events. The executor never received `session.completed` so tasks stalled until `StaleTaskSeconds` expired, generating failure notifications that looked like guardrail misses. Added an exponential-backoff reconnect loop in `streamEvents` (1s → 2s → … → 30s cap). The loop stops on context cancellation and on clean session completion (`session.completed` / `message.completed`), so finished opencode processes are not retried.
+
 ## v8.28.3 — feat(pwa): session elapsed clock + decomposer scope-drift hardening (BL383, BL384)
 
 ### Added

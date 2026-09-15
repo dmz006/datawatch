@@ -382,25 +382,52 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 	return nil
 }
 
-// streamEvents subscribes to the opencode SSE event stream and writes
-// human-readable lines to logFile. The text content from message parts
-// is extracted and written as plain text, and also dispatched via OnChannelReply
-// so the web UI can render ACP replies as amber channel-reply lines.
+// streamEvents wraps streamEventsOnce with an exponential-backoff reconnect
+// loop. The loop exits when ctx is cancelled or when the session signals a
+// clean completion (session.completed / message.completed), which means the
+// opencode process is finished and there is nothing to reconnect to.
 func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st *acpSessionState) {
+	backoff := time.Second
+	for {
+		reconnect := streamEventsOnce(ctx, baseURL, logFile, tmuxSession, st)
+		if !reconnect {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE reconnecting (backoff %v)...", backoff))
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// streamEventsOnce makes one SSE connection and drains events until the
+// stream drops or the context is cancelled. Returns true when the caller
+// should reconnect (transient drop), false when the session completed
+// cleanly or the context was cancelled.
+func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string, st *acpSessionState) (reconnect bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/event", nil)
 	if err != nil {
 		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE request error: %v", err))
-		return
+		return ctx.Err() == nil
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
 		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE connect error: %v", err))
-		return
+		return true
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	writeLogLine(logFile, "[opencode-acp] SSE stream connected")
 	var pendingText strings.Builder // accumulates streaming deltas until step-finish
+	completed := false              // set on session.completed / message.completed
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -469,7 +496,7 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 						pendingText.Reset()
 					}
 					writeLogLine(logFile, "[opencode-acp] done")
-						emitACPChat(tmuxSession, "assistant", "", false) // signal streaming complete
+					emitACPChat(tmuxSession, "assistant", "", false) // signal streaming complete
 				case "text":
 					// Text snapshot — captures response if deltas were missed or partial.
 					// Also accumulates into pendingText for step-finish flush.
@@ -509,7 +536,6 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 				}
 			}
 		case "session.idle":
-			// Session is idle and ready for the next prompt
 			writeLogLine(logFile, "[opencode-acp] awaiting input")
 			emitACPChat(tmuxSession, "system", "Ready — send a message", false)
 		case "session.error":
@@ -522,13 +548,20 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 			}
 		case "session.completed", "message.completed":
 			writeLogLine(logFile, "DATAWATCH_COMPLETE: opencode-acp done")
+			completed = true
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		default:
 		}
 	}
+	// Stream ended. Reconnect unless session completed cleanly or ctx cancelled.
+	if completed || ctx.Err() != nil {
+		return false
+	}
+	writeLogLine(logFile, "[opencode-acp] SSE stream dropped")
+	return true
 }
 
 func writeLogLine(logFile, text string) {
