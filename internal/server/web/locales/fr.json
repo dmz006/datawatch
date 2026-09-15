@@ -1334,5 +1334,7 @@
   "stats_web_search": "Recherche web",
   "web_search_queries": "Requêtes",
   "web_search_errors": "Erreurs",
-  "web_search_last_query": "Dernière requête"
+  "web_search_last_query": "Dernière requête",
+  "prd_set_story_llm_title": "Forcer le LLM de la story",
+  "prd_story_llm_hint": "Forçage LLM par story — vide hérite de l'Automate puis de la configuration globale. Toutes les tâches de cette story héritent de cette valeur sauf si elles ont leur propre forçage."
 }

@@ -1334,5 +1334,7 @@
   "stats_web_search": "ウェブ検索",
   "web_search_queries": "クエリ数",
   "web_search_errors": "エラー数",
-  "web_search_last_query": "最終クエリ"
+  "web_search_last_query": "最終クエリ",
+  "prd_set_story_llm_title": "ストーリーLLM上書き",
+  "prd_story_llm_hint": "ストーリーごとのLLM上書き — 空の場合はオートマトンのデフォルト、続いてグローバル設定を継承します。このストーリーのすべてのタスクは、独自の上書きがない限りこれを継承します。"
 }

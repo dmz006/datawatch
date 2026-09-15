@@ -10071,11 +10071,13 @@ function renderStory(prd, story) {
   const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
   const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
+  const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')})`;
   const editIcons = editable
     ? `<span class="prd-story-edit-group">
          <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
+         <button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>
        </span>`
     : '';
 
@@ -10085,6 +10087,9 @@ function renderStory(prd, story) {
     : '';
   const profPill = (!editable && story.execution_profile)
     ? `<span class="prd-story-profile-pill" title="Per-story execution profile override">prof: ${escHtml(story.execution_profile)}</span>`
+    : '';
+  const llmPill = (story.backend || story.effort || story.model)
+    ? `<span class="prd-story-profile-pill" title="Per-story LLM override">LLM: ${escHtml(story.backend || 'inherit')}${story.effort ? ' / ' + escHtml(String(story.effort)) : ''}${story.model ? ' / ' + escHtml(story.model) : ''}</span>`
     : '';
 
   // 6(d) — read-only widgets: progress, files-touched, worker session.
@@ -10116,7 +10121,7 @@ function renderStory(prd, story) {
   return `<div class="prd-story-card">
     <div class="prd-story-card-header">
       <strong class="prd-story-title">${escHtml(story.title || story.id)}</strong>
-      ${statusPill}${profPill}
+      ${statusPill}${profPill}${llmPill}
       <span class="prd-story-header-spacer"></span>
       ${cancelStoryBtn}${arBtns}${editIcons}
     </div>
@@ -11285,10 +11290,8 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
 window.openPRDEditTaskModal = openPRDEditTaskModal;
 
 // v5.26.32 — operator-asked: "i don't see a story review or
-// approval or story edit option." The story edit modal mirrors the
-// task edit modal but only takes title + description (no LLM
-// override at the story level — that's a future phase 3 item per
-// docs/plans/2026-04-27-v6-prep-backlog.md).
+// approval or story edit option." The story edit modal handles title + description.
+// BL381 — per-story LLM override is in openPRDSetStoryLLMModal (4th icon button).
 function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription) {
   _prdMountModal(`
     <div class="response-modal-header">
@@ -11330,6 +11333,49 @@ function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription)
   });
 }
 window.openPRDEditStoryModal = openPRDEditStoryModal;
+
+// BL381 — per-story LLM override modal. Mirrors openPRDEditTaskModal's LLM
+// section; calls set_story_llm. Available in needs_review + revisions_asked.
+function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel) {
+  ensureLLMModelLists().then(() => {
+    _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${t('prd_set_story_llm_title')||'Story LLM override'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">Story ${escHtml(storyID)}</label>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_story_llm_hint')||'Per-story LLM override — empty inherits from the Automaton then the global config. All tasks in this story inherit this unless they have their own override.'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdStoryLLMBackend', currentBackend || '', `refreshLLMModelField('prdStoryLLMModelWrap','prdStoryLLMModelInner','prdStoryLLMBackend',${JSON.stringify(currentModel || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdStoryLLMEffort', currentEffort || '', '')}</div>
+        <div id="prdStoryLLMModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdStoryLLMModelInner"></div></div>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
+      </div>
+    </form>
+  `, () => {
+    const backend = document.getElementById('prdStoryLLMBackend').value;
+    const effort = document.getElementById('prdStoryLLMEffort').value;
+    const modelEl = document.getElementById('prdStoryLLMModelInner')?.querySelector('input,select');
+    const model = modelEl ? modelEl.value.trim() : '';
+    if (backend === (currentBackend || '') && effort === (currentEffort || '') && model === (currentModel || '')) {
+      _prdCloseModal();
+      return;
+    }
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_llm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ story_id: storyID, backend, effort, model, actor: 'operator' }),
+    })
+      .then(() => { showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+  refreshLLMModelField('prdStoryLLMModelWrap', 'prdStoryLLMModelInner', 'prdStoryLLMBackend', currentModel || '');
+  });
+}
+window.openPRDSetStoryLLMModal = openPRDSetStoryLLMModal;
 
 function openPRDSetLLMModal(prdID, current) {
   // v5.26.8 — same dynamic model dropdown pattern as the New PRD and

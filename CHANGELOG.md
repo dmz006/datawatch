@@ -3,6 +3,21 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.2 — feat(pwa): per-story LLM picker in story editor (BL381 completion)
+
+### Added
+- **Per-story LLM override button in the PWA story editor** — a 4th icon button (🤖) appears in the story card's edit group when the PRD is in `needs_review` / `revisions_asked`. It opens a modal with backend / effort / model dropdowns (same dynamic model list as the task and PRD LLM modals) and calls `POST /api/autonomous/prds/{id}/set_story_llm`.
+- **Story LLM badge** — when a per-story LLM override is set, a pill ("LLM: backend / effort / model") appears in the story card header next to the profile pill.
+- **Locale keys** (`prd_set_story_llm_title`, `prd_story_llm_hint`) in all 5 locale files (en/de/es/fr/ja).
+
+This completes BL381's PWA surface. REST + MCP + CLI + comm channel + fedCap shipped in v8.28.0; this adds the PWA picker so the server-side story LLM fields are operator-accessible from the web UI (and therefore from Android/iOS which use the same REST API).
+
+### Fixed
+- **Stale comment** in `openPRDEditStoryModal` — removed reference to "future phase 3 item."
+
+### Fixed (searxng-mcp)
+- **SearXNG MCP stub fetch hangs**: `~/.config/opencode/searxng-mcp.js` lacked a timeout on the `fetch()` call. If SearXNG was slow, the tool call would block the MCP process until opencode's 30-second tool-call timeout fired, marking the connection as timed out. Added `AbortController` with a 12-second timeout (configurable via `SEARXNG_TIMEOUT_MS`). Added `stderr` logging for diagnostics and graceful error messages returned to the agent on timeout.
+
 ## v8.28.1 — fix(federation): add missing fedCap guards on autonomous write endpoints + federation-parity rule
 
 ### Fixed

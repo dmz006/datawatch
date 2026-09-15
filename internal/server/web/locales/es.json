@@ -1334,5 +1334,7 @@
   "stats_web_search": "Búsqueda web",
   "web_search_queries": "Consultas",
   "web_search_errors": "Errores",
-  "web_search_last_query": "Última consulta"
+  "web_search_last_query": "Última consulta",
+  "prd_set_story_llm_title": "Anular LLM de historia",
+  "prd_story_llm_hint": "Anulación de LLM por historia — vacío hereda del Autómata y luego de la configuración global. Todas las tareas de esta historia heredan esto salvo que tengan su propia anulación."
 }

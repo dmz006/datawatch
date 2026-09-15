@@ -1346,5 +1346,7 @@
   "stats_web_search": "Web Search",
   "web_search_queries": "Queries",
   "web_search_errors": "Errors",
-  "web_search_last_query": "Last query"
+  "web_search_last_query": "Last query",
+  "prd_set_story_llm_title": "Story LLM override",
+  "prd_story_llm_hint": "Per-story LLM override — empty inherits from the Automaton then the global config. All tasks in this story inherit this unless they have their own override."
 }

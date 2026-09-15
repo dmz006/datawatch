@@ -1334,5 +1334,7 @@
   "stats_web_search": "Websuche",
   "web_search_queries": "Anfragen",
   "web_search_errors": "Fehler",
-  "web_search_last_query": "Letzte Anfrage"
+  "web_search_last_query": "Letzte Anfrage",
+  "prd_set_story_llm_title": "Story-LLM-Überschreibung",
+  "prd_story_llm_hint": "Story-spezifische LLM-Überschreibung — leer erbt vom Automaten dann die globale Konfiguration. Alle Aufgaben in dieser Story erben diesen Wert, sofern sie keine eigene Überschreibung haben."
 }

@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.28.2](CHANGELOG.md) (2026-09-14)** — Feat: per-story LLM picker in PWA story editor (BL381 completion); fix searxng-mcp fetch timeout.
+
 **[v8.28.1](CHANGELOG.md) (2026-09-14)** — Fix: add missing `fedCap` guards on 7 autonomous write endpoints; add Federation-Parity Rule to AGENT.md.
 
 **[v8.27.1](CHANGELOG.md) (2026-09-14)** — Security fix: remove insecure spawned automata-watchdog schedule (cross-session tmux read, out-of-workspace writes); watchdog now covers `verifying`/`running_tests` tasks.
