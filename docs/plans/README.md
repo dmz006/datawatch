@@ -202,6 +202,18 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
+#### BL386 — Memory lifecycle management (warm-start seeding, harvest, archive-on-delete, handoff, PRD report)
+
+**Operator-filed 2026-09-15. Status: planned. Requires BL385.**
+
+**Problem:** Memory has no managed lifecycle. Sessions start cold, learnings stay trapped in session-local, and deleted PRDs/sessions leave memories orphaned or silently dropped. No mechanism for warm-start seeding, task-to-task handoff, harvest-on-completion, or archive-before-delete.
+
+**Plan:** `docs/plans/2026-09-15-bl386-memory-lifecycle-management.md`
+
+**Target release:** v8.30.0 (after BL385 / v8.29.0)
+
+---
+
 #### BL385 — Subprocess memory scope isolation (session-local writes, scoped reads)
 
 **Operator-filed 2026-09-15. Status: planned.**

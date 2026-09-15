@@ -420,7 +420,16 @@ falls out of the new Scope constants.
 
 ### Phase 2 — REST endpoint
 
-1. Add `memoryScopeSave` in `internal/server/memory_scopes.go`.
+1. Add `memoryScopeDelete` in `internal/server/memory_scopes.go`.
+   - `POST /api/memory/scopes/delete`
+   - Body: `{scope, project, session_id, prd_id, story_id, persona, dry_run}`
+   - Resolves `ScopeRef` → `(projectDir, role, sessionID)` → bulk-deletes matching rows
+   - Returns `{deleted, scope, resolved, dry_run}`
+   - Required by BL386 archive-on-delete strategy
+   - Tests: `TestBL385_ScopeDelete_SessionLocal`, `TestBL385_ScopeDelete_PRDShared`,
+     `TestBL385_ScopeDelete_DryRun_ReturnsCountWithoutDeleting`
+
+2. Add `memoryScopeSave` in `internal/server/memory_scopes.go`.
    - Decode `{scope, project, session_id, prd_id, story_id, persona, content, role}`.
    - Construct `ScopeRef` and call `Resolve()` to get `(projectDir, role, sessionID)`.
    - Write via existing `backend.Save`.
@@ -485,9 +494,19 @@ falls out of the new Scope constants.
 - `memory_forget` scope targeting — needs memory-ID-to-scope reverse lookup. Left
   global for now; follow-up item.
 - PWA promotion UI — operator uses MCP/CLI; dedicated UI is a separate future item.
-- Auto-promote on task/story completion — operator-directed only in this cut.
+- Auto-promote on task/story completion — that is BL386 (harvest policy).
+- Warm-start seeding at session spawn — that is BL386 (auto-seed at spawn).
+- Archive-on-delete (promote before purge) — that is BL386.
+- Memory handoff, PRD report, scope inventory, scope TTL — all BL386.
 - Changing the Backend interface — non-breaking by design (role-namespacing convention).
 - Encryption or access control on scopes — orthogonal to BL68/BL70.
+
+## Relationship to BL386
+
+BL385 is the mechanics foundation. BL386 (`docs/plans/2026-09-15-bl386-memory-lifecycle-management.md`)
+builds lifecycle policies on top: warm-start seeding, harvest on completion,
+archive-on-delete, handoff tool, PRD memory report, scope inventory, scope-aware TTL.
+BL386 cannot ship without BL385.
 
 ---
 
