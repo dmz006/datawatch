@@ -66,7 +66,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | B87 — verifier blind-spot: pre-existing untracked files not captured in new-untracked delta (must fix before v9.0.0) |
+| Open bugs | 2 | B87 — verifier blind-spot: pre-existing untracked files not captured in new-untracked delta (must fix before v9.0.0) · B88 — Automata comm-channel missing `cancel_story`, `cancel_task` (BL382 regression; both on REST+MCP+PWA), `reset_to_draft`, `set_quality_gates`, `scan_results` (present on REST+MCP+PWA) |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 3 | BL385 (v8.29.0), BL386 (v8.30.0), BL387 (v8.31–33.0) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
