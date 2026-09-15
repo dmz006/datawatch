@@ -774,3 +774,107 @@ datawatch session list --config /tmp/dev-config.yaml
 ### Testing with a dedicated Signal number
 
 The recommended approach for integration testing is to use a cheap VoIP number (e.g. Google Voice, Twilio) to register a dedicated Signal account for the daemon. Keep a test Signal group with that account and your personal number, then run the daemon against it in a tmux session on your development machine.
+
+---
+
+## 11. Memory Lifecycle Management (v8.30.0)
+
+### Memory scope hierarchy
+
+Six-layer scope hierarchy (broadest → narrowest):
+
+```
+persona-global → persona-in-project → project-shared → prd-shared → story-shared → session-local
+```
+
+`ScopeRef.Resolve()` maps a scope + IDs to `(projectDir, role, sessionID)`:
+
+| Scope | role | sessionID |
+|---|---|---|
+| `project-shared` | `""` | `""` |
+| `prd-shared` | `"prd/<prdID>"` | `""` |
+| `story-shared` | `"story/<storyID>"` | `""` |
+| `session-local` | `""` | session ID |
+
+SQLite deduplication is per `(projectDir, content_hash)` — same content in the same project only stores once regardless of role.
+
+### New REST endpoints (v8.30.0)
+
+#### Archive import
+
+```
+POST /api/memory/scopes/archive-import
+```
+
+Seeds memories from archived breadcrumbs into a target Automaton's `prd-shared` scope. Optional `role_filter`, `max`, `dry_run` params.
+
+Request body:
+```json
+{
+  "target_scope": {"scope": "prd-shared", "project": "/path", "prd_id": "abc"},
+  "source_project": "/path",
+  "role_filter": "archived",
+  "max": 50,
+  "dry_run": false
+}
+```
+
+#### Scope inventory
+
+```
+GET /api/memory/scopes/inventory?project=/path/to/project
+```
+
+Returns all role/session_id groups with row counts for a given project directory.
+
+Response:
+```json
+{
+  "project": "/path/to/project",
+  "scopes": [
+    {"role": "prd/abc123", "count": 12},
+    {"role": "story/s01", "count": 4},
+    {"role": "", "session_id": "sess-xyz", "count": 7}
+  ],
+  "count": 3
+}
+```
+
+#### Automaton memory report
+
+```
+GET /api/autonomous/prds/{id}/memory-report?include_scopes=prd,story,session&max_per_scope=50
+```
+
+Aggregates and deduplicates all memories for a completed Automaton across all configured scopes. Returns grouped results with total deduplicated count.
+
+Response:
+```json
+{
+  "prd_id": "abc",
+  "total": 18,
+  "scopes": {
+    "prd-shared": [...],
+    "story-shared": [...],
+    "session-local": [...]
+  }
+}
+```
+
+### New MCP tools (v8.30.0)
+
+| Tool | Description |
+|---|---|
+| `memory_archive_import` | Import archived memories into a target Automaton scope; supports `dry_run` |
+| `memory_handoff` | Write a structured handoff summary to `story-shared` for the next task |
+| `memory_prd_report` | Aggregate all memories for an Automaton across scopes (wraps REST endpoint) |
+| `memory_scope_inventory` | Discover which scopes have data for a project, with row counts |
+
+### Internal packages
+
+- **`internal/memory/scopes.go`** — `PurgeScope`, `ArchiveScope`, `SweepScopedByAge`
+- **`internal/memory/backend.go`** — `InventoryBackend` optional interface + `ScopeInventoryEntry`
+- **`internal/memory/store.go`** — `Store.Inventory()` GROUP BY SQL; `.UTC()` fix on all `Prune*` calls
+- **`internal/server/memory_scopes.go`** — `archive-import` and `inventory` REST handlers
+- **`internal/server/autonomous.go`** — `memory-report` route + `handlePRDMemoryReport`
+- **`internal/mcp/memory_scopes.go`** — all four new MCP tools

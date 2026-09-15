@@ -3,6 +3,59 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.30.0 — feat(memory): Autonomous Automata Memory Lifecycle Management
+
+### Added
+
+**Warm-start seeding** — Automata sessions automatically receive memories from
+earlier work when spawned. Configure `memory_seed` per Automaton with
+`max_per_scope` and optional `role_filter`:
+- `autonomous_prd_set_memory_seed` MCP tool
+- `POST /api/autonomous/prds/{id}` `set_memory_seed` action
+
+**Harvest on completion** — When a task session completes, session-local learnings
+are automatically promoted to `story-shared` or `prd-shared`. Configure via
+`memory_harvest` per Automaton:
+- `autonomous_prd_set_memory_harvest` MCP tool
+- `POST /api/autonomous/prds/{id}` `set_memory_harvest` action
+
+**Archive-on-delete** — When an Automaton is permanently deleted, its prd-shared
+memories can be archived to `project-shared` with a breadcrumb (strategy: `archive`),
+deleted (strategy: `purge`), or left in place (strategy: `keep`):
+- `DELETE /api/autonomous/prds/{id}?hard=true&memory_strategy=archive|purge|keep`
+- Optional `archive_role_filter` and `archive_to_scope` query params
+
+**Archive import** — Memories archived from a deleted Automaton can be seeded into a
+new Automaton's `prd-shared` scope, enabling knowledge transfer across projects:
+- `POST /api/memory/scopes/archive-import` — seeds from archived breadcrumb search
+- `memory_archive_import` MCP tool — with optional `dry_run` preview
+- Supports `role_filter` and `max` limits
+
+**Memory handoff** — Task sessions can write a structured handoff summary to
+`story-shared` for the next task in the same story to pick up:
+- `memory_handoff` MCP tool — writes `role=handoff` entry to story-shared
+
+**Automaton memory report** — Aggregate all memories associated with a completed
+Automaton across all scopes in one call:
+- `GET /api/autonomous/prds/{id}/memory-report` — deduplicated, grouped-by-scope
+- `memory_prd_report` MCP tool — configurable scope inclusion and max-per-scope
+
+**Scope inventory** — Discover which PRD/story/session scopes have data for a
+project, with per-scope row counts:
+- `GET /api/memory/scopes/inventory?project=...`
+- `memory_scope_inventory` MCP tool
+
+**Scoped sweep** — Prune stale memories from a specific scope without touching
+other scopes:
+- `memory.SweepScopedByAge()` — scope-targeted TTL sweep
+- Global fallback when no scope specified (backward-compat)
+
+### Fixed
+- `Prune` / `PruneByRole` / `SweepStale` now use `.UTC()` on Go `time.Time` bind
+  parameters, matching the UTC format stored by SQLite's `CURRENT_TIMESTAMP`.
+  Previously, local-timezone offsets caused date comparisons to fail silently
+  when the host was in a non-UTC timezone.
+
 ## v8.29.0 — feat(memory): Subprocess Memory Scope Isolation
 
 ### Added
