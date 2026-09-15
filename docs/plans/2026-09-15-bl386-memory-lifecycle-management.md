@@ -201,6 +201,63 @@ or silently purged. The operator chooses an archival strategy.
 Default remains `keep` so existing behavior is unchanged. The PWA delete dialog
 for PRDs surfaces a "What to do with memories?" selector.
 
+### Archive import: seed a new PRD from archived memories
+
+When memories are archived (promoted to project-shared with a breadcrumb recording
+`archived_from_prd: <id>`), they become available for import into a new PRD or session.
+This closes the feedback loop: knowledge from a completed or deleted PRD can be
+deliberately carried forward into successor work.
+
+**`memory_archive_import` MCP tool:**
+
+```
+memory_archive_import
+  project=/home/user/datawatch
+  source_prd_id=0fb4e302        # filter to archives from a specific PRD
+  target_prd_id=a1b2c3d4        # seed this PRD's prd-shared scope
+  role_filter=["learning","decision"]
+  max=30
+  dry_run=true                  # preview what would be seeded
+```
+
+**What it does:**
+1. Queries `project-shared` for memories with breadcrumb `archived_from_prd=<source_prd_id>`
+2. Seeds matching memories into the target PRD's `prd-shared` scope
+3. Appends a breadcrumb: `"imported_from_archive: <source_prd_id>, imported_at: <ts>"`
+4. Returns a summary: `{seeded: N, skipped_duplicate: M, dry_run: bool}`
+
+**REST endpoint:**
+
+```
+POST /api/memory/scopes/archive-import
+{
+  "project_dir":    "/home/user/datawatch",
+  "source_prd_id":  "0fb4e302",       // required
+  "target_prd_id":  "a1b2c3d4",       // optional: if absent, seeds project-shared
+  "role_filter":    ["learning"],      // optional
+  "max":            30,                // optional; default 50
+  "dry_run":        false
+}
+```
+
+**PWA integration:** The "Create PRD" and "Instantiate PRD template" dialogs gain an
+optional "Seed from prior PRD archives" multi-select, listing all PRDs that have
+archived memories in the project. Selecting one or more fires `archive-import` before
+the PRD starts. The `memory_seed.from_archives` config block on a PRD template
+allows this to be preset:
+
+```yaml
+memory_seed:
+  from_archives:
+    - prd_id: "0fb4e302"
+      role_filter: ["learning", "decision"]
+      max: 20
+```
+
+This is distinct from BL387's `from_prds` cross-seeding — `from_prds` copies the
+live prd-shared scope of an existing PRD; `from_archives` imports the archived
+memories of a deleted or completed PRD that no longer has an active prd-shared scope.
+
 ---
 
 ## Feature 4 — Handoff: task-to-task context passing
@@ -354,7 +411,7 @@ default; enabled via `memory.sweep.auto: true` config flag.
 | `internal/server/memory_scopes.go` | `GET /api/memory/scopes/inventory`; `memory_prd_report` handler |
 | `internal/server/server.go` | New routes; per-scope stats in `memory_stats`; scope TTL config; auto-sweep scheduler |
 | `internal/memory/scopes.go` | Backend `Inventory()` query method signature (non-breaking add) |
-| `internal/mcp/memory_tools.go` | `memory_harvest`, `memory_handoff`, `memory_prd_report`, `memory_scope_inventory` tools |
+| `internal/mcp/memory_tools.go` | `memory_harvest`, `memory_handoff`, `memory_prd_report`, `memory_scope_inventory`, `memory_archive_import` tools |
 | `internal/config/config.go` | `memory.sweep` TTL config block; `prd.memory_seed`/`memory_harvest` defaults |
 | `cmd/datawatch/main.go` | Version → v8.30.0 |
 | `internal/server/api.go` | Version → v8.30.0 |
@@ -390,17 +447,26 @@ default; enabled via `memory.sweep.auto: true` config flag.
    - `TestBL386_Executor_NoHarvest_WhenDisabled`
    - `TestBL386_MemoryHarvest_Tool_ProxiesToScopeSeed`
 
-### Phase 3 — Archive-on-delete
+### Phase 3 — Archive-on-delete + archive import
 
 1. `memory_strategy` on `DeletePRD` + `DeleteSession`.
 2. `archive` strategy: scope-seed to project-shared → scope-delete source.
-3. PWA delete dialog selector.
-4. Tests:
+3. Breadcrumb `archived_from_prd` on each archived memory.
+4. `POST /api/memory/scopes/archive-import` REST endpoint.
+5. `memory_archive_import` MCP tool.
+6. `memory_seed.from_archives` config on PRD struct + setter.
+7. PWA delete dialog selector: "What to do with memories?"
+8. PWA PRD creation: "Seed from prior PRD archives" multi-select.
+9. Tests:
    - `TestBL386_DeletePRD_MemoryStrategy_Purge_DeletesScope`
    - `TestBL386_DeletePRD_MemoryStrategy_Archive_PromotesThenPurges`
    - `TestBL386_DeletePRD_MemoryStrategy_Keep_LeavesOrphans`
    - `TestBL386_DeleteSession_MemoryStrategy_Purge`
    - `TestBL386_DeleteSession_MemoryStrategy_Archive`
+   - `TestBL386_ArchiveImport_SeedsFromBreadcrumbedArchive`
+   - `TestBL386_ArchiveImport_DryRun_DoesNotWrite`
+   - `TestBL386_ArchiveImport_DeduplicatesExistingScoped`
+   - `TestBL386_PRD_FromArchives_Config_AutoImportsAtSpawn`
 
 ### Phase 4 — Handoff + PRD report
 
@@ -454,7 +520,12 @@ Task spawns
 
 PRD/session deleted
   └─ [BL386 Phase 3] archive: promote valuable memories → project-shared
-       └─ [BL385] scope_delete: purge source scope
+       ├─ [BL385] scope_delete: purge source scope
+       └─ [BL386 Phase 3] archived memories tagged with archived_from_prd breadcrumb
+
+New PRD/session created
+  └─ [BL386 Phase 3] archive import: seed prd-shared from archived memories of prior PRD
+       └─ memory_archive_import from_archives=[prior_prd_id] → prd-shared
 
 Routine maintenance
   ├─ [BL386 Phase 5] scope TTL auto-sweep (session-local 30d, prd 180d, ...)

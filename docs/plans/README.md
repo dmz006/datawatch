@@ -68,7 +68,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
-| Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
+| Active backlog | 3 | BL385 (v8.29.0), BL386 (v8.30.0), BL387 (v8.31–33.0) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
@@ -199,6 +199,28 @@ v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage ac
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
+
+---
+
+#### v9.0.0 — Memory Lifecycle Complete (major release milestone)
+
+**Operator-filed 2026-09-15. Status: planned. Requires BL385 + BL386 + BL387.**
+
+**Purpose:** Operator-designated major release milestone. Validates the three-BL memory lifecycle trilogy with a full 9-scenario e2e suite, performance benchmarks, backward-compat audit, and documentation complete pass. No new features beyond v8.33.0.
+
+**Plan:** `docs/plans/2026-09-15-v9-memory-lifecycle-major.md`
+
+---
+
+#### BL387 — PRD memory integration (6 features: verifier memory, child inheritance, decomposer enrichment, cross-PRD seeding, auto-report, PWA tile)
+
+**Operator-filed 2026-09-15. Status: planned. Requires BL386.**
+
+**Problem:** PRDs remain memory-blind. Verifier findings are not persisted between retries. Child PRDs start from zero even when parent accumulated learnings. Decomposer has no access to prior project knowledge. Completed PRDs leave no audit trail of what was learned.
+
+**Plan:** `docs/plans/2026-09-15-bl387-prd-memory-integration.md`
+
+**Target releases:** v8.31.0 (Phase 1: verifier + child inheritance), v8.32.0 (Phase 2: decomposer enrichment + cross-PRD seeding), v8.33.0 (Phase 3: auto-report + PWA tile)
 
 ---
 
