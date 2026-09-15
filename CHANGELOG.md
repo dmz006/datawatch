@@ -3,6 +3,14 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.3 — feat(server): per-guardrail block approval endpoint + tests (GH#153); ZAP false-positive triage (GH#154)
+
+### Added
+- **Per-guardrail block approval** — `POST /api/sessions/{id}/guardrail/{name}/approve` (REST), `session_guardrail_approve` (MCP tool), and `session guardrail-approve id=<id> guardrail=<name>` (comm channel) let an operator approve a single blocked verdict without clearing all blocks. Returns updated telemetry and a `session_unblocked` flag indicating whether the session can now resume. Used by Android Auto BL33 block-details approve button. 7 regression tests covering single/multi-block approval, unknown guardrail 404, and HTTP response shape. GH#153 closed.
+
+### Fixed (ZAP)
+- **GH#154** — ZAP PWA baseline auto-filed two new WebSocket alerts: [110002] Base64 Disclosure and [110004] Email Address. Both are false positives in session-content data (arbitrary LLM output and git identity strings broadcast as part of the session list). Both are already `IGNORE`d in `.zap/rules.tsv` with documented justifications. No code change needed; GH#154 closed.
+
 ## v8.33.2 — fix(autonomous): boot-time stuck-task reconciliation (B90)
 
 ### Fixed
