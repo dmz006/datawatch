@@ -316,3 +316,75 @@ func BorrowReadOnly(b Backend, from ScopeRef, queryVec []float32, topK int) ([]M
 	dir, _, _ := from.Resolve()
 	return b.Search(dir, queryVec, topK)
 }
+
+// PurgeScope (BL386 Phase 3) deletes every memory belonging to the
+// given scope. Returns the number of deleted entries and the first error
+// encountered (partial deletes are NOT rolled back).
+func PurgeScope(b Backend, ref ScopeRef) (int, error) {
+	if b == nil {
+		return 0, errors.New("memory backend nil")
+	}
+	dir, role, _ := ref.Resolve()
+	var rows []Memory
+	var err error
+	if role != "" {
+		rows, err = b.ListByRole(dir, role, 10000)
+	} else {
+		rows, err = b.ListRecent(dir, 10000)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("purge scope: list: %w", err)
+	}
+	count := 0
+	for _, m := range rows {
+		if derr := b.Delete(m.ID); derr != nil {
+			return count, fmt.Errorf("purge scope: delete %d: %w", m.ID, derr)
+		}
+		count++
+	}
+	return count, nil
+}
+
+// ArchiveScope (BL386 Phase 3) copies memories from from-scope to to-scope
+// with an "archived from prd:<breadcrumbLabel>" annotation, then purges the
+// from-scope. Used when a PRD is deleted with memory_strategy=archive.
+//
+// On success returns {copied, purged}. Errors mid-copy stop before purge.
+func ArchiveScope(b Backend, from, to ScopeRef, filter SeedFilter, breadcrumbLabel string, n int) (copied, purged int, err error) {
+	if b == nil {
+		return 0, 0, errors.New("memory backend nil")
+	}
+	if n <= 0 {
+		n = 1000
+	}
+	srcDir, srcRole, _ := from.Resolve()
+	dstDir, _, dstSession := to.Resolve()
+	var src []Memory
+	if filter.RolePrefix != "" || srcRole != "" {
+		role := filter.RolePrefix
+		if role == "" {
+			role = srcRole
+		}
+		src, err = b.ListByRole(srcDir, role, n)
+	} else {
+		src, err = b.ListRecent(srcDir, n)
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("archive scope: list source: %w", err)
+	}
+	for _, m := range src {
+		if filter.ContentSubstring != "" && !strings.Contains(strings.ToLower(m.Content), strings.ToLower(filter.ContentSubstring)) {
+			continue
+		}
+		if !filter.Since.IsZero() && m.CreatedAt.Before(filter.Since) {
+			continue
+		}
+		annotated := m.Content + "\n\n_(archived from prd:" + breadcrumbLabel + " at " + time.Now().UTC().Format(time.RFC3339) + ")_"
+		if _, serr := b.Save(dstDir, annotated, m.Summary, "archived", dstSession, nil); serr != nil {
+			return copied, 0, fmt.Errorf("archive scope: save target: %w", serr)
+		}
+		copied++
+	}
+	purged, err = PurgeScope(b, from)
+	return copied, purged, err
+}

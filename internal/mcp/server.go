@@ -628,6 +628,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))
 	mcpSrv.AddTool(s.toolMemoryScopeSeed(), tracked(s.handleMemoryScopeSeedMCP))
 	mcpSrv.AddTool(s.toolMemoryScopePromote(), tracked(s.handleMemoryScopePromoteMCP))
+	mcpSrv.AddTool(s.toolMemoryArchiveImport(), tracked(s.handleMemoryArchiveImport)) // BL386 P3
 	// BL332 T42c — discussion scope MCP tools.
 	mcpSrv.AddTool(s.toolDiscussionWrite(), tracked(s.handleDiscussionWrite))
 	mcpSrv.AddTool(s.toolDiscussionRecall(), tracked(s.handleDiscussionRecall))

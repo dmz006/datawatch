@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/memory"
 )
 
 // handleAutonomousConfig — GET / PUT.
@@ -249,12 +250,38 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if r.URL.Query().Get("hard") == "true" {
+				// BL386 Phase 3 — optional memory_strategy before hard-delete.
+				memStrat := r.URL.Query().Get("memory_strategy") // keep | purge | archive
+				if (memStrat == "purge" || memStrat == "archive") && s.memoryBackend != nil {
+					// Look up the PRD for projectDir before deleting it.
+					if prd, ok := s.autonomousMgr.GetPRD(id); ok {
+						if prdMap, isMap := prd.(map[string]any); isMap {
+							projectDir, _ := prdMap["project_dir"].(string)
+							prdRef := memory.ScopeRef{Scope: memory.ScopePRDShared, Project: projectDir, PRDID: id}
+							if memStrat == "archive" {
+								archiveFilter := memory.SeedFilter{}
+								archiveRoleFilter := r.URL.Query().Get("archive_role_filter")
+								if archiveRoleFilter != "" {
+									archiveFilter.RolePrefix = archiveRoleFilter
+								}
+								archiveTo := r.URL.Query().Get("archive_to_scope")
+								if archiveTo == "" {
+									archiveTo = "project-shared"
+								}
+								toRef := memory.ScopeRef{Scope: memory.Scope(archiveTo), Project: projectDir}
+								_, _, _ = memory.ArchiveScope(s.memoryBackend, prdRef, toRef, archiveFilter, id, 1000)
+							} else { // purge
+								_, _ = memory.PurgeScope(s.memoryBackend, prdRef)
+							}
+						}
+					}
+				}
 				if err := s.autonomousMgr.DeletePRD(id); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
 				killSessions()
-				writeJSONOK(w, map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs)})
+				writeJSONOK(w, map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "memory_strategy": memStrat})
 				return
 			}
 			if err := s.autonomousMgr.Cancel(id); err != nil {

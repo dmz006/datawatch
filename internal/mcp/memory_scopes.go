@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -144,6 +145,44 @@ func (s *Server) handleMemoryScopePromoteMCP(_ context.Context, req mcpsdk.CallT
 		},
 	}
 	out, err := s.proxyJSON("POST", "/api/memory/scopes/promote", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// ----- memory_archive_import (BL386 Phase 3) ---------------------------------
+
+func (s *Server) toolMemoryArchiveImport() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_archive_import",
+		mcpsdk.WithDescription("BL386 Phase 3 — seed a PRD's prd-shared scope from memories archived from a deleted/completed PRD. Archived memories carry 'archived from prd:<id>' breadcrumbs."),
+		mcpsdk.WithString("project", mcpsdk.Required(), mcpsdk.Description("Project directory")),
+		mcpsdk.WithString("source_prd_id", mcpsdk.Required(), mcpsdk.Description("Source PRD ID whose archived memories to import")),
+		mcpsdk.WithString("target_prd_id", mcpsdk.Description("Target PRD ID to seed (absent = seed into project-shared)")),
+		mcpsdk.WithString("role_filter", mcpsdk.Description("Comma-separated role names to include (empty = all)")),
+		mcpsdk.WithNumber("max", mcpsdk.Description("Maximum memories to import (default 50)")),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("Preview without writing")),
+	)
+}
+
+func (s *Server) handleMemoryArchiveImport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	var roleFilter []string
+	if rf := req.GetString("role_filter", ""); rf != "" {
+		for _, r := range splitCSV(rf) {
+			if r != "" {
+				roleFilter = append(roleFilter, r)
+			}
+		}
+	}
+	body, _ := json.Marshal(map[string]any{
+		"project_dir":    req.GetString("project", ""),
+		"source_prd_id":  req.GetString("source_prd_id", ""),
+		"target_prd_id":  req.GetString("target_prd_id", ""),
+		"role_filter":    roleFilter,
+		"max":            int(req.GetFloat("max", 0)),
+		"dry_run":        req.GetBool("dry_run", false),
+	})
+	out, err := s.proxyJSON("POST", "/api/memory/scopes/archive-import", body)
 	if err != nil {
 		return nil, err
 	}

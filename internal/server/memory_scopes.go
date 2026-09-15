@@ -86,6 +86,16 @@ func (s *Server) handleMemoryScopes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.memoryScopesDelete(w, r)
+	// BL386 Phase 3 — archive-import: seed a scope from previously archived memories.
+	case rest == "archive-import" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
+		s.memoryArchiveImport(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -243,6 +253,100 @@ func (s *Server) memoryScopesDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, map[string]any{
 		"deleted":   body.MemoryID,
 		"scope":     body.Scope,
+	})
+}
+
+// memoryArchiveImport (BL386 Phase 3) — seeds a PRD's prd-shared scope (or
+// project-shared) from memories previously archived from a deleted/completed PRD.
+// Archived memories are identified by the "archived from prd:<source_prd_id>"
+// breadcrumb embedded in their content.
+//
+//	POST /api/memory/scopes/archive-import
+//	{
+//	  "project_dir":   "/home/user/proj",
+//	  "source_prd_id": "0fb4e302",
+//	  "target_prd_id": "a1b2c3d4",   // optional; absent = seed into project-shared
+//	  "role_filter":   ["learning"],  // optional
+//	  "max":           30,            // optional; default 50
+//	  "dry_run":       false
+//	}
+func (s *Server) memoryArchiveImport(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ProjectDir   string   `json:"project_dir"`
+		SourcePRDID  string   `json:"source_prd_id"`
+		TargetPRDID  string   `json:"target_prd_id"`
+		RoleFilter   []string `json:"role_filter"`
+		Max          int      `json:"max"`
+		DryRun       bool     `json:"dry_run"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SourcePRDID == "" {
+		http.Error(w, "source_prd_id required", http.StatusBadRequest)
+		return
+	}
+	max := body.Max
+	if max <= 0 {
+		max = 50
+	}
+	// source is project-shared (where archives land after PRD deletion)
+	from := memory.ScopeRef{Scope: memory.ScopeProjectShared, Project: body.ProjectDir}
+	var to memory.ScopeRef
+	if body.TargetPRDID != "" {
+		to = memory.ScopeRef{Scope: memory.ScopePRDShared, Project: body.ProjectDir, PRDID: body.TargetPRDID}
+	} else {
+		to = memory.ScopeRef{Scope: memory.ScopeProjectShared, Project: body.ProjectDir}
+	}
+	filter := memory.SeedFilter{
+		ContentSubstring: "archived from prd:" + body.SourcePRDID,
+	}
+	if len(body.RoleFilter) > 0 {
+		filter.RolePrefix = body.RoleFilter[0]
+	}
+	if body.DryRun {
+		// Dry run: count what would be seeded without writing
+		srcDir, srcRole, _ := from.Resolve()
+		var rows []memory.Memory
+		var lErr error
+		if srcRole != "" {
+			rows, lErr = s.memoryBackend.ListByRole(srcDir, srcRole, max*10)
+		} else {
+			rows, lErr = s.memoryBackend.ListRecent(srcDir, max*10)
+		}
+		if lErr != nil {
+			http.Error(w, lErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		count := 0
+		for _, m := range rows {
+			if filter.ContentSubstring != "" && !strings.Contains(strings.ToLower(m.Content), strings.ToLower(filter.ContentSubstring)) {
+				continue
+			}
+			count++
+			if count >= max {
+				break
+			}
+		}
+		writeJSONOK(w, map[string]any{
+			"dry_run":        true,
+			"would_seed":     count,
+			"source_prd_id":  body.SourcePRDID,
+			"target_prd_id":  body.TargetPRDID,
+		})
+		return
+	}
+	seeded, err := memory.Seed(s.memoryBackend, from, to, filter, max)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSONOK(w, map[string]any{
+		"seeded":        seeded,
+		"source_prd_id": body.SourcePRDID,
+		"target_prd_id": body.TargetPRDID,
+		"dry_run":       false,
 	})
 }
 
