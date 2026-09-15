@@ -4005,6 +4005,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"one_shot":        true,
 				"prd_id":          req.PRDID,
 				"task_id":         req.TaskID,
+				"story_id":        req.StoryID, // BL385 Phase 4 — memory scope routing
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",

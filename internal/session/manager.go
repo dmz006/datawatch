@@ -1495,11 +1495,12 @@ type StartOptions struct {
 	KillChildren          bool
 	KillChildrenRecursive bool
 
-	// PRDID and TaskID link an autonomous task session to its executor so
-	// the PWA detail view can filter sessions by PRD and show which task
-	// is actively being worked on.
-	PRDID  string
-	TaskID string
+	// PRDID, TaskID, and StoryID link an autonomous task session to its executor
+	// so the PWA detail view can filter sessions by PRD and show which task is
+	// actively being worked on. StoryID added BL385 Phase 4 for memory scope routing.
+	PRDID   string
+	TaskID  string
+	StoryID string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1675,6 +1676,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.TaskID != "" {
 		sess.TaskID = opt.TaskID
 	}
+	if opt != nil && opt.StoryID != "" {
+		sess.StoryID = opt.StoryID
+	}
 
 	// Create the session tracker (git-tracked folder)
 	tracker, err := NewTracker(m.dataDir, sess)
@@ -1832,6 +1836,19 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			}
 			if sid, ok := backendObj.(interface{ SetSessionFullID(string) }); ok {
 				sid.SetSessionFullID(sess.FullID)
+			}
+			// BL385 Phase 4 — inject PRD/story context so subprocess MCP server
+			// routes memory writes to session-local and recall walks the correct
+			// scope hierarchy.
+			if sess.PRDID != "" {
+				if sp, ok := backendObj.(interface{ SetCallerPRDID(string) }); ok {
+					sp.SetCallerPRDID(sess.PRDID)
+				}
+			}
+			if sess.StoryID != "" {
+				if ss2, ok := backendObj.(interface{ SetCallerStoryID(string) }); ok {
+					ss2.SetCallerStoryID(sess.StoryID)
+				}
 			}
 		}
 		// BL372 — inject web search MCP server when enabled.

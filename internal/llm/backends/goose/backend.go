@@ -26,6 +26,8 @@ type Backend struct {
 	apiKey           string
 	channelEnabled   bool
 	sessionFullID    string // BL363 T3 — passed to MCP server via --caller-session-id
+	callerPRDID      string // BL385 — passed to MCP server via --caller-prd-id
+	callerStoryID    string // BL385 — passed to MCP server via --caller-story-id
 	webSearchEnabled bool   // BL372 — inject GOOSE_MCP__WEB_SEARCH__* when true
 	webSearchURL     string // BL372 — SearXNG base URL
 	webSearchEngine  string // BL372 — engine list (e.g. "bing")
@@ -92,6 +94,8 @@ func (b *Backend) SetModel(m string)               { b.model = m }
 func (b *Backend) SetAPIKey(k string)              { b.apiKey = k }
 func (b *Backend) SetChannelEnabled(v bool)        { b.channelEnabled = v }
 func (b *Backend) SetSessionFullID(id string)      { b.sessionFullID = id }
+func (b *Backend) SetCallerPRDID(id string)        { b.callerPRDID = id }   // BL385
+func (b *Backend) SetCallerStoryID(id string)      { b.callerStoryID = id } // BL385
 func (b *Backend) SetWebSearchEnabled(v bool)      { b.webSearchEnabled = v }     // BL372
 func (b *Backend) SetWebSearchURL(url string)      { b.webSearchURL = url }       // BL372
 func (b *Backend) SetWebSearchEngine(engine string) { b.webSearchEngine = engine } // BL372
@@ -114,10 +118,20 @@ func (b *Backend) gooseEnvPrefix() string {
 	// Goose reads GOOSE_MCP__<NAME>__TYPE/CMD/ARGS at startup to load MCP servers.
 	if b.channelEnabled && b.sessionFullID != "" {
 		if binaryPath, err := os.Executable(); err == nil {
+			// BL385 Phase 4 — append PRD/story context so subprocess MCP server
+			// routes memory writes to session-local and recall walks the correct
+			// scope hierarchy.
+			mcpArgs := "mcp,--caller-session-id," + b.sessionFullID
+			if b.callerPRDID != "" {
+				mcpArgs += ",--caller-prd-id," + b.callerPRDID
+			}
+			if b.callerStoryID != "" {
+				mcpArgs += ",--caller-story-id," + b.callerStoryID
+			}
 			parts = append(parts,
 				"GOOSE_MCP__DATAWATCH__TYPE=stdio",
 				"GOOSE_MCP__DATAWATCH__CMD="+shellQuote(binaryPath),
-				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote("mcp,--caller-session-id,"+b.sessionFullID),
+				"GOOSE_MCP__DATAWATCH__ARGS="+shellQuote(mcpArgs),
 			)
 		}
 	}
