@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.28.4"
+var Version = "8.28.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8231,6 +8231,20 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// GH#153: session guardrail-approve <id> <name> [--note <note>]
+	guardrailApproveCmd := &cobra.Command{
+		Use:   "guardrail-approve <session-id> <guardrail-name>",
+		Short: "Approve a blocked guardrail verdict for a session",
+		Long:  "Approves a single blocked guardrail verdict. If all blocked verdicts are approved, the session is unblocked.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			note, _ := cmd.Flags().GetString("note")
+			return runSessionGuardrailApprove(args[0], args[1], note)
+		},
+	}
+	guardrailApproveCmd.Flags().String("note", "", "Optional operator note explaining the approval")
+	sessionCmd.AddCommand(guardrailApproveCmd)
+
 	// session children <id> — list child sessions of a parent
 	childrenCmd := &cobra.Command{
 		Use:   "children <id>",
@@ -9212,6 +9226,42 @@ func runSessionGuardrail(cfg *config.Config, id, name string) error {
 	fmt.Printf("%s %s: %s", icon, v.Guardrail, v.Outcome)
 	if v.Summary != "" {
 		fmt.Printf(" — %s", v.Summary)
+	}
+	fmt.Println()
+	return nil
+}
+
+// runSessionGuardrailApprove — GH#153: datawatch session guardrail-approve <id> <name> [--note]
+func runSessionGuardrailApprove(id, name, note string) error {
+	client := daemonClient()
+	bodyMap := map[string]string{}
+	if note != "" {
+		bodyMap["note"] = note
+	}
+	body, _ := json.Marshal(bodyMap)
+	resp, err := client.Post(
+		fmt.Sprintf("%s/api/sessions/%s/guardrail/%s/approve", daemonURL(), id, name),
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("daemon unreachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	var v struct {
+		OK               bool   `json:"ok"`
+		Guardrail        string `json:"guardrail"`
+		SessionUnblocked bool   `json:"session_unblocked"`
+	}
+	if err := json.Unmarshal(respBody, &v); err != nil {
+		fmt.Println(string(respBody))
+		return nil
+	}
+	fmt.Printf("✓ approved: %s/%s", id, name)
+	if v.SessionUnblocked {
+		fmt.Print(" — session unblocked")
 	}
 	fmt.Println()
 	return nil

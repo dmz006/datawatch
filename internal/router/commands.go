@@ -395,9 +395,11 @@ type Command struct {
 	BindAgentID string // empty means unbind
 
 	// BL93/BL94 — CmdSession fields.
-	SessionVerb        string // "reconcile" | "import" | "summarize" | "restart"
-	SessionArg         string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id
-	SessionRestartTask string // BL359 — optional task override for "session restart"
+	SessionVerb           string // "reconcile" | "import" | "summarize" | "restart" | "guardrail-approve"
+	SessionArg            string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id; for guardrail-approve: session id
+	SessionRestartTask    string // BL359 — optional task override for "session restart"
+	SessionGuardrailName  string // GH#153 — guardrail name for "session guardrail-approve"
+	SessionGuardrailNote  string // GH#153 — optional operator note for "session guardrail-approve"
 
 	// Sprint Sx2 — CmdRest fields.
 	//   Method:  GET | POST | PUT | DELETE
@@ -465,12 +467,13 @@ type Command struct {
 
 // SessionVerb values.
 const (
-	SessionVerbReconcile = "reconcile"
-	SessionVerbImport    = "import"
-	SessionVerbSummarize = "summarize"
-	SessionVerbSelf      = "self"     // BL349
-	SessionVerbOrphaned  = "orphaned" // BL350
-	SessionVerbRestart   = "restart"  // BL359
+	SessionVerbReconcile       = "reconcile"
+	SessionVerbImport          = "import"
+	SessionVerbSummarize       = "summarize"
+	SessionVerbSelf            = "self"              // BL349
+	SessionVerbOrphaned        = "orphaned"          // BL350
+	SessionVerbRestart         = "restart"           // BL359
+	SessionVerbGuardrailApprove = "guardrail-approve" // GH#153
 )
 
 // parseBL353ScheduleParams parses a BL353 key=value style schedule command.
@@ -874,6 +877,31 @@ func Parse(text string) Command {
 				}
 			}
 			cmd.SessionRestartTask = params["task"]
+			return cmd
+		case SessionVerbGuardrailApprove:
+			// GH#153 — "session guardrail-approve id=<id> guardrail=<name> [note=<...>]"
+			params := make(map[string]string)
+			for _, p := range parts[1:] {
+				if idx := strings.Index(p, "="); idx > 0 {
+					params[p[:idx]] = p[idx+1:]
+				}
+			}
+			// note= may be multi-word — scan original text.
+			if idx := strings.Index(rest, "note="); idx >= 0 {
+				val := rest[idx+5:]
+				for _, key := range []string{" id=", " guardrail="} {
+					if ki := strings.Index(val, key); ki >= 0 {
+						val = val[:ki]
+					}
+				}
+				params["note"] = strings.TrimSpace(val)
+			}
+			cmd.SessionArg = params["id"]
+			cmd.SessionGuardrailName = params["guardrail"]
+			cmd.SessionGuardrailNote = params["note"]
+			if cmd.SessionArg == "" || cmd.SessionGuardrailName == "" {
+				cmd.Text = "guardrail-approve requires id=<session-id> guardrail=<name>"
+			}
 			return cmd
 		default:
 			cmd.Text = "unknown session verb: " + verb

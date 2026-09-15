@@ -32,6 +32,8 @@ func (r *Router) handleSessionCmd(cmd Command) {
 		r.sessionOrphaned()
 	case SessionVerbRestart: // BL359
 		r.sessionRestart(cmd)
+	case SessionVerbGuardrailApprove: // GH#153
+		r.sessionGuardrailApprove(cmd)
 	default:
 		r.send(sessionHelpText(r.hostname, "unknown verb: "+cmd.SessionVerb))
 	}
@@ -194,6 +196,39 @@ func (r *Router) sessionRestart(cmd Command) {
 	r.send(fmt.Sprintf("[%s] session restarted: %s", r.hostname, strings.TrimSpace(result)))
 }
 
+// sessionGuardrailApprove handles "session guardrail-approve id=<id> guardrail=<name> [note=...]" (GH#153).
+func (r *Router) sessionGuardrailApprove(cmd Command) {
+	if cmd.SessionArg == "" || cmd.SessionGuardrailName == "" {
+		r.send(sessionHelpText(r.hostname, "guardrail-approve requires id=<session-id> guardrail=<name>"))
+		return
+	}
+	body := map[string]string{}
+	if cmd.SessionGuardrailNote != "" {
+		body["note"] = cmd.SessionGuardrailNote
+	}
+	result, err := r.commJSON("POST",
+		fmt.Sprintf("/api/sessions/%s/guardrail/%s/approve", cmd.SessionArg, cmd.SessionGuardrailName),
+		bodyJSON(body))
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] guardrail-approve %s/%s: %v", r.hostname, cmd.SessionArg, cmd.SessionGuardrailName, err))
+		return
+	}
+	var v struct {
+		OK               bool   `json:"ok"`
+		SessionUnblocked bool   `json:"session_unblocked"`
+		Guardrail        string `json:"guardrail"`
+	}
+	if err := json.Unmarshal([]byte(result), &v); err != nil {
+		r.send(fmt.Sprintf("[%s] guardrail-approve: %s", r.hostname, strings.TrimSpace(result)))
+		return
+	}
+	msg := fmt.Sprintf("[%s] guardrail approved: %s/%s", r.hostname, cmd.SessionArg, cmd.SessionGuardrailName)
+	if v.SessionUnblocked {
+		msg += " — session unblocked"
+	}
+	r.send(msg)
+}
+
 // bodyJSON marshals a map to a compact JSON string for commJSON.
 func bodyJSON(m map[string]string) string {
 	out, _ := json.Marshal(m)
@@ -215,6 +250,8 @@ func sessionHelpText(hostname, note string) string {
 		"  session restart id=<id>   — restart session from any state (BL359)",
 		"  session restart name=<n>  — restart session by name",
 		"  session restart id=<id> task=<task>  — restart with new task",
+		"  session guardrail-approve id=<id> guardrail=<name>  — approve a blocked guardrail verdict (GH#153)",
+		"  session guardrail-approve id=<id> guardrail=<name> note=<...>  — approve with operator note",
 	)
 	return strings.Join(out, "\n")
 }

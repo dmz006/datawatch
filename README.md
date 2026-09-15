@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.28.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.28.4)
+[![Release](https://img.shields.io/badge/release-v8.28.5-success)](https://github.com/dmz006/datawatch/releases/tag/v8.28.5)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,11 +89,11 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.28.2](CHANGELOG.md) (2026-09-14)** — Feat: per-story LLM picker in PWA story editor (BL381 completion); fix searxng-mcp fetch timeout.
+**[v8.28.5](CHANGELOG.md) (2026-09-14)** — Feat: per-guardrail block approval on CLI, comm channel, and PWA (GH#153).
 
-**[v8.28.1](CHANGELOG.md) (2026-09-14)** — Fix: add missing `fedCap` guards on 7 autonomous write endpoints; add Federation-Parity Rule to AGENT.md.
+**[v8.28.4](CHANGELOG.md) (2026-09-14)** — Fix: ACP SSE reconnect loop for opencode-acp stream drops.
 
-**[v8.27.1](CHANGELOG.md) (2026-09-14)** — Security fix: remove insecure spawned automata-watchdog schedule (cross-session tmux read, out-of-workspace writes); watchdog now covers `verifying`/`running_tests` tasks.
+**[v8.28.3](CHANGELOG.md) (2026-09-14)** — Feat: PWA live elapsed clock on active session cards (BL383); decomposer scope-drift hardening in AGENT.md (BL384).
 
 **[v8.26.1](CHANGELOG.md) (2026-09-13)** — Fix: Observer peer stats grid now correctly reads CPU%, RAM, and GPU power/temperature from the v2 stats format. GPU temperature and power render as dedicated bar rows; CPU bar label includes load averages.
 

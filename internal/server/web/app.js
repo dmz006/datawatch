@@ -4227,17 +4227,36 @@ function renderProgressBar(telemetry) {
   </div>`;
 }
 
-// T08/T10 — guardrail verdicts inline.
-function renderSessionGuardrailVerdicts(verdicts) {
+// T08/T10 — guardrail verdicts inline. GH#153: shows Approve button on blocked, non-approved verdicts.
+function renderSessionGuardrailVerdicts(verdicts, sessionId) {
   if (!verdicts || !verdicts.length) return '';
   const chips = verdicts.map(v => {
     const cl = v.outcome === 'pass' ? 'var(--success,#10b981)' : v.outcome === 'block' ? 'var(--error,#ef4444)' : 'var(--warning,#f59e0b)';
+    const approveBtn = (v.outcome === 'block' && !v.approved && sessionId)
+      ? `<button onclick="approveGuardrailVerdict(${JSON.stringify(sessionId)},${JSON.stringify(v.guardrail)},this)" style="margin-left:4px;font-size:9px;padding:0 4px;border:1px solid var(--error,#ef4444);border-radius:3px;background:none;color:var(--error,#ef4444);cursor:pointer;line-height:14px;" title="Approve this blocked verdict">approve</button>`
+      : (v.approved ? `<span style="margin-left:3px;font-size:9px;opacity:0.7;" title="Approved">✓</span>` : '');
     return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg);border:1px solid ${cl};border-radius:4px;padding:1px 5px;font-size:10px;color:${cl};" title="${escHtml(v.summary||'')}">
-      ${escHtml(v.guardrail)} · ${escHtml(v.outcome)}
+      ${escHtml(v.guardrail)} · ${escHtml(v.outcome)}${approveBtn}
     </span>`;
   }).join(' ');
   return `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${chips}</div>`;
 }
+
+window.approveGuardrailVerdict = function(sessionId, guardrailName, btn) {
+  if (btn) btn.disabled = true;
+  apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/guardrail/' + encodeURIComponent(guardrailName) + '/approve', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+  }).then(r => r.json()).then(data => {
+    const msg = data.session_unblocked
+      ? (guardrailName + ': approved — session unblocked')
+      : (guardrailName + ': approved');
+    showToast(msg, 'success', 3000);
+    if (btn) { btn.replaceWith(Object.assign(document.createElement('span'), {textContent: ' ✓', title: 'Approved', style: 'font-size:9px;opacity:0.7;'})); }
+  }).catch(err => {
+    showToast('approve failed: ' + err, 'error', 3000);
+    if (btn) btn.disabled = false;
+  });
+};
 
 // T10 — failed task drill-down panel (last 5 hook events before failure).
 function renderFailedDrilldown(telemetry, task) {
@@ -4284,7 +4303,7 @@ function renderLiveTaskTree(telemetry, sessionType) {
       </div>${drill}
     </div>`;
   }).join('');
-  const verdicts = renderSessionGuardrailVerdicts(telemetry.guardrail_verdicts || []);
+  const verdicts = renderSessionGuardrailVerdicts(telemetry.guardrail_verdicts || [], telemetry.session_id || '');
   return rows + verdicts;
 }
 

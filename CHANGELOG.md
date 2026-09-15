@@ -3,6 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.5 — feat(guardrail): per-guardrail block approval on CLI, comm channel, and PWA (GH#153)
+
+### Added
+- **CLI: `datawatch session guardrail-approve <id> <name> [--note <note>]`** — approves a single blocked guardrail verdict via `POST /api/sessions/{id}/guardrail/{name}/approve`. Prints confirmation and `session unblocked` if all blocks are now approved. REST and MCP surfaces were added in v8.28.4.
+- **Comm channel: `session guardrail-approve id=<id> guardrail=<name> [note=<...>]`** — new chat verb dispatched through `handleSessionCmd`/`sessionGuardrailApprove`. Note can be multi-word. Responds with `guardrail approved: <id>/<name> — session unblocked` when applicable.
+- **PWA: Approve button on blocked guardrail verdict chips** — in the session Status tab's Live Task Tree, each `outcome=block` chip now shows a small `approve` button (hidden once approved). Clicking calls `POST /api/sessions/{id}/guardrail/{name}/approve` and replaces the button with a `✓` checkmark. Shows a toast with unblock status.
+
 ## v8.28.4 — fix(acp): SSE reconnect loop for opencode-acp stream drops
 
 ### Fixed
