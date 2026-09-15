@@ -3,6 +3,27 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.29.0 — feat(memory): Subprocess Memory Scope Isolation
+
+### Added
+- **6-layer scope hierarchy** — extends the memory scope model from 4 to 6 layers by inserting `prd-shared` and `story-shared` between `project-shared` and `session-local`:
+  `persona-global → persona-in-project → project-shared → prd-shared → story-shared → session-local`
+- **`POST /api/memory/scopes/save`** — writes a memory entry directly into any named scope (including the new `prd-shared`/`story-shared` layers). Accepts `scope` (with `prd_id`/`story_id` fields), `content`, and optional `summary`.
+- **`POST /api/memory/scopes/delete`** — deletes a memory entry by `memory_id`; scope field accepted for auditing.
+- **`GET /api/memory/scopes/recall` `prd_id`/`story_id` params** — extends the recall endpoint to forward PRD and story context; the `prd-shared` layer is included when `prd_id` is provided, `story-shared` when `story_id` is provided.
+- **Subprocess MCP memory routing** — when the datawatch MCP server runs as a subprocess (Goose/Claude channel with `--caller-session-id`), memory tool behavior changes automatically:
+  - `memory_remember` → writes to `session-local` scope (isolated per task; does not pollute the shared project store)
+  - `memory_recall` → walks the full scope hierarchy (session-local, story-shared, prd-shared, project-shared) so the agent sees memories from earlier tasks in the same PRD/story
+  - `memory_list` → shows session-local layer only
+  - `memory_sweep_stale` / `memory_import` → blocked (returns error) to protect shared and operator-curated memory
+- **`--caller-prd-id` / `--caller-story-id` CLI flags** on the `mcp` subcommand for direct subprocess invocation.
+- **Executor injection** — when the autonomous executor spawns a Goose agent session with a PRD/story context, these IDs are injected into `GOOSE_MCP__DATAWATCH__ARGS` automatically via `--caller-prd-id`/`--caller-story-id`.
+- **`ScopeRef` JSON tags** — all `ScopeRef` fields now use snake_case JSON keys (`prd_id`, `story_id`, `session_id`) for consistent REST API usage.
+- **`session.StoryID` field** — sessions spawned by the autonomous executor now record the story they belong to; propagates through `autonomousSpawn` → `start_session` → `session.Manager`.
+
+### Changed
+- `ScopedRecall` signature extended with `prdID` and `storyID` parameters (breaking change only for internal callers; all call sites updated).
+
 ## v8.28.7 — fix(mcp): memory tools proxy to HTTP loopback in subprocess mode; searxng timeout +resilience
 
 ### Fixed

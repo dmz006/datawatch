@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.28.9** (2026-09-15). fix(autonomous): Automata comm-channel parity gap B88 — adds `cancel-story`, `cancel-task`, `reset-to-draft`, `set-quality-gates`, `scan-results` to `internal/router/sx2_parity.go`. All five operations were present on REST, MCP, and PWA but missing from the comm-channel router (BL382 regression). Also updates help string.
+Latest release: **v8.29.0** (2026-09-15). feat(memory): Subprocess Memory Scope Isolation — extends the memory scope hierarchy from 4 to 6 layers, adding `prd-shared` and `story-shared` scopes. MCP subprocess memory tools now route through scoped API automatically; `memory_sweep_stale`/`memory_import` blocked in subprocess mode. New REST save/delete endpoints. Executor injects `--caller-prd-id`/`--caller-story-id` into Goose MCP args.
+
+Previous: **v8.28.9** (2026-09-15). fix(autonomous): Automata comm-channel parity gap B88 — adds `cancel-story`, `cancel-task`, `reset-to-draft`, `set-quality-gates`, `scan-results` to `internal/router/sx2_parity.go`. All five operations were present on REST, MCP, and PWA but missing from the comm-channel router (BL382 regression). Also updates help string.
 
 Previous: **v8.28.8** (2026-09-15). fix(autonomous): verifier now detects pre-existing untracked files overwritten by a task (B87). When `task.FilesPlanned` overlaps `pre_task_untracked_files`, the verifier reads current file content (up to 8 KB) and includes it as `<overwritten_files>` context so the LLM can verify the spec was satisfied. The hard "no output" early-return now only fires when diff, new-untracked, AND overwritten-files are all empty.
 
