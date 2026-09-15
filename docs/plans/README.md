@@ -202,6 +202,18 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
+#### BL385 — Subprocess memory scope isolation (session-local writes, scoped reads)
+
+**Operator-filed 2026-09-15. Status: planned.**
+
+**Problem:** After v8.28.7, subprocess MCP mode (`datawatch mcp` spawned by opencode/Goose) has full read-write access to the global flat memory store. Any subprocess session can pollute global memory or trigger destructive operations (sweep, import) against the entire store.
+
+**Plan:** `docs/plans/2026-09-15-bl385-subprocess-memory-scope-isolation.md`
+
+**Target release:** v8.29.0
+
+---
+
 #### BL384 — Document + harden decomposer scope-drift (qwen/ollama ignores PRD-level doc-only constraints) ✅ Closed in v8.28.3
 
 **Operator-filed 2026-09-14. Closed 2026-09-14 in v8.28.3.**
