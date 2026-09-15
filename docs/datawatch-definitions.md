@@ -14,7 +14,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 
 - **Long-lived AI sessions** that survive daemon restarts and re-attach cleanly. xterm.js streaming in the PWA, full tmux underneath, full event history captured.
 - **Ephemeral container workers** in Docker or Kubernetes, spawned on demand with PQC bootstrap, distroless images, per-pod auth, and Tailscale mesh.
-- **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work. The **scope hierarchy** (persona-global → persona-in-project → project-shared → session-local) lets you borrow cross-agent context without polluting higher scopes, seed curated knowledge into a narrower scope, and promote session discoveries up to shared scopes with breadcrumb provenance.
+- **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work. The **scope hierarchy** (persona-global → persona-in-project → project-shared → **prd-shared** → **story-shared** → session-local) lets you borrow cross-agent context without polluting higher scopes, seed curated knowledge into a narrower scope, and promote session discoveries up to shared scopes with breadcrumb provenance. **Subprocess mode** (opencode, Goose, and other MCP-based tools) routes writes to `session-local` by default and recalls the full 6-layer hierarchy. **Warm-start seeding** pre-populates a new task session from applicable scopes before it begins work. **Memory harvest** auto-promotes session learnings to `story-shared` or `prd-shared` on task completion. **Archive-on-delete** promotes valuable memories to `project-shared` before purging an entity's scope. **Archive import** seeds a new PRD from a prior PRD's archived memories. See [`howto/prd-memory-workflow.md`](howto/prd-memory-workflow.md) for the complete lifecycle walkthrough.
 - **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper; image/photo attachments described by a configurable vision backend.
 - **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell.
 - **Operator identity** — a structured self-description you write once and the daemon injects into every spawned session as the L0 wake-up layer.
@@ -1320,6 +1320,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | MCP tools | [`howto/mcp-tools.md`](howto/mcp-tools.md) | ✓ | ✓ |
 | Pipeline chaining | [`howto/pipeline-chaining.md`](howto/pipeline-chaining.md) | ✓ | ✓ |
 | Cross-agent memory | [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) | ✓ | ✓ |
+| PRD memory lifecycle | [`howto/prd-memory-workflow.md`](howto/prd-memory-workflow.md) | ✓ | ✓ |
 | Daemon operations | [`howto/daemon-operations.md`](howto/daemon-operations.md) | ✓ | ✓ |
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
@@ -1427,7 +1428,8 @@ Infrastructure:
 - [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
 
 Memory + ops:
-- [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph + 4-scope hierarchy (persona-global → project-shared → session-local) with borrow/seed/promote
+- [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph + 6-scope hierarchy (persona-global → persona-in-project → project-shared → prd-shared → story-shared → session-local) with borrow/seed/promote
+- [`howto/prd-memory-workflow.md`](howto/prd-memory-workflow.md) — complete PRD memory lifecycle: warm-start seeding, harvest, archive-on-delete, archive import, PRD memory report, scope inventory (BL385–387)
 - [`howto/daemon-operations.md`](howto/daemon-operations.md) — start / stop / restart / upgrade / logs
 - [`howto/setup-and-install.md`](howto/setup-and-install.md) — first-time install end-to-end
 
