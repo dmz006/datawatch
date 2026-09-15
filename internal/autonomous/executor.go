@@ -405,6 +405,32 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.Status = PRDFailed
 		} else {
 			prd.Status = PRDCompleted
+			// BL387 Phase 3 — fire auto-report asynchronously on completion.
+			m.mu.Lock()
+			reportFn := m.memoryReportFn
+			m.mu.Unlock()
+			if reportFn != nil && prd.MemorySeed.Enabled {
+				prdID := prd.ID
+				projectDir := prd.ProjectDir
+				go func() {
+					report, rerr := reportFn(context.Background(), prdID, projectDir)
+					if rerr != nil {
+						log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)
+						return
+					}
+					if report == "" {
+						return
+					}
+					if p, ok := m.store.GetPRD(prdID); ok {
+						now := time.Now().UTC()
+						p.MemoryReport = report
+						p.MemoryReportAt = &now
+						if serr := m.store.SavePRD(p); serr != nil {
+							log.Printf("[autonomous] memory-report save: prd=%s: %v", prdID, serr)
+						}
+					}
+				}()
+			}
 		}
 	}
 	return m.store.SavePRD(prd)

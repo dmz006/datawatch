@@ -3,6 +3,22 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.0 — feat(memory): Automata Memory Integration — Auto-Report + Memory Scope PWA Tile
+
+### Added
+
+**Auto-report on Automaton completion** — When an Automaton reaches `completed` status
+and `memory_seed.enabled=true`, a goroutine fires asynchronously and calls an operator-
+supplied `memoryReportFn` callback. The returned markdown string is stored in
+`PRD.MemoryReport` (with `PRD.MemoryReportAt` timestamp) and persisted to the store.
+This gives every completed Automaton a durable memory summary without blocking the
+executor path. Report errors are logged but do not affect the `PRDCompleted` outcome.
+
+**Memory Scopes PWA dashboard tile** — A new `memory-scope` card is now part of the
+default dashboard layout. It pulls counts from `/api/memory/stats` and renders a per-scope
+bar chart (session-local, story-shared, prd-shared, project-shared, and any custom scopes)
+with the total entry count prominently displayed. Updates on every dashboard refresh tick.
+
 ## v8.32.0 — feat(memory): Automata Memory Integration — Decomposer Enrichment + Cross-Automaton Seeding
 
 ### Added

@@ -47,6 +47,8 @@ func defaultDashCards() []dashCard {
 		{ID: "guardrails", CS: 3, RS: 1, System: true},
 		{ID: "ekg", CS: 6, RS: 2, System: true},
 		{ID: "smoke", CS: 6, RS: 2, System: true},
+		// BL387 Phase 3 — memory scope stats tile.
+		{ID: "memory-scope", CS: 3, RS: 1, System: true},
 	}
 }
 

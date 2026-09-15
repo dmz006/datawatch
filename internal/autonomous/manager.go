@@ -284,6 +284,11 @@ type Manager struct {
 	// prd-shared into this PRD's prd-shared. Nil = cross-PRD seeding skipped.
 	memoryCrossSeedFn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int, roleFilter []string) error
 
+	// memoryReportFn (BL387 Phase 3) — when set, called asynchronously when a
+	// PRD reaches PRDCompleted. Returns a markdown summary of the prd-shared
+	// memory scope; the result is stored on PRD.MemoryReport. Nil = no report.
+	memoryReportFn func(ctx context.Context, prdID, projectDir string) (string, error)
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -379,6 +384,15 @@ func (m *Manager) SetMemoryCrossSeedFn(fn func(ctx context.Context, fromPRDID, t
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryCrossSeedFn = fn
+}
+
+// SetMemoryReportFn (BL387 Phase 3) wires the auto-report callback. Called
+// asynchronously when a PRD reaches PRDCompleted; result stored in PRD.MemoryReport.
+// Nil = no report generated on completion.
+func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectDir string) (string, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryReportFn = fn
 }
 
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for

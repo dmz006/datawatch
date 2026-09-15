@@ -20832,6 +20832,7 @@ function _dashLoop(ts) {
     _dashRenderEventFeed();
     _dashRenderBurnRate();
     _dashRenderGuardrails();
+    _dashRenderMemoryScope();
     _dashRenderSmoke();
   }
 
@@ -20939,18 +20940,22 @@ const DASH_CARD_DEFS = [
     body: () => '<div style="height:100%;display:flex;"><canvas id="ekgCanvas" style="flex:1;min-width:0;height:100%;display:block;"></canvas><div id="dashBurnRate" style="width:72px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 6px;font-size:10px;font-family:monospace;color:var(--text2);"></div></div>' },
   { id: 'smoke',      label: 'Smoke Run',       icon: '🔬', defaultCs: 6,
     body: () => '<div id="dashSmokeCard" style="height:100%;display:flex;flex-direction:column;font-size:11px;user-select:none;"></div>' },
+  // BL387 Phase 3 — memory scope stats tile.
+  { id: 'memory-scope', label: 'Memory Scopes', icon: '🧠', defaultCs: 3,
+    body: () => '<div id="dashMemoryScopeCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 ];
 
 const DASH_DEFAULT_LAYOUT = [
-  { id: 'tree',       cs: 2,  rs: 2 },
-  { id: 'orbital',    cs: 6,  rs: 2 },
-  { id: 'events',     cs: 2,  rs: 2 },
-  { id: 'sparklines', cs: 2,  rs: 1 },
-  { id: 'gantt',      cs: 12, rs: 1 },
-  { id: 'heatmap',    cs: 3,  rs: 1 },
-  { id: 'guardrails', cs: 3,  rs: 1 },
-  { id: 'ekg',        cs: 6,  rs: 2 },
-  { id: 'smoke',      cs: 6,  rs: 2 },
+  { id: 'tree',         cs: 2,  rs: 2 },
+  { id: 'orbital',      cs: 6,  rs: 2 },
+  { id: 'events',       cs: 2,  rs: 2 },
+  { id: 'sparklines',   cs: 2,  rs: 1 },
+  { id: 'gantt',        cs: 12, rs: 1 },
+  { id: 'heatmap',      cs: 3,  rs: 1 },
+  { id: 'guardrails',   cs: 3,  rs: 1 },
+  { id: 'memory-scope', cs: 3,  rs: 1 },
+  { id: 'ekg',          cs: 6,  rs: 2 },
+  { id: 'smoke',        cs: 6,  rs: 2 },
 ];
 
 function _dashLoadLayout() {
@@ -21034,6 +21039,7 @@ function _dashBuildGrid(layout) {
   _dashRenderEventFeed();
   _dashRenderBurnRate();
   _dashRenderGuardrails();
+  _dashRenderMemoryScope();
   _drawGantt();
   _dashForceStep();
   _drawConstellation();
@@ -21284,6 +21290,57 @@ function _dashRenderGuardrails() {
       <div style="font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(rule)}">${escHtml(rule.length > 28 ? rule.slice(0, 27) + '…' : rule)}</div>
       <div style="height:5px;background:var(--border);border-radius:2px;margin-top:2px;">
         <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;"></div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+// Memory scope stats card (BL387 Phase 3) — shows scope inventory counts from
+// /api/memory/stats. Refreshed on every dashboard tick. State is kept in _dash._memStats.
+if (!_dash._memStats) _dash._memStats = null;
+
+function _dashFetchMemoryStats() {
+  apiFetch('/api/memory/stats').then(d => {
+    _dash._memStats = d || null;
+    _dashRenderMemoryScope();
+  }).catch(() => {});
+}
+
+function _dashRenderMemoryScope() {
+  const el = document.getElementById('dashMemoryScopeCard');
+  if (!el) return;
+  const d = _dash._memStats;
+  if (!d) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('memory_stats_unavailable') || 'Memory stats unavailable')}</div>`;
+    _dashFetchMemoryStats();
+    return;
+  }
+  const total = d.total_entries || 0;
+  const scopes = d.scopes || {};
+  const scopeOrder = ['session-local','story-shared','prd-shared','project-shared','persona-in-project','persona-global'];
+  const scopeRows = scopeOrder
+    .filter(k => scopes[k] !== undefined)
+    .map(k => ({ key: k, n: scopes[k] }));
+  // Include any scope not in the canonical order
+  for (const k of Object.keys(scopes)) {
+    if (!scopeOrder.includes(k)) scopeRows.push({ key: k, n: scopes[k] });
+  }
+  const maxN = Math.max(1, ...scopeRows.map(r => r.n));
+  let html = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px;">
+    <span style="font-size:16px;font-weight:700;color:var(--text);">${total}</span>
+    <span style="font-size:9px;color:var(--text2);">total entries</span>
+  </div>`;
+  for (const { key, n } of scopeRows) {
+    const pct = Math.round(n / maxN * 100);
+    const label = key.replace(/-/g, ' ');
+    html += `<div style="margin-bottom:5px;">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);margin-bottom:2px;">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(key)}">${escHtml(label)}</span>
+        <span style="flex-shrink:0;margin-left:4px;color:var(--text);">${n}</span>
+      </div>
+      <div style="height:4px;background:var(--border);border-radius:2px;">
+        <div style="height:100%;width:${pct}%;background:var(--accent,#6366f1);border-radius:2px;"></div>
       </div>
     </div>`;
   }

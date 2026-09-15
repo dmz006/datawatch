@@ -210,6 +210,12 @@ type PRD struct {
 	// promotes session-local memories to story-shared (or prd-shared) after
 	// each task reaches TaskCompleted.
 	MemoryHarvest MemoryHarvestConfig `json:"memory_harvest,omitempty"`
+
+	// BL387 Phase 3 — auto-report generated when the PRD reaches PRDCompleted.
+	// MemoryReport holds the generated text (populated asynchronously).
+	// MemoryReportAt is the UTC timestamp when the report was generated.
+	MemoryReport   string     `json:"memory_report,omitempty"`
+	MemoryReportAt *time.Time `json:"memory_report_at,omitempty"`
 }
 
 // MemorySeedConfig (BL386 Phase 1 + BL387 Phase 2b) controls warm-start seeding at task spawn.

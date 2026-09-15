@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.32.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 2 (BL387) — decomposer prompt enriched with project-shared context via memoryContextFn callback; cross-Automaton prd-shared seeding at first run via MemorySeedConfig.FromPRDs + memoryCrossSeedFn; REST/MCP/AutonomousAPI interface all updated with from_prds param. 8 new tests.
+Latest release: **v8.33.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 3 (BL387) — auto-report on PRDCompleted (async goroutine, memoryReportFn callback, PRD.MemoryReport field); memory-scope PWA dashboard tile (per-scope bar chart from /api/memory/stats). BL387 complete; all 3 phases across BL385-387 form complete memory lifecycle.
+
+Previous: **v8.32.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 2 (BL387) — decomposer prompt enriched with project-shared context via memoryContextFn callback; cross-Automaton prd-shared seeding at first run via MemorySeedConfig.FromPRDs + memoryCrossSeedFn; REST/MCP/AutonomousAPI interface all updated with from_prds param. 8 new tests.
 
 Previous: **v8.31.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 1 (BL387) — verifier findings written to prd-shared on task failure (role=verifier-finding, prefix=[verifier-finding]), child Automaton prd-shared inheritance (up to 50 entries seeded parent→child before decompose). Both controlled by existing memory_seed.enabled flag. Manager gains memoryVerifierFn + memoryScopeSeedFn callbacks with SetMemoryVerifierFn/SetMemoryScopeSeedFn setters.
 
@@ -80,7 +82,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
-| Active backlog | 1 | BL387 (v8.31–33.0) |
+| Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |

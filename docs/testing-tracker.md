@@ -283,3 +283,20 @@ first run via `from_prds`). `MemorySeedConfig.FromPRDs` field added. REST, MCP, 
 | `memoryCrossSeedFn` NOT called when `from_prds` is empty | Yes | No | `TestBL387_CrossPRDSeed_NoSeed_WhenFromPRDsEmpty` | Guard on empty slice |
 | `memoryCrossSeedFn` NOT called on resume (PRDRunning) | Yes | No | `TestBL387_CrossPRDSeed_SkipsOnResume_WhenAlreadyRunning` | isFirstRun=false for PRDRunning |
 | `memoryCrossSeedFn` maxEntries defaults to 20 when MaxPerScope=0 | Yes | No | `TestBL387_CrossPRDSeed_UsesMaxPerScope_DefaultsTo20` | Hard default applied |
+
+## v8.33.0 — Automata Memory Integration: Auto-Report + Memory Scope PWA Tile
+
+Added in v8.33.0. `memoryReportFn` callback fires asynchronously on `PRDCompleted` when
+`MemorySeed.Enabled=true`; result stored in `PRD.MemoryReport` + `PRD.MemoryReportAt`.
+Memory scope PWA tile (`memory-scope` card) added to dashboard, rendering stats from
+`/api/memory/stats`.
+
+| Scenario | Automated | Manual | Test | Notes |
+|----------|-----------|--------|------|-------|
+| `memoryReportFn` called on PRDCompleted when MemorySeed.Enabled | Yes | No | `TestBL387_AutoReport_CalledOnCompletion` | Goroutine fires after Run() returns |
+| `memoryReportFn` NOT called when MemorySeed.Enabled=false | Yes | No | `TestBL387_AutoReport_NotCalledWhenSeedDisabled` | Guard on Enabled flag |
+| `Decompose` works normally with nil memoryReportFn | Yes | No | `TestBL387_AutoReport_NotCalledWhenFnNil` | No panic; PRD reaches PRDCompleted |
+| `PRD.MemoryReport` + `PRD.MemoryReportAt` stored after successful call | Yes | No | `TestBL387_AutoReport_StoredOnPRD` | MemoryReportAt ≥ test start time |
+| reportFn error does not abort PRD completion | Yes | No | `TestBL387_AutoReport_ErrorDoesNotAbortCompletion` | PRDCompleted set; MemoryReport empty |
+| Empty report string does not write MemoryReport | Yes | No | `TestBL387_AutoReport_EmptyStringNotStored` | Empty string skipped |
+| memory-scope dashboard card appears in default layout | No | Yes | Visual — dashboard memory-scope tile visible | Fetches /api/memory/stats |
