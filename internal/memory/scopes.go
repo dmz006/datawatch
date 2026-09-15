@@ -13,6 +13,12 @@
 //   Promote preserves breadcrumb metadata
 //   {session, persona, run, promoted_at, promoted_by}.
 //
+// BL385 (v8.29.0) extends the hierarchy to 6 layers by inserting two
+// PRD/story scopes between project-shared and session-local:
+//
+//   persona-global → persona-in-project → project-shared →
+//   prd-shared → story-shared → session-local
+//
 // Naming distinction: this is NOT the v6.x Layers wake-up stack
 // (L0 identity → L3 deep search by token-budget). That layer concept
 // stays. This S5 work is a SCOPE hierarchy (ownership / visibility),
@@ -21,12 +27,14 @@
 // Storage: layers project onto the existing Backend's
 // (projectDir, role, sessionID) tuple by convention:
 //
-//   ScopeSessionLocal      → (projectDir,    role,                  sessionID)
-//   ScopeProjectShared     → (projectDir,    role,                  ""       )
+//   ScopeSessionLocal      → (projectDir,    "",                    sessionID)
+//   ScopeStoryShared       → (projectDir,    "story/"+storyID,      ""       )  BL385
+//   ScopePRDShared         → (projectDir,    "prd/"+prdID,          ""       )  BL385
+//   ScopeProjectShared     → (projectDir,    "",                    ""       )
 //   ScopePersonaInProject  → (projectDir,    "persona/"+personaName, ""      )
-//   ScopePersonaGlobal     → (""+,           "persona/"+personaName, ""      )
+//   ScopePersonaGlobal     → ("",            "persona/"+personaName, ""      )
 //
-// (The +"" projectDir for PersonaGlobal is a sentinel — backends key
+// (The "" projectDir for PersonaGlobal is a sentinel — backends key
 // rows on projectDir, so an empty value is fine for "no project".)
 //
 // Backend changes are non-breaking — this layer is pure convention
@@ -41,13 +49,15 @@ import (
 	"time"
 )
 
-// Scope enumerates the 4 ownership/visibility layers per BL295 Q17.
+// Scope enumerates the 6 ownership/visibility layers (BL295 + BL385).
 type Scope string
 
 const (
 	ScopePersonaGlobal    Scope = "persona-global"     // per persona, ALL projects
 	ScopePersonaInProject Scope = "persona-in-project" // per persona, current project
 	ScopeProjectShared    Scope = "project-shared"     // current datawatch episodic memory (cross-persona)
+	ScopePRDShared        Scope = "prd-shared"         // per-PRD shared memory (BL385)
+	ScopeStoryShared      Scope = "story-shared"       // per-story shared memory (BL385)
 	ScopeSessionLocal     Scope = "session-local"      // per council run / session
 	ScopeDiscussion       Scope = "discussion"         // per-discussion federated shared memory (BL332)
 )
@@ -59,6 +69,8 @@ var AllScopesTopDown = []Scope{
 	ScopePersonaGlobal,
 	ScopePersonaInProject,
 	ScopeProjectShared,
+	ScopePRDShared,
+	ScopeStoryShared,
 	ScopeSessionLocal,
 	ScopeDiscussion,
 }
@@ -68,9 +80,11 @@ var AllScopesTopDown = []Scope{
 // existing API surface.
 type ScopeRef struct {
 	Scope     Scope
-	Persona   string // empty for project-shared / session-local
+	Persona   string // empty for project-shared / prd-shared / story-shared / session-local
 	Project   string // empty for persona-global
 	SessionID string // empty for everything except session-local
+	PRDID     string // required for prd-shared (BL385)
+	StoryID   string // required for story-shared (BL385)
 }
 
 // Resolve returns the (projectDir, role, sessionID) tuple the Backend
@@ -83,6 +97,10 @@ func (sr ScopeRef) Resolve() (projectDir, role, sessionID string) {
 		return sr.Project, "persona/" + sr.Persona, ""
 	case ScopeProjectShared:
 		return sr.Project, "", ""
+	case ScopePRDShared:
+		return sr.Project, "prd/" + sr.PRDID, ""
+	case ScopeStoryShared:
+		return sr.Project, "story/" + sr.StoryID, ""
 	case ScopeSessionLocal:
 		return sr.Project, "", sr.SessionID
 	case ScopeDiscussion:
@@ -105,10 +123,13 @@ type ScopedMemory struct {
 // nil layers = AllScopesTopDown. topK is per-layer; final list is
 // concatenated in walk order (most-general to most-specific).
 //
+// prdID and storyID gate the BL385 scope layers: prd-shared is skipped
+// when prdID is empty; story-shared is skipped when storyID is empty.
+//
 // Backend errors on individual layers are logged but don't fail the
 // walk — recall is best-effort across layers (a missing project
 // shouldn't suppress persona-global hits).
-func ScopedRecall(b Backend, queryVec []float32, persona, project, sessionID string, layers []Scope, topK int) ([]ScopedMemory, error) {
+func ScopedRecall(b Backend, queryVec []float32, persona, project, sessionID, prdID, storyID string, layers []Scope, topK int) ([]ScopedMemory, error) {
 	if b == nil {
 		return nil, errors.New("memory backend nil")
 	}
@@ -120,9 +141,17 @@ func ScopedRecall(b Backend, queryVec []float32, persona, project, sessionID str
 	}
 	out := []ScopedMemory{}
 	for _, sc := range layers {
-		ref := ScopeRef{Scope: sc, Persona: persona, Project: project, SessionID: sessionID}
+		ref := ScopeRef{Scope: sc, Persona: persona, Project: project, SessionID: sessionID, PRDID: prdID, StoryID: storyID}
 		// Only walk persona-* layers when persona is set.
 		if (sc == ScopePersonaGlobal || sc == ScopePersonaInProject) && persona == "" {
+			continue
+		}
+		// Only walk prd-shared when prdID is set (BL385).
+		if sc == ScopePRDShared && prdID == "" {
+			continue
+		}
+		// Only walk story-shared when storyID is set (BL385).
+		if sc == ScopeStoryShared && storyID == "" {
 			continue
 		}
 		// Only walk session-local when sessionID is set.

@@ -48,7 +48,7 @@ func TestScopedRecall_WalksLayersInOrder(t *testing.T) {
 	_, _ = b.Save("proj1", "session-local memory about retries", "", "", "sess1", nil)
 
 	// Embedding-free recall — exercises the layer walk + dedup logic.
-	out, err := ScopedRecall(b, nil, "alice", "proj1", "sess1", nil, 10)
+	out, err := ScopedRecall(b, nil, "alice", "proj1", "sess1", "", "", nil, 10)
 	if err != nil {
 		t.Fatalf("recall: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestScopedRecall_SkipsPersonaLayersWhenPersonaEmpty(t *testing.T) {
 	_, _ = b.Save("proj1", "project memory", "", "", "", nil)
 	_, _ = b.Save("proj1", "persona memory", "", "persona/alice", "", nil)
 
-	out, err := ScopedRecall(b, nil, "" /*no persona*/, "proj1", "", nil, 10)
+	out, err := ScopedRecall(b, nil, "" /*no persona*/, "proj1", "", "", "", nil, 10)
 	if err != nil {
 		t.Fatalf("recall: %v", err)
 	}
@@ -156,6 +156,85 @@ func TestBorrowReadOnly_DoesNotMutateSource(t *testing.T) {
 	rows, _ := b.ListRecent("proj1", 10)
 	if len(rows) != 1 || rows[0].ID != id {
 		t.Errorf("borrow mutated source: %+v", rows)
+	}
+}
+
+// BL385 Phase 1 tests — prd-shared / story-shared scope model.
+
+func TestBL385_ScopeRef_Resolve_PRDShared(t *testing.T) {
+	ref := ScopeRef{Scope: ScopePRDShared, Project: "proj1", PRDID: "prd-abc"}
+	dir, role, sess := ref.Resolve()
+	if dir != "proj1" || role != "prd/prd-abc" || sess != "" {
+		t.Errorf("prd-shared resolve: got (%q, %q, %q), want (proj1, prd/prd-abc, \"\")", dir, role, sess)
+	}
+}
+
+func TestBL385_ScopeRef_Resolve_StoryShared(t *testing.T) {
+	ref := ScopeRef{Scope: ScopeStoryShared, Project: "proj1", StoryID: "story-xyz"}
+	dir, role, sess := ref.Resolve()
+	if dir != "proj1" || role != "story/story-xyz" || sess != "" {
+		t.Errorf("story-shared resolve: got (%q, %q, %q), want (proj1, story/story-xyz, \"\")", dir, role, sess)
+	}
+}
+
+func TestBL385_ScopedRecall_SkipsPRDLayer_WhenPRDIDEmpty(t *testing.T) {
+	b := newScopeTestStore(t)
+	_, _ = b.Save("proj1", "prd memory", "", "prd/prd-abc", "", nil)
+	_, _ = b.Save("proj1", "project memory", "", "", "", nil)
+
+	out, err := ScopedRecall(b, nil, "", "proj1", "", "" /*no prd*/, "", nil, 10)
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	for _, sm := range out {
+		if sm.Scope == ScopePRDShared {
+			t.Errorf("should skip prd-shared when prdID empty; got scope %v", sm.Scope)
+		}
+	}
+}
+
+func TestBL385_ScopedRecall_SkipsStoryLayer_WhenStoryIDEmpty(t *testing.T) {
+	b := newScopeTestStore(t)
+	_, _ = b.Save("proj1", "story memory", "", "story/story-xyz", "", nil)
+	_, _ = b.Save("proj1", "project memory", "", "", "", nil)
+
+	out, err := ScopedRecall(b, nil, "", "proj1", "", "", "" /*no story*/, nil, 10)
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	for _, sm := range out {
+		if sm.Scope == ScopeStoryShared {
+			t.Errorf("should skip story-shared when storyID empty; got scope %v", sm.Scope)
+		}
+	}
+}
+
+func TestBL385_ScopedRecall_IncludesPRDAndStoryLayers_WhenIDsProvided(t *testing.T) {
+	b := newScopeTestStore(t)
+	_, _ = b.Save("proj1", "project-shared memory", "", "", "", nil)
+	_, _ = b.Save("proj1", "prd memory", "", "prd/prd-abc", "", nil)
+	_, _ = b.Save("proj1", "story memory", "", "story/story-xyz", "", nil)
+	_, _ = b.Save("proj1", "session memory", "", "", "sess1", nil)
+
+	out, err := ScopedRecall(b, nil, "", "proj1", "sess1", "prd-abc", "story-xyz", nil, 10)
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	scopes := map[Scope]bool{}
+	for _, sm := range out {
+		scopes[sm.Scope] = true
+	}
+	if !scopes[ScopePRDShared] {
+		t.Error("expected prd-shared scope in results when prdID provided")
+	}
+	if !scopes[ScopeStoryShared] {
+		t.Error("expected story-shared scope in results when storyID provided")
+	}
+	if !scopes[ScopeProjectShared] {
+		t.Error("expected project-shared scope in results")
+	}
+	if !scopes[ScopeSessionLocal] {
+		t.Error("expected session-local scope in results when sessionID provided")
 	}
 }
 

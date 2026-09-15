@@ -75,7 +75,7 @@ func (s *Server) memoryRecall(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	topK := atoiDefault(q.Get("top_k"), 10)
 	out, err := memory.ScopedRecall(s.memoryBackend, nil,
-		q.Get("persona"), q.Get("project"), q.Get("session"), nil, topK)
+		q.Get("persona"), q.Get("project"), q.Get("session"), q.Get("prd_id"), q.Get("story_id"), nil, topK)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
