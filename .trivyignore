@@ -568,3 +568,12 @@ CVE-2026-76642
 CVE-2026-78408
 CVE-2026-78409
 CVE-2026-78410
+
+# python3.11 family — CVE-2026-82049 (HIGH, no fix in bookworm)
+# Affects libpython3.11-minimal, libpython3.11-stdlib, python3.11,
+# python3.11-minimal, and python3.11-venv (agent-aider only). The
+# vulnerability is in the tarfile module's handling of crafted archives.
+# These agent containers do not process untrusted tar archives at runtime;
+# aider/gemini tooling unpacks archives only from the operator-controlled
+# pip/git infrastructure. No fix is available in Debian bookworm 3.11.2.
+CVE-2026-82049

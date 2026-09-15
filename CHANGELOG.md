@@ -3,6 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.6 — fix(ci): suppress CVE-2026-82049 (python3.11 tarfile, no fix in bookworm)
+
+### Fixed
+- **Trivy container scan failures for agent-aider and agent-gemini** — `CVE-2026-82049` (python3.11 tarfile module, HIGH) appeared in the Trivy DB between v8.33.4 and v8.33.5 releases; no fix is available in Debian bookworm 3.11.2. Added to `.trivyignore` with rationale: agent containers do not process untrusted tar archives at runtime.
+
+---
+
 ## v8.33.5 — fix(pwa): cancel-task button for running PRDs; stats poll storm; gosec/CI advisory fixes
 
 ### Fixed

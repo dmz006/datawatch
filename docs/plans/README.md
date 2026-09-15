@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.33.5** (2026-09-15). fix(pwa): Automata cancel-task button hidden when PRD running (editable guard removed); stats poll stacking bug (module-level interval var + _statsInFlight guard, 1s→5s); loadGlobalScheduleBadge in-flight stacking guard. gosec: 5 net-new findings fixed (G402/G404 #nosec directives; G118/G703 annotated). CI advisory: golangci-lint-action v7→v8, goreleaser-action v6→v7, codeql-action v3→v4.
+Latest release: **v8.33.6** (2026-09-15). fix(ci): CVE-2026-82049 (python3.11 tarfile, HIGH, no fix in bookworm) added to .trivyignore; unblocks agent-aider and agent-gemini container scans.
 
 Previous: **v8.33.4** (2026-09-15). docs: remove internal IDs from user-facing howtos; add exec_steps to automata-memory-workflow howto. Pre-release smoke found 9 BL### leaks in docs/datawatch-definitions.md + docs/howto/automata-memory-workflow.md + docs/howto/prd-memory-workflow.md — replaced with plain version strings. prd-memory-workflow.md lacked exec_steps front-matter (howto-coverage rule) — added exec_steps for seed/harvest/get steps; corrected title to "Automata Memory Workflow". smoke: 94 headers, 169 passed, 0 failed, 30 skipped.
 
