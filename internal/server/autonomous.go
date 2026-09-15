@@ -486,6 +486,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			StoryID        string `json:"story_id"`
 			NewTitle       string `json:"new_title"`
@@ -516,6 +519,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			StoryID string `json:"story_id"`
 			Profile string `json:"profile"`
@@ -544,6 +550,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			StoryID string `json:"story_id"`
 			Actor   string `json:"actor"`
@@ -569,6 +578,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Phase 3 (v5.26.60) — per-story rejection (sets blocked + reason).
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {
@@ -600,6 +612,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
 		var req struct {
 			StoryID string   `json:"story_id"`
 			Files   []string `json:"files"`
@@ -627,6 +642,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Body: {task_id, files: [...], actor?}.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {
@@ -1064,6 +1082,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	case "guardrails":
 		if r.Method != http.MethodPut {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
 		var req struct {

@@ -507,6 +507,36 @@ a change is non-string, this rule still requires the app issue/comment.
 release change anything an operator would notice on the PWA?" If yes,
 confirm an app issue or comment is in flight (link in commit body).
 
+## Federation-Parity Rule (v8.28.0, audit 2026-09-14)
+
+**Every new autonomous write/run REST endpoint must have a `fedCap` guard.**
+Federation peers are untrusted callers. Without a `fedCap` check, any peer
+with network access can mutate PRD state regardless of the capability grants
+configured for that peer.
+
+**Capability mapping:**
+| Operation type | Required cap |
+|---|---|
+| Read PRD / task / story data | `CapAutonomousRead` |
+| Mutate PRD / task / story state | `CapAutonomousWrite` |
+| Run / execute (decompose, run, scan, scan/fix) | `CapAutonomousRun` |
+| List PRDs | `CapAutonomousList` |
+
+**Trigger:** any new `case "..."` block in `internal/server/autonomous.go`
+(or a new autonomous REST handler file) that writes, runs, or mutates state.
+
+**Action:** place `if !s.fedCap(w, r, federation.Cap<Appropriate>) { return }`
+immediately after the `r.Method != ...` method guard, before any decoding or
+business logic. Read-only GET cases still need `CapAutonomousRead`.
+
+**Audit note (v8.28.0):** `edit_story`, `set_story_profile`, `approve_story`,
+`reject_story`, `set_story_files`, `set_task_files`, and `guardrails` were
+missing `CapAutonomousWrite` guards — added in v8.28.1.
+
+**Release-time checklist:** before tagging, grep for new `case "` entries in
+autonomous.go and confirm each has a `fedCap` call. `grep -n "case \"" internal/server/autonomous.go`
+then cross-reference with `grep -n "fedCap"` on the same file.
+
 ## Skills-Awareness Rule (BL255, v6.7.0)
 
 Skills are a first-class cross-cutting concern in datawatch. Whenever you
@@ -1046,6 +1076,7 @@ Write `N/A` for every row whose trigger did not fire.
 | B15 | New messaging or LLM backend | Secrets-Store Rule applied: credential fields use `${secret:...}` | `secrets-store: applied` |
 | B16 | New audit-event-emitting code path | JSON-lines round-trip test + CEF format + escape test added | `audit-tests: added` |
 | B17 | New Go module dependency added | Dep noted in CHANGELOG; 72-hour rule verified; `go mod tidy` run | `deps: <module@version>` |
+| B18 | New `case "..."` block added to `internal/server/autonomous.go` (or new autonomous handler) | Federation-Parity Rule: write/run cases have `fedCap` guard; read cases have `CapAutonomousRead` | `fed-parity: verified` |
 
 ---
 

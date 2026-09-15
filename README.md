@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.28.1](CHANGELOG.md) (2026-09-14)** — Fix: add missing `fedCap` guards on 7 autonomous write endpoints; add Federation-Parity Rule to AGENT.md.
+
 **[v8.27.1](CHANGELOG.md) (2026-09-14)** — Security fix: remove insecure spawned automata-watchdog schedule (cross-session tmux read, out-of-workspace writes); watchdog now covers `verifying`/`running_tests` tasks.
 
 **[v8.26.1](CHANGELOG.md) (2026-09-13)** — Fix: Observer peer stats grid now correctly reads CPU%, RAM, and GPU power/temperature from the v2 stats format. GPU temperature and power render as dedicated bar rows; CPU bar label includes load averages.

@@ -3,6 +3,14 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.1 — fix(federation): add missing fedCap guards on autonomous write endpoints + federation-parity rule
+
+### Fixed
+- **Missing `fedCap` guards on 7 write endpoints** — `edit_story`, `set_story_profile`, `approve_story`, `reject_story`, `set_story_files`, `set_task_files`, and `guardrails` handlers in `internal/server/autonomous.go` accepted writes from federation peers regardless of the peer's `CapAutonomousWrite` grant. All seven now have `if !s.fedCap(w, r, federation.CapAutonomousWrite) { return }` immediately after the method guard, consistent with the rest of the handler. These handlers were present before the fedCap pattern was established and were missed during later audits.
+
+### Added
+- **Federation-Parity Rule (AGENT.md B18)** — documents the requirement that every new autonomous write/run REST endpoint must include a `fedCap` guard, with a capability mapping table (Read/Write/Run/List) and a release-time grep checklist.
+
 ## v8.27.11 — fix(pwa): image attachments not processed by Claude Code sessions
 
 ### Fixed
