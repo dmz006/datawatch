@@ -164,6 +164,14 @@ jobs:
           mkdir -p internal/docsindex/assets
           echo '{}' > internal/docsindex/assets/docs-bm25-index.json
           make sync-docs docs-index
+      - name: verify go.mod is tidy
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.mod go.sum; then
+            echo "::error::go.mod or go.sum is out of date. Run 'go mod tidy' locally and push a new tag."
+            git diff go.mod go.sum
+            exit 1
+          fi
       - name: goreleaser
         id: goreleaser_step
         continue-on-error: true
