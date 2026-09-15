@@ -244,3 +244,24 @@ Chain of fixes across six patch releases. v8.27.11 is the stable version.
 | `sendSessionInputDirect` attachment handling | No | Yes (v8.27.9) | — | Channel-mode sessions with tmux tab route through this path. |
 | Block-while-uploading guard (all three send paths) | No | Yes (v8.27.10) | — | Toast + pulsing ⏫ → ✓ flow confirmed on Android. |
 | `expandImageTags` no-visioner → `@path` conversion | Yes | Yes (v8.27.11) | `TestExpandImageTags_NoVisioner` | Converts `[image:path]` to `@path` so Claude Code sessions read the file via own vision pipeline. |
+
+## v8.31.0 — Automata Memory Integration: Verifier Findings + Child Inheritance
+
+Added in v8.31.0. When `memory_seed.enabled=true` on an Automaton, two new callbacks
+fire: (1) after each verification failure, each issue string is written to `prd-shared`
+with `role=verifier-finding`; (2) when a child Automaton is spawned via recursive
+decomposition, up to 50 entries from the parent's `prd-shared` are seeded into the child's
+`prd-shared` before the child decomposes.
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| `memoryVerifierFn` called per issue on verify fail + seed enabled | Yes | No | `TestBL387_Verifier_WritesFindings_ToPRDShared_OnFailure` | At least 2 calls per retry (2 issues × 1+ retries). Role=verifier-finding, prefix=[verifier-finding]. |
+| `memoryVerifierFn` NOT called on verify success | Yes | No | `TestBL387_Verifier_NoWrite_OnSuccess` | fn must not fire for OK=true tasks |
+| `memoryVerifierFn` NOT called when `memory_seed.enabled=false` | Yes | No | `TestBL387_Verifier_NoWrite_WhenMemorySeedDisabled` | Default disabled state |
+| `[verifier-finding]` prefix present in content | Yes | No | `TestBL387_Verifier_ContainsPrefix` | Content always starts `[verifier-finding] <issue>` |
+| `memoryVerifierFn` error does not abort retry loop | Yes | No | `TestBL387_Verifier_ErrorDoesNotAbortRetry` | Simulated write failure → executor continues; verifyCount > 0 |
+| `memoryScopeSeedFn` called with parent/child PRD IDs + projectDir | Yes | No | `TestBL387_ChildPRD_InheritsParentPRDShared_WhenSeedEnabled` | fromPRDID=parent.ID, toPRDID=child.ID, same projectDir |
+| `memoryScopeSeedFn` NOT called when parent `memory_seed.enabled=false` | Yes | No | `TestBL387_ChildPRD_NoInheritance_WhenSeedDisabled` | Must not fire for disabled parent |
+| `memoryScopeSeedFn` maxEntries capped at 50 | Yes | No | `TestBL387_ChildPRD_InheritanceCappedAt50` | Hard cap regardless of parent MaxPerScope |
+| `SetMemoryVerifierFn` wires callback on Manager | Yes | No | Used in all Verifier tests above | Production wire-up in main.go pending Phase 2 integration |
+| `SetMemoryScopeSeedFn` wires callback on Manager | Yes | No | Used in all ChildPRD tests above | Production wire-up in main.go pending Phase 2 integration |

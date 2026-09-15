@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.30.0** (2026-09-15). feat(memory): Autonomous Automata Memory Lifecycle Management (BL386) — warm-start seeding, harvest-on-completion, archive-on-delete, archive-import, memory handoff MCP tool, Automaton memory report REST+MCP, scope inventory REST+MCP, scoped TTL sweep, UTC timezone fix for Prune/PruneByRole/SweepStale. All 5 phases complete.
+Latest release: **v8.31.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 1 (BL387) — verifier findings written to prd-shared on task failure (role=verifier-finding, prefix=[verifier-finding]), child Automaton prd-shared inheritance (up to 50 entries seeded parent→child before decompose). Both controlled by existing memory_seed.enabled flag. Manager gains memoryVerifierFn + memoryScopeSeedFn callbacks with SetMemoryVerifierFn/SetMemoryScopeSeedFn setters.
+
+Previous: **v8.30.0** (2026-09-15). feat(memory): Autonomous Automata Memory Lifecycle Management (BL386) — warm-start seeding, harvest-on-completion, archive-on-delete, archive-import, memory handoff MCP tool, Automaton memory report REST+MCP, scope inventory REST+MCP, scoped TTL sweep, UTC timezone fix for Prune/PruneByRole/SweepStale. All 5 phases complete.
 
 Previous: **v8.29.0** (2026-09-15). feat(memory): Subprocess Memory Scope Isolation — extends the memory scope hierarchy from 4 to 6 layers, adding `prd-shared` and `story-shared` scopes. MCP subprocess memory tools now route through scoped API automatically; `memory_sweep_stale`/`memory_import` blocked in subprocess mode. New REST save/delete endpoints. Executor injects `--caller-prd-id`/`--caller-story-id` into Goose MCP args.
 

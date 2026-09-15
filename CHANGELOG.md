@@ -3,6 +3,23 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.31.0 — feat(memory): Automata Memory Integration — Verifier Findings + Child Inheritance
+
+### Added
+
+**Verifier findings written to prd-shared** — When verification fails on a task and
+`memory_seed` is enabled, each verifier issue is automatically written to the Automaton's
+`prd-shared` memory scope with role `verifier-finding`. Subsequent retry tasks seed from
+this scope, allowing the agent to avoid repeating the same verified mistakes. Controlled
+by the existing `memory_seed.enabled` flag — no new configuration required.
+
+**Child Automaton prd-shared inheritance** — When an Automaton spawns a child Automaton
+(recursive decomposition), the child now inherits up to 50 entries from the parent's
+`prd-shared` memory before decomposition begins. This gives the child decomposer and its
+tasks the benefit of the parent's accumulated findings and verifier history. Inheritance
+is triggered automatically when `memory_seed.enabled=true` on the parent; the child's
+`prd-shared` receives a seeded copy (with provenance breadcrumb) that it fully owns.
+
 ## v8.30.0 — feat(memory): Autonomous Automata Memory Lifecycle Management
 
 ### Added

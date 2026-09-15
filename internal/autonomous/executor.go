@@ -552,6 +552,20 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			return m.store.SaveTask(t)
 		}
+		// BL387 Phase 1a — write each verifier issue to prd-shared so subsequent
+		// retry tasks can seed from it and avoid repeating the same mistake.
+		if prd.MemorySeed.Enabled && len(vr.Issues) > 0 {
+			m.mu.Lock()
+			verifierFn := m.memoryVerifierFn
+			m.mu.Unlock()
+			if verifierFn != nil {
+				for _, issue := range vr.Issues {
+					if ferr := verifierFn(ctx, t.PRDID, prd.ProjectDir, "[verifier-finding] "+issue, "verifier-finding"); ferr != nil {
+						log.Printf("[autonomous] verifier memory: prd=%s: %v", t.PRDID, ferr)
+					}
+				}
+			}
+		}
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -718,6 +732,19 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	t.ChildPRDID = child.ID
 	t.Status = TaskInProgress
 	_ = m.store.SaveTask(t)
+
+	// BL387 Phase 1b — inherit parent prd-shared memories into child so the
+	// child decomposer and tasks start with the parent's accumulated findings.
+	if parent.MemorySeed.Enabled {
+		m.mu.Lock()
+		scopeSeedFn := m.memoryScopeSeedFn
+		m.mu.Unlock()
+		if scopeSeedFn != nil {
+			if serr := scopeSeedFn(ctx, parent.ID, child.ID, parent.ProjectDir, 50); serr != nil {
+				log.Printf("[autonomous] child PRD scope-seed: parent=%s child=%s: %v", parent.ID, child.ID, serr)
+			}
+		}
+	}
 
 	// Decompose → (auto-)Approve → Run is the same lifecycle a root PRD
 	// goes through. AutoApproveChildren defaults true because every level

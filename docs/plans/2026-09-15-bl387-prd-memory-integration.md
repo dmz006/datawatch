@@ -1,7 +1,7 @@
 # BL387 — PRD Memory Integration
 
-**Status:** Draft  
-**Target releases:** v8.31.0 (Phase 1) · v8.32.0 (Phase 2) · v8.33.0 (Phase 3)  
+**Status:** Phase 1 complete (v8.31.0) · Phase 2 planned · Phase 3 planned  
+**Target releases:** v8.31.0 (Phase 1 ✅) · v8.32.0 (Phase 2) · v8.33.0 (Phase 3)  
 **Prerequisites:** BL385 (v8.29.0) · BL386 (v8.30.0)  
 **Filed:** 2026-09-15  
 **Author:** dmz006

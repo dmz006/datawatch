@@ -262,6 +262,17 @@ type Manager struct {
 	// Nil = harvest silently skipped.
 	memoryHarvestFn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemoryHarvestConfig) error
 
+	// memoryVerifierFn (BL387 Phase 1a) — when set, called once per verification
+	// issue after verify() returns !OK. Writes the issue to prd-shared scope so
+	// retry tasks can seed from it. Nil = verifier writes silently skipped.
+	memoryVerifierFn func(ctx context.Context, prdID, projectDir, content, role string) error
+
+	// memoryScopeSeedFn (BL387 Phase 1b) — when set, called in recurseChildPRD
+	// after the child PRD is created and before it is decomposed. Copies the
+	// parent's prd-shared memories into the child's prd-shared scope.
+	// Nil = child-PRD inheritance silently skipped.
+	memoryScopeSeedFn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int) error
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -320,6 +331,24 @@ func (m *Manager) SetMemoryHarvestFn(fn func(ctx context.Context, sessionID, prd
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryHarvestFn = fn
+}
+
+// SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.
+// Called once per issue after verify() fails on a task. Writes the issue to
+// prd-shared so retry tasks can seed from it. Nil disables writes (no-op; no error).
+func (m *Manager) SetMemoryVerifierFn(fn func(ctx context.Context, prdID, projectDir, content, role string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryVerifierFn = fn
+}
+
+// SetMemoryScopeSeedFn (BL387 Phase 1b) wires the child-PRD prd-shared inheritance
+// callback. Called in recurseChildPRD after the child PRD is created and before
+// Decompose. Copies parent's prd-shared into child's prd-shared. Nil = skipped.
+func (m *Manager) SetMemoryScopeSeedFn(fn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryScopeSeedFn = fn
 }
 
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
