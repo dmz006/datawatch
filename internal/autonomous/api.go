@@ -408,6 +408,16 @@ func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, act
 	return out, err
 }
 
+// SetMemorySeed (BL386 Phase 1) updates the PRD's warm-start seed config.
+func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, actor string) (any, error) {
+	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter}
+	out, err := a.M.SetMemorySeed(prdID, cfg, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

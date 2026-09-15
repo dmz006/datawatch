@@ -200,6 +200,19 @@ type PRD struct {
 	// autonomous.max_concurrent_tasks for this specific PRD. 0 = use
 	// the global default (effectively 1 = sequential).
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+
+	// BL386 Phase 1 — warm-start seeding. When Enabled, the executor
+	// seeds each spawned task's session-local scope from project-shared,
+	// prd-shared, and story-shared before the task begins work.
+	MemorySeed MemorySeedConfig `json:"memory_seed,omitempty"`
+}
+
+// MemorySeedConfig (BL386 Phase 1) controls warm-start seeding at task spawn.
+// Zero value = disabled; no behavior change from pre-BL386 code.
+type MemorySeedConfig struct {
+	Enabled     bool     `json:"enabled,omitempty"`
+	MaxPerScope int      `json:"max_per_scope,omitempty"` // default 20 when Enabled
+	RoleFilter  []string `json:"role_filter,omitempty"`   // empty = all roles
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a

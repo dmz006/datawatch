@@ -74,7 +74,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 |---|---|---|
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
-| Active backlog | 3 | BL385 (v8.29.0), BL386 (v8.30.0), BL387 (v8.31–33.0) |
+| Active backlog | 2 | BL386 (v8.30.0), BL387 (v8.31–33.0) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
@@ -242,9 +242,9 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL385 — Subprocess memory scope isolation (session-local writes, scoped reads)
+#### BL385 — Subprocess memory scope isolation (session-local writes, scoped reads) ✅ Closed in v8.29.0
 
-**Operator-filed 2026-09-15. Status: planned.**
+**Operator-filed 2026-09-15. Closed 2026-09-15 in v8.29.0.**
 
 **Problem:** After v8.28.7, subprocess MCP mode (`datawatch mcp` spawned by opencode/Goose) has full read-write access to the global flat memory store. Any subprocess session can pollute global memory or trigger destructive operations (sweep, import) against the entire store.
 

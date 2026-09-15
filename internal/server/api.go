@@ -552,6 +552,9 @@ type AutonomousAPI interface {
 	SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
 
+	// BL386 Phase 1 — per-PRD warm-start seed config.
+	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, actor string) (any, error)
+
 	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD
 	// tasks. Empty list when none.
 	ListChildPRDs(prdID string) []any
@@ -3861,6 +3864,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID   string `json:"prd_id,omitempty"`
 		TaskID  string `json:"task_id,omitempty"`
 		StoryID string `json:"story_id,omitempty"`
+		// BL386 Phase 1 — optional warm-start seeding at session creation.
+		// When from_scope is set, memories are copied from that scope into
+		// the new session's session-local scope after it starts.
+		MemorySeed *struct {
+			FromScope  string   `json:"from_scope"`
+			Project    string   `json:"project"`
+			Max        int      `json:"max,omitempty"`
+			RoleFilter []string `json:"role_filter,omitempty"`
+		} `json:"memory_seed,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -4206,6 +4218,20 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// BL386 Phase 1 — optional warm-start seed after session creation.
+	if req.MemorySeed != nil && req.MemorySeed.FromScope != "" && s.memoryBackend != nil {
+		seedMax := req.MemorySeed.Max
+		if seedMax <= 0 {
+			seedMax = 30
+		}
+		rolePrefix := ""
+		if len(req.MemorySeed.RoleFilter) > 0 {
+			rolePrefix = req.MemorySeed.RoleFilter[0]
+		}
+		from := memory.ScopeRef{Scope: memory.Scope(req.MemorySeed.FromScope), Project: req.MemorySeed.Project}
+		to := memory.ScopeRef{Scope: memory.ScopeSessionLocal, SessionID: sess.FullID}
+		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
 	go s.hub.BroadcastSessions(s.manager.ListSessions())
 	w.Header().Set("Content-Type", "application/json")

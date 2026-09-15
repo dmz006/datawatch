@@ -251,6 +251,11 @@ type Manager struct {
 	// Injected from main.go to avoid a circular import on session.Manager.
 	sessionKillerFn func(sessionID string) error
 
+	// memorySeedFn (BL386 Phase 1) — when set, called after each spawn
+	// when the PRD's MemorySeedConfig.Enabled=true. Seeds session-local
+	// from applicable scopes. Nil = seeding silently skipped.
+	memorySeedFn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemorySeedConfig) error
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -291,6 +296,15 @@ func (m *Manager) SetSessionKillerFn(fn func(sessionID string) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionKillerFn = fn
+}
+
+// SetMemorySeedFn (BL386 Phase 1) wires the warm-start seeding callback.
+// Called after each task spawn when the PRD's MemorySeedConfig.Enabled=true.
+// Nil disables seeding (no-op; no error).
+func (m *Manager) SetMemorySeedFn(fn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemorySeedConfig) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memorySeedFn = fn
 }
 
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
@@ -1458,6 +1472,25 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 // SetPRDLLM (BL203, v5.4.0) overrides the PRD-level worker LLM defaults
 // (backend / effort / model). Only allowed pre-Run. Tasks without
 // per-task overrides will inherit these.
+// SetMemorySeed (BL386 Phase 1) updates the PRD's warm-start seed config.
+func (m *Manager) SetMemorySeed(prdID string, cfg MemorySeedConfig, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.MemorySeed = cfg
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_memory_seed", Actor: actor,
+		Note: fmt.Sprintf("enabled=%v max_per_scope=%d", cfg.Enabled, cfg.MaxPerScope),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {

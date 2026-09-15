@@ -1078,6 +1078,32 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONOK(w, updated)
 
+	// BL386 Phase 1 — per-PRD warm-start memory seed config.
+	case "set_memory_seed":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Enabled     bool     `json:"enabled"`
+			MaxPerScope int      `json:"max_per_scope"`
+			RoleFilter  []string `json:"role_filter"`
+			Actor       string   `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetMemorySeed(id, req.Enabled, req.MaxPerScope, req.RoleFilter, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
 	// BL303 S2 T06 — per-Automaton guardrail override.
 	case "guardrails":
 		if r.Method != http.MethodPut {

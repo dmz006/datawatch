@@ -56,6 +56,9 @@ type SpawnRequest struct {
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode backends.
 	// Resolved per-task → per-PRD → empty (no LSP).
 	LSPLanguage string
+	// MemorySeed (BL386 Phase 1) — warm-start seeding config, copied from
+	// the PRD's MemorySeedConfig. Zero value = seeding disabled.
+	MemorySeed MemorySeedConfig
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -467,11 +470,23 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			ClusterProfile: prd.ClusterProfile, // v5.26.19
 			ContextPrepend: contextPrepend,      // BL244
 			LSPLanguage:    lspLang,
+			MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
 		})
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)
 		}
 		t.SessionID = sr.SessionID
+		// BL386 Phase 1 — warm-start seed after spawn, best-effort.
+		if sr.SessionID != "" && prd.MemorySeed.Enabled {
+			m.mu.Lock()
+			seedFn := m.memorySeedFn
+			m.mu.Unlock()
+			if seedFn != nil {
+				if serr := seedFn(ctx, sr.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemorySeed); serr != nil {
+					log.Printf("[autonomous] seed: session=%s: %v", sr.SessionID, serr)
+				}
+			}
+		}
 		t.PreTaskSHA = sr.PreTaskSHA                             // BL366: persisted for verifier diff grounding
 		t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles       // v8.25.12: detect newly created untracked files
 		t.Status = TaskVerifying
