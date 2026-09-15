@@ -108,10 +108,29 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
 		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", prdID, prd.Status)
 	}
+	// BL387 Phase 2b — cross-PRD seeding at first run.
+	// Only fires when PRD is transitioning from approved (not a resume from Running).
+	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	prd.Status = PRDRunning
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
+	}
+	if isFirstRun && prd.MemorySeed.Enabled && len(prd.MemorySeed.FromPRDs) > 0 {
+		m.mu.Lock()
+		crossSeedFn := m.memoryCrossSeedFn
+		m.mu.Unlock()
+		if crossSeedFn != nil {
+			maxEntries := prd.MemorySeed.MaxPerScope
+			if maxEntries <= 0 {
+				maxEntries = 20
+			}
+			for _, fromID := range prd.MemorySeed.FromPRDs {
+				if ferr := crossSeedFn(ctx, fromID, prd.ID, prd.ProjectDir, maxEntries, prd.MemorySeed.RoleFilter); ferr != nil {
+					log.Printf("[autonomous] cross-seed: from=%s to=%s: %v", fromID, prd.ID, ferr)
+				}
+			}
+		}
 	}
 	m.loadSkillGuardrails(prd) // BL303 S2 T08
 	tasks := flattenTasks(prd)

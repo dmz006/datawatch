@@ -408,9 +408,9 @@ func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, act
 	return out, err
 }
 
-// SetMemorySeed (BL386 Phase 1) updates the PRD's warm-start seed config.
-func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, actor string) (any, error) {
-	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter}
+// SetMemorySeed (BL386 Phase 1 + BL387 Phase 2b) updates the PRD's warm-start seed config.
+func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error) {
+	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter, FromPRDs: fromPRDs}
 	out, err := a.M.SetMemorySeed(prdID, cfg, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)

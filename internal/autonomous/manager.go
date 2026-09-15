@@ -273,6 +273,17 @@ type Manager struct {
 	// Nil = child-PRD inheritance silently skipped.
 	memoryScopeSeedFn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int) error
 
+	// memoryContextFn (BL387 Phase 2a) — when set, called before building the
+	// decomposer prompt. Returns a formatted markdown block of relevant prior
+	// context from project-shared memory. Empty return = no injection.
+	// Nil = context enrichment silently skipped.
+	memoryContextFn func(ctx context.Context, projectDir, query string, topK int) (string, error)
+
+	// memoryCrossSeedFn (BL387 Phase 2b) — when set, called at PRD first-run
+	// for each entry in MemorySeed.FromPRDs. Seeds the referenced PRD's
+	// prd-shared into this PRD's prd-shared. Nil = cross-PRD seeding skipped.
+	memoryCrossSeedFn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int, roleFilter []string) error
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -349,6 +360,25 @@ func (m *Manager) SetMemoryScopeSeedFn(fn func(ctx context.Context, fromPRDID, t
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryScopeSeedFn = fn
+}
+
+// SetMemoryContextFn (BL387 Phase 2a) wires the decomposer context-enrichment
+// callback. Called before building the decomposer prompt; returns a formatted
+// markdown block of relevant prior context from project-shared. Empty string =
+// no injection. Nil = enrichment silently skipped.
+func (m *Manager) SetMemoryContextFn(fn func(ctx context.Context, projectDir, query string, topK int) (string, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryContextFn = fn
+}
+
+// SetMemoryCrossSeedFn (BL387 Phase 2b) wires the cross-PRD seeding callback.
+// Called at PRD first-run for each entry in MemorySeed.FromPRDs. Copies the
+// referenced PRD's prd-shared into the current PRD's prd-shared. Nil = skipped.
+func (m *Manager) SetMemoryCrossSeedFn(fn func(ctx context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int, roleFilter []string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryCrossSeedFn = fn
 }
 
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
@@ -523,7 +553,17 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prd.UpdatedAt = time.Now()
 	_ = m.store.SavePRD(prd)
 
+	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
+	m.mu.Lock()
+	ctxFn := m.memoryContextFn
+	m.mu.Unlock()
+	if ctxFn != nil && prd.ProjectDir != "" {
+		if priorCtx, cerr := ctxFn(context.Background(), prd.ProjectDir, prd.Spec, 15); cerr == nil && priorCtx != "" {
+			prompt = fmt.Sprintf(PlanningPrompt, prd.Spec+"\n\n"+priorCtx)
+		}
+	}
+
 	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		// Roll back to draft so the operator can re-trigger.
@@ -608,7 +648,17 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	prd.UpdatedAt = time.Now()
 	_ = m.store.SavePRD(prd)
 
+	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
+	m.mu.Lock()
+	ctxFn2 := m.memoryContextFn
+	m.mu.Unlock()
+	if ctxFn2 != nil && prd.ProjectDir != "" {
+		if priorCtx, cerr := ctxFn2(context.Background(), prd.ProjectDir, prd.Spec, 15); cerr == nil && priorCtx != "" {
+			prompt = fmt.Sprintf(PlanningPrompt, prd.Spec+"\n\n"+priorCtx)
+		}
+	}
+
 	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		prd.Status = PRDDraft

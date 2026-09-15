@@ -265,3 +265,21 @@ decomposition, up to 50 entries from the parent's `prd-shared` are seeded into t
 | `memoryScopeSeedFn` maxEntries capped at 50 | Yes | No | `TestBL387_ChildPRD_InheritanceCappedAt50` | Hard cap regardless of parent MaxPerScope |
 | `SetMemoryVerifierFn` wires callback on Manager | Yes | No | Used in all Verifier tests above | Production wire-up in main.go pending Phase 2 integration |
 | `SetMemoryScopeSeedFn` wires callback on Manager | Yes | No | Used in all ChildPRD tests above | Production wire-up in main.go pending Phase 2 integration |
+
+## v8.32.0 — Automata Memory Integration: Decomposer Enrichment + Cross-Automaton Seeding
+
+Added in v8.32.0. Two Phase 2 callbacks: `memoryContextFn` (decomposer prompt enrichment
+from `project-shared`) and `memoryCrossSeedFn` (cross-Automaton prd-shared seeding at
+first run via `from_prds`). `MemorySeedConfig.FromPRDs` field added. REST, MCP, and
+`AutonomousAPI` interface all updated.
+
+| Scenario | Automated | Manual | Test | Notes |
+|----------|-----------|--------|------|-------|
+| `memoryContextFn` called during `Decompose` with projectDir + limit=15 | Yes | No | `TestBL387_Decomposer_InjectsProjectSharedContext_WhenMemoriesExist` | PRD must have ProjectDir set |
+| Empty context result from `memoryContextFn` does not crash | Yes | No | `TestBL387_Decomposer_NoInjection_WhenNoMemoriesExist` | fn called but result ignored |
+| `Decompose` works normally with nil `memoryContextFn` | Yes | No | `TestBL387_Decomposer_NoInjection_WhenContextFnNil` | No panic with zero-value fn |
+| `memoryCrossSeedFn` called once per `from_prds` entry at first run | Yes | No | `TestBL387_CrossPRDSeed_SeedsFromListedPRDs_AtFirstRun` | 2 calls for 2 entries; correct IDs + maxEntries |
+| `memoryCrossSeedFn` NOT called when `memory_seed.enabled=false` | Yes | No | `TestBL387_CrossPRDSeed_NoSeed_WhenMemorySeedDisabled` | Guard on Enabled flag |
+| `memoryCrossSeedFn` NOT called when `from_prds` is empty | Yes | No | `TestBL387_CrossPRDSeed_NoSeed_WhenFromPRDsEmpty` | Guard on empty slice |
+| `memoryCrossSeedFn` NOT called on resume (PRDRunning) | Yes | No | `TestBL387_CrossPRDSeed_SkipsOnResume_WhenAlreadyRunning` | isFirstRun=false for PRDRunning |
+| `memoryCrossSeedFn` maxEntries defaults to 20 when MaxPerScope=0 | Yes | No | `TestBL387_CrossPRDSeed_UsesMaxPerScope_DefaultsTo20` | Hard default applied |

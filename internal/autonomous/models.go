@@ -212,12 +212,16 @@ type PRD struct {
 	MemoryHarvest MemoryHarvestConfig `json:"memory_harvest,omitempty"`
 }
 
-// MemorySeedConfig (BL386 Phase 1) controls warm-start seeding at task spawn.
+// MemorySeedConfig (BL386 Phase 1 + BL387 Phase 2b) controls warm-start seeding at task spawn.
 // Zero value = disabled; no behavior change from pre-BL386 code.
 type MemorySeedConfig struct {
 	Enabled     bool     `json:"enabled,omitempty"`
 	MaxPerScope int      `json:"max_per_scope,omitempty"` // default 20 when Enabled
 	RoleFilter  []string `json:"role_filter,omitempty"`   // empty = all roles
+	// FromPRDs (BL387 Phase 2b) — list of PRD IDs whose prd-shared memories are
+	// seeded into this PRD's prd-shared at first-task spawn. Enables cross-PRD
+	// knowledge transfer without manual operator intervention.
+	FromPRDs []string `json:"from_prds,omitempty"`
 }
 
 // MemoryHarvestConfig (BL386 Phase 2) controls harvest-on-completion.

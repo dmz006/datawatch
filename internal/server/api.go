@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.31.0"
+var Version = "8.32.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -552,8 +552,8 @@ type AutonomousAPI interface {
 	SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
 
-	// BL386 Phase 1 — per-PRD warm-start seed config.
-	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, actor string) (any, error)
+	// BL386 Phase 1 + BL387 Phase 2b — per-PRD warm-start seed config.
+	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error)
 
 	// BL386 Phase 2 — per-PRD harvest-on-completion config.
 	SetMemoryHarvest(prdID string, enabled bool, promoteTo string, roleFilter []string, max int, actor string) (any, error)

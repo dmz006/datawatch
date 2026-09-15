@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.31.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 1 (BL387) — verifier findings written to prd-shared on task failure (role=verifier-finding, prefix=[verifier-finding]), child Automaton prd-shared inheritance (up to 50 entries seeded parent→child before decompose). Both controlled by existing memory_seed.enabled flag. Manager gains memoryVerifierFn + memoryScopeSeedFn callbacks with SetMemoryVerifierFn/SetMemoryScopeSeedFn setters.
+Latest release: **v8.32.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 2 (BL387) — decomposer prompt enriched with project-shared context via memoryContextFn callback; cross-Automaton prd-shared seeding at first run via MemorySeedConfig.FromPRDs + memoryCrossSeedFn; REST/MCP/AutonomousAPI interface all updated with from_prds param. 8 new tests.
+
+Previous: **v8.31.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 1 (BL387) — verifier findings written to prd-shared on task failure (role=verifier-finding, prefix=[verifier-finding]), child Automaton prd-shared inheritance (up to 50 entries seeded parent→child before decompose). Both controlled by existing memory_seed.enabled flag. Manager gains memoryVerifierFn + memoryScopeSeedFn callbacks with SetMemoryVerifierFn/SetMemoryScopeSeedFn setters.
 
 Previous: **v8.30.0** (2026-09-15). feat(memory): Autonomous Automata Memory Lifecycle Management (BL386) — warm-start seeding, harvest-on-completion, archive-on-delete, archive-import, memory handoff MCP tool, Automaton memory report REST+MCP, scope inventory REST+MCP, scoped TTL sweep, UTC timezone fix for Prune/PruneByRole/SweepStale. All 5 phases complete.
 

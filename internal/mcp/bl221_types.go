@@ -134,11 +134,12 @@ func (s *Server) handleAutonomousPRDSetQualityGates(_ context.Context, req mcpsd
 
 func (s *Server) toolAutonomousPRDSetMemorySeed() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_memory_seed",
-		mcpsdk.WithDescription("BL386 — set per-PRD warm-start memory seed config. When enabled, each spawned task session is pre-seeded from project-shared, prd-shared, and story-shared before work begins."),
+		mcpsdk.WithDescription("BL386 + BL387 — set per-PRD warm-start memory seed config. When enabled, each spawned task session is pre-seeded from project-shared, prd-shared, and story-shared before work begins. from_prds seeds cross-PRD memories at first run."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Enable warm-start seeding for this PRD")),
 		mcpsdk.WithNumber("max_per_scope", mcpsdk.Description("Maximum memories to seed per scope layer (default 20)")),
 		mcpsdk.WithString("role_filter", mcpsdk.Description("Comma-separated role names to include (empty = all roles)")),
+		mcpsdk.WithString("from_prds", mcpsdk.Description("Comma-separated PRD IDs whose prd-shared memories are seeded into this PRD at first task spawn (BL387 Phase 2b)")),
 	)
 }
 func (s *Server) handleAutonomousPRDSetMemorySeed(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -151,10 +152,19 @@ func (s *Server) handleAutonomousPRDSetMemorySeed(_ context.Context, req mcpsdk.
 			}
 		}
 	}
+	var fromPRDs []string
+	if fp := req.GetString("from_prds", ""); fp != "" {
+		for _, p := range splitCSV(fp) {
+			if p != "" {
+				fromPRDs = append(fromPRDs, p)
+			}
+		}
+	}
 	body, _ := json.Marshal(map[string]any{
 		"enabled":       req.GetBool("enabled", false),
 		"max_per_scope": int(req.GetFloat("max_per_scope", 0)),
 		"role_filter":   roleFilter,
+		"from_prds":     fromPRDs,
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_memory_seed", body)
 	if err != nil {

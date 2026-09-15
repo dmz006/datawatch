@@ -3,6 +3,25 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.32.0 — feat(memory): Automata Memory Integration — Decomposer Enrichment + Cross-Automaton Seeding
+
+### Added
+
+**Decomposer context enrichment** — Before calling the LLM to decompose an Automaton,
+the system now queries `project-shared` for relevant prior context and injects it into
+the planning prompt. This allows the decomposer to produce tasks that build on prior
+project knowledge, avoiding duplicate work and incorporating lessons from earlier
+Automata in the same project. Controlled by `SetMemoryContextFn` callback; no new
+configuration required on the Automaton itself.
+
+**Cross-Automaton seeding at first run** — A new `from_prds` field on the `memory_seed`
+config allows an Automaton to inherit `prd-shared` memories from one or more sibling
+Automata at the moment its first task spawns. This is useful when launching a follow-on
+Automaton that should benefit from the accumulated verifier findings and decisions of a
+prior run. Only fires on first run (not resume); respects `max_per_scope` and
+`role_filter`. Configurable via REST, MCP (`autonomous_prd_set_memory_seed`), and the
+existing `SetMemorySeed` API.
+
 ## v8.31.0 — feat(memory): Automata Memory Integration — Verifier Findings + Child Inheritance
 
 ### Added
