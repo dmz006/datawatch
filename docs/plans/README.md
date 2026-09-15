@@ -69,7 +69,7 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 3 | BL335 — APNs push for iOS client (GH#107); BL383 — PWA session elapsed clock alongside session-active indicator; BL384 — document + harden decomposer scope-drift: qwen/ollama always decomposes into implementation tasks regardless of PRD constraints |
+| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
@@ -202,9 +202,9 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### BL384 — Document + harden decomposer scope-drift (qwen/ollama ignores PRD-level doc-only constraints)
+#### BL384 — Document + harden decomposer scope-drift (qwen/ollama ignores PRD-level doc-only constraints) ✅ Closed in v8.28.3
 
-**Operator-filed 2026-09-14.**
+**Operator-filed 2026-09-14. Closed 2026-09-14 in v8.28.3.**
 
 **Problem:** `qwen3.8:27b` (and `qwen3:8b`) consistently decomposes PRDs into "Implement X / Write code to..." task specs regardless of PRD-level constraints forbidding source code changes. The executor follows task-level spec over PRD-level constraints, so documentation-only PRDs produce Go file changes.
 
@@ -215,19 +215,19 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 2. Patch each task spec individually via `autonomous_prd_edit_task` to: (a) name the exact output file, (b) specify required content structure (tables/prose/YAML), (c) end with explicit "Do NOT create or modify .go files"
 3. Document the pattern in AGENT.md operator notes
 
-**Scope:** AGENT.md (operator notes section), docs/plans/README.md, consider adding a PRD scan rule that flags task specs containing "Implement"/"Write code" when PRD spec contains "documentation only".
+**Shipped (v8.28.3):** AGENT.md "Decomposer Scope-Drift Rule" section added with 3-step mitigation checklist, root-cause explanation, and operator runbook. No backend changes (pattern is operator workflow, not code enforcement).
 
 ---
 
-#### BL383 — PWA session elapsed clock alongside session-active indicator
+#### BL383 — PWA session elapsed clock alongside session-active indicator ✅ Closed in v8.28.3
 
-**Operator-filed 2026-09-14.**
+**Operator-filed 2026-09-14. Closed 2026-09-14 in v8.28.3.**
 
 **Problem:** The PWA "session active" indicator shows that a session is running but gives no sense of elapsed time. Long-running automata sessions can run for hours unnoticed.
 
 **Proposed:** Add a live elapsed-time counter (HH:MM:SS or Xh Ym format) next to the session-active indicator in the PWA. Counter starts from `session.started_at`, updates every second while the session is active, stops (freezes or hides) when the session completes or is killed.
 
-**Scope:** PWA session card / detail view. No backend changes required — `started_at` is already on the session object.
+**Shipped (v8.28.3):** `formatElapsed(ms)` helper + `updateElapsedClocks()` function + 1s `setInterval` ticker in app.js. Active session cards show a `<span class="session-elapsed" data-started-at="...">` element in the footer, rendered in accent-blue `var(--accent2)` with tabular-nums, updating live from `sess.created_at`. No backend changes — `created_at` already present on all session objects.
 
 ---
 

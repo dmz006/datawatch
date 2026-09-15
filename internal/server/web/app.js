@@ -2486,6 +2486,7 @@ function sessionCard(sess, idx, total) {
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
               ${sess.last_response ? `<button onclick="event.stopPropagation();showResponseViewer('${escHtml(fullId)}')" title="View last response" style="border:1px solid var(--border);background:var(--bg2);color:var(--text);border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;line-height:1;">&#128196; Response</button>` : ''}
+              ${isActive && sess.created_at ? `<span class="session-elapsed" data-started-at="${escHtml(sess.created_at)}" style="font-variant-numeric:tabular-nums;font-size:10px;color:var(--accent2,#60a5fa);opacity:0.85;" title="Session elapsed time"></span>` : ''}
               <span class="time">${escHtml(ago)}</span>
             </span>
           </div>
@@ -14747,6 +14748,28 @@ function timeAgo(ts) {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+
+// BL383 — live elapsed clock for active sessions
+function formatElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
+  return `${sec}s`;
+}
+
+function updateElapsedClocks() {
+  document.querySelectorAll('.session-elapsed[data-started-at]').forEach(el => {
+    const startedAt = el.getAttribute('data-started-at');
+    if (!startedAt) return;
+    const ms = Date.now() - new Date(startedAt).getTime();
+    if (ms < 0) return;
+    el.textContent = formatElapsed(ms);
+  });
+}
+setInterval(updateElapsedClocks, 1000);
 
 function escHtml(str) {
   if (str === null || str === undefined) return '';

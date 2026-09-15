@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.3 — feat(pwa): session elapsed clock + decomposer scope-drift hardening (BL383, BL384)
+
+### Added
+- **PWA live elapsed clock on active session cards** (BL383) — a live `Xm YYs` / `Xh Ym` counter in accent-blue appears in the footer of every active session card, driven by `sess.created_at`. Updates every second via a lightweight `updateElapsedClocks()` DOM-patch loop (no re-render). Uses tabular-nums for stable width. Stops / hides once a session reaches a terminal state. No backend changes — `created_at` is already present on all session objects.
+- **Decomposer Scope-Drift Rule in AGENT.md** (BL384) — documents that `qwen3.8:27b` / `qwen3:8b` ignores PRD-level "documentation only" constraints at decomposition time and always produces code-writing task specs. Operator runbook: (1) set guided mode on any constrained PRD, (2) patch each task spec with an explicit scope constraint before approving, (3) run `autonomous_prd_scan` post-decomposition. Root-cause explanation included.
+
 ## v8.28.2 — feat(pwa): per-story LLM picker in story editor (BL381 completion)
 
 ### Added

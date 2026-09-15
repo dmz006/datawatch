@@ -537,6 +537,45 @@ missing `CapAutonomousWrite` guards — added in v8.28.1.
 autonomous.go and confirm each has a `fedCap` call. `grep -n "case \"" internal/server/autonomous.go`
 then cross-reference with `grep -n "fedCap"` on the same file.
 
+## Decomposer Scope-Drift Rule (BL384, v8.28.3)
+
+**qwen3.8:27b and qwen3:8b ignore PRD-level scope constraints at decomposition time.**
+Even when the PRD spec says "documentation only — do not write code", these models
+routinely generate task specs containing "Implement ...", "Write code for ...", or
+"Create .go files ...". The tasks then execute and modify source files outside the
+PRD's intended scope.
+
+**Mitigations (apply in order of urgency):**
+
+1. **Use guided mode for any doc-only or constrained PRD:**
+   `rtk curl -s -X POST http://localhost:8080/api/autonomous/prds/<id>/set_guided_mode -d '{"guided_mode":true}'`
+   Guided mode pauses before each task runs and requires operator approval, giving
+   a checkpoint before scope drift executes.
+
+2. **Patch each task spec before approving it:**
+   After decomposition but before approving each task, edit the task spec to add an
+   explicit constraint at the top:
+   ```
+   SCOPE CONSTRAINT: Do NOT create, modify, or delete any .go, .ts, .js, or
+   source-code files. This task produces documentation only.
+   ```
+   Use: `autonomous_prd_edit_task` or the PWA task-spec editor.
+
+3. **PRD scan rule — scope drift detector:**
+   The scan config includes a `scope-drift` rule that flags task specs containing
+   code-creation language when the PRD spec indicates documentation or doc-only work.
+   Run `autonomous_prd_scan` after decomposition and before any task approval.
+
+**Root cause:** These models have strong "helpful agent" priors that override
+instruction-following for negative constraints. A constraint like "documentation
+only" is treated as a description of the end state, not a hard restriction on tool
+use. Claude-class models generally respect the constraint.
+
+**Checklist before running a doc-only PRD with a qwen decomposer:**
+- [ ] `guided_mode: true` set on PRD
+- [ ] Each decomposed task spec reviewed and scope constraint injected
+- [ ] `autonomous_prd_scan` passed with no scope-drift findings
+
 ## Skills-Awareness Rule (BL255, v6.7.0)
 
 Skills are a first-class cross-cutting concern in datawatch. Whenever you
