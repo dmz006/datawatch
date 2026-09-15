@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.4 — docs: remove internal IDs from user-facing howtos; add exec_steps to automata-memory-workflow howto
+
+### Fixed
+- **Internal ID leak in user-facing docs** — 9 occurrences of internal backlog IDs (BL###) in `docs/datawatch-definitions.md`, `docs/howto/automata-memory-workflow.md`, and `docs/howto/prd-memory-workflow.md` were replaced with plain version strings (e.g. `v8.32.0+` instead of `BL387 (v8.32.0+)`). Caught by the pre-release internal-ref audit (smoke pre-flight check).
+- **Missing exec_steps front-matter on prd-memory-workflow.md** — `docs/howto/prd-memory-workflow.md` lacked the YAML front-matter block required by the howto-coverage rule. Added `exec_steps` (seed + harvest + get), corrected the title to "Automata Memory Workflow" per the user-facing naming convention, and updated the prerequisite line to use version strings only.
+
 ## v8.33.3 — feat(server): per-guardrail block approval endpoint + tests (GH#153); ZAP false-positive triage (GH#154)
 
 ### Added

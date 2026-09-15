@@ -1,11 +1,42 @@
-# PRD Memory Workflow
+---
+docs:
+  index: true
+  topics: [memory, automata, scopes, lifecycle, harvest, archive, cross-prd, scope-recall]
+exec_params:
+  - {name: prd_id, required: true, description: "Automaton (PRD) ID to operate on"}
+  - {name: project_dir, required: true, description: "Project directory"}
+exec_steps:
+  - tool: autonomous_prd_set_memory_seed
+    description: Enable warm-start memory seeding on the Automaton
+    args:
+      id: "{{params.prd_id}}"
+      enabled: true
+      max_per_scope: 20
+      role_filter: "learning,decision"
+    read_only: false
+  - tool: autonomous_prd_set_memory_harvest
+    description: Enable memory harvest on task completion
+    args:
+      id: "{{params.prd_id}}"
+      enabled: true
+      promote_to: "story-shared"
+      role_filter: "learning,decision"
+    read_only: false
+  - tool: autonomous_prd_get
+    description: Read the Automaton memory report after a run
+    args:
+      id: "{{params.prd_id}}"
+    read_only: true
+---
 
-This guide covers the complete memory lifecycle for PRDs in datawatch: how to
+# Automata Memory Workflow
+
+This guide covers the complete memory lifecycle for Automata in datawatch: how to
 configure memory seeding and harvest, how to use archive import to carry knowledge
-forward, how to read a PRD memory report, and how to use scope recall in MCP tools.
+forward, how to read an Automaton memory report, and how to use scope recall in MCP tools.
 
-Prerequisite: BL385 (v8.29.0) for scope model; BL386 (v8.30.0) for lifecycle
-policies; BL387 (v8.31.0+) for PRD orchestrator integration.
+Prerequisite: v8.29.0 for scope model; v8.30.0 for lifecycle
+policies; v8.31.0+ for Automaton orchestrator integration.
 
 ---
 
@@ -262,7 +293,7 @@ Manual sweep:
 memory sweep-stale scope=session-local older_than_days=30 dry_run=true
 ```
 
-Omit `scope` for global sweep (backward-compatible with pre-BL386 behavior).
+Omit `scope` for global sweep (backward-compatible with v8.29.x and earlier).
 
 ---
 

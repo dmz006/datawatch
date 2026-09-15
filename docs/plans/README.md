@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.33.3** (2026-09-15). feat(server): per-guardrail block approval endpoint (GH#153) — REST `POST /api/sessions/{id}/guardrail/{name}/approve`, MCP `session_guardrail_approve`, comm `session guardrail-approve`. 7 tests. ZAP GH#154 triage — 110002/110004 confirmed false positives, already IGNORE'd in rules.tsv. Both issues closed.
+Latest release: **v8.33.4** (2026-09-15). docs: remove internal IDs from user-facing howtos; add exec_steps to automata-memory-workflow howto. Pre-release smoke found 9 BL### leaks in docs/datawatch-definitions.md + docs/howto/automata-memory-workflow.md + docs/howto/prd-memory-workflow.md — replaced with plain version strings. prd-memory-workflow.md lacked exec_steps front-matter (howto-coverage rule) — added exec_steps for seed/harvest/get steps; corrected title to "Automata Memory Workflow". smoke: 94 headers, 169 passed, 0 failed, 30 skipped.
+
+Previous: **v8.33.3** (2026-09-15). feat(server): per-guardrail block approval endpoint (GH#153) — REST `POST /api/sessions/{id}/guardrail/{name}/approve`, MCP `session_guardrail_approve`, comm `session guardrail-approve`. 7 tests. ZAP GH#154 triage — 110002/110004 confirmed false positives, already IGNORE'd in rules.tsv. Both issues closed.
 
 Previous: **v8.33.2** (2026-09-15). fix(autonomous): boot-time stuck-task reconciliation (B90) — `reconcileStuckTasks()` at Manager startup marks stuck `TaskInProgress`/`TaskVerifying`/`TaskRunningTests` tasks as `TaskFailed` when session is no longer alive; `SetSessionAliveFn` callback wired in main.go; 6 regression tests. Depends on `AutoFixRetries` to re-queue. All 2626 tests passing.
 

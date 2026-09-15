@@ -1429,7 +1429,7 @@ Infrastructure:
 
 Memory + ops:
 - [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph + 6-scope hierarchy (persona-global → persona-in-project → project-shared → prd-shared → story-shared → session-local) with borrow/seed/promote
-- [`howto/prd-memory-workflow.md`](howto/prd-memory-workflow.md) — complete PRD memory lifecycle: warm-start seeding, harvest, archive-on-delete, archive import, PRD memory report, scope inventory (BL385–387)
+- [`howto/prd-memory-workflow.md`](howto/prd-memory-workflow.md) — complete PRD memory lifecycle: warm-start seeding, harvest, archive-on-delete, archive import, PRD memory report, scope inventory
 - [`howto/daemon-operations.md`](howto/daemon-operations.md) — start / stop / restart / upgrade / logs
 - [`howto/setup-and-install.md`](howto/setup-and-install.md) — first-time install end-to-end
 

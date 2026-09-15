@@ -391,7 +391,7 @@ memory_stats project=<dir>
    `memory_scope_inventory` before and after archive — project-shared count should have increased.
 
 **"The decomposer isn't using project-shared memories"**
-→ Decomposer enrichment requires BL387 (v8.32.0+). Verify version with `get_version`.
+→ Decomposer enrichment requires v8.32.0+. Verify version with `get_version`.
 → Check project-shared has entries: `memory_scope_inventory project=<dir>`.
 
 **"Subprocess session can write to global scope"**
@@ -403,10 +403,10 @@ memory_stats project=<dir>
 
 ## Base requirements
 
-- datawatch v8.29.0+ for 6-layer scope model (BL385)
-- datawatch v8.30.0+ for lifecycle management — seeding, harvest, archive (BL386)
-- datawatch v8.31.0+ for verifier feedback, child PRD inheritance (BL387 Phase 1)
-- datawatch v8.32.0+ for decomposer enrichment, cross-PRD seeding (BL387 Phase 2)
+- datawatch v8.29.0+ for 6-layer scope model
+- datawatch v8.30.0+ for lifecycle management — seeding, harvest, archive
+- datawatch v8.31.0+ for verifier feedback, child PRD inheritance
+- datawatch v8.32.0+ for decomposer enrichment, cross-PRD seeding
 - Memory backend + embedder configured (see [cross-agent-memory.md](cross-agent-memory.md))
 
 ---
