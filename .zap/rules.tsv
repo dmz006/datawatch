@@ -123,3 +123,30 @@
 # details are disclosed; error messages describe the user-visible problem.
 # Must be IGNORE (not WARN): WARN causes WARN-NEW exit-2 in no-baseline runs.
 90022	IGNORE	Application Error Disclosure — structured JSON error bodies are intentional API design; WARN causes WARN-NEW exit-2 in no-baseline runs
+
+# [110002] Base64 Disclosure in WebSocket message
+# Investigated GH#154: ZAP evidence is the 4-char substring "LOR=" (Risk 0 —
+# Informational). ZAP's base64 detector matches any string of 4+ characters
+# from the base64 alphabet ending in "=", regardless of context. Any JSON
+# payload with alphanumeric keys or values will contain random substrings that
+# satisfy this regex — the evidence does NOT contain a readable secret. The
+# /ws frames are session telemetry, hook events, and system stats broadcast to
+# the browser. Sanitising WS payloads to prevent all 4-char base64-pattern
+# substrings would break all structured data transmission. Cannot be fixed
+# without removing this detection entirely from ZAP's ruleset (outside our
+# control). False positive; investigated and confirmed non-actionable.
+110002	IGNORE	Base64 Disclosure in WebSocket — confirmed false positive (evidence: "LOR=" — 4-char substring match, Risk 0); sanitising all WS payloads to prevent this is not feasible
+
+# [110004] Email Address in WebSocket message
+# Investigated GH#154: ZAP evidence is "runner@runnervmlun5p" and
+# "nrunner@runnervmlun5p" — the GitHub Actions CI runner's auto-generated git
+# identity (runner's username @ runner hostname), set by actions/checkout.
+# This is a CI-environment-specific false positive; in production the operator's
+# own configured email may appear in WS messages (e.g. in session telemetry or
+# broadcast stats). Both cases represent data the receiver already owns — the
+# authenticated operator viewing their own configuration or CI infrastructure.
+# Stripping email-pattern strings from WS messages would remove legitimate
+# operator data. The only fix would be to disable this ZAP detection entirely,
+# which is not configurable per-deployment. Investigated and confirmed that the
+# source is CI runner metadata, not inadvertent credential disclosure.
+110004	IGNORE	Email Address in WebSocket — confirmed false positive in CI (evidence: runner@runnervmlun5p = GitHub Actions runner git identity); stripping emails from WS would break legitimate operator data

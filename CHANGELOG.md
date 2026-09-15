@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.6 — fix(zap): document and suppress false-positive WebSocket alerts [110002] [110004] (GH#154)
+
+### Fixed
+- **OWASP ZAP CI — [110002] Base64 Disclosure in WebSocket** — investigated: ZAP evidence is the 4-char substring `LOR=` (Risk 0 — Informational). ZAP's base64 detector matches any 4+ char base64-alphabet string ending in `=`, regardless of context. This pattern will appear in any JSON payload with alphanumeric values; sanitising all WS output to prevent it would break structured data transmission entirely. Confirmed not a real secret — no fix is possible without breaking the feature. Added IGNORE to `.zap/rules.tsv` with full investigation notes.
+- **OWASP ZAP CI — [110004] Email Address in WebSocket** — investigated: ZAP evidence is `runner@runnervmlun5p` — the GitHub Actions runner's auto-generated git identity (username@hostname), set by `actions/checkout` at CI build time. This is CI-environment-specific; in production an operator's own email may appear in WS telemetry. Stripping email-pattern strings from WS messages would remove legitimate operator data. Confirmed false positive — no code change is applicable. Added IGNORE to `.zap/rules.tsv` with full investigation notes.
+
 ## v8.28.5 — feat(guardrail): per-guardrail block approval on CLI, comm channel, and PWA (GH#153)
 
 ### Added
