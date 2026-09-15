@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -773,6 +773,92 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous template-clone", prettyJSON(out))
+
+	// BL382 (v8.27.0) — B88 comm-channel parity gap fixes.
+	case "cancel-story", "cancel_story":
+		if len(args) < 3 {
+			r.reply("autonomous cancel-story failed", "usage: autonomous cancel-story <prd-id> <story-id> [reason]")
+			return
+		}
+		reason := strings.TrimSpace(strings.Join(args[3:], " "))
+		raw, _ := json.Marshal(map[string]string{"story_id": args[2], "reason": reason, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/cancel_story", string(raw))
+		if err != nil {
+			r.reply("autonomous cancel-story failed", err.Error())
+			return
+		}
+		r.reply("autonomous cancel-story", prettyJSON(out))
+
+	case "cancel-task", "cancel_task":
+		if len(args) < 3 {
+			r.reply("autonomous cancel-task failed", "usage: autonomous cancel-task <prd-id> <task-id> [reason]")
+			return
+		}
+		reason := strings.TrimSpace(strings.Join(args[3:], " "))
+		raw, _ := json.Marshal(map[string]string{"task_id": args[2], "reason": reason, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/cancel_task", string(raw))
+		if err != nil {
+			r.reply("autonomous cancel-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous cancel-task", prettyJSON(out))
+
+	case "reset-to-draft", "reset_to_draft":
+		if len(args) < 2 {
+			r.reply("autonomous reset-to-draft failed", "usage: autonomous reset-to-draft <prd-id>")
+			return
+		}
+		raw, _ := json.Marshal(map[string]string{"actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/reset_to_draft", string(raw))
+		if err != nil {
+			r.reply("autonomous reset-to-draft failed", err.Error())
+			return
+		}
+		r.reply("autonomous reset-to-draft", prettyJSON(out))
+
+	case "set-quality-gates", "set_quality_gates":
+		// usage: autonomous set-quality-gates <prd-id> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]
+		if len(args) < 2 {
+			r.reply("autonomous set-quality-gates failed", "usage: autonomous set-quality-gates <prd-id> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]")
+			return
+		}
+		payload := map[string]any{}
+		for _, kv := range args[2:] {
+			if i := strings.IndexByte(kv, '='); i > 0 {
+				k, v := kv[:i], kv[i+1:]
+				switch strings.ToLower(k) {
+				case "enabled":
+					payload["enabled"] = v == "true" || v == "1"
+				case "test_command":
+					payload["test_command"] = v
+				case "timeout":
+					if n, err2 := strconv.Atoi(v); err2 == nil {
+						payload["timeout"] = n
+					}
+				case "block_on_regression":
+					payload["block_on_regression"] = v == "true" || v == "1"
+				}
+			}
+		}
+		raw, _ := json.Marshal(payload)
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_quality_gates", string(raw))
+		if err != nil {
+			r.reply("autonomous set-quality-gates failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-quality-gates", prettyJSON(out))
+
+	case "scan-results", "scan_results":
+		if len(args) < 2 {
+			r.reply("autonomous scan-results failed", "usage: autonomous scan-results <prd-id>")
+			return
+		}
+		out, err := r.commGet("/api/autonomous/prds/"+args[1]+"/scan", nil)
+		if err != nil {
+			r.reply("autonomous scan-results failed", err.Error())
+			return
+		}
+		r.reply("autonomous scan-results", prettyJSON(out))
 
 	default:
 		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
