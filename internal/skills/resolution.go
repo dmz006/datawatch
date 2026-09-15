@@ -176,7 +176,7 @@ func appendIfMissing(path, pattern string) (int, error) {
 		prefix = "\n"
 	}
 	out := append(existing, []byte(prefix+pattern+"\n")...)
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	if err := os.WriteFile(path, out, 0644); err != nil { // #nosec G703 -- path validated by caller
 		return 0, fmt.Errorf("write %s: %w", path, err)
 	}
 	return 1, nil

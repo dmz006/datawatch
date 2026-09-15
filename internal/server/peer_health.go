@@ -33,7 +33,7 @@ func StartPeerHealthMonitor(ctx context.Context, store *multiserver.Store, alert
 func runPeerHealthMonitor(ctx context.Context, store *multiserver.Store, alertStore *alerts.Store) {
 	// Jitter the first tick up to 60s so multiple daemons started at the same
 	// time don't all probe at the same instant.
-	jitter := time.Duration(rand.Intn(60)) * time.Second //nolint:gosec
+	jitter := time.Duration(rand.Intn(60)) * time.Second // #nosec G404 -- non-crypto jitter for health-check scheduling
 	select {
 	case <-ctx.Done():
 		return

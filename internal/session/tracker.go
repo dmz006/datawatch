@@ -488,7 +488,7 @@ func (t *Tracker) appendFile(name, content string) error {
 		if err != nil {
 			return fmt.Errorf("encrypt %s: %w", name, err)
 		}
-		return os.WriteFile(path, enc, 0644)
+		return os.WriteFile(path, enc, 0644) // #nosec G703 -- path derived from operator-controlled data directory
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

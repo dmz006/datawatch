@@ -1825,6 +1825,7 @@ function navigate(view, sessionId, fromPopstate) {
     if (viewEl) viewEl.classList.remove('view-full');
     destroyXterm(); // clean up terminal when leaving session detail
     // Clean up stats polling interval
+    if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -2142,7 +2143,10 @@ function renderSessionsView() {
 function loadGlobalScheduleBadge() {
   const badge = document.getElementById('schedBadge');
   if (!badge) return;
+  if (loadGlobalScheduleBadge._inFlight) return;
+  loadGlobalScheduleBadge._inFlight = true;
   apiFetch('/api/schedules?state=pending').then(items => {
+    loadGlobalScheduleBadge._inFlight = false;
     if (!items || items.length === 0) {
       badge.style.display = 'none';
       return;
@@ -2162,7 +2166,7 @@ function loadGlobalScheduleBadge() {
         </div>`;
       }).join('')}
     </div>`;
-  }).catch(() => { badge.style.display = 'none'; });
+  }).catch(() => { loadGlobalScheduleBadge._inFlight = false; badge.style.display = 'none'; });
 }
 
 function toggleGlobalScheduleDropdown() {
@@ -3533,10 +3537,14 @@ function loadSessionStats(sessionId) {
   const el = document.getElementById('statsPanel');
   if (!el) return;
 
-  // Attach interval ID to element so we can clear it later when switching sessions
-  if (el._statsInterval) clearInterval(el._statsInterval);
+  // Use module-level variable so interval survives innerHTML re-renders of statsPanel.
+  if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
+  if (el._statsInterval) { clearInterval(el._statsInterval); el._statsInterval = null; }
 
+  let _statsInFlight = false;
   const fetchStats = () => {
+    if (_statsInFlight) return;
+    _statsInFlight = true;
     apiFetch('/api/stats')
       .then(data => {
         if (!data || !data.envelopes) {
@@ -3593,12 +3601,14 @@ function loadSessionStats(sessionId) {
             <span class="stat-value">${gpu.toFixed(1)}%${gpuMem ? ' / '+(gpuMem/1000000000).toFixed(1)+'GB' : ''}</span>
           </div>` : ''}
         </div>`;
+        _statsInFlight = false;
       })
-      .catch(() => { el.style.display = 'none'; });
+      .catch(() => { _statsInFlight = false; el.style.display = 'none'; });
   };
 
   fetchStats(); // immediate fetch
-  el._statsInterval = setInterval(fetchStats, 1000); // then poll every 1 second
+  window._sessionStatsInterval = setInterval(fetchStats, 5000); // poll every 5s
+  el._statsInterval = window._sessionStatsInterval; // keep for legacy cleanup paths
 }
 
 function loadSessionSchedules(sessionId) {
@@ -10375,7 +10385,7 @@ function renderTask(prd, story, task, editable) {
   const retryBtn = canRetry
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
     : '';
-  const cancelTaskBtn = canCancelTask && editable
+  const cancelTaskBtn = canCancelTask
     ? `<button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdCancelTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.title||'')})" title="${t('prd_cancel_task')||'Cancel this task'}">✕</button>`
     : '';
   const requeueBtn = canRequeue && editable

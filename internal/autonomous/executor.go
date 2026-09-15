@@ -412,7 +412,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if reportFn != nil && prd.MemorySeed.Enabled {
 				prdID := prd.ID
 				projectDir := prd.ProjectDir
-				go func() {
+				go func() { // #nosec G118 -- background report after PRD completion; request context already done
 					report, rerr := reportFn(context.Background(), prdID, projectDir)
 					if rerr != nil {
 						log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)

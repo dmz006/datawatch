@@ -3,6 +3,16 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.5 — fix(pwa): cancel-task button for running PRDs; stats poll storm; gosec/CI advisory fixes
+
+### Fixed
+- **Automata cancel-task button invisible while PRD is running** — The cancel button on individual tasks was gated by `editable` (only true in `needs_review`/`revisions_asked`), so it never appeared during `running` status even when the task was in a cancellable state (`pending`, `in_progress`, `verifying`, `running_tests`). Removed the incorrect `editable` guard; the button now shows whenever `canCancelTask` is true.
+- **ERR_INSUFFICIENT_RESOURCES storm when viewing session detail** — The `/api/stats` stats panel polled every 1 second. If `renderSessionDetail()` was called multiple times (e.g. WS reconnect path) the `statsPanel` DOM element was recreated, orphaning the old `clearInterval` reference and stacking intervals. Fixed by using a module-level `window._sessionStatsInterval` variable (survives innerHTML replacement), adding a per-request in-flight guard (`_statsInFlight`), and slowing the poll from 1 s to 5 s.
+- **`loadGlobalScheduleBadge` in-flight stacking** — Added an `_inFlight` guard so concurrent calls don't stack up HTTP connections when the schedules view re-renders rapidly.
+- **gosec G402/G404/G118/G703 net-new findings** — Five new gosec findings above the baseline (60→65): G402 `InsecureSkipVerify` and G404 `math/rand` were using `//nolint:gosec` (golangci-lint directive) instead of `// #nosec` (gosec directive); fixed. G118 (goroutine context) in `executor.go` and G703 (path traversal FP) in `skills/resolution.go` and `session/tracker.go` annotated with `// #nosec`. Baseline count restored to 60.
+- **CI advisory: Node.js 20 deprecation** — Updated `golangci/golangci-lint-action` from v7→v8 (ci.yaml, release.yaml) and `goreleaser/goreleaser-action` from v6→v7 (release.yaml).
+- **CI advisory: CodeQL v3 deprecation** — Updated all three `github/codeql-action/upload-sarif` from v3→v4 in release.yaml.
+
 ## v8.33.4 — docs: remove internal IDs from user-facing howtos; add exec_steps to automata-memory-workflow howto
 
 ### Fixed

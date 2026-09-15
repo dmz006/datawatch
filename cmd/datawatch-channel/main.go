@@ -452,7 +452,7 @@ func (b *bridge) postToParent(ctx context.Context, path string, body any) error 
 	client := &http.Client{ // #nosec G402 -- loopback only, self-signed daemon cert
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback only, self-signed daemon cert
 		},
 	}
 	resp, err := client.Do(req)
