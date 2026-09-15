@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.0"
+var Version = "8.33.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -886,23 +886,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// reference it without an init-order tangle.
 	var f10PRHook func(sess *session.Session)
 
-	// autonomousSSEStallPatterns lists pane output fragments that indicate
-	// opencode has lost its Ollama SSE connection and will not self-terminate.
-	// Scanned every ~30s inside the autonomousVerify wait loop; on match the
-	// session is killed so the executor's retry path fires.
-	autonomousSSEStallPatterns := []string{
-		"SSE Timeout",
-		"SSE error",
-		"SSE connection",
-		"connection refused",
-		"dial tcp: lookup",
-		"context deadline exceeded",
-		"failed to connect to ollama",
-		"no such host",
-		"cannot be parsed as a URL",
-		"provider response headers",
-	}
-	_ = autonomousSSEStallPatterns // used inside autonomousVerify closure below
+	// autonomousSSEStallPatterns / matchSSEStallPattern now live in
+	// sse_stall.go (package-level, unit tested) — see B89.
 
 	// Phase 4 follow-up (v5.26.67) — post-session diff callback for
 	// autonomous PRD task spawns. Declared here so onSessionEnd can
@@ -1303,7 +1288,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if model == "" && cfg.OpenCode.DefaultModel != "" {
 					model = cfg.OpenCode.DefaultModel
 				}
-				ocOpts := opencode.ProjectConfigOpts{Model: model, OllamaURL: sess.OllamaURL}
+				ocOpts := opencode.ProjectConfigOpts{
+					Model:            model,
+					OllamaURL:        sess.OllamaURL,
+					ChunkTimeoutSec:  cfg.OpenCode.OllamaChunkTimeoutSec,
+					HeaderTimeoutSec: cfg.OpenCode.OllamaHeaderTimeoutSec,
+				}
 				if sess.LSPLanguage != "" {
 					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {
 						ocOpts.LSPServers = map[string]opencode.LSPServer{
@@ -4063,14 +4053,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// session will never self-terminate.
 						if waitTick%10 == 9 && s.TmuxSession != "" {
 							if sb, sbErr := mgr.CapturePaneScrollback(s.FullID, 300); sbErr == nil && sb != "" {
-								for _, pat := range autonomousSSEStallPatterns {
-									if strings.Contains(sb, pat) {
-										log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
-											task.SessionID, task.PRDID, task.ID, pat)
-										_ = mgr.Kill(task.SessionID)
-										stallErr = fmt.Errorf("opencode SSE stall detected (%q); retrying task", pat)
-										break waitLoop
-									}
+								if pat, matched := matchSSEStallPattern(sb); matched {
+									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
+										task.SessionID, task.PRDID, task.ID, pat)
+									_ = mgr.Kill(task.SessionID)
+									stallErr = fmt.Errorf("opencode SSE stall detected (%q); retrying task", pat)
+									break waitLoop
 								}
 							}
 						}
@@ -4382,13 +4370,10 @@ Reply with STRICT JSON:
 								if sbErr != nil || sb == "" {
 									continue
 								}
-								for _, pat := range autonomousSSEStallPatterns {
-									if strings.Contains(sb, pat) {
-										log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
-											prd.ID, task.ID, task.SessionID, pat)
-										_ = mgr.Kill(task.SessionID)
-										break
-									}
+								if pat, matched := matchSSEStallPattern(sb); matched {
+									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
+										prd.ID, task.ID, task.SessionID, pat)
+									_ = mgr.Kill(task.SessionID)
 								}
 							}
 						}

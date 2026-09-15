@@ -107,6 +107,62 @@ func TestWriteProjectConfig_OllamaProvider_SchemelessURL(t *testing.T) {
 	}
 }
 
+// TestWriteProjectConfig_OllamaProvider_ChunkHeaderTimeouts (B89) verifies
+// ChunkTimeoutSec/HeaderTimeoutSec are written into provider.ollama.options
+// as chunkTimeout/headerTimeout in milliseconds — the fields opencode's own
+// config schema (https://opencode.ai/config.json ProviderConfig.options)
+// actually reads to bound the idle gap between streamed SSE chunks and the
+// wait for response headers. Regression coverage for the root cause of the
+// "SSE read timed out" stall: opencode's built-in 300s chunkTimeout is
+// shorter than observed qwen3 "thinking" pauses on large local models.
+func TestWriteProjectConfig_OllamaProvider_ChunkHeaderTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteProjectConfig(dir, ProjectConfigOpts{
+		Model:            "ollama/qwen3.8:27b",
+		OllamaURL:        "http://datawatch:11434",
+		ChunkTimeoutSec:  1200,
+		HeaderTimeoutSec: 900,
+	}); err != nil {
+		t.Fatalf("WriteProjectConfig: %v", err)
+	}
+	cfg := readProjectConfig(t, dir)
+	ollama := cfg.Provider["ollama"].(map[string]any)
+	opts := ollama["options"].(map[string]any)
+
+	// json.Unmarshal decodes numbers as float64 into map[string]any.
+	if got, want := opts["chunkTimeout"], float64(1200*1000); got != want {
+		t.Errorf("options.chunkTimeout = %v, want %v", got, want)
+	}
+	if got, want := opts["headerTimeout"], float64(900*1000); got != want {
+		t.Errorf("options.headerTimeout = %v, want %v", got, want)
+	}
+}
+
+// TestWriteProjectConfig_OllamaProvider_ZeroTimeouts_Omitted verifies that
+// ChunkTimeoutSec/HeaderTimeoutSec left at zero (operator disabled the
+// override, or an older config predates B89) omit the keys entirely so
+// opencode's own built-in defaults apply — matching the documented "0 =
+// leave opencode's built-in default in effect" contract.
+func TestWriteProjectConfig_OllamaProvider_ZeroTimeouts_Omitted(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteProjectConfig(dir, ProjectConfigOpts{
+		Model:     "ollama/qwen3:1.7b",
+		OllamaURL: "http://datawatch:11434",
+	}); err != nil {
+		t.Fatalf("WriteProjectConfig: %v", err)
+	}
+	cfg := readProjectConfig(t, dir)
+	ollama := cfg.Provider["ollama"].(map[string]any)
+	opts := ollama["options"].(map[string]any)
+
+	if _, ok := opts["chunkTimeout"]; ok {
+		t.Errorf("options.chunkTimeout should be omitted when ChunkTimeoutSec=0, got %#v", opts)
+	}
+	if _, ok := opts["headerTimeout"]; ok {
+		t.Errorf("options.headerTimeout should be omitted when HeaderTimeoutSec=0, got %#v", opts)
+	}
+}
+
 // TestWriteProjectConfig_NonOllamaModel_NoProviderBlock ensures cloud/free
 // builtin models (anthropic/*, opencode/*) never get an ollama provider
 // block written — only "ollama/" prefixed models do.

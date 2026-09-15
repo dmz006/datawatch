@@ -47,6 +47,13 @@ type ProjectConfigOpts struct {
 	// http://localhost:11434 (matches internal/llm/backends/ollama.ListModels).
 	// Only used when Model starts with "ollama/".
 	OllamaURL string
+
+	// ChunkTimeoutSec / HeaderTimeoutSec (B89) — written into the ollama
+	// provider's options.chunkTimeout / options.headerTimeout (converted to
+	// milliseconds). 0 leaves opencode's own default (300s each) in effect.
+	// Only used when Model starts with "ollama/".
+	ChunkTimeoutSec  int
+	HeaderTimeoutSec int
 }
 
 const defaultOllamaURL = "http://localhost:11434"
@@ -105,12 +112,22 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		if existing.Provider == nil {
 			existing.Provider = make(map[string]any)
 		}
+		providerOpts := map[string]any{
+			"baseURL": strings.TrimSuffix(baseURL, "/") + "/v1",
+		}
+		// B89 — override opencode's default 300s chunk/header timeouts,
+		// which are too short for long "thinking" pauses and cold-load
+		// times on large locally-hosted models (see ProjectConfigOpts doc).
+		if opts.ChunkTimeoutSec > 0 {
+			providerOpts["chunkTimeout"] = opts.ChunkTimeoutSec * 1000
+		}
+		if opts.HeaderTimeoutSec > 0 {
+			providerOpts["headerTimeout"] = opts.HeaderTimeoutSec * 1000
+		}
 		existing.Provider["ollama"] = map[string]any{
-			"npm":  "@ai-sdk/openai-compatible",
-			"name": "Ollama",
-			"options": map[string]any{
-				"baseURL": strings.TrimSuffix(baseURL, "/") + "/v1",
-			},
+			"npm":     "@ai-sdk/openai-compatible",
+			"name":    "Ollama",
+			"options": providerOpts,
 			"models": map[string]any{
 				modelName: map[string]any{},
 			},

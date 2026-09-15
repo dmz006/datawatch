@@ -712,6 +712,25 @@ type OpenCodeConfig struct {
 	// Providers holds API keys for cloud providers (anthropic, openai, google).
 	// Keys are stored in the daemon secrets store and never returned in plain text.
 	Providers map[string]OpenCodeProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
+
+	// OllamaChunkTimeoutSec (B89, v8.33.x) — written into opencode.json's
+	// provider.ollama.options.chunkTimeout (converted to ms). Max idle gap
+	// between streamed SSE chunks before opencode aborts the request.
+	// OpenCode's own default is 300s (5 min); observed qwen3 "thinking"
+	// pauses on large local models ran 6m+ with zero streamed output,
+	// tripping the default and aborting mid-generation with "SSE read
+	// timed out" — the opencode session then hangs waiting for output that
+	// will never arrive, since the underlying request was already killed.
+	// 0 = leave opencode's built-in default in effect.
+	OllamaChunkTimeoutSec int `yaml:"ollama_chunk_timeout_sec,omitempty"`
+
+	// OllamaHeaderTimeoutSec (B89, v8.33.x) — written into opencode.json's
+	// provider.ollama.options.headerTimeout (converted to ms). Max wait for
+	// the first response header, i.e. how long Ollama is given to cold-load
+	// a model into VRAM before opencode gives up. OpenCode's own default
+	// (300s) is tight for the largest locally-hosted models. 0 = leave
+	// opencode's built-in default in effect.
+	OllamaHeaderTimeoutSec int `yaml:"ollama_header_timeout_sec,omitempty"`
 }
 
 // OpenCodeACPConfig holds opencode ACP (headless server) backend configuration.
@@ -1883,6 +1902,12 @@ func DefaultConfig() *Config {
 		// Operators configure them explicitly via `datawatch setup llm <name>`.
 		OpenCode: OpenCodeConfig{
 			DefaultModel: "opencode/big-pickle",
+			// B89 — 20 min / 15 min vs. opencode's built-in 5 min defaults;
+			// sized for observed long-"thinking" pauses and cold-load times
+			// on large locally-hosted models. Operator-overridable (0 = use
+			// opencode's own default).
+			OllamaChunkTimeoutSec:  1200,
+			OllamaHeaderTimeoutSec: 900,
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},

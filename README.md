@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[v8.33.1](CHANGELOG.md) (2026-09-15)** — Fix: autonomous SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config for large local models.
+
 **[v8.28.7](CHANGELOG.md) (2026-09-14)** — Fix: memory tools proxy to HTTP loopback in subprocess MCP mode; searxng MCP timeout bumped + multi-engine fallback.
 
 **[v8.28.6](CHANGELOG.md) (2026-09-14)** — Fix: document and suppress false-positive ZAP WebSocket alerts [110002] [110004] after investigation (GH#154).

@@ -420,12 +420,27 @@ For an Ollama model, OpenCode has no built-in Ollama provider, so datawatch also
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Ollama",
-      "options": { "baseURL": "http://<compute-node-host>:11434/v1" },
+      "options": {
+        "baseURL": "http://<compute-node-host>:11434/v1",
+        "chunkTimeout": 1200000,
+        "headerTimeout": 900000
+      },
       "models": { "qwen3.8:27b": {} }
     }
   }
 }
 ```
+
+`chunkTimeout`/`headerTimeout` come from `opencode.ollama_chunk_timeout_sec` / `opencode.ollama_header_timeout_sec` (default 1200s / 900s, seconds → ms) — see [SSE stalls on local models](#sse-stalls-on-local-models) below. Set either to `0` to fall back to opencode's own built-in 300s default.
+
+#### SSE stalls on local models (B89)
+
+Large local models (30B+ params, or "thinking"/reasoning-enabled models like qwen3) can go several minutes with zero streamed output — either loading into VRAM on a cold start (`headerTimeout`) or reasoning silently before the first output token (`chunkTimeout`). OpenCode's own defaults for both are 300s (5 min), which is routinely too short: a stalled request aborts client-side and opencode prints `SSE read timed out` (or `SSE error` / `provider response headers`, depending on which timeout tripped and the opencode/ai-sdk version) into the TUI, then sits idle forever waiting for output that will never arrive because the underlying HTTP request is already dead.
+
+Two layers of defense:
+
+1. **Prevention** — `opencode.ollama_chunk_timeout_sec` / `opencode.ollama_header_timeout_sec` (config-accessible via YAML/REST/MCP/comm/PWA per the Configuration Accessibility Rule) raise opencode's own timeouts past the pauses observed on locally-hosted models, so the request doesn't get killed in the first place.
+2. **Detection fallback** — the autonomous PRD executor's built-in stall watchdog (`cmd/datawatch/sse_stall.go` `matchSSEStallPattern`) scans one-shot opencode session scrollback every ~30-60s for known stall phrasings and kills+retries the session if a stall is detected anyway (e.g. a genuine network/provider outage). The pattern list is matched case-insensitively; if opencode ever prints a stall message not on the list, it will not be caught automatically — check `docs/plans/README.md` for the current bug if you hit this.
 
 ### Language Server Protocol — LSP (v8.7.0)
 

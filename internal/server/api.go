@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.0"
+var Version = "8.33.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4822,13 +4822,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Ollama.InputMode,
 		},
 		"opencode": map[string]interface{}{
-			"enabled":       s.cfg.OpenCode.Enabled,
-			"binary":        s.cfg.OpenCode.Binary,
-			"default_model": s.cfg.OpenCode.DefaultModel,
-			"console_cols":  s.cfg.OpenCode.ConsoleCols,
-			"console_rows":  s.cfg.OpenCode.ConsoleRows,
-			"output_mode":   s.cfg.OpenCode.OutputMode,
-			"input_mode":    s.cfg.OpenCode.InputMode,
+			"enabled":                   s.cfg.OpenCode.Enabled,
+			"binary":                    s.cfg.OpenCode.Binary,
+			"default_model":             s.cfg.OpenCode.DefaultModel,
+			"console_cols":              s.cfg.OpenCode.ConsoleCols,
+			"console_rows":              s.cfg.OpenCode.ConsoleRows,
+			"output_mode":               s.cfg.OpenCode.OutputMode,
+			"input_mode":                s.cfg.OpenCode.InputMode,
+			"ollama_chunk_timeout_sec":  s.cfg.OpenCode.OllamaChunkTimeoutSec,
+			"ollama_header_timeout_sec": s.cfg.OpenCode.OllamaHeaderTimeoutSec,
 		},
 		"opencode_acp": map[string]interface{}{
 			"enabled":             s.cfg.OpenCodeACP.Enabled,
@@ -5581,6 +5583,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
 		case "opencode.default_model":
 			cfg.OpenCode.DefaultModel = toString(v)
+		case "opencode.ollama_chunk_timeout_sec":
+			if n, ok := toInt(v); ok { cfg.OpenCode.OllamaChunkTimeoutSec = n }
+		case "opencode.ollama_header_timeout_sec":
+			if n, ok := toInt(v); ok { cfg.OpenCode.OllamaHeaderTimeoutSec = n }
 		case "opencode_acp.enabled":
 			cfg.OpenCodeACP.Enabled = toBool(v)
 		case "opencode_acp.binary":

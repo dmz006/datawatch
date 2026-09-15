@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.1 — fix(autonomous): SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config
+
+### Fixed
+- **Watchdog blind to "SSE read timed out"** — the autonomous PRD stall watchdog's pattern list did not include this phrasing (only "SSE Timeout", "SSE error", etc.), so a session whose opencode/ollama SSE stream stalled mid-read went undetected indefinitely instead of being killed and retried. Matching is now case-insensitive and the pattern list plus matcher moved to a dedicated, unit-tested file (`cmd/datawatch/sse_stall.go`) with regression coverage for the exact observed string.
+- **OpenCode's default SSE timeouts too short for large local models** — opencode aborts a request after 300s (5 min) without a streamed chunk or response header by default. Long "thinking" pauses on large/reasoning-enabled local models (observed 6m+) and cold-load times for large models routinely exceed this, aborting generation mid-flight. New `opencode.ollama_chunk_timeout_sec` (default 1200) and `opencode.ollama_header_timeout_sec` (default 900) config fields are written into `opencode.json`'s `provider.ollama.options.{chunkTimeout,headerTimeout}`, configurable via YAML, REST `/api/config`, and PWA Settings → LLM → opencode.
+
 ## v8.33.0 — feat(memory): Automata Memory Integration — Auto-Report + Memory Scope PWA Tile
 
 ### Added

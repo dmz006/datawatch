@@ -397,6 +397,17 @@ opencode:
   # Free built-in models are always available; cloud provider models appear after
   # running `opencode providers login <provider>`.
   default_model: opencode/big-pickle
+  # Max idle gap between streamed SSE chunks from an ollama/* model before
+  # opencode aborts the request (seconds). Written into opencode.json's
+  # provider.ollama.options.chunkTimeout. OpenCode's own default is 300s,
+  # which is shorter than long "thinking" pauses on large local models.
+  # 0 = use opencode's built-in default.
+  ollama_chunk_timeout_sec: 1200
+  # Max wait for response headers from an ollama/* model, i.e. cold-load
+  # time (seconds). Written into opencode.json's
+  # provider.ollama.options.headerTimeout. 0 = use opencode's built-in
+  # default (300s).
+  ollama_header_timeout_sec: 900
   # Enable ACP (Analysis Code Plugin) mode
   acp_enabled: false
   # Enable opencode-prompt mode

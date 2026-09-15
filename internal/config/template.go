@@ -187,6 +187,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "console_cols", cfg.OpenCode.ConsoleCols, "Terminal width")
 	fieldi(&b, "console_rows", cfg.OpenCode.ConsoleRows, "Terminal height")
 	fieldi(&b, "output_mode", cfg.OpenCode.OutputMode, "Output display mode: terminal (default) or log")
+	fieldi(&b, "ollama_chunk_timeout_sec", cfg.OpenCode.OllamaChunkTimeoutSec, "Max idle gap between streamed SSE chunks from an ollama/* model before opencode aborts the request (seconds). 0 = opencode's built-in 300s default.")
+	fieldi(&b, "ollama_header_timeout_sec", cfg.OpenCode.OllamaHeaderTimeoutSec, "Max wait for response headers from an ollama/* model, i.e. cold-load time (seconds). 0 = opencode's built-in 300s default.")
 
 	b.WriteString("opencode_acp:\n")
 	fieldi(&b, "enabled", cfg.OpenCodeACP.Enabled, "Enable opencode ACP (headless server) backend")
