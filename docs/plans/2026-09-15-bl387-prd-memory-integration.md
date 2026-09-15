@@ -28,6 +28,108 @@ gate the v9.0.0 major release.
 
 ---
 
+## Workflow diagram
+
+```
+PRD LIFECYCLE WITH MEMORY INTEGRATION (BL387 overlay on BL385+386 foundation)
+
+PRD CREATED
+  │
+  ├─► [Phase 2b] from_prds=[A,B]: seed prd-shared from prior PRD scopes at first spawn
+  │
+  ▼
+DECOMPOSE  [Phase 2a]
+  │
+  ├─► Query project-shared (top-15 hits, semantic match against PRD spec)
+  │     Inject as "## Prior context from project memory" block in decomposer prompt
+  │     → avoid repeating known dead-ends; use proven patterns
+  │
+  ▼
+TASK SPAWNED
+  │
+  ├─► [BL386 Phase 1] Auto-seed: project-shared + prd-shared + story-shared → session-local
+  │     role_filter includes "verifier-finding" (Phase 1a) when seed enabled
+  │
+  ▼
+TASK RUNS
+  │
+  ├─► [BL385] Default writes to session-local; explicit scope= to story/prd-shared
+  ├─► [BL386] memory_handoff: write story-shared summary for next task
+  └─► [BL386] memory_recall: full 6-layer hierarchy walk
+  │
+  ▼
+TASK COMPLETE OR FAIL
+  │
+  ├─► [BL386 Phase 2] Harvest: session-local → story-shared / prd-shared
+  │
+  └─► [Phase 1a] VERIFIER FAIL path:
+        verifier writes findings → prd-shared (role=verifier-finding)
+        RetryHint: "N verifier findings in prd-shared (role: verifier-finding)"
+        → retry task's warm-start includes verifier-finding memories
+        → full finding detail available via memory_recall during retry
+  │
+  ▼
+CHILD PRD SPAWNED  [Phase 1b]
+  │
+  └─► Seed parent.prd-shared → child.prd-shared at child PRD instantiation
+        Breadcrumb: "seeded from parent prd/<parent_id>"
+        Cap: 50 memories (max_per_scope)
+  │
+  ▼
+PRD COMPLETE
+  │
+  └─► [Phase 3a] AUTO-REPORT (goroutine, non-blocking)
+        Aggregate prd-shared + story-shared + session-local
+        Store as PRD.memory_report (markdown) + memory_report_at
+        Surface via autonomous_prd_get, PWA memory tile [Phase 3b]
+  │
+  ▼
+[BL386] PRD DELETED → archive/purge/keep → project-shared
+[BL386] NEW PRD → archive import from prior PRD archives
+```
+
+---
+
+## Comm-channel surface
+
+All BL387 commands use the `autonomous prd` prefix or the MCP tool name.
+
+**Verifier memory (Phase 1a — automatic, no operator command)**
+```
+# View verifier findings stored in prd-shared:
+memory scope recall project=<dir> prd_id=<id> query="verifier finding" scope=prd-shared
+# MCP: memory_scope_recall project=<dir> prd_id=<id> scope=prd-shared query="verifier finding"
+```
+
+**Set memory seed (from_prds cross-seeding, Phase 2b)**
+```
+autonomous prd set-memory-seed prd_id=<id> enabled=true from_prds=<id1>,<id2> max_per_scope=20
+# MCP: autonomous_prd_set_memory_seed prd_id=<id> enabled=true from_prds=[id1,id2] max_per_scope=20
+# REST: PATCH /api/autonomous/prds/{id}/memory-seed  body: {from_prds: ["id1","id2"]}
+```
+
+**Set memory harvest (Phase 2 — BL386, also surfaced here)**
+```
+autonomous prd set-memory-harvest prd_id=<id> enabled=true promote_to=prd-shared role_filter=learning
+# MCP: autonomous_prd_set_memory_harvest prd_id=<id> enabled=true promote_to=prd-shared
+```
+
+**Trigger PRD memory report (Phase 3a)**
+```
+autonomous prd memory-report prd_id=<id>
+# MCP: autonomous_prd_memory_report prd_id=<id>
+# REST: POST /api/autonomous/prds/{id}/memory-report
+```
+
+**Read auto-generated report from PRD record**
+```
+autonomous prd get prd_id=<id>   # → memory_report field in response
+# MCP: autonomous_prd_get prd_id=<id>
+# REST: GET /api/autonomous/prds/{id}  # → .memory_report, .memory_report_at
+```
+
+---
+
 ## Phase 1 — v8.31.0: Verifier memory + child PRD inheritance
 
 ### Feature 1a: Verifier memory
@@ -139,6 +241,7 @@ before its first task runs.
 - [ ] E2e smoke: start PRD with memory_seed.enabled=true → fail one task → retry → verify retry session sees verifier-finding memories
 - [ ] E2e smoke: spawn child PRD → verify child prd-shared contains parent memories
 - [ ] `docs/testing-tracker.md` Validated column: mark Validated=Yes after live smoke passes
+- [ ] **mobile-parity: datawatch-app#176 noted** — no Android/iOS mobile surface in Phase 1 (server-side only); parity issue filed for tracking
 - [ ] Commit: `feat(autonomous): verifier memory + child PRD inheritance (BL387 Phase 1)`
 
 ---
@@ -276,6 +379,10 @@ for _, fromPRDID := range prd.MemorySeed.FromPRDs {
 - [ ] E2e smoke: write project-shared memory → decompose new PRD → verify memory context in decomposer session output
 - [ ] E2e smoke: PRD A completes with prd-shared memories → PRD B with from_prds=[A] → first task of B has cross-PRD memories
 - [ ] `docs/testing-tracker.md` Validated=Yes after live smokes
+- [ ] **mobile-parity: datawatch-app#176** — Android PRD create/edit screen: `from_prds` multi-select (list active PRDs with prd-shared memories); locale keys below
+- [ ] Locale keys (add to all 5 locale bundles + datawatch-app#176):
+  - `memory_from_prds` — "Seed from prior PRDs"
+  - `memory_from_prds_hint` — "Select PRDs whose memories should be inherited by this PRD at first task spawn"
 - [ ] Commit: `feat(autonomous): decomposer enrichment + cross-PRD seeding (BL387 Phase 2)`
 
 ---
@@ -399,6 +506,12 @@ async function renderPRDMemoryStats(prdID, projectDir) {
 - [ ] E2e smoke: manual `autonomous_prd_memory_report` → returns report → same content as auto-generated
 - [ ] E2e UI: open PWA PRD status card → memory tile visible → counts match scope inventory API
 - [ ] `docs/testing-tracker.md` Validated=Yes for all Phase 3 features
+- [ ] **mobile-parity: datawatch-app#176** — Android PRD detail screen: memory stats section (prd-shared count, story-shared count, session-local count, last write timestamp); locale keys below
+- [ ] Locale keys (add to all 5 locale bundles + datawatch-app#176):
+  - `prd_memory_stats` — "Memory Stats"
+  - `memory_scope_prd_shared` — "PRD-shared memories"
+  - `memory_scope_story_shared` — "Story-shared memories"
+  - `memory_scope_session_local` — "Session-local memories"
 - [ ] Commit: `feat(autonomous): auto PRD memory report + memory stats PWA card (BL387 Phase 3)`
 
 ---
@@ -465,6 +578,9 @@ These must be written as integration test functions (not manual-only). Tests liv
 - [ ] Validated: at least Scenario E1 and E5 run against a live daemon with `make smoke`
 - [ ] `docs/testing-tracker.md`: BL387 e2e section added, Tested=Yes for all 5
 - [ ] `docs/testing-tracker.md`: Validated=Yes for E1, E5 after live run
+- [ ] Comm-channel verification: `autonomous prd set-memory-seed prd_id=<id> from_prds=...` works via MCP + REST + comm channel
+- [ ] Comm-channel verification: `autonomous prd memory-report prd_id=<id>` returns markdown report via all 3 surfaces
+- [ ] Comm-channel verification: `memory scope recall scope=prd-shared prd_id=<id> query="verifier"` returns verifier-finding memories
 
 ---
 

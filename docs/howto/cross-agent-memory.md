@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [memory, kg, mempalace, cross-session]
+  topics: [memory, kg, mempalace, cross-session, scopes, prd-shared, story-shared, lifecycle, harvest, archive, subprocess]
 exec_params:
   - {name: project_dir, required: true, description: "Project directory the memory belongs to"}
   - {name: text, required: true, description: "Memory text to remember"}
@@ -239,20 +239,209 @@ kg:
 ## Memory scope hierarchy
 
 Beyond flat recall/remember, the daemon organizes memory into a
-**4-scope hierarchy** that lets agents share context across sessions
-while keeping session-private notes separate.
+**6-scope hierarchy** (v8.29.0+) that lets agents share context across
+sessions, stories, and PRDs while keeping session-private notes separate.
 
 ```
-persona-global          ← shared across all projects for a persona
-  └─ persona-in-project ← persona's memory within a specific project
-       └─ project-shared ← all agents on a project see this
-            └─ session-local ← private to the current session
+[1] persona-global          ← shared across all projects for a persona
+  └─ [2] persona-in-project ← persona's memory within a specific project
+       └─ [3] project-shared ← all agents on a project see this
+            └─ [4] prd-shared     ← all tasks within one PRD  (NEW v8.29.0)
+                 └─ [5] story-shared ← all tasks within one story (NEW v8.29.0)
+                      └─ [6] session-local ← private to the current session
 ```
+
+Recall walks from [6] up to [1] and merges results. A subprocess session
+(opencode, Goose, or an executor task) writing `memory_remember` with no
+`scope=` argument defaults to **session-local [6]** — it never pollutes
+higher scopes by accident.
 
 Use **borrow** to read a higher scope without polluting it. Use
 **seed** to copy curated entries into a lower scope. Use **promote**
 to surface a session discovery into a shared scope (adds a breadcrumb
-so provenance is traceable).
+so provenance is traceable). Use **save** to write directly to any
+named scope.
+
+### Scope reference
+
+| # | Scope | Shared between | Backend tuple | Subprocess default? |
+|---|-------|---------------|--------------|-------------------|
+| 1 | `persona-global` | All projects, this persona | `("", persona, "")` | — |
+| 2 | `persona-in-project` | All sessions in project, this persona | `(projectDir, persona, "")` | — |
+| 3 | `project-shared` | All sessions in project | `(projectDir, "", "")` | — |
+| 4 | `prd-shared` | All tasks in one PRD | `(projectDir, "prd/<id>", "")` | — |
+| 5 | `story-shared` | All tasks in one story | `(projectDir, "story/<id>", "")` | — |
+| 6 | `session-local` | This session only | `(projectDir, "", sessionID)` | ✅ default write |
+
+### Scoped memory for autonomous tasks (BL385+)
+
+When the executor spawns a task as a subprocess MCP session
+(`datawatch mcp --caller-session-id=X --caller-prd-id=Y --caller-story-id=Z`),
+memory routing changes automatically:
+
+- `memory_remember` (no `scope=`) → writes to **session-local** for session X
+- `memory_recall` → walks the full 6-layer hierarchy bottom-up
+- Global destructive ops (`memory_sweep_stale`, `memory_import`) → blocked
+
+**Write to a scope explicitly from within a task:**
+
+```
+# Persist a learning that sibling and successor tasks in this story will see:
+memory_remember scope=story-shared story_id=<your_story_id> project=<project_dir>
+  text="Approach X works; approach Y fails at scale because of Z"
+  role=learning
+
+# Write a finding that retry tasks of this PRD will seed automatically:
+memory_remember scope=prd-shared prd_id=<your_prd_id> project=<project_dir>
+  text="API rate-limit hit on endpoint /v2/items — add exponential backoff"
+  role=verifier-finding
+
+# Recall relevant context (walks all 6 layers, returns merged results):
+memory_recall query="rate limit retry patterns" project=<project_dir>
+```
+
+**New endpoints (v8.29.0):**
+
+```sh
+# Write to any scope directly (REST):
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123","text":"...","role":"learning"}' \
+  $BASE/api/memory/scopes/save
+
+# Bulk-delete a scope (e.g. on PRD cleanup):
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123"}' \
+  $BASE/api/memory/scopes/delete
+```
+
+---
+
+### PRD memory lifecycle (BL386+)
+
+Memories now have a managed lifecycle across the full PRD run:
+
+```
+Task spawned
+  └─ [auto-seed] project-shared + prd-shared + story-shared → session-local
+       Task runs
+         ├─ writes session-local (default) and explicit scopes
+         └─ Task completes
+              └─ [harvest] session-local matching role_filter → story-shared or prd-shared
+
+All tasks complete → PRD complete
+  ├─ [auto-report] memory_prd_report generated on PRD record
+  └─ PRD deleted
+       ├─ [archive] matching memories → project-shared (breadcrumb: archived_from_prd)
+       └─ [scope_delete] purge prd-shared + story-shared
+
+New PRD created
+  └─ [archive-import] seed prd-shared from prior PRD's archived memories
+```
+
+**Enable warm-start seeding on a PRD:**
+
+```
+autonomous_prd_set_memory_seed id=<prd_id> enabled=true max_per_scope=20
+  role_filter=learning,decision,pattern
+```
+
+The executor then seeds each task's session-local from project-shared,
+prd-shared, and story-shared before the task starts work.
+
+**Enable harvest on completion:**
+
+```
+autonomous_prd_set_memory_harvest id=<prd_id> enabled=true
+  promote_to=story-shared role_filter=learning,decision max=50
+```
+
+When a task reaches `completed`, session-local memories matching `role_filter`
+are copied to `story-shared` (or `prd-shared` if `promote_to=prd-shared`).
+
+**Archive-on-delete strategies:**
+
+| Strategy | Behavior |
+|----------|----------|
+| `keep` | Memories stay as orphaned scopes (default — existing behavior) |
+| `purge` | All memories in the scope are deleted immediately |
+| `archive` | Qualifying memories promoted to project-shared with breadcrumb, then scope purged |
+
+```
+# Delete a PRD and archive its learnings:
+autonomous prd delete <id> memory_strategy=archive archive_role_filter=learning,decision
+
+# Or via REST:
+DELETE /api/autonomous/prds/{id}
+  body: {"memory_strategy":"archive","archive_role_filter":["learning","decision"]}
+```
+
+**Archive import — seed a new PRD from a prior PRD's archived memories:**
+
+```
+# Preview what would be imported (dry run):
+memory_archive_import project=<dir> source_prd_id=<old_id> target_prd_id=<new_id>
+  role_filter=learning dry_run=true
+
+# Perform the import:
+memory_archive_import project=<dir> source_prd_id=<old_id> target_prd_id=<new_id>
+  role_filter=learning max=30
+```
+
+**Generate a PRD learning report:**
+
+```
+memory_prd_report prd_id=<id> project=<dir> format=markdown
+# Returns a markdown summary of everything the PRD learned, grouped by scope.
+
+# REST:
+GET /api/autonomous/prds/{id}/memory-report?include_scopes=prd-shared,story-shared&format=markdown
+```
+
+**Check what scopes have data:**
+
+```
+memory_scope_inventory project=<dir>
+# Returns counts per scope: prd-shared by PRD ID, story-shared by story ID, session-local by session ID
+```
+
+---
+
+### Cross-PRD knowledge transfer (BL387+)
+
+**`from_prds` — inherit live prd-shared from an existing PRD:**
+
+```
+# When creating a new PRD, seed it from another PRD's live prd-shared scope:
+autonomous_prd_create ... memory_seed.from_prds=<prd_id_a>,<prd_id_b>
+```
+
+The decomposer will also query project-shared before generating task specs,
+injecting the top-15 memories as a `prior-context` block in the prompt.
+
+**`from_archives` — inherit archived memories from a completed/deleted PRD:**
+
+```yaml
+# In PRD config:
+memory_seed:
+  from_archives:
+    - prd_id: "0fb4e302"
+      role_filter: ["learning", "decision"]
+      max: 20
+```
+
+**Verifier feedback loop (automatic):**
+When a task fails verification, the verifier's findings are written to
+`prd-shared` with `role=verifier-finding`. Retry tasks are seeded with
+these findings automatically (if `memory_seed.enabled`), so the retry
+session knows exactly what went wrong without reading a transcript.
+
+**Child PRD inheritance (automatic):**
+Child PRDs spawned from a task inherit the parent PRD's `prd-shared`
+memories at instantiation. No config needed — it happens at spawn time.
+
+---
 
 ### 4a. CLI
 
@@ -328,6 +517,89 @@ memory scope seed from-scope=project-shared from-project=/home/me/web to-scope=s
 memory scope promote memory-id=42 from-scope=session-local from-project=/home/me/web from-session=sess1 to-scope=project-shared to-project=/home/me/web
 ```
 
+### New scope commands (v8.29.0+)
+
+#### CLI
+
+```sh
+# Write directly to a named scope:
+datawatch memory scope save \
+  --scope prd-shared --project /home/me/web --prd-id abc123 \
+  --text "Found that X approach works" --role learning
+
+# Delete an entire scope (e.g. after PRD archived):
+datawatch memory scope delete \
+  --scope prd-shared --project /home/me/web --prd-id abc123
+
+# Inventory: list all scopes with data:
+datawatch memory scope inventory --project /home/me/web
+
+# Archive import: seed new PRD from archived memories of prior PRD:
+datawatch memory archive-import \
+  --project /home/me/web --source-prd old123 --target-prd new456 \
+  --role-filter learning --dry-run
+
+# Harvest: promote session learnings to story-shared:
+datawatch memory harvest \
+  --session sess1 --project /home/me/web \
+  --promote-to story-shared --story-id story1 \
+  --role-filter learning,decision --dry-run
+
+# PRD learning report:
+datawatch memory prd-report --prd-id abc123 --project /home/me/web --format markdown
+```
+
+#### REST
+
+```sh
+# Save to scope
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123","text":"...","role":"learning"}' \
+  $BASE/api/memory/scopes/save
+
+# Delete scope
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123"}' \
+  $BASE/api/memory/scopes/delete
+
+# Archive import
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"project_dir":"/home/me/web","source_prd_id":"old123","target_prd_id":"new456","role_filter":["learning"],"dry_run":true}' \
+  $BASE/api/memory/scopes/archive-import
+
+# Scope inventory
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/memory/scopes/inventory?project=/home/me/web"
+
+# PRD report
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/autonomous/prds/abc123/memory-report?format=markdown"
+```
+
+#### MCP
+
+```json
+{ "tool": "memory_scope_save",      "args": { "scope": "prd-shared", "project": "/home/me/web", "prd_id": "abc123", "text": "...", "role": "learning" } }
+{ "tool": "memory_scope_delete",    "args": { "scope": "prd-shared", "project": "/home/me/web", "prd_id": "abc123" } }
+{ "tool": "memory_scope_inventory", "args": { "project": "/home/me/web" } }
+{ "tool": "memory_archive_import",  "args": { "project": "/home/me/web", "source_prd_id": "old123", "target_prd_id": "new456", "role_filter": ["learning"], "dry_run": true } }
+{ "tool": "memory_harvest",         "args": { "session_id": "sess1", "project": "/home/me/web", "promote_to": "story-shared", "story_id": "story1", "role_filter": ["learning"] } }
+{ "tool": "memory_handoff",         "args": { "summary": "Found X works; Y fails", "scope": "story-shared", "role": "handoff" } }
+{ "tool": "memory_prd_report",      "args": { "prd_id": "abc123", "project": "/home/me/web", "format": "markdown" } }
+```
+
+#### Comm channel
+
+```
+memory scope save scope=prd-shared project=<dir> prd_id=<id> text=<text> role=learning
+memory scope delete scope=prd-shared project=<dir> prd_id=<id>
+memory scope inventory project=<dir>
+memory archive-import project=<dir> source_prd_id=<old> target_prd_id=<new> role_filter=learning dry_run=true
+memory harvest session_id=<id> project=<dir> promote_to=story-shared story_id=<id> role_filter=learning,decision
+memory handoff summary=<text> scope=story-shared role=handoff
+memory prd-report prd_id=<id> project=<dir> format=markdown
+```
+
 ### Breadcrumbs
 
 Both `seed` and `promote` append a breadcrumb to the destination entry:
@@ -379,6 +651,7 @@ can always trace a memory back to the session that originally captured it.
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
+- [howto/automata-memory-workflow](automata-memory-workflow.md) — end-to-end Automata memory workflow for operators and AI agents
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [memory](../memory.md)
 - [api/memory](../api/memory.md)

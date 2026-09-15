@@ -36,6 +36,44 @@ exist (v7.0.0 BL295). The missing pieces are:
 
 ---
 
+## Workflow diagram
+
+```
+NON-SUBPROCESS SESSION (claude-code interactive, operator CLI, PWA)
+  │
+  └─► Flat global memory store — memory_remember writes globally
+        memory_recall returns global results
+        memory_sweep_stale sweeps the entire store
+
+SUBPROCESS SESSION (opencode, Goose, executor task — spawned via "datawatch mcp")
+  │
+  │  Daemon injects context flags at spawn:
+  │    --caller-session-id <session_id>
+  │    --caller-prd-id     <prd_id>      (NEW BL385)
+  │    --caller-story-id   <story_id>    (NEW BL385)
+  │
+  └─► 6-layer scope hierarchy (read: top→bottom; write default: session-local)
+
+       [1] persona-global      (projectDir="",       role="persona/<n>", sessionID="")
+       [2] persona-in-project  (projectDir,          role="persona/<n>", sessionID="")
+       [3] project-shared      (projectDir,          role="",            sessionID="")
+       [4] prd-shared     NEW  (projectDir,          role="prd/<id>",    sessionID="")
+       [5] story-shared   NEW  (projectDir,          role="story/<id>",  sessionID="")
+       [6] session-local       (projectDir,          role="",            sessionID=callerSessionID)
+              ▲
+              └─ memory_remember (no scope=) writes HERE in subprocess mode
+
+       Recall walks [6]→[5]→[4]→[3]→[2]→[1], merges results, labels by layer.
+
+       Blocked in subprocess mode: memory_sweep_stale, memory_import
+       Informed (use promote first): memory_pin
+
+PROMOTION / SHARING (operator or auto-harvest BL386)
+  session-local  ──promote──►  story-shared  ──promote──►  prd-shared  ──promote──►  project-shared
+```
+
+---
+
 ## Scope hierarchy (extended)
 
 The existing 4-layer model is extended to 6 layers, slotting between `project-shared`
@@ -317,6 +355,32 @@ this memory to project-shared first, then pin from an operator session.
 
 ---
 
+## Comm-channel surface
+
+All new scope operations are reachable from comm channels (Signal, Telegram, Slack,
+etc.) using the existing `memory` command family:
+
+```
+# Write to a specific scope
+memory scope save  scope=prd-shared  project=/home/user/proj  prd_id=0fb4e302  text="found that X approach causes OOM"
+
+# Write to story scope
+memory scope save  scope=story-shared  project=/home/user/proj  story_id=9b90b7a5  text="pattern Z works here"  role=learning
+
+# Delete an entire scope (e.g. cleanup after PRD deleted)
+memory scope delete  scope=prd-shared  project=/home/user/proj  prd_id=0fb4e302
+
+# Recall across hierarchy for a session in a PRD context
+memory scope recall  project=/home/user/proj  session_id=johnnyjohnny-12cf  prd_id=0fb4e302  story_id=9b90b7a5  query="approach for X"
+
+# List all scopes with data
+memory scope inventory  project=/home/user/proj
+```
+
+These comm commands proxy to the same REST endpoints as the MCP tools.
+
+---
+
 ## Executor changes: inject PRD/story context
 
 In the autonomous executor's session-spawn path, when launching a task session via
@@ -418,6 +482,14 @@ falls out of the new Scope constants.
    - `TestBL385_ScopedRecall_SkipsStoryLayer_WhenStoryIDEmpty`
    - `TestBL385_ScopedRecall_IncludesPRDAndStoryLayers_WhenIDsProvided`
 
+**Phase 1 release checklist:**
+
+- [ ] All 5 scope model tests pass: `rtk go test ./internal/memory/...`
+- [ ] Full suite unchanged: `rtk go test ./...`
+- [ ] `docs/testing-tracker.md`: Phase 1 scope model row added (Tested=Yes)
+- [ ] E2e smoke: write to prd-shared scope via REST → recall with prd_id → memory returned
+- [ ] Validated=Yes in testing-tracker.md after live smoke
+
 ### Phase 2 — REST endpoint
 
 1. Add `memoryScopeDelete` in `internal/server/memory_scopes.go`.
@@ -446,6 +518,15 @@ falls out of the new Scope constants.
    - `TestBL385_ScopeSave_PRDShared_MissingPRDID_Returns400`
    - `TestBL385_ScopeSave_StoryShared_MissingStoryID_Returns400`
 
+**Phase 2 release checklist:**
+
+- [ ] All 10 REST tests pass: `rtk go test ./internal/server/...`
+- [ ] Full suite: `rtk go test ./...`
+- [ ] `docs/testing-tracker.md`: Phase 2 REST endpoint row (Tested=Yes)
+- [ ] fedCap guard added to `POST /api/memory/scopes/save` and `POST /api/memory/scopes/delete`
+- [ ] E2e smoke: `POST /api/memory/scopes/save` → verify stored; `POST /api/memory/scopes/delete` → verify purged
+- [ ] Validated=Yes after live smoke
+
 ### Phase 3 — MCP server subprocess routing
 
 1. Add `callerPRDID`, `callerStoryID` to `mcp.Server`; add setters.
@@ -470,6 +551,15 @@ falls out of the new Scope constants.
    - `TestBL385_SubprocessMode_Pin_Returns_Inform`
    - `TestBL385_NonSubprocessMode_Remember_RoutesTo_GlobalSave`
 
+**Phase 3 release checklist:**
+
+- [ ] All 12 MCP subprocess routing tests pass: `rtk go test ./internal/mcp/...`
+- [ ] Full suite: `rtk go test ./...`
+- [ ] `docs/testing-tracker.md`: Phase 3 MCP routing row (Tested=Yes)
+- [ ] E2e smoke: spawn `datawatch mcp --caller-session-id X --caller-prd-id Y --caller-story-id Z`; call `memory_remember`; verify written to session-local not global
+- [ ] E2e smoke: call `memory_sweep_stale` in subprocess → verify blocked error returned
+- [ ] Validated=Yes after live smoke
+
 ### Phase 4 — Executor injection
 
 1. Locate the MCP spawn path in the autonomous executor or session manager
@@ -480,12 +570,40 @@ falls out of the new Scope constants.
    - `TestBL385_Executor_InjectsPRDAndStoryID_WhenSpawningMCPSession`
    - `TestBL385_Executor_OmitsPRDAndStoryID_WhenNotPRDTask`
 
+**Phase 4 release checklist:**
+
+- [ ] Both executor injection tests pass
+- [ ] Full suite: `rtk go test ./...`
+- [ ] `docs/testing-tracker.md`: Phase 4 executor injection row (Tested=Yes)
+- [ ] E2e smoke: run PRD task → verify subprocess session receives correct prd_id/story_id via `memory_recall` scope attribution
+
 ### Phase 5 — Docs + version bump
 
 1. Bump both version files to `v8.29.0`.
 2. CHANGELOG entry.
 3. README badge.
 4. `docs/implementation.md` — new `/api/memory/scopes/save` endpoint.
+5. `docs/howto/prd-memory-workflow.md` — new how-to for PRD memory workflow.
+6. `docs/datawatch-definitions.md` — add `prd-shared`, `story-shared`, `subprocess mode` definitions.
+7. `docs/parity-status.md` — add memory-scope row (PWA | Android | iOS).
+
+**Phase 5 release checklist (v8.29.0 full release):**
+
+- [ ] `rtk go test ./...` — all tests pass, zero failures
+- [ ] ZAP scan: no new WARN/FAIL on new endpoints
+- [ ] `scripts/release-smoke.sh` passes (new scope save/delete/recall smoke sections added)
+- [ ] Both version files → `v8.29.0`
+- [ ] CHANGELOG v8.29.0 entry written
+- [ ] README badge → v8.29.0
+- [ ] `docs/implementation.md` updated with new endpoints
+- [ ] `docs/howto/prd-memory-workflow.md` written
+- [ ] `docs/datawatch-definitions.md` updated
+- [ ] `docs/parity-status.md` memory-scope row added
+- [ ] mobile-parity: datawatch-app#174 filed ✓ (already filed)
+- [ ] fedCap guard verified on `POST /api/memory/scopes/save` and `POST /api/memory/scopes/delete`
+- [ ] All 5 phases: Validated=Yes in testing-tracker.md
+- [ ] Tag: `git tag v8.29.0` → CI handles goreleaser + containers
+- [ ] **Do NOT** run `make cross` or `gh release create` manually
 
 ---
 
@@ -500,6 +618,62 @@ falls out of the new Scope constants.
 - Memory handoff, PRD report, scope inventory, scope TTL — all BL386.
 - Changing the Backend interface — non-breaking by design (role-namespacing convention).
 - Encryption or access control on scopes — orthogonal to BL68/BL70.
+
+---
+
+## E2e test scenarios (`internal/mcp/bl385_e2e_test.go`)
+
+In-process daemon with real SQLite memory backend + fake LLM. No external services.
+
+**E1: Subprocess write isolation**
+```
+1. Start daemon; write 5 global memories
+2. Spawn subprocess MCP session with --caller-session-id=X --caller-prd-id=Y --caller-story-id=Z
+3. Call memory_remember (no scope=) → assert writes to session-local, NOT global
+4. Global count still = 5; session-local count for session X = 1
+```
+
+**E2: Subprocess recall hierarchy**
+```
+1. Write 1 memory to project-shared, prd-shared (prd Y), story-shared (story Z), session-local (session X)
+2. In subprocess session X/Y/Z: call memory_recall query="test"
+3. Assert: all 4 memories returned, labeled by scope layer
+4. Assert: recall order is session-local first (most specific)
+```
+
+**E3: Scoped delete removes only target scope**
+```
+1. Write 3 memories to prd-shared (prd Y), 2 to project-shared
+2. POST /api/memory/scopes/delete {scope: "prd-shared", prd_id: Y}
+3. Assert: prd-shared count = 0
+4. Assert: project-shared count still = 2
+```
+
+**E4: Scope inventory returns correct counts**
+```
+1. Write memories across 3 scopes: prd-shared (prd Y), story-shared (story Z), project-shared
+2. GET /api/memory/scopes/inventory?project=...
+3. Assert: response contains all 3 scope types with correct counts
+```
+
+**E5: Non-subprocess session — flat global behavior unchanged**
+```
+1. Interactive session (memoryAPI set, webPort 0)
+2. Call memory_remember → assert writes to global flat store
+3. Call memory_recall → assert returns global flat results
+4. Call memory_sweep_stale → assert NOT blocked (works normally)
+5. Assert: no regression from pre-BL385 behavior
+```
+
+**E2e checklist:**
+
+- [ ] `internal/mcp/bl385_e2e_test.go` created with all 5 scenarios
+- [ ] All 5 pass with in-process test doubles
+- [ ] Comm-channel commands E3/E4 verified via `POST /api/test/message` (e.g. `memory scope delete ...`)
+- [ ] `docs/testing-tracker.md`: BL385 e2e section added (Tested=Yes for all 5)
+- [ ] Validated=Yes for E1 and E5 after live daemon run
+
+---
 
 ## Relationship to BL386
 

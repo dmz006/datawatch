@@ -39,6 +39,9 @@ Legend:
 | Localization (5 locales) | ✅ | ✅ | ❌ (planned) |
 | Dark / light theme | ✅ | ✅ | ❌ (planned) |
 | Image attachment in session input (📷 button) | ✅ | ❌ (tracked: app#158) | ❌ (tracked: app#158) |
+| Memory scope model — prd-shared/story-shared (BL385+) | ✅ v8.29.0 | 🔲 (tracked: app#174) | 🔲 (tracked: app#174) |
+| Memory lifecycle — seeding/harvest/archive/import (BL386+) | ✅ v8.30.0 | 🔲 (tracked: app#175) | 🔲 (tracked: app#175) |
+| Automata memory integration — stats tile, report (BL387+) | ✅ v8.31.0+ | 🔲 (tracked: app#176) | 🔲 (tracked: app#176) |
 
 ## iOS Client Plan
 
