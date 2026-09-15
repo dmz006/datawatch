@@ -111,18 +111,32 @@ func (s *Server) toolMemoryRemember() mcpsdk.Tool {
 }
 
 func (s *Server) handleMemoryRemember(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	if s.memoryAPI == nil {
-		text := req.GetString("text", "")
-		projectDir := req.GetString("project_dir", "")
-		if r, ok := s.proxyMemoryPOST("/api/memory/save", map[string]any{"content": text, "project_dir": projectDir}); ok {
-			return r, nil
-		}
-		return mcpsdk.NewToolResultText("Memory not enabled. Set memory.enabled=true in config."), nil
-	}
 	text := req.GetString("text", "")
 	projectDir := req.GetString("project_dir", "")
 	if text == "" {
 		return mcpsdk.NewToolResultError("text is required"), nil
+	}
+	// BL385 Phase 3 — in subprocess mode, writes go to session-local scope
+	// via the daemon's scoped-save REST endpoint so the memory is isolated to
+	// this task's session and does not pollute the shared project store.
+	if s.subprocessMode() {
+		scopeBody := map[string]any{
+			"scope": map[string]any{
+				"scope":      "session-local",
+				"project":    projectDir,
+				"session_id": s.callerSessionID,
+			},
+			"content": text,
+		}
+		if r, ok := s.proxyMemoryPOST("/api/memory/scopes/save", scopeBody); ok {
+			return r, nil
+		}
+	}
+	if s.memoryAPI == nil {
+		if r, ok := s.proxyMemoryPOST("/api/memory/save", map[string]any{"content": text, "project_dir": projectDir}); ok {
+			return r, nil
+		}
+		return mcpsdk.NewToolResultText("Memory not enabled. Set memory.enabled=true in config."), nil
 	}
 	id, err := s.memoryAPI.Remember(projectDir, text)
 	if err != nil {
@@ -140,16 +154,30 @@ func (s *Server) toolMemoryRecall() mcpsdk.Tool {
 }
 
 func (s *Server) handleMemoryRecall(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	query := req.GetString("query", "")
+	if query == "" {
+		return mcpsdk.NewToolResultError("query is required"), nil
+	}
+	// BL385 Phase 3 — in subprocess mode, recall walks the scope hierarchy
+	// (session-local, story-shared, prd-shared, project-shared) so the agent
+	// sees memories written by earlier tasks in the same PRD/story.
+	if s.subprocessMode() {
+		q := url.Values{"q": {query}, "session": {s.callerSessionID}}
+		if s.callerPRDID != "" {
+			q.Set("prd_id", s.callerPRDID)
+		}
+		if s.callerStoryID != "" {
+			q.Set("story_id", s.callerStoryID)
+		}
+		if r, ok := s.proxyMemoryGET("/api/memory/scopes/recall", q); ok {
+			return r, nil
+		}
+	}
 	if s.memoryAPI == nil {
-		query := req.GetString("query", "")
 		if r, ok := s.proxyMemoryGET("/api/memory/search", url.Values{"q": {query}}); ok {
 			return r, nil
 		}
 		return mcpsdk.NewToolResultText("Memory not enabled."), nil
-	}
-	query := req.GetString("query", "")
-	if query == "" {
-		return mcpsdk.NewToolResultError("query is required"), nil
 	}
 	results, err := s.memoryAPI.Search(query, 10)
 	if err != nil {
@@ -168,16 +196,28 @@ func (s *Server) toolMemoryList() mcpsdk.Tool {
 }
 
 func (s *Server) handleMemoryList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	projectDir := req.GetString("project_dir", "")
+	n := req.GetInt("n", 20)
+	// BL385 Phase 3 — in subprocess mode, list shows only the session-local
+	// layer so the agent sees its own writes without cross-contaminating from
+	// other sessions.
+	if s.subprocessMode() {
+		q := url.Values{
+			"project": {projectDir},
+			"session": {s.callerSessionID},
+			"layers":  {"session-local"},
+			"top_k":   {fmt.Sprintf("%d", n)},
+		}
+		if r, ok := s.proxyMemoryGET("/api/memory/scopes/recall", q); ok {
+			return r, nil
+		}
+	}
 	if s.memoryAPI == nil {
-		projectDir := req.GetString("project_dir", "")
-		n := req.GetInt("n", 20)
 		if r, ok := s.proxyMemoryGET("/api/memory/list", url.Values{"project": {projectDir}, "n": {fmt.Sprintf("%d", n)}}); ok {
 			return r, nil
 		}
 		return mcpsdk.NewToolResultText("Memory not enabled."), nil
 	}
-	projectDir := req.GetString("project_dir", "")
-	n := req.GetInt("n", 20)
 	results, err := s.memoryAPI.ListRecent(projectDir, n)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("list failed: %v", err)), nil
@@ -274,6 +314,12 @@ func (s *Server) toolMemorySweep() mcpsdk.Tool {
 }
 
 func (s *Server) handleMemorySweep(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// BL385 Phase 3 — block cross-scope sweep in subprocess mode; sweeping
+	// shared layers from a task subprocess could evict memories that other
+	// concurrent tasks or the operator need.
+	if s.subprocessMode() {
+		return mcpsdk.NewToolResultError("memory_sweep_stale is not available in subprocess mode"), nil
+	}
 	if s.memoryAPI == nil {
 		days := req.GetInt("older_than_days", 90)
 		dry := req.GetBool("dry_run", true)
@@ -817,6 +863,11 @@ func (s *Server) toolMemoryImport() mcpsdk.Tool {
 }
 
 func (s *Server) handleMemoryImport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// BL385 Phase 3 — block bulk import in subprocess mode; importing a large
+	// snapshot from a task could overwrite operator-curated shared memories.
+	if s.subprocessMode() {
+		return mcpsdk.NewToolResultError("memory_import is not available in subprocess mode"), nil
+	}
 	if s.memoryAPI == nil {
 		data := req.GetString("json_data", "")
 		if r, ok := s.proxyMemoryPOST("/api/memory/import", []byte(data)); ok {

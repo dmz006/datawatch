@@ -105,6 +105,10 @@ type Server struct {
 	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
 	// the FullID of the session that launched it, enabling session-aware routing.
 	callerSessionID string
+	// BL385 Phase 3 — PRD/story context injected when spawned as a subprocess
+	// inside an Automata run. Controls scope routing in memory tools.
+	callerPRDID   string
+	callerStoryID string
 	// BL368 Phase 3 — vision describer for vision_describe tool and image_paths injection.
 	visioner VisionerMCP
 }
@@ -126,6 +130,20 @@ func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = st
 // server (BL363 T3 — Goose channel). Tools can use it for session-aware routing
 // (e.g. reply_to_parent can look up the parent without an explicit session_id).
 func (s *Server) SetCallerSessionID(id string) { s.callerSessionID = id }
+
+// SetCallerPRDID stores the PRD id for BL385 scope routing. When set, memory
+// writes from subprocess MCP servers target the prd-shared layer; recall walks
+// it too (in addition to session-local and story-shared when available).
+func (s *Server) SetCallerPRDID(id string) { s.callerPRDID = id }
+
+// SetCallerStoryID stores the story id for BL385 scope routing. When set,
+// memory writes from subprocess MCP servers also surface the story-shared layer.
+func (s *Server) SetCallerStoryID(id string) { s.callerStoryID = id }
+
+// subprocessMode returns true when this MCP server is running as a subprocess
+// launched by the daemon (i.e. callerSessionID is set). In subprocess mode
+// memory writes default to session-local and cross-scope sweeps are blocked.
+func (s *Server) subprocessMode() bool { return s.callerSessionID != "" }
 
 // SetAgentAuditPath wires the audit file path for the agent_audit
 // MCP tool. cef=true marks the file as CEF-formatted (in which case

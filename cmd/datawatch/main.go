@@ -10105,6 +10105,11 @@ Remote AI config (SSE):
 	// BL363 T3 — Goose MCP channel: set the calling session ID so tools can
 	// self-route without requiring an explicit session_id argument.
 	cmd.Flags().String("caller-session-id", "", "FullID of the session that launched this MCP server (Goose channel use)")
+	// BL385 Phase 3 — subprocess memory scope isolation: inject the PRD/story
+	// context so memory writes default to session-local and recall walks the
+	// correct scope hierarchy.
+	cmd.Flags().String("caller-prd-id", "", "PRD id of the Automata run that spawned this MCP server (BL385)")
+	cmd.Flags().String("caller-story-id", "", "Story id within the PRD that spawned this MCP server (BL385)")
 
 	// BL302 S1 — mcp resources subcommand group.
 	cmd.AddCommand(newMCPResourcesCmd())
@@ -10574,6 +10579,13 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	// server so session-aware tools can self-route without an explicit argument.
 	if callerSessID, _ := cmd.Flags().GetString("caller-session-id"); callerSessID != "" {
 		mcpSrv.SetCallerSessionID(callerSessID)
+	}
+	// BL385 Phase 3 — inject PRD/story context for memory scope routing.
+	if callerPRDID, _ := cmd.Flags().GetString("caller-prd-id"); callerPRDID != "" {
+		mcpSrv.SetCallerPRDID(callerPRDID)
+	}
+	if callerStoryID, _ := cmd.Flags().GetString("caller-story-id"); callerStoryID != "" {
+		mcpSrv.SetCallerStoryID(callerStoryID)
 	}
 	// BL368 Phase 3 — wire vision describer into channel MCP server.
 	if cfg.Vision.Enabled {
