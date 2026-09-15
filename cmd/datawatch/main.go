@@ -4116,8 +4116,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
-				if len(diffOut) == 0 && len(newUntrackedFiles) == 0 {
-					// No tracked changes, no new untracked files — task produced nothing.
+				// B87 — detect pre-existing untracked files that the task may have
+				// overwritten. Such files appear in neither git diff (not tracked) nor
+				// newUntrackedFiles (not new). Check task.Files against preUntracked; for
+				// any overlap, read current content so the verifier can judge the output.
+				var overwrittenFilesSections []string
+				const maxFileBytes = 8192
+				for _, tf := range task.FilesPlanned {
+					if _, preExisted := preUntracked[tf]; preExisted {
+						fullPath := filepath.Join(prd.ProjectDir, tf)
+						data, readErr := os.ReadFile(fullPath)
+						if readErr == nil && len(data) > 0 {
+							content := string(data)
+							truncNote := ""
+							if len(content) > maxFileBytes {
+								content = content[:maxFileBytes]
+								truncNote = " (truncated)"
+							}
+							overwrittenFilesSections = append(overwrittenFilesSections,
+								fmt.Sprintf("File: %s%s\n%s", tf, truncNote, content))
+						}
+					}
+				}
+				if len(diffOut) == 0 && len(newUntrackedFiles) == 0 && len(overwrittenFilesSections) == 0 {
+					// No tracked changes, no new untracked files, no overwritten pre-existing
+					// files — task produced nothing.
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
 						Summary:    "verifier: no changes detected (diff empty and no new files); task produced no output",
@@ -4154,6 +4177,15 @@ New files created (not yet committed):
 <new_files>
 %s
 </new_files>`, strings.Join(newUntrackedFiles, "\n"))
+				}
+				if len(overwrittenFilesSections) > 0 {
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
+					diffSection += fmt.Sprintf(`
+
+Pre-existing files written by task (not tracked by git):
+<overwritten_files>
+%s
+</overwritten_files>`, strings.Join(overwrittenFilesSections, "\n---\n"))
 				}
 			}
 			// BL369 — security preamble + data-boundary tag + Layer 3 federation trust notice.
