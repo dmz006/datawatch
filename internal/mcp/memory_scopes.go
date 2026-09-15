@@ -188,3 +188,62 @@ func (s *Server) handleMemoryArchiveImport(_ context.Context, req mcpsdk.CallToo
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- memory_handoff (BL386 Phase 4) -----------------------------------------
+
+func (s *Server) toolMemoryHandoff() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_handoff",
+		mcpsdk.WithDescription("BL386 Phase 4 — write a task-completion summary to story-shared so the next task in the same story inherits it. Adds role=handoff breadcrumb."),
+		mcpsdk.WithString("summary", mcpsdk.Required(), mcpsdk.Description("Summary of what was learned / accomplished in this task")),
+		mcpsdk.WithString("project", mcpsdk.Required(), mcpsdk.Description("Project directory")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID (targets story-shared scope)")),
+		mcpsdk.WithString("prd_id", mcpsdk.Description("PRD ID (recorded in breadcrumb only)")),
+	)
+}
+
+func (s *Server) handleMemoryHandoff(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	prdID := req.GetString("prd_id", "")
+	note := ""
+	if prdID != "" {
+		note = " [prd:" + prdID + "]"
+	}
+	content := req.GetString("summary", "") + "\n\n_(handoff" + note + ")_"
+	body, _ := json.Marshal(map[string]any{
+		"scope": map[string]any{
+			"scope":    "story-shared",
+			"project":  req.GetString("project", ""),
+			"story_id": req.GetString("story_id", ""),
+		},
+		"content": content,
+		"summary": "task handoff",
+	})
+	out, err := s.proxyJSON("POST", "/api/memory/scopes/save", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// ----- memory_prd_report (BL386 Phase 4) --------------------------------------
+
+func (s *Server) toolMemoryPRDReport() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_prd_report",
+		mcpsdk.WithDescription("BL386 Phase 4 — aggregate all memories associated with a PRD across prd-shared, story-shared, and optionally session-local scopes. Returns deduplicated, grouped-by-scope results."),
+		mcpsdk.WithString("prd_id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("include_scopes", mcpsdk.Description("Comma-separated scopes to include (default: prd-shared,story-shared)")),
+		mcpsdk.WithNumber("max_per_scope", mcpsdk.Description("Max memories per scope layer (default 50)")),
+	)
+}
+
+func (s *Server) handleMemoryPRDReport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	prdID := req.GetString("prd_id", "")
+	q := "?max_per_scope=" + strconv.Itoa(int(req.GetFloat("max_per_scope", 0)))
+	if inc := req.GetString("include_scopes", ""); inc != "" {
+		q += "&include_scopes=" + inc
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+prdID+"/memory-report"+q, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

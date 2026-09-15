@@ -1238,9 +1238,136 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONOK(w, proposal)
 
+	// BL386 Phase 4 — GET /api/autonomous/prds/{id}/memory-report
+	case "memory-report":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		s.handlePRDMemoryReport(w, r, id)
+
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}
+}
+
+// handlePRDMemoryReport (BL386 Phase 4) aggregates memories from all scopes
+// associated with a PRD: prd-shared, story-shared per story, and optionally
+// session-local per task session.
+//
+//	GET /api/autonomous/prds/{id}/memory-report
+//	  ?include_scopes=prd-shared,story-shared  (default; add session-local for task sessions)
+//	  &max_per_scope=50
+func (s *Server) handlePRDMemoryReport(w http.ResponseWriter, r *http.Request, prdID string) {
+	if s.memoryBackend == nil {
+		http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+		return
+	}
+	prdRaw, ok := s.autonomousMgr.GetPRD(prdID)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// JSON round-trip to extract project_dir + story/task session IDs.
+	var prdData struct {
+		ProjectDir string `json:"project_dir"`
+		Stories    []struct {
+			ID    string `json:"id"`
+			Tasks []struct {
+				SessionID string `json:"session_id"`
+			} `json:"tasks"`
+		} `json:"stories"`
+	}
+	if b, err := json.Marshal(prdRaw); err == nil {
+		_ = json.Unmarshal(b, &prdData)
+	}
+
+	q := r.URL.Query()
+	maxPerScope := atoiDefault(q.Get("max_per_scope"), 50)
+
+	// Parse include_scopes (default: prd-shared,story-shared)
+	includeRaw := q.Get("include_scopes")
+	if includeRaw == "" {
+		includeRaw = "prd-shared,story-shared"
+	}
+	scopeSet := map[string]bool{}
+	for _, s := range strings.Split(includeRaw, ",") {
+		scopeSet[strings.TrimSpace(s)] = true
+	}
+
+	type scopeResult struct {
+		Scope     string          `json:"scope"`
+		ScopeID   string          `json:"scope_id,omitempty"`
+		Memories  []memory.Memory `json:"memories"`
+	}
+	var results []scopeResult
+	seen := map[string]bool{} // deduplicate by content
+
+	addMems := func(scope, scopeID, dir, role string) {
+		var rows []memory.Memory
+		var err error
+		if role != "" {
+			rows, err = s.memoryBackend.ListByRole(dir, role, maxPerScope)
+		} else {
+			rows, err = s.memoryBackend.ListRecent(dir, maxPerScope)
+		}
+		if err != nil || len(rows) == 0 {
+			return
+		}
+		var uniq []memory.Memory
+		for _, m := range rows {
+			key := m.Content
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			uniq = append(uniq, m)
+		}
+		if len(uniq) > 0 {
+			results = append(results, scopeResult{Scope: scope, ScopeID: scopeID, Memories: uniq})
+		}
+	}
+
+	if scopeSet["prd-shared"] {
+		ref := memory.ScopeRef{Scope: memory.ScopePRDShared, Project: prdData.ProjectDir, PRDID: prdID}
+		dir, role, _ := ref.Resolve()
+		addMems("prd-shared", prdID, dir, role)
+	}
+	if scopeSet["story-shared"] {
+		for _, st := range prdData.Stories {
+			ref := memory.ScopeRef{Scope: memory.ScopeStoryShared, Project: prdData.ProjectDir, StoryID: st.ID}
+			dir, role, _ := ref.Resolve()
+			addMems("story-shared", st.ID, dir, role)
+		}
+	}
+	if scopeSet["session-local"] {
+		for _, st := range prdData.Stories {
+			for _, t := range st.Tasks {
+				if t.SessionID == "" {
+					continue
+				}
+				ref := memory.ScopeRef{Scope: memory.ScopeSessionLocal, Project: prdData.ProjectDir, SessionID: t.SessionID}
+				dir, role, sess := ref.Resolve()
+				_ = role
+				addMems("session-local", t.SessionID, dir, sess)
+			}
+		}
+	}
+
+	total := 0
+	for _, r := range results {
+		total += len(r.Memories)
+	}
+	writeJSONOK(w, map[string]any{
+		"prd_id":         prdID,
+		"project_dir":    prdData.ProjectDir,
+		"include_scopes": strings.Split(includeRaw, ","),
+		"results":        results,
+		"total":          total,
+	})
 }
 
 // handleAutonomousTemplates — BL221 (v6.2.0) — CRUD for the dedicated
