@@ -247,3 +247,20 @@ func (s *Server) handleMemoryPRDReport(_ context.Context, req mcpsdk.CallToolReq
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- memory_scope_inventory (BL386 Phase 5) ---------------------------------
+
+func (s *Server) toolMemoryScopeInventory() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_scope_inventory",
+		mcpsdk.WithDescription("BL386 Phase 5 — list all memory scopes that have data for a project, with per-(role,session) row counts. Useful for discovering orphaned PRD/story scopes."),
+		mcpsdk.WithString("project", mcpsdk.Required(), mcpsdk.Description("Project directory")),
+	)
+}
+
+func (s *Server) handleMemoryScopeInventory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/memory/scopes/inventory?project="+req.GetString("project", ""), nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

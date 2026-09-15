@@ -84,8 +84,26 @@ type TextSearchableBackend interface {
 	ListUnembedded(n int) ([]Memory, error)
 }
 
+// InventoryBackend (BL386 Phase 5) is an optional capability that returns a
+// per-scope breakdown of memory counts for a project. SQLite Store implements
+// it; PG path can land later. Callers type-assert before using.
+type InventoryBackend interface {
+	// Inventory returns one row per (role, session_id) pair in the given
+	// project dir, with a row count. Used by scope inventory and per-scope
+	// stats endpoints.
+	Inventory(projectDir string) ([]ScopeInventoryEntry, error)
+}
+
+// ScopeInventoryEntry is one row from Inventory().
+type ScopeInventoryEntry struct {
+	Role      string `json:"role"`
+	SessionID string `json:"session_id,omitempty"`
+	Count     int    `json:"count"`
+}
+
 // Compile-time interface checks
 var _ Backend = (*Store)(nil)
 var _ NamespacedBackend = (*Store)(nil)
 var _ PinnableBackend = (*Store)(nil)
 var _ TextSearchableBackend = (*Store)(nil)
+var _ InventoryBackend = (*Store)(nil)

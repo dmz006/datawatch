@@ -733,7 +733,7 @@ func (s *Store) CountAll() (int, error) {
 
 // Prune removes memories older than the given duration.
 func (s *Store) Prune(olderThan time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-olderThan)
+	cutoff := time.Now().Add(-olderThan).UTC()
 	result, err := s.db.Exec(`DELETE FROM memories WHERE created_at < ?`, cutoff)
 	if err != nil {
 		return 0, err
@@ -744,7 +744,7 @@ func (s *Store) Prune(olderThan time.Duration) (int64, error) {
 // PruneByRole deletes memories of a specific role older than the given duration.
 // Returns the number of deleted rows.
 func (s *Store) PruneByRole(role string, olderThan time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-olderThan)
+	cutoff := time.Now().Add(-olderThan).UTC()
 	result, err := s.db.Exec(`DELETE FROM memories WHERE role = ? AND created_at < ?`, role, cutoff)
 	if err != nil {
 		return 0, err
@@ -1020,6 +1020,32 @@ func (s *Store) Stats() MemoryStats {
 	ms.Encrypted = s.IsEncrypted()
 	ms.KeyFingerprint = KeyFingerprint(s.encKey)
 	return ms
+}
+
+// Inventory (BL386 Phase 5) returns a per-(role,session_id) row count for a
+// project dir. Callers use it to discover which PRD/story/session scopes have
+// data. Non-breaking — only *Store implements InventoryBackend.
+func (s *Store) Inventory(projectDir string) ([]ScopeInventoryEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT COALESCE(role,''), COALESCE(session_id,''), COUNT(*) FROM memories
+		 WHERE project_dir = ?
+		 GROUP BY role, session_id
+		 ORDER BY COUNT(*) DESC`,
+		projectDir,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+	var out []ScopeInventoryEntry
+	for rows.Next() {
+		var e ScopeInventoryEntry
+		if err := rows.Scan(&e.Role, &e.SessionID, &e.Count); err != nil {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // ListFiltered returns memories matching optional filters.

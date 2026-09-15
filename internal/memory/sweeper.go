@@ -38,7 +38,7 @@ func (s *Store) SweepStale(olderThan time.Duration, dryRun bool) (*SweepStaleRes
 	if olderThan <= 0 {
 		return nil, fmt.Errorf("SweepStale: positive olderThan required")
 	}
-	cutoff := time.Now().Add(-olderThan)
+	cutoff := time.Now().Add(-olderThan).UTC()
 	res := &SweepStaleResult{DryRun: dryRun}
 
 	// Count candidates first so the dry-run branch can return a

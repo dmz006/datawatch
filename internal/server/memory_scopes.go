@@ -86,6 +86,16 @@ func (s *Server) handleMemoryScopes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.memoryScopesDelete(w, r)
+	// BL386 Phase 5 — scope inventory: per-(role,session) row counts.
+	case rest == "inventory" && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
+		s.memoryScopeInventory(w, r)
 	// BL386 Phase 3 — archive-import: seed a scope from previously archived memories.
 	case rest == "archive-import" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
@@ -347,6 +357,30 @@ func (s *Server) memoryArchiveImport(w http.ResponseWriter, r *http.Request) {
 		"source_prd_id": body.SourcePRDID,
 		"target_prd_id": body.TargetPRDID,
 		"dry_run":       false,
+	})
+}
+
+// memoryScopeInventory (BL386 Phase 5) returns per-scope row counts for a
+// project dir. Uses the optional InventoryBackend capability; returns 501 if
+// the backend doesn't support it.
+//
+//	GET /api/memory/scopes/inventory?project=...
+func (s *Server) memoryScopeInventory(w http.ResponseWriter, r *http.Request) {
+	inv, ok := s.memoryBackend.(memory.InventoryBackend)
+	if !ok {
+		http.Error(w, "inventory not supported by this backend", http.StatusNotImplemented)
+		return
+	}
+	projectDir := r.URL.Query().Get("project")
+	entries, err := inv.Inventory(projectDir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSONOK(w, map[string]any{
+		"project":  projectDir,
+		"scopes":   entries,
+		"count":    len(entries),
 	})
 }
 

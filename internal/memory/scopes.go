@@ -388,3 +388,102 @@ func ArchiveScope(b Backend, from, to ScopeRef, filter SeedFilter, breadcrumbLab
 	purged, err = PurgeScope(b, from)
 	return copied, purged, err
 }
+
+// SweepScopedByAge (BL386 Phase 5) prunes memories older than olderThan from
+// a specific scope without touching other scopes.
+//
+//   - Scopes with non-empty role (prd-shared, story-shared, persona-*): uses PruneByRole.
+//   - ScopeSessionLocal (role="", session_id set): uses SessionPrunableBackend if available,
+//     otherwise list+delete fallback.
+//   - ScopeProjectShared (role="", session_id=""): uses list+delete for empty-role/session rows.
+//   - ref.Scope == "": global Prune (backward-compat).
+//
+// Returns the count of pruned rows and the first error encountered.
+func SweepScopedByAge(b Backend, ref ScopeRef, olderThan time.Duration, dryRun bool) (int64, error) {
+	if b == nil {
+		return 0, errors.New("memory backend nil")
+	}
+
+	// Global fallback — no scope specified.
+	if ref.Scope == "" {
+		if dryRun {
+			rows, err := b.ListRecent("", 1000000)
+			if err != nil {
+				return 0, err
+			}
+			cutoff := time.Now().Add(-olderThan)
+			var count int64
+			for _, m := range rows {
+				if m.CreatedAt.Before(cutoff) {
+					count++
+				}
+			}
+			return count, nil
+		}
+		return b.Prune(olderThan)
+	}
+
+	dir, role, _ := ref.Resolve()
+
+	// Scopes with a distinct role (prd-shared, story-shared, persona-*).
+	if role != "" {
+		if dryRun {
+			rows, err := b.ListByRole(dir, role, 1000000)
+			if err != nil {
+				return 0, err
+			}
+			cutoff := time.Now().Add(-olderThan)
+			var count int64
+			for _, m := range rows {
+				if m.CreatedAt.Before(cutoff) {
+					count++
+				}
+			}
+			return count, nil
+		}
+		return b.PruneByRole(role, olderThan)
+	}
+
+	// Session-local or project-shared: role is empty. For session-local the
+	// discriminator is session_id != ''; for project-shared session_id == ''.
+	// Use list+delete fallback (works on all backends).
+	var rows []Memory
+	var lErr error
+	if dir != "" {
+		rows, lErr = b.ListRecent(dir, 1000000)
+	} else {
+		rows, lErr = b.ListRecent("", 1000000)
+	}
+	if lErr != nil {
+		return 0, fmt.Errorf("sweep scoped: list: %w", lErr)
+	}
+
+	cutoff := time.Now().Add(-olderThan)
+	var matching []Memory
+	for _, m := range rows {
+		if ref.Scope == ScopeSessionLocal && m.SessionID == "" {
+			continue // skip non-session rows
+		}
+		if ref.Scope == ScopeProjectShared && m.SessionID != "" {
+			continue // skip session rows
+		}
+		if m.CreatedAt.Before(cutoff) {
+			matching = append(matching, m)
+		}
+	}
+	if dryRun {
+		return int64(len(matching)), nil
+	}
+	var firstErr error
+	deleted := int64(0)
+	for _, m := range matching {
+		if err := b.Delete(m.ID); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		deleted++
+	}
+	return deleted, firstErr
+}
