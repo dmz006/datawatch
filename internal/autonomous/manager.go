@@ -1372,9 +1372,48 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 	return m.store.SavePRD(prd)
 }
 
+// SetStoryLLM (BL381) lets the operator override a story's worker LLM
+// (backend / effort / model). All tasks in this story inherit these
+// values unless overridden at the task level. Empty string clears the
+// override (falls back to PRD-level then global). Allowed in
+// needs_review / revisions_asked only.
+func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept LLM overrides", prdID, prd.Status)
+	}
+	found := false
+	for i := range prd.Story {
+		if prd.Story[i].ID == storyID {
+			prd.Story[i].Backend = backend
+			prd.Story[i].Effort = Effort(effort)
+			prd.Story[i].Model = model
+			prd.Story[i].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_story_llm", Actor: actor,
+		Note: fmt.Sprintf("story=%s backend=%s effort=%s model=%s", storyID, backend, effort, model),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
 // worker LLM (backend / effort / model) before approval. Empty string
-// clears the override (falls back to PRD-level then global). Allowed
+// clears the override (falls back to story-level then PRD-level then global). Allowed
 // in needs_review / revisions_asked only — once approved or running
 // the worker is locked in.
 func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, error) {

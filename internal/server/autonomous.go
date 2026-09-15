@@ -842,6 +842,45 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	// BL381 — per-story worker LLM override.
+	case "set_story_llm":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			Backend string `json:"backend"`
+			Effort  string `json:"effort"`
+			Model   string `json:"model"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		if req.Backend != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(req.Backend); err != nil {
+				http.Error(w, "unknown LLM "+strconv.Quote(req.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
+		}
+		updated, err := s.autonomousMgr.SetStoryLLM(id, req.StoryID, req.Backend, req.Effort, req.Model, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
 	// BL203 (v5.4.0) — per-task worker LLM override.
 	case "set_task_llm":
 		if r.Method != http.MethodPost {

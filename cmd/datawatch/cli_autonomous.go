@@ -74,6 +74,7 @@ Subcommands:
 		newAutonomousPRDEditTaskCmd(),
 		newAutonomousPRDInstantiateCmd(),
 		newAutonomousPRDSetLLMCmd(),
+		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
 		newAutonomousLearningsCmd(),
 		newAutonomousPRDChildrenCmd(),
@@ -376,6 +377,25 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend name (claude / claude-code / ollama / openai / etc.) — empty = inherit global default")
 	cmd.Flags().StringVar(&effort, "effort", "", "effort level (low / medium / high / max / quick / normal / thorough) — empty = inherit")
 	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. claude-3-5-sonnet) — empty = backend default")
+	return cmd
+}
+
+func newAutonomousPRDSetStoryLLMCmd() *cobra.Command {
+	var storyID, backend, effort, model string
+	cmd := &cobra.Command{
+		Use:   "prd-set-story-llm <prd-id> --story <story-id> [--backend B --effort E --model M]",
+		Short: "Override the worker LLM for all tasks in one story. Empty value clears the override (falls back to PRD then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
+	cmd.Flags().StringVar(&backend, "backend", "", "story-level LLM backend; empty = inherit PRD then global")
+	cmd.Flags().StringVar(&effort, "effort", "", "effort level for all tasks in this story; empty = inherit")
+	cmd.Flags().StringVar(&model, "model", "", "specific model name for this story; empty = backend default")
+	_ = cmd.MarkFlagRequired("story")
 	return cmd
 }
 

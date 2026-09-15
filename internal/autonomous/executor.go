@@ -408,10 +408,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		t.RetryCount = attempt
 		_ = m.store.SaveTask(t)
 
-		// BL203 (v5.4.0) — most-specific LLM override wins. Per-task fields
-		// take precedence over PRD-level fields; cfg.ExecutionBackend is the
-		// autonomous-level fallback before the global session.llm_backend default.
+		// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
+		// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
+		story := findStory(prd, t.StoryID)
 		backend := t.Backend
+		if backend == "" && story != nil {
+			backend = story.Backend
+		}
 		if backend == "" {
 			backend = prd.Backend
 		}
@@ -419,10 +422,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			backend = m.cfg.ExecutionBackend
 		}
 		effort := t.Effort
+		if effort == "" && story != nil {
+			effort = story.Effort
+		}
 		if effort == "" {
 			effort = prd.Effort
 		}
 		model := t.Model
+		if model == "" && story != nil {
+			model = story.Model
+		}
 		if model == "" {
 			model = prd.Model
 		}
@@ -858,4 +867,15 @@ func storyAllTasksDone(s *Story) bool {
 		}
 	}
 	return true
+}
+
+// findStory returns the Story in prd whose ID matches storyID, or nil.
+// BL381 — used by the executor to resolve per-story LLM overrides.
+func findStory(prd *PRD, storyID string) *Story {
+	for i := range prd.Story {
+		if prd.Story[i].ID == storyID {
+			return &prd.Story[i]
+		}
+	}
+	return nil
 }

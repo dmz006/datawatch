@@ -439,6 +439,32 @@ func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToo
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDSetStoryLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_story_llm",
+		mcpsdk.WithDescription("BL381 — override the worker LLM for all tasks in one story. Empty string = clear (falls back to PRD then global). Resolution order: per-task → per-story → per-PRD → global."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
+		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),
+		mcpsdk.WithString("effort", mcpsdk.Description("effort level; empty = inherit")),
+		mcpsdk.WithString("model", mcpsdk.Description("specific model name; empty = backend default")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetStoryLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id": req.GetString("story_id", ""),
+		"backend":  req.GetString("backend", ""),
+		"effort":   req.GetString("effort", ""),
+		"model":    req.GetString("model", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_story_llm", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_task_llm",
 		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global)."),

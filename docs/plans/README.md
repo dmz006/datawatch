@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-09-14
 
-Latest release: **v8.27.11** (2026-09-14). fix(pwa): image attachments now work end-to-end — `[image:path]` converted to `@path` (Claude Code file-reference notation) when no vision backend is configured, allowing Claude Code sessions to read and process images directly. Chain of PWA attachment fixes v8.27.6–v8.27.11: Android label fix, preview position, re-render survival, multi-file, 403 upload fix, channel-mode send, upload-blocking guard, and vision passthrough.
+Latest release: **v8.28.0** (2026-09-14). feat(autonomous): per-story LLM config (BL381) — Story struct gains Backend/Effort/Model fields; executor resolves per-task → per-story → per-PRD → global; new `set_story_llm` on 5 surfaces (REST, MCP `autonomous_prd_set_story_llm`, CLI `prd-set-story-llm`, comm channel `autonomous set-story-llm`, API). Allows Story A to run on claude-opus while Story B uses llama3 concurrently.\n\nPrevious: **v8.27.11** (2026-09-14). fix(pwa): image attachments now work end-to-end — `[image:path]` converted to `@path` (Claude Code file-reference notation) when no vision backend is configured, allowing Claude Code sessions to read and process images directly. Chain of PWA attachment fixes v8.27.6–v8.27.11: Android label fix, preview position, re-render survival, multi-file, 403 upload fix, channel-mode send, upload-blocking guard, and vision passthrough.
 
 Previous: **v8.27.4** (2026-09-14). fix(autonomous): sequential executor re-runs terminal tasks on restart — the sequential path in `Manager.Run()` now skips tasks already in a terminal state (`completed`/`failed`/`cancelled`) when the executor goroutine is restarted. Previously, a re-`/run` would re-dispatch all tasks in topological order including already-finished work, and failed tasks would not populate `failedIDs`, causing their dependents to run instead of being skipped. Also: `qwen3.8:27b` replaced with `qwen3:8b` as default PRD model to avoid provider header timeouts.
 
@@ -69,12 +69,12 @@ Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements
 | Open bugs | 0 | — |
 | Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
 | Active backlog | 0 | BL353–BL362 all delivered v8.10.4–v8.10.17; BL319 ✅ v8.13.0 |
-| Pending backlog | 2 | BL335 — APNs push for iOS client (GH#107); BL381 — per-story LLM config + multi-LLM concurrent execution |
+| Pending backlog | 3 | BL335 — APNs push for iOS client (GH#107); BL383 — PWA session elapsed clock alongside session-active indicator; BL384 — document + harden decomposer scope-drift: qwen/ollama always decomposes into implementation tasks regardless of PRD constraints |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
 | Open GH issues | 3 | GH#78 — PWA E2E browser-nav (feature req, no sprint); GH#4 — mobile parity tracking (meta); GH#152 — MCP tool completeness (cancel/requeue tools now added) |
-| Recently closed | GH#153 ✅ v8.27.5; B86 ✅ v8.27.4; B85 ✅ v8.27.3; B84 ✅ v8.27.2; B83 ✅ v8.27.1; BL382 ✅ v8.27.0; BL380 ✅ v8.27.0; B82 ✅ v8.25.12; B81 ✅ v8.25.11; B79+B80 ✅ v8.25.10; BL377 ✅ v8.25.6; BL376 ✅ v8.25.5; BL375 ✅ v8.25.4; BL373 ✅ v8.25.0; BL374 — files-as-links (deferred, needs new API endpoint); B78 ✅ v8.23.0; BL372 ✅ v8.22.0; BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17; BL319 ✅ v8.13.0; GH#117 ✅ v8.13.1; GH#120 ✅ v8.13.0; GH#125 ✅ v8.9.25 (already existed); GH#128 ✅ v8.13.2; GH#129 ✅ v8.13.4; BL368 ✅ v8.15.0; BL366 ✅ v8.16.0; BL367 ✅ v8.17.0; BL369 ✅ v8.18.0; B55+B56 ✅ v8.19.9; B57 ✅ v8.19.10; BL371 ✅ v8.20.0; B58 ✅ v8.20.1; B59+B60+B61+B62+B63 ✅ v8.20.2–v8.20.3; B64+B65 ✅ v8.20.4; B66 ✅ v8.20.5; B67 ✅ v8.20.6; B68 ✅ v8.20.7; B69+B70+B71 ✅ v8.20.8; B72+B73+B74+B75+B76 ✅ v8.20.9–v8.20.11; B77 ✅ v8.21.0; B79+B80 ✅ v8.25.10; B81 ✅ v8.25.11 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics; extra_mcp_servers injection; alert dock fix; FCM payload enrichment; schedule spawn overlap guard + run history; downloadChannelBinary version fix; vision input system; verifier git-diff grounding; autonomous PRD quality gates; prompt injection hardening; PRD backend filter; PRD Approve/Reject restore; autonomous task backend resolution; PRD split planning vs execution backend; cancelled PRD restart; session wait/cleanup; wizard create modal execution backend + dir validation; Plan/Run prominent toolbar buttons; image attachment file picker; Start Planning feedback + detail view progress; Edit menu stacking context fix; Start Planning button disables in-place + Cancel warning; opencode one-shot task delivery via state-change handler; prd_id/task_id on sessions; verifying progress + glyphs; active session filter fix; generalized TUI task delivery (goose/aider/all backends); session-based PRD decomposer with codebase access; DATAWATCH_COMPLETE: detection fixed for one-shot sessions (v8.21.1–v8.21.4: visible scan limit, firstTick skip, daemon-restart recovery, creation-time screen capture) |
+| Recently closed | BL381 ✅ v8.28.0; GH#153 ✅ v8.27.5; B86 ✅ v8.27.4; B85 ✅ v8.27.3; B84 ✅ v8.27.2; B83 ✅ v8.27.1; BL382 ✅ v8.27.0; BL380 ✅ v8.27.0; B82 ✅ v8.25.12; B81 ✅ v8.25.11; B79+B80 ✅ v8.25.10; BL377 ✅ v8.25.6; BL376 ✅ v8.25.5; BL375 ✅ v8.25.4; BL373 ✅ v8.25.0; BL374 — files-as-links (deferred, needs new API endpoint); B78 ✅ v8.23.0; BL372 ✅ v8.22.0; BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17; BL319 ✅ v8.13.0; GH#117 ✅ v8.13.1; GH#120 ✅ v8.13.0; GH#125 ✅ v8.9.25 (already existed); GH#128 ✅ v8.13.2; GH#129 ✅ v8.13.4; BL368 ✅ v8.15.0; BL366 ✅ v8.16.0; BL367 ✅ v8.17.0; BL369 ✅ v8.18.0; B55+B56 ✅ v8.19.9; B57 ✅ v8.19.10; BL371 ✅ v8.20.0; B58 ✅ v8.20.1; B59+B60+B61+B62+B63 ✅ v8.20.2–v8.20.3; B64+B65 ✅ v8.20.4; B66 ✅ v8.20.5; B67 ✅ v8.20.6; B68 ✅ v8.20.7; B69+B70+B71 ✅ v8.20.8; B72+B73+B74+B75+B76 ✅ v8.20.9–v8.20.11; B77 ✅ v8.21.0; B79+B80 ✅ v8.25.10; B81 ✅ v8.25.11 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics; extra_mcp_servers injection; alert dock fix; FCM payload enrichment; schedule spawn overlap guard + run history; downloadChannelBinary version fix; vision input system; verifier git-diff grounding; autonomous PRD quality gates; prompt injection hardening; PRD backend filter; PRD Approve/Reject restore; autonomous task backend resolution; PRD split planning vs execution backend; cancelled PRD restart; session wait/cleanup; wizard create modal execution backend + dir validation; Plan/Run prominent toolbar buttons; image attachment file picker; Start Planning feedback + detail view progress; Edit menu stacking context fix; Start Planning button disables in-place + Cancel warning; opencode one-shot task delivery via state-change handler; prd_id/task_id on sessions; verifying progress + glyphs; active session filter fix; generalized TUI task delivery (goose/aider/all backends); session-based PRD decomposer with codebase access; DATAWATCH_COMPLETE: detection fixed for one-shot sessions (v8.21.1–v8.21.4: visible scan limit, firstTick skip, daemon-restart recovery, creation-time screen capture) |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version) | |
 
@@ -199,6 +199,35 @@ v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage ac
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
+
+---
+
+#### BL384 — Document + harden decomposer scope-drift (qwen/ollama ignores PRD-level doc-only constraints)
+
+**Operator-filed 2026-09-14.**
+
+**Problem:** `qwen3.8:27b` (and `qwen3:8b`) consistently decomposes PRDs into "Implement X / Write code to..." task specs regardless of PRD-level constraints forbidding source code changes. The executor follows task-level spec over PRD-level constraints, so documentation-only PRDs produce Go file changes.
+
+**Root cause:** The decomposer model treats the PRD spec as creative context only; its own instruction-following training overrides operator intent when task titles and specs are generated.
+
+**Mitigation (validated 2026-09-14):**
+1. Enable guided mode (`autonomous_prd_set_guided_mode`) — pauses before tasks 2–N for operator review
+2. Patch each task spec individually via `autonomous_prd_edit_task` to: (a) name the exact output file, (b) specify required content structure (tables/prose/YAML), (c) end with explicit "Do NOT create or modify .go files"
+3. Document the pattern in AGENT.md operator notes
+
+**Scope:** AGENT.md (operator notes section), docs/plans/README.md, consider adding a PRD scan rule that flags task specs containing "Implement"/"Write code" when PRD spec contains "documentation only".
+
+---
+
+#### BL383 — PWA session elapsed clock alongside session-active indicator
+
+**Operator-filed 2026-09-14.**
+
+**Problem:** The PWA "session active" indicator shows that a session is running but gives no sense of elapsed time. Long-running automata sessions can run for hours unnoticed.
+
+**Proposed:** Add a live elapsed-time counter (HH:MM:SS or Xh Ym format) next to the session-active indicator in the PWA. Counter starts from `session.started_at`, updates every second while the session is active, stops (freezes or hides) when the session completes or is killed.
+
+**Scope:** PWA session card / detail view. No backend changes required — `started_at` is already on the session object.
 
 ---
 

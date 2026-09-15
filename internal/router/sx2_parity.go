@@ -432,6 +432,25 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-llm", prettyJSON(out))
+	case "set-story-llm", "set_story_llm":
+		if len(args) < 4 {
+			r.reply("autonomous set-story-llm failed", "usage: autonomous set-story-llm <prd-id> <story-id> <backend> [effort] [model]")
+			return
+		}
+		body := map[string]string{"story_id": args[2], "backend": args[3], "actor": "operator"}
+		if len(args) >= 5 {
+			body["effort"] = args[4]
+		}
+		if len(args) >= 6 {
+			body["model"] = strings.Join(args[5:], " ")
+		}
+		raw, _ := json.Marshal(body)
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_story_llm", string(raw))
+		if err != nil {
+			r.reply("autonomous set-story-llm failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-story-llm", prettyJSON(out))
 	case "set-task-llm", "set_task_llm":
 		if len(args) < 4 {
 			r.reply("autonomous set-task-llm failed", "usage: autonomous set-task-llm <prd-id> <task-id> <backend> [effort] [model]")

@@ -383,6 +383,15 @@ func (a *API) InstantiateTemplate(templateID string, vars map[string]string, act
 	return newPRD, err
 }
 
+// BL381 — per-story LLM override.
+func (a *API) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error) {
+	out, err := a.M.SetStoryLLM(prdID, storyID, backend, effort, model, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 // BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error) {
 	out, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)

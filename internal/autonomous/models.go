@@ -308,6 +308,13 @@ type Story struct {
 	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
 	RejectedReason   string     `json:"rejected_reason,omitempty"`
 
+	// BL381 — per-story LLM overrides. Resolution order:
+	//   per-task → per-story → per-PRD → global.
+	// Empty = inherit from PRD then global config.
+	Backend string `json:"backend,omitempty"`
+	Effort  Effort `json:"effort,omitempty"`
+	Model   string `json:"model,omitempty"`
+
 	// Phase 4 (v5.26.64) — file association. FilesPlanned is
 	// LLM-extracted at decompose time (the decomposer prompt asks
 	// for `files: [...]` per story); operator can edit via the
@@ -319,9 +326,9 @@ type Story struct {
 // session.Manager. Maps 1:1 to a pipeline.Task once enqueued.
 //
 // BL203 (v5.4.0) — flexible LLM selection at the task level. Backend /
-// Effort / Model fields override PRD-level defaults when set. Most-
+// Effort / Model fields override story-level defaults when set. Most-
 // specific wins:
-//   per-task → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
+//   per-task → per-story (BL381) → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
 type Task struct {
 	ID            string     `json:"id"`
 	StoryID       string     `json:"story_id"`
