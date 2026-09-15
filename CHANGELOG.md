@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.28.7 — fix(mcp): memory tools proxy to HTTP loopback in subprocess mode; searxng timeout +resilience
+
+### Fixed
+- **Memory tools unavailable in opencode sessions** — `memory_remember`, `memory_recall`, `memory_list`, `memory_forget`, `memory_stats`, `memory_pin`, `memory_sweep_stale`, `memory_spellcheck`, `memory_extract_facts`, `memory_schema_version`, `memory_export`, `memory_import`, and `memory_learnings` all returned "Memory not enabled." when called from an opencode subprocess MCP session (the `datawatch mcp` subprocess has no direct in-process `memoryAPI` wired). Fixed by adding HTTP loopback proxy fallback in `internal/mcp/memory_tools.go`: when `memoryAPI == nil` but `webPort > 0`, each handler proxies to the corresponding `/api/memory/*` REST endpoint instead of failing. Root cause: `SetMemoryAPI` is only called on the in-process daemon MCP server, not on stdio subprocess servers.
+- **SearXNG MCP timeout** — default timeout bumped from 12s to 25s; removed `&engines=bing` restriction from the search URL so all configured searxng engines are used (Bing alone will timeout under rate-limiting). Changes in `~/.config/opencode/searxng-mcp.js`.
+
 ## v8.28.6 — fix(zap): document and suppress false-positive WebSocket alerts [110002] [110004] (GH#154)
 
 ### Fixed
