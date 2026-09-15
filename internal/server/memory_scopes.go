@@ -4,6 +4,8 @@
 //	GET  /api/memory/scopes/borrow    read-only cross-scope query
 //	POST /api/memory/scopes/seed      copy entries (with filter) into a target scope
 //	POST /api/memory/scopes/promote   move an entry up the hierarchy with breadcrumb
+//	POST /api/memory/scopes/save      write a memory directly to a scope (BL385)
+//	POST /api/memory/scopes/delete    delete a memory from a scope by id (BL385)
 //
 // Returns 503 when no memory backend is wired.
 
@@ -66,6 +68,24 @@ func (s *Server) handleMemoryScopes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.memoryPromote(w, r)
+	case rest == "save" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
+		s.memoryScopesSave(w, r)
+	case rest == "delete" && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+		if s.memoryBackend == nil {
+			http.Error(w, "memory backend disabled", http.StatusServiceUnavailable)
+			return
+		}
+		s.memoryScopesDelete(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -164,6 +184,65 @@ func (s *Server) memoryPromote(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, map[string]any{
 		"new_memory_id": newID,
 		"breadcrumb":    bc,
+	})
+}
+
+// memoryScopesSave writes a memory entry directly into a named scope
+// (BL385). The caller supplies a ScopeRef (including PRDID/StoryID
+// for the new layers) plus the content and optional summary.
+func (s *Server) memoryScopesSave(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scope   memory.ScopeRef `json:"scope"`
+		Content string          `json:"content"`
+		Summary string          `json:"summary"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Scope.Scope == "" {
+		http.Error(w, "scope.scope required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.Content) == "" {
+		http.Error(w, "content required", http.StatusBadRequest)
+		return
+	}
+	dir, role, sessID := body.Scope.Resolve()
+	id, err := s.memoryBackend.Save(dir, body.Content, body.Summary, role, sessID, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSONOK(w, map[string]any{
+		"id":    id,
+		"scope": body.Scope,
+	})
+}
+
+// memoryScopesDelete removes a memory entry by id (BL385). The scope
+// field is accepted for auditing but deletion is by id only — the
+// Backend.Delete method takes the global row id.
+func (s *Server) memoryScopesDelete(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scope    memory.ScopeRef `json:"scope"`
+		MemoryID int64           `json:"memory_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.MemoryID == 0 {
+		http.Error(w, "memory_id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.memoryBackend.Delete(body.MemoryID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSONOK(w, map[string]any{
+		"deleted":   body.MemoryID,
+		"scope":     body.Scope,
 	})
 }
 

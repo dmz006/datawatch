@@ -79,12 +79,12 @@ var AllScopesTopDown = []Scope{
 // sessionID). Helper for resolving a Scope into the Backend's
 // existing API surface.
 type ScopeRef struct {
-	Scope     Scope
-	Persona   string // empty for project-shared / prd-shared / story-shared / session-local
-	Project   string // empty for persona-global
-	SessionID string // empty for everything except session-local
-	PRDID     string // required for prd-shared (BL385)
-	StoryID   string // required for story-shared (BL385)
+	Scope     Scope  `json:"scope"`
+	Persona   string `json:"persona,omitempty"`  // empty for project-shared / prd-shared / story-shared / session-local
+	Project   string `json:"project,omitempty"`  // empty for persona-global
+	SessionID string `json:"session_id,omitempty"` // empty for everything except session-local
+	PRDID     string `json:"prd_id,omitempty"`   // required for prd-shared (BL385)
+	StoryID   string `json:"story_id,omitempty"` // required for story-shared (BL385)
 }
 
 // Resolve returns the (projectDir, role, sessionID) tuple the Backend
