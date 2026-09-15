@@ -40,7 +40,11 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.33.0** (2026-09-15, retagged). feat(memory): Automata Memory Integration Phase 3 (BL387) — auto-report on PRDCompleted (async goroutine, memoryReportFn callback, PRD.MemoryReport field); memory-scope PWA dashboard tile (per-scope bar chart from /api/memory/stats). BL387 complete; all 3 phases across BL385-387 form complete memory lifecycle. CI fixes included in retag: gitleaks advisory (5d05a9c5), goreleaser dirty go.mod (58d7e3a7 — removed go mod tidy before hook, added verify step).
+Latest release: **v8.33.2** (2026-09-15). fix(autonomous): boot-time stuck-task reconciliation (B90) — `reconcileStuckTasks()` at Manager startup marks stuck `TaskInProgress`/`TaskVerifying`/`TaskRunningTests` tasks as `TaskFailed` when session is no longer alive; `SetSessionAliveFn` callback wired in main.go; 6 regression tests. Depends on `AutoFixRetries` to re-queue. All 2626 tests passing.
+
+Previous: **v8.33.1** (2026-09-15). fix(autonomous): SSE stall watchdog + opencode chunk/header timeouts (B89) — "SSE read timed out" added to stall patterns; patterns + matcher extracted to `sse_stall.go`; new `opencode.ollama_chunk_timeout_sec`/`opencode.ollama_header_timeout_sec` config fields (default 1200s/900s) written to opencode.json.
+
+Previous: **v8.33.0** (2026-09-15, retagged). feat(memory): Automata Memory Integration Phase 3 (BL387) — auto-report on PRDCompleted (async goroutine, memoryReportFn callback, PRD.MemoryReport field); memory-scope PWA dashboard tile (per-scope bar chart from /api/memory/stats). BL387 complete; all 3 phases across BL385-387 form complete memory lifecycle. CI fixes included in retag: gitleaks advisory (5d05a9c5), goreleaser dirty go.mod (58d7e3a7 — removed go mod tidy before hook, added verify step).
 
 Previous: **v8.32.0** (2026-09-15). feat(memory): Automata Memory Integration Phase 2 (BL387) — decomposer prompt enriched with project-shared context via memoryContextFn callback; cross-Automaton prd-shared seeding at first run via MemorySeedConfig.FromPRDs + memoryCrossSeedFn; REST/MCP/AutonomousAPI interface all updated with from_prds param. 8 new tests.
 

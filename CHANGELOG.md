@@ -3,6 +3,11 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.2 — fix(autonomous): boot-time stuck-task reconciliation (B90)
+
+### Fixed
+- **Autonomous task verify loop lost on daemon restart** — Tasks left in `TaskInProgress`, `TaskVerifying`, or `TaskRunningTests` state when the daemon was stopped had no recovery path: on restart the executor would never pick them up (they appeared to be running) and the verify loop was gone. A new `reconcileStuckTasks()` scan runs at Manager startup, finds tasks in those states whose session is no longer alive, marks them `TaskFailed` with a descriptive error, and appends a `boot_reconcile` decision record so the audit trail shows what happened. The existing `AutoFixRetries` mechanism then re-queues them in the normal retry cycle. A `SetSessionAliveFn` callback (same injection pattern as `SetSessionKillerFn`) lets the daemon wire live session state into the reconciler.
+
 ## v8.33.1 — fix(autonomous): SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config
 
 ### Fixed

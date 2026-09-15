@@ -251,6 +251,11 @@ type Manager struct {
 	// Injected from main.go to avoid a circular import on session.Manager.
 	sessionKillerFn func(sessionID string) error
 
+	// sessionAliveFn — when set, reconcileStuckTasks uses it to skip
+	// tasks whose session is still running (B90). Nil = conservative:
+	// all stuck tasks are failed regardless of session state.
+	sessionAliveFn func(sessionID string) bool
+
 	// memorySeedFn (BL386 Phase 1) — when set, called after each spawn
 	// when the PRD's MemorySeedConfig.Enabled=true. Seeds session-local
 	// from applicable scopes. Nil = seeding silently skipped.
@@ -329,6 +334,15 @@ func (m *Manager) SetSessionKillerFn(fn func(sessionID string) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionKillerFn = fn
+}
+
+// SetSessionAliveFn wires the liveness check used by reconcileStuckTasks (B90).
+// fn returns true when sessionID still refers to a non-terminal session.
+// Nil is safe: stuck tasks are conservatively marked failed on daemon start.
+func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionAliveFn = fn
 }
 
 // SetMemorySeedFn (BL386 Phase 1) wires the warm-start seeding callback.
@@ -1838,12 +1852,64 @@ func (m *Manager) Stop() {
 	}
 }
 
+// reconcileStuckTasks scans all PRDs on daemon start and marks any task
+// in TaskInProgress/TaskVerifying/TaskRunningTests as TaskFailed when its
+// verify loop is gone (B90). The session-alive check is skipped when no
+// sessionAliveFn is wired, conservatively failing all stuck tasks so
+// AutoFixRetries can retry them.
+func (m *Manager) reconcileStuckTasks() {
+	m.mu.Lock()
+	aliveFn := m.sessionAliveFn
+	m.mu.Unlock()
+
+	prds := m.store.ListPRDs()
+	for _, prd := range prds {
+		if prd.Status != PRDRunning && prd.Status != PRDActive {
+			continue
+		}
+		changed := false
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.Status != TaskInProgress && t.Status != TaskVerifying && t.Status != TaskRunningTests {
+					continue
+				}
+				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
+					continue // session still live; leave it
+				}
+				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskFailed (verify loop lost on daemon restart)",
+					prd.ID, t.ID, t.Status, t.SessionID)
+				t.Status = TaskFailed
+				t.Error = "verify loop lost on daemon restart; will be retried by AutoFixRetries"
+				t.UpdatedAt = time.Now()
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		now := time.Now()
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    now,
+			Kind:  "boot_reconcile",
+			Actor: "autonomous",
+			Note:  "stuck task(s) marked failed on daemon restart (B90)",
+		})
+		if err := m.store.SavePRD(prd); err != nil {
+			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
+		}
+	}
+}
+
 // run is the loop body. v1 is intentionally minimal: marks newly-
 // active PRDs so external schedulers (e.g. main daemon's
 // pipeline.Executor or operator-driven `datawatch autonomous run`)
 // can pick them up. The actual Task → Session dispatch is done by
 // the executor in executor.go (called from REST handler).
 func (m *Manager) run() {
+	m.reconcileStuckTasks()
+
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 30 * time.Second

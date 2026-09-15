@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.1"
+var Version = "8.33.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4329,6 +4329,16 @@ Reply with STRICT JSON:
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(func(sessionID string) error {
 				return mgr.Kill(sessionID)
+			})
+			// Wire liveness check for boot-time stuck-task reconciliation (B90).
+			amgr.SetSessionAliveFn(func(sessionID string) bool {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return false
+				}
+				return s.State != session.StateComplete &&
+					s.State != session.StateFailed &&
+					s.State != session.StateKilled
 			})
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
