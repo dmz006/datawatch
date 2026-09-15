@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-09-14
 
-Latest release: **v8.27.5** (2026-09-14). feat(guardrail): per-guardrail block approval endpoint — `POST /api/sessions/{id}/guardrail/{name}/approve` lets Android Auto BL33 (and any operator client) approve a single blocked guardrail verdict without clearing all blocks at once. `HookGuardrailVerdict` gains `approved` + `approval_note` fields; `session_guardrail_approve` MCP tool added. Closes GH#153.
+Latest release: **v8.27.11** (2026-09-14). fix(pwa): image attachments now work end-to-end — `[image:path]` converted to `@path` (Claude Code file-reference notation) when no vision backend is configured, allowing Claude Code sessions to read and process images directly. Chain of PWA attachment fixes v8.27.6–v8.27.11: Android label fix, preview position, re-render survival, multi-file, 403 upload fix, channel-mode send, upload-blocking guard, and vision passthrough.
 
 Previous: **v8.27.4** (2026-09-14). fix(autonomous): sequential executor re-runs terminal tasks on restart — the sequential path in `Manager.Run()` now skips tasks already in a terminal state (`completed`/`failed`/`cancelled`) when the executor goroutine is restarted. Previously, a re-`/run` would re-dispatch all tasks in topological order including already-finished work, and failed tasks would not populate `failedIDs`, causing their dependents to run instead of being skipped. Also: `qwen3.8:27b` replaced with `qwen3:8b` as default PRD model to avoid provider header timeouts.
 

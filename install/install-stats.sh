@@ -113,7 +113,10 @@ fetch_latest_version() {
           | grep -i "Location:" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
   fi
   if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
-    error "Could not determine latest version. Use --version X.Y.Z to pin one."
+    local fallback="8.27.11"
+    warn "Could not determine latest version from GitHub; defaulting to v${fallback}"
+    warn "Use --version X.Y.Z to install a specific version, e.g.: bash install-stats.sh --version 8.27.11"
+    ver="${fallback}"
   fi
   echo "${ver}"
 }

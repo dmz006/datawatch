@@ -132,11 +132,14 @@ func TestVisionDescribe_VisionerError(t *testing.T) {
 }
 
 // TS-v8193-EIT1: expandImageTags — no visioner → pass-through
+// TS-v8193-EIT1: expandImageTags — no vision backend → convert [image:path] to @path
+// (Claude Code file-reference notation so sessions can read the file directly)
 func TestExpandImageTags_NoVisioner(t *testing.T) {
 	s := &Server{}
 	in := "hello [image:/tmp/x.jpg] world"
-	if got := s.expandImageTags(in); got != in {
-		t.Errorf("no-visioner: got %q want %q", got, in)
+	want := "hello @/tmp/x.jpg world"
+	if got := s.expandImageTags(in); got != want {
+		t.Errorf("no-visioner: got %q want %q", got, want)
 	}
 }
 

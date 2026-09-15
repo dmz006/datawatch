@@ -106,4 +106,5 @@ release:
     name: datawatch
   draft: false
   prerelease: auto
+  make_latest: latest-stable
   name_template: "v{{.Version}}"

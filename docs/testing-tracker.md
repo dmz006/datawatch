@@ -229,3 +229,18 @@ Added in v8.27.5. `POST /api/sessions/{id}/guardrail/{name}/approve` marks a sin
 | `session_guardrail_approve` MCP tool | No | No | — | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
 | `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | No | No | — | Verify new fields appear in telemetry response after approve call. |
 | WebSocket hub broadcasts on approve | No | No | — | Connect WS client; approve verdict; verify hub.BroadcastHookUpdate fired. |
+
+## v8.27.6–v8.27.11 — PWA image attachment (Android)
+
+Chain of fixes across six patch releases. v8.27.11 is the stable version.
+
+| Component | Unit tested | Live tested | Unit test coverage | Notes |
+|---|---|---|---|---|
+| File input label (Android) — `<label for>` + `display:none` replaces off-screen fixed element | No | Yes (v8.27.6) | — | User confirmed Android file picker opens correctly. |
+| Preview strip position — sibling before inputBar (not inside flex row) | No | Yes (v8.27.6) | — | Preview appears above command row. |
+| `_pendingAttachments[]` state survives re-render | No | Yes (v8.27.7) | — | Preview restored at end of every `renderSessionDetail`. |
+| Multi-file upload — `multiple` attribute + concurrent uploads | No | Yes (v8.27.7) | — | Multiple chips shown with per-chip remove. |
+| `POST /api/files` bare filename path traversal fix | Yes | Yes (v8.27.8) | `TestHandleFilesUpload_BareFilename` | v8.27.8 fix: bare names joined to fileServiceRoot before traversal check. |
+| `sendSessionInputDirect` attachment handling | No | Yes (v8.27.9) | — | Channel-mode sessions with tmux tab route through this path. |
+| Block-while-uploading guard (all three send paths) | No | Yes (v8.27.10) | — | Toast + pulsing ⏫ → ✓ flow confirmed on Android. |
+| `expandImageTags` no-visioner → `@path` conversion | Yes | Yes (v8.27.11) | `TestExpandImageTags_NoVisioner` | Converts `[image:path]` to `@path` so Claude Code sessions read the file via own vision pipeline. |
