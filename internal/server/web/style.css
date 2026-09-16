@@ -4326,6 +4326,15 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   outline: none;
 }
 
+/* Stop + Restart live inside an inline <span> in the .meta flex row;
+   inline-flex with matching gap/align makes them behave like direct
+   flex siblings of the other pill buttons. */
+#actionBtns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .btn-restart {
   padding: 2px 8px;
   font-size: 10px;
