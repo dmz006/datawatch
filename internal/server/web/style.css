@@ -1799,6 +1799,21 @@ body {
   font-size: 10px;
   color: var(--text);
 }
+/* BL374 — file chip as a download link (replaces plain <code> for files_touched). */
+a.prd-file-chip {
+  display: inline-block;
+  background: rgba(16,185,129,0.08);
+  padding: 1px 6px 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: monospace;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+a.prd-file-chip::before { content: "⬇ "; font-size: 9px; }
+a.prd-file-chip:hover { background: rgba(16,185,129,0.18); text-decoration: underline; }
 
 /* v8.23.0 — task session link, error, verification, retry button. */
 .prd-task-session-link {

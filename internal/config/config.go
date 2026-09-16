@@ -1909,6 +1909,7 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
+		Autonomous: AutonomousConfig{AutoFixRetries: 1},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},

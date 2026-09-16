@@ -199,6 +199,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/info", api.handleInfo)
 	apiMux.HandleFunc("/api/backends", api.handleBackends)
 	apiMux.HandleFunc("/api/files", api.handleFiles)
+	apiMux.HandleFunc("/api/files/download", api.handleFilesDownload)
 	// BL333 — federated file service sub-routes.
 	apiMux.HandleFunc("/api/files/peers/", api.handleFilesPeer)
 	apiMux.HandleFunc("/api/files/discussions/", api.handleFilesDiscussion)

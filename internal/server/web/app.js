@@ -10204,7 +10204,7 @@ function _renderStoryReadOnlyExtras(story) {
   const touchedRow = cappedTouched.length
     ? `<div class="prd-story-touched-row">
          <span class="prd-story-touched-label">&#9989; Touched:</span>
-         ${cappedTouched.map(f => `<code class="prd-story-touched-chip">${escHtml(f)}</code>`).join('')}
+         ${cappedTouched.map(f => _fileChip(f)).join('')}
          ${touched.length > cappedTouched.length ? `<span class="prd-story-touched-more">+${touched.length - cappedTouched.length} more</span>` : ''}
        </div>`
     : '';
@@ -10430,7 +10430,7 @@ function renderTask(prd, story, task, editable) {
   const filesT = hasTaskTouched
     ? `<div class="prd-task-touched">
          <span class="prd-task-touched-label">&#9989; Touched:</span>
-         ${task.files_touched.map(f => `<code class="prd-task-touched-chip">${escHtml(f)}</code>`).join('')}
+         ${task.files_touched.map(f => _fileChip(f)).join('')}
        </div>`
     : '';
   // v8.23.0 — error + verification details in expanded view.
@@ -14831,6 +14831,19 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// BL374 — render a files_touched path as a clickable download link chip.
+// Shows just the filename; full path appears on hover. Text/code/doc files
+// open inline in a new tab; everything else downloads.
+function _fileChip(path) {
+  if (!path) return '';
+  const name = path.split('/').pop() || path;
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const inlineExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
+  const inline = inlineExts.has(ext) ? '&inline=1' : '';
+  const url = '/api/files/download?path=' + encodeURIComponent(path) + inline;
+  return `<a href="${escHtml(url)}" class="prd-file-chip" target="_blank" rel="noopener" title="${escHtml(path)}">${escHtml(name)}</a>`;
 }
 
 // Strip ANSI terminal escape sequences for display (CSI, OSC, DCS, tmux passthrough)

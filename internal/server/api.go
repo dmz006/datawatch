@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.21"
+var Version = "8.33.22"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2460,6 +2460,63 @@ func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status": "ok", "path": target,
 	})
+}
+
+// handleFilesDownload serves a single file for download (BL374).
+// GET /api/files/download?path=<abs-path>[&inline=1]
+// Returns the file content with Content-Disposition: attachment by default,
+// or inline when ?inline=1 is set (e.g. for image preview).
+// Enforces the same root-path restriction as handleFiles.
+func (s *Server) handleFilesDownload(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path required", http.StatusBadRequest)
+		return
+	}
+	if len(path) > 0 && path[0] == '~' {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[1:])
+	}
+	cleanPath := filepath.Clean(path)
+
+	// Enforce root-path restriction.
+	if s.cfg != nil && s.cfg.Session.RootPath != "" {
+		rootPath := s.cfg.Session.RootPath
+		if len(rootPath) > 0 && rootPath[0] == '~' {
+			home, _ := os.UserHomeDir()
+			rootPath = filepath.Join(home, rootPath[1:])
+		}
+		cleanRoot := filepath.Clean(rootPath)
+		if !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanRoot+string(filepath.Separator)) &&
+			cleanPath != cleanRoot {
+			http.Error(w, "path outside configured root", http.StatusForbidden)
+			return
+		}
+	}
+
+	fi, err := os.Stat(cleanPath)
+	if err != nil {
+		http.Error(w, "not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	if fi.IsDir() {
+		http.Error(w, "path is a directory", http.StatusBadRequest)
+		return
+	}
+
+	disposition := "attachment"
+	if r.URL.Query().Get("inline") == "1" {
+		disposition = "inline"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, filepath.Base(cleanPath)))
+	http.ServeFile(w, r, cleanPath)
 }
 
 // handleRenameSession renames a session.
