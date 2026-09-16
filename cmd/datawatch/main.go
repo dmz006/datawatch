@@ -3694,7 +3694,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return "", fmt.Errorf("session-based decompose requires project_dir on the PRD (set it with autonomous_prd_set_llm or at PRD creation)")
 			}
 			outputFile := filepath.Join(req.ProjectDir, ".decompose-output.json")
-			_ = os.Remove(outputFile) // clear stale output from a prior attempt
+			// If a prior run already produced output, reuse it — this handles daemon
+			// restart recovery without wiping a successfully-completed decompose run.
+			if existingContent, readErr := os.ReadFile(outputFile); readErr == nil && len(existingContent) > 0 {
+				fmt.Printf("[decompose-session] reusing prior output file %s (%d bytes)\n", outputFile, len(existingContent))
+				return string(existingContent), nil
+			}
+			_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
 			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, outputFile, req.Spec)
 

@@ -12287,7 +12287,11 @@ function loadGeneralConfig() {
           // calls baked into f.label ran before the bundle was fetched and
           // returned the raw key as a truthy string. A labelKey property
           // defers the lookup here where the bundle is ready.
-          const fLabel = f.labelKey ? (t(f.labelKey) || f.label) : f.label;
+          // When t() can't find a key it returns the key itself (truthy) so
+          // the naive (t(k) || fallback) idiom doesn't work — check for
+          // t() returning the key unchanged and fall back to f.label instead.
+          const _tl = f.labelKey ? t(f.labelKey) : null;
+          const fLabel = (_tl && _tl !== f.labelKey) ? _tl : f.label;
           if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
