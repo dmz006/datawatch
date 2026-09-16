@@ -44,10 +44,48 @@ func ExtractPersonaYAMLAndTags(raw string) (string, string) {
 			tagsCSV = parseTagsLine(trim)
 			continue
 		}
+		// Auto-quote top-level scalar fields whose LLM-generated values may
+		// contain colons or other YAML-special characters (e.g. role: Title — Does: X).
+		line = quotePersonaScalarLine(line)
 		bodyLines = append(bodyLines, line)
 	}
 	body := strings.TrimSpace(strings.Join(bodyLines, "\n"))
 	return body, tagsCSV
+}
+
+// quotePersonaScalarLine detects top-level name:/role: lines whose values
+// are unquoted strings containing YAML-special characters and wraps them in
+// double quotes. This guards against LLM output like:
+//
+//	role: Security Lead — evaluates: risk posture
+//
+// which YAML parses as a nested mapping and fails.
+func quotePersonaScalarLine(line string) string {
+	for _, key := range []string{"name:", "role:"} {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, key) {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		indentStr := line[:indent]
+		val := strings.TrimSpace(trimmed[len(key):])
+		if val == "" {
+			return line
+		}
+		// Already quoted — leave alone.
+		if (strings.HasPrefix(val, `"`) && strings.HasSuffix(val, `"`)) ||
+			(strings.HasPrefix(val, `'`) && strings.HasSuffix(val, `'`)) {
+			return line
+		}
+		// Only requote if the value contains characters that break YAML scalars.
+		if strings.ContainsAny(val, `:#{}[]|>&*!,`) {
+			escaped := strings.ReplaceAll(val, `\`, `\\`)
+			escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+			return indentStr + key + ` "` + escaped + `"`
+		}
+		return line
+	}
+	return line
 }
 
 // parseTagsLine handles both flow-style `tags: [a, b, c]` and a

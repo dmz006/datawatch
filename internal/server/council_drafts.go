@@ -388,7 +388,7 @@ You produce a YAML persona definition for a council debate participant from
 the operator's interview answers. Output STRICTLY a single YAML document:
 
   name: <kebab-case-name>
-  role: <Title — One-sentence "what they do">
+  role: "<Title — One-sentence what they do>"
   system_prompt: |
     You are a {role}. For each proposal, evaluate:
     * <bullet 1>
@@ -399,7 +399,7 @@ the operator's interview answers. Output STRICTLY a single YAML document:
 
 Rules:
 - name must be kebab-case (lowercase + hyphens). Derive from operator-supplied name.
-- role MUST be "<Title> — <one-sentence description of what they do>" combining the operator-supplied title + a clear description.
+- role MUST be a double-quoted YAML string: "Title — one-sentence description of what they do" (quotes are required; the value often contains colons that break unquoted YAML).
 - system_prompt must be 5-12 lines, in second person ("You are…"), action-oriented.
 - tags is 2-4 short lowercase words capturing the persona's domain.
 - No prose around the YAML. No code-fence wrapping. Just the YAML.
