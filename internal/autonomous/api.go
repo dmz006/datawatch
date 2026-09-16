@@ -266,9 +266,14 @@ func (a *API) Run(id string) error {
 	if a.runCancels == nil {
 		a.runCancels = map[string]context.CancelFunc{}
 	}
-	// Cancel any previous run for the same PRD ID before replacing.
-	if prev, ok := a.runCancels[id]; ok {
-		prev()
+	// B98 — if an executor goroutine is already live, don't cancel it:
+	// it will pick up any newly-pending tasks on its next poll cycle.
+	// Cancelling a live goroutine mid-spawn causes "context canceled"
+	// on the spawn HTTP call, which marks the task failed again.
+	if _, alive := a.runCancels[id]; alive {
+		cancel() // discard unused context
+		a.runMu.Unlock()
+		return nil
 	}
 	a.runCancels[id] = cancel
 	a.runMu.Unlock()

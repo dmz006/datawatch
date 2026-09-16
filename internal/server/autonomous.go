@@ -736,9 +736,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Ensure an executor goroutine is alive. After a daemon restart the
 		// executor map is empty even though the PRD shows PRDRunning in the
 		// store, so without this call the reset task would never be retried.
-		// Run() is idempotent on a live PRD: if an executor is already
-		// running it is cancelled and a fresh one starts, which is acceptable
-		// since the operator just triggered a deliberate retry action.
+		// Run() is now idempotent: if an executor is already live it returns
+		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
 		writeJSONOK(w, updated)
 	case "cancel_story":
