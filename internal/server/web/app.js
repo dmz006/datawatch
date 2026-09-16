@@ -1849,6 +1849,7 @@ function navigate(view, sessionId, fromPopstate) {
       headerTitle.textContent = t('automata_tab_automata') || 'Automata';
       _automataDetailId = null;
       _automataDetailBreadcrumb = [];
+      _automataDetailPRD = null;
       renderAutonomousView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
@@ -16712,11 +16713,36 @@ window._toggleAutonomousFilters = _toggleAutonomousFilters;
 
 let _automataDetailId = null;  // null = list view; string = detail view for this PRD id
 let _automataDetailBreadcrumb = [];  // [{id, title}] chain from root to current
+let _automataDetailPRD = null;  // last-fetched PRD object for in-place tab switching
 // BL246 v6.6.0 — sub-tabs in detail view: 'overview' | 'stories' | 'decisions' | 'scan'
 let _automataDetailTab = 'overview';
 function switchAutomataDetailTab(tab) {
   _automataDetailTab = tab;
-  if (_automataDetailId) renderPRDDetailView(_automataDetailId);
+  if (!_automataDetailId) return;
+  // Fast path: swap only the tab strip + body using cached PRD data — no API
+  // fetch, no loading flash, no full view wipe.
+  if (_automataDetailPRD) {
+    const prd = _automataDetailPRD;
+    const tabsEl = document.querySelector('#automataDetailBody .prd-detail-tabs');
+    if (tabsEl) tabsEl.outerHTML = _renderDetailTabStrip(prd, tab);
+    const bodyEl = document.querySelector('#automataDetailBody .prd-detail-tab-body');
+    if (bodyEl) {
+      let html = '';
+      if (tab === 'overview') html = _renderDetailOverview(prd);
+      else if (tab === 'stories') html = _renderDetailStories(prd);
+      else if (tab === 'decisions') html = _renderDetailDecisionsTab(prd);
+      else if (tab === 'scan') html = _renderDetailScanTab(prd);
+      else if (tab === 'rules') html = _renderDetailRulesTab(prd);
+      else html = _renderDetailOverview(prd);
+      bodyEl.innerHTML = html;
+      if (tab === 'overview') {
+        if (['planning','decomposing','running'].includes(prd.status || '')) _loadPRDActiveSessionCard(prd);
+        if (['decomposing','running'].includes(prd.status || '')) _renderStatusGraphs(prd);
+      }
+    }
+    return;
+  }
+  renderPRDDetailView(_automataDetailId);
 }
 window.switchAutomataDetailTab = switchAutomataDetailTab;
 
@@ -16853,6 +16879,7 @@ function renderPRDDetailView(prdId, breadcrumbAppend) {
 window.renderPRDDetailView = renderPRDDetailView;
 
 function _renderDetailContent(prd) {
+  _automataDetailPRD = prd;  // cache for in-place tab switching
   const id = prd.id || '';
   const title = prd.title || '(no title)';
   const status = prd.status || 'draft';
@@ -17173,9 +17200,13 @@ window._renderStatusGraphs = function(prd) {
     const barColor = pct === 100 ? 'var(--success,#22c55e)' : 'var(--accent2,#60a5fa)';
     const stTitle = escHtml(st.title || ('Story ' + (idx + 1)));
     const stStatus = st.status || '';
-    const isActive = stStatus === 'in_progress' || stStatus === 'running';
-    const statusDot = stStatus === 'completed' ? '✓' : isActive ? '▶' : '·';
-    const statusColor = stStatus === 'completed' ? 'var(--success,#22c55e)' : isActive ? 'var(--accent,#3b82f6)' : 'var(--text2)';
+    // B99: story.status may be stale (completed) while a task is actively running
+    // after reset_task — override with active state when tasks say otherwise.
+    const hasActiveTasks = tasks.some(tk => activeTaskStates.has(tk.status || ''));
+    const effectiveStatus = hasActiveTasks ? 'running' : stStatus;
+    const isActive = effectiveStatus === 'in_progress' || effectiveStatus === 'running';
+    const statusDot = effectiveStatus === 'completed' ? '✓' : isActive ? '▶' : '·';
+    const statusColor = effectiveStatus === 'completed' ? 'var(--success,#22c55e)' : isActive ? 'var(--accent,#3b82f6)' : 'var(--text2)';
     return `<div class="prd-sg-story" data-story-idx="${idx}" style="margin-bottom:6px;">
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px;">
         <span style="color:${statusColor};min-width:14px;text-align:center;">${statusDot}</span>

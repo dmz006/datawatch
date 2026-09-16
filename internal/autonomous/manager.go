@@ -1162,6 +1162,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning or PRDFailed", prdID, prd.Status)
 	}
 	found := false
+	foundSI := -1
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
@@ -1183,6 +1184,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()
 				found = true
+				foundSI = si
 				break
 			}
 		}
@@ -1192,6 +1194,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	}
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	// B99: if the containing story was completed/failed, reopen it to pending
+	// so the progress bar and status dot reflect that work is still in flight.
+	if foundSI >= 0 {
+		s := &prd.Story[foundSI]
+		if s.Status == StoryCompleted || s.Status == StoryFailed {
+			s.Status = StoryPending
+		}
 	}
 	now := time.Now()
 	prd.UpdatedAt = now
