@@ -3780,6 +3780,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 						fmt.Printf("[decompose-session] %s complete, read %d bytes from %s\n", startOut.ID, len(content), outputFile)
 						return string(content), nil
+					case "waiting_input":
+						// opencode TUI sessions may reach waiting_input instead of
+						// complete when the TUI renders DATAWATCH_COMPLETE with box-drawing
+						// chars that the screen-capture scan misses, then the opencode
+						// input prompt appears and transitions the session to waiting_input
+						// before the next scan tick can detect the marker. If the output
+						// file exists the decompose succeeded — treat as complete.
+						if _, statErr := os.Stat(outputFile); statErr == nil {
+							content, err := os.ReadFile(outputFile)
+							if err != nil {
+								return "", fmt.Errorf("decompose session %s (waiting_input) output file %s read error: %w", startOut.ID, outputFile, err)
+							}
+							fmt.Printf("[decompose-session] %s waiting_input→complete (output file found), read %d bytes from %s\n", startOut.ID, len(content), outputFile)
+							return string(content), nil
+						}
 					case "failed", "killed", "cancelled":
 						return "", fmt.Errorf("decompose session %s ended with state %q", startOut.ID, s.State)
 					}

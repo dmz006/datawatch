@@ -2246,7 +2246,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						if l == "" { continue }
 						checked++
 						for _, pat := range m.effectiveCompletionPatterns() {
-							if strings.HasPrefix(l, pat) {
+							if matchesCompletionPattern(l, pat) {
 								completionDetected = true
 								break
 							}
@@ -2256,16 +2256,18 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// v8.20.11 — for one-shot TUI sessions, the completion marker may
 					// have been pushed into the scrollback by a progress animation
 					// before the watcher fired (e.g. opencode's ⬝■ spinner). If the
-					// visible scan missed it, re-check the last 50 scrollback lines.
+					// visible scan missed it, re-check the last 500 scrollback lines.
+					// Use matchesCompletionPattern (not bare HasPrefix) to handle TUI
+					// box-drawing chars and indicator runes that prefix rendered lines.
 					if !completionDetected && current.OneShot {
-						if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 50); sbErr == nil {
+						if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500); sbErr == nil {
 							sbLines := strings.Split(StripANSI(sb), "\n")
-							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 50; i-- {
+							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
 								l := strings.TrimSpace(sbLines[i])
 								if l == "" { continue }
 								checked++
 								for _, pat := range m.effectiveCompletionPatterns() {
-									if strings.HasPrefix(l, pat) {
+									if matchesCompletionPattern(l, pat) {
 										completionDetected = true
 										break
 									}
