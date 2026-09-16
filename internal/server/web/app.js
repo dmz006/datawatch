@@ -2218,6 +2218,7 @@ function toggleSessionTreeView() {
   localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
   renderSessionsView();
 }
+window.toggleSessionTreeView = toggleSessionTreeView;
 
 // BL348 — render sessions as a parent/child tree
 function renderSessionsAsTree(sessions) {
@@ -10131,7 +10132,7 @@ function renderStory(prd, story) {
   const terminalStory = ['completed','cancelled','failed'].includes(story.status || '');
   const canCancelStory = prd.status === 'running' && !terminalStory;
   const cancelStoryBtn = canCancelStory
-    ? `<button class="prd-story-cancel-btn" onclick="event.stopPropagation();prdCancelStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title||'')})" title="${(window._t&&window._t('prd_cancel_story'))||'Cancel this story'}">✕ Cancel</button>`
+    ? `<button class="prd-story-cancel-btn" onclick="event.stopPropagation();prdCancelStory(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(story.id))},${escHtml(JSON.stringify(story.title||''))})" title="${(window._t&&window._t('prd_cancel_story'))||'Cancel this story'}">✕ Cancel</button>`
     : '';
 
   // 2(b) — "Files:" text label + 📂 button.
@@ -10383,13 +10384,13 @@ function renderTask(prd, story, task, editable) {
   const canCancelTask = ['pending','in_progress','running','verifying','running_tests'].includes(task.status||'') && prd.status === 'running';
   const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && prd.status === 'running';
   const retryBtn = canRetry
-    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
+    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
     : '';
   const cancelTaskBtn = canCancelTask
-    ? `<button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdCancelTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.title||'')})" title="${t('prd_cancel_task')||'Cancel this task'}">✕</button>`
+    ? `<button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdCancelTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))},${escHtml(JSON.stringify(task.title||''))})" title="${t('prd_cancel_task')||'Cancel this task'}">✕</button>`
     : '';
   const requeueBtn = canRequeue && editable
-    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdRequeueTask(${JSON.stringify(prd.id)},${JSON.stringify(task.id)})" title="${t('prd_requeue_task')||'Re-run this task'}">&#8635; ${t('prd_requeue_task_label')||'Re-run'}</button>`
+    ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdRequeueTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_requeue_task')||'Re-run this task'}">&#8635; ${t('prd_requeue_task_label')||'Re-run'}</button>`
     : '';
 
   // Status glyph for the collapsed header row.
