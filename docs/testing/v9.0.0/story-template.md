@@ -1,7 +1,7 @@
 # v9.0.0 Story Template
 
 **Use this template when planning E2E stories for the v9.0 release sprint.**  
-Next available TS#: **TS-695** (T45 closed at TS-694).
+Next available TS#: **TS-696** (T46 closed at TS-695).
 
 ---
 

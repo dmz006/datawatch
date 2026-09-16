@@ -1,8 +1,8 @@
 # E2E Test Cookbook — v9.0.0
 
 **Version**: v9.0.0  
-**Sprint**: T45 — Memory Lifecycle, Executor Resilience, Per-Story LLM, Per-Guardrail Approve  
-**Stories**: TS-680–TS-694 (15 tests)  
+**Sprint**: T45 + T46 — Memory Lifecycle, Executor Resilience, Per-Story LLM, Per-Guardrail Approve, Parallel LLM Execution  
+**Stories**: TS-680–TS-695 (16 tests)  
 **Last Run**: —  
 **Pass Rate**: — (0/15)  
 **Status**: 📋 Ready to run
@@ -98,9 +98,44 @@ bash scripts/run-tests.sh --story=TS-680
 
 ---
 
+## T46 Results — Parallel LLM Execution (BL370)
+
+| TS# | Description | Status | Notes |
+|---|---|---|---|
+| TS-695 | BL370 parallel Automata across two Ollama compute nodes; simultaneous node stats | 📋 planned | Requires TEST_OLLAMA2_HOST (second Ollama); skips if unreachable |
+
+---
+
+## Feature Coverage (T46)
+
+### Parallel Task Execution (BL370 — v8.26.0)
+
+| Surface | Story | Expected |
+|---|---|---|
+| REST | TS-695 | PRD with max_concurrent_tasks=2, two stories routed to distinct compute nodes; both reach terminal state |
+| REST | TS-695 | GET /api/compute/nodes/{name}/health for both nodes simultaneously returns valid JSON mid-run |
+| REST | TS-695 | GET /api/compute/nodes/{name}/detail for both nodes simultaneously returns Ollama stats |
+
+---
+
+## Run Commands (T46)
+
+```bash
+# Full T46 sprint (needs two Ollama servers)
+TEST_OLLAMA_HOST=http://ollama-1:11434 TEST_OLLAMA2_HOST=http://ollama-2:11434 \
+  bash scripts/run-tests.sh --sprint=T46
+
+# Single story
+bash scripts/run-tests.sh --story=TS-695
+```
+
+---
+
 ## Coverage Gaps (pending live-LLM tests)
 
-The following features have unit/API tests in T45 but lack live-LLM e2e coverage:
+BL370 parallel task execution is covered by TS-695 (T46).
+
+The following features still have unit/API tests but lack live-LLM e2e coverage:
 
 | Feature | What's missing | Conflict tag needed |
 |---|---|---|

@@ -758,6 +758,12 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T45 | TS-693 | memory_scope_recall MCP tool accepts prd_id parameter (BL385) | surface:mcp feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
 | T45 | TS-694 | memory-scope PWA dashboard tile visible when memory is enabled (BL387 Phase 3) | surface:pwa feature:memory group:memory-lifecycle-v9 conflict:pwa | 📋 pending | needs pwa/TS-694.mjs |
 
+## T46 — v9.0.0 Parallel LLM Execution (BL370)
+
+| Sprint | TS# | Description | Tags | Status | Notes |
+|--------|-----|-------------|------|--------|-------|
+| T46 | TS-695 | BL370: parallel Automata with two Ollama compute nodes; simultaneous health+detail stats from both mid-run | surface:api feature:automata feature:compute group:parallel-llm-v9 conflict:llm parallel:ok | ✅ ready | Requires TEST_OLLAMA_HOST + TEST_OLLAMA2_HOST (two Ollama servers); skips if node B unreachable |
+
 ---
 
 ## Bug Workflow
