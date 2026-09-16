@@ -611,11 +611,11 @@ autonomous:
   poll_interval_seconds: 30
   # Per-PRD in-flight worker cap.
   max_parallel_tasks: 3
-  # LLM backend used for the planning/decompose call (empty = inherit session.llm_backend).
-  # Must be an ollama or openwebui backend — headless /api/ask is required for decompose.
-  # Old key "decomposition_backend" is still accepted on read.
-  # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm
-  # or the PWA Settings modal. Empty per-PRD value falls back to this global setting.
+  # LLM backend used for the planning/decompose call. Any configured LLM name works:
+  # opencode/claude-code spawn a full session with codebase tool access (recommended);
+  # ollama/openwebui run headless via /api/ask. Old key "decomposition_backend" accepted on read.
+  # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm,
+  # the PWA Settings modal, or CLI --decomposition-profile. Per-PRD value takes priority.
   planning_backend: ""
   # Fallback backend for autonomous task sessions. Task backend resolution
   # checks (1) task.backend, (2) prd.backend, (3) this field, (4) the global

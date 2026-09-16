@@ -259,7 +259,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
 - **`autonomous_prd_edit_task`** (v5.9.0+) — edit task `spec` / `backend` / `effort` / `model` while a PRD is in `needs_review` or `revisions_asked`.
-- **`autonomous_prd_set_llm`** (v5.4.0; v8.20.0 extended) — operator-pinned LLM override at the PRD level. Parameters: `backend` (task-execution backend — opencode, claude-code, goose, etc.), `effort`, `model`, and `decomposition_profile` (planning/decompose backend — must be ollama or openwebui; empty = use global `autonomous.planning_backend`).
+- **`autonomous_prd_set_llm`** (v5.4.0; v8.20.0 extended; v8.33.9 priority fix) — operator-pinned LLM override at the PRD level. Parameters: `backend` (task-execution backend — opencode, claude-code, goose, etc.), `effort`, `model`, and `decomposition_profile` (planning/decompose backend — any configured LLM; opencode/claude-code spawn a full session with codebase tool access, ollama/openwebui run headless; empty = use global `autonomous.planning_backend`). Per-PRD `decomposition_profile` takes priority over the global setting.
 - **`autonomous_prd_set_task_llm`** (v5.4.0) — operator-pinned LLM override at the task level (overrides the PRD-level execution backend for that specific task).
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.

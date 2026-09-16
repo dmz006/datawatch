@@ -364,19 +364,20 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 }
 
 func newAutonomousPRDSetLLMCmd() *cobra.Command {
-	var backend, effort, model string
+	var backend, effort, model, decompositionProfile string
 	cmd := &cobra.Command{
 		Use:   "prd-set-llm <id>",
-		Short: "Set the PRD-level worker LLM (backend / effort / model). Tasks inherit unless overridden.",
+		Short: "Set the PRD-level worker LLM (backend / effort / model / decomposition-profile). Tasks inherit unless overridden.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"backend": backend, "effort": effort, "model": model, "actor": "operator"})
+			body, _ := json.Marshal(map[string]string{"backend": backend, "effort": effort, "model": model, "decomposition_profile": decompositionProfile, "actor": "operator"})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
 		},
 	}
-	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend name (claude / claude-code / ollama / openai / etc.) — empty = inherit global default")
+	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend name for task execution (claude-code / opencode / ollama / etc.) — empty = inherit global default")
 	cmd.Flags().StringVar(&effort, "effort", "", "effort level (low / medium / high / max / quick / normal / thorough) — empty = inherit")
-	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. claude-3-5-sonnet) — empty = backend default")
+	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. qwen3.8:27b) — empty = backend default")
+	cmd.Flags().StringVar(&decompositionProfile, "decomposition-profile", "", "LLM backend for planning/decompose (any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui use headless planning) — empty = use global autonomous.planning_backend")
 	return cmd
 }
 

@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.8"
+var Version = "8.33.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3786,9 +3786,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
-			rawBackend := amgrCfg.PlanningBackend
+			// Per-PRD decomposition_profile takes priority over global planning_backend.
+			rawBackend := req.Backend
 			if rawBackend == "" {
-				rawBackend = req.Backend
+				rawBackend = amgrCfg.PlanningBackend
 			}
 			if rawBackend == "" {
 				rawBackend = "ollama"

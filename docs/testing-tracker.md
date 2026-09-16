@@ -106,21 +106,22 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 
 ## Autonomous PRD Split Planning/Execution Backend (v8.20.0)
 
-Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, used by Decompose/DecomposeStreaming) from the task-execution backend (`backend`, used by autonomous task session spawning). `Decompose()` now resolves: `prd.DecompositionProfile` → `manager.cfg.PlanningBackend`. The execution `backend` field accepts any registered backend (opencode, goose, claude-code, etc.).
+Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, used by Decompose/DecomposeStreaming) from the task-execution backend (`backend`, used by autonomous task session spawning). Resolution order (v8.33.9 priority fix): `prd.DecompositionProfile` (per-PRD, wins) → `manager.cfg.PlanningBackend` (global fallback) → `"ollama"` default. Any registered LLM works for planning — opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui run headless. CLI `prd-set-llm` gained `--decomposition-profile` flag in v8.33.9.
 
-`POST /api/autonomous/prds/{id}/set_llm` — extended with `decomposition_profile` field (validated against inference registry).
+`POST /api/autonomous/prds/{id}/set_llm` — extended with `decomposition_profile` field (validated against inference registry). Available on all surfaces: REST, MCP (`autonomous_prd_set_llm`), CLI (`prd-set-llm --decomposition-profile`), PWA Settings modal, Android/iPhone (via REST).
 
 | Test case | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `Decompose()` uses `DecompositionProfile` when set | No | No | — | Unit test needed: PRD with non-empty `DecompositionProfile` → decomposeFn called with that backend, not `prd.Backend`. |
+| `Decompose()` uses `DecompositionProfile` when set, priority over global | No | No | — | Unit test needed: PRD with non-empty `DecompositionProfile` + cfg.PlanningBackend set → decomposeFn called with PRD value. |
 | `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | No | No | — | Unit test needed: PRD with empty `DecompositionProfile`, cfg.PlanningBackend set → decomposeFn called with cfg value. |
+| `Decompose()` with opencode backend uses session path with codebase tool access | No | No | — | Unit test needed: decomposeFnSession called, PlanningPromptSession used, output file read. |
 | `SetPRDLLM` persists `DecompositionProfile` field | No | No | — | Unit test needed: verify `prd.DecompositionProfile` set after call; decision log includes `decomposition_profile=<value>`. |
 | `set_llm` endpoint: unknown `decomposition_profile` returns 400 | No | No | — | Unit test needed: POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
-| `set_llm` endpoint: valid `decomposition_profile` returns 200 | No | No | — | Unit test needed: POST with known inference-registry name → 200, field persisted. |
+| `set_llm` endpoint: valid `decomposition_profile` returns 200 | No | No | — | POST with known inference-registry name → 200, field persisted. Applies to ollama, openwebui, opencode, claude-code. |
+| CLI `prd-set-llm --decomposition-profile` round-trip | No | No | — | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
 | `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | No | No | — | Code inspection confirmed; live test requires PRD run with mismatched backends. |
-| PWA Settings modal — execution backend picker shows all session backends | No | No | — | Manual: open Settings on a PRD; verify opencode, goose, claude-code appear; no planningOnly filter. |
-| PWA Settings modal — planning backend picker filters to ollama/openwebui | No | No | — | Manual: "Planning backend" picker should not show opencode, claude-code, goose. |
-| **LIVE** round-trip: set `decomposition_profile` + `backend` separately, verify PRD fields | No | No | — | POST `set_llm` with `backend=opencode, decomposition_profile=ollama-datawatch`; GET PRD → confirm both fields. |
+| PWA Settings modal — planning backend picker accepts all configured LLMs | No | No | — | Manual: "Planning backend" picker should show opencode, claude-code, ollama variants — all registered LLMs. |
+| **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | No | No | — | POST `set_llm` with `decomposition_profile=opencode`; trigger decompose; confirm opencode session spawned, codebase read. |
 
 ## PWA Current-Status No-Change Contract (v8.19.8)
 

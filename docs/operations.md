@@ -1481,42 +1481,47 @@ Autonomous PRDs use two separate backends:
 
 | Role | Config | Description |
 |------|--------|-------------|
-| **Planning** (decompose) | `autonomous.planning_backend` (global) or `decomposition_profile` (per-PRD) | Runs headless LLM inference via `/api/ask`. Must be an **ollama** or **openwebui** backend. |
+| **Planning** (decompose) | `autonomous.planning_backend` (global) or `decomposition_profile` (per-PRD, takes priority) | Any configured LLM. `opencode`/`claude-code` spawn a full session with codebase tool access; `ollama`/`openwebui` run headless via `/api/ask`. |
 | **Execution** (task sessions) | `backend` per-PRD | Spawns interactive coding sessions. Any registered backend: `opencode`, `claude-code`, `goose`, `aider`, etc. |
 
-**Global planning backend** (applies to all PRDs that don't override it):
+**Global planning backend** (applies to all PRDs that don't set `decomposition_profile`):
 
 ```yaml
 autonomous:
-  planning_backend: "ollama-datawatch"   # must be ollama or openwebui kind
+  planning_backend: "opencode"    # any configured LLM; opencode/claude-code get full codebase tool access
   planning_effort: "thorough"
 ```
 
-**Per-PRD settings** — use the PWA Settings modal (Settings button on any PRD in the detail view), or the MCP tool:
+**Per-PRD settings** — use the PWA Settings modal (Settings button on any PRD in the detail view), the MCP tool, CLI, or REST API. Per-PRD `decomposition_profile` takes priority over the global setting.
 
+MCP:
 ```
 autonomous_prd_set_llm(
   id="<prd-id>",
-  backend="opencode",            # task execution (any session backend)
-  decomposition_profile="",      # planning (empty = use global planning_backend)
+  backend="opencode",              # task execution (any session backend)
+  decomposition_profile="opencode", # planning (overrides global; any LLM)
   effort="thorough"
 )
 ```
 
-Or the REST API:
+CLI:
+```bash
+datawatch autonomous prd-set-llm <id> --backend opencode --decomposition-profile opencode --effort thorough
+```
 
+REST API (also used by Android / iPhone clients):
 ```bash
 curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
   -H "Content-Type: application/json" \
-  -d '{"backend":"opencode","decomposition_profile":"","effort":"thorough"}'
+  -d '{"backend":"opencode","decomposition_profile":"opencode","effort":"thorough"}'
 ```
 
 **Typical setup for opencode-based PRDs:**
 
-1. Configure a global planning backend (ollama) in `config.yaml`
-2. Create the PRD
-3. In the PWA Settings modal, set "Execution backend" to `opencode`, leave "Planning backend" blank
-4. Decompose → Review → Approve → Run — decompose uses ollama, tasks spawn opencode sessions with file access
+1. Configure a global planning backend in `config.yaml` (`autonomous.planning_backend: opencode`)
+2. Create the PRD — decompose will spawn an opencode session that reads the codebase before writing the plan
+3. Or set per-PRD via PWA Settings modal → "Planning backend" dropdown → pick any configured LLM
+4. Decompose → Review → Approve → Run
 
 ---
 

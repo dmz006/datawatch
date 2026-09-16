@@ -11419,7 +11419,7 @@ function openPRDSetLLMModal(prdID, current) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Execution backend runs task sessions (opencode, claude-code, goose, etc.). Planning backend runs decompose — must be ollama or openwebui; defaults to the global planning_backend when left empty.'}</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Execution backend runs task sessions (opencode, claude-code, goose, etc.). Planning backend runs decompose — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Defaults to global autonomous.planning_backend when left empty.'}</div>
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Execution backend (task sessions)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
@@ -11429,9 +11429,9 @@ function openPRDSetLLMModal(prdID, current) {
         </div>
       </div>
       <div>
-        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Planning backend (decompose / headless only)</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Planning backend (decompose)</div>
         <div style="display:grid;grid-template-columns:1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (ollama / openwebui)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', '', true)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (any configured backend)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', '', true)}</div>
         </div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -11514,9 +11514,9 @@ function openPRDSettingsModal(prdID) {
               </div>
             </div>
             <div class="wizard-field">
-              <label class="wizard-label">Planning backend (decompose — ollama / openwebui)</label>
+              <label class="wizard-label">Planning backend (decompose)</label>
               ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, '', true)}
-              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Runs headless planning only. Empty = use global planning_backend config.</div>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Empty = use global autonomous.planning_backend.</div>
             </div>
             <!-- v6.13.4 — operator: "skills should be a selectable list
                  from what is installed... if no skills installed say
