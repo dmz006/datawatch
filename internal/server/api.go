@@ -3253,6 +3253,23 @@ func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
 // for the rollback.go set (rollback, hook-event, status, telemetry, guardrail, input).
 func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	// GET /api/sessions/{id} — bare session lookup, no verb suffix.
+	if !strings.Contains(path, "/") {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapSessionsRead) {
+			return
+		}
+		sess, ok := s.manager.GetSession(path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSONOK(w, sess)
+		return
+	}
 	if strings.HasSuffix(path, "/last-summary") {
 		s.handleSessionLastSummary(w, r)
 		return
