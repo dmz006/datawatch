@@ -2245,6 +2245,13 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						l := strings.TrimSpace(capLines[i])
 						if l == "" { continue }
 						checked++
+						// Skip lines enclosed in TUI box-drawing borders (┃…┃ or │…│).
+						// opencode renders user messages (including the task text that
+						// contains "DATAWATCH_COMPLETE:" as an instruction) in bordered
+						// boxes. Only the LLM's actual output appears as unbordered text.
+						if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+							continue
+						}
 						for _, pat := range m.effectiveCompletionPatterns() {
 							if matchesCompletionPattern(l, pat) {
 								completionDetected = true
@@ -2266,6 +2273,10 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								l := strings.TrimSpace(sbLines[i])
 								if l == "" { continue }
 								checked++
+								// Same box-border guard as the visible scan above.
+								if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+									continue
+								}
 								for _, pat := range m.effectiveCompletionPatterns() {
 									if matchesCompletionPattern(l, pat) {
 										completionDetected = true
@@ -4328,13 +4339,13 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
-	// Check the status bar (last few lines) for "esc to interrupt" — this is the
-	// most reliable indicator that Claude is actively processing. When truly idle,
-	// Claude shows "esc to go back" or just the prompt mode indicator.
+	// Check the status bar (last few lines) for active-processing indicators.
+	// "esc to interrupt" is the claude-code pattern; opencode shows "esc interrupt"
+	// (without "to"). Both mean the LLM is actively working — suppress detection.
 	for i := len(lines) - 1; i >= 0 && i >= len(lines)-3; i-- {
 		l := strings.TrimSpace(lines[i])
-		if strings.Contains(l, "esc to interrupt") {
-			return "", "" // Claude actively processing — status bar confirms it
+		if strings.Contains(l, "esc to interrupt") || strings.Contains(l, "esc interrupt") {
+			return "", "" // LLM actively processing — status bar confirms it
 		}
 	}
 
@@ -5189,6 +5200,12 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							cl := strings.TrimSpace(capLines[ci])
 							if cl == "" { continue }
 							cc++
+							// Skip TUI box-bordered lines (user message renders) so that
+							// "DATAWATCH_COMPLETE:" appearing in the task text instruction
+							// does not falsely trigger completion (same guard as StartScreenCapture).
+							if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
+								continue
+							}
 							for _, pat := range m.effectiveCompletionPatterns() {
 								if strings.HasPrefix(cl, pat) {
 									completionFound = true
@@ -5205,6 +5222,10 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 									cl := strings.TrimSpace(sbLines[ci])
 									if cl == "" { continue }
 									cc++
+									// Same box-border guard for scrollback.
+									if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
+										continue
+									}
 									for _, pat := range m.effectiveCompletionPatterns() {
 										if strings.HasPrefix(cl, pat) {
 											completionFound = true
