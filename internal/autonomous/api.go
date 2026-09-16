@@ -65,6 +65,10 @@ func (a *API) resumeRunningPRDs() {
 		if prd.Status != PRDRunning {
 			continue
 		}
+		// Kill any orphaned sessions from in-progress tasks and reset them
+		// to pending so the new executor re-runs them cleanly instead of
+		// re-spawning a duplicate alongside an already-running old session.
+		a.M.resetInProgressTasksForResume(prd)
 		if err := a.Run(prd.ID); err != nil {
 			log.Printf("[autonomous] boot-resume: prd=%s: %v", prd.ID, err)
 		} else {

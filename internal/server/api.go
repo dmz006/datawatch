@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.9"
+var Version = "8.33.10"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4759,9 +4759,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"console_cols":      s.cfg.Session.ConsoleCols,
 				"console_rows":      s.cfg.Session.ConsoleRows,
 				"log_level":         s.cfg.Session.LogLevel,
-				"summarizer.enabled": s.cfg.Session.Summarizer.Enabled,
-				"summarizer.llm_ref": s.cfg.Session.Summarizer.LLMRef,
-				"summarizer.prompt":  s.cfg.Session.Summarizer.Prompt,
+				"summarizer": map[string]interface{}{
+					"enabled": s.cfg.Session.Summarizer.Enabled,
+					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
+					"prompt":  s.cfg.Session.Summarizer.Prompt,
+				},
 			}
 			// v7.0.0: claude-code settings moved to LLM registry.
 			// Read from registry when available for API back-compat.

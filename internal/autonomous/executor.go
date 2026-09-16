@@ -521,6 +521,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return fmt.Errorf("spawn: %w", err)
 		}
 		t.SessionID = sr.SessionID
+		_ = m.store.SaveTask(t) // persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 		// BL386 Phase 1 — warm-start seed after spawn, best-effort.
 		if sr.SessionID != "" && prd.MemorySeed.Enabled {
 			m.mu.Lock()

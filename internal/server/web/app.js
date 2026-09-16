@@ -338,6 +338,7 @@ function connect() {
       state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
       state._recentMinutes = cfg.server?.recent_session_minutes || 5;
       state._maxSessions = cfg.session?.max_sessions || 10;
+      state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
     }).catch(() => {});
     // After reconnect (e.g. after daemon restart), re-render the current view
     // so settings/LLM data reloads from the fresh daemon
@@ -2396,10 +2397,12 @@ function sessionCard(sess, idx, total) {
     actions += `<button onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart" style="${btnStyle}">&#8635; Restart</button>`;
     actions += `<button onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete" style="${btnStyle}border-color:var(--error);color:var(--error);">&#128465;</button>`;
   }
-  // Manual summarize button — visible on waiting_input and done sessions when summarizer is likely configured
-  // (we can't cheaply check config here so always show it; server returns 503 if not configured)
-  if (!isActive || isWaiting) {
-    actions += `<button onclick="event.stopPropagation();manualSummarize('${escHtml(fullId)}')" title="Re-summarize with AI" style="${btnStyle}font-size:10px;">&#129302; Summary</button>`;
+  // Manual summarize button — only show when summarizer is enabled in config.
+  // When enabled, show for all sessions (running sessions call fetchCurrentStatus instead of /summarize).
+  if (state._summarizerEnabled) {
+    const isSummarizing = !!(state._summarizing && state._summarizing[fullId]);
+    const summaryLabel = isSummarizing ? '&#9203; Summarizing…' : '&#129302; Summary';
+    actions += `<button onclick="event.stopPropagation();manualSummarize('${escHtml(fullId)}')" title="Re-summarize with AI" style="${btnStyle}font-size:10px;" ${isSummarizing ? 'disabled' : ''}>${summaryLabel}</button>`;
   }
   // BL303 S4 T10 — maximize button opens session in dashboard expand mode.
   actions += `<button class="sess-maximize-btn" onclick="event.stopPropagation();window.openDashExpand('${escHtml(fullId)}')" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
@@ -2557,11 +2560,15 @@ window.toggleSummaryLong = toggleSummaryLong;
 function manualSummarize(fullId) {
   const sess = state.sessions.find(s => s.full_id === fullId);
   if (!sess) return;
+  if (state._summarizing && state._summarizing[fullId]) return; // debounce
   // For running sessions, use the current-status path instead
   if (sess.state === 'running' || sess.state === 'rate_limited') {
     fetchCurrentStatus(fullId);
     return;
   }
+  if (!state._summarizing) state._summarizing = {};
+  state._summarizing[fullId] = true;
+  renderSessionsView(); // re-render to show loading state on the button
   apiFetch('/api/sessions/' + encodeURIComponent(fullId) + '/summarize', { method: 'POST', body: '{}' })
     .then(data => {
       // Patch session in state so the card re-renders with the new summaries
@@ -2572,10 +2579,13 @@ function manualSummarize(fullId) {
           last_summary_long: data.long_summary || '',
         });
       }
-      renderSessionsView();
     })
     .catch(err => {
       console.warn('[summarize] error for', fullId, err.message);
+    })
+    .finally(() => {
+      delete state._summarizing[fullId];
+      renderSessionsView();
     });
 }
 window.manualSummarize = manualSummarize;
@@ -12679,6 +12689,7 @@ function saveGeneralField(key, value) {
         // Update cached state for settings that affect UI behavior
         if (key === 'server.suppress_active_toasts') state.suppressActiveToasts = !!value;
         if (key === 'server.auto_restart_on_config') state.autoRestartOnConfig = !!value;
+        if (key === 'session.summarizer.enabled') state._summarizerEnabled = !!value;
         // Show restart hint if this field requires a restart
         if (RESTART_FIELDS.has(key)) {
           const hint = document.getElementById('restartHint');

@@ -409,6 +409,36 @@ func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectD
 	m.memoryReportFn = fn
 }
 
+// resetInProgressTasksForResume kills any sessions associated with
+// TaskInProgress tasks, clears their SessionID, and resets their status to
+// TaskPending so the executor re-runs them cleanly after a daemon restart.
+// Called from api.resumeRunningPRDs before re-launching the executor.
+func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
+	m.mu.Lock()
+	fn := m.sessionKillerFn
+	m.mu.Unlock()
+	if prd == nil {
+		return
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.Status != TaskInProgress {
+				continue
+			}
+			if fn != nil && t.SessionID != "" {
+				if err := fn(t.SessionID); err != nil {
+					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
+				}
+			}
+			t.SessionID = ""
+			t.Status = TaskPending
+			_ = m.store.SaveTask(t)
+			log.Printf("[autonomous] boot-resume: reset task %s (was in_progress) for prd=%s", t.ID, prd.ID)
+		}
+	}
+}
+
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
 // each non-empty SessionID. Best-effort — errors are logged but not returned.
 func (m *Manager) killPRDSessions(prd *PRD) {
