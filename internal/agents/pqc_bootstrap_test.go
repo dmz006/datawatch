@@ -5,6 +5,7 @@ package agents
 
 import (
 	"context"
+	"encoding/base64"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,9 +107,22 @@ func TestConsumeBootstrap_PQCEnvelope_TamperedRejected(t *testing.T) {
 	keys := m.agents[a.ID].PQCKeys
 	m.mu.Unlock()
 	envelope, _, _ := MakePQCBootstrapToken(a.ID, keys)
-	// Flip one byte in the signature half (after the dot).
-	idx := strings.Index(envelope, ".")
-	tampered := envelope[:idx+1] + "A" + envelope[idx+2:]
+	// Corrupt the signature half by flipping a bit in the raw bytes then
+	// re-encoding. Replacing a base64 character with a fixed literal
+	// ('A') was previously used but is a no-op when the original
+	// character is already 'A' (~1.6% probability), causing a flaky
+	// failure because VerifyPQCBootstrapToken then sees the original
+	// valid signature and returns nil.
+	parts := strings.SplitN(envelope, ".", 2)
+	if len(parts) != 2 {
+		t.Fatalf("envelope missing dot separator: %q", envelope)
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decode sig: %v", err)
+	}
+	sigBytes[0] ^= 0x01 // flip LSB of first byte — never a no-op
+	tampered := parts[0] + "." + base64.StdEncoding.EncodeToString(sigBytes)
 	if _, err := m.ConsumeBootstrap(tampered, a.ID); err == nil {
 		t.Error("expected error for tampered envelope")
 	}
