@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-15
 
-Latest release: **v8.33.7** (2026-09-15). fix(daemon): in-place update now auto-restarts the daemon (detached shell child polls for PID exit then calls `datawatch start`); no service manager required.
+Latest release: **v8.33.8** (2026-09-15). fix(autonomous): executor goroutines re-launched at daemon startup for PRDs in `running` state (`resumeRunningPRDs()` in `SetExecutors`); `reset_task` handler now calls `Run(id)` after reset to guarantee executor is alive. Fixes Automata stuck in "running" with no sessions starting after daemon restart or after task reset on a restarted daemon.
+
+Previous: **v8.33.7** (2026-09-15). fix(daemon): in-place update now auto-restarts the daemon (detached shell child polls for PID exit then calls `datawatch start`); no service manager required.
 
 Previous: **v8.33.4** (2026-09-15). docs: remove internal IDs from user-facing howtos; add exec_steps to automata-memory-workflow howto. Pre-release smoke found 9 BL### leaks in docs/datawatch-definitions.md + docs/howto/automata-memory-workflow.md + docs/howto/prd-memory-workflow.md — replaced with plain version strings. prd-memory-workflow.md lacked exec_steps front-matter (howto-coverage rule) — added exec_steps for seed/harvest/get steps; corrected title to "Automata Memory Workflow". smoke: 94 headers, 169 passed, 0 failed, 30 skipped.
 

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
@@ -46,10 +47,30 @@ func NewAPI(m *Manager) *API {
 
 // SetExecutors wires the real spawn + verify indirections used by the
 // executor walk. Called from main.go once session.Manager + BL103
-// validator wiring are available.
+// validator wiring are available. After wiring, re-launches executor
+// goroutines for any PRD that was left in PRDRunning state by a prior
+// daemon instance — those goroutines are lost on restart, leaving
+// in-flight PRDs permanently stalled without this recovery step.
 func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 	a.spawnFn = spawn
 	a.verify = verify
+	go a.resumeRunningPRDs()
+}
+
+// resumeRunningPRDs re-launches executor goroutines for PRDs that are
+// stored in PRDRunning state but have no live executor (e.g. after a
+// daemon restart). Called once from SetExecutors in a background goroutine.
+func (a *API) resumeRunningPRDs() {
+	for _, prd := range a.M.Store().ListPRDs() {
+		if prd.Status != PRDRunning {
+			continue
+		}
+		if err := a.Run(prd.ID); err != nil {
+			log.Printf("[autonomous] boot-resume: prd=%s: %v", prd.ID, err)
+		} else {
+			log.Printf("[autonomous] boot-resume: re-launched executor for prd=%s", prd.ID)
+		}
+	}
 }
 
 func (a *API) Config() any { return a.M.Config() }

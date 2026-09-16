@@ -3,6 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.8 — fix(autonomous): executor goroutines re-launched after daemon restart; reset_task re-starts stuck Automata
+
+### Fixed
+- **Automata stuck in "running" with no sessions after daemon restart** — Executor goroutines are in-memory and lost on every restart. PRDs stored in `running` status had no goroutine driving them, so queued tasks sat idle indefinitely. Fixed in two places: (1) `SetExecutors()` now calls `resumeRunningPRDs()` at startup, re-launching an executor goroutine for every PRD in `running` state; (2) the `reset_task` REST handler now calls `Run(id)` after resetting the task, ensuring the executor is alive even when the reset follows a restart that cleared the goroutine map.
+
+---
+
 ## v8.33.7 — fix(daemon): in-place update now auto-restarts without service manager
 
 ### Fixed
