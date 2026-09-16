@@ -786,9 +786,9 @@ function handleMessage(msg) {
         clearTimeout(state._prdReloadTimer);
         state._prdReloadTimer = setTimeout(() => {
           if (_automataDetailId) {
-            // Refresh detail view in place
+            // B103 — incremental live update; falls back to full render if off-tab
             apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
-              .then(prd => { if (prd && prd.id) _renderDetailContent(prd); })
+              .then(prd => { if (prd && prd.id) _liveUpdateDetail(prd); })
               .catch(() => {});
           } else {
             loadAutomataPanel();
@@ -10161,7 +10161,7 @@ function renderStory(prd, story) {
     ? `<div class="prd-story-desc">${escHtml(story.description)}</div>`
     : '';
 
-  return `<div class="prd-story-card">
+  return `<div class="prd-story-card" data-story-id="${escHtml(story.id)}">
     <div class="prd-story-card-header">
       <strong class="prd-story-title">${escHtml(story.title || story.id)}</strong>
       ${statusPill}${profPill}${llmPill}
@@ -16745,6 +16745,75 @@ function switchAutomataDetailTab(tab) {
   renderPRDDetailView(_automataDetailId);
 }
 window.switchAutomataDetailTab = switchAutomataDetailTab;
+
+// B103 — incremental live-update for the PRD detail view on prd_update WS events.
+// Patches only what changed: task rows (by data-task-id), story pills, overview
+// slot refreshes. Preserves expanded-task state and scroll position.
+function _liveUpdateDetail(prd) {
+  if (!_automataDetailId || prd.id !== _automataDetailId) return;
+  const oldPrd = _automataDetailPRD;
+  _automataDetailPRD = prd;
+  const tab = _automataDetailTab || 'overview';
+  const bodyEl = document.querySelector('#automataDetailBody .prd-detail-tab-body');
+
+  if (tab === 'stories') {
+    if (!bodyEl) return;
+    const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+    // Build a fast lookup of old tasks by id for change detection
+    const oldTaskMap = {};
+    if (oldPrd) {
+      (oldPrd.stories || []).forEach(s => {
+        (s.tasks || []).forEach(t => { oldTaskMap[t.id] = t; });
+      });
+    }
+    (prd.stories || []).forEach(story => {
+      // Update story status pill in place (no re-render)
+      const storyCardEl = bodyEl.querySelector('[data-story-id="' + CSS.escape(story.id) + '"]');
+      if (storyCardEl && story.status) {
+        const pillEl = storyCardEl.querySelector('.prd-story-status-pill');
+        if (pillEl && pillEl.textContent !== story.status) pillEl.textContent = story.status;
+      }
+      // Re-render individual task rows that changed
+      (story.tasks || []).forEach(task => {
+        const rowEl = bodyEl.querySelector('[data-task-id="' + CSS.escape(task.id) + '"]');
+        if (!rowEl) return;
+        const old = oldTaskMap[task.id];
+        const changed = !old ||
+          old.status !== task.status ||
+          old.session_id !== task.session_id ||
+          old.error !== task.error ||
+          (old.verification_result || '') !== (task.verification_result || '');
+        if (!changed) return;
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderTask(prd, story, task, editable);
+        const newRow = tmp.firstElementChild;
+        if (newRow) rowEl.replaceWith(newRow);
+      });
+    });
+    // Update isolated async slots if present on the overview tab
+    const sgSlot = document.getElementById('prdStatusGraphsSlot');
+    if (sgSlot && ['decomposing','running'].includes(prd.status || '')) _renderStatusGraphs(prd);
+  } else if (tab === 'overview') {
+    if (bodyEl) {
+      const oldStatus = oldPrd ? (oldPrd.status || '') : '';
+      if ((prd.status || '') !== oldStatus) {
+        // Status changed — re-render overview to update lifecycle strip
+        bodyEl.innerHTML = _renderDetailOverview(prd);
+      }
+      // Always refresh the live slots (they write to named element IDs)
+      if (['planning','decomposing','running'].includes(prd.status || '')) _loadPRDActiveSessionCard(prd);
+      if (['decomposing','running'].includes(prd.status || '')) _renderStatusGraphs(prd);
+    }
+  } else if (tab === 'decisions') {
+    if (bodyEl) {
+      const oldCount = oldPrd ? (oldPrd.decisions || []).length : 0;
+      if ((prd.decisions || []).length !== oldCount) {
+        bodyEl.innerHTML = _renderDetailDecisionsTab(prd);
+      }
+    }
+  }
+  // scan/rules tabs: static data, skip live patching
+}
 
 function _taskStatusIcon(status) {
   const icons = { completed: '✓', in_progress: '⚡', pending: '○', blocked: '✗', failed: '✗', cancelled: '○' };

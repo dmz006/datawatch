@@ -2,8 +2,11 @@ package session
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ProjectGit manages git operations on the user's project directory.
@@ -156,6 +159,82 @@ func (g *ProjectGit) DiffNames() []string {
 		}
 	}
 	return files
+}
+
+// TouchedFiles (B102) returns files modified or created since the given time,
+// working for both git and non-git project directories. Capped at 50 entries.
+//
+// For git repos: unions tracked-modified (git diff --name-only HEAD) with new
+// untracked files (git ls-files --others --exclude-standard). This catches
+// uncommitted edits and brand-new files that git diff HEAD~1..HEAD misses.
+//
+// For non-git directories (or when git fails): walks the directory tree and
+// returns files whose ModTime is after since, skipping dotfiles and
+// vendor/node_modules directories.
+func (g *ProjectGit) TouchedFiles(since time.Time) []string {
+	seen := make(map[string]struct{})
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name != "" && len(seen) < 50 {
+			seen[name] = struct{}{}
+		}
+	}
+
+	if g.IsRepo() {
+		// Tracked modified/staged vs HEAD
+		if out, err := gitOutput(g.dir, "diff", "--name-only", "HEAD"); err == nil {
+			for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+				add(l)
+			}
+		}
+		// New untracked files (not yet in git index)
+		if out, err := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard"); err == nil {
+			for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+				add(l)
+			}
+		}
+		if len(seen) > 0 {
+			out := make([]string, 0, len(seen))
+			for f := range seen {
+				out = append(out, f)
+			}
+			return out
+		}
+		// Fall through to find-newer if git returned nothing (possible on fresh clone)
+	}
+
+	// Non-git or git returned nothing: walk and find files modified after since.
+	skipDirs := map[string]bool{
+		"node_modules": true, "vendor": true, ".git": true,
+		".hg": true, ".svn": true,
+	}
+	_ = filepath.Walk(g.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || len(seen) >= 50 {
+			return nil
+		}
+		if info.IsDir() {
+			if skipDirs[info.Name()] || (info.Name() != "." && strings.HasPrefix(info.Name(), ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(info.Name(), ".") {
+			return nil
+		}
+		if info.ModTime().After(since) {
+			rel, relErr := filepath.Rel(g.dir, path)
+			if relErr == nil {
+				add(rel)
+			}
+		}
+		return nil
+	})
+
+	out := make([]string, 0, len(seen))
+	for f := range seen {
+		out = append(out, f)
+	}
+	return out
 }
 
 func parseShortstat(line string) DiffStat {

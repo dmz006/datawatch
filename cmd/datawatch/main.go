@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.26"
+var Version = "8.33.27"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4531,7 +4531,9 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// Phase 4 follow-up (v5.26.67) — wire the post-session
 			// diff hook now that the autonomous Manager exists.
 			autonomousFilesHook = func(sess *session.Session) {
-				if sess == nil || sess.State != session.StateComplete {
+				// B102: also accept failed/cancelled sessions so a task
+				// that was retried still records files from prior runs.
+				if sess == nil {
 					return
 				}
 				prdID, taskID := amgr.FindTaskBySessionID(sess.FullID)
@@ -4539,7 +4541,9 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 					return
 				}
 				projGit := session.NewProjectGit(sess.ProjectDir)
-				files := projGit.DiffNames()
+				// TouchedFiles covers git-tracked edits + new untracked files
+				// + non-git dirs (find-newer since session start).
+				files := projGit.TouchedFiles(sess.CreatedAt)
 				if len(files) == 0 {
 					return
 				}
