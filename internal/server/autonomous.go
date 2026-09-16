@@ -881,7 +881,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		// v8.20.0 — validate decomposition_profile (planning LLM) separately.
+		// Validate decomposition_profile against the registry (any kind accepted —
+		// ollama/openwebui run headless, opencode/claude-code spawn a session).
 		if req.DecompositionProfile != "" && s.inferenceReg != nil {
 			if _, err := s.inferenceReg.Get(req.DecompositionProfile); err != nil {
 				http.Error(w, "unknown planning LLM "+strconv.Quote(req.DecompositionProfile)+" — check /api/llms for valid names", http.StatusBadRequest)

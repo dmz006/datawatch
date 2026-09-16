@@ -9834,7 +9834,8 @@ const NON_LLM_BACKENDS = new Set(['shell']);
 // Session-only backends (claude-code, opencode, aider, gemini, goose) spawn
 // a tmux session and cannot be called headlessly — decompose will fail if
 // one of those is selected as the PRD-level backend.
-const HEADLESS_PLANNING_KINDS = new Set(['ollama', 'openwebui']);
+// Planning backend accepts any registered LLM (session-capable or headless).
+// Kept as a set for legacy reference but no longer used to filter the dropdown.
 
 function renderBackendSelect(id, current, onchange, planningOnly) {
   const opts = ['<option value="">(inherit)</option>'];
@@ -9852,7 +9853,6 @@ function renderBackendSelect(id, current, onchange, planningOnly) {
     if (!b || !b.name) return;
     if (b.disabled === true) return;
     if (NON_LLM_BACKENDS.has(b.name)) return;
-    if (planningOnly && !HEADLESS_PLANNING_KINDS.has(b.kind || '')) return;
     seen.add(b.name);
     opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
   });
