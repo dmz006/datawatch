@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.15"
+var Version = "8.33.17"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5914,12 +5914,16 @@ Return STRICT JSON:
 				}
 				go func() {
 					time.Sleep(time.Second) // let TUI input handler settle
+					// Mark before SendInput so StartScreenCapture's task-echo
+					// suppression is active during the entire input rendering window
+					// (the task text with DATAWATCH_COMPLETE: placeholder is visible
+					// in the input field between send-keys -l and the Enter keystroke).
+					mgr.MarkTaskDelivered(sessID)
 					if err := mgr.SendInput(sessID, task, "channel-task"); err != nil {
 						fmt.Printf("[tui-task] send_input failed for %s (%s): %v\n", sessID, backendFamily, err)
 						tuiTaskDelivered.Delete(sessID)
 					} else {
 						fmt.Printf("[tui-task] task delivered to %s (%s) via send_input\n", sessID, backendFamily)
-						mgr.MarkTaskDelivered(sessID)
 					}
 				}()
 			}

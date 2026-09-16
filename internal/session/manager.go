@@ -2252,8 +2252,22 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
 							continue
 						}
+						// Skip the literal instruction placeholder appended to every TUI task
+						// delivery: "DATAWATCH_COMPLETE: <one-sentence summary of what was done>".
+						// The LLM's real completion never contains the literal angle-bracket
+						// placeholder text; this guards against the task-box remaining visible
+						// on screen indefinitely while the LLM processes.
+						if strings.Contains(l, "<one-sentence summary") {
+							m.debugf("StartScreenCapture: skipping placeholder line=%q session=%s", l, sess.FullID)
+							continue
+						}
 						for _, pat := range m.effectiveCompletionPatterns() {
 							if matchesCompletionPattern(l, pat) {
+								lRunes := []rune(l)
+								lastR := ""
+								if len(lRunes) > 0 { lastR = string(lRunes[len(lRunes)-1]) }
+								lShort := l; if len(lShort) > 120 { lShort = lShort[:120] }
+								m.debugf("StartScreenCapture: visible-scan match pat=%q line=%q (len=%d lastRune=%q) session=%s", pat, lShort, len(l), lastR, sess.FullID)
 								completionDetected = true
 								break
 							}
@@ -2277,14 +2291,39 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
 									continue
 								}
+								// Same placeholder guard as the visible scan above.
+								if strings.Contains(l, "<one-sentence summary") {
+									continue
+								}
 								for _, pat := range m.effectiveCompletionPatterns() {
 									if matchesCompletionPattern(l, pat) {
+										sbRunes := []rune(l)
+										sbLast := ""; if len(sbRunes) > 0 { sbLast = string(sbRunes[len(sbRunes)-1]) }
+										sbShort := l; if len(sbShort) > 120 { sbShort = sbShort[:120] }
+										m.debugf("StartScreenCapture: scrollback-scan match pat=%q line=%q (len=%d lastRune=%q) session=%s", pat, sbShort, len(l), sbLast, sess.FullID)
 										completionDetected = true
 										break
 									}
 								}
 								if completionDetected { break }
 							}
+						}
+					}
+					// Task-echo suppression for screen capture: if the task was recently
+					// delivered via send_input, suppress completion detection for 5 minutes.
+					// The task text (which contains "DATAWATCH_COMPLETE:" as a placeholder
+					// instruction) is visible in the opencode input field and then in a
+					// TUI box for the full session. processOutputLine has a 5 s version of
+					// this guard; StartScreenCapture needs a longer window because the box
+					// stays on screen permanently, and needs to start BEFORE SendInput so
+					// the input-field rendering phase is also covered.
+					if completionDetected {
+						m.mu.Lock()
+						deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
+						m.mu.Unlock()
+						if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
+							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, time.Since(deliveredAt).Round(time.Second))
+							completionDetected = false
 						}
 					}
 					if completionDetected {
@@ -5234,6 +5273,18 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 									}
 									if completionFound { break }
 								}
+							}
+						}
+						// Same task-echo suppression as StartScreenCapture: suppress completion
+						// for 5 minutes after task delivery so the input-field rendering phase
+						// (where DATAWATCH_COMPLETE: appears as plain text) cannot falsely trigger.
+						if completionFound {
+							m.mu.Lock()
+							deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
+							m.mu.Unlock()
+							if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
+								m.debugf("monitorOutput structured-channel: suppressing completion within 5min task-echo window for %s", sess.FullID)
+								completionFound = false
 							}
 						}
 						if completionFound && (current.State == StateRunning || current.State == StateWaitingInput) {

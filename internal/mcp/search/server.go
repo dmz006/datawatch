@@ -9,6 +9,14 @@
 //	DATAWATCH_WEB_SEARCH_NUM_RESULTS default result count 1-20 (default: 10)
 //
 // Or from CLI flags: --url, --engine, --num-results.
+//
+// When DATAWATCH_WEB_SEARCH_URL is not set (e.g. when the MCP host doesn't
+// forward env vars), the server falls back to reading web_search.url and
+// web_search.engine from the daemon config at $DATAWATCH_DATA_DIR/config.yaml
+// (default: ~/.datawatch/config.yaml).
+//
+// Transport: NDJSON (newline-delimited JSON) — one JSON object per line,
+// no Content-Length framing. Compatible with opencode ≥1.18 and Claude Desktop.
 package search
 
 import (
@@ -19,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,12 +40,25 @@ type Config struct {
 	NumResults int
 }
 
-// ConfigFromEnv reads config from environment variables, falling back to defaults.
+// ConfigFromEnv reads config from environment variables. When
+// DATAWATCH_WEB_SEARCH_URL is absent (e.g. because the MCP host doesn't
+// forward env entries from opencode.jsonc), it falls back to reading
+// web_search.{url,engine} from the daemon config at
+// $DATAWATCH_DATA_DIR/config.yaml (default: ~/.datawatch/config.yaml).
 func ConfigFromEnv() Config {
 	c := Config{
 		URL:        os.Getenv("DATAWATCH_WEB_SEARCH_URL"),
 		Engine:     os.Getenv("DATAWATCH_WEB_SEARCH_ENGINE"),
 		NumResults: 10,
+	}
+	if c.URL == "" || c.Engine == "" {
+		cfgURL, cfgEngine := readDaemonConfig()
+		if c.URL == "" {
+			c.URL = cfgURL
+		}
+		if c.Engine == "" {
+			c.Engine = cfgEngine
+		}
 	}
 	if c.Engine == "" {
 		c.Engine = "bing"
@@ -47,6 +69,42 @@ func ConfigFromEnv() Config {
 		}
 	}
 	return c
+}
+
+// readDaemonConfig parses the daemon's config.yaml for web_search settings.
+// Returns empty strings if the file is absent or unparseable.
+func readDaemonConfig() (url, engine string) {
+	dataDir := os.Getenv("DATAWATCH_DATA_DIR")
+	if dataDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", ""
+		}
+		dataDir = filepath.Join(home, ".datawatch")
+	}
+	raw, err := os.ReadFile(filepath.Join(dataDir, "config.yaml"))
+	if err != nil {
+		return "", ""
+	}
+	inSection := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "web_search:" {
+			inSection = true
+			continue
+		}
+		if inSection {
+			if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmed != "" {
+				break // left web_search section
+			}
+			if strings.HasPrefix(trimmed, "url:") {
+				url = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "url:")), `"'`)
+			} else if strings.HasPrefix(trimmed, "engine:") {
+				engine = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "engine:")), `"'`)
+			}
+		}
+	}
+	return url, engine
 }
 
 // jsonrpc wraps a JSON-RPC 2.0 message.
@@ -64,13 +122,13 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// sendMsg writes an MCP-framed message to w.
+// sendMsg writes a JSON-RPC message using NDJSON transport (one line per message).
 func sendMsg(w io.Writer, msg interface{}) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "Content-Length: %d\r\n\r\n%s", len(body), body)
+	_, err = fmt.Fprintf(w, "%s\n", body)
 	return err
 }
 
@@ -123,23 +181,22 @@ func searxngSearch(cfg Config, query string, limit int) ([]searchResult, error) 
 	return out, nil
 }
 
-// Run starts the stdio MCP server. It blocks until stdin is closed.
+// Run starts the stdio MCP server using NDJSON transport. It blocks until stdin is closed.
 func Run(cfg Config) error {
-	scanner := newFrameScanner(os.Stdin)
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB per line
 	writer := os.Stdout
 
-	for {
-		msg, err := scanner.Next()
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
 		}
-		if err := handle(writer, cfg, msg); err != nil {
+		if err := handle(writer, cfg, []byte(line)); err != nil {
 			return err
 		}
 	}
+	return sc.Err()
 }
 
 func handle(w io.Writer, cfg Config, raw []byte) error {
@@ -153,7 +210,7 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 		return sendMsg(w, jsonrpc{
 			JSONRPC: "2.0", ID: msg.ID,
 			Result: map[string]interface{}{
-				"protocolVersion": "2024-11-05",
+				"protocolVersion": "2025-11-25",
 				"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
 				"serverInfo":      map[string]interface{}{"name": "datawatch-web-search", "version": "1.0.0"},
 			},
@@ -243,45 +300,3 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 	}
 }
 
-// frameScanner parses the Content-Length-framed MCP stdio protocol.
-type frameScanner struct {
-	r *bufio.Reader
-}
-
-func newFrameScanner(r io.Reader) *frameScanner {
-	return &frameScanner{r: bufio.NewReader(r)}
-}
-
-// Next returns the next complete JSON body, or io.EOF when the stream ends.
-func (s *frameScanner) Next() ([]byte, error) {
-	var contentLen int
-	// Read headers until blank line.
-	for {
-		line, err := s.r.ReadString('\n')
-		if err != nil {
-			if err == io.EOF && line == "" {
-				return nil, io.EOF
-			}
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				n, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-				contentLen = n
-			}
-		}
-	}
-	if contentLen <= 0 {
-		return s.Next() // skip frame with no body length
-	}
-	buf := make([]byte, contentLen)
-	if _, err := io.ReadFull(s.r, buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
-}
