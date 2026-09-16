@@ -52,6 +52,18 @@ type HTTPServer struct {
 	srv     *http.Server
 	manager *session.Manager
 	api     *Server
+
+	// readyCh is closed once all TCP listeners are bound and the server
+	// is ready to accept connections. Callers that need to wait for the
+	// server before making requests (e.g. the Automata boot-resume
+	// goroutine) can receive on ReadyCh().
+	readyCh chan struct{}
+}
+
+// ReadyCh returns a channel that is closed once the server is ready to
+// accept connections (all listeners bound). The channel is never nil.
+func (s *HTTPServer) ReadyCh() <-chan struct{} {
+	return s.readyCh
 }
 
 // isLoopbackRemote (v5.18.0) returns true when the request's
@@ -624,6 +636,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 		srv:     srv,
 		manager: manager,
 		api:     api,
+		readyCh: make(chan struct{}),
 	}
 }
 
@@ -1166,6 +1179,11 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			}
 		}
 	}
+
+	// Signal readiness: all TCP listeners are now bound and goroutines are
+	// serving. Callers waiting on ReadyCh() (e.g. Automata boot-resume) can
+	// now safely make HTTP requests to this server.
+	close(s.readyCh)
 
 	select {
 	case <-ctx.Done():

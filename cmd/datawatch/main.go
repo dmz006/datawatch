@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.12"
+var Version = "8.33.14"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3749,6 +3749,28 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			fmt.Printf("[decompose-session] spawned %s (backend=%s, output=%s)\n", startOut.ID, backend, outputFile)
 
+			// Best-effort: kill the session when this function returns (handles
+			// TUI sessions that land in waiting_input after writing the output).
+			sessionID := startOut.ID
+			defer func() {
+				killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer killCancel()
+				killBody, _ := json.Marshal(map[string]string{"id": sessionID})
+				killReq, err := http.NewRequestWithContext(killCtx, http.MethodPost,
+					loopbackBaseURL(cfg)+"/api/sessions/kill", bytes.NewReader(killBody))
+				if err != nil {
+					return
+				}
+				killReq.Header.Set("Content-Type", "application/json")
+				if cfg.Server.Token != "" {
+					killReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				if r, err := http.DefaultClient.Do(killReq); err == nil {
+					_ = r.Body.Close()
+				}
+				fmt.Printf("[decompose-session] killed %s\n", sessionID)
+			}()
+
 			// Poll for session completion.
 			tick := time.NewTicker(3 * time.Second)
 			defer tick.Stop()
@@ -4364,6 +4386,10 @@ Reply with STRICT JSON:
 					s.State != session.StateKilled
 			})
 			aAPI := autonomouspkg.NewAPI(amgr)
+			// Wire the HTTP server readiness channel so boot-resume goroutines
+			// wait until the server is accepting connections before spawning
+			// executor sessions (prevents "connection refused" on daemon restart).
+			aAPI.SetServerReadyCh(httpServer.ReadyCh())
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and

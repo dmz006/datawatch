@@ -1,9 +1,9 @@
 // B90 — boot-time stuck-task reconciliation.
 //
-// TC-1: stuck task (TaskVerifying, dead session) → TaskFailed on reconcile
+// TC-1: stuck task (TaskVerifying, dead session) → TaskPending on reconcile
 // TC-2: stuck task with live session → left alone when sessionAliveFn set
-// TC-3: no sessionAliveFn → all stuck tasks failed (conservative path)
-// TC-4: TaskFailed tasks not re-failed; already-terminal tasks untouched
+// TC-3: no sessionAliveFn → all stuck tasks reset to pending (conservative: assume dead)
+// TC-4: TaskFailed tasks not touched; already-terminal tasks untouched
 // TC-5: PRDs not in Running/Active state are skipped
 // TC-6: boot_reconcile Decision appended exactly once per PRD with changes
 
@@ -40,18 +40,21 @@ func b90Setup(t *testing.T) (*Manager, *PRD) {
 	return m, prd
 }
 
-func TestB90_StuckTaskFailedOnReconcile(t *testing.T) {
+func TestB90_StuckTaskResetOnReconcile(t *testing.T) {
 	m, prd := b90Setup(t)
-	// no sessionAliveFn → conservative: dead session → TaskFailed
+	// no sessionAliveFn → conservative: dead session → TaskPending so executor can retry
 	m.reconcileStuckTasks()
 
 	got, _ := m.Store().GetPRD(prd.ID)
 	task := got.Story[0].Tasks[0]
-	if task.Status != TaskFailed {
-		t.Fatalf("want TaskFailed, got %q", task.Status)
+	if task.Status != TaskPending {
+		t.Fatalf("want TaskPending, got %q", task.Status)
 	}
-	if task.Error == "" {
-		t.Fatal("want non-empty error message")
+	if task.Error != "" {
+		t.Fatalf("want empty error on reset, got %q", task.Error)
+	}
+	if task.SessionID != "" {
+		t.Fatalf("want empty SessionID on reset, got %q", task.SessionID)
 	}
 }
 
@@ -69,14 +72,14 @@ func TestB90_LiveSessionSkipped(t *testing.T) {
 	}
 }
 
-func TestB90_NoAliveFnConservative(t *testing.T) {
+func TestB90_NoAliveFnResetsTopending(t *testing.T) {
 	m, prd := b90Setup(t)
-	// sessionAliveFn = nil means conservative: all stuck tasks failed
+	// sessionAliveFn = nil: no way to check liveness → treat all as dead → TaskPending
 	m.reconcileStuckTasks()
 
 	got, _ := m.Store().GetPRD(prd.ID)
-	if got.Story[0].Tasks[0].Status != TaskFailed {
-		t.Fatalf("want TaskFailed (conservative), got %q", got.Story[0].Tasks[0].Status)
+	if got.Story[0].Tasks[0].Status != TaskPending {
+		t.Fatalf("want TaskPending (no alive fn), got %q", got.Story[0].Tasks[0].Status)
 	}
 }
 

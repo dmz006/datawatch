@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
@@ -38,11 +37,26 @@ type API struct {
 	// callbacks are removed from the map when the goroutine exits.
 	runMu      sync.Mutex
 	runCancels map[string]context.CancelFunc
+
+	// serverReadyCh, when non-nil, is closed by the HTTP server layer once
+	// it is ready to accept requests. resumeRunningPRDs blocks on it so that
+	// executor spawn calls don't fail with "connection refused" on daemon
+	// restart. In tests the channel is nil and the wait is skipped.
+	serverReadyCh <-chan struct{}
 }
 
 // NewAPI is a convenience constructor.
 func NewAPI(m *Manager) *API {
 	return &API{M: m, runCancels: map[string]context.CancelFunc{}}
+}
+
+// SetServerReadyCh wires the channel that signals when the HTTP server is
+// ready to accept connections. resumeRunningPRDs blocks on it before
+// spawning executor sessions, preventing "connection refused" errors on
+// daemon restart. Call this before SetExecutors. The channel must be closed
+// (not sent on) to unblock the wait.
+func (a *API) SetServerReadyCh(ch <-chan struct{}) {
+	a.serverReadyCh = ch
 }
 
 // SetExecutors wires the real spawn + verify indirections used by the
@@ -59,20 +73,48 @@ func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 
 // resumeRunningPRDs re-launches executor goroutines for PRDs that are
 // stored in PRDRunning state but have no live executor (e.g. after a
-// daemon restart). Called once from SetExecutors in a background goroutine.
+// daemon restart). Also recovers PRDFailed PRDs where all failed tasks
+// were killed by the daemon restart before they could run (their SessionID
+// is empty or dead and they have no partial result).
+// Called once from SetExecutors in a background goroutine.
 func (a *API) resumeRunningPRDs() {
+	// Wait for the HTTP server to be ready before spawning executor sessions.
+	// SetExecutors fires this goroutine before httpServer.Start() is called;
+	// without this gate the spawn calls get "connection refused" and tasks
+	// fail immediately, re-producing PRDFailed. In tests serverReadyCh is
+	// nil and the wait is skipped so tests don't need to fake a server.
+	if ch := a.serverReadyCh; ch != nil {
+		<-ch
+	}
+
 	for _, prd := range a.M.Store().ListPRDs() {
-		if prd.Status != PRDRunning {
-			continue
-		}
-		// Kill any orphaned sessions from in-progress tasks and reset them
-		// to pending so the new executor re-runs them cleanly instead of
-		// re-spawning a duplicate alongside an already-running old session.
-		a.M.resetInProgressTasksForResume(prd)
-		if err := a.Run(prd.ID); err != nil {
-			log.Printf("[autonomous] boot-resume: prd=%s: %v", prd.ID, err)
-		} else {
-			log.Printf("[autonomous] boot-resume: re-launched executor for prd=%s", prd.ID)
+		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, prd.Status)
+		switch prd.Status {
+		case PRDRunning:
+			// Kill any orphaned sessions from in-progress tasks and reset them
+			// to pending so the new executor re-runs them cleanly instead of
+			// re-spawning a duplicate alongside an already-running old session.
+			a.M.resetInProgressTasksForResume(prd)
+			if err := a.Run(prd.ID); err != nil {
+				fmt.Printf("[autonomous] boot-resume: prd=%s: %v\n", prd.ID, err)
+			} else {
+				fmt.Printf("[autonomous] boot-resume: re-launched executor for prd=%s\n", prd.ID)
+			}
+		case PRDFailed:
+			// A PRDFailed PRD where every failed task has an empty or dead
+			// session was most likely killed mid-run by a daemon SIGKILL.
+			// resetKilledTasksForResume resets tasks to pending and saves the
+			// PRD as PRDRunning; then Run re-launches the executor.
+			fmt.Printf("[autonomous] boot-resume: prd=%s is PRDFailed, attempting recovery\n", prd.ID)
+			if a.M.resetKilledTasksForResume(prd) {
+				if err := a.Run(prd.ID); err != nil {
+					fmt.Printf("[autonomous] boot-resume: failed-prd recovery %s: %v\n", prd.ID, err)
+				} else {
+					fmt.Printf("[autonomous] boot-resume: recovered PRDFailed prd=%s (all tasks were daemon-killed)\n", prd.ID)
+				}
+			} else {
+				fmt.Printf("[autonomous] boot-resume: prd=%s PRDFailed recovery skipped (tasks have results or live sessions)\n", prd.ID)
+			}
 		}
 	}
 }

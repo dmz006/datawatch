@@ -439,6 +439,93 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	}
 }
 
+// resetKilledTasksForResume checks a PRDFailed PRD: if every failed task has
+// either no SessionID or a dead session (no live session), it resets those
+// tasks to pending so the executor can retry them after a daemon restart.
+// Returns true if any task was reset (meaning the caller should re-run the PRD).
+// Stories that are in a failed/blocked state are also reset to pending.
+func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
+	m.mu.Lock()
+	aliveFn := m.sessionAliveFn
+	killerFn := m.sessionKillerFn
+	m.mu.Unlock()
+
+	// Check whether any task is in an in-progress state with a live session.
+	// A task that is already in `failed` state cannot have an actively running
+	// session for THIS task (the session may have been reused for other work),
+	// so we only guard on non-terminal statuses.
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if isTaskTerminal(t.Status) {
+				continue // terminal tasks can't have live executor sessions
+			}
+			if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
+				return false // a task is genuinely still running; leave it
+			}
+		}
+	}
+
+	// Check that at least one failed task exists and no task is completed.
+	// A completed task means real work was done before the kill — partial runs
+	// should not be auto-recovered; use reset_task per task instead.
+	hasResettable := false
+	for si := range prd.Story {
+		for _, t := range prd.Story[si].Tasks {
+			if t.Status == TaskCompleted {
+				return false
+			}
+			if t.Status == TaskFailed {
+				hasResettable = true
+			}
+		}
+	}
+	if !hasResettable {
+		return false
+	}
+
+	// Reset all failed tasks to pending.
+	now := time.Now()
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.Status != TaskFailed {
+				continue
+			}
+			if killerFn != nil && t.SessionID != "" {
+				if err := killerFn(t.SessionID); err != nil {
+					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
+				}
+			}
+			t.Status = TaskPending
+			t.Error = ""
+			t.SessionID = ""
+			t.RetryCount = 0
+			t.UpdatedAt = now
+			_ = m.store.SaveTask(t)
+			log.Printf("[autonomous] boot-resume: reset killed task %s to pending for prd=%s", t.ID, prd.ID)
+		}
+		// Reset stories that are not completed back to pending.
+		s := &prd.Story[si]
+		if s.Status != StoryCompleted {
+			s.Status = StoryPending
+		}
+	}
+	prd.Status = PRDRunning
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:    now,
+		Kind:  "boot_resume_recovery",
+		Actor: "autonomous",
+		Note:  "PRDFailed auto-recovered: all tasks reset to pending after daemon restart",
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
+		return false
+	}
+	return true
+}
+
 // killPRDSessions iterates every task in prd and calls sessionKillerFn for
 // each non-empty SessionID. Best-effort — errors are logged but not returned.
 func (m *Manager) killPRDSessions(prd *PRD) {
@@ -1890,14 +1977,16 @@ func (m *Manager) Stop() {
 	}
 }
 
-// reconcileStuckTasks scans all PRDs on daemon start and marks any task
-// in TaskInProgress/TaskVerifying/TaskRunningTests as TaskFailed when its
-// verify loop is gone (B90). The session-alive check is skipped when no
-// sessionAliveFn is wired, conservatively failing all stuck tasks so
-// AutoFixRetries can retry them.
+// reconcileStuckTasks scans all PRDs on daemon start and resets any task
+// in TaskInProgress/TaskVerifying/TaskRunningTests to TaskPending when its
+// session is gone (B90). Resetting to pending (not failed) lets the executor
+// restart pick them up naturally, avoiding the bug where tasks end up stuck
+// in failed state because resetInProgressTasksForResume only looks for
+// TaskInProgress (which reconcileStuckTasks would have already converted).
 func (m *Manager) reconcileStuckTasks() {
 	m.mu.Lock()
 	aliveFn := m.sessionAliveFn
+	killerFn := m.sessionKillerFn
 	m.mu.Unlock()
 
 	prds := m.store.ListPRDs()
@@ -1915,10 +2004,18 @@ func (m *Manager) reconcileStuckTasks() {
 				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
 					continue // session still live; leave it
 				}
-				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskFailed (verify loop lost on daemon restart)",
+				// Kill any surviving tmux session so the new executor doesn't
+				// spawn alongside it.
+				if killerFn != nil && t.SessionID != "" {
+					if err := killerFn(t.SessionID); err != nil {
+						log.Printf("[autonomous] boot-reconcile: kill orphaned session %s: %v", t.SessionID, err)
+					}
+				}
+				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 					prd.ID, t.ID, t.Status, t.SessionID)
-				t.Status = TaskFailed
-				t.Error = "verify loop lost on daemon restart; will be retried by AutoFixRetries"
+				t.Status = TaskPending
+				t.Error = ""
+				t.SessionID = ""
 				t.UpdatedAt = time.Now()
 				changed = true
 			}
@@ -1932,7 +2029,7 @@ func (m *Manager) reconcileStuckTasks() {
 			At:    now,
 			Kind:  "boot_reconcile",
 			Actor: "autonomous",
-			Note:  "stuck task(s) marked failed on daemon restart (B90)",
+			Note:  "orphaned task(s) reset to pending on daemon restart",
 		})
 		if err := m.store.SavePRD(prd); err != nil {
 			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
