@@ -5878,7 +5878,14 @@ Return STRICT JSON:
 				backendFamily := sess.BackendFamily
 				// Append DATAWATCH_COMPLETE: convention so the manager's pane-watcher
 				// can detect task completion and transition to StateComplete.
-				task := sess.Task + "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
+				// Exception: autonomous:decompose sessions use output-file detection
+				// in the poll loop; appending the marker here causes a false positive
+				// because the task prompt itself contains the text "DATAWATCH_COMPLETE:"
+				// which the pane-watcher sees before the LLM has run.
+				task := sess.Task
+				if sess.Name != "autonomous:decompose" {
+					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
+				}
 				go func() {
 					time.Sleep(time.Second) // let TUI input handler settle
 					if err := mgr.SendInput(sessID, task, "channel-task"); err != nil {

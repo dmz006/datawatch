@@ -110,9 +110,6 @@ Rules:
 
 Feature request:
 %s
-
-When you have written the JSON to the file above, output exactly this line as your final message:
-DATAWATCH_COMPLETE: decomposition written
 `
 
 // DecomposeRequest captures the LLM call inputs.
