@@ -244,6 +244,10 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 		stories[i].PRDID = prdID
 		stories[i].CreatedAt = time.Now()
 		stories[i].UpdatedAt = time.Now()
+		// B95: LLM output may include a "status" field (e.g. "running") that is
+		// not a valid initial StoryStatus. Force all freshly-set stories to
+		// StoryPending so the executor's transition guard always applies cleanly.
+		stories[i].Status = StoryPending
 		for j := range stories[i].Tasks {
 			if stories[i].Tasks[j].ID == "" {
 				stories[i].Tasks[j].ID = newID()

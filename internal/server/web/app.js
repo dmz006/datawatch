@@ -17146,8 +17146,11 @@ window._renderStatusGraphs = function(prd) {
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
   const decomposed = stories.length > 0;
 
-  // Per-story progress: count done/failed/cancelled/skipped as finished
-  const terminalTaskStates = new Set(['done','failed','cancelled','skipped']);
+  // Per-story progress: count completed/failed/cancelled/skipped as finished.
+  // 'completed' is the executor's terminal-success status (TaskCompleted);
+  // 'done' was a mistaken alias that never matched and caused 0% on all bars.
+  const terminalTaskStates = new Set(['completed','done','failed','cancelled','skipped']);
+  const activeTaskStates   = new Set(['verifying','running_tests','in_progress','running']);
   const storyRows = stories.map((st, idx) => {
     const tasks = st.tasks || [];
     const done = tasks.filter(tk => terminalTaskStates.has(tk.status || '')).length;
@@ -17156,8 +17159,9 @@ window._renderStatusGraphs = function(prd) {
     const barColor = pct === 100 ? 'var(--success,#22c55e)' : 'var(--accent2,#60a5fa)';
     const stTitle = escHtml(st.title || ('Story ' + (idx + 1)));
     const stStatus = st.status || '';
-    const statusDot = stStatus === 'completed' ? '✓' : stStatus === 'in_progress' ? '▶' : '·';
-    const statusColor = stStatus === 'completed' ? 'var(--success,#22c55e)' : stStatus === 'in_progress' ? 'var(--accent,#3b82f6)' : 'var(--text2)';
+    const isActive = stStatus === 'in_progress' || stStatus === 'running';
+    const statusDot = stStatus === 'completed' ? '✓' : isActive ? '▶' : '·';
+    const statusColor = stStatus === 'completed' ? 'var(--success,#22c55e)' : isActive ? 'var(--accent,#3b82f6)' : 'var(--text2)';
     return `<div class="prd-sg-story" data-story-idx="${idx}" style="margin-bottom:6px;">
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px;">
         <span style="color:${statusColor};min-width:14px;text-align:center;">${statusDot}</span>
