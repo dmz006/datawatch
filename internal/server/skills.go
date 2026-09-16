@@ -34,6 +34,7 @@ import (
 type skillsManager interface {
 	Store() *skills.Store
 	AddDefault() error
+	AddBuiltinDefaults() error
 	Connect(name string) ([]*skills.AvailableSkill, error)
 	Browse(name string) ([]*skills.AvailableSkill, error)
 	Sync(registry string, names []string) ([]*skills.Synced, error)
@@ -67,6 +68,9 @@ func (a SkillsManagerAdapter) Store() *skills.Store { return a.M.Store }
 
 // AddDefault forwards.
 func (a SkillsManagerAdapter) AddDefault() error { return a.M.AddDefault() }
+
+// AddBuiltinDefaults forwards.
+func (a SkillsManagerAdapter) AddBuiltinDefaults() error { return a.M.AddBuiltinDefaults() }
 
 // Connect forwards.
 func (a SkillsManagerAdapter) Connect(name string) ([]*skills.AvailableSkill, error) {
@@ -157,12 +161,12 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "skills disabled", http.StatusServiceUnavailable)
 			return
 		}
-		if err := s.skillsMgr.AddDefault(); err != nil {
+		if err := s.skillsMgr.AddBuiltinDefaults(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		s.audit("skills_registry_add_default", "registry", skills.PAIDefaultRegistry.Name, nil)
-		writeJSONOK(w, map[string]any{"status": "ok", "name": skills.PAIDefaultRegistry.Name})
+		s.audit("skills_registry_add_default", "registry", skills.CommunityDefaultRegistry.Name+","+skills.PAIDefaultRegistry.Name, nil)
+		writeJSONOK(w, map[string]any{"status": "ok", "names": []string{skills.CommunityDefaultRegistry.Name, skills.PAIDefaultRegistry.Name}})
 		return
 	}
 

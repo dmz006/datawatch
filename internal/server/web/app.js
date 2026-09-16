@@ -11819,8 +11819,8 @@ const GENERAL_CONFIG_FIELDS = [
   // Section title "Session AI Summarizer" → slug "session-ai-summarizer" →
   // matches ### Session AI summarizer in datawatch-definitions.md.
   { id: 'summarizer', section: 'Session AI Summarizer', fields: [
-    { key: 'session.summarizer.enabled', label: t('session_summarizer_enabled') || 'Summarize last response', type: 'toggle' },
-    { key: 'session.summarizer.llm_ref', label: t('session_summarizer_llm') || 'Summarizer LLM', type: 'llm_summarizer' },
+    { key: 'session.summarizer.enabled', label: 'Summarize last response', labelKey: 'session_summarizer_enabled', type: 'toggle' },
+    { key: 'session.summarizer.llm_ref', label: 'Summarizer LLM', labelKey: 'session_summarizer_llm', type: 'llm_summarizer' },
     { key: 'session.summarizer.model', label: 'Summarizer model', type: 'summarizer_model' },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
@@ -11849,7 +11849,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
-    { key: 'autonomous.verifier_diff_max_bytes', label: t('settings_verifier_diff_max_bytes'), type: 'number', placeholder: '0' },
+    { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
@@ -11864,12 +11864,12 @@ const GENERAL_CONFIG_FIELDS = [
     // individually via the per-story Approve button on the PRD card.
     { key: 'autonomous.per_story_approval', label: 'Per-story approval gate (each story needs explicit approve)', type: 'toggle' },
     // BL367 (v8.17.0) — default quality gate config for all PRDs.
-    { key: 'autonomous.default_quality_gates.enabled', label: t('settings_quality_gates_enabled'), type: 'toggle' },
-    { key: 'autonomous.default_quality_gates.test_command', label: t('settings_quality_gates_test_command'), type: 'text', placeholder: 'go test ./...' },
-    { key: 'autonomous.default_quality_gates.timeout', label: t('settings_quality_gates_timeout'), type: 'number', placeholder: '0' },
-    { key: 'autonomous.default_quality_gates.block_on_regression', label: t('settings_quality_gates_block_on_regression'), type: 'toggle' },
-    { key: 'autonomous.injection_guard', label: t('settings_injection_guard'), type: 'toggle' },
-    { key: 'autonomous.block_on_injection', label: t('settings_block_on_injection'), type: 'toggle' },
+    { key: 'autonomous.default_quality_gates.enabled', label: 'Quality gates enabled (default for all PRDs)', labelKey: 'settings_quality_gates_enabled', type: 'toggle' },
+    { key: 'autonomous.default_quality_gates.test_command', label: 'Quality gate test command', labelKey: 'settings_quality_gates_test_command', type: 'text', placeholder: 'go test ./...' },
+    { key: 'autonomous.default_quality_gates.timeout', label: 'Quality gate timeout (seconds, 0=no limit)', labelKey: 'settings_quality_gates_timeout', type: 'number', placeholder: '0' },
+    { key: 'autonomous.default_quality_gates.block_on_regression', label: 'Block task on test regression', labelKey: 'settings_quality_gates_block_on_regression', type: 'toggle' },
+    { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
+    { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -11941,10 +11941,10 @@ const LLM_CONFIG_FIELDS = [
     { key: 'opencode.default_model', label: 'Default model (e.g. opencode/big-pickle)', type: 'text', placeholder: 'opencode/big-pickle' },
   ]},
   { id: 'web_search', section: 'Web Search (SearXNG)', docs: 'howto/chat-and-llm-quickstart.md', fields: [
-    { key: 'web_search.enabled', label: t('settings_web_search_enabled') || 'Enable web search injection', type: 'toggle' },
-    { key: 'web_search.url', label: t('settings_web_search_url') || 'SearXNG URL', type: 'text', placeholder: 'http://searxng.example.com:3001' },
-    { key: 'web_search.engine', label: t('settings_web_search_engine') || 'Engine (comma-separated)', type: 'text', placeholder: 'bing' },
-    { key: 'web_search.num_results', label: t('settings_web_search_num_results') || 'Default results per query (1–20)', type: 'number', placeholder: '10' },
+    { key: 'web_search.enabled', label: 'Enable web search injection (opencode + goose sessions)', labelKey: 'settings_web_search_enabled', type: 'toggle' },
+    { key: 'web_search.url', label: 'SearXNG URL (e.g. http://searxng.example.com:3001)', labelKey: 'settings_web_search_url', type: 'text', placeholder: 'http://searxng.example.com:3001' },
+    { key: 'web_search.engine', label: 'Search engine (comma-separated, default: bing)', labelKey: 'settings_web_search_engine', type: 'text', placeholder: 'bing' },
+    { key: 'web_search.num_results', label: 'Default results per query (1–20)', labelKey: 'settings_web_search_num_results', type: 'number', placeholder: '10' },
   ]},
   { id: 'rtk', section: 'RTK (Token Savings)', docs: 'rtk-integration.md', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
@@ -12282,18 +12282,24 @@ function loadGeneralConfig() {
         for (const f of sec.fields) {
           const parts = f.key.split('.');
           const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          // Resolve label at render time so t() runs after locale loads.
+          // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
+          // calls baked into f.label ran before the bundle was fetched and
+          // returned the raw key as a truthy string. A labelKey property
+          // defers the lookup here where the bundle is ready.
+          const fLabel = f.labelKey ? (t(f.labelKey) || f.label) : f.label;
           if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
             ).join('');
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
             </div>`;
           } else if (f.type === 'toggle') {
             const checked = !!val;
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <label class="toggle-switch">
                 <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
                 <span class="toggle-slider"></span>
@@ -12303,7 +12309,7 @@ function loadGeneralConfig() {
             const fid = 'cfg_dir_' + f.key.replace(/\./g, '_');
             const browserId = fid + '_browser';
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
                 <input type="text" id="${fid}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
                   style="flex:1;" onchange="saveGeneralField('${f.key}', this.value)" />
@@ -12334,7 +12340,7 @@ function loadGeneralConfig() {
               </label>`;
             }).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <div class="iface-list" style="display:flex;flex-direction:column;gap:2px;margin-top:4px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
                 ${checkboxes}
               </div>
@@ -12344,7 +12350,7 @@ function loadGeneralConfig() {
               `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`
             ).join('');
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
             </div>`;
           } else if (f.type === 'button') {
@@ -12353,7 +12359,7 @@ function loadGeneralConfig() {
             // because loadGeneralConfig fell through to the generic else.
             // Now mirrors the loadCommsConfig button branch.
             html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <button class="btn-secondary" style="font-size:12px;" onclick="(window['${escHtml(f.action || '')}']||function(){showToast('Action ${escHtml(f.action || '')} not wired','error',2000);})()">Run</button>
             </div>`;
           } else if (f.type === 'llm_backend') {
@@ -12377,7 +12383,7 @@ function loadGeneralConfig() {
             const backendCurrent = JSON.stringify(String(val || ''));
             const onchange = `saveGeneralField('${f.key}', this.value); refreshLLMModelField(${modelSelector}, ${modelInner}, '${inputId}', '');`;
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <select id="${inputId}" class="form-select general-cfg-input" onchange="${onchange}">${opts.join('')}</select>
             </div>`;
           } else if (f.type === 'llm_model') {
@@ -12389,7 +12395,7 @@ function loadGeneralConfig() {
             const backendInputId = f.backendKey ? ('gcfg-llmbk-' + f.backendKey.replace(/\W+/g,'-')) : '';
             const onchange = `saveGeneralField('${f.key}', (this.querySelector('select,input')||{value:''}).value)`;
             html += `<div id="${wrapId}" class="settings-row" style="justify-content:space-between;display:none;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <div id="${innerId}" onchange="${onchange}" style="flex:0 0 200px;"></div>
             </div>`;
             // Defer the populate to after the DOM is in place; ensureLLMModelLists then refreshLLMModelField.
@@ -12403,7 +12409,7 @@ function loadGeneralConfig() {
             const noLLMsLabel = t('session_summarizer_no_llms') || 'No Ollama/OpenAI LLMs configured';
             const currentVal = String(val || '');
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <select id="${summarizerId}" class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value); if(window._refreshSummarizerModelSelect) window._refreshSummarizerModelSelect(); if(window._testSummarizerLLM) window._testSummarizerLLM();">
                 <option value="">(${t('disabled') || 'disabled'})</option>
               </select>
@@ -12439,7 +12445,7 @@ function loadGeneralConfig() {
             const inputId = 'sum-model-input';
             const savedModel = String(val || '');
             html += `<div id="${wrapId}" class="settings-row" style="justify-content:space-between;display:none;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <div style="flex:0 0 200px;display:flex;flex-direction:column;gap:2px;">
                 <input id="${inputId}" list="${listId}" class="form-input" style="font-size:12px;width:100%;"
                   value="${escHtml(savedModel)}" placeholder="(backend default)"
@@ -12532,13 +12538,13 @@ function loadGeneralConfig() {
             }, 0);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <textarea class="form-input general-cfg-input" rows="4" style="margin-top:4px;resize:vertical;font-size:11px;"
                 onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
             </div>`;
           } else {
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="settings-label">${escHtml(fLabel)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
@@ -23548,13 +23554,13 @@ function loadSkillsPanel() {
 window.loadSkillsPanel = loadSkillsPanel;
 
 function _renderSkillsRegistries(panel, registries) {
-  const addDefaultBtn = `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="skillsAddDefault()" title="${escHtml(t('skills_add_default_title')||'Idempotently add the built-in PAI registry')}">${escHtml(t('skills_btn_add_default')||'+ Add default (PAI)')}</button>`;
+  const addDefaultBtn = `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="skillsAddDefault()" title="${escHtml(t('skills_add_default_title')||'Idempotently add the built-in community and PAI registries')}">${escHtml(t('skills_btn_add_default')||'+ Add built-in registries')}</button>`;
   const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="skillsOpenAddModal()" title="${escHtml(t('skills_btn_add_title')||'Add a new skill registry')}">${escHtml(t('skills_btn_add')||'+ Add registry')}</button>`;
 
   if (!registries || registries.length === 0) {
     // BL261 v6.7.7 — wrap empty state in standard card-content inset.
     panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
-      ${escHtml(t('skills_empty')||'No skill registries configured. Add the built-in PAI registry to get started.')}
+      ${escHtml(t('skills_empty')||'No skill registries configured. Add the built-in registries to get started.')}
       <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;">${addDefaultBtn}${addBtn}</div>
     </div></div>`;
     return;
