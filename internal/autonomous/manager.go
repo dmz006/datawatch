@@ -622,7 +622,11 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 	}
 
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+	planModel := m.cfg.PlanningModel
+	if planModel == "" {
+		planModel = prd.Model
+	}
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		// Roll back to draft so the operator can re-trigger.
 		prd.Status = PRDDraft
@@ -717,7 +721,11 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 	}
 
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+	planModel2 := m.cfg.PlanningModel
+	if planModel2 == "" {
+		planModel2 = prd.Model
+	}
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()

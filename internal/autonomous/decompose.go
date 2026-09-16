@@ -119,6 +119,7 @@ DATAWATCH_COMPLETE: decomposition written
 type DecomposeRequest struct {
 	Spec       string
 	Backend    string // empty = caller default
+	Model      string // empty = backend default; passed to session-based decompose path
 	Effort     Effort
 	ProjectDir string // for session-based decompose path
 	// TimeoutSeconds, when > 0, overrides the effort-scaled default
