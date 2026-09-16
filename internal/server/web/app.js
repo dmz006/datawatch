@@ -15925,6 +15925,13 @@ window.automataCancel = function(id, status) {
 function loadAutomataPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
+  // Save expanded <details> state before wiping for loading spinner so
+  // WS-triggered refreshes don't collapse cards the user has opened.
+  const expandedCardIds = new Set();
+  panel.querySelectorAll('.prd-row.prd-card[id]').forEach(card => {
+    const det = card.querySelector(':scope > details');
+    if (det && det.open) expandedCardIds.add(card.id);
+  });
   panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
   // BL312 S5 — use aggregated endpoint in all-servers mode
   const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds';
@@ -15943,7 +15950,7 @@ function loadAutomataPanel() {
       (childIdx[pid] = childIdx[pid] || []).push(p);
     }
     state._prdChildIndex = childIdx;
-    _automataRenderCards();
+    _automataRenderCards(expandedCardIds);
   }).catch(err => {
     if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(String(err))}</span>`;
   });
@@ -16216,10 +16223,19 @@ window.openTemplateInstantiateModal = function(id) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
-function _automataRenderCards() {
+function _automataRenderCards(savedExpandedIds) {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   const filtered = _automataFilteredList();
+
+  // Save open <details> state for direct calls (loadAutomataPanel passes savedExpandedIds)
+  const expandedCardIds = savedExpandedIds || new Set();
+  if (!savedExpandedIds) {
+    panel.querySelectorAll('.prd-row.prd-card[id]').forEach(card => {
+      const det = card.querySelector(':scope > details');
+      if (det && det.open) expandedCardIds.add(card.id);
+    });
+  }
 
   // Update select-all checkbox state
   const allCb = document.getElementById('automataSelectAll');
@@ -16237,6 +16253,18 @@ function _automataRenderCards() {
     return;
   }
   panel.innerHTML = filtered.map(renderAutomataCard).join('');
+
+  // Restore previously-open <details> so WS refreshes don't collapse expanded cards
+  if (expandedCardIds.size > 0) {
+    expandedCardIds.forEach(cardId => {
+      const card = document.getElementById(cardId);
+      if (card) {
+        const det = card.querySelector(':scope > details');
+        if (det) det.open = true;
+      }
+    });
+  }
+
   _automataRenderBatchBar();
 }
 
@@ -16767,11 +16795,15 @@ function _liveUpdateDetail(prd) {
       });
     }
     (prd.stories || []).forEach(story => {
-      // Update story status pill in place (no re-render)
+      // Update story status pill in place (no re-render); use effective status
+      // so a stale 'completed' pill updates to 'in_progress' when tasks are active
       const storyCardEl = bodyEl.querySelector('[data-story-id="' + CSS.escape(story.id) + '"]');
-      if (storyCardEl && story.status) {
+      if (storyCardEl) {
+        const activeStates = ['verifying','running_tests','in_progress','running'];
+        const hasActiveTasks2 = (story.tasks || []).some(t => activeStates.includes(t.status || ''));
+        const effectiveStoryStatus = hasActiveTasks2 && (story.status || '') === 'completed' ? 'in_progress' : (story.status || '');
         const pillEl = storyCardEl.querySelector('.prd-story-status-pill');
-        if (pillEl && pillEl.textContent !== story.status) pillEl.textContent = story.status;
+        if (pillEl && effectiveStoryStatus && pillEl.textContent !== effectiveStoryStatus) pillEl.textContent = effectiveStoryStatus;
       }
       // Re-render individual task rows that changed
       (story.tasks || []).forEach(task => {
@@ -16816,7 +16848,7 @@ function _liveUpdateDetail(prd) {
 }
 
 function _taskStatusIcon(status) {
-  const icons = { completed: '✓', in_progress: '⚡', pending: '○', blocked: '✗', failed: '✗', cancelled: '○' };
+  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', failed: '✗', blocked: '✗', cancelled: '○', pending: '○' };
   return icons[status] || '○';
 }
 
@@ -16843,7 +16875,7 @@ function renderDetailStoriesTree(prd) {
     const taskRows = tasks.map((t, ti) => {
       const sts = t.status || t.Status || 'pending';
       const icon = _taskStatusIcon(sts);
-      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
         ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
@@ -16858,9 +16890,15 @@ function renderDetailStoriesTree(prd) {
       </div>`;
     }).join('');
     const verdicts = renderVerdicts(st.verdicts);
-    const stStatus = st.status || st.Status || 'pending';
+    // B99: same effective-status override as _renderStatusGraphs — if any task is
+    // actively running, don't show the story as completed even if story.status
+    // hasn't been updated yet.
+    const activeStates = new Set(['verifying','running_tests','in_progress','running']);
+    const hasActive = tasks.some(tk => activeStates.has(tk.status || tk.Status || ''));
+    const rawStStatus = st.status || st.Status || 'pending';
+    const stStatus = hasActive && rawStStatus === 'completed' ? 'in_progress' : rawStStatus;
     const stIcon = _taskStatusIcon(stStatus);
-    const stColor = { completed: 'var(--success)', in_progress: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[stStatus] || 'var(--text2)';
+    const stColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[stStatus] || 'var(--text2)';
     const stId = `prd-story-${escHtml(prd.id)}-${si}`;
     return `<div class="prd-story-block">
       <div class="prd-story-header" onclick="document.getElementById('${stId}-tasks').classList.toggle('hidden')">
