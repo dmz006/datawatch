@@ -4589,6 +4589,7 @@ function onSessionImageSelected(input) {
         entry.path = d.path || uploadName;
         entry.uploading = false;
         _refreshAttachmentPreview();
+        showToast((t('image_upload_ok') || 'Image attached — will be sent with your next message'), 'success');
       })
       .catch(e => {
         showToast((t('image_upload_failed') || 'Image upload failed') + ': ' + String(e.message || e), 'error');
