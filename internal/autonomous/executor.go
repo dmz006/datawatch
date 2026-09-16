@@ -450,93 +450,114 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}
 	hint := ""
 	for attempt := 0; attempt <= retries; attempt++ {
-		now := time.Now()
-		t.StartedAt = &now
-		t.Status = TaskInProgress
-		t.RetryCount = attempt
-		_ = m.store.SaveTask(t)
+		var err error
 
-		// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
-		// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
-		story := findStory(prd, t.StoryID)
-		backend := t.Backend
-		if backend == "" && story != nil {
-			backend = story.Backend
-		}
-		if backend == "" {
-			backend = prd.Backend
-		}
-		if backend == "" {
-			backend = m.cfg.ExecutionBackend
-		}
-		effort := t.Effort
-		if effort == "" && story != nil {
-			effort = story.Effort
-		}
-		if effort == "" {
-			effort = prd.Effort
-		}
-		model := t.Model
-		if model == "" && story != nil {
-			model = story.Model
-		}
-		if model == "" {
-			model = prd.Model
-		}
-		// v5.27.5 — most-specific permission-mode wins: per-task →
-		// per-PRD → SpawnFn falls through to session default.
-		permMode := t.PermissionMode
-		if permMode == "" {
-			permMode = prd.PermissionMode
-		}
-		lspLang := t.LSPLanguage
-		if lspLang == "" {
-			lspLang = prd.LSPLanguage
-		}
-		var contextPrepend string
-		m.mu.Lock()
-		if m.contextFn != nil {
-			contextPrepend = m.contextFn(prd.Type)
-		}
-		m.mu.Unlock()
-		sr, err := spawn(ctx, SpawnRequest{
-			TaskID:         t.ID,
-			StoryID:        t.StoryID,
-			PRDID:          t.PRDID,
-			Title:          t.Title,
-			Spec:           t.Spec,
-			ProjectDir:     prd.ProjectDir,
-			Backend:        backend,
-			Effort:         effort,
-			Model:          model,
-			PermissionMode: permMode,
-			RetryHint:      hint,
-			ProjectProfile: prd.ProjectProfile, // v5.26.19
-			ClusterProfile: prd.ClusterProfile, // v5.26.19
-			ContextPrepend: contextPrepend,      // BL244
-			LSPLanguage:    lspLang,
-			MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
-		})
-		if err != nil {
-			return fmt.Errorf("spawn: %w", err)
-		}
-		t.SessionID = sr.SessionID
-		_ = m.store.SaveTask(t) // persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
-		// BL386 Phase 1 — warm-start seed after spawn, best-effort.
-		if sr.SessionID != "" && prd.MemorySeed.Enabled {
+		// On daemon restart the task may already be in TaskVerifying with a
+		// session that survived the restart. Skip the spawn so we don't create
+		// a duplicate session alongside the still-running one. Only applies on
+		// the first attempt (attempt > 0 means the previous session already
+		// finished and failed verification, so we must spawn a new one).
+		skipSpawn := false
+		if attempt == 0 && t.Status == TaskVerifying && t.SessionID != "" {
 			m.mu.Lock()
-			seedFn := m.memorySeedFn
+			aliveFn := m.sessionAliveFn
 			m.mu.Unlock()
-			if seedFn != nil {
-				if serr := seedFn(ctx, sr.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemorySeed); serr != nil {
-					log.Printf("[autonomous] seed: session=%s: %v", sr.SessionID, serr)
-				}
+			if aliveFn != nil && aliveFn(t.SessionID) {
+				log.Printf("[autonomous] executeOne: task %s resuming verify for live session %s (daemon restart)", t.ID, t.SessionID)
+				skipSpawn = true
 			}
 		}
-		t.PreTaskSHA = sr.PreTaskSHA                             // BL366: persisted for verifier diff grounding
-		t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles       // v8.25.12: detect newly created untracked files
-		t.Status = TaskVerifying
-		_ = m.store.SaveTask(t)
+
+		if !skipSpawn {
+			now := time.Now()
+			t.StartedAt = &now
+			t.Status = TaskInProgress
+			t.RetryCount = attempt
+			_ = m.store.SaveTask(t)
+
+			// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
+			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
+			story := findStory(prd, t.StoryID)
+			backend := t.Backend
+			if backend == "" && story != nil {
+				backend = story.Backend
+			}
+			if backend == "" {
+				backend = prd.Backend
+			}
+			if backend == "" {
+				backend = m.cfg.ExecutionBackend
+			}
+			effort := t.Effort
+			if effort == "" && story != nil {
+				effort = story.Effort
+			}
+			if effort == "" {
+				effort = prd.Effort
+			}
+			model := t.Model
+			if model == "" && story != nil {
+				model = story.Model
+			}
+			if model == "" {
+				model = prd.Model
+			}
+			// v5.27.5 — most-specific permission-mode wins: per-task →
+			// per-PRD → SpawnFn falls through to session default.
+			permMode := t.PermissionMode
+			if permMode == "" {
+				permMode = prd.PermissionMode
+			}
+			lspLang := t.LSPLanguage
+			if lspLang == "" {
+				lspLang = prd.LSPLanguage
+			}
+			var contextPrepend string
+			m.mu.Lock()
+			if m.contextFn != nil {
+				contextPrepend = m.contextFn(prd.Type)
+			}
+			m.mu.Unlock()
+			var sr SpawnResult
+			sr, err = spawn(ctx, SpawnRequest{
+				TaskID:         t.ID,
+				StoryID:        t.StoryID,
+				PRDID:          t.PRDID,
+				Title:          t.Title,
+				Spec:           t.Spec,
+				ProjectDir:     prd.ProjectDir,
+				Backend:        backend,
+				Effort:         effort,
+				Model:          model,
+				PermissionMode: permMode,
+				RetryHint:      hint,
+				ProjectProfile: prd.ProjectProfile, // v5.26.19
+				ClusterProfile: prd.ClusterProfile, // v5.26.19
+				ContextPrepend: contextPrepend,      // BL244
+				LSPLanguage:    lspLang,
+				MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
+			})
+			if err != nil {
+				return fmt.Errorf("spawn: %w", err)
+			}
+			t.SessionID = sr.SessionID
+			_ = m.store.SaveTask(t) // persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
+			// BL386 Phase 1 — warm-start seed after spawn, best-effort.
+			if sr.SessionID != "" && prd.MemorySeed.Enabled {
+				m.mu.Lock()
+				seedFn := m.memorySeedFn
+				m.mu.Unlock()
+				if seedFn != nil {
+					if serr := seedFn(ctx, sr.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemorySeed); serr != nil {
+						log.Printf("[autonomous] seed: session=%s: %v", sr.SessionID, serr)
+					}
+				}
+			}
+			t.PreTaskSHA = sr.PreTaskSHA                             // BL366: persisted for verifier diff grounding
+			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles       // v8.25.12: detect newly created untracked files
+			t.Status = TaskVerifying
+			_ = m.store.SaveTask(t)
+		}
 
 		var vr VerificationResult
 		if verify != nil {
