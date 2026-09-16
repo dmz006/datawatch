@@ -738,6 +738,28 @@ The following items are excluded from automated runs. Gaps are documented, not h
 
 ---
 
+## T45 — v9.0.0 Memory Lifecycle, Executor Resilience, Per-Story LLM, Per-Guardrail Approve
+
+| T-Sprint | Story ID | Description | Tags | Status | Notes |
+|---|---|---|---|---|---|
+| T45 | TS-680 | POST /api/memory/scopes/save writes a memory to a named scope (BL385) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-681 | POST /api/memory/scopes/delete removes scoped entry by id (BL385) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-682 | GET /api/memory/scopes/inventory returns scope row counts dict (BL386 Phase 5) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-683 | POST /api/memory/scopes/archive-import accepts valid request (BL386 Phase 3) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-684 | GET /api/autonomous/prds/{id}/memory-report returns prd_id field (BL386/BL387) | surface:api feature:memory feature:automata group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-685 | DELETE /api/autonomous/prds/{id}?memory_strategy=archive deletes with archive (BL386) | surface:api feature:memory feature:automata group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-686 | GET /api/memory/scopes/recall with prd_id param returns 200 (BL385 enhanced recall) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-687 | POST /api/autonomous/prds with memory_seed.from_prds cross-seeding accepted (BL387) | surface:api feature:memory feature:automata group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-688 | POST /api/sessions/{id}/guardrail/{name}/approve returns 200 or 404 (v8.33.3) | surface:api feature:guardrail group:guardrail-approve-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-689 | executor_resume_test.go: 4 TestExecutorResume tests pass (v8.33.8) | surface:unit feature:automata group:executor-resume-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-690 | PATCH /api/autonomous/prds/{id} set_story_llm action accepted (BL381) | surface:api feature:automata group:per-story-llm-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-691 | scoped save + recall round-trip: content written via save then found via recall (BL385) | surface:api feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-692 | autonomous_prd_set_story_llm MCP tool exists and is callable (BL381) | surface:mcp feature:automata group:per-story-llm-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-693 | memory_scope_recall MCP tool accepts prd_id parameter (BL385) | surface:mcp feature:memory group:memory-lifecycle-v9 parallel:ok | ✅ ready | — |
+| T45 | TS-694 | memory-scope PWA dashboard tile visible when memory is enabled (BL387 Phase 3) | surface:pwa feature:memory group:memory-lifecycle-v9 conflict:pwa | 📋 pending | needs pwa/TS-694.mjs |
+
+---
+
 ## Bug Workflow
 
 When a test fails, follow this workflow. The runner does steps 1–2 automatically.
