@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.17"
+var Version = "8.33.18"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5924,6 +5924,10 @@ Return STRICT JSON:
 						tuiTaskDelivered.Delete(sessID)
 					} else {
 						fmt.Printf("[tui-task] task delivered to %s (%s) via send_input\n", sessID, backendFamily)
+						// Mark input sent so the 30s post-input-sent suppression
+						// window blocks the brief needs-input flash that opencode
+						// shows between "Enter pressed" and "esc interrupt".
+						mgr.MarkInputSent(sessID)
 					}
 				}()
 			}

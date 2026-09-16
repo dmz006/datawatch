@@ -289,11 +289,19 @@ type Manager struct {
 	restartedAt map[string]time.Time
 
 	// taskDeliveredAt records when a task was delivered to a OneShot session
-	// via send_input. Used to suppress DATAWATCH_COMPLETE: detection for 5 s
+	// via send_input. Used to suppress DATAWATCH_COMPLETE: detection for 5 min
 	// after delivery so the TUI's re-render of the task text itself (which may
 	// contain the pattern verbatim as instruction) does not trigger a false
 	// positive before the LLM has had time to process and respond.
 	taskDeliveredAt map[string]time.Time
+
+	// inputSentAt records when the send_input call that typed the task
+	// actually completed (keys sent + Enter pressed). Used to suppress
+	// spurious needs-input notifications that fire from the brief prompt
+	// flash in opencode's status bar between "Enter pressed" and "LLM
+	// starts streaming (esc interrupt appears)". Set AFTER SendInput
+	// returns; distinct from taskDeliveredAt which is set BEFORE SendInput.
+	inputSentAt map[string]time.Time
 
 	// encFIFOs tracks encrypting FIFOs per session for cleanup.
 	encFIFOs map[string]*secfile.EncryptingFIFO
@@ -467,6 +475,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:   make(map[string]int),
 		restartedAt:      make(map[string]time.Time),
 		taskDeliveredAt:  make(map[string]time.Time),
+		inputSentAt:      make(map[string]time.Time),
 		encKey:           key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
@@ -2690,12 +2699,22 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 
 // MarkTaskDelivered records the moment a task was delivered to a OneShot
 // session via send_input. processOutputLine suppresses DATAWATCH_COMPLETE:
-// detection for 5 s after this timestamp so the TUI's re-render of the task
+// detection for 5 min after this timestamp so the TUI's re-render of the task
 // text (which may contain the pattern as a verbatim instruction) does not
 // produce a false-positive completion before the LLM has had time to respond.
 func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Lock()
 	m.taskDeliveredAt[fullID] = time.Now()
+	m.mu.Unlock()
+}
+
+// MarkInputSent records when the send_input call that delivered the task
+// actually completed (all keys sent + Enter pressed). Used to suppress the
+// brief needs-input flash that opencode shows between "Enter pressed" and
+// "LLM starts streaming". Should be called after SendInput returns.
+func (m *Manager) MarkInputSent(fullID string) {
+	m.mu.Lock()
+	m.inputSentAt[fullID] = time.Now()
 	m.mu.Unlock()
 }
 
@@ -3400,6 +3419,7 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	delete(m.promptFirstSeen, fullID)
 	delete(m.promptLastNotify, fullID)
 	delete(m.promptOscillation, fullID)
+	delete(m.inputSentAt, fullID)
 	trackingDir := ""
 	if t, ok := m.trackers[fullID]; ok {
 		trackingDir = t.SessionDir()
@@ -3847,6 +3867,16 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 	}
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
+	}
+	// Post-input-sent suppression: after send_input completes, opencode briefly
+	// shows the prompt pattern before "esc interrupt" appears. Suppress for 30 s
+	// to avoid spurious needs-input alerts during the LLM startup phase.
+	m.mu.Lock()
+	sentAt, wasSent := m.inputSentAt[fullID]
+	m.mu.Unlock()
+	if wasSent && time.Since(sentAt) < 30*time.Second {
+		m.debugf("notifyNeedsInput: suppressing within 30s post-input-sent window for %s (elapsed=%v)", fullID, time.Since(sentAt).Round(time.Second))
+		return
 	}
 	// Respect notification cooldown to prevent floods
 	m.mu.Lock()
@@ -4354,6 +4384,15 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 
 	if m.onStateChange != nil {
 		m.onStateChange(current, oldState)
+	}
+
+	// Post-input-sent suppression: same guard as MarkWaitingInput path above.
+	m.mu.Lock()
+	sentAt, wasSent := m.inputSentAt[fullID]
+	m.mu.Unlock()
+	if wasSent && time.Since(sentAt) < 30*time.Second {
+		m.debugf("tryTransitionToWaiting: suppressing needs-input within 30s post-input-sent for %s (elapsed=%v)", fullID, time.Since(sentAt).Round(time.Second))
+		return true
 	}
 
 	// Notification cooldown: only fire onNeedsInput if enough time has passed
