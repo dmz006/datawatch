@@ -11,6 +11,25 @@ import (
 	"syscall"
 )
 
+// selfRestart spawns a detached shell that waits for pid to exit then calls
+// "datawatch start" so the new binary comes up without requiring a service
+// manager or manual intervention. Runs in a new session (Setsid) so it
+// survives the parent process exit. The TLS listener's O_CLOEXEC fd is
+// closed automatically on exec, avoiding the headless-daemon issue.
+func selfRestart(exe string, pid int) {
+	script := fmt.Sprintf(
+		`while kill -0 %d 2>/dev/null; do sleep 0.2; done; %s start`,
+		pid, exe,
+	)
+	devnull, _ := os.Open(os.DevNull)
+	cmd := exec.Command("sh", "-c", script) // #nosec G204 -- exe from os.Executable()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdin = devnull
+	cmd.Stdout = devnull
+	cmd.Stderr = devnull
+	_ = cmd.Start()
+}
+
 // daemonize re-invokes the current binary with --foreground appended, detaches
 // it from the terminal (new session via Setsid), and writes its PID to
 // ~/.datawatch/daemon.pid.

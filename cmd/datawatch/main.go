@@ -107,7 +107,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.6"
+var Version = "8.33.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5334,11 +5334,13 @@ Return STRICT JSON:
 		daemonRestartFn := func() {
 			// syscall.Exec was previously used here but caused the TLS listener
 			// socket (O_CLOEXEC) to be closed during runtime_BeforeExec even when
-			// execve fails, leaving the daemon alive but headless. Use exit-only
-			// restart: the caller (handleUpdate) already logged the success message;
-			// the user/supervisor restarts the process from the updated binary.
-			fmt.Printf("[daemon] Update complete. Exiting for restart (v%s → new binary at %s).\n", Version, os.Args[0])
-			fmt.Printf("[daemon] Run: datawatch start  — or your service manager will restart automatically.\n")
+			// execve fails, leaving the daemon alive but headless. Instead we spawn
+			// a detached shell that polls until this PID exits then calls
+			// "datawatch start", so the updated binary comes up automatically
+			// without requiring a service manager or manual intervention.
+			exe, _ := os.Executable()
+			selfRestart(exe, os.Getpid())
+			fmt.Printf("[daemon] Update complete. Spawning new process and exiting (v%s → %s).\n", Version, exe)
 			os.Exit(0)
 		}
 		httpServer.SetRestartFunc(daemonRestartFn)

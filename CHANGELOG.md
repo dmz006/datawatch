@@ -3,6 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v8.33.7 — fix(daemon): in-place update now auto-restarts without service manager
+
+### Fixed
+- **In-place update (Settings → About) did not restart daemon** — After installing the new binary, `daemonRestartFn` called `os.Exit(0)` and logged "run `datawatch start` or wait for your service manager to restart it." With no service manager (nohup launch), the daemon stayed down until manually restarted. Fixed by spawning a detached shell child (`sh -c "while kill -0 <pid>; do sleep 0.2; done; datawatch start"` in a new session via `Setsid`) before exiting. The new process starts as soon as the old PID disappears and ports are free. Windows is a no-op (manual restart still required there). PWA notification updated from "run datawatch start" to "Daemon restarting…".
+
+---
+
 ## v8.33.6 — fix(ci): suppress CVE-2026-82049 (python3.11 tarfile, no fix in bookworm)
 
 ### Fixed

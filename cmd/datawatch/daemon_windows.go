@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 )
 
+// selfRestart is a no-op on Windows — the update message instructs the
+// operator to restart manually or via a Windows Service manager.
+func selfRestart(_ string, _ int) {}
+
 // daemonize on Windows runs the child process without Setsid (not supported).
 // Use 'datawatch start --foreground' or a Windows Service wrapper for true background operation.
 func daemonize() error {

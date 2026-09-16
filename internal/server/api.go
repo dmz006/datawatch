@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.6"
+var Version = "8.33.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7666,7 +7666,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "installed",
 		})
 		s.hub.Broadcast(MsgNotification, map[string]string{
-			"message": "[update] Installed v" + latest + ". Daemon exiting — run `datawatch start` or wait for your service manager to restart it.",
+			"message": "[update] Installed v" + latest + ". Daemon restarting…",
 		})
 		// Give clients 800ms to receive the message before the process exits.
 		s.hub.Broadcast(MsgUpdateProgress, map[string]any{
