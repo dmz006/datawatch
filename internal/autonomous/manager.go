@@ -1158,8 +1158,8 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDRunning {
-		return nil, fmt.Errorf("prd %q status %q is not running; reset_task only applies to running PRDs", prdID, prd.Status)
+	if prd.Status != PRDRunning && prd.Status != PRDFailed {
+		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning or PRDFailed", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
@@ -1195,6 +1195,12 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	}
 	now := time.Now()
 	prd.UpdatedAt = now
+	// B97: when called on a PRDFailed PRD, restore it to PRDRunning so the
+	// executor picks it back up without the operator having to reset_to_draft
+	// (which would discard all completed task work).
+	if prd.Status == PRDFailed {
+		prd.Status = PRDRunning
+	}
 	kind := "reset_task"
 	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
 	if force {
