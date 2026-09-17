@@ -93,7 +93,11 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			// when the operator KNOWS the node is currently unreachable but
 			// wants to persist the entry).
 			if r.URL.Query().Get("probe") != "skip" {
-				pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+				probeTimeout := 15 * time.Second
+				if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
+					probeTimeout = 30 * time.Second
+				}
+				pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 				defer cancel()
 				if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
 					http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
@@ -267,7 +271,11 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.URL.Query().Get("probe") != "skip" {
-			pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			probeTimeout := 15 * time.Second
+			if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
+				probeTimeout = 30 * time.Second
+			}
+			pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 			defer cancel()
 			if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)

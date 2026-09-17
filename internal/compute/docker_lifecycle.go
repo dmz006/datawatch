@@ -32,42 +32,49 @@ func (d *DockerLifecycle) EnsureRunning(ctx context.Context, n *Node) (ip string
 	cname := containerName(n)
 
 	running, _, statusErr := d.Status(ctx, n)
-	if statusErr != nil {
-		// Container may not exist yet — treat as not running.
-		running = false
-	}
+	containerExists := statusErr == nil
 
 	if !running {
 		if !cfg.AutoStart {
 			return "", 0, fmt.Errorf("docker lifecycle: container %q is not running and auto_start is disabled", cname)
 		}
 
-		// Optionally pull the image first.
-		if cfg.AutoPull {
-			pullArgs := d.hostArgs(cfg.DockerEndpoint)
-			pullArgs = append(pullArgs, "pull", cfg.Image)
-			out, perr := exec.CommandContext(ctx, "docker", pullArgs...).CombinedOutput()
-			if perr != nil {
-				return "", 0, fmt.Errorf("docker lifecycle: pull %q: %v — %s", cfg.Image, perr, strings.TrimSpace(string(out)))
+		if containerExists {
+			// Container exists but is not running (e.g. "Created" state from a prior
+			// killed probe). Use docker start instead of docker run to avoid name conflict.
+			startArgs := d.hostArgs(cfg.DockerEndpoint)
+			startArgs = append(startArgs, "start", cname)
+			out, startErr := exec.CommandContext(ctx, "docker", startArgs...).CombinedOutput()
+			if startErr != nil {
+				return "", 0, fmt.Errorf("docker lifecycle: start container %q: %v — %s", cname, startErr, strings.TrimSpace(string(out)))
 			}
-		}
+		} else {
+			// Container does not exist — optionally pull, then create and run.
+			if cfg.AutoPull {
+				pullArgs := d.hostArgs(cfg.DockerEndpoint)
+				pullArgs = append(pullArgs, "pull", cfg.Image)
+				out, perr := exec.CommandContext(ctx, "docker", pullArgs...).CombinedOutput()
+				if perr != nil {
+					return "", 0, fmt.Errorf("docker lifecycle: pull %q: %v — %s", cfg.Image, perr, strings.TrimSpace(string(out)))
+				}
+			}
 
-		// Build docker run args.
-		runArgs := d.hostArgs(cfg.DockerEndpoint)
-		runArgs = append(runArgs,
-			"run", "-d",
-			"--name", cname,
-			"--network", cfg.NetworkName,
-			"--restart", "unless-stopped",
-		)
-		for _, e := range cfg.Env {
-			runArgs = append(runArgs, "-e", e)
-		}
-		runArgs = append(runArgs, cfg.Image)
+			runArgs := d.hostArgs(cfg.DockerEndpoint)
+			runArgs = append(runArgs,
+				"run", "-d",
+				"--name", cname,
+				"--network", cfg.NetworkName,
+				"--restart", "unless-stopped",
+			)
+			for _, e := range cfg.Env {
+				runArgs = append(runArgs, "-e", e)
+			}
+			runArgs = append(runArgs, cfg.Image)
 
-		out, runErr := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput()
-		if runErr != nil {
-			return "", 0, fmt.Errorf("docker lifecycle: run container %q: %v — %s", cname, runErr, strings.TrimSpace(string(out)))
+			out, runErr := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput()
+			if runErr != nil {
+				return "", 0, fmt.Errorf("docker lifecycle: run container %q: %v — %s", cname, runErr, strings.TrimSpace(string(out)))
+			}
 		}
 	}
 

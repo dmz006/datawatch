@@ -13,6 +13,8 @@ _story_ts_615() {
   local payload resp code
   payload='{"name":"r615-dn-node","kind":"ollama","address":"http://localhost:11434","routing":"docker-network","routing_docker_network":{"network":"r615-net","image":"ollama/ollama:latest","container_name":"r615-ctr","port":11434,"auto_start":true}}'
   api DELETE /api/compute/nodes/r615-dn-node >/dev/null 2>&1 || true
+  docker rm -f r615-ctr 2>/dev/null || true
+  docker network rm r615-net 2>/dev/null || true
   resp=$(api_code POST /api/compute/nodes "$payload")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   save_evidence TS-615 "create.json" "$resp"
