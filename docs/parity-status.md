@@ -16,29 +16,29 @@ Legend:
 
 | Feature | PWA | Android | iOS |
 |---------|-----|---------|-----|
-| Session list + status | ✅ | ✅ | ❌ (planned) |
-| Start / stop / kill session | ✅ | ✅ | ❌ (planned) |
-| Session output streaming | ✅ | ✅ | ❌ (planned) |
-| Settings — General | ✅ | ✅ | ❌ (planned) |
-| Settings — LLM backends | ✅ | ✅ | ❌ (planned) |
-| Settings — Messaging backends | ✅ | ✅ | ❌ (planned) |
+| Session list + status | ✅ | ✅ | ❌ (tracked: app#182) |
+| Start / stop / kill session | ✅ | ✅ | ❌ (tracked: app#182) |
+| Session output streaming | ✅ | ✅ | ❌ (tracked: app#182) |
+| Settings — General | ✅ | ✅ | ❌ (tracked: app#182) |
+| Settings — LLM backends | ✅ | ✅ | ❌ (tracked: app#182) |
+| Settings — Messaging backends | ✅ | ✅ | ❌ (tracked: app#182) |
 | Push notifications (FCM) | ✅ | ✅ | N/A |
-| Push notifications (APNs) | N/A | N/A | ❌ (BL item — next minor) |
-| Alert list + mark read | ✅ | ✅ | ❌ (planned) |
-| Autonomous PRD list + actions | ✅ | 🔶 | ❌ (planned) |
-| Automaton spec expand (show full / collapse) | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
-| Automaton status graphs (progress bars + CPU/RSS) | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
-| Automaton cancel button visible during running state | ✅ | ❌ (tracked: app#166) | ❌ (tracked: app#166) |
-| Memory recall | ✅ | 🔶 | ❌ (planned) |
-| Council run + results | ✅ | 🔶 | ❌ (planned) |
-| Monitor tab (stats) | ✅ | 🔶 | ❌ (planned) |
-| Orchestrator graphs | ✅ | ❌ | ❌ (planned) |
-| Compute nodes | ✅ | ❌ | ❌ (planned) |
-| Summarize last response | ✅ | ❌ (tracked: app#146) | ❌ (planned) |
-| Chrome session flag | ✅ | ❌ (tracked: app#146) | ❌ (planned) |
-| Localization (5 locales) | ✅ | ✅ | ❌ (planned) |
-| Dark / light theme | ✅ | ✅ | ❌ (planned) |
-| Image attachment in session input (📷 button) | ✅ | ❌ (tracked: app#158) | ❌ (tracked: app#158) |
+| Push notifications (APNs) | N/A | N/A | ❌ (BL item — tracked: app#185) |
+| Alert list + mark read | ✅ | ✅ | ❌ (tracked: app#182) |
+| Autonomous PRD list + actions | ✅ | ✅ (app#162,#163,#165,#171,#172 closed) | ❌ (tracked: app#182) |
+| Automaton spec expand (show full / collapse) | ✅ | ✅ v8.25.0 (app#166 closed) | ❌ (tracked: app#182) |
+| Automaton status graphs (progress bars + CPU/RSS) | ✅ | ✅ v8.25.0 (app#166 closed) | ❌ (tracked: app#182) |
+| Automaton cancel button visible during running state | ✅ | ✅ v8.25.0 (app#166 closed) | ❌ (tracked: app#182) |
+| Memory recall | ✅ | 🔶 (tracked: app#183) | ❌ (tracked: app#183) |
+| Council run + results | ✅ | ✅ v8.0 (app#127 closed) | ❌ (tracked: app#182) |
+| Monitor tab (stats) | ✅ | ✅ v8.22.0 (app#164 closed) | ❌ (tracked: app#182) |
+| Orchestrator graphs | ✅ | ❌ (tracked: app#184) | ❌ (tracked: app#184) |
+| Compute nodes | ✅ | ✅ v8.25.3 (app#168,#173 closed) | ❌ (tracked: app#182) |
+| Summarize last response | ✅ | ✅ v8.8.13 (app#146,#147 closed) | ❌ (tracked: app#182) |
+| Chrome session flag | ✅ | ✅ v8.8.3 (app#146 closed) | ❌ (tracked: app#182) |
+| Localization (5 locales) | ✅ | ✅ | ❌ (tracked: app#182) |
+| Dark / light theme | ✅ | ✅ | ❌ (tracked: app#182) |
+| Image attachment in session input (📷 button) | ✅ | ✅ v8.19.0 (app#158 closed) | ❌ (tracked: app#182) |
 | Memory scope model — prd-shared/story-shared (BL385+) | ✅ v8.29.0 | 🔲 (tracked: app#174) | 🔲 (tracked: app#174) |
 | Memory lifecycle — seeding/harvest/archive/import (BL386+) | ✅ v8.30.0 | 🔲 (tracked: app#175) | 🔲 (tracked: app#175) |
 | Automata memory integration — stats tile, report (BL387+) | ✅ v8.31.0+ | 🔲 (tracked: app#176) | 🔲 (tracked: app#176) |
