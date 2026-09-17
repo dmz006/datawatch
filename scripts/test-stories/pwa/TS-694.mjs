@@ -7,8 +7,9 @@ await runStory(async (page) => {
   // Check memory status via API before testing the tile
   const memEnabled = await page.evaluate(async () => {
     try {
+      const token = localStorage.getItem('cs_token') || '';
       const r = await fetch('/api/memory/stats', {
-        headers: { Authorization: 'Bearer ' + (window._token || '') },
+        headers: { Authorization: 'Bearer ' + token },
       });
       if (!r.ok) return false;
       const d = await r.json();

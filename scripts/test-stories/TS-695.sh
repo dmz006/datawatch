@@ -94,7 +94,7 @@ _story_ts_695() {
 
   # ---- create PRD with two clearly independent tasks ----
   prd_id=$(api POST /api/autonomous/prds \
-    "{\"spec\":\"Two fully independent tasks with no dependencies between them. Task A: write the text 'hello from story A' into /tmp/e2e-a-${sid}.txt. Task B: write the text 'hello from story B' into /tmp/e2e-b-${sid}.txt. Each task is self-contained and must not depend on the other.\",\"project_dir\":\"/tmp\",\"backend\":\"$llm_a\"}" \
+    "{\"spec\":\"This spec MUST be decomposed into EXACTLY TWO stories. Do not merge them. Story 1 (standalone, no deps): run the shell command: echo hello-a > /tmp/e2e-a-${sid}.txt. Story 2 (standalone, no deps): run the shell command: echo hello-b > /tmp/e2e-b-${sid}.txt. These are two completely separate independent stories with zero shared state. Each story is one shell command. Output exactly 2 stories.\",\"project_dir\":\"/tmp\",\"backend\":\"$llm_a\"}" \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     _cleanup; skip "could not create PRD"; return
