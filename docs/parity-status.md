@@ -1,7 +1,7 @@
 # Client Parity Status
 
 **Standard: PWA == Android == iOS**  
-**Last updated:** v8.19.0 (2026-09-01)
+**Last updated:** v8.33.32 (2026-09-17)
 
 This table tracks the parity state of operator-visible features across all three clients.
 iOS parity standard added in v8.8.6 (issue #107 in `dmz006/datawatch`).
@@ -42,6 +42,23 @@ Legend:
 | Memory scope model — prd-shared/story-shared (BL385+) | ✅ v8.29.0 | 🔲 (tracked: app#174) | 🔲 (tracked: app#174) |
 | Memory lifecycle — seeding/harvest/archive/import (BL386+) | ✅ v8.30.0 | 🔲 (tracked: app#175) | 🔲 (tracked: app#175) |
 | Automata memory integration — stats tile, report (BL387+) | ✅ v8.31.0+ | 🔲 (tracked: app#176) | 🔲 (tracked: app#176) |
+| files_touched on tasks — uncommitted edits, untracked files, non-git dirs (B102) | ✅ v8.33.27 | 🔲 (tracked: app#177) | 🔲 (tracked: app#177) |
+| PRD detail live WS updates — incremental patch, no flicker (B103) | ✅ v8.33.27 | 🔲 (tracked: app#178) | 🔲 (tracked: app#178) |
+| PRD list story/task status parity — icon mapping, effective status, card persistence (B104) | ✅ v8.33.28 | 🔲 (tracked: app#179) | 🔲 (tracked: app#179) |
+| Automata list — completed in default view, filter badges for all statuses incl. history group (B105) | ✅ v8.33.29 | 🔲 (tracked: app#180) | 🔲 (tracked: app#180) |
+| Inline file viewer for task file chips — markdown rendered, plain text, download fallback (B106) | ✅ v8.33.32 | 🔲 (tracked: app#181) | 🔲 (tracked: app#181) |
+
+## Plan/Proposal parity gate
+
+The table above tracks **shipped** client parity. This section tracks **in-flight** work so the parity gate is visible before a feature lands. Per AGENT.md, every plan/proposal under `docs/plans/` must ship across all enumerated surfaces — `REST`, `MCP`, `CLI`, `comm channel`, `PWA` (plus the Android/iPhone clients as parity targets) — or carry a reason-logged exclusion in its `Parity surface` section.
+
+| Planned feature | Target surfaces (per spec) | Status |
+|-----------------|----------------------------|--------|
+| Eval Sweep — suite × backend matrix | REST, MCP, CLI, comm, PWA | planned — `docs/plans/harness-impl/eval-sweep-api.md` (cross-surface contract §4) |
+| Eval nodes in the PRD-DAG orchestrator | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §2) |
+| Red-team validator pipeline (deepening the injection guard) | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §5) |
+
+Features promoted to shipped move a row into the Feature Parity Table above with per-client ✅/🔶/❌ columns and `datawatch-app` tracking; until then they remain visible here.
 
 ## iOS Client Plan
 
