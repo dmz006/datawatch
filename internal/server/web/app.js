@@ -14847,8 +14847,8 @@ function _fileChip(path) {
   const viewableExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
   const dlUrl = '/api/files/download?path=' + encodeURIComponent(path);
   if (viewableExts.has(ext)) {
-    const viewFn = `event.stopPropagation();_showFileViewer(${escHtml(JSON.stringify(path))})`;
     const icon = ext === 'md' ? '📄' : '📃';
+    const viewFn = `event.stopPropagation();_showFileViewer(${JSON.stringify(path)})`;
     return `<span class="prd-file-chip" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(path)}"><button onclick="${escHtml(viewFn)}" class="prd-file-chip-view" title="View ${escHtml(name)}">${icon} ${escHtml(name)}</button><a href="${escHtml(dlUrl)}" download="${escHtml(name)}" onclick="event.stopPropagation()" class="prd-file-chip-dl" title="Download">⬇</a></span>`;
   }
   return `<a href="${escHtml(dlUrl)}" class="prd-file-chip" download="${escHtml(name)}" onclick="event.stopPropagation()" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
