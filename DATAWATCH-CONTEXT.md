@@ -84,6 +84,8 @@ Single-binary daemon (`cmd/datawatch/`) that:
 
 **Release sign-off template**: `docs/agent/RELEASE-SIGNOFF.md` — fill in and include in every release commit body.
 
+**Parity enforcement:** any feature that touches an API MUST ship across *all* enumerated parity surfaces — `REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`, `iPhone/iOS` — or carry an explicit, reason-logged exclusion per AGENT.md (the Configuration Accessibility Rule, Mobile-Parity Rule, and the `Parity surface` plan-section clause). Plans and proposals MUST document this per-surface intent (include/exclude-with-reason) *before* implementation begins; a plan that cannot articulate where a capability ships is incomplete and does not pass the release `Parity surface` audit. Capability parity is required, implementation parity is not — each platform uses idiomatic delivery.
+
 ---
 
 ## Directory Structure

@@ -16,7 +16,7 @@ _story_ts_533() {
     return
   fi
   local resp
-  resp=$(api POST /api/mcp/call "{\"tool\":\"council_run_cancel\",\"params\":{\"run_id\":\"$run_id\"}}")
+  resp=$(api POST /api/mcp/call "{\"tool\":\"council_run_cancel\",\"params\":{\"id\":\"$run_id\"}}")
   resp=$(mcp_unwrap "$resp")
   save_evidence TS-533 "resp.json" "$resp"
   if echo "$resp" | grep -qi "unknown tool\|not enabled"; then

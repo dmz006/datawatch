@@ -15,13 +15,30 @@ await runStory(async (page) => {
   await navigateTo(page, 'settings');
   await screenshot(page, '01-settings-before-toggle');
 
-  // Find theme toggle button/checkbox
-  const themeToggleSelector = '#themeToggle, [id*="theme"], .theme-toggle, [data-action="toggle-theme"], input[type="checkbox"][id*="dark"], input[type="checkbox"][id*="theme"]';
+  // Navigate to the About tab where the theme picker (#themePickerAbout) lives
+  const aboutTab = await page.$('[data-tab="about"]');
+  if (aboutTab) {
+    await aboutTab.click();
+    await page.waitForTimeout(500);
+  }
+
+  // Find theme toggle — #themePickerAbout is a <select> in the About tab
+  const themeToggleSelector = '#themePickerAbout, #themeToggle, [id*="theme"], .theme-toggle, [data-action="toggle-theme"]';
   const themeToggle = await page.$(themeToggleSelector);
   if (!themeToggle) {
     throw new Error(`Theme toggle not found with selector: ${themeToggleSelector}`);
   }
-  await themeToggle.click();
+
+  // For a select element, change the value; for a checkbox/button, click it
+  const tagName = await themeToggle.evaluate(el => el.tagName.toLowerCase());
+  if (tagName === 'select') {
+    // Select a different value than current
+    const currentVal = await themeToggle.evaluate(el => el.value);
+    const newVal = currentVal === 'dark' ? 'light' : 'dark';
+    await themeToggle.selectOption(newVal);
+  } else {
+    await themeToggle.click();
+  }
   await page.waitForTimeout(500);
 
   // Read new theme

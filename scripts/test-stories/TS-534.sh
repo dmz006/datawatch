@@ -20,7 +20,11 @@ _story_ts_534() {
     skip "council_persona_oneshot tool not available"
     return
   fi
-  if echo "$resp" | grep -qi "model.*not found\|ollama.*404\|HTTP 502\|HTTP 503\|no llm\|llm not"; then
+  if [[ -z "$resp" ]]; then
+    skip "council_persona_oneshot: empty response (LLM timeout or not available)"
+    return
+  fi
+  if echo "$resp" | grep -qi "model.*not found\|ollama.*404\|HTTP 502\|HTTP 503\|no llm\|llm not\|HTTP 000"; then
     skip "council_persona_oneshot: LLM model not available (ollama model not loaded)"
     return
   fi

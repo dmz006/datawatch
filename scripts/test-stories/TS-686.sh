@@ -13,12 +13,14 @@ _story_ts_686() {
   resp=$(api_code GET "/api/memory/scopes/recall?prd_id=e2e-prd-$$&project=/e2e-proj-$$&top_k=5" '')
   save_evidence TS-686 "recall-prd.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
+  local body
+  body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   case "$code" in
     200)
-      if assert_json "$resp" 'isinstance(d, list) or isinstance(d, dict)'; then
+      if assert_json "$body" 'isinstance(d, list) or isinstance(d, dict)'; then
         ok "GET recall with prd_id returned 200"
       else
-        ko "recall response has unexpected shape: $(echo "$resp" | head -c 200)"
+        ko "recall response has unexpected shape: $(echo "$body" | head -c 200)"
       fi
       ;;
     503) skip "memory backend disabled (503)" ;;

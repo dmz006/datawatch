@@ -8829,9 +8829,14 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		req.Chrome = &t
 	}
 	body, _ := json.Marshal(req)
-	resp, err := http.Post(
+	httpReq, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
-		"application/json", bytes.NewReader(body))
+		bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if cfg.Server.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
 	if err == nil {
 		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()

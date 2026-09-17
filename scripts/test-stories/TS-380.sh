@@ -19,6 +19,8 @@ _story_ts_380() {
 
   if [[ "$code" == "200" ]]; then
     ok "decompose (effort=low) completed: HTTP 200"
+  elif [[ "$code" == "202" ]]; then
+    ok "decompose accepted async (HTTP 202): $body"
   elif [[ "$code" == "400" ]]; then
     # Already decomposed or invalid state — still counts as endpoint working
     ok "decompose returned 400 (already decomposed or invalid state): $body"

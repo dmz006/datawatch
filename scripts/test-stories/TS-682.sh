@@ -13,12 +13,14 @@ _story_ts_682() {
   resp=$(api_code GET "/api/memory/scopes/inventory?project=/e2e-proj" '')
   save_evidence TS-682 "inventory.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
+  local body
+  body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   case "$code" in
     200)
-      if assert_json "$resp" 'isinstance(d, dict)'; then
+      if assert_json "$body" 'isinstance(d, dict)'; then
         ok "GET /api/memory/scopes/inventory returned 200 with dict payload"
       else
-        ko "inventory response is not a dict: $(echo "$resp" | head -c 200)"
+        ko "inventory response is not a dict: $(echo "$body" | head -c 200)"
       fi
       ;;
     404|405) skip "memory/scopes/inventory endpoint not available ($code)" ;;

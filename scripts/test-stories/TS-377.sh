@@ -38,6 +38,8 @@ for item in items:
     ok "inference LLM enable returned $en_code (pretest ran and failed as expected — no backend)"
   elif [[ "$en_code" == "404" || "$en_code" == "405" ]]; then
     skip "LLM enable endpoint not available ($en_code)"
+  elif [[ "$en_code" == "000" ]]; then
+    skip "LLM enable pretest timed out (HTTP 000 — inference backend not responding)"
   else
     ko "unexpected HTTP $en_code enabling inference LLM: $en_body"
   fi

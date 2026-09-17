@@ -11,7 +11,7 @@ _story_ts_680() {
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
 
   resp=$(api_code POST /api/memory/scopes/save \
-    '{"scope":"project-shared","project":"/e2e-proj-$$","content":"TS-680 scope save e2e","role":"e2e-test"}')
+    "{\"scope\":{\"scope\":\"project-shared\",\"project\":\"/e2e-proj-$$\"},\"content\":\"TS-680 scope save e2e\"}")
   save_evidence TS-680 "save.json" "$resp"
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   case "$code" in

@@ -1,4 +1,4 @@
-// TS-639 — Settings General tab reachable
+// TS-639 — Settings About tab has version info
 import { runStory, connectToPWA, navigateTo, assertVisible, screenshot } from './lib.mjs';
 
 await runStory(async (page) => {
@@ -7,16 +7,22 @@ await runStory(async (page) => {
   await navigateTo(page, 'settings');
   await screenshot(page, '01-settings-view');
 
-  // Look for general tab active state or click it if present
-  const generalTabSelector = '[data-tab="general"], [data-section="general"], #settingsGeneral, #generalTab';
-  const generalTab = await page.$(generalTabSelector);
-  if (generalTab) {
-    await generalTab.click();
+  // Click the About tab (data-tab="about") which contains version info
+  const aboutTab = await page.$('[data-tab="about"]');
+  if (aboutTab) {
+    await aboutTab.click();
     await page.waitForTimeout(500);
+  } else {
+    // Fallback: try general or other tabs
+    const generalTab = await page.$('[data-tab="general"], [data-section="general"], #settingsGeneral, #generalTab');
+    if (generalTab) {
+      await generalTab.click();
+      await page.waitForTimeout(500);
+    }
   }
 
-  // Look for version info which is typically in the general/about section
-  await assertVisible(page, '[id*="version"], .settings-version, #settingsVersion, #aboutVersion, [class*="version"]', 'version info');
+  // #aboutVersion is in the About tab
+  await assertVisible(page, '#aboutVersion, [id*="version"], .settings-version', 'version info');
 
-  await screenshot(page, '02-general-tab');
+  await screenshot(page, '02-about-tab');
 });

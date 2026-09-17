@@ -1,11 +1,11 @@
 # E2E Test Cookbook — v9.0.0
 
 **Version**: v9.0.0  
-**Sprint**: T45 + T46 — Memory Lifecycle, Executor Resilience, Per-Story LLM, Per-Guardrail Approve, Parallel LLM Execution  
-**Stories**: TS-680–TS-695 (16 tests)  
-**Last Run**: —  
-**Pass Rate**: — (0/15)  
-**Status**: 📋 Ready to run
+**Sprint**: T45 + T46 + T47 — Memory Lifecycle, Executor Resilience, Per-Story LLM, Per-Guardrail Approve, Parallel LLM Execution, B102–B106 UI Features  
+**Stories**: TS-680–TS-705 (26 tests)  
+**Last Run**: 2026-09-16  
+**Pass Rate**: — (T47 stories added 2026-09-16)  
+**Status**: 📋 T47 added; prior sprints green
 
 ---
 
@@ -145,4 +145,39 @@ The following features still have unit/API tests but lack live-LLM e2e coverage:
 | BL381 per-story spawn with model set | Story must actually execute on a specific backend | conflict:llm |
 | v8.33.8 boot-resume on real daemon | Daemon restart then PRD advancement | conflict:llm |
 
-Add these as T46 stories (DW_MAJOR=1 gate) when a live LLM backend is available in CI.
+Add these as T47 stories (DW_MAJOR=1 gate) when a live LLM backend is available in CI.
+
+---
+
+## T47 Stories — B102–B106 UI Features (v8.33.27–v8.33.32)
+
+| TS# | Description | Feature | Status | Notes |
+|---|---|---|---|---|
+| TS-696 | B102: session detail returns valid JSON after hook Stop (files_touched shape) | B102 files_touched | 📋 planned | No LLM needed |
+| TS-697 | B106: GET /api/files/download?inline=1 returns content without attachment header | B106 file viewer | 📋 planned | Requires root_path-accessible file |
+| TS-698 | B106: GET /api/files/download (no inline) returns Content-Disposition: attachment | B106 file viewer | 📋 planned | — |
+| TS-699 | B103: PRD decompose/stream SSE endpoint reachable | B103 live updates | 📋 planned | No LLM needed |
+| TS-700 | B104: PRD detail has status field | B104 status parity | 📋 planned | — |
+| TS-701 | B105: GET /api/autonomous/prds includes completed items; ?status= filter accepted | B105 filter badges | 📋 planned | — |
+| TS-702 | B102: PRD stories/tasks have files field when LLM decompose ran | B102 files chips | 📋 planned | conflict:llm for full check |
+| TS-703 | B104/B105: automata status locale keys present in all 5 bundles | B104/B105 locale | 📋 planned | Keys may not yet exist |
+| TS-704 | B106: _showFileViewer and _fileChip functions present in app.js | B106 JS surface | 📋 planned | Static check |
+| TS-705 | B102: files_touched paths are absolute (start with /) | B102 absolute paths | 📋 planned | — |
+
+### Run Commands (T47)
+
+```bash
+# Full T47 sprint
+bash scripts/run-tests.sh --sprint=T47
+
+# Individual stories
+bash scripts/run-tests.sh --story=TS-697
+bash scripts/run-tests.sh --story=TS-704
+
+# All B102-B106 coverage
+bash scripts/run-tests.sh --group=b102-files-touched-v9
+bash scripts/run-tests.sh --group=b103-live-updates-v9
+bash scripts/run-tests.sh --group=b104-status-parity-v9
+bash scripts/run-tests.sh --group=b105-filter-badges-v9
+bash scripts/run-tests.sh --group=b106-file-viewer-v9
+```

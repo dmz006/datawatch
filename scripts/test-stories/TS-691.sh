@@ -12,7 +12,7 @@ _story_ts_691() {
 
   local uniq_content="ts691-round-trip-$$-$(date +%s)"
   save_resp=$(api POST /api/memory/scopes/save \
-    "{\"scope\":\"project-shared\",\"project\":\"/e2e-roundtrip-$$\",\"content\":\"$uniq_content\",\"role\":\"e2e-test\"}" \
+    "{\"scope\":{\"scope\":\"project-shared\",\"project\":\"/e2e-roundtrip-$$\"},\"content\":\"$uniq_content\"}" \
     2>/dev/null || echo "")
   id=$(echo "$save_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
 
@@ -35,7 +35,7 @@ print('yes' if any('$uniq_content' in str(r) for r in rows) else 'no')
 " 2>/dev/null || echo "no")
 
   # Cleanup.
-  api POST /api/memory/scopes/delete "{\"scope\":\"project-shared\",\"project\":\"/e2e-roundtrip-$$\",\"id\":\"$id\"}" >/dev/null 2>&1 || true
+  api POST /api/memory/scopes/delete "{\"scope\":{\"scope\":\"project-shared\",\"project\":\"/e2e-roundtrip-$$\"},\"memory_id\":$id}" >/dev/null 2>&1 || true
 
   if [[ "$found" == "yes" ]]; then
     ok "scoped save + recall round-trip: content $uniq_content found"

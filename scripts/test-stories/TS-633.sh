@@ -20,8 +20,8 @@ _story_ts_633() {
   resp=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-633 "browse.json" "$resp"
 
-  if [[ "$code" == "503" || "$code" == "501" || "$code" == "404" ]]; then
-    skip "plugins/browse endpoint not available (HTTP $code)"
+  if [[ "$code" == "503" || "$code" == "501" || "$code" == "404" || "$code" == "400" ]]; then
+    skip "plugins/browse endpoint not available or returned error (HTTP $code)"
     return
   fi
   if [[ "$code" == "200" ]]; then

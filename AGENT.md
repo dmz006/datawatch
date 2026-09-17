@@ -148,6 +148,7 @@ follow the same rule.
 5. Update the **documentation index** in both `README.md` and `docs/README.md` for any new doc files
 6. Update `docs/testing-tracker.md` for any new interface, backend, **or changed endpoint contract** (e.g. HTTP status code change, new response field, renamed route). A contract change requires a new tracker section just as much as a new endpoint does. Record the section name in the commit message as `tracker: <section name>`.
 7. Verify no internal tracker IDs leaked into user-facing docs (see rule above)
+8. **Parity surface section** — every generated plan document under `docs/plans/` MUST contain a `## Parity surface` section enumerating all channels the feature touches from the full parity-surface set (`REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`, `iPhone`) and listing which surfaces are intentionally excluded, each with a stated reason. A plan that cannot articulate per-surface intent is incomplete.
 
 ### New LLM backend (`internal/llm/backends/<name>/`)
 
@@ -399,9 +400,17 @@ MUST include all new config fields. The web UI `GENERAL_CONFIG_FIELDS`,
 **Before marking a feature complete**, verify the config value round-trips:
 ```
 PUT /api/config {"key":"feature.setting","value":true}
-GET /api/config → verify feature.setting = true
+GET /api/config → feature.setting = true (verify)
 configure feature.setting=true → verify response
 ```
+
+**Parity-surface note:** the channels above are the *input* surfaces for configuration.
+Per the full parity set in this file, a config surface is additionally a parity target on
+the operator-facing clients — **Android** and **iPhone/iOS** — which must reflect the same
+setting (or an explicit, reason-logged exclusion in the plan's `Parity surface` section).
+This follows the Mobile-Parity Rule's clause: *capability parity is required; implementation
+parity is not — each platform uses idiomatic delivery.* Adding Android/iPhone as additional
+*config-input* channels is explicitly out of scope for this rule and would contradict that clause.
 
 ## Localization Rule (BL214, v5.28.0)
 
@@ -449,6 +458,13 @@ for translation values, parent → mobile for new key requests.
 SwiftUI iOS client is under development and the parity standard extends from the
 previous PWA == Android to include iOS. See `docs/parity-status.md` for the
 per-feature parity table (PWA | Android | iOS columns).
+
+**Full parity-surface set** (used across this file and in every `Parity surface` plan section):
+`REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`, `iPhone/iOS`.
+Client-parity (PWA/Android/iPhone) is enforced by this rule; the operator-interface
+surfaces (REST, MCP, CLI, comm, YAML/config) are enforced by the Configuration
+Accessibility Rule and Section B6. A feature touching any one surface names the rest
+in its plan's `Parity surface` section, with each excluded surface carrying a reason.
 
 **iOS-specific notes:**
 - **Native patterns:** APNs (not FCM) for push, Keychain for credentials, WKWebView
@@ -537,6 +553,13 @@ missing `CapAutonomousWrite` guards — added in v8.28.1.
 autonomous.go and confirm each has a `fedCap` call. `grep -n "case \"" internal/server/autonomous.go`
 then cross-reference with `grep -n "fedCap"` on the same file.
 
+**Parity-surface enumeration:** a federation-guarded endpoint is an API surface.
+Per the full parity-surface set, the plan or docs for that endpoint MUST enumerate
+which of `REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`,
+`iPhone/iOS` the capability is reachable from (and which are excluded, with reason),
+so that a `fedCap`-guarded REST surface is not silently shipped without its
+`MCP`/`CLI`/`comm` equivalents where the operator expects them.
+
 ## Decomposer Scope-Drift Rule (BL384, v8.28.3)
 
 **qwen3.8:27b and qwen3:8b ignore PRD-level scope constraints at decomposition time.**
@@ -564,7 +587,14 @@ PRD's intended scope.
 3. **PRD scan rule — scope drift detector:**
    The scan config includes a `scope-drift` rule that flags task specs containing
    code-creation language when the PRD spec indicates documentation or doc-only work.
-   Run `autonomous_prd_scan` after decomposition and before any task approval.
+    Run `autonomous_prd_scan` after decomposition and before any task approval.
+
+    **Parity inheritance:** decomposed PRD stories MUST inherit the parent plan's
+    `Parity surface` list. Each story spec carries the same full surface set
+    (`REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`,
+    `iPhone/iOS`) and the same per-surface include/exclude-with-reason entries as its
+    parent plan. A story that narrows or drops a surface without a stated reason is a
+    scope drift and fails the scan.
 
 **Root cause:** These models have strong "helpful agent" priors that override
 instruction-following for negative constraints. A constraint like "documentation
@@ -621,6 +651,9 @@ this need a skill hook?"** before shipping.
   resolution code — it's just a registry that ships preconfigured.
 
 ### Release workflow (must be followed for every version bump)
+
+Checklist (verify before bumping the version):
+- [ ] **parity audit passed** — every plan/proposal doc under `docs/plans/` touched by the release has a `Parity surface` section matching the AGENT.md rule set, with per-surface include/exclude-with-reason entries across `REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`, `iPhone/iOS`.
 
 ```bash
 # 1. Bump version in BOTH files (they must match)
