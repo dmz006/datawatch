@@ -181,16 +181,23 @@ func (g *ProjectGit) TouchedFiles(since time.Time) []string {
 	}
 
 	if g.IsRepo() {
-		// Tracked modified/staged vs HEAD
+		// Tracked modified/staged vs HEAD — git returns repo-relative paths;
+		// join with g.dir so the caller gets absolute paths.
 		if out, err := gitOutput(g.dir, "diff", "--name-only", "HEAD"); err == nil {
 			for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-				add(l)
+				l = strings.TrimSpace(l)
+				if l != "" {
+					add(filepath.Join(g.dir, l))
+				}
 			}
 		}
 		// New untracked files (not yet in git index)
 		if out, err := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard"); err == nil {
 			for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-				add(l)
+				l = strings.TrimSpace(l)
+				if l != "" {
+					add(filepath.Join(g.dir, l))
+				}
 			}
 		}
 		if len(seen) > 0 {
@@ -204,6 +211,7 @@ func (g *ProjectGit) TouchedFiles(since time.Time) []string {
 	}
 
 	// Non-git or git returned nothing: walk and find files modified after since.
+	// Use the absolute path from filepath.Walk directly so results are always absolute.
 	skipDirs := map[string]bool{
 		"node_modules": true, "vendor": true, ".git": true,
 		".hg": true, ".svn": true,
@@ -222,10 +230,7 @@ func (g *ProjectGit) TouchedFiles(since time.Time) []string {
 			return nil
 		}
 		if info.ModTime().After(since) {
-			rel, relErr := filepath.Rel(g.dir, path)
-			if relErr == nil {
-				add(rel)
-			}
+			add(path)
 		}
 		return nil
 	})

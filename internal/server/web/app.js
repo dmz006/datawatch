@@ -10416,10 +10416,11 @@ function renderTask(prd, story, task, editable) {
   // re-rendering the whole PRD detail view.
   const hasTaskFiles = task.files && task.files.length;
   const hasTaskTouched = task.files_touched && task.files_touched.length;
+  const _projDir = (prd && prd.project_dir) ? prd.project_dir : '';
   const filesP = hasTaskFiles
     ? `<div class="prd-task-files">
          <span class="prd-task-files-label">Files:</span>
-         ${task.files.map(f => `<code class="prd-task-file-chip">${escHtml(f)}</code>`).join('')}
+         ${task.files.map(f => _fileChip(_projDir ? _projDir + '/' + f : f)).join('')}
          ${editable ? `<button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
        </div>`
     : (editable
