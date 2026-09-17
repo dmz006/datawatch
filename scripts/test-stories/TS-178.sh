@@ -20,7 +20,7 @@ _story_ts_178() {
   out=$(kubectl --context="$K8S_CONTEXT" delete namespace "$K8S_NAMESPACE" \
     --ignore-not-found=true 2>&1 || echo "failed")
   save_evidence TS-178 "delete_ns.txt" "$out"
-  if echo "$out" | grep -qE "deleted|not found|NotFound"; then
+  if [[ -z "$out" ]] || echo "$out" | grep -qE "deleted|not found|NotFound"; then
     ok "kubectl delete namespace $K8S_NAMESPACE: completed (deleted or not found)"
   elif echo "$out" | grep -qiE "terminating"; then
     ok "kubectl delete namespace $K8S_NAMESPACE: namespace is terminating"
