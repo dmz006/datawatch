@@ -12,7 +12,7 @@ _story_ts_687() {
 
   # Create source PRD.
   src_prd_id=$(api POST /api/autonomous/prds \
-    '{"spec":"TS-687 source","project":"/e2e-$$","backend":"opencode"}' \
+    '{"spec":"TS-687 source","project_dir":"/tmp","backend":"opencode"}' \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$src_prd_id" ]]; then
     skip "could not create source PRD"
@@ -21,7 +21,7 @@ _story_ts_687() {
 
   # Create child PRD with from_prds cross-seeding config.
   prd_id=$(api POST /api/autonomous/prds \
-    "{\"spec\":\"TS-687 child\",\"project\":\"/e2e-$$\",\"backend\":\"opencode\",\"memory_seed\":{\"enabled\":true,\"from_prds\":[\"$src_prd_id\"]}}" \
+    "{\"spec\":\"TS-687 child\",\"project_dir\":\"/tmp\",\"backend\":\"opencode\",\"memory_seed\":{\"enabled\":true,\"from_prds\":[\"$src_prd_id\"]}}" \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
 
   # Cleanup.

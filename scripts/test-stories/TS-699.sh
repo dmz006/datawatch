@@ -9,7 +9,7 @@ _story_ts_699() {
   # Create a test Automaton
   local prd_resp prd_id
   prd_resp=$(api POST /api/autonomous/prds \
-    '{"title":"TS-699 B103 test","spec":"Test live updates endpoint accessibility."}')
+    '{"title":"TS-699 B103 test","spec":"Test live updates endpoint accessibility.","project_dir":"/tmp"}')
   prd_id=$(echo "$prd_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     skip "could not create test automaton"

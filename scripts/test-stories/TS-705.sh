@@ -13,7 +13,7 @@ _story_ts_705() {
   local proj_dir="$REPO_ROOT"
   local sess_id
   sess_id=$(api POST /api/sessions/start \
-    "{\"task\":\"ts705-files-touched-absolute\",\"llm\":\"shell\",\"project_dir\":\"$proj_dir\"}" \
+    "{\"task\":\"ts705-files-touched-absolute\",\"backend\":\"shell\",\"project_dir\":\"$proj_dir\"}" \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("session",{}).get("id","") or d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$sess_id" ]]; then
     skip "could not create test session"

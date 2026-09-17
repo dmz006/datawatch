@@ -26,7 +26,7 @@ if not a:
     # Create a minimal PRD just to verify the shape
     local prd_resp
     prd_resp=$(api POST /api/autonomous/prds \
-      '{"title":"TS-702 task.files test","spec":"Verify task files field in PRD stories."}')
+      '{"title":"TS-702 task.files test","spec":"Verify task files field in PRD stories.","project_dir":"/tmp"}')
     prd_id=$(echo "$prd_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
     if [[ -z "$prd_id" ]]; then
       skip "could not create test automaton"

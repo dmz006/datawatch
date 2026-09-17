@@ -10,7 +10,7 @@ _story_ts_684() {
 
   # Create a minimal PRD to get a valid ID.
   prd_id=$(api POST /api/autonomous/prds \
-    '{"spec":"TS-684 memory-report e2e test","project":"/e2e-$$","backend":"opencode"}' \
+    '{"spec":"TS-684 memory-report e2e test","project_dir":"/tmp","backend":"opencode"}' \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     skip "could not create PRD (autonomous feature may require LLM backend)"

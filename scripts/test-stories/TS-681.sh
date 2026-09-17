@@ -12,7 +12,7 @@ _story_ts_681() {
 
   # First save an entry to have something to delete.
   save_resp=$(api POST /api/memory/scopes/save \
-    '{"scope":"project-shared","project":"/e2e-proj-$$","content":"TS-681 delete target","role":"e2e-test"}' 2>/dev/null || echo "")
+    "{\"scope\":{\"scope\":\"project-shared\",\"project\":\"/e2e-proj-$$\"},\"content\":\"TS-681 delete target\",\"role\":\"e2e-test\"}" 2>/dev/null || echo "")
   id=$(echo "$save_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$id" ]]; then
     skip "could not create entry to delete (save_resp: $(echo "$save_resp" | head -c 100))"
@@ -20,7 +20,7 @@ _story_ts_681() {
   fi
 
   del_resp=$(api_code POST /api/memory/scopes/delete \
-    "{\"scope\":\"project-shared\",\"project\":\"/e2e-proj-$$\",\"id\":\"$id\"}")
+    "{\"scope\":{\"scope\":\"project-shared\",\"project\":\"/e2e-proj-$$\"},\"memory_id\":$id}")
   save_evidence TS-681 "delete.json" "$del_resp"
   code=$(echo "$del_resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   case "$code" in

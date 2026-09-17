@@ -15,7 +15,7 @@ _story_ts_700() {
   if [[ -z "$prd_id" ]]; then
     local prd_resp
     prd_resp=$(api POST /api/autonomous/prds \
-      '{"title":"TS-700 status parity test","spec":"Verify story status fields."}')
+      '{"title":"TS-700 status parity test","spec":"Verify story status fields.","project_dir":"/tmp"}')
     prd_id=$(echo "$prd_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
     created=1
   fi

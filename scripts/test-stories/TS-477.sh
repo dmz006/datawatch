@@ -17,12 +17,25 @@ _story_ts_477() {
   fi
   add_cleanup automaton "$local_id"
 
-  # Decompose first to move PRD to needs_review state
+  # Decompose first to move PRD to needs_review state (202 = async, poll for completion)
   local decomp_code
   decomp_code=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 60 \
     -X POST -H "Authorization: Bearer $TEST_TOKEN" \
     "$TEST_BASE/api/autonomous/prds/$local_id/decompose")
-  if [[ "$decomp_code" != "200" ]]; then
+  if [[ "$decomp_code" == "202" ]]; then
+    # Async decompose started — poll until needs_review or timeout
+    local i status
+    for i in $(seq 1 24); do
+      sleep 5
+      status=$(api GET "/api/autonomous/prds/$local_id" \
+        | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
+      [[ "$status" == "needs_review" || "$status" == "approved" ]] && break
+    done
+    if [[ "$status" != "needs_review" && "$status" != "approved" ]]; then
+      skip "decompose async (202) — PRD status '$status' after 120s — LLM may be slow or unavailable"
+      return
+    fi
+  elif [[ "$decomp_code" != "200" ]]; then
     skip "decompose returned $decomp_code — cannot get PRD to needs_review"
     return
   fi

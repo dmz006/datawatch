@@ -20,6 +20,23 @@ _story_ts_023() {
   if [[ "$code" == "200" ]]; then
     local n; n=$(echo "$body" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d.get("stories",[])))' 2>/dev/null || echo 0)
     ok "Automaton decompose returned 200, $n stories"
+  elif [[ "$code" == "202" ]]; then
+    # Async decompose started — poll PRD status for up to 2 minutes
+    local i status
+    for i in $(seq 1 24); do
+      sleep 5
+      status=$(api GET "/api/autonomous/prds/$AUTOMATON_ID" \
+        | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
+      [[ "$status" == "needs_review" || "$status" == "approved" ]] && break
+    done
+    if [[ "$status" == "needs_review" || "$status" == "approved" ]]; then
+      local n
+      n=$(api GET "/api/autonomous/prds/$AUTOMATON_ID" \
+        | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d.get("stories",[])))' 2>/dev/null || echo 0)
+      ok "Automaton decompose async (202) → status=$status, $n stories"
+    else
+      skip "Automaton decompose returned 202 (LLM may not be reachable in test env)"
+    fi
   else
     skip "Automaton decompose returned $code (LLM may not be reachable in test env)"
   fi

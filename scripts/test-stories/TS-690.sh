@@ -10,7 +10,7 @@ _story_ts_690() {
 
   # Create PRD so we have an ID.
   prd_id=$(api POST /api/autonomous/prds \
-    '{"spec":"TS-690 per-story llm e2e","project":"/e2e-$$","backend":"opencode"}' \
+    '{"spec":"TS-690 per-story llm e2e","project_dir":"/tmp","backend":"opencode"}' \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     skip "could not create PRD"

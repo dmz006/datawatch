@@ -8,7 +8,7 @@ story_preflight "surface:api feature:automata feature:sessions group:b102-files-
 _story_ts_696() {
   # Create a test session and fire hook events to populate files_touched
   local sess_id
-  sess_id=$(api POST /api/sessions/start '{"task":"ts696-files-touched-test","llm":"shell"}' \
+  sess_id=$(api POST /api/sessions/start '{"task":"ts696-files-touched-test","backend":"shell","project_dir":"/tmp"}' \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("session",{}).get("id","") or d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$sess_id" ]]; then
     skip "could not create test session"

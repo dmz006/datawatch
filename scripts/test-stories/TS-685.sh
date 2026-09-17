@@ -11,7 +11,7 @@ _story_ts_685() {
   [[ "$m_enabled" != "yes" ]] && { skip "memory not enabled"; return; }
 
   prd_id=$(api POST /api/autonomous/prds \
-    '{"spec":"TS-685 archive-delete e2e test","project":"/e2e-$$","backend":"opencode"}' \
+    '{"spec":"TS-685 archive-delete e2e test","project_dir":"/tmp","backend":"opencode"}' \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     skip "could not create PRD"
