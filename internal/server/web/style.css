@@ -1799,9 +1799,10 @@ body {
   font-size: 10px;
   color: var(--text);
 }
-/* BL374 — file chip as a download link (replaces plain <code> for files_touched). */
+/* BL374 — file chip: viewable files show view+download pair; binary shows download only. */
 a.prd-file-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   background: rgba(16,185,129,0.08);
   padding: 1px 6px 1px 4px;
   border-radius: 3px;
@@ -1812,8 +1813,35 @@ a.prd-file-chip {
   cursor: pointer;
   transition: background 0.1s;
 }
-a.prd-file-chip::before { content: "⬇ "; font-size: 9px; }
 a.prd-file-chip:hover { background: rgba(16,185,129,0.18); text-decoration: underline; }
+span.prd-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(16,185,129,0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: monospace;
+}
+button.prd-file-chip-view {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 10px;
+  font-family: monospace;
+  transition: opacity 0.1s;
+}
+button.prd-file-chip-view:hover { opacity: 0.75; text-decoration: underline; }
+a.prd-file-chip-dl {
+  color: var(--text2);
+  text-decoration: none;
+  font-size: 10px;
+  padding: 0 2px;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+a.prd-file-chip-dl:hover { opacity: 1; }
 
 /* v8.23.0 — task session link, error, verification, retry button. */
 .prd-task-session-link {

@@ -14834,18 +14834,71 @@ function escHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// BL374 — render a files_touched path as a clickable download link chip.
-// Shows just the filename; full path appears on hover. Text/code/doc files
-// open inline in a new tab; everything else downloads.
+// BL374 — render a files_touched path as a viewable + downloadable chip.
+// Markdown files open in an inline rendered modal (primary action).
+// Other text/code files open in a plain-text viewer modal.
+// Binary/unknown files show a download-only chip.
+// A small ⬇ download icon is always available alongside the view action.
 function _fileChip(path) {
   if (!path) return '';
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
-  const inlineExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
-  const inline = inlineExts.has(ext) ? '&inline=1' : '';
-  const url = '/api/files/download?path=' + encodeURIComponent(path) + inline;
-  return `<a href="${escHtml(url)}" class="prd-file-chip" target="_blank" rel="noopener" title="${escHtml(path)}">${escHtml(name)}</a>`;
+  const viewableExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
+  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path);
+  if (viewableExts.has(ext)) {
+    const viewFn = `event.stopPropagation();_showFileViewer(${escHtml(JSON.stringify(path))})`;
+    const icon = ext === 'md' ? '📄' : '📃';
+    return `<span class="prd-file-chip" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(path)}"><button onclick="${escHtml(viewFn)}" class="prd-file-chip-view" title="View ${escHtml(name)}">${icon} ${escHtml(name)}</button><a href="${escHtml(dlUrl)}" download="${escHtml(name)}" onclick="event.stopPropagation()" class="prd-file-chip-dl" title="Download">⬇</a></span>`;
+  }
+  return `<a href="${escHtml(dlUrl)}" class="prd-file-chip" download="${escHtml(name)}" onclick="event.stopPropagation()" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
 }
+
+// _showFileViewer opens a modal that renders the file's content.
+// Markdown is rendered with renderChatMarkdown; other text files show as <pre>.
+// A download button is always in the header.
+window._showFileViewer = function(path) {
+  const existing = document.getElementById('fileViewerModal');
+  if (existing) existing.remove();
+  const name = path.split('/').pop() || path;
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const isMd = ext === 'md';
+  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path);
+  const viewUrl = dlUrl + '&inline=1';
+
+  const modal = document.createElement('div');
+  modal.id = 'fileViewerModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="response-modal" style="max-width:min(860px,95vw);max-height:90vh;width:95vw;">
+    <div class="response-modal-header">
+      <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(path)}">${escHtml(name)}</span>
+      <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px;">
+        <a href="${escHtml(dlUrl)}" download="${escHtml(name)}" style="text-decoration:none;font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text);background:var(--bg2);display:inline-flex;align-items:center;gap:3px;" title="Download ${escHtml(name)}">⬇ Download</a>
+        <button class="btn-icon" onclick="document.getElementById('fileViewerModal').remove()" title="Close">&#10005;</button>
+      </div>
+    </div>
+    <div id="fileViewerContent" class="response-modal-body" style="white-space:${isMd ? 'normal' : 'pre'};font-family:${isMd ? 'inherit' : 'var(--mono,monospace)'};font-size:${isMd ? '13px' : '12px'};line-height:1.6;">
+      <em style="color:var(--text2);">Loading…</em>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+
+  fetch(viewUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(text => {
+      const el = document.getElementById('fileViewerContent');
+      if (!el) return;
+      if (isMd) {
+        el.innerHTML = renderChatMarkdown(text);
+      } else {
+        el.innerHTML = `<code>${escHtml(text)}</code>`;
+      }
+    })
+    .catch(err => {
+      const el = document.getElementById('fileViewerContent');
+      if (el) el.innerHTML = `<span style="color:var(--error);">Failed to load: ${escHtml(String(err))}</span>`;
+    });
+};
 
 // Strip ANSI terminal escape sequences for display (CSI, OSC, DCS, tmux passthrough)
 // eslint-disable-next-line no-control-regex
