@@ -15586,14 +15586,21 @@ window.toggleAutomataPin = function(id) {
 };
 
 // Status sets for history toggle.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','blocked']);
+// completed is in the active set so it shows by default without toggling history.
+// The history toggle adds the terminal-failure/archive statuses only.
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','blocked','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 function _automataFilteredList() {
   const st = _automataState;
   const isTemplates = st.tab === 'templates';
   let list = st.allPrds.filter(p => !!p.is_template === isTemplates);
-  if (!st.historyOn) list = list.filter(p => _AUTOMATA_ACTIVE_STATUSES.has(p.status || 'draft'));
+  // When a status badge filter is active the badge controls exactly what's visible,
+  // so bypass the history gate — a clicked 'archived' badge should show archived
+  // without needing to toggle the history button separately.
+  if (!st.historyOn && st.statusFilter.size === 0) {
+    list = list.filter(p => _AUTOMATA_ACTIVE_STATUSES.has(p.status || 'draft'));
+  }
   if (st.statusFilter.size) list = list.filter(p => st.statusFilter.has(p.status || 'draft'));
   if (st.typeFilter.size) list = list.filter(p => st.typeFilter.has(p.type || ''));
   if (st.search) {
@@ -18084,11 +18091,20 @@ function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
-  const statusBadges = ['draft','planning','needs_review','approved','running','blocked'].map(s => {
+  // Active statuses + completed (shown by default); then terminal statuses behind history toggle
+  const statusBadgesActive = ['draft','planning','needs_review','approved','running','blocked','completed'].map(s => {
     const active = st.statusFilter.has(s) ? 'active' : '';
-    const label = escHtml(t('automata_status_' + s.replace('needs_review','needs_review')) || s);
+    const label = escHtml(t('automata_status_' + s) || s);
     return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;
   }).join('');
+  // Terminal-failure + archived badges always visible in the filter bar even when
+  // history is off — clicking one bypasses the gate and shows only those items.
+  const statusBadgesHistory = ['cancelled','rejected','archived'].map(s => {
+    const active = st.statusFilter.has(s) ? 'active' : '';
+    const label = escHtml(t('automata_status_' + s) || s);
+    return `<button class="automata-filter-badge status-${s} ${active}" style="opacity:0.7;" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;
+  }).join('');
+  const statusBadges = statusBadgesActive + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + statusBadgesHistory;
   const typeBadges = ['software','research','operational','personal'].map(type => {
     const active = st.typeFilter.has(type) ? 'active' : '';
     return `<button class="automata-filter-badge type-badge ${active}" data-type="${type}" onclick="toggleAutomataTypeFilter('${type}')">${escHtml(type)}</button>`;
