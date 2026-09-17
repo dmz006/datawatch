@@ -26,10 +26,11 @@ _story_ts_684() {
 
   case "$code" in
     200)
-      if assert_json "$resp" '"prd_id" in d'; then
+      local body; body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+      if assert_json "$body" '"prd_id" in d'; then
         ok "GET memory-report returned 200 with prd_id field"
       else
-        ko "memory-report response missing prd_id: $(echo "$resp" | head -c 200)"
+        ko "memory-report response missing prd_id: $(echo "$body" | head -c 200)"
       fi
       ;;
     503) skip "memory backend disabled (503)" ;;
