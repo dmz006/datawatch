@@ -28,6 +28,9 @@
 
 set -euo pipefail
 
+# Ensure user-local binaries (kind, kubectl, rtk, etc.) are in PATH.
+export PATH="${HOME}/.local/bin:${PATH}"
+
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)

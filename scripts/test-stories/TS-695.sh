@@ -20,10 +20,10 @@ _story_ts_695() {
   local sid="$$"
   local ollama_a="${TEST_OLLAMA_HOST:-http://datawatch:11434}"
   local ollama_b="${TEST_OLLAMA2_HOST:-http://localhost:11434}"
-  local node_a="e2e-nodeA-${sid}"
-  local node_b="e2e-nodeB-${sid}"
-  local llm_a="e2e-llmA-${sid}"
-  local llm_b="e2e-llmB-${sid}"
+  local node_a="e2e-nodea-${sid}"
+  local node_b="e2e-nodeb-${sid}"
+  local llm_a="e2e-llma-${sid}"
+  local llm_b="e2e-llmb-${sid}"
   local prd_id="" code resp
 
   _cleanup() {

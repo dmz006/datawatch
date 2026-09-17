@@ -6,21 +6,23 @@ CURRENT_STORY="TS-539"
 story_preflight "surface:api feature:mcp" || return 0
 
 _story_ts_539() {
-  local resp
-  resp=$(api GET /api/mcp/tools)
+  local resp code
+  resp=$(api_code GET /api/mcp/tools '')
+  code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
+  resp=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-539 "tools.json" "$resp"
-  if echo "$resp" | grep -qi "not found\|404\|unknown"; then
-    skip "mcp/tools endpoint not available"
+  if [[ "$code" == "404" || "$code" == "503" || "$code" == "501" ]]; then
+    skip "mcp/tools endpoint not available (HTTP $code)"
     return
   fi
   local cnt
   cnt=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);tools=d.get("tools",d) if isinstance(d,dict) else d;print(len(tools) if isinstance(tools,list) else 0)' 2>/dev/null || echo "0")
   if [[ "$cnt" -gt 0 ]] 2>/dev/null; then
     ok "GET /api/mcp/tools returns $cnt tools"
-  elif assert_json "$resp" 'isinstance(d, (dict, list))'; then
-    skip "mcp/tools responds but no tools found"
+  elif [[ "$code" == "200" ]]; then
+    skip "mcp/tools responds 200 but no tools in response"
   else
-    ko "unexpected response: $(echo "$resp" | head -c 200)"
+    ko "unexpected HTTP $code: $(echo "$resp" | head -c 200)"
   fi
 }
 

@@ -7,7 +7,10 @@ story_preflight "surface:cli feature:alert-rules" || return 0
 
 _story_ts_630() {
   local out rc
-  out=$(cli_test alert-rules add test-cpu-rule --metric cpu_pct --operator '>' --threshold 90 --action alert 2>&1); rc=$?
+  # Flags: --condition-metric, --condition-operator, --condition-threshold, --action-kind
+  out=$(cli_test alert-rules add test-cpu-rule \
+    --condition-metric cpu_pct --condition-operator '>' --condition-threshold 90 \
+    --action-kind alert 2>&1); rc=$?
   save_evidence TS-630 "out.txt" "$out"
   if echo "$out" | grep -qiE "unknown command|unknown flag|no such|help.*alert"; then
     skip "alert-rules add CLI not available in this build"
