@@ -25,14 +25,14 @@ _story_ts_477() {
   if [[ "$decomp_code" == "202" ]]; then
     # Async decompose started — poll until needs_review or timeout
     local i status
-    for i in $(seq 1 24); do
+    for i in $(seq 1 60); do
       sleep 5
       status=$(api GET "/api/autonomous/prds/$local_id" \
         | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
       [[ "$status" == "needs_review" || "$status" == "approved" ]] && break
     done
     if [[ "$status" != "needs_review" && "$status" != "approved" ]]; then
-      skip "decompose async (202) — PRD status '$status' after 120s — LLM may be slow or unavailable"
+      skip "decompose async (202) — PRD status '$status' after 300s — LLM may be slow or unavailable"
       return
     fi
   elif [[ "$decomp_code" != "200" ]]; then

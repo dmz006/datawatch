@@ -23,7 +23,7 @@ _story_ts_023() {
   elif [[ "$code" == "202" ]]; then
     # Async decompose started — poll PRD status for up to 2 minutes
     local i status
-    for i in $(seq 1 24); do
+    for i in $(seq 1 60); do
       sleep 5
       status=$(api GET "/api/autonomous/prds/$AUTOMATON_ID" \
         | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")

@@ -46,16 +46,28 @@ memory:
 
 autonomous:
   enabled: true
-  planning_backend: ollama
+  planning_backend: ollama-johnnyjohnny
 
 council:
   enabled: true
-  llm_ref: ollama
+  llm_ref: ollama-johnnyjohnny
 
 ollama:
   enabled: true
   model: qwen3:1.7b
   host: http://johnnyjohnny:11434
+
+llms:
+  - name: ollama-johnnyjohnny
+    kind: ollama
+    url: http://johnnyjohnny:11434
+    model: qwen3:1.7b
+    enabled: true
+  - name: ollama-localhost
+    kind: ollama
+    url: http://localhost:11434
+    model: qwen3:1.7b
+    enabled: true
 
 openwebui:
   enabled: true
@@ -76,10 +88,10 @@ whisper:
 # Points to the test ollama instance (port 21434 in docker-compose.test.yml;
 # port 11434 on the host network when running natively against johnnyjohnny).
 vision:
-  enabled: false
+  enabled: true
   backend: ollama
-  endpoint: http://datawatch:11434
-  model: Gemma3:12b
+  endpoint: http://localhost:11434
+  model: llmvision/glimpse-v1:latest
   max_image_bytes: 0
 
 # Lightweight webhook backend: provides a comm responder so pipeline,
@@ -97,6 +109,13 @@ compute_nodes:
     declared_capacity:
       gpus: 1
       max_concurrent_models: 3
+  - name: datawatch-ollama-b
+    kind: ollama
+    address: http://localhost:11434
+    scheduling_priority: 80
+    declared_capacity:
+      gpus: 1
+      max_concurrent_models: 2
 
 observer:
   peers:

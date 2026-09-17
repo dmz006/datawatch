@@ -9,7 +9,7 @@ _story_ts_668() {
   # Enable vision on sandbox daemon pointing at the datawatch ollama instance
   local cfg_code
   cfg_code=$(api_code PUT /api/config \
-    '{"vision.enabled":true,"vision.backend":"ollama","vision.endpoint":"http://datawatch:11434","vision.model":"Gemma3:12b"}' \
+    '{"vision.enabled":true,"vision.backend":"ollama","vision.endpoint":"http://localhost:11434","vision.model":"llmvision/glimpse-v1:latest"}' \
     | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   if [[ ! "$cfg_code" =~ ^2 ]]; then
     skip "could not enable vision on sandbox daemon (HTTP $cfg_code)"
