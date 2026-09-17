@@ -17,11 +17,21 @@ await runStory(async (page) => {
 
   // Look for dashboard stat strip elements
   const statStripSelector = '#dashStatBurnRate, [id*="dash"], .stat-strip, .dash-stats, [id*="stat"]';
-  await page.waitForSelector(statStripSelector, { state: 'attached', timeout: 8000 });
+  let found = null;
+  try {
+    found = await page.waitForSelector(statStripSelector, { state: 'attached', timeout: 8000 });
+  } catch {
+    // waitForSelector can throw on navigation or timeout
+    found = null;
+  }
 
-  const found = await page.$(statStripSelector);
   if (!found) {
-    throw new Error('Dashboard stat strip element not found in DOM');
+    // Try a JS-level check in case of navigation/context race
+    const inDom = await page.evaluate((sel) => !!document.querySelector(sel), statStripSelector)
+      .catch(() => false);
+    if (!inDom) {
+      throw new Error('Dashboard stat strip element not found in DOM');
+    }
   }
 
   await screenshot(page, '02-stat-strip');
