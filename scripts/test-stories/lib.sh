@@ -237,7 +237,7 @@ ensure_test_automaton() {
     return 1
   fi
   local resp
-  resp=$(api POST /api/autonomous/prds '{"spec":"test-prd-fixture: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
+  resp=$(api POST /api/autonomous/prds '{"spec":"test-prd-fixture: echo hello world","project_dir":"/tmp","effort":"low"}')
   AUTOMATON_ID=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -n "$AUTOMATON_ID" ]]; then
     add_cleanup automaton "$AUTOMATON_ID"

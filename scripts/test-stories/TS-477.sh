@@ -9,7 +9,7 @@ _story_ts_477() {
   # Use a fresh PRD — earlier tests may have already approved the shared AUTOMATON_ID
   local local_id
   local resp
-  resp=$(api POST /api/autonomous/prds '{"spec":"ts477-approve-test: echo ok","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
+  resp=$(api POST /api/autonomous/prds '{"spec":"ts477-approve-test: echo ok","project_dir":"/tmp","effort":"low"}')
   local_id=$(echo "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$local_id" ]]; then
     skip "could not create PRD for approve test"

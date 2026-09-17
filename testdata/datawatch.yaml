@@ -42,7 +42,7 @@ memory:
   backend: sqlite
   embedder: ollama
   embedder_model: nomic-embed-text
-  embedder_host: http://johnnyjohnny:11434
+  embedder_host: http://localhost:11434
 
 autonomous:
   enabled: true
@@ -91,7 +91,7 @@ vision:
   enabled: true
   backend: ollama
   endpoint: http://localhost:11434
-  model: llmvision/glimpse-v1:latest
+  model: moondream:latest
   max_image_bytes: 0
 
 # Lightweight webhook backend: provides a comm responder so pipeline,
