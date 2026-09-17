@@ -114,6 +114,46 @@ idx["updated_at"] = now
 json.dump(idx, open(path, "w"), indent=2)
 PY
 
+  # Seed the community registry entry + .skills-cache from the production data dir
+  # when available (native local run with internet-synced production daemon).
+  # Skipped in CI / docker where the production data dir is absent.
+  local prod_skills_cache="${HOME}/.datawatch/.skills-cache/community"
+  if [[ -d "$prod_skills_cache/.git" ]]; then
+    local test_cache_dir="$TEST_DATA/.skills-cache"
+    mkdir -p "$test_cache_dir"
+    if [[ ! -d "$test_cache_dir/community/.git" ]]; then
+      cp -a "$prod_skills_cache" "$test_cache_dir/community"
+    fi
+    # Add community registry + available_cache to skills.json via the production API cache.
+    local prod_skills_json="${HOME}/.datawatch/skills.json"
+    python3 - "$TEST_DATA/skills.json" "$prod_skills_json" "$now" <<'PY2'
+import json, sys, os
+test_path, prod_path, now = sys.argv[1], sys.argv[2], sys.argv[3]
+test_idx = {"registries": [], "synced": [], "available_cache": {}, "updated_at": now}
+if os.path.exists(test_path):
+    try: test_idx = json.load(open(test_path))
+    except Exception: pass
+prod_idx = {}
+if os.path.exists(prod_path):
+    try: prod_idx = json.load(open(prod_path))
+    except Exception: pass
+# Copy community registry entry from production.
+regs = test_idx.get("registries", [])
+for r in prod_idx.get("registries", []):
+    if r.get("name") == "community" and not any(x.get("name") == "community" for x in regs):
+        regs.append(r)
+test_idx["registries"] = regs
+# Copy community available_cache from production.
+prod_cache = prod_idx.get("available_cache", {})
+if "community" in prod_cache and "community" not in test_idx.get("available_cache", {}):
+    if test_idx.get("available_cache") is None:
+        test_idx["available_cache"] = {}
+    test_idx["available_cache"]["community"] = prod_cache["community"]
+test_idx["updated_at"] = now
+json.dump(test_idx, open(test_path, "w"), indent=2)
+PY2
+  fi
+
   # Find the binary
   local binary=""
   if [[ -n "${TEST_BINARY:-}" && -x "$TEST_BINARY" ]]; then

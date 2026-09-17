@@ -23784,7 +23784,11 @@ function loadSkillsPanel() {
 window.loadSkillsPanel = loadSkillsPanel;
 
 function _renderSkillsRegistries(panel, registries) {
-  const addDefaultBtn = `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="skillsAddDefault()" title="${escHtml(t('skills_add_default_title')||'Idempotently add the built-in community and PAI registries')}">${escHtml(t('skills_btn_add_default')||'+ Add built-in registries')}</button>`;
+  const names = new Set((registries || []).map(r => r.name));
+  // Hide "Add built-in" when both community and pai are already registered.
+  const bothBuiltinsPresent = names.has('community') && names.has('pai');
+  const addDefaultBtn = bothBuiltinsPresent ? '' :
+    `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="skillsAddDefault()" title="${escHtml(t('skills_add_default_title')||'Idempotently add the built-in community and PAI registries')}">${escHtml(t('skills_btn_add_default')||'+ Add built-in registries')}</button>`;
   const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="skillsOpenAddModal()" title="${escHtml(t('skills_btn_add_title')||'Add a new skill registry')}">${escHtml(t('skills_btn_add')||'+ Add registry')}</button>`;
 
   if (!registries || registries.length === 0) {
@@ -23797,7 +23801,8 @@ function _renderSkillsRegistries(panel, registries) {
   }
 
   const rows = registries.map(r => {
-    const ts = r.last_synced_at && new Date(r.last_synced_at).getFullYear() > 2000
+    const connected = r.last_synced_at && new Date(r.last_synced_at).getFullYear() > 2000;
+    const ts = connected
       ? new Date(r.last_synced_at).toLocaleString()
       : (t('skills_never_synced')||'never synced');
     const errBadge = r.last_sync_error
@@ -23812,10 +23817,14 @@ function _renderSkillsRegistries(panel, registries) {
     // &quot; and the inline onclick handler stays valid (same fix pattern as
     // renderPRDActions in v5.26.3).
     const idJ = escHtml(JSON.stringify(r.name));
+    // Show a "Connect first" hint on registries that have never been connected.
+    const connectHint = !connected
+      ? `<span style="font-size:10px;color:var(--accent);margin-left:4px;" title="${escHtml(t('skills_connect_hint_title')||'Click Connect to fetch the registry catalog before browsing')}">${escHtml(t('skills_connect_hint')||'— Connect to browse')}</span>`
+      : '';
     return `<div class="settings-row" style="flex-direction:column;align-items:stretch;padding:8px;border-bottom:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         ${statusDot}
-        <strong style="font-size:13px;">${escHtml(r.name)}</strong>${builtin}
+        <strong style="font-size:13px;">${escHtml(r.name)}</strong>${builtin}${connectHint}
         <span style="font-size:11px;color:var(--text2);">${escHtml(r.url||'')}</span>
         ${errBadge}
       </div>
@@ -23836,8 +23845,9 @@ function _renderSkillsRegistries(panel, registries) {
   </div>`;
 
   // BL261 v6.7.7 — wrap populated state in standard card-content inset.
+  const bottomBtns = addDefaultBtn ? `<div style="display:flex;gap:6px;margin-top:8px;">${addDefaultBtn}${addBtn}</div>` : `<div style="display:flex;gap:6px;margin-top:8px;">${addBtn}</div>`;
   panel.innerHTML = `<div style="padding:6px 12px;"><div>${rows}</div>
-    <div style="display:flex;gap:6px;margin-top:8px;">${addDefaultBtn}${addBtn}</div>
+    ${bottomBtns}
     ${syncedSection}</div>`;
   loadSyncedSkillsList();
 }
@@ -23869,14 +23879,15 @@ window.skillsAddDefault = function() {
 };
 
 window.skillsConnect = function(name) {
-  showToast(t('skills_connecting')||'Connecting to registry…', 'info', 2000);
+  // Show a persistent toast while git clone/fetch runs (can take 10-30s).
+  showToast((t('skills_connecting')||'Connecting to registry…') + ' ' + name, 'info', 30000);
   apiFetch('/api/skills/registries/' + encodeURIComponent(name) + '/connect', { method: 'POST' })
     .then(data => {
       const n = (data && data.available && data.available.length) || 0;
-      showToast((t('skills_connected')||'Connected; available skills:') + ' ' + n, 'success', 3000);
+      showToast((t('skills_connected')||'Connected;') + ' ' + n + ' ' + (t('skills_available_count')||'skills available — use Browse to select and sync'), 'success', 5000);
       loadSkillsPanel();
     })
-    .catch(e => showToast((t('skills_connect_failed')||'Connect failed') + ': ' + String(e.message||e), 'error', 4000));
+    .catch(e => showToast((t('skills_connect_failed')||'Connect failed') + ': ' + String(e.message||e), 'error', 6000));
 };
 
 window.skillsBrowse = function(name) {
