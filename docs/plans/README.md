@@ -258,11 +258,13 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### v9.0.0 — Memory Lifecycle Complete (major release milestone)
 
-**Operator-filed 2026-09-15. Status: planned. Requires BL385 + BL386 + BL387.**
+**Operator-filed 2026-09-15. Status: in-progress (e2e green). Requires BL385 + BL386 + BL387.**
 
 **Purpose:** Operator-designated major release milestone. Validates the three-BL memory lifecycle trilogy with a full 9-scenario e2e suite, performance benchmarks, backward-compat audit, and documentation complete pass. No new features beyond v8.33.0.
 
 **Plan:** `docs/plans/2026-09-15-v9-memory-lifecycle-major.md`
+
+**E2E status (2026-09-16):** Full suite ran: 551 passed, 18 failed, 39 skipped. All 18 failures fixed (T45 sprint TS-680–694: locale keys, ScopeRef schema, auth header, async decompose, api_code stripping, MCP param names, PWA tab navigation). T47 sprint added: TS-696–705 covering B102–B106 (files_touched absolute paths, file viewer API, decompose/stream SSE, PRD status field, filter/status locale keys, app.js static checks). All fixed tests verified green.
 
 ---
 

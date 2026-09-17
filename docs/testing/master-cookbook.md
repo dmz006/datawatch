@@ -764,6 +764,21 @@ The following items are excluded from automated runs. Gaps are documented, not h
 |--------|-----|-------------|------|--------|-------|
 | T46 | TS-695 | BL370: parallel Automata with two Ollama compute nodes; simultaneous health+detail stats from both mid-run | surface:api feature:automata feature:compute group:parallel-llm-v9 conflict:llm parallel:ok | ✅ ready | Requires TEST_OLLAMA_HOST + TEST_OLLAMA2_HOST (two Ollama servers); skips if node B unreachable |
 
+## T47 — v9.0.0 B102–B106 UI Features
+
+| Sprint | TS# | Description | Tags | Status | Notes |
+|--------|-----|-------------|------|--------|-------|
+| T47 | TS-696 | B102: session detail returns valid JSON after hook Stop; files_touched shape correct | surface:api feature:sessions group:b102-files-touched-v9 parallel:ok | ✅ ready | No LLM needed |
+| T47 | TS-697 | B106: GET /api/files/download?inline=1 returns content without Content-Disposition attachment header | surface:api feature:files group:b106-file-viewer-v9 parallel:ok | ✅ ready | Requires root_path-accessible file |
+| T47 | TS-698 | B106: GET /api/files/download (no inline) returns Content-Disposition: attachment header | surface:api feature:files group:b106-file-viewer-v9 parallel:ok | ✅ ready | — |
+| T47 | TS-699 | B103: POST /api/autonomous/prds/{id}/decompose/stream SSE endpoint reachable (202 or 200) | surface:api feature:automata group:b103-live-updates-v9 parallel:ok | ✅ ready | No LLM needed |
+| T47 | TS-700 | B104: GET /api/autonomous/prds/{id} detail response has status field | surface:api feature:automata group:b104-status-parity-v9 parallel:ok | ✅ ready | — |
+| T47 | TS-701 | B105: GET /api/autonomous/prds list includes completed items; ?status= filter accepted | surface:api feature:automata group:b105-filter-badges-v9 parallel:ok | ✅ ready | — |
+| T47 | TS-702 | B102: PRD stories/tasks have files field when LLM decompose ran | surface:api feature:automata group:b102-files-touched-v9 conflict:llm parallel:ok | ✅ ready | conflict:llm for full check |
+| T47 | TS-703 | B104/B105: automata status locale keys present in all 5 locale bundles | surface:locale feature:automata group:b104-status-parity-v9 parallel:ok | ✅ ready | Keys may be added in future sprint |
+| T47 | TS-704 | B106: _showFileViewer and _fileChip functions present in app.js (static check) | surface:pwa feature:automata group:b106-file-viewer-v9 parallel:ok | ✅ ready | Static analysis — no server needed |
+| T47 | TS-705 | B102: files_touched paths are absolute (start with /) after hook Stop in git repo | surface:api feature:sessions group:b102-files-touched-v9 parallel:ok | ✅ ready | Uses repo root as project_dir |
+
 ---
 
 ## Bug Workflow
