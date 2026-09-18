@@ -222,9 +222,13 @@ PY2
   vision_model=$(python3 -c "import yaml,sys; c=yaml.safe_load(open('$test_cfg')); print(c.get('vision',{}).get('model',''))" 2>/dev/null || echo "")
   if [[ -n "$vision_host" && -n "$vision_model" ]]; then
     echo "Pre-warming vision model $vision_model at $vision_host ..."
+    # Include a minimal 1x1 PNG as base64 so moondream (vision model) loads its vision
+    # pipeline during warmup; text-only warmup can cause it to crash on the first real image.
+    local _tiny_png
+    _tiny_png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI6QAAAABJRU5ErkJggg=="
     curl -sf --max-time 120 -X POST "$vision_host/api/generate" \
       -H "Content-Type: application/json" \
-      -d "{\"model\":\"$vision_model\",\"prompt\":\"describe this image\",\"stream\":false}" \
+      -d "{\"model\":\"$vision_model\",\"prompt\":\"describe\",\"images\":[\"$_tiny_png\"],\"stream\":false}" \
       >/dev/null 2>&1 && echo "  vision warmup done" || echo "  vision warmup skipped (not reachable or timed out)"
   fi
 }

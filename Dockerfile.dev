@@ -2,7 +2,7 @@
 # Dev/test image for E2E testing — NOT for production use.
 # Builds the datawatch binary from source and runs as root for test convenience.
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26.6
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
