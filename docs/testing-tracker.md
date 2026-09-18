@@ -178,7 +178,7 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | goose injection — `GOOSE_MCP__WEB_SEARCH__*` env vars | No | No | Code inspection of `internal/llm/backends/goose/backend.go` | Live: start a goose session, inspect env for GOOSE_MCP__WEB_SEARCH__TYPE |
 | Skill injection — `web-search-guidance` SKILL.md | No | No | — | Live: confirm `.datawatch/skills/web-search-guidance/SKILL.md` created at session start |
 | REST `GET /api/web_search/stats` | No | No | — | Live: curl with bearer token, verify JSON response |
-| MCP `web_search_stats` tool | No | No | — | Live: from connected MCP session, call `web_search_stats` |
+| MCP `web_search_stats` tool | **Yes** | No | `TestBL372_WebSearchStats_ReturnsConfiguredValues`, `TestBL372_WebSearchStats_DisabledReturnsEnabledFalse` in `internal/mcp/bl372_web_search_stats_test.go` — T47 sprint | Live: from connected MCP session, call `web_search_stats` |
 | Monitor card — web search stats visible | No | No | — | Live: enable web_search, reload Monitor tab, confirm card appears |
 | Web UI Settings — web_search section | No | No | — | Live: Settings > LLM > Web Search, toggle enabled, save, confirm GET /api/config reflects change |
 
@@ -193,7 +193,7 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | `ResetTask` — completed task cannot be reset | **Yes** | No | `TestBL382_ResetTask_NoForce_CompletedTask_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` | status=completed; expect error |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 200 | No | No | — | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
-| MCP `autonomous_prd_reset_task` | No | No | — | Live: call from MCP session, verify task reset |
+| MCP `autonomous_prd_reset_task` | **Yes** | No | `TestBL372_AutoPRDResetTask_NoWebPort_ReturnsError` in `internal/mcp/bl372_web_search_stats_test.go` (no-webPort path) — T47 sprint | Live: call from MCP session, verify task reset |
 | PWA task row — session link chip visible when task.session_id set | No | No | — | Live: PRD with completed task; verify → chip in task header |
 | PWA task row — error panel visible in expanded body when task.error set | No | No | — | Live: failed task; expand; verify red error panel |
 | PWA task row — verification summary visible when task.verification set | No | No | — | Live: failed/completed task; expand; verify verif panel |
