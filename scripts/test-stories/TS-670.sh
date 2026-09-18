@@ -26,9 +26,13 @@ _story_ts_670() {
     return
   fi
 
+  # Override timeout: vision describe may take 60-120s under load (default 30s too short)
   local resp code body
-  resp=$(api_code POST /api/council/run \
-    "{\"proposal\":\"What is in the image?\",\"image_path\":\"$tmp_png\"}")
+  resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"proposal\":\"What is in the image?\",\"image_path\":\"$tmp_png\"}" \
+    "$TEST_BASE/api/council/run" \
+    -w "\n__HTTP_CODE_%{http_code}__" 2>/dev/null)
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-670 "council_submit.json" "$body"

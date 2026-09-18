@@ -20,7 +20,8 @@ _story_ts_667() {
   printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82' > "$tmp_png"
 
   local resp code
-  resp=$(curl "${curl_args[@]}" -X POST \
+  # Override timeout: moondream needs 60-120s under concurrent load (default 30s too short)
+  resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
     -F "image=@$tmp_png;type=image/png" \
     "$TEST_BASE/api/vision/describe" \
     -w "\n__HTTP_CODE_%{http_code}__" 2>/dev/null)

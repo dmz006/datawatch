@@ -24,6 +24,10 @@ _story_ts_695() {
   local node_b="e2e-nodeb-${sid}"
   local llm_a="e2e-llma-${sid}"
   local llm_b="e2e-llmb-${sid}"
+  # node_a (datawatch) has 128GB GPU — use qwen3:8b for faster execution+verification.
+  # node_b (localhost) has 32GB GPU — qwen3:1.7b is the largest available model there.
+  local model_a="qwen3:8b"
+  local model_b="qwen3:1.7b"
   local prd_id="" code resp
   # Use a unique project_dir per run to avoid decompose-session caching
   # (.decompose-output.json is cached by project_dir; /tmp is shared across runs)
@@ -83,14 +87,14 @@ _story_ts_695() {
 
   # ---- register LLM entries, one per compute node ----
   resp=$(api_code POST /api/llms \
-    "{\"name\":\"$llm_a\",\"kind\":\"ollama\",\"model\":\"qwen3:1.7b\",\"compute_nodes\":[\"$node_a\"]}")
+    "{\"name\":\"$llm_a\",\"kind\":\"ollama\",\"model\":\"$model_a\",\"compute_nodes\":[\"$node_a\"]}")
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   if [[ "$code" != "200" && "$code" != "201" ]]; then
     _cleanup; skip "could not register LLM A ($code)"; return
   fi
 
   resp=$(api_code POST /api/llms \
-    "{\"name\":\"$llm_b\",\"kind\":\"ollama\",\"model\":\"qwen3:1.7b\",\"compute_nodes\":[\"$node_b\"]}")
+    "{\"name\":\"$llm_b\",\"kind\":\"ollama\",\"model\":\"$model_b\",\"compute_nodes\":[\"$node_b\"]}")
   code=$(echo "$resp" | grep -oP '__HTTP_CODE_\K[0-9]+' || echo "0")
   if [[ "$code" != "200" && "$code" != "201" ]]; then
     _cleanup; skip "could not register LLM B ($code)"; return
@@ -115,7 +119,7 @@ _story_ts_695() {
   # (TUI mode which takes >90s). decomposition_profile overrides the planner;
   # 'ollama' is always present (auto-migrated from legacy cfg.ollama.host).
   api POST "/api/autonomous/prds/$prd_id/set_llm" \
-    '{"decomposition_profile":"ollama","model":"qwen3:1.7b"}' >/dev/null 2>&1 || true
+    "{\"decomposition_profile\":\"$llm_a\",\"model\":\"$model_a\"}" >/dev/null 2>&1 || true
 
   # ---- decompose (planning phase) ----
   resp=$(api_code POST "/api/autonomous/prds/$prd_id/decompose" '{}')
@@ -160,9 +164,9 @@ _story_ts_695() {
 
   # ---- route each story to a different Ollama backend ----
   api POST "/api/autonomous/prds/$prd_id/set_story_llm" \
-    "{\"story_id\":\"$story0_id\",\"backend\":\"$llm_a\",\"model\":\"qwen3:1.7b\"}" >/dev/null 2>&1
+    "{\"story_id\":\"$story0_id\",\"backend\":\"$llm_a\",\"model\":\"$model_a\"}" >/dev/null 2>&1
   api POST "/api/autonomous/prds/$prd_id/set_story_llm" \
-    "{\"story_id\":\"$story1_id\",\"backend\":\"$llm_b\",\"model\":\"qwen3:1.7b\"}" >/dev/null 2>&1
+    "{\"story_id\":\"$story1_id\",\"backend\":\"$llm_b\",\"model\":\"$model_b\"}" >/dev/null 2>&1
 
   # ---- approve ----
   resp=$(api_code POST "/api/autonomous/prds/$prd_id/approve" '{}')
@@ -213,11 +217,11 @@ _story_ts_695() {
   save_evidence TS-695 "detail_a_confirm.json" "$detail_a"
   save_evidence TS-695 "detail_b_confirm.json" "$detail_b"
 
-  # ---- poll PRD to terminal state (max 720s; verifier adds ~60-120s per story) ----
-  # Each task verification uses qwen3:1.7b via /api/ask (60-120s each); with 2
-  # concurrent tasks both verifying + execution time, allow up to 720s total.
+  # ---- poll PRD to terminal state (max 1800s; node_a uses qwen3:8b, node_b qwen3:1.7b) ----
+  # node_a (datawatch 128GB GPU) runs qwen3:8b — fast. node_b (localhost 32GB) runs
+  # qwen3:1.7b. With max_concurrent_tasks=2 both verifying + executing, allow 1800s.
   local final_status=""
-  for i in $(seq 1 360); do
+  for i in $(seq 1 900); do
     sleep 2
     final_status=$(api GET "/api/autonomous/prds/$prd_id" | \
       python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
@@ -244,10 +248,10 @@ _story_ts_695() {
     running|in_progress|"")
       # Both compute nodes confirmed live simultaneously — that is the primary assertion.
       # PRD did not reach terminal state within 480s (verifier still running); treat as skip.
-      skip "both nodes confirmed live mid-run; PRD still in state '$final_status' after 720s (verifier slow — see final.json)"
+      skip "both nodes confirmed live mid-run; PRD still in state '$final_status' after 1800s (see final.json)"
       ;;
     *)
-      ko "PRD did not reach terminal state within 480s (status=$final_status); check final.json"
+      ko "PRD did not reach terminal state within 1800s (status=$final_status); check final.json"
       ;;
   esac
 }
