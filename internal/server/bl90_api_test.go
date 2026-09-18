@@ -76,6 +76,34 @@ func TestBL90_Info_ReportsVersion(t *testing.T) {
 	}
 }
 
+func TestBL90_Info_WhisperConfigured(t *testing.T) {
+	s := bl90Server(t)
+	check := func(label string, wantConfigured bool) {
+		req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
+		rr := httptest.NewRecorder()
+		s.handleInfo(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: info code=%d body=%s", label, rr.Code, rr.Body.String())
+		}
+		var v map[string]any
+		if err := json.NewDecoder(rr.Body).Decode(&v); err != nil {
+			t.Fatalf("%s: decode: %v", label, err)
+		}
+		got, _ := v["whisper_configured"].(bool)
+		if got != wantConfigured {
+			t.Errorf("%s: whisper_configured=%v want %v (full: %+v)", label, got, wantConfigured, v)
+		}
+	}
+
+	check("no transcriber", false)
+
+	s.SetTranscriber(&fakeTranscriber{})
+	check("with transcriber", true)
+
+	s.SetTranscriber(nil)
+	check("transcriber cleared", false)
+}
+
 func TestBL90_Sessions_List_Empty(t *testing.T) {
 	s := bl90Server(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)

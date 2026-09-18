@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.33"
+var Version = "8.33.34"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2192,11 +2192,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"hostname":           s.hostname,
-		"version":            Version,
-		"llm_backend":        s.manager.ActiveBackend(),
-		"available_backends": s.availableBackends,
-		"session_count":      len(sessions),
+		"hostname":            s.hostname,
+		"version":             Version,
+		"llm_backend":         s.manager.ActiveBackend(),
+		"available_backends":  s.availableBackends,
+		"session_count":       len(sessions),
+		"whisper_configured":  s.transcriber != nil,
 	})
 }
 
