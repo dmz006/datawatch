@@ -27,8 +27,12 @@ for item in items:
   fi
   # Try enabling — will run pretest which may fail since no real backend
   # Endpoint is /api/llms/{name}/enabled (PATCH or POST), body: {"enabled":true}
+  # Pretest calls the LLM for a single token; use a longer timeout than the default 30s.
   local en_resp en_code en_body
+  local saved_curl_args=("${curl_args[@]}")
+  curl_args=(-sk --max-time 120 -H "Authorization: Bearer $TEST_TOKEN")
   en_resp=$(api_code POST "/api/llms/$inference_name/enabled" '{"enabled":true}')
+  curl_args=("${saved_curl_args[@]}")
   en_code=$(echo "$en_resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   en_body=$(echo "$en_resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-377 "enable_resp.json" "$en_body"

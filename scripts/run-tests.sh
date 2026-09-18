@@ -72,6 +72,7 @@ start_test_daemon() {
     -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
     -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:${TEST_DNS_PORT}\"|g" \
     -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:${TEST_WEBHOOK_PORT}|g" \
+    -e "s|server_url: http://127\.0\.0\.1:19180|server_url: http://127.0.0.1:${TEST_NTFY_PORT}|g" \
     "$tmpl" > "$test_cfg"
   # Also write to TEST_DATA/config.yaml so cli_test (--config $TEST_DATA/config.yaml) works
   cp "$test_cfg" "$TEST_DATA/config.yaml"
@@ -172,6 +173,8 @@ PY2
     return 1
   fi
 
+  start_ntfy_server
+
   echo "Starting test daemon ($binary)..."
   mkdir -p "$TEST_DATA"
   "$binary" start --foreground --config "$test_cfg" >> "$TEST_DATA/daemon.log" 2>&1 &
@@ -212,6 +215,35 @@ PY2
       -d "{\"model\":\"$ollama_model\",\"prompt\":\"hi\",\"stream\":false}" \
       >/dev/null 2>&1 && echo "  ollama warmup done" || echo "  ollama warmup skipped (not reachable or timed out)"
   fi
+  # Pre-warm vision model (moondream) so TS-667/668/670 don't hit cold-start crashes.
+  local vision_host
+  vision_host=$(python3 -c "import yaml,sys; c=yaml.safe_load(open('$test_cfg')); print(c.get('vision',{}).get('endpoint',''))" 2>/dev/null || echo "")
+  local vision_model
+  vision_model=$(python3 -c "import yaml,sys; c=yaml.safe_load(open('$test_cfg')); print(c.get('vision',{}).get('model',''))" 2>/dev/null || echo "")
+  if [[ -n "$vision_host" && -n "$vision_model" ]]; then
+    echo "Pre-warming vision model $vision_model at $vision_host ..."
+    curl -sf --max-time 120 -X POST "$vision_host/api/generate" \
+      -H "Content-Type: application/json" \
+      -d "{\"model\":\"$vision_model\",\"prompt\":\"describe this image\",\"stream\":false}" \
+      >/dev/null 2>&1 && echo "  vision warmup done" || echo "  vision warmup skipped (not reachable or timed out)"
+  fi
+}
+
+NTFY_PID=""
+
+start_ntfy_server() {
+  if ! command -v ntfy &>/dev/null; then return; fi
+  ntfy serve \
+    --listen-http ":${TEST_NTFY_PORT}" \
+    --base-url "http://127.0.0.1:${TEST_NTFY_PORT}" \
+    > "$TEST_DIR/ntfy.log" 2>&1 &
+  NTFY_PID=$!
+  # Wait up to 5s for ntfy to be ready
+  local tries=0
+  while [[ $tries -lt 10 ]]; do
+    curl -sf "http://127.0.0.1:${TEST_NTFY_PORT}/v1/health" >/dev/null 2>&1 && break
+    sleep 0.5; tries=$((tries+1))
+  done
 }
 
 stop_test_daemon() {
@@ -219,6 +251,10 @@ stop_test_daemon() {
     kill "$DAEMON_PID" 2>/dev/null || true
     wait "$DAEMON_PID" 2>/dev/null || true
     DAEMON_PID=""
+  fi
+  if [[ -n "$NTFY_PID" ]]; then
+    kill "$NTFY_PID" 2>/dev/null || true
+    NTFY_PID=""
   fi
   # Kill any tmux sessions the test daemon created (cs-dw-e2e-test-*).
   # The hostname comes from testdata/datawatch.yaml (hostname: dw-e2e-test).
@@ -324,6 +360,8 @@ export DOCKER_SIM_HTTP="$(_fresh_port "${DOCKER_SIM_HTTP:-}")"
 export DOCKER_SIM_TLS="$(_fresh_port "${DOCKER_SIM_TLS:-}")"
 export DOCKER_SIM_MCP="$(_fresh_port "${DOCKER_SIM_MCP:-}")"
 export DOCKER_SIM_CHAN="$(_fresh_port "${DOCKER_SIM_CHAN:-}")"
+export TEST_NTFY_PORT="$(_fresh_port "${TEST_NTFY_PORT:-}")"
+export TEST_NTFY_TOPIC="dw-e2e-${RUN_ID}"
 # Stable path keyed by RUN_ID so the EXIT trap can always find and remove it,
 # even after a resume. lib.sh falls back to /tmp/dw-docker-sim-$$ only when
 # this var is unset (standalone story invocation).

@@ -7,7 +7,7 @@ story_preflight "surface:api feature:parity feature:howto" || return 0
 
 _story_ts_354() {
   local raw code resp
-  raw=$(curl -sk --max-time 30 \
+  raw=$(curl -sk --max-time 120 \
     -H "Authorization: Bearer $TEST_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST \
