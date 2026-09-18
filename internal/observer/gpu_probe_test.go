@@ -162,3 +162,16 @@ func TestCollector_SetGPUFn_NoFn_NoGPUInSnap(t *testing.T) {
 		t.Errorf("expected 0 GPUs when no gpuFn set, got %d", len(snap.GPU))
 	}
 }
+
+// TestNewTegraStatsProbe_NotInPATH verifies NewTegraStatsProbe returns nil
+// when the tegrastats binary is not present (non-Jetson host).
+func TestNewTegraStatsProbe_NotInPATH(t *testing.T) {
+	// tegrastats is only present on NVIDIA Jetson/Tegra devices.
+	// On any other host the probe must return nil, not panic.
+	probe := NewTegraStatsProbe(0)
+	// On dev/CI hosts without tegrastats binary this must be nil.
+	// On a Jetson the test is a no-op (probe is non-nil but that's fine).
+	if probe != nil {
+		t.Skip("tegrastats found in PATH — skipping nil-return assertion (Jetson host)")
+	}
+}

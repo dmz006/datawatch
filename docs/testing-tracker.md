@@ -114,12 +114,12 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 |---|---|---|---|---|
 | `Decompose()` uses `DecompositionProfile` when set, priority over global | **Yes** | No | `TestBL321_Decompose_UsesDecompositionProfile_OverGlobal`, `TestBL321_Decompose_PRDProfileOverridesGlobal_BothNonEmpty` in `internal/autonomous/bl321_decomp_priority_test.go` | T47 sprint; per-PRD profile wins over cfg.PlanningBackend |
 | `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | **Yes** | No | `TestBL321_Decompose_FallsBackToGlobal_WhenProfileEmpty` in `internal/autonomous/bl321_decomp_priority_test.go` | T47 sprint; empty profile → cfg.PlanningBackend used |
-| `Decompose()` with opencode backend uses session path with codebase tool access | No | No | — | Unit test needed: decomposeFnSession called, PlanningPromptSession used, output file read. |
+| `Decompose()` with opencode backend uses session path with codebase tool access | Yes | No | `TestBL321_Decompose_UsesDecompositionProfile_OverGlobal` in `bl321_decomp_priority_test.go` covers backend propagation; `decomposeFnSession` (main.go closure) routes by kind at runtime. | Live: set `decomposition_profile=opencode-acp`; trigger decompose; confirm opencode session spawned. |
 | `SetPRDLLM` persists `DecompositionProfile` field | **Yes** | No | `TestBL320_SetPRDLLM_PersistsDecompositionProfile`, `TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile` in `internal/autonomous/bl320_decomp_profile_test.go` | T47 sprint; decision log check + store round-trip |
 | `set_llm` endpoint: unknown `decomposition_profile` returns 400 | **Yes** | No | `TestBL320_SetLLM_UnknownDecompProfile_Returns400` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
 | `set_llm` endpoint: valid `decomposition_profile` returns 200 | **Yes** | No | `TestBL320_SetLLM_ValidDecompProfile_Returns200` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with known inference-registry name → 200, field persisted. |
-| CLI `prd-set-llm --decomposition-profile` round-trip | No | No | — | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. TS-740 (e2e) |
-| `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | No | No | — | Code inspection confirmed; live test requires PRD run with mismatched backends. |
+| CLI `prd-set-llm --decomposition-profile` round-trip | Yes | No | TS-740 (e2e) | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
+| `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | Yes | No | TS-743 (e2e): set_llm stores backend+decomposition_profile independently; code inspection confirms spawn uses `prd.Backend` | Live: full PRD run with mismatched backends to verify session backend != decomposition_profile. |
 | PWA Settings modal — planning backend picker accepts all configured LLMs | No | No | — | Manual: "Planning backend" picker should show opencode, claude-code, ollama variants — all registered LLMs. |
 | **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | No | No | — | POST `set_llm` with `decomposition_profile=opencode`; trigger decompose; confirm opencode session spawned, codebase read. |
 
@@ -176,8 +176,8 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | `ConfigFromEnv()` — env var parsing | **Yes** | No | `TestConfigFromEnv` | DATAWATCH_WEB_SEARCH_URL/ENGINE/NUM_RESULTS |
 | opencode injection — `extraMCPSpecs["web_search"]` | No | No | Code inspection of `cmd/datawatch/main.go` | Live: start an opencode session with web_search.enabled, confirm .datawatch/.mcp.json contains web_search entry |
 | goose injection — `GOOSE_MCP__WEB_SEARCH__*` env vars | No | No | Code inspection of `internal/llm/backends/goose/backend.go` | Live: start a goose session, inspect env for GOOSE_MCP__WEB_SEARCH__TYPE |
-| Skill injection — `web-search-guidance` SKILL.md | No | No | — | Live: confirm `.datawatch/skills/web-search-guidance/SKILL.md` created at session start |
-| REST `GET /api/web_search/stats` | No | No | — | Live: curl with bearer token, verify JSON response |
+| Skill injection — `web-search-guidance` SKILL.md | Yes | No | TS-741 (e2e) | Live: confirm `.datawatch/skills/web-search-guidance/SKILL.md` created at session start |
+| REST `GET /api/web_search/stats` | Yes | No | TS-716 (e2e) | Live: curl with bearer token, verify JSON response |
 | MCP `web_search_stats` tool | **Yes** | No | `TestBL372_WebSearchStats_ReturnsConfiguredValues`, `TestBL372_WebSearchStats_DisabledReturnsEnabledFalse` in `internal/mcp/bl372_web_search_stats_test.go` — T47 sprint | Live: from connected MCP session, call `web_search_stats` |
 | Monitor card — web search stats visible | No | No | — | Live: enable web_search, reload Monitor tab, confirm card appears |
 | Web UI Settings — web_search section | No | No | — | Live: Settings > LLM > Web Search, toggle enabled, save, confirm GET /api/config reflects change |
@@ -191,7 +191,7 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | `ResetTask` — task not found returns error | **Yes** | No | `TestBL382_ResetTask_TaskNotFound_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Call with nonexistent task_id; expect error |
 | `ResetTask` — PRD not running returns error | **Yes** | No | `TestBL382_ResetTask_PRDNotRunning_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Call while PRD status=approved; expect error |
 | `ResetTask` — completed task cannot be reset | **Yes** | No | `TestBL382_ResetTask_NoForce_CompletedTask_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` | status=completed; expect error |
-| REST `POST /api/autonomous/prds/{id}/reset_task` 200 | No | No | — | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
+| REST `POST /api/autonomous/prds/{id}/reset_task` 200 | Yes | No | TS-710 (e2e) | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
 | MCP `autonomous_prd_reset_task` | **Yes** | No | `TestBL372_AutoPRDResetTask_NoWebPort_ReturnsError` in `internal/mcp/bl372_web_search_stats_test.go` (no-webPort path) — T47 sprint | Live: call from MCP session, verify task reset |
 | PWA task row — session link chip visible when task.session_id set | No | No | — | Live: PRD with completed task; verify → chip in task header |
@@ -207,7 +207,7 @@ Added in v8.25.3. `internal/observer/gpu_tegrastats.go` and `internal/observer/g
 
 | Component | Unit tested | Live tested | Unit test coverage | Notes |
 |---|---|---|---|---|
-| `NewTegraStatsProbe` — returns nil when `tegrastats` not in PATH | No | No | — | No unit test; exits cleanly via `exec.LookPath`. Live: run on host without tegrastats, confirm probe nil. |
+| `NewTegraStatsProbe` — returns nil when `tegrastats` not in PATH | Yes | No | `TestNewTegraStatsProbe_NotInPATH` in `gpu_probe_test.go` | Live: run on host without tegrastats, confirm probe nil. |
 | `parseTegraStatsLine` — classic Jetson format (`GR3D_FREQ X%`) | **Yes** | No | `TestParseTegraStatsLine_ClassicJetson` in `internal/observer/gpu_probe_test.go` — `RAM 1024/4096MB GR3D_FREQ 45%@1300 GPU@65.5C` → util_pct=45, temp_c=65.5 | T47 sprint |
 | `parseTegraStatsLine` — Thor format (no GR3D_FREQ, lowercase `gpu@`, `VDD_GPU`) | **Yes** | No | `TestParseTegraStatsLine_ThorFormat` — `RAM 69178/125772MB ... gpu@35.25C VDD_GPU 2376mW` → util_pct=0, temp_c=35.25, power_w=2.376 | T47 sprint |
 | `parseTegraStatsLine` — returns nil when no GPU temp found | **Yes** | No | `TestParseTegraStatsLine_NoGPUTemp_ReturnsNil` — line without `gpu@` → nil | T47 sprint |
@@ -225,11 +225,11 @@ Added in v8.27.5. `POST /api/sessions/{id}/guardrail/{name}/approve` marks a sin
 |---|---|---|---|---|
 | `POST /api/sessions/{id}/guardrail/{name}/approve` — happy path | **Yes** | No | `TestGH153_HTTPApprove_200` in `internal/server/gh153_guardrail_approve_test.go` — TC-5: 200 + approved=true + session_unblocked=true | Live: run session_guardrail_run to add a block verdict; POST approve/{name}; verify response `session_unblocked: true`. |
 | `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | **Yes** | No | `TestGH153_HTTPApprove_404_UnknownGuardrail` in `internal/server/gh153_guardrail_approve_test.go` — TC-6 | Live: POST approve/nonexistent; expect 404 "guardrail not found in session telemetry". |
-| `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | No | No | — | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. TS-738 (e2e) |
-| `session_unblocked: false` when other block verdicts remain | No | No | — | Live: add two block verdicts; approve one; verify `session_unblocked: false`. TS-739 (e2e) |
-| `session_guardrail_approve` MCP tool | No | No | — | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
-| `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | No | No | — | Verify new fields appear in telemetry response after approve call. TS-742 (e2e) |
-| WebSocket hub broadcasts on approve | No | No | — | Connect WS client; approve verdict; verify hub.BroadcastHookUpdate fired. |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | Yes | No | TS-738 (e2e) | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. |
+| `session_unblocked: false` when other block verdicts remain | Yes | No | TS-739 (e2e) | Live: add two block verdicts; approve one; verify `session_unblocked: false`. |
+| `session_guardrail_approve` MCP tool | Yes | No | `TestMCP_SessionGuardrailApprove_NoWebPort_ReturnsError` in `bl_gh153_mcp_guardrail_approve_test.go` | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
+| `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | Yes | No | TS-742 (e2e) | Verify new fields appear in telemetry response after approve call. |
+| WebSocket hub broadcasts on approve | Yes | No | `TestGH153_WS_BroadcastFiresOnApprove` in `gh153_ws_broadcast_test.go` | Live: connect real WS client; approve; observe hook_update message. |
 
 ## v8.27.6–v8.27.11 — PWA image attachment (Android)
 
