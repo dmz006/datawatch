@@ -1674,11 +1674,9 @@ body {
   text-decoration: underline;
 }
 
-/* 3(c) — tasks collapsed by default; tap header to expand. */
+/* 3(c) — tasks inside expanded story body; full-width accordion rows. */
 .prd-story-tasks {
   margin-top: 6px;
-  padding-left: 14px;
-  border-left: 2px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 4px;

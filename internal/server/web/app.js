@@ -10374,6 +10374,11 @@ function renderTask(prd, story, task, editable) {
   }
   const taskID = task.id || '';
   state._prdTaskExpanded = state._prdTaskExpanded || {};
+  // Default expansion: active/running tasks open so progress is visible without a click.
+  if (!(taskID in state._prdTaskExpanded)) {
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','blocked','failed'];
+    state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
+  }
   const isExpanded = !!state._prdTaskExpanded[taskID];
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
