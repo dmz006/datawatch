@@ -80,6 +80,11 @@ func (s *Server) handleProjectSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dir must be absolute", http.StatusBadRequest)
 		return
 	}
+	root := s.sessionRoot()
+	if err := checkPathTraversal(root, dir); err != nil {
+		http.Error(w, "dir is outside the allowed root path", http.StatusBadRequest)
+		return
+	}
 	out := buildProjectSummary(s, dir)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

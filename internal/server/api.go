@@ -2331,22 +2331,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(home, path[1:])
 	}
 
-	// Enforce root path restriction
-	rootPath := ""
-	if s.cfg != nil && s.cfg.Session.RootPath != "" {
-		rootPath = s.cfg.Session.RootPath
-		if len(rootPath) > 0 && rootPath[0] == '~' {
-			home, _ := os.UserHomeDir()
-			rootPath = filepath.Join(home, rootPath[1:])
-		}
-		// Clean both paths and ensure requested path is within root
-		cleanRoot := filepath.Clean(rootPath)
-		cleanPath := filepath.Clean(path)
-		if !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanRoot+string(filepath.Separator)) &&
-			cleanPath != cleanRoot {
-			// Clamp to root path silently
-			path = cleanRoot
-		}
+	// Enforce root path restriction via fileServiceRoot (resolves RootPath → $HOME)
+	root := s.fileServiceRoot()
+	if err := checkPathTraversal(root, path); err != nil {
+		path = root
 	}
 
 	entries, err := os.ReadDir(path)
@@ -2364,7 +2352,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	result := []Entry{}
 	// Add parent directory entry (omit if at root path boundary)
 	parent := filepath.Dir(path)
-	atRoot := rootPath != "" && filepath.Clean(path) == filepath.Clean(rootPath)
+	atRoot := root != "" && filepath.Clean(path) == filepath.Clean(root)
 	if parent != path && !atRoot {
 		result = append(result, Entry{Name: "..", IsDir: true, Path: parent})
 	}

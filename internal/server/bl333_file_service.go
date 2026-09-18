@@ -25,6 +25,22 @@ import (
 
 // fileServiceRoot resolves the effective root for the file service.
 // Priority: FileServiceRoot → RootPath → user home directory.
+// sessionRoot returns the operator-configured session root (RootPath or $HOME).
+// Used to restrict endpoints that operate on arbitrary project paths (e.g. project summary).
+// For the file browser, use fileServiceRoot() which may be narrower (FileServiceRoot).
+func (s *Server) sessionRoot() string {
+	if s.cfg != nil && s.cfg.Session.RootPath != "" {
+		root := s.cfg.Session.RootPath
+		if len(root) > 0 && root[0] == '~' {
+			home, _ := os.UserHomeDir()
+			root = filepath.Join(home, root[1:])
+		}
+		return filepath.Clean(root)
+	}
+	home, _ := os.UserHomeDir()
+	return home
+}
+
 func (s *Server) fileServiceRoot() string {
 	if s.cfg != nil && s.cfg.Session.FileServiceRoot != "" {
 		root := s.cfg.Session.FileServiceRoot
