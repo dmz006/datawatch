@@ -139,7 +139,15 @@ func daemonJSON(method, path string, body any) error {
 	client := daemonClient()
 	var rdr io.Reader
 	if body != nil {
-		buf, _ := json.Marshal(body)
+		var buf []byte
+		switch v := body.(type) {
+		case json.RawMessage:
+			buf = v
+		case []byte:
+			buf = v
+		default:
+			buf, _ = json.Marshal(body)
+		}
 		rdr = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequest(method, daemonURL()+path, rdr)

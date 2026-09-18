@@ -142,8 +142,8 @@ web_search:
   engine: bing
 
 goose:
-  enabled: false
-  binary: goose
+  enabled: true
+  binary: /home/dmz/.local/bin/goose
 
 opencode:
   enabled: false

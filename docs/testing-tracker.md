@@ -15,10 +15,10 @@ Added in v8.19.0. File service: `POST /api/files` (multipart upload), `DELETE /a
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `POST /api/files` multipart upload (image attachment path) — `TestFilesUpload_ImageFile` | Yes | No | `bl333_file_service_test.go` — sends JPEG header bytes, verifies `path` + `bytes` in response and file on disk | Live test: PWA → attach image → verify file lands at `$fileServiceRoot/dw_attach_*` |
-| `POST /api/files` path traversal blocked — `TestFilesUpload_PathTraversal` | Yes | No | Sends `path=/tmp/evil.txt` (outside root); expects HTTP 403 | Security boundary; `checkPathTraversal` verified in unit test |
-| `DELETE /api/files` — `TestFilesUpload_And_Delete` | Yes | No | Uploads file then deletes; confirms `os.Stat` returns `IsNotExist` | Live curl test not yet performed |
-| `GET /api/files/meta` — `TestFileMeta_Empty` | Yes | No | Fresh temp root; verifies `root`, `peers`, `discussions` fields present | Live test: Settings → Files → Storage overview |
+| `POST /api/files` multipart upload (image attachment path) — `TestFilesUpload_ImageFile` | Yes | **Yes** | `bl333_file_service_test.go` — sends JPEG header bytes, verifies `path` + `bytes` in response and file on disk | TS-767 (e2e): upload temp file, verify path+bytes in JSON response, root from /api/files/meta; PASS |
+| `POST /api/files` path traversal blocked — `TestFilesUpload_PathTraversal` | Yes | **Yes** | Sends `path=/tmp/evil.txt` (outside root); expects HTTP 403 | TS-768 (e2e): `../../etc/passwd`=403, `/etc/passwd`=403, legitimate upload=200; PASS |
+| `DELETE /api/files` — `TestFilesUpload_And_Delete` | Yes | **Yes** | Uploads file then deletes; confirms `os.Stat` returns `IsNotExist` | TS-767 (e2e): DELETE with absolute path returns `{"deleted":...}`; second DELETE returns 404; PASS |
+| `GET /api/files/meta` — `TestFileMeta_Empty` | Yes | **Yes** | Fresh temp root; verifies `root`, `peers`, `discussions` fields present | TS-767 (e2e): GET /api/files/meta returns `{"root":"/home/dmz/workspace/datawatch",...}`; PASS |
 | `GET /api/files/peers/{name}` — `TestFilesPeer_Subdir` | Yes | No | Pre-creates `peers/test-peer/note.txt`; confirms listing returns `note.txt` entry | Live federation test not yet performed |
 | Federation auth — `CapConfigWrite` required for POST+DELETE | Yes | No | Verified in handler source (`bl333_file_service.go` lines 63, `api.go` handleFiles gate) | No unit test for auth rejection; integration test via federated smoke would confirm |
 | PWA 📷 button → upload → preview → send `[image:<path>]` | **Yes** | Yes | TS-761 (PWA/Playwright): structural check of `sessionImageInput`, `accept="image/*"`, `_pendingAttachments` in app.js; live check confirms label in active session DOM | Structural + live DOM check PASS |
@@ -32,11 +32,11 @@ Added in v8.13.36–v8.14.0. Backends: `goose` (interactive TUI), `goose-prompt`
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `goose` TUI backend (`internal/llm/backends/goose/`) — named sessions, resume, version normalization | Yes | No | 22 unit tests in `internal/llm/backends/goose/backend_test.go`; cover `providerKeyEnvVar`, `shellQuote`, `gooseEnvPrefix`, all setters | Live test requires goose binary. DATAWATCH_COMPLETE detection path not yet validated with a real goose session. |
+| `goose` TUI backend (`internal/llm/backends/goose/`) — named sessions, resume, version normalization | Yes | **Yes** | 22 unit tests in `internal/llm/backends/goose/backend_test.go`; cover `providerKeyEnvVar`, `shellQuote`, `gooseEnvPrefix`, all setters | TS-775 (e2e): POST /api/sessions/start backend=goose → session id=f856 backend_family=goose state=running; PASS |
 | `goose-prompt` one-shot backend — `goose run --text`, DATAWATCH_COMPLETE detection | Yes | No | Same test suite as above | Requires goose binary + provider API key. |
 | Provider/model/API-key injection (T2) — `GOOSE_PROVIDER`, `GOOSE_MODEL`, `ANTHROPIC_API_KEY` etc. | Yes | No | Unit tests verify env var construction for all providers | Live inject test not yet performed. |
 | MCP channel bridge (T3) — `GOOSE_MCP__DATAWATCH__*` env vars | Yes | No | Unit tests verify env var construction when `channel_enabled=true` | Requires goose binary with MCP support. |
-| Config parity — all 6 GooseConfig fields via YAML/REST/MCP/CLI/PWA | Yes | No | TS-637–TS-643 in master-cookbook; config-reference.yaml, implementation.md, app.js all updated | PWA section present (Settings → LLM → Goose). Live GET/PUT config round-trip not yet performed end-to-end. |
+| Config parity — all 6 GooseConfig fields via YAML/REST/MCP/CLI/PWA | Yes | **Yes** | TS-637–TS-643 in master-cookbook; config-reference.yaml, implementation.md, app.js all updated | TS-774 (e2e): GET /api/config goose.enabled=true goose.binary=/home/dmz/.local/bin/goose; matches testdata/datawatch.yaml; binary v1.50.1 confirmed; PASS |
 
 ---
 
@@ -47,7 +47,7 @@ Added in the current release cycle. Backends: ollama, openai, openai\_compat.
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
 | `Describer` interface (`internal/vision/`) — `New()` + `Describe()` | Yes | No | `internal/vision/service_test.go` (httptest fake servers, 10 tests) | All three backends covered by unit tests. Live validation against a running ollama with llava or gpt-4o-mini not yet performed. |
-| `POST /api/vision/describe` (multipart) | Yes | No | `internal/server/vision_test.go` (6 tests: 503/405/200/400/502/mime) | HTTP handler fully unit-tested via httptest. Live curl test with a real image not yet performed. |
+| `POST /api/vision/describe` (multipart) | Yes | **Yes** | `internal/server/vision_test.go` (6 tests: 503/405/200/400/502/mime) | TS-773 (e2e): POST real 8×8 PNG → HTTP 200 description='urn of water...' latency_ms=5401 (moondream:latest); PASS |
 | MCP `vision_describe` tool | **Yes** | No | `TestBL368_VisionDescribe_NoVisioner_ReturnsError`, `TestBL368_VisionDescribe_MissingImagePath_ReturnsError`, `TestBL368_VisionDescribe_FileNotFound_ReturnsError`, `TestBL368_VisionDescribe_HappyPath_ReturnsDescription` in `internal/mcp/bl368_vision_describe_test.go` — T47 sprint | 4 unit tests: no visioner, missing path, file not found, happy path. |
 | Router image injection (comms → `msg.Text`) | Yes | No | `internal/router/bl368_vision_test.go` (5 tests: CmdRemember injection, plain text, non-command regression) | Verifies `Parse()` still recognises `remember:` after image description is injected. Live test with an actual image attachment via SMS or Matrix not yet performed. |
 | `AcceptsImages` manifest field (skills) | Yes | No | `internal/skills/manifest_test.go` (4 tests: true/false/default/no-extra-leak) | Manifest parsing verified. Live test with a skill that declares `accepts_images: true` receiving an image context not yet performed. |
@@ -63,7 +63,7 @@ Added in v8.16.0. Captures `git diff <pre_task_sha>..HEAD` before verification; 
 |---|---|---|---|---|
 | `SpawnResult.PreTaskSHA` threading → `Task.PreTaskSHA` → `VerifyFn` | Yes | No | `internal/autonomous/bl366_verifier_diff_test.go`: `TestBL366_PreTaskSHA_ThreadedToVerifier`, `TestBL366_PreTaskSHA_StoredOnTask` | Store round-trip confirmed via `mgr.Store().GetTask(id)`. Live test requires a project with git history. |
 | Empty SHA no-op (cluster dispatch / non-git project) | Yes | No | `TestBL366_PreTaskSHA_EmptyWhenNoSHA` — verifier receives empty SHA, no panic | No live cluster or non-git project test performed. |
-| `autonomous.verifier_diff_max_bytes` default (0 = 8192) | Yes | No | `TestBL366_VerifierDiffMaxBytes_DefaultIsEightKB` confirms zero-value sentinel | Config accessible via all 6 surfaces: YAML, Web UI, REST, comm, MCP, CLI. |
+| `autonomous.verifier_diff_max_bytes` default (0 = 8192) | Yes | **Yes** | `TestBL366_VerifierDiffMaxBytes_DefaultIsEightKB` confirms zero-value sentinel | TS-777 (e2e): PUT `{"autonomous.verifier_diff_max_bytes": 4096}` → GET confirms 4096; sentinel 0=8192 in source; PASS |
 | Git diff capture round-trip (real git repo) | Yes | No | `TestBL366_GitDiffCapture` — creates real git repo, commits, confirms diff contains changed file | Integration test. Live verifier prompt injection requires a running daemon executing a real PRD task. |
 
 ## Autonomous PRD Quality Gates
@@ -72,7 +72,7 @@ Interface: `POST /api/autonomous/prds` with `quality_gates`, `PUT /api/config` w
 
 | Test case | Tested | Live-validated | Coverage details | Notes |
 |---|---|---|---|---|
-| `SetPRDQualityGates` — persists to store and round-trips | Yes | No | `TestBL367_SetPRDQualityGates_Persisted` | Enabled, TestCommand, Timeout, BlockOnRegression all verified. |
+| `SetPRDQualityGates` — persists to store and round-trips | Yes | **Yes** | `TestBL367_SetPRDQualityGates_Persisted` | TS-770 (e2e): POST set_quality_gates enabled=true cmd='echo ts770-ok' timeout=30; GET PRD confirms round-trip; PASS |
 | Unknown PRD ID returns error | Yes | No | `TestBL367_SetPRDQualityGates_NotFound` | No panic, descriptive error. |
 | Per-PRD override takes precedence over manager default | Yes | No | `TestBL367_ResolveQualityGates_PerPRDOverridesDefault` | `resolveQualityGates` priority. |
 | No per-PRD config falls back to manager default | Yes | No | `TestBL367_ResolveQualityGates_FallsBackToDefault` | `cfg.DefaultQualityGates` used when `PRD.QualityGates == nil`. |
@@ -87,7 +87,7 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 | `ScanForInjection` detects 11+ known patterns | Yes | No | `TestBL369_ScanForInjection_DetectsPatterns` (13 sub-cases: ignore-prev, disregard, forget, you-are-now, act-as, im_start, SYS, INST, system-prefix, assistant-prefix, new-instructions, override) | Pattern matching confirmed for every entry in `injectionPatterns`. |
 | Clean specs return no hits (no false positives) | Yes | No | `TestBL369_ScanForInjection_CleanInputReturnsEmpty` (5 clean task specs) | Guards against over-triggering on normal engineering language. |
 | `injection_guard:true, block_on_injection:false` — warn-only mode | Yes | No | `TestBL369_CheckInjectionGuard_WarnMode` — CreatePRD with injection phrase succeeds | Warn-only is the default; operator must opt-in to blocking. |
-| `injection_guard:true, block_on_injection:true` — block mode | Yes | No | `TestBL369_CheckInjectionGuard_BlockMode` — CreatePRD returns `injection-guard` error | HTTP 400 at REST boundary. |
+| `injection_guard:true, block_on_injection:true` — block mode | Yes | **Yes** | `TestBL369_CheckInjectionGuard_BlockMode` — CreatePRD returns `injection-guard` error | TS-769 (e2e): PUT `{"autonomous.injection_guard":"true"}` + `{"autonomous.block_on_injection":"true"}` → GET confirms both true; PASS |
 | `injection_guard:false` — disabled regardless of `block_on_injection` | Yes | No | `TestBL369_CheckInjectionGuard_Disabled` | Default config: guard off = pass-through. |
 | Clean spec always passes block mode | Yes | No | `TestBL369_CleanSpec_AlwaysPasses` | No false-positive blocking. |
 | `EditPRDFields` runs injection guard on new spec | Yes | No | `TestBL369_EditPRDFields_BlocksOnInjection` | Covers PRD spec edits, not only create. |
@@ -118,7 +118,7 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | `SetPRDLLM` persists `DecompositionProfile` field | **Yes** | No | `TestBL320_SetPRDLLM_PersistsDecompositionProfile`, `TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile` in `internal/autonomous/bl320_decomp_profile_test.go` | T47 sprint; decision log check + store round-trip |
 | `set_llm` endpoint: unknown `decomposition_profile` returns 400 | **Yes** | No | `TestBL320_SetLLM_UnknownDecompProfile_Returns400` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
 | `set_llm` endpoint: valid `decomposition_profile` returns 200 | **Yes** | No | `TestBL320_SetLLM_ValidDecompProfile_Returns200` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with known inference-registry name → 200, field persisted. |
-| CLI `prd-set-llm --decomposition-profile` round-trip | Yes | No | TS-740 (e2e) | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
+| CLI `prd-set-llm --decomposition-profile` round-trip | Yes | **Yes** | TS-740 (e2e) | TS-776 (e2e): `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms decomposition_profile=opencode; fixed daemonJSON []byte double-encode bug in cli_sx_parity.go + cli_autonomous.go; PASS |
 | `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | Yes | Yes | TS-743 (e2e, PASS): set_llm backend=ollama decomposition_profile=claude-code, GET PRD confirms independent storage; code inspection confirms spawn uses prd.Backend | Full live run with mismatched backends would confirm session backend. |
 | PWA Settings modal — planning backend picker accepts all configured LLMs | **Yes** | Yes | TS-764 (PWA/Playwright): structural check confirms `autonomous.planning_backend` key + `type: 'llm_backend'` in app.js settings config; live check confirms label in settings HTML (collapsed section) | PASS |
 | **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | **Yes** | Yes | TS-766 (e2e): POST `set_llm` `decomposition_profile=opencode`; trigger decompose; sandbox log confirms `[decompose-session] spawned f218 (backend=opencode)` — session-based path confirmed | PASS |
@@ -177,7 +177,7 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | opencode injection — `extraMCPSpecs["web_search"]` | **Yes** | Yes | TS-750 (e2e, API): POST /api/sessions/start with backend=opencode, verify .mcp.json has mcpServers.web_search with DATAWATCH_WEB_SEARCH_URL | Validated: sandbox daemon PASS |
 | goose injection — web_search SKILL.md + .mcp.json | **Yes** | Yes | TS-751 (e2e, API): POST /api/sessions/start with backend=goose, verify web-search-guidance SKILL.md injected at {projectDir}/.datawatch/skills/web-search-guidance/SKILL.md | Validated: sandbox daemon PASS |
 | Skill injection — `web-search-guidance` SKILL.md | Yes | Yes | TS-741 (e2e); TS-751 (goose, PASS); TS-752 (claude-code, PASS) | Validated: sandbox daemon — goose+claude-code sessions write SKILL.md at {projectDir}/.datawatch/skills/web-search-guidance/ |
-| REST `GET /api/web_search/stats` | Yes | No | TS-716 (e2e) | Live: curl with bearer token, verify JSON response |
+| REST `GET /api/web_search/stats` | Yes | **Yes** | TS-716 (e2e) | TS-772 (e2e): GET /api/web_search/stats → HTTP 200 enabled=true engine=bing provider=searxng; PASS |
 | MCP `web_search_stats` tool | **Yes** | No | `TestBL372_WebSearchStats_ReturnsConfiguredValues`, `TestBL372_WebSearchStats_DisabledReturnsEnabledFalse` in `internal/mcp/bl372_web_search_stats_test.go` — T47 sprint | Live: from connected MCP session, call `web_search_stats` |
 | Monitor card — web search stats visible | **Yes** | Yes | TS-744 (e2e, PWA): connectToPWA, navigateTo('observer'), verify .stat-card containing "Web Search" text | Validated: Chrome Playwright against sandbox (web_search_enabled=true), PASS |
 | Web UI Settings — web_search section | **Yes** | Yes | TS-749 (e2e, PWA): connectToPWA, navigateTo('settings'), verify web_search section present in panel or API config | Validated: Chrome Playwright against sandbox, PASS |
@@ -224,7 +224,7 @@ Added in v8.27.5. `POST /api/sessions/{id}/guardrail/{name}/approve` marks a sin
 | Component | Unit tested | Live tested | Unit test coverage | Notes |
 |---|---|---|---|---|
 | `POST /api/sessions/{id}/guardrail/{name}/approve` — happy path | **Yes** | No | `TestGH153_HTTPApprove_200` in `internal/server/gh153_guardrail_approve_test.go` — TC-5: 200 + approved=true + session_unblocked=true | Live: run session_guardrail_run to add a block verdict; POST approve/{name}; verify response `session_unblocked: true`. |
-| `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | **Yes** | No | `TestGH153_HTTPApprove_404_UnknownGuardrail` in `internal/server/gh153_guardrail_approve_test.go` — TC-6 | Live: POST approve/nonexistent; expect 404 "guardrail not found in session telemetry". |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | **Yes** | **Yes** | `TestGH153_HTTPApprove_404_UnknownGuardrail` in `internal/server/gh153_guardrail_approve_test.go` — TC-6 | TS-771 (e2e): POST approve/ts771-phantom → 404; unknown session → 404; GET telemetry has updated_at; PASS |
 | `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | Yes | No | TS-738 (e2e) | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. |
 | `session_unblocked: false` when other block verdicts remain | Yes | No | TS-739 (e2e) | Live: add two block verdicts; approve one; verify `session_unblocked: false`. |
 | `session_guardrail_approve` MCP tool | Yes | No | `TestMCP_SessionGuardrailApprove_NoWebPort_ReturnsError` in `bl_gh153_mcp_guardrail_approve_test.go` | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
@@ -276,7 +276,7 @@ first run via `from_prds`). `MemorySeedConfig.FromPRDs` field added. REST, MCP, 
 
 | Scenario | Automated | Manual | Test | Notes |
 |----------|-----------|--------|------|-------|
-| `memoryContextFn` called during `Decompose` with projectDir + limit=15 | Yes | No | `TestBL387_Decomposer_InjectsProjectSharedContext_WhenMemoriesExist` | PRD must have ProjectDir set |
+| `memoryContextFn` called during `Decompose` with projectDir + limit=15 | Yes | **Yes** | `TestBL387_Decomposer_InjectsProjectSharedContext_WhenMemoriesExist` | TS-778 (e2e): source inspection confirms all 5 BL387 callbacks wired in main.go (SetMemoryVerifierFn, SetMemoryScopeSeedFn, SetMemoryContextFn, SetMemoryCrossSeedFn, SetMemoryReportFn); memory save + PRD creation with matching project_dir confirmed; PASS |
 | Empty context result from `memoryContextFn` does not crash | Yes | No | `TestBL387_Decomposer_NoInjection_WhenNoMemoriesExist` | fn called but result ignored |
 | `Decompose` works normally with nil `memoryContextFn` | Yes | No | `TestBL387_Decomposer_NoInjection_WhenContextFnNil` | No panic with zero-value fn |
 | `memoryCrossSeedFn` called once per `from_prds` entry at first run | Yes | No | `TestBL387_CrossPRDSeed_SeedsFromListedPRDs_AtFirstRun` | 2 calls for 2 entries; correct IDs + maxEntries |

@@ -4385,6 +4385,37 @@ Reply with STRICT JSON:
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
 			})
+			// BL387 — wire memory callbacks so verifier findings, decompose
+			// context enrichment, and cross-PRD seeding flow into episodic memory.
+			if memRetriever != nil {
+				memStore387 := memRetriever.Store()
+				amgr.SetMemoryVerifierFn(func(_ context.Context, _, projectDir, content, _ string) error {
+					_, err := memRetriever.Remember(projectDir, content)
+					return err
+				})
+				amgr.SetMemoryScopeSeedFn(func(_ context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int) error {
+					from387 := memoryPkg.ScopeRef{Scope: memoryPkg.ScopePRDShared, Project: projectDir, PRDID: fromPRDID}
+					to387 := memoryPkg.ScopeRef{Scope: memoryPkg.ScopePRDShared, Project: projectDir, PRDID: toPRDID}
+					_, err := memoryPkg.Seed(memStore387, from387, to387, memoryPkg.SeedFilter{}, maxEntries)
+					return err
+				})
+				amgr.SetMemoryContextFn(func(_ context.Context, projectDir, query string, topK int) (string, error) {
+					return memRetriever.RetrieveContext(projectDir, query, topK), nil
+				})
+				amgr.SetMemoryCrossSeedFn(func(_ context.Context, fromPRDID, toPRDID, projectDir string, maxEntries int, roleFilter []string) error {
+					filter387 := memoryPkg.SeedFilter{}
+					if len(roleFilter) > 0 {
+						filter387.RolePrefix = roleFilter[0]
+					}
+					from387 := memoryPkg.ScopeRef{Scope: memoryPkg.ScopePRDShared, Project: projectDir, PRDID: fromPRDID}
+					to387 := memoryPkg.ScopeRef{Scope: memoryPkg.ScopePRDShared, Project: projectDir, PRDID: toPRDID}
+					_, err := memoryPkg.Seed(memStore387, from387, to387, filter387, maxEntries)
+					return err
+				})
+				amgr.SetMemoryReportFn(func(_ context.Context, prdID, projectDir string) (string, error) {
+					return memRetriever.RetrieveContext(projectDir, "outcomes and lessons from automaton "+prdID, 10), nil
+				})
+			}
 			aAPI := autonomouspkg.NewAPI(amgr)
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
