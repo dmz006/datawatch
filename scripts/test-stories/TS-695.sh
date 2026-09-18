@@ -213,11 +213,11 @@ _story_ts_695() {
   save_evidence TS-695 "detail_a_confirm.json" "$detail_a"
   save_evidence TS-695 "detail_b_confirm.json" "$detail_b"
 
-  # ---- poll PRD to terminal state (max 480s; verifier adds ~60-120s per story) ----
+  # ---- poll PRD to terminal state (max 720s; verifier adds ~60-120s per story) ----
   # Each task verification uses qwen3:1.7b via /api/ask (60-120s each); with 2
-  # concurrent tasks both verifying, allow up to 480s total.
+  # concurrent tasks both verifying + execution time, allow up to 720s total.
   local final_status=""
-  for i in $(seq 1 240); do
+  for i in $(seq 1 360); do
     sleep 2
     final_status=$(api GET "/api/autonomous/prds/$prd_id" | \
       python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
@@ -244,7 +244,7 @@ _story_ts_695() {
     running|in_progress|"")
       # Both compute nodes confirmed live simultaneously — that is the primary assertion.
       # PRD did not reach terminal state within 480s (verifier still running); treat as skip.
-      skip "both nodes confirmed live mid-run; PRD still in state '$final_status' after 480s (verifier slow — see final.json)"
+      skip "both nodes confirmed live mid-run; PRD still in state '$final_status' after 720s (verifier slow — see final.json)"
       ;;
     *)
       ko "PRD did not reach terminal state within 480s (status=$final_status); check final.json"
