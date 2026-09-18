@@ -10771,6 +10771,12 @@ window.submitPRDEdit = function(id) {
 // panel is currently visible (Automata tab uses loadAutomataPanel, legacy
 // views fall back to loadPRDPanel).
 function _refreshAutomataOrPRD() {
+  // When inside a PRD detail view, re-render it in place so status changes
+  // (reset_to_draft, cancel, approve, etc.) are immediately visible.
+  if (_automataDetailId && typeof renderPRDDetailView === 'function') {
+    renderPRDDetailView(_automataDetailId);
+    return;
+  }
   if (state.activeView === 'autonomous' && typeof loadAutomataPanel === 'function') {
     loadAutomataPanel();
   } else {
@@ -17853,7 +17859,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
   }
   // v8.20.1 — Reset to Draft button for cancelled PRDs.
-  const resetToDraftBtn = (status === 'cancelled')
+  const resetToDraftBtn = (['cancelled','failed','needs_review','approved','revisions_asked','completed','rejected','blocked','draft'].includes(status))
     ? `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'reset_to_draft','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_reset_to_draft_title')||'Reset to draft so you can reconfigure the backend and re-decompose')}">↺ ${escHtml(t('prd_btn_reset_to_draft')||'Reset to Draft')}</button>`
     : '';
   const editBtn = editMenuItems.length > 0
