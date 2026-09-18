@@ -1682,6 +1682,9 @@ body {
   gap: 4px;
 }
 .prd-task-row {
+  display: block;
+  padding: 0;
+  gap: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
