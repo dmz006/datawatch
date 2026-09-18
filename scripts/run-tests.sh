@@ -250,6 +250,32 @@ start_ntfy_server() {
   done
 }
 
+prepare_k8s_image() {
+  local image="harbor.dmzs.com/library/datawatch-e2e:latest"
+  local cluster="testing"
+
+  if ! command -v kind &>/dev/null; then return; fi
+  if ! kind get clusters 2>/dev/null | grep -qx "$cluster"; then return; fi
+
+  # Build image if not present in docker
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "  Building $image from Dockerfile.dev..."
+    if ! docker build -f "$REPO_DIR/Dockerfile.dev" -t "$image" "$REPO_DIR" 2>&1 | tail -5; then
+      echo "  WARNING: datawatch-e2e image build failed — K8s tests will skip"
+      return
+    fi
+    echo "  Build complete."
+  fi
+
+  # Load into kind cluster
+  echo "  Loading $image into kind cluster '$cluster'..."
+  if kind load docker-image "$image" --name "$cluster" >/dev/null 2>&1; then
+    echo "  K8s image ready."
+  else
+    echo "  WARNING: kind load failed — K8s tests may skip"
+  fi
+}
+
 stop_test_daemon() {
   if [[ -n "$DAEMON_PID" ]]; then
     kill "$DAEMON_PID" 2>/dev/null || true
@@ -573,6 +599,9 @@ if [[ ! -d "$STORIES_DIR" ]]; then
   echo "Stories are defined in: $DATAWATCH_COOKBOOK"
   exit 0
 fi
+
+# --- K8s image pre-build ----------------------------------------------------
+prepare_k8s_image
 
 # --- daemon startup ---------------------------------------------------------
 if [[ $NO_DAEMON -eq 0 ]]; then
