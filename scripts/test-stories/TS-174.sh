@@ -16,12 +16,14 @@ _story_ts_174() {
   out1=$(kubectl --context="$K8S_CONTEXT" run "$pod1" \
     --namespace="$K8S_NAMESPACE" \
     --image=harbor.dmzs.com/library/datawatch-e2e:latest \
+    --image-pull-policy=IfNotPresent \
     --port=18180 \
     --restart=Never \
     2>&1 || echo "failed")
   out2=$(kubectl --context="$K8S_CONTEXT" run "$pod2" \
     --namespace="$K8S_NAMESPACE" \
     --image=harbor.dmzs.com/library/datawatch-e2e:latest \
+    --image-pull-policy=IfNotPresent \
     --port=18180 \
     --restart=Never \
     2>&1 || echo "failed")

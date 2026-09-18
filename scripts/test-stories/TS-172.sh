@@ -14,6 +14,7 @@ _story_ts_172() {
   out=$(kubectl --context="$K8S_CONTEXT" run "$pod_name" \
     --namespace="$K8S_NAMESPACE" \
     --image=harbor.dmzs.com/library/datawatch-e2e:latest \
+    --image-pull-policy=IfNotPresent \
     --port=18180 \
     --restart=Never \
     2>&1 || echo "failed")
