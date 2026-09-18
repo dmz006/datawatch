@@ -24,7 +24,7 @@ func TestBL320_SetPRDLLM_PersistsDecompositionProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, "ollama", "", "qwen3:8b", "my-planning-llm", "test")
+	updated, err := m.SetPRDLLM(prd.ID, "ollama", "", "qwen3:8b", "my-planning-llm", "", "test")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "opencode", "operator")
+	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "opencode", "", "operator")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestBL320_SetPRDLLM_EmptyDecompProfile_Accepted(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, "ollama", "", "", "", "test")
+	updated, err := m.SetPRDLLM(prd.ID, "ollama", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM with empty DecompositionProfile should not error: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "", "test")
+	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestBL320_SetPRDLLM_LockedOnRunning(t *testing.T) {
 	prd.Status = PRDRunning
 	_ = m.Store().SavePRD(prd)
 
-	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "opencode", "test")
+	_, err = m.SetPRDLLM(prd.ID, "ollama", "", "", "", "", "opencode")
 	if err == nil {
 		t.Error("SetPRDLLM on PRDRunning should return error (LLM overrides locked)")
 	}

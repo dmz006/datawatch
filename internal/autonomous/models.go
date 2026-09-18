@@ -122,6 +122,7 @@ type PRD struct {
 	// existing ProjectProfile field is re-purposed as the *default
 	// execution profile* for stories that don't override.
 	DecompositionProfile string `json:"decomposition_profile,omitempty"`
+	DecompositionModel   string `json:"decomposition_model,omitempty"` // model override for the planning/decompose backend
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override

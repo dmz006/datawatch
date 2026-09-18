@@ -10674,7 +10674,7 @@ function renderPRDActions(prd) {
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
   // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
   if (status !== 'running' && status !== 'completed') {
-    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '' });
+    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '' });
     btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
@@ -11032,7 +11032,7 @@ function renderLifecycleStrip(prd) {
   const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openCloneToTemplateModal(${idJ})">Clone to Template…</button>`;
   const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
   const llmItem = !isRunning && status !== 'completed'
-    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||''}))})">Set LLM…</button>`
+    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||'',decomposition_profile:prd.decomposition_profile||'',decomposition_model:prd.decomposition_model||''}))})">Set LLM…</button>`
     : '';
   // v6.13.1 (C2) — operator: "since the buttons are there (and on all
   // stages of automata) the '...' dropdown isn't needed. make sure no
@@ -11494,8 +11494,9 @@ function openPRDSetLLMModal(prdID, current) {
       </div>
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Planning backend (decompose)</div>
-        <div style="display:grid;grid-template-columns:1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (any configured backend)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', '', true)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (any configured backend)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', `refreshLLMModelField('prdSetDecompModelWrap','prdSetDecompModelInner','prdSetDecompositionProfile',${JSON.stringify(current.decomposition_model || '')})`, true)}</div>
+          <div id="prdSetDecompModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Planning model (optional)</label><div id="prdSetDecompModelInner"></div></div>
         </div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -11505,11 +11506,13 @@ function openPRDSetLLMModal(prdID, current) {
     </form>
   `, () => {
     const modelEl = document.getElementById('prdSetModelInner')?.querySelector('input,select');
+    const decompModelEl = document.getElementById('prdSetDecompModelInner')?.querySelector('input,select');
     const body = {
       backend: document.getElementById('prdSetBackend').value,
       effort: document.getElementById('prdSetEffort').value,
       model: modelEl ? modelEl.value.trim() : '',
       decomposition_profile: document.getElementById('prdSetDecompositionProfile').value,
+      decomposition_model: decompModelEl ? decompModelEl.value.trim() : '',
       actor: 'operator',
     };
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
@@ -11518,9 +11521,9 @@ function openPRDSetLLMModal(prdID, current) {
     }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
-  // Populate the model dropdown for the current backend now that the
-  // modal is mounted.
+  // Populate model dropdowns for the current backends now that the modal is mounted.
   refreshLLMModelField('prdSetModelWrap', 'prdSetModelInner', 'prdSetBackend', current.model || '');
+  refreshLLMModelField('prdSetDecompModelWrap', 'prdSetDecompModelInner', 'prdSetDecompositionProfile', current.decomposition_model || '');
   });
 }
 window.openPRDSetLLMModal = openPRDSetLLMModal;
@@ -11539,6 +11542,7 @@ function openPRDSettingsModal(prdID) {
         effort:               prd.effort || '',
         model:                prd.model || '',
         decomposition_profile: prd.decomposition_profile || '',
+        decomposition_model:  prd.decomposition_model || '',
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
@@ -11579,7 +11583,10 @@ function openPRDSettingsModal(prdID) {
             </div>
             <div class="wizard-field">
               <label class="wizard-label">Planning backend (decompose)</label>
-              ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, '', true)}
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, `refreshLLMModelField('prdSettingsDecompModelWrap','prdSettingsDecompModelInner','prdSettingsDecompositionProfile',${JSON.stringify(cur.decomposition_model||'')})`, true)}
+                <div id="prdSettingsDecompModelWrap" style="display:none;"><div id="prdSettingsDecompModelInner"></div></div>
+              </div>
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">Any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Empty = use global autonomous.planning_backend.</div>
             </div>
             <!-- v6.13.4 — operator: "skills should be a selectable list
@@ -11620,6 +11627,8 @@ function openPRDSettingsModal(prdID) {
           const modelEl = document.getElementById('prdSettingsModelInner')?.querySelector('input,select');
           const newModel = modelEl ? modelEl.value.trim() : '';
           const newDecompositionProfile = document.getElementById('prdSettingsDecompositionProfile').value;
+          const decompModelEl = document.getElementById('prdSettingsDecompModelInner')?.querySelector('input,select');
+          const newDecompositionModel = decompModelEl ? decompModelEl.value.trim() : '';
           // v6.13.4 — read skills from the chip-picker hidden input
           // (populated by _renderSkillChipPicker on toggle).
           const newSkills = (document.getElementById('prdSettingsSkills').value || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -11633,10 +11642,10 @@ function openPRDSettingsModal(prdID) {
               body: JSON.stringify({ type: newType, actor: 'operator' }),
             }));
           }
-          if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model || newDecompositionProfile !== cur.decomposition_profile) {
+          if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model || newDecompositionProfile !== cur.decomposition_profile || newDecompositionModel !== (cur.decomposition_model||'')) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
               method: 'POST', headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, decomposition_profile: newDecompositionProfile, actor: 'operator' }),
+              body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, decomposition_profile: newDecompositionProfile, decomposition_model: newDecompositionModel, actor: 'operator' }),
             }));
           }
           const skillsChanged = JSON.stringify(newSkills) !== JSON.stringify((prd.skills || []));
@@ -11663,8 +11672,9 @@ function openPRDSettingsModal(prdID) {
             .then(() => { showToast(t('prd_settings_saved')||'Settings saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
             .catch(err => showToast((t('prd_settings_save_failed')||'Save failed') + ': ' + String(err), 'error', 3000));
         });
-        // Populate the model dropdown for the current backend now that the modal is mounted.
+        // Populate model dropdowns for the current backends now that the modal is mounted.
         refreshLLMModelField('prdSettingsModelWrap', 'prdSettingsModelInner', 'prdSettingsBackend', cur.model);
+        refreshLLMModelField('prdSettingsDecompModelWrap', 'prdSettingsDecompModelInner', 'prdSettingsDecompositionProfile', cur.decomposition_model || '');
       });
     })
     .catch(err => showToast('Failed to load automaton: ' + String(err), 'error', 3000));

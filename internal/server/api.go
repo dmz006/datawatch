@@ -548,7 +548,7 @@ type AutonomousAPI interface {
 
 	// BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 	// BL381 — adds story-level override (per-task → per-story → per-PRD → global).
-	SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (any, error)
+	SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error)
 	SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
 

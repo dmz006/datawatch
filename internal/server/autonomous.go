@@ -864,6 +864,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			Effort               string `json:"effort"`
 			Model                string `json:"model"`
 			DecompositionProfile string `json:"decomposition_profile"`
+			DecompositionModel   string `json:"decomposition_model"`
 			Actor                string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -888,7 +889,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.Actor)
+		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -24,7 +24,7 @@ type setLLMTestOrch struct {
 	returnErr       error
 }
 
-func (o *setLLMTestOrch) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (any, error) {
+func (o *setLLMTestOrch) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error) {
 	o.capturedProfile = decompositionProfile
 	o.capturedBackend = backend
 	if o.returnErr != nil {

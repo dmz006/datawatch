@@ -70,7 +70,7 @@ func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, stri
 }
 
 // BL203 (v5.4.0) — flexible LLM override stubs.
-func (f *fakeOrchAutonomous) SetPRDLLM(string, string, string, string, string, string) (any, error) {
+func (f *fakeOrchAutonomous) SetPRDLLM(string, string, string, string, string, string, string) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) SetTaskLLM(string, string, string, string, string, string) (any, error) {

@@ -709,7 +709,10 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 	}
 
-	planModel := m.cfg.PlanningModel
+	planModel := prd.DecompositionModel
+	if planModel == "" {
+		planModel = m.cfg.PlanningModel
+	}
 	if planModel == "" {
 		planModel = prd.Model
 	}
@@ -1776,7 +1779,7 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	return updated, nil
 }
 
-func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, actor string) (*PRD, error) {
+func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -1788,10 +1791,14 @@ func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile,
 	prd.Effort = Effort(effort)
 	prd.Model = model
 	prd.DecompositionProfile = decompositionProfile
+	prd.DecompositionModel = decompositionModel
 	prd.UpdatedAt = time.Now()
 	note := fmt.Sprintf("backend=%s effort=%s model=%s", backend, effort, model)
 	if decompositionProfile != "" {
 		note += " decomposition_profile=" + decompositionProfile
+	}
+	if decompositionModel != "" {
+		note += " decomposition_model=" + decompositionModel
 	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
