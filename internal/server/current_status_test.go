@@ -115,4 +115,32 @@ func TestCurrentStatus_ThinDelta(t *testing.T) {
 	}
 }
 
+// TestCurrentStatus_WithNewOutput pins the success path: 5+ lines of new output
+// since the last summary offset must return HTTP 200 with a non-empty current_status
+// and no no_change field.
+func TestCurrentStatus_WithNewOutput_Returns200(t *testing.T) {
+	// 6 lines of output — crosses the 4-newline threshold in the handler.
+	content := line("line1") + line("line2") + line("line3") +
+		line("line4") + line("line5") + line("line6")
+	srv, _ := newCurrentStatusServer(t, content, 0)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/h-ab01/current-status", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionCurrentStatus(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rr.Code, rr.Body.String())
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body not JSON: %v; body=%q", err, rr.Body.String())
+	}
+	if got["no_change"] == true {
+		t.Error("no_change should not be true on success path with new output")
+	}
+	if _, ok := got["current_status"]; !ok {
+		t.Error("current_status field missing in success path response")
+	}
+}
+
 func line(s string) string { return s + "\n" }

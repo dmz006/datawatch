@@ -131,7 +131,7 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 |---|---|---|---|---|
 | No new output → HTTP 200 + `no_change:true` — `TestCurrentStatus_NoNewOutput` | **Yes** | No | `internal/server/current_status_test.go` — empty output store; asserts 200 + non-empty body + `no_change:true` | Pins the exact bug: 204 + empty body used to reach PWA as a `r.json()` throw |
 | Thin delta (output unchanged since last call) → HTTP 200 + `no_change:true` — `TestCurrentStatus_ThinDelta` | **Yes** | No | Same file — output identical on two consecutive calls; second returns `no_change:true` | Covers the second merged branch of the no-op condition |
-| Success path with new output → HTTP 200 + content body | No | No | — | Live test: start a session, let it produce output, poll endpoint; verify body contains session output and no `no_change` field |
+| Success path with new output → HTTP 200 + content body | **Yes** | No | `TestCurrentStatus_WithNewOutput_Returns200` in `internal/server/current_status_test.go` — T47 sprint | Live test: start a session, let it produce output, poll endpoint; verify body contains session output and no `no_change` field |
 | `apiFetch` 204/205 → null guard (PWA) | No | No | Code inspection of `internal/server/web/app.js apiFetch` | Live test: any `/api/…` route returning 204 must not surface `Unexpected end of JSON input` in browser console |
 | PWA chip "(no change since last refresh)" renders on no_change response | No | No | Code inspection of `fetchCurrentStatus` in `app.js` | Live test: idle session → "What's it doing?" button → chip appears instead of error toast |
 
@@ -186,11 +186,11 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 
 | Test Condition | Unit | Live | Test ID / Location | Notes |
 |---|---|---|---|---|
-| `ResetTask` — happy path: failed task in running PRD resets to pending | No | No | — | Manual: set task status=failed, call ResetTask, verify status="" error="" session_id="" |
-| `ResetTask` — blocked task resets | No | No | — | Same as above with status=blocked |
-| `ResetTask` — task not found returns error | No | No | — | Call with nonexistent task_id; expect error |
-| `ResetTask` — PRD not running returns error | No | No | — | Call while PRD status=approved; expect error |
-| `ResetTask` — completed task cannot be reset | No | No | — | status=completed; expect error |
+| `ResetTask` — happy path: failed task in running PRD resets to pending | **Yes** | No | `TestBL382_ResetTask_FailedTask_NoForce_StillWorks` in `internal/autonomous/bl382_cancel_test.go` | Manual: set task status=failed, call ResetTask, verify status="" error="" session_id="" |
+| `ResetTask` — blocked task resets | **Yes** | No | `TestBL382_ResetTask_BlockedTask_Resets` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Same as above with status=blocked |
+| `ResetTask` — task not found returns error | **Yes** | No | `TestBL382_ResetTask_TaskNotFound_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Call with nonexistent task_id; expect error |
+| `ResetTask` — PRD not running returns error | **Yes** | No | `TestBL382_ResetTask_PRDNotRunning_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Call while PRD status=approved; expect error |
+| `ResetTask` — completed task cannot be reset | **Yes** | No | `TestBL382_ResetTask_NoForce_CompletedTask_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` | status=completed; expect error |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 200 | No | No | — | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
 | MCP `autonomous_prd_reset_task` | No | No | — | Live: call from MCP session, verify task reset |
@@ -223,12 +223,12 @@ Added in v8.27.5. `POST /api/sessions/{id}/guardrail/{name}/approve` marks a sin
 
 | Component | Unit tested | Live tested | Unit test coverage | Notes |
 |---|---|---|---|---|
-| `POST /api/sessions/{id}/guardrail/{name}/approve` — happy path | No | No | — | Live: run session_guardrail_run to add a block verdict; POST approve/{name}; verify response `session_unblocked: true`. |
-| `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | No | No | — | Live: POST approve/nonexistent; expect 404 "guardrail not found in session telemetry". |
-| `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | No | No | — | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. |
-| `session_unblocked: false` when other block verdicts remain | No | No | — | Live: add two block verdicts; approve one; verify `session_unblocked: false`. |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — happy path | **Yes** | No | `TestGH153_HTTPApprove_200` in `internal/server/gh153_guardrail_approve_test.go` — TC-5: 200 + approved=true + session_unblocked=true | Live: run session_guardrail_run to add a block verdict; POST approve/{name}; verify response `session_unblocked: true`. |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — 404 for unknown guardrail name | **Yes** | No | `TestGH153_HTTPApprove_404_UnknownGuardrail` in `internal/server/gh153_guardrail_approve_test.go` — TC-6 | Live: POST approve/nonexistent; expect 404 "guardrail not found in session telemetry". |
+| `POST /api/sessions/{id}/guardrail/{name}/approve` — note stored | No | No | — | POST with `{"note":"test approval"}`; GET telemetry; verify `approval_note` field present. TS-738 (e2e) |
+| `session_unblocked: false` when other block verdicts remain | No | No | — | Live: add two block verdicts; approve one; verify `session_unblocked: false`. TS-739 (e2e) |
 | `session_guardrail_approve` MCP tool | No | No | — | MCP: call `session_guardrail_approve(session_id=..., guardrail=..., note=...)`; verify result. |
-| `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | No | No | — | Verify new fields appear in telemetry response after approve call. |
+| `GET /api/sessions/{id}/telemetry` — `approved`+`approval_note` fields present | No | No | — | Verify new fields appear in telemetry response after approve call. TS-742 (e2e) |
 | WebSocket hub broadcasts on approve | No | No | — | Connect WS client; approve verdict; verify hub.BroadcastHookUpdate fired. |
 
 ## v8.27.6–v8.27.11 — PWA image attachment (Android)

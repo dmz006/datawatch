@@ -220,3 +220,54 @@ func TestBL382_ResetTask_FailedTask_NoForce_StillWorks(t *testing.T) {
 		t.Fatalf("failed task should still reset without force: %v", err)
 	}
 }
+
+func TestBL382_ResetTask_BlockedTask_Resets(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	// Set task-1b to blocked state
+	prd.Story[0].Tasks[1].Status = TaskBlocked
+	_ = m.Store().SavePRD(prd)
+
+	updated, err := m.ResetTask(prd.ID, "task-1b", "operator", false)
+	if err != nil {
+		t.Fatalf("blocked task should reset without force: %v", err)
+	}
+	var found bool
+	for _, s := range updated.Story {
+		for _, tk := range s.Tasks {
+			if tk.ID == "task-1b" {
+				if tk.Status != "" {
+					t.Errorf("task-1b status = %q; want empty (pending)", tk.Status)
+				}
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("task-1b not found in updated PRD")
+	}
+}
+
+func TestBL382_ResetTask_TaskNotFound_ReturnsError(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	_, err := m.ResetTask(prd.ID, "task-does-not-exist", "operator", false)
+	if err == nil {
+		t.Error("expected error for nonexistent task ID")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention not found: %v", err)
+	}
+}
+
+func TestBL382_ResetTask_PRDNotRunning_ReturnsError(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+
+	_, err := m.ResetTask(prd.ID, "task-2b", "operator", false)
+	if err == nil {
+		t.Error("expected error when PRD is not in running/failed state")
+	}
+	if !strings.Contains(err.Error(), "not recoverable") {
+		t.Errorf("error should mention not recoverable: %v", err)
+	}
+}
