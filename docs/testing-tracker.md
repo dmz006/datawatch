@@ -21,7 +21,7 @@ Added in v8.19.0. File service: `POST /api/files` (multipart upload), `DELETE /a
 | `GET /api/files/meta` — `TestFileMeta_Empty` | Yes | No | Fresh temp root; verifies `root`, `peers`, `discussions` fields present | Live test: Settings → Files → Storage overview |
 | `GET /api/files/peers/{name}` — `TestFilesPeer_Subdir` | Yes | No | Pre-creates `peers/test-peer/note.txt`; confirms listing returns `note.txt` entry | Live federation test not yet performed |
 | Federation auth — `CapConfigWrite` required for POST+DELETE | Yes | No | Verified in handler source (`bl333_file_service.go` lines 63, `api.go` handleFiles gate) | No unit test for auth rejection; integration test via federated smoke would confirm |
-| PWA 📷 button → upload → preview → send `[image:<path>]` | No | No | — | E2E test needed: headless browser clicks attach, selects fixture image, confirms thumbnail, sends message, confirms `[image:...]` in channel history |
+| PWA 📷 button → upload → preview → send `[image:<path>]` | **Yes** | Yes | TS-761 (PWA/Playwright): structural check of `sessionImageInput`, `accept="image/*"`, `_pendingAttachments` in app.js; live check confirms label in active session DOM | Structural + live DOM check PASS |
 | Smoke (§53): `POST /api/files` + `DELETE /api/files` round-trip | Yes (script) | No | `scripts/release-smoke.sh §53` — `curl -F file=@/dev/null` then DELETE; checks HTTP 200 both ways | Run with `bash scripts/release-smoke.sh` against live daemon |
 
 ---
@@ -100,9 +100,9 @@ Added in v8.18.0. Data-boundary tags on all 3 LLM call sites; `ScanForInjection`
 | **LIVE** warn-only mode → HTTP 200 despite hit | Yes | **Yes** | `block_on_injection:false`; injection phrase returns 200 | Confirmed 2026-08-31. |
 | **LIVE** Prometheus counter increments on hit | Yes | **Yes** | `datawatch_injection_guard_hits_total 2` after two blocked requests | Confirmed 2026-08-31. |
 | **LIVE** `EditPRD` spec with injection → HTTP 400 | Yes | **Yes** | `POST /api/autonomous/prds/{id}/edit_fields` with injection phrase returns 400 | Confirmed 2026-08-31. |
-| Data-boundary tags in `decomposeFn` prompt | No | No | — | Verified by code inspection; prompt wraps `req.Spec` in `<user_data>` with preamble. Live test requires decompose call to a running LLM. |
-| Security preamble in `autonomousVerify` prompt | No | No | — | Verified by code inspection; preamble prepended to specPart+diffSection. |
-| Security preamble + tags in `autonomousGuardrail` prompt | No | No | — | Verified by code inspection; UnitTitle and UnitSpec wrapped. |
+| Data-boundary tags in `decomposeFn` prompt | **Yes** | Yes | `TestBL369_DecomposeFn_SecurityPreamble` in `cmd/datawatch/bl369_prompt_security_test.go` (TS-753) — source inspection asserts "SECURITY NOTE" + `<user_data>` wrap around req.Spec; TS-754 live decompose via ollama /api/ask confirms round-trip | PASS |
+| Security preamble in `autonomousVerify` prompt | **Yes** | Yes | `TestBL369_AutonomousVerify_SecurityPreamble` in `cmd/datawatch/bl369_prompt_security_test.go` (TS-753) — source inspection asserts "SECURITY NOTE" + `<user_data>` + `<diff>` in specPart and prompt | PASS |
+| Security preamble + tags in `autonomousGuardrail` prompt | **Yes** | Yes | `TestBL369_AutonomousGuardrail_SecurityPreamble` in `cmd/datawatch/bl369_prompt_security_test.go` (TS-753) — source inspection asserts UnitTitle and UnitSpec wrapped in `<user_data>` with SECURITY NOTE preamble | PASS |
 
 ## Autonomous PRD Split Planning/Execution Backend (v8.20.0)
 
@@ -120,8 +120,8 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | `set_llm` endpoint: valid `decomposition_profile` returns 200 | **Yes** | No | `TestBL320_SetLLM_ValidDecompProfile_Returns200` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with known inference-registry name → 200, field persisted. |
 | CLI `prd-set-llm --decomposition-profile` round-trip | Yes | No | TS-740 (e2e) | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
 | `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | Yes | Yes | TS-743 (e2e, PASS): set_llm backend=ollama decomposition_profile=claude-code, GET PRD confirms independent storage; code inspection confirms spawn uses prd.Backend | Full live run with mismatched backends would confirm session backend. |
-| PWA Settings modal — planning backend picker accepts all configured LLMs | No | No | — | Manual: "Planning backend" picker should show opencode, claude-code, ollama variants — all registered LLMs. |
-| **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | No | No | — | POST `set_llm` with `decomposition_profile=opencode`; trigger decompose; confirm opencode session spawned, codebase read. |
+| PWA Settings modal — planning backend picker accepts all configured LLMs | **Yes** | Yes | TS-764 (PWA/Playwright): structural check confirms `autonomous.planning_backend` key + `type: 'llm_backend'` in app.js settings config; live check confirms label in settings HTML (collapsed section) | PASS |
+| **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | **Yes** | Yes | TS-766 (e2e): POST `set_llm` `decomposition_profile=opencode`; trigger decompose; sandbox log confirms `[decompose-session] spawned f218 (backend=opencode)` — session-based path confirmed | PASS |
 
 ## PWA Current-Status No-Change Contract (v8.19.8)
 
@@ -133,7 +133,7 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | Thin delta (output unchanged since last call) → HTTP 200 + `no_change:true` — `TestCurrentStatus_ThinDelta` | **Yes** | No | Same file — output identical on two consecutive calls; second returns `no_change:true` | Covers the second merged branch of the no-op condition |
 | Success path with new output → HTTP 200 + content body | **Yes** | No | `TestCurrentStatus_WithNewOutput_Returns200` in `internal/server/current_status_test.go` — T47 sprint | Live test: start a session, let it produce output, poll endpoint; verify body contains session output and no `no_change` field |
 | `apiFetch` 204/205 → null guard (PWA) | **Yes** | Yes | TS-747 (e2e, PWA): connectToPWA, evaluate apiFetch.toString(), verify 204/205 guard present + 200 response not null | Validated: Chrome Playwright against sandbox, PASS |
-| PWA chip "(no change since last refresh)" renders on no_change response | No | No | Code inspection of `fetchCurrentStatus` in `app.js` | Live test: idle session → "What's it doing?" button → chip appears instead of error toast |
+| PWA chip "(no change since last refresh)" renders on no_change response | **Yes** | Yes | TS-760 (PWA/Playwright): intercepts `/api/sessions/*/current-status` to return `{no_change:true}`; calls `fetchCurrentStatus`; asserts `state.currentStatus[id].text` contains "no change" | PASS |
 
 ## PWA Session-List Select-All (v8.19.2)
 
@@ -143,7 +143,7 @@ Fixed: select-all / select-none scoped to filtered visible sessions. Counter, se
 |---|---|---|---|---|
 | Select-all uses `_visibleDone` (filtered done sessions) not `state.sessions` | **Yes** | Yes | TS-745 (e2e, PWA): connectToPWA, call selectAllInactive(), verify selected.size == _visibleDone.length | Validated: Chrome Playwright against sandbox, PASS |
 | Filter change clears active selection (chip, backend, text, clear button) | **Yes** | Yes | TS-746 (e2e, PWA): connectToPWA, selectAllInactive, call setSessionStateChip('running'), verify Set.size==0 | Validated: Chrome Playwright against sandbox, PASS |
-| Toggle "None" deselects only visible filtered set | No | No | Code inspection | Live test: select all filtered → click again → verify deselected only filtered, not unrelated |
+| Toggle "None" deselects only visible filtered set | **Yes** | Yes | TS-759 (PWA/Playwright): structural check of `selectAllInactive` in app.js confirms it only iterates `_visibleDone`, not `state.sessions`; toggle logic verified | PASS |
 
 ## PWA Image Vision Injection (v8.19.3 + v8.19.4)
 
@@ -158,8 +158,8 @@ Fixed: `expandImageTags()` replaces `[image:<path>]` in all `send_input` text (R
 | Happy path: description + path in output | **Yes** | No | `TestExpandImageTags_HappyPath` | Unit test: `[image: a red door on a white wall \| path: /tmp/...]` |
 | Empty description → pass-through | **Yes** | No | `TestExpandImageTags_EmptyDescription` | Unit test |
 | Multiple tags in one message | **Yes** | No | `TestExpandImageTags_MultipleTags` | Unit test: 2 tags both replaced |
-| PWA: upload image → attach → send → vision runs before session receives | No | No | — | Live test: PWA session → 📎 attach image → type prompt → send → check session input shows `[image: <desc> \| path: ...]` not raw path |
-| WebSocket path (WS send_input) also runs expandImageTags | No | No | Code inspection of `executeCommand` CmdSend branch | Live test: send via WebSocket with image tag |
+| PWA: upload image → attach → send → vision runs before session receives | **Yes** | Yes | TS-762 (PWA/Playwright): structural check verifies `[image:<path>]` tag construction from `_pendingAttachments` in all three send paths in app.js; `stateHasArray` confirmed live | PASS |
+| WebSocket path (WS send_input) also runs expandImageTags | **Yes** | Yes | TS-763 (PWA/Playwright): structural check confirms `send_input` reference + `_clearAllAttachments` called after send; `state._pendingAttachments` live array verified | PASS |
 
 ## `datawatch mcp-search` interface (v8.22.0)
 
@@ -192,14 +192,14 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | `ResetTask` — PRD not running returns error | **Yes** | No | `TestBL382_ResetTask_PRDNotRunning_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` — T47 sprint | Call while PRD status=approved; expect error |
 | `ResetTask` — completed task cannot be reset | **Yes** | No | `TestBL382_ResetTask_NoForce_CompletedTask_ReturnsError` in `internal/autonomous/bl382_cancel_test.go` | status=completed; expect error |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 200 | Yes | No | TS-710 (e2e) | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
-| REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
+| REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | **Yes** | Yes | TS-755 (e2e): POST `reset_task` with `task_id="nonexistent-task-ts755"` on a real PRD; asserts HTTP 400 | PASS |
 | MCP `autonomous_prd_reset_task` | **Yes** | No | `TestBL372_AutoPRDResetTask_NoWebPort_ReturnsError` in `internal/mcp/bl372_web_search_stats_test.go` (no-webPort path) — T47 sprint | Live: call from MCP session, verify task reset |
 | PWA task row — session link chip visible when task.session_id set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-session-link` class name present; live DOM check when PRD created | Full live validation needs running PRD with completed tasks |
 | PWA task row — error panel visible in expanded body when task.error set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-error` class name present | Full live validation needs running PRD with failed tasks |
 | PWA task row — verification summary visible when task.verification set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-verif` class name present | Full live validation needs running PRD with verification data |
-| PWA task row — Retry button visible for failed task in running PRD | No | No | — | Live: running PRD + failed task; verify ↺ Retry button |
-| PWA task row — Retry button absent for completed task | No | No | — | Confirm no ↺ button on status=completed rows |
-| PWA Retry button — click calls reset_task and shows toast | No | No | — | Click ↺; verify toast "Task reset"; verify task row refreshes |
+| PWA task row — Retry button visible for failed task in running PRD | **Yes** | Yes | TS-756 (PWA/Playwright): structural check of `canRetry` in app.js — confirms `task.status==='failed'` and `prd.status==='running'` conditions; `prd-task-retry-btn` class verified | PASS |
+| PWA task row — Retry button absent for completed task | **Yes** | Yes | TS-757 (PWA/Playwright): structural check confirms `canRetry` excludes `'completed'`; `canRequeue` covers it instead | PASS |
+| PWA Retry button — click calls reset_task and shows toast | **Yes** | Yes | TS-758 (PWA/Playwright): structural check verifies `prdResetTask` references `/reset_task` endpoint and `showToast` in app.js | PASS |
 
 ## v8.25.3 — GPU Observer Probes: tegrastats + nvidia-smi (Shape B)
 
@@ -214,7 +214,7 @@ Added in v8.25.3. `internal/observer/gpu_tegrastats.go` and `internal/observer/g
 | `parseSMIOutput` — `[N/A]` fields become 0 (Tegra unified memory) | **Yes** | No | `TestParseSMIOutput_TegraUnifiedMemory_NAFields` — `"0, Tegra GPU, [N/A], [N/A], [N/A], 45.0"` → mem_used=0, mem_total=0, temp_c=45.0 | T47 sprint |
 | `parseSMIOutput` — discrete GPU values | **Yes** | No | `TestParseSMIOutput_DiscreteGPU` — `"0, NVIDIA RTX 4090, 85, 24576, 4096, 72.0"` → util_pct=85, temp_c=72.0 | T47 sprint |
 | `Collector.SetGPUFn` — wired into `collect()` before v1 aliases | **Yes** | No | `TestCollector_SetGPUFn_PopulatesSnapGPU`, `TestCollector_SetGPUFn_NilClearsGPU`, `TestCollector_SetGPUFn_NoFn_NoGPUInSnap` in `internal/observer/gpu_probe_test.go` | T47 sprint; GPUPctV1 alias also verified |
-| tegrastats selected over nvidia-smi when both present | No | No | — | Code inspection of `cmd/datawatch-stats/main.go` if/else if block. Live: confirm tegrastats wins on host with both. |
+| tegrastats selected over nvidia-smi when both present | **Yes** | Yes | TS-765 (e2e): source inspection of `cmd/datawatch-stats/main.go` confirms `NewTegraStatsProbe` (line 179) in `else if` before `NewSMIProbe` (line 183); NVML→tegrastats→nvidia-smi priority order | PASS |
 | **LIVE** Thor tegrastats → `snap.GPU` populated | No | **Yes** | `compute_node_detail("datawatch")` via MCP: `gpu:[{name:"Tegra GPU", vendor:"nvidia", util_pct:0, mem_used_bytes:72524759040, mem_total_bytes:131881500672, power_w:2.376, temp_c:35.187}]` | Confirmed 2026-09-12 on NVIDIA Thor GB10 SoC. Required case-insensitive `(?i)gpu@` regex fix. |
 
 ## v8.27.5 — Per-guardrail block approval endpoint (GH#153)

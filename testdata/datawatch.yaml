@@ -46,7 +46,7 @@ memory:
 
 autonomous:
   enabled: true
-  planning_backend: ollama-johnnyjohnny
+  planning_backend: ollama
 
 council:
   enabled: true
