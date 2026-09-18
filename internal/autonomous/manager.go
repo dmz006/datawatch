@@ -935,17 +935,20 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	return updated, nil
 }
 
-// ResetToDraft (v8.20.1) resets a cancelled PRD back to draft so the
-// operator can reconfigure the backend and re-decompose. Stories and
-// tasks are cleared so the next Decompose starts fresh. Only allowed
-// on PRDCancelled; all other statuses are rejected.
+// ResetToDraft resets a PRD back to draft so the operator can reconfigure
+// the backend and re-decompose. Stories and tasks are cleared so the next
+// Decompose starts fresh. Blocked only while a run is in flight (running /
+// planning) or when the PRD has been archived.
 func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(id)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
-	if prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is not cancelled; only cancelled PRDs can be reset to draft", id, prd.Status)
+	switch prd.Status {
+	case PRDRunning, PRDActive, PRDPlanning:
+		return nil, fmt.Errorf("prd %q is %s; stop it before resetting to draft", id, prd.Status)
+	case PRDArchived:
+		return nil, fmt.Errorf("prd %q is archived and cannot be reset", id)
 	}
 	now := time.Now()
 	prd.Status = PRDDraft
@@ -956,7 +959,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	prd.UpdatedAt = now
 	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 		At: now, Kind: "reset_to_draft", Actor: actor,
-		Note: fmt.Sprintf("reset from cancelled by %s", actor),
+		Note: fmt.Sprintf("reset from %s by %s", prd.Status, actor),
 	}))
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

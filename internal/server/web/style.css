@@ -4418,6 +4418,12 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   color: #fff;
 }
 
+/* On narrow phone screens hide the text labels on action buttons so the
+   meta row doesn't wrap — icon only is enough (title tooltip carries meaning). */
+@media (max-width: 480px) {
+  .session-info-bar .meta .btn-label { display: none; }
+}
+
 /* Saved commands quick-send panel */
 .saved-cmds-quick {
   display: flex;

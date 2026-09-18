@@ -2798,9 +2798,10 @@ function renderSessionDetail(sessionId) {
   }
 
   // BL359 — Restart is available on all states.
-  const _restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>`;
-  const _stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`;
-  const _deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`;
+  // btn-label spans allow CSS to hide text on narrow screens (mobile).
+  const _restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635;<span class="btn-label"> ${escHtml(t('action_restart')||'Restart')}</span></button>`;
+  const _stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632;<span class="btn-label"> ${escHtml(t('action_stop')||'Stop')}</span></button>`;
+  const _deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465;<span class="btn-label"> ${escHtml(t('action_delete')||'Delete')}</span></button>`;
   const actionButtons = isActive
     ? _stopBtn + _restartBtn
     : isDone
@@ -11266,12 +11267,18 @@ window.refreshLLMModelField = function(wrapId, innerId, backendId, currentValue)
   if (!wrap || !inner || !backendEl) return;
   const backend = backendEl.value || '';
   const models = (state._availableModels || {})[backend] || [];
-  if (!backend || models.length === 0) {
+  if (!backend) {
     wrap.style.display = 'none';
     inner.innerHTML = '';
     return;
   }
   wrap.style.display = '';
+  if (models.length === 0) {
+    // Backend selected but no fetched model list (goose, claude-code, shell, etc.)
+    // Fall through to show a free-text input so the operator can type a model name.
+    inner.innerHTML = `<input type="text" class="form-input" style="font-size:12px;width:100%;padding:3px 6px;" placeholder="(backend default)" value="${escHtml(currentValue||'')}" />`;
+    return;
+  }
   // For OpenCode backends, fall back to the server-declared default model
   // when the operator hasn't picked one yet.
   const isOC = backend === 'opencode' || backend === 'opencode-acp' || backend === 'opencode-prompt';
