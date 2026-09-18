@@ -828,6 +828,7 @@
   "prd_new_backend_label": "Backend",
   "prd_new_effort_label": "Aufwand",
   "prd_new_model_label": "Modell (optional)",
+  "prd_new_planning_label": "Planungs-Backend (Zerlegung — nur ollama/openwebui, leer = globaler Standard)",
   "prd_new_spec_label": "Spezifikation — Feature auf Englisch beschreiben",
   "prd_new_spec_ph": "Eine CACHE-Spalte zu /api/stats hinzufügen…",
   "prd_new_title": "Neues Automaton",

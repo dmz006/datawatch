@@ -1475,15 +1475,35 @@ body {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.prd-story-card.expanded {
+  border-color: rgba(96,165,250,0.35);
 }
 .prd-story-card-header {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.prd-story-card-header:hover {
+  background: rgba(96,165,250,0.04);
+}
+.prd-story-chevron {
+  color: var(--text2);
+  font-size: 11px;
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.prd-story-body {
+  padding: 2px 12px 10px;
+  border-top: 1px solid var(--border);
 }
 .prd-story-title {
   font-size: 13px;

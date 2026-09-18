@@ -10094,6 +10094,17 @@ function renderStory(prd, story) {
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
   const tasks = (story.tasks || []).map(t => renderTask(prd, story, t, editable)).join('');
   const conflicts = story._conflictSet || {};
+  const storyID = story.id || '';
+
+  // Accordion expand state — active/running stories open by default; others closed.
+  state._prdStoryExpanded = state._prdStoryExpanded || {};
+  if (!(storyID in state._prdStoryExpanded)) {
+    const activeStatuses = ['running','in_progress','active','awaiting_approval','verifying','running_tests'];
+    state._prdStoryExpanded[storyID] = activeStatuses.includes(story.status || '');
+  }
+  const isExpanded = !!state._prdStoryExpanded[storyID];
+  const chevron = isExpanded ? '▾' : '▸';
+
   const verdictsRow = story.verdicts && story.verdicts.length
     ? `<div class="prd-story-verdicts">${renderVerdicts(story.verdicts)}</div>`
     : '';
@@ -10104,7 +10115,7 @@ function renderStory(prd, story) {
   const approveFn = `_prdStoryApprove(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
   const rejectFn  = `_prdStoryReject(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
   const arBtns = showAR
-    ? `<span class="prd-story-ar-group">
+    ? `<span class="prd-story-ar-group" onclick="event.stopPropagation()">
          <button class="prd-story-ar-btn approve" onclick="${escHtml(approveFn)}" title="Approve this story">&#10003; Approve</button>
          <button class="prd-story-ar-btn reject"  onclick="${escHtml(rejectFn)}"  title="Reject this story">&#10005; Reject</button>
        </span>`
@@ -10116,7 +10127,7 @@ function renderStory(prd, story) {
   const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
   const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')})`;
   const editIcons = editable
-    ? `<span class="prd-story-edit-group">
+    ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">
          <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
@@ -10161,19 +10172,22 @@ function renderStory(prd, story) {
     ? `<div class="prd-story-desc">${escHtml(story.description)}</div>`
     : '';
 
-  return `<div class="prd-story-card" data-story-id="${escHtml(story.id)}">
-    <div class="prd-story-card-header">
-      <strong class="prd-story-title">${escHtml(story.title || story.id)}</strong>
+  return `<div class="prd-story-card${isExpanded ? ' expanded' : ''}" data-story-id="${escHtml(storyID)}">
+    <div class="prd-story-card-header" onclick="_prdToggleStory('${escHtml(storyID)}')" title="${isExpanded ? 'Collapse story' : 'Expand story'}">
+      <span class="prd-story-chevron">${chevron}</span>
+      <strong class="prd-story-title">${escHtml(story.title || storyID)}</strong>
       ${statusPill}${profPill}${llmPill}
       <span class="prd-story-header-spacer"></span>
       ${cancelStoryBtn}${arBtns}${editIcons}
     </div>
-    ${verdictsRow}
-    ${desc}
-    ${filesPlannedRow}
-    ${story.rejected_reason ? `<div class="prd-story-rejected">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
-    ${readOnlyExtras}
-    ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
+    <div class="prd-story-body"${isExpanded ? '' : ' hidden'}>
+      ${verdictsRow}
+      ${desc}
+      ${filesPlannedRow}
+      ${story.rejected_reason ? `<div class="prd-story-rejected">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
+      ${readOnlyExtras}
+      ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
+    </div>
   </div>`;
 }
 
@@ -10548,6 +10562,30 @@ function _prdToggleTask(taskID) {
   }
 }
 window._prdToggleTask = _prdToggleTask;
+
+function _prdToggleStory(storyID) {
+  state._prdStoryExpanded = state._prdStoryExpanded || {};
+  state._prdStoryExpanded[storyID] = !state._prdStoryExpanded[storyID];
+  const card = document.querySelector('.prd-story-card[data-story-id="' + CSS.escape(storyID) + '"]');
+  if (card) {
+    const expanded = state._prdStoryExpanded[storyID];
+    card.classList.toggle('expanded', expanded);
+    const header = card.querySelector('.prd-story-card-header');
+    if (header) header.title = expanded ? 'Collapse story' : 'Expand story';
+    const chevron = card.querySelector('.prd-story-chevron');
+    if (chevron) chevron.textContent = expanded ? '▾' : '▸';
+    const body = card.querySelector('.prd-story-body');
+    if (body) body.hidden = !expanded;
+    return;
+  }
+  // Fallback: card not in DOM — full re-render.
+  if (_automataDetailId && typeof renderPRDDetailView === 'function') {
+    renderPRDDetailView(_automataDetailId);
+  } else if (typeof _refreshAutomataOrPRD === 'function') {
+    _refreshAutomataOrPRD();
+  }
+}
+window._prdToggleStory = _prdToggleStory;
 
 // BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on
 // stories + tasks. Color-coded by outcome with a tooltip showing

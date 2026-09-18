@@ -828,6 +828,7 @@
   "prd_new_backend_label": "Backend",
   "prd_new_effort_label": "Esfuerzo",
   "prd_new_model_label": "Modelo (opcional)",
+  "prd_new_planning_label": "Backend de planificación (descomposición — solo ollama/openwebui, vacío = predeterminado global)",
   "prd_new_spec_label": "Spec — describa la funcionalidad en inglés llano",
   "prd_new_spec_ph": "Agregar una columna CACHE a /api/stats…",
   "prd_new_title": "Nuevo Automaton",

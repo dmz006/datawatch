@@ -828,6 +828,7 @@
   "prd_new_backend_label": "バックエンド",
   "prd_new_effort_label": "努力レベル",
   "prd_new_model_label": "モデル（任意）",
+  "prd_new_planning_label": "計画バックエンド（分解 — ollama/openwebui のみ、空 = グローバルデフォルト）",
   "prd_new_spec_label": "仕様 — 機能を平易な言葉で説明",
   "prd_new_spec_ph": "/api/statsにCACHE列を追加…",
   "prd_new_title": "新しいAutomaton",
