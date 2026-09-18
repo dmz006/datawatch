@@ -51,7 +51,7 @@ Added in the current release cycle. Backends: ollama, openai, openai\_compat.
 | MCP `vision_describe` tool | No | No | — | MCP tool wires directly to the same HTTP handler; no standalone unit test. Requires a running daemon with vision enabled. |
 | Router image injection (comms → `msg.Text`) | Yes | No | `internal/router/bl368_vision_test.go` (5 tests: CmdRemember injection, plain text, non-command regression) | Verifies `Parse()` still recognises `remember:` after image description is injected. Live test with an actual image attachment via SMS or Matrix not yet performed. |
 | `AcceptsImages` manifest field (skills) | Yes | No | `internal/skills/manifest_test.go` (4 tests: true/false/default/no-extra-leak) | Manifest parsing verified. Live test with a skill that declares `accepts_images: true` receiving an image context not yet performed. |
-| Council `image_path` field (`POST /api/council/run`) | No | No | — | Wired in `internal/server/council.go`; no dedicated unit test for the image injection path. Requires a running daemon with vision enabled and a valid local file path. |
+| Council `image_path` field (`POST /api/council/run`) | **Yes** | No | `TestBL368_CouncilRun_ImagePath_PrependedToProposal`, `TestBL368_CouncilRun_ImagePath_FileNotFound_Returns400`, `TestBL368_CouncilRun_ImagePath_VisionerError_Returns500` in `internal/server/bl368_council_image_path_test.go` — T47 sprint | Wired in `internal/server/council.go`; 3 unit tests cover happy path + error cases. |
 
 ---
 
@@ -116,9 +116,9 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | **Yes** | No | `TestBL321_Decompose_FallsBackToGlobal_WhenProfileEmpty` in `internal/autonomous/bl321_decomp_priority_test.go` | T47 sprint; empty profile → cfg.PlanningBackend used |
 | `Decompose()` with opencode backend uses session path with codebase tool access | No | No | — | Unit test needed: decomposeFnSession called, PlanningPromptSession used, output file read. |
 | `SetPRDLLM` persists `DecompositionProfile` field | **Yes** | No | `TestBL320_SetPRDLLM_PersistsDecompositionProfile`, `TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile` in `internal/autonomous/bl320_decomp_profile_test.go` | T47 sprint; decision log check + store round-trip |
-| `set_llm` endpoint: unknown `decomposition_profile` returns 400 | No | No | — | Unit test needed: POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
-| `set_llm` endpoint: valid `decomposition_profile` returns 200 | No | No | — | POST with known inference-registry name → 200, field persisted. Applies to ollama, openwebui, opencode, claude-code. |
-| CLI `prd-set-llm --decomposition-profile` round-trip | No | No | — | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
+| `set_llm` endpoint: unknown `decomposition_profile` returns 400 | **Yes** | No | `TestBL320_SetLLM_UnknownDecompProfile_Returns400` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
+| `set_llm` endpoint: valid `decomposition_profile` returns 200 | **Yes** | No | `TestBL320_SetLLM_ValidDecompProfile_Returns200` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with known inference-registry name → 200, field persisted. |
+| CLI `prd-set-llm --decomposition-profile` round-trip | No | No | — | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. TS-740 (e2e) |
 | `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | No | No | — | Code inspection confirmed; live test requires PRD run with mismatched backends. |
 | PWA Settings modal — planning backend picker accepts all configured LLMs | No | No | — | Manual: "Planning backend" picker should show opencode, claude-code, ollama variants — all registered LLMs. |
 | **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | No | No | — | POST `set_llm` with `decomposition_profile=opencode`; trigger decompose; confirm opencode session spawned, codebase read. |
