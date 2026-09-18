@@ -112,8 +112,8 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 
 | Test case | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `Decompose()` uses `DecompositionProfile` when set, priority over global | No | No | — | Unit test needed: PRD with non-empty `DecompositionProfile` + cfg.PlanningBackend set → decomposeFn called with PRD value. |
-| `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | No | No | — | Unit test needed: PRD with empty `DecompositionProfile`, cfg.PlanningBackend set → decomposeFn called with cfg value. |
+| `Decompose()` uses `DecompositionProfile` when set, priority over global | **Yes** | No | `TestBL321_Decompose_UsesDecompositionProfile_OverGlobal`, `TestBL321_Decompose_PRDProfileOverridesGlobal_BothNonEmpty` in `internal/autonomous/bl321_decomp_priority_test.go` | T47 sprint; per-PRD profile wins over cfg.PlanningBackend |
+| `Decompose()` falls back to global `PlanningBackend` when `DecompositionProfile` is empty | **Yes** | No | `TestBL321_Decompose_FallsBackToGlobal_WhenProfileEmpty` in `internal/autonomous/bl321_decomp_priority_test.go` | T47 sprint; empty profile → cfg.PlanningBackend used |
 | `Decompose()` with opencode backend uses session path with codebase tool access | No | No | — | Unit test needed: decomposeFnSession called, PlanningPromptSession used, output file read. |
 | `SetPRDLLM` persists `DecompositionProfile` field | **Yes** | No | `TestBL320_SetPRDLLM_PersistsDecompositionProfile`, `TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile` in `internal/autonomous/bl320_decomp_profile_test.go` | T47 sprint; decision log check + store round-trip |
 | `set_llm` endpoint: unknown `decomposition_profile` returns 400 | No | No | — | Unit test needed: POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
@@ -213,7 +213,7 @@ Added in v8.25.3. `internal/observer/gpu_tegrastats.go` and `internal/observer/g
 | `parseTegraStatsLine` — returns nil when no GPU temp found | **Yes** | No | `TestParseTegraStatsLine_NoGPUTemp_ReturnsNil` — line without `gpu@` → nil | T47 sprint |
 | `parseSMIOutput` — `[N/A]` fields become 0 (Tegra unified memory) | **Yes** | No | `TestParseSMIOutput_TegraUnifiedMemory_NAFields` — `"0, Tegra GPU, [N/A], [N/A], [N/A], 45.0"` → mem_used=0, mem_total=0, temp_c=45.0 | T47 sprint |
 | `parseSMIOutput` — discrete GPU values | **Yes** | No | `TestParseSMIOutput_DiscreteGPU` — `"0, NVIDIA RTX 4090, 85, 24576, 4096, 72.0"` → util_pct=85, temp_c=72.0 | T47 sprint |
-| `Collector.SetGPUFn` — wired into `collect()` before v1 aliases | No | No | — | Code inspection of `internal/observer/collector.go`; `snap.GPU` populated when `gpuFn != nil`. Unit test needed. |
+| `Collector.SetGPUFn` — wired into `collect()` before v1 aliases | **Yes** | No | `TestCollector_SetGPUFn_PopulatesSnapGPU`, `TestCollector_SetGPUFn_NilClearsGPU`, `TestCollector_SetGPUFn_NoFn_NoGPUInSnap` in `internal/observer/gpu_probe_test.go` | T47 sprint; GPUPctV1 alias also verified |
 | tegrastats selected over nvidia-smi when both present | No | No | — | Code inspection of `cmd/datawatch-stats/main.go` if/else if block. Live: confirm tegrastats wins on host with both. |
 | **LIVE** Thor tegrastats → `snap.GPU` populated | No | **Yes** | `compute_node_detail("datawatch")` via MCP: `gpu:[{name:"Tegra GPU", vendor:"nvidia", util_pct:0, mem_used_bytes:72524759040, mem_total_bytes:131881500672, power_w:2.376, temp_c:35.187}]` | Confirmed 2026-09-12 on NVIDIA Thor GB10 SoC. Required case-insensitive `(?i)gpu@` regex fix. |
 

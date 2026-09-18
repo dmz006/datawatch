@@ -114,3 +114,51 @@ func TestParseSMIOutput_EmptyInput(t *testing.T) {
 		t.Errorf("expected 0 GPUs for empty input, got %d", len(gpus))
 	}
 }
+
+// Tests for Collector.SetGPUFn (gpu_probe_test.go) — v8.25.3
+
+func TestCollector_SetGPUFn_PopulatesSnapGPU(t *testing.T) {
+	fakeGPU := []GPU{{
+		Name:    "Test GPU",
+		Vendor:  "nvidia",
+		UtilPct: 42.0,
+		TempC:   70.0,
+	}}
+
+	c := NewCollector(DefaultConfig())
+	c.SetGPUFn(func() []GPU { return fakeGPU })
+
+	snap := c.collect()
+	if len(snap.GPU) != 1 {
+		t.Fatalf("expected 1 GPU in snap, got %d", len(snap.GPU))
+	}
+	if snap.GPU[0].UtilPct != 42.0 {
+		t.Errorf("GPU util_pct: want 42.0, got %v", snap.GPU[0].UtilPct)
+	}
+	// v1 alias should be populated from first GPU
+	if snap.GPUPctV1 != 42.0 {
+		t.Errorf("GPUPctV1 (v1 alias): want 42.0, got %v", snap.GPUPctV1)
+	}
+}
+
+func TestCollector_SetGPUFn_NilClearsGPU(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	c.SetGPUFn(func() []GPU {
+		return []GPU{{Name: "Test GPU", Vendor: "nvidia"}}
+	})
+	c.SetGPUFn(nil) // clear
+
+	snap := c.collect()
+	if len(snap.GPU) != 0 {
+		t.Errorf("expected 0 GPUs after SetGPUFn(nil), got %d", len(snap.GPU))
+	}
+}
+
+func TestCollector_SetGPUFn_NoFn_NoGPUInSnap(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	// gpuFn not set — snap.GPU should be empty
+	snap := c.collect()
+	if len(snap.GPU) != 0 {
+		t.Errorf("expected 0 GPUs when no gpuFn set, got %d", len(snap.GPU))
+	}
+}
