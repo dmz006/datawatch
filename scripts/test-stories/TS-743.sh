@@ -4,23 +4,24 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-743"
 
-story_preflight || exit 0
+story_preflight "surface:api feature:automata" || exit 0
 
 # Create a PRD
-prd_body=$(api POST /api/autonomous/prds '{"spec":"test spec for TS-743 backend separation","backend":"claude-code","actor":"ts-743"}')
+prd_body=$(api POST /api/autonomous/prds '{"spec":"test spec for TS-743 backend separation","backend":"claude-code","actor":"ts-743","project_dir":"/tmp"}')
 prd_id=$(echo "$prd_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
 if [[ -z "$prd_id" ]]; then
   ko "Could not create PRD: $prd_body"
-  finish_story; exit 0
+  exit 0
 fi
 
 # Set the decomposition_profile to something different from the execution backend
-set_body=$(api POST "/api/autonomous/prds/${prd_id}/set_llm" '{"backend":"ollama","decomposition_profile":"claude-code","actor":"ts-743"}')
-set_code=$(api_code POST "/api/autonomous/prds/${prd_id}/set_llm" '{"backend":"ollama","decomposition_profile":"claude-code","actor":"ts-743"}')
+set_raw=$(api_code POST "/api/autonomous/prds/${prd_id}/set_llm" '{"backend":"ollama","decomposition_profile":"claude-code","actor":"ts-743"}')
+set_code=$(echo "$set_raw" | grep -oP '(?<=__HTTP_CODE_)\d+(?=__)' | tail -1)
+set_body=$(echo "$set_raw" | sed 's/__HTTP_CODE_[0-9]*__//' | tr -d '\n')
 
 if [[ "$set_code" != "200" ]]; then
-  ko "set_llm returned $set_code: $set_body"
-  finish_story; exit 0
+  ko "set_llm returned HTTP $set_code"
+  exit 0
 fi
 
 # Fetch the PRD and verify both fields are stored independently
@@ -30,13 +31,12 @@ got_profile=$(echo "$prd_get" | python3 -c "import sys,json; print(json.load(sys
 
 if [[ "$got_backend" != "ollama" ]]; then
   ko "Expected backend=ollama, got: $got_backend (full: $prd_get)"
-  finish_story; exit 0
+  exit 0
 fi
 if [[ "$got_profile" != "claude-code" ]]; then
   ko "Expected decomposition_profile=claude-code, got: $got_profile (full: $prd_get)"
-  finish_story; exit 0
+  exit 0
 fi
 
 ok "PRD $prd_id: backend=$got_backend decomposition_profile=$got_profile (independent storage confirmed)"
-save_evidence "ts743_prd.json" "$prd_get"
-finish_story
+save_evidence "$CURRENT_STORY" "ts743_prd.json" "$prd_get"

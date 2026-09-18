@@ -135,5 +135,20 @@ ntfy:
 plugins:
   enabled: true
 
+web_search:
+  enabled: true
+  provider: searxng
+  url: http://datawatch:3001
+  engine: bing
+
+goose:
+  enabled: false
+  binary: goose
+
+opencode:
+  enabled: false
+  binary: opencode
+  default_model: opencode/big-pickle
+
 update:
   enabled: false

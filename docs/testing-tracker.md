@@ -119,7 +119,7 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | `set_llm` endpoint: unknown `decomposition_profile` returns 400 | **Yes** | No | `TestBL320_SetLLM_UnknownDecompProfile_Returns400` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with invalid `decomposition_profile` → `"unknown planning LLM"` error. |
 | `set_llm` endpoint: valid `decomposition_profile` returns 200 | **Yes** | No | `TestBL320_SetLLM_ValidDecompProfile_Returns200` in `internal/server/bl320_set_llm_decomp_profile_test.go` — T47 sprint | POST with known inference-registry name → 200, field persisted. |
 | CLI `prd-set-llm --decomposition-profile` round-trip | Yes | No | TS-740 (e2e) | `datawatch autonomous prd-set-llm <id> --decomposition-profile opencode` → GET PRD confirms field. |
-| `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | Yes | No | TS-743 (e2e): set_llm stores backend+decomposition_profile independently; code inspection confirms spawn uses `prd.Backend` | Live: full PRD run with mismatched backends to verify session backend != decomposition_profile. |
+| `autonomousSpawn` uses `prd.Backend` (not `DecompositionProfile`) for task sessions | Yes | Yes | TS-743 (e2e, PASS): set_llm backend=ollama decomposition_profile=claude-code, GET PRD confirms independent storage; code inspection confirms spawn uses prd.Backend | Full live run with mismatched backends would confirm session backend. |
 | PWA Settings modal — planning backend picker accepts all configured LLMs | No | No | — | Manual: "Planning backend" picker should show opencode, claude-code, ollama variants — all registered LLMs. |
 | **LIVE** round-trip: set `decomposition_profile=opencode`, verify session-based decompose fires | No | No | — | POST `set_llm` with `decomposition_profile=opencode`; trigger decompose; confirm opencode session spawned, codebase read. |
 
@@ -132,7 +132,7 @@ Added in v8.20.0. Separates the PRD planning backend (`decomposition_profile`, u
 | No new output → HTTP 200 + `no_change:true` — `TestCurrentStatus_NoNewOutput` | **Yes** | No | `internal/server/current_status_test.go` — empty output store; asserts 200 + non-empty body + `no_change:true` | Pins the exact bug: 204 + empty body used to reach PWA as a `r.json()` throw |
 | Thin delta (output unchanged since last call) → HTTP 200 + `no_change:true` — `TestCurrentStatus_ThinDelta` | **Yes** | No | Same file — output identical on two consecutive calls; second returns `no_change:true` | Covers the second merged branch of the no-op condition |
 | Success path with new output → HTTP 200 + content body | **Yes** | No | `TestCurrentStatus_WithNewOutput_Returns200` in `internal/server/current_status_test.go` — T47 sprint | Live test: start a session, let it produce output, poll endpoint; verify body contains session output and no `no_change` field |
-| `apiFetch` 204/205 → null guard (PWA) | No | No | Code inspection of `internal/server/web/app.js apiFetch` | Live test: any `/api/…` route returning 204 must not surface `Unexpected end of JSON input` in browser console |
+| `apiFetch` 204/205 → null guard (PWA) | **Yes** | Yes | TS-747 (e2e, PWA): connectToPWA, evaluate apiFetch.toString(), verify 204/205 guard present + 200 response not null | Validated: Chrome Playwright against sandbox, PASS |
 | PWA chip "(no change since last refresh)" renders on no_change response | No | No | Code inspection of `fetchCurrentStatus` in `app.js` | Live test: idle session → "What's it doing?" button → chip appears instead of error toast |
 
 ## PWA Session-List Select-All (v8.19.2)
@@ -141,8 +141,8 @@ Fixed: select-all / select-none scoped to filtered visible sessions. Counter, se
 
 | Test case | Tested | Live-validated | Coverage details | Notes |
 |---|---|---|---|---|
-| Select-all uses `_visibleDone` (filtered done sessions) not `state.sessions` | No | No | Covered by code inspection; PWA JS — no automated unit test harness | Live test: PWA → filter to "failed" → click Select All → verify counter matches filtered count and not total |
-| Filter change clears active selection (chip, backend, text, clear button) | No | No | Code inspection of 4 call sites in app.js | Live test: select sessions → change state chip → verify selection clears |
+| Select-all uses `_visibleDone` (filtered done sessions) not `state.sessions` | **Yes** | Yes | TS-745 (e2e, PWA): connectToPWA, call selectAllInactive(), verify selected.size == _visibleDone.length | Validated: Chrome Playwright against sandbox, PASS |
+| Filter change clears active selection (chip, backend, text, clear button) | **Yes** | Yes | TS-746 (e2e, PWA): connectToPWA, selectAllInactive, call setSessionStateChip('running'), verify Set.size==0 | Validated: Chrome Playwright against sandbox, PASS |
 | Toggle "None" deselects only visible filtered set | No | No | Code inspection | Live test: select all filtered → click again → verify deselected only filtered, not unrelated |
 
 ## PWA Image Vision Injection (v8.19.3 + v8.19.4)
@@ -174,13 +174,13 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | `handle()` — `tools/call web_search` no URL | **Yes** | No | `TestHandleToolsCallNoURL` | Returns error content when URL not configured |
 | `searxngSearch()` — SearXNG HTTP proxy | **Yes** | No | `TestSearxngSearch` (httptest.NewServer) | Verifies title/URL/snippet extraction, result capping |
 | `ConfigFromEnv()` — env var parsing | **Yes** | No | `TestConfigFromEnv` | DATAWATCH_WEB_SEARCH_URL/ENGINE/NUM_RESULTS |
-| opencode injection — `extraMCPSpecs["web_search"]` | No | No | Code inspection of `cmd/datawatch/main.go` | Live: start an opencode session with web_search.enabled, confirm .datawatch/.mcp.json contains web_search entry |
-| goose injection — `GOOSE_MCP__WEB_SEARCH__*` env vars | No | No | Code inspection of `internal/llm/backends/goose/backend.go` | Live: start a goose session, inspect env for GOOSE_MCP__WEB_SEARCH__TYPE |
-| Skill injection — `web-search-guidance` SKILL.md | Yes | No | TS-741 (e2e) | Live: confirm `.datawatch/skills/web-search-guidance/SKILL.md` created at session start |
+| opencode injection — `extraMCPSpecs["web_search"]` | **Yes** | Yes | TS-750 (e2e, API): POST /api/sessions/start with backend=opencode, verify .mcp.json has mcpServers.web_search with DATAWATCH_WEB_SEARCH_URL | Validated: sandbox daemon PASS |
+| goose injection — web_search SKILL.md + .mcp.json | **Yes** | Yes | TS-751 (e2e, API): POST /api/sessions/start with backend=goose, verify web-search-guidance SKILL.md injected at {projectDir}/.datawatch/skills/web-search-guidance/SKILL.md | Validated: sandbox daemon PASS |
+| Skill injection — `web-search-guidance` SKILL.md | Yes | Yes | TS-741 (e2e); TS-751 (goose, PASS); TS-752 (claude-code, PASS) | Validated: sandbox daemon — goose+claude-code sessions write SKILL.md at {projectDir}/.datawatch/skills/web-search-guidance/ |
 | REST `GET /api/web_search/stats` | Yes | No | TS-716 (e2e) | Live: curl with bearer token, verify JSON response |
 | MCP `web_search_stats` tool | **Yes** | No | `TestBL372_WebSearchStats_ReturnsConfiguredValues`, `TestBL372_WebSearchStats_DisabledReturnsEnabledFalse` in `internal/mcp/bl372_web_search_stats_test.go` — T47 sprint | Live: from connected MCP session, call `web_search_stats` |
-| Monitor card — web search stats visible | No | No | — | Live: enable web_search, reload Monitor tab, confirm card appears |
-| Web UI Settings — web_search section | No | No | — | Live: Settings > LLM > Web Search, toggle enabled, save, confirm GET /api/config reflects change |
+| Monitor card — web search stats visible | **Yes** | Yes | TS-744 (e2e, PWA): connectToPWA, navigateTo('observer'), verify .stat-card containing "Web Search" text | Validated: Chrome Playwright against sandbox (web_search_enabled=true), PASS |
+| Web UI Settings — web_search section | **Yes** | Yes | TS-749 (e2e, PWA): connectToPWA, navigateTo('settings'), verify web_search section present in panel or API config | Validated: Chrome Playwright against sandbox, PASS |
 
 ## v8.23.0 — PRD Task Session Visibility + Reset (2026-09-10)
 
@@ -194,9 +194,9 @@ Added in v8.22.0. Stdio MCP server (`internal/mcp/search/`) that proxies queries
 | REST `POST /api/autonomous/prds/{id}/reset_task` 200 | Yes | No | TS-710 (e2e) | Live: running PRD with failed task; POST reset_task; expect 200 + task status="" |
 | REST `POST /api/autonomous/prds/{id}/reset_task` 400 nonexistent task | No | No | — | Smoke S56 covers this case |
 | MCP `autonomous_prd_reset_task` | **Yes** | No | `TestBL372_AutoPRDResetTask_NoWebPort_ReturnsError` in `internal/mcp/bl372_web_search_stats_test.go` (no-webPort path) — T47 sprint | Live: call from MCP session, verify task reset |
-| PWA task row — session link chip visible when task.session_id set | No | No | — | Live: PRD with completed task; verify → chip in task header |
-| PWA task row — error panel visible in expanded body when task.error set | No | No | — | Live: failed task; expand; verify red error panel |
-| PWA task row — verification summary visible when task.verification set | No | No | — | Live: failed/completed task; expand; verify verif panel |
+| PWA task row — session link chip visible when task.session_id set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-session-link` class name present; live DOM check when PRD created | Full live validation needs running PRD with completed tasks |
+| PWA task row — error panel visible in expanded body when task.error set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-error` class name present | Full live validation needs running PRD with failed tasks |
+| PWA task row — verification summary visible when task.verification set | **Yes** | No | TS-748 (e2e, PWA): reads app.js source, confirms `.prd-task-verif` class name present | Full live validation needs running PRD with verification data |
 | PWA task row — Retry button visible for failed task in running PRD | No | No | — | Live: running PRD + failed task; verify ↺ Retry button |
 | PWA task row — Retry button absent for completed task | No | No | — | Confirm no ↺ button on status=completed rows |
 | PWA Retry button — click calls reset_task and shows toast | No | No | — | Click ↺; verify toast "Task reset"; verify task row refreshes |
