@@ -46,6 +46,7 @@ func TestBL35_ProjectSummary_RequiresAbsoluteDir(t *testing.T) {
 
 func TestBL35_ProjectSummary_NoGitNoSessions(t *testing.T) {
 	s := bl90Server(t)
+	s.cfg.Session.RootPath = "/tmp" // allow t.TempDir() paths
 	dir := t.TempDir()
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/summary?dir="+dir, nil)
@@ -66,6 +67,7 @@ func TestBL35_ProjectSummary_NoGitNoSessions(t *testing.T) {
 
 func TestBL35_ProjectSummary_WithSessions(t *testing.T) {
 	s := bl90Server(t)
+	s.cfg.Session.RootPath = "/tmp" // allow t.TempDir() paths
 	dir := t.TempDir()
 
 	// Seed two sessions for this dir, one for elsewhere.
@@ -120,6 +122,7 @@ func TestBL35_ProjectSummary_GitRepo(t *testing.T) {
 	mustGit("commit", "--allow-empty", "-m", "initial")
 
 	s := bl90Server(t)
+	s.cfg.Session.RootPath = "/tmp" // allow t.TempDir() paths
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/summary?dir="+dir, nil)
 	rr := httptest.NewRecorder()
