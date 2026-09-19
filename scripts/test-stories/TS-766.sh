@@ -4,13 +4,13 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-766"
 
-story_preflight "surface:api feature:automata live:yes" || exit 0
+story_preflight "surface:api feature:automata live:yes" || return 0
 
 # Verify opencode is available.
 opencode_bin="${OPENCODE_BIN:-/home/dmz/.opencode/bin/opencode}"
 if ! command -v opencode &>/dev/null && [[ ! -x "$opencode_bin" ]]; then
   skip "opencode binary not found — skip live session-based decompose test"
-  exit 0
+  return 0
 fi
 
 # Check autonomous is enabled.
@@ -18,7 +18,7 @@ a_cfg=$(api GET /api/autonomous/config)
 a_enabled=$(echo "$a_cfg" | python3 -c "import sys,json; print(json.load(sys.stdin).get('enabled','false'))" 2>/dev/null || echo false)
 if [[ "$a_enabled" != "True" && "$a_enabled" != "true" ]]; then
   skip "autonomous disabled in sandbox — skip"
-  exit 0
+  return 0
 fi
 
 # Create a PRD with project_dir=/tmp (opencode needs a real dir).
@@ -27,7 +27,7 @@ prd_body=$(api POST /api/autonomous/prds \
 prd_id=$(echo "$prd_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
 if [[ -z "$prd_id" ]]; then
   ko "Could not create PRD for opencode decompose test: $prd_body"
-  exit 0
+  return 0
 fi
 
 # Set decomposition_profile=opencode to force session-based decompose path.
@@ -36,7 +36,7 @@ set_raw=$(api_code POST "/api/autonomous/prds/${prd_id}/set_llm" \
 set_code=$(echo "$set_raw" | grep -oP '(?<=__HTTP_CODE_)\d+(?=__)' | tail -1)
 if [[ "$set_code" != "200" ]]; then
   ko "set_llm decomposition_profile=opencode returned HTTP $set_code"
-  exit 0
+  return 0
 fi
 
 # Trigger async decompose.
@@ -44,7 +44,7 @@ decomp_raw=$(api_code POST "/api/autonomous/prds/${prd_id}/decompose" '{}')
 decomp_code=$(echo "$decomp_raw" | grep -oP '(?<=__HTTP_CODE_)\d+(?=__)' | tail -1)
 if [[ "$decomp_code" != "202" && "$decomp_code" != "200" ]]; then
   ko "decompose returned HTTP $decomp_code — expected 202"
-  exit 0
+  return 0
 fi
 
 # Poll daemon logs for "decompose-session spawned" with backend=opencode.
@@ -81,7 +81,7 @@ echo "  [TS-766] decision_backend=$decision_backend status=$status"
 if [[ "$status" == "draft" && -z "$spawned_msg" ]]; then
   # Decompose may have failed (opencode timed out) — check the decisions for error
   ko "opencode session-based decompose rolled back to draft — check daemon.log for opencode errors"
-  exit 0
+  return 0
 fi
 
 if [[ -n "$spawned_msg" || "$decision_backend" == "opencode" || "$status" == "planned" || "$status" == "needs_review" ]]; then

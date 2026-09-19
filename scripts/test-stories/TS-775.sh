@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-775"
 
-story_preflight "surface:api feature:goose" || exit 0
+story_preflight "surface:api feature:goose" || return 0
 
 # Pre-check: goose must be configured and binary must exist.
 cfg_raw=$(curl "${curl_args[@]}" "$TEST_TLS/api/config" 2>/dev/null)
@@ -12,11 +12,11 @@ goose_enabled=$(echo "$cfg_raw" | python3 -c "import sys,json; c=json.load(sys.s
 goose_binary=$(echo "$cfg_raw" | python3 -c "import sys,json; c=json.load(sys.stdin); print(c.get('goose',{}).get('binary',''))" 2>/dev/null)
 if [[ "${goose_enabled,,}" != "true" ]]; then
   skip "goose not enabled in daemon config — skip live session spawn"
-  exit 0
+  return 0
 fi
 if [[ ! -x "$goose_binary" ]]; then
   skip "goose binary $goose_binary not executable — skip"
-  exit 0
+  return 0
 fi
 echo "  [TS-775] goose binary=$goose_binary enabled=$goose_enabled"
 
@@ -32,14 +32,14 @@ save_evidence "$CURRENT_STORY" "session.json" "$sess_raw"
 
 if [[ -z "$sess_id" ]]; then
   ko "POST /api/sessions/start with backend=goose returned no id: $sess_raw"
-  exit 0
+  return 0
 fi
 add_cleanup sess "$sess_id"
 
 # Verify backend_family reflects goose.
 if ! echo "$sess_backend" | grep -qi "goose"; then
   ko "session backend_family does not reflect goose: got $sess_backend (session=$sess_id)"
-  exit 0
+  return 0
 fi
 
 # Kill the session to avoid orphan processes.

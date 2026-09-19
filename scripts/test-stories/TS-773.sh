@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-773"
 
-story_preflight "surface:api feature:vision" || exit 0
+story_preflight "surface:api feature:vision" || return 0
 
 # Check vision is enabled in config.
 vis_cfg=$(curl "${curl_args[@]}" "$TEST_TLS/api/config" 2>/dev/null | \
@@ -14,7 +14,7 @@ echo "  [TS-773] vision config: $vis_cfg"
 # Check moondream model is available locally.
 if ! curl -s --max-time 5 http://localhost:11434/api/tags 2>/dev/null | grep -q "moondream"; then
   skip "moondream model not available on localhost:11434 — skip live vision test"
-  exit 0
+  return 0
 fi
 
 # Create a minimal valid PNG (1x1 pixel, white).
@@ -34,7 +34,7 @@ open(sys.argv[1], 'wb').write(make_png(8, 8))
 
 if [[ ! -s "$PNG_FILE" ]]; then
   ko "could not create test PNG file"
-  exit 0
+  return 0
 fi
 echo "  [TS-773] test PNG: $PNG_FILE ($(wc -c < "$PNG_FILE") bytes)"
 
@@ -52,7 +52,7 @@ save_evidence "$CURRENT_STORY" "vision_response.json" "$vis_raw"
 
 if [[ "$vis_code" != "200" ]]; then
   ko "POST /api/vision/describe returned HTTP $vis_code (expected 200): $vis_raw"
-  exit 0
+  return 0
 fi
 
 vis_desc=$(echo "$vis_raw" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('description','')[:80])" 2>/dev/null)
@@ -61,7 +61,7 @@ echo "  [TS-773] description=${vis_desc:0:60} latency_ms=$vis_lat"
 
 if [[ -z "$vis_desc" ]]; then
   ko "vision describe returned no description field: $vis_raw"
-  exit 0
+  return 0
 fi
 
 ok "vision describe live: HTTP 200 latency_ms=$vis_lat description='${vis_desc:0:50}...'"

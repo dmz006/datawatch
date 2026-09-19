@@ -4,13 +4,13 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-778"
 
-story_preflight "surface:api feature:memory" || exit 0
+story_preflight "surface:api feature:memory" || return 0
 
 # ── Part 1: Source inspection — all 5 BL387 callbacks must be called in main.go ──
 main_go="$REPO_ROOT/cmd/datawatch/main.go"
 if [[ ! -f "$main_go" ]]; then
   ko "cmd/datawatch/main.go not found"
-  exit 0
+  return 0
 fi
 
 for fn in SetMemoryVerifierFn SetMemoryScopeSeedFn SetMemoryContextFn SetMemoryCrossSeedFn SetMemoryReportFn; do
@@ -18,7 +18,7 @@ for fn in SetMemoryVerifierFn SetMemoryScopeSeedFn SetMemoryContextFn SetMemoryC
   echo "  [TS-778] $fn wired in main.go: $count occurrences"
   if [[ "$count" -lt 1 ]]; then
     ko "BL387 callback $fn not called in cmd/datawatch/main.go"
-    exit 0
+    return 0
   fi
 done
 save_evidence "$CURRENT_STORY" "wiring_check.txt" "all 5 BL387 callbacks verified in main.go"
@@ -31,7 +31,7 @@ mem_cfg=$(curl "${curl_args[@]}" "$TEST_TLS/api/config" 2>/dev/null | \
 echo "  [TS-778] memory.enabled=$mem_cfg"
 if [[ "${mem_cfg,,}" != "true" ]]; then
   skip "memory not enabled in sandbox config — skip live memoryContextFn test"
-  exit 0
+  return 0
 fi
 
 # Save a memory entry to a project scope.

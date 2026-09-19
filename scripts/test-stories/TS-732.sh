@@ -43,8 +43,10 @@ _story_ts_732() {
   local got_enabled
   got_enabled=$(echo "$cfg2" | python3 -c "import json,sys; print(json.load(sys.stdin).get('goose',{}).get('enabled',''))" 2>/dev/null || echo "")
 
-  # Restore original value
-  api PUT /api/config "{\"goose.enabled\":$orig_enabled}" >/dev/null 2>&1 || true
+  # Restore original value (Python prints True/False uppercase; JSON needs lowercase).
+  local restore_val
+  if [[ "$orig_enabled" == "True" || "$orig_enabled" == "true" ]]; then restore_val=true; else restore_val=false; fi
+  api PUT /api/config "{\"goose.enabled\":$restore_val}" >/dev/null 2>&1 || true
 
   local expected
   if [[ "$new_val" == "true" ]]; then expected="True"; else expected="False"; fi

@@ -4,7 +4,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-754"
 
-story_preflight "surface:api feature:automata live:yes" || exit 0
+story_preflight "surface:api feature:automata live:yes" || return 0
 
 # Create a PRD with a simple spec so decompose completes quickly.
 prd_body=$(api POST /api/autonomous/prds \
@@ -12,7 +12,7 @@ prd_body=$(api POST /api/autonomous/prds \
 prd_id=$(echo "$prd_body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
 if [[ -z "$prd_id" ]]; then
   ko "Could not create PRD: $prd_body"
-  exit 0
+  return 0
 fi
 
 # Trigger async decompose — expect 202 Accepted or 200.
@@ -20,7 +20,7 @@ decomp_raw=$(api_code POST "/api/autonomous/prds/${prd_id}/decompose" '{}')
 decomp_code=$(echo "$decomp_raw" | grep -oP '(?<=__HTTP_CODE_)\d+(?=__)' | tail -1)
 if [[ "$decomp_code" != "202" && "$decomp_code" != "200" ]]; then
   ko "decompose returned HTTP $decomp_code — expected 202"
-  exit 0
+  return 0
 fi
 
 # Poll up to 150s for PRD to leave planning state (planned or needs_review = decompose OK).
@@ -39,20 +39,20 @@ for i in $(seq 1 30); do
   fi
   if [[ "$status" == "draft" ]]; then
     ko "PRD rolled back to draft — decompose LLM call failed (check sandbox logs)"
-    exit 0
+    return 0
   fi
 done
 
 if [[ "$status" != "planned" && "$status" != "needs_review" ]]; then
   ko "PRD still in status=$status after timeout — decompose did not complete"
   save_evidence "$CURRENT_STORY" "ts754_timeout.json" "$prd_detail"
-  exit 0
+  return 0
 fi
 
 if [[ "${stories:-0}" -lt 1 ]]; then
   ko "decompose completed (status=$status) but produced 0 stories"
   save_evidence "$CURRENT_STORY" "ts754_no_stories.json" "$prd_detail"
-  exit 0
+  return 0
 fi
 
 # Verify first story has tasks nested in PRD detail.
@@ -66,7 +66,7 @@ print(len(s[0].get('tasks',[])) if s else 0)
 if [[ "${task_count:-0}" -lt 1 ]]; then
   ko "first story has 0 tasks — ollama did not produce structured tasks"
   save_evidence "$CURRENT_STORY" "ts754_no_tasks.json" "$prd_detail"
-  exit 0
+  return 0
 fi
 
 # Verify decision log shows ollama backend was used for decompose.
