@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.35"
+var Version = "8.33.36"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3805,31 +3805,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					if err := json.Unmarshal(pollBody, &s); err != nil {
 						continue
 					}
+					// Output-file-first: whenever the file exists and has content,
+					// treat the decompose as done regardless of session state.
+					// This handles sessions that write the file then transition
+					// to an unexpected terminal state (failed/killed) or stall
+					// in running/waiting_input without completing normally.
+					if content, ferr := os.ReadFile(outputFile); ferr == nil && len(bytes.TrimSpace(content)) > 0 {
+						fmt.Printf("[decompose-session] %s state=%q, output file ready (%d bytes) — treating as complete\n", startOut.ID, s.State, len(content))
+						return string(content), nil
+					}
 					switch s.State {
 					case "complete":
-						content, err := os.ReadFile(outputFile)
-						if err != nil {
-							return "", fmt.Errorf("decompose session %s completed but output file %s not found: %w", startOut.ID, outputFile, err)
-						}
-						fmt.Printf("[decompose-session] %s complete, read %d bytes from %s\n", startOut.ID, len(content), outputFile)
-						return string(content), nil
-					case "waiting_input":
-						// opencode TUI sessions may reach waiting_input instead of
-						// complete when the TUI renders DATAWATCH_COMPLETE with box-drawing
-						// chars that the screen-capture scan misses, then the opencode
-						// input prompt appears and transitions the session to waiting_input
-						// before the next scan tick can detect the marker. If the output
-						// file exists the decompose succeeded — treat as complete.
-						if _, statErr := os.Stat(outputFile); statErr == nil {
-							content, err := os.ReadFile(outputFile)
-							if err != nil {
-								return "", fmt.Errorf("decompose session %s (waiting_input) output file %s read error: %w", startOut.ID, outputFile, err)
-							}
-							fmt.Printf("[decompose-session] %s waiting_input→complete (output file found), read %d bytes from %s\n", startOut.ID, len(content), outputFile)
-							return string(content), nil
-						}
+						// Output file check above should have caught this; if not,
+						// the session completed but didn't write the file.
+						return "", fmt.Errorf("decompose session %s completed but output file %s not found", startOut.ID, outputFile)
 					case "failed", "killed", "cancelled":
-						return "", fmt.Errorf("decompose session %s ended with state %q", startOut.ID, s.State)
+						return "", fmt.Errorf("decompose session %s ended with state %q and no output file", startOut.ID, s.State)
 					}
 				}
 			}
