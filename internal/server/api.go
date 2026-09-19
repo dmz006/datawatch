@@ -2332,8 +2332,9 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(home, path[1:])
 	}
 
-	// Enforce root path restriction via fileServiceRoot (resolves RootPath → $HOME)
-	root := s.fileServiceRoot()
+	// Directory listing uses sessionRoot (RootPath → $HOME) so the project
+	// directory browser is not clamped to the narrower file-service upload root.
+	root := s.sessionRoot()
 	if err := checkPathTraversal(root, path); err != nil {
 		path = root
 	}
