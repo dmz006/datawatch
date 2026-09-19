@@ -73,10 +73,18 @@ Feature request:
 // Second %s = the raw PRD spec (feature request text).
 const PlanningPromptSession = `You are decomposing a feature request into a structured Product Requirements Document.
 
-This is a coding project. Before writing the plan, explore the actual codebase:
-read relevant source files to understand the existing architecture and patterns,
-check what already exists so tasks don't duplicate existing work, and identify
-the actual file paths that will need to change.
+Before writing the plan, explore the project to understand what already exists —
+read files that are relevant to the feature request (source code, config, docs,
+or whatever the spec calls for).
+
+IMPORTANT: follow the feature request faithfully.
+- If the spec asks for research, research.
+- If the spec asks for implementation, explore source code.
+- Do NOT use prior planning documents, historical PRD outputs, or other
+  decomposition artifacts as a substitute for what the spec asks for. Those are
+  records of past work, not instructions for this task.
+- Base the decomposition on the feature request below and what you observe in
+  the project — not on what previous plans happened to produce.
 
 After exploring, write the decomposition as raw JSON to this file:
 %s
