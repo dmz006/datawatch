@@ -11348,7 +11348,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       <textarea id="prdEditSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;">${escHtml(currentSpec || '')}</textarea>
       <div style="font-size:10px;color:var(--text2);">${t('prd_task_llm_hint')||'Per-task LLM override — empty inherits Automaton then global.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend',${JSON.stringify(currentModel || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend','')`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
         <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
@@ -11446,7 +11446,7 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
       <label style="font-size:11px;color:var(--text2);">Story ${escHtml(storyID)}</label>
       <div style="font-size:10px;color:var(--text2);">${t('prd_story_llm_hint')||'Per-story LLM override — empty inherits from the Automaton then the global config. All tasks in this story inherit this unless they have their own override.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdStoryLLMBackend', currentBackend || '', `refreshLLMModelField('prdStoryLLMModelWrap','prdStoryLLMModelInner','prdStoryLLMBackend',${JSON.stringify(currentModel || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdStoryLLMBackend', currentBackend || '', `refreshLLMModelField('prdStoryLLMModelWrap','prdStoryLLMModelInner','prdStoryLLMBackend','')`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdStoryLLMEffort', currentEffort || '', '')}</div>
         <div id="prdStoryLLMModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdStoryLLMModelInner"></div></div>
       </div>
@@ -11492,7 +11492,7 @@ function openPRDSetLLMModal(prdID, current) {
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Execution backend (task sessions)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend','')`)}</div>
           <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
           <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdSetModelInner"></div></div>
         </div>
@@ -11500,7 +11500,7 @@ function openPRDSetLLMModal(prdID, current) {
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Planning backend (decompose)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (any configured backend)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', `refreshLLMModelField('prdSetDecompModelWrap','prdSetDecompModelInner','prdSetDecompositionProfile',${JSON.stringify(current.decomposition_model || '')})`, true)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">Planning LLM (any configured backend)</label>${renderBackendSelect('prdSetDecompositionProfile', current.decomposition_profile || '', `refreshLLMModelField('prdSetDecompModelWrap','prdSetDecompModelInner','prdSetDecompositionProfile','')`, true)}</div>
           <div id="prdSetDecompModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Planning model (optional)</label><div id="prdSetDecompModelInner"></div></div>
         </div>
       </div>
@@ -11575,7 +11575,7 @@ function openPRDSettingsModal(prdID) {
             <div class="wizard-grid-mobile">
               <div class="wizard-field">
                 <label class="wizard-label">${escHtml(t('prd_new_backend_label')||'Execution backend (tasks)')}</label>
-                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
+                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend','')`)}
               </div>
               <div class="wizard-field">
                 <label class="wizard-label">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
@@ -11589,7 +11589,7 @@ function openPRDSettingsModal(prdID) {
             <div class="wizard-field">
               <label class="wizard-label">Planning backend (decompose)</label>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, `refreshLLMModelField('prdSettingsDecompModelWrap','prdSettingsDecompModelInner','prdSettingsDecompositionProfile',${JSON.stringify(cur.decomposition_model||'')})`, true)}
+                ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, `refreshLLMModelField('prdSettingsDecompModelWrap','prdSettingsDecompModelInner','prdSettingsDecompositionProfile','')`, true)}
                 <div id="prdSettingsDecompModelWrap" style="display:none;"><div id="prdSettingsDecompModelInner"></div></div>
               </div>
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">Any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Empty = use global autonomous.planning_backend.</div>
