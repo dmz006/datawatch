@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # TS-732 — Goose backend: GET /api/config round-trip for goose.enabled via PUT
-# tags: surface:api feature:goose parallel:ok
+# tags: surface:api feature:goose
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-732"
 story_preflight "surface:api feature:goose" || return 0

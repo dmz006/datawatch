@@ -178,12 +178,15 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleFilesDelete handles DELETE /api/files with JSON body {path}.
+// handleFilesDelete handles DELETE /api/files with path as query param or JSON body {path}.
 func (s *Server) handleFilesDelete(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// Accept path as ?path=... query param (avoids sending a body on DELETE).
+	if qp := r.URL.Query().Get("path"); qp != "" {
+		req.Path = qp
+	} else if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}

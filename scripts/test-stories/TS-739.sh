@@ -9,7 +9,7 @@ _story_ts_739() {
   # Find a session with TWO or more block verdicts (none yet approved)
   local sessions
   sessions=$(api GET /api/sessions 2>/dev/null || echo "[]")
-  local session_id first_guard second_guard
+  local session_id="" first_guard="" second_guard=""
   while IFS= read -r line; do
     local sid
     sid=$(echo "$line" | python3 -c 'import json,sys;print(json.loads(sys.stdin.read()).get("id",""))' 2>/dev/null || echo "")
@@ -25,7 +25,7 @@ blocks=[v.get("guardrail","") for v in d.get("guardrail_verdicts",[])
 print("\n".join(blocks))
 ' 2>/dev/null || echo "")
     local count
-    count=$(echo "$guards" | grep -c . 2>/dev/null || echo 0)
+    count=0; [[ -n "$guards" ]] && count=$(echo "$guards" | grep -c . 2>/dev/null || echo 0)
     if [[ "$count" -ge 2 ]]; then
       session_id="$sid"
       first_guard=$(echo "$guards" | head -1)

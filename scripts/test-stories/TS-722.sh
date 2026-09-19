@@ -39,8 +39,8 @@ for item in items:
     skip "compute node detail endpoint not found (HTTP 404)"
     return
   fi
-  if [[ "$code" == "502" ]]; then
-    skip "compute node $node_name unreachable (502) — Ollama may be down"
+  if [[ "$code" == "502" || "$code" == "503" ]]; then
+    skip "compute node $node_name unreachable ($code) — Ollama may be down"
     return
   fi
   if [[ ! "$code" =~ ^2 ]]; then

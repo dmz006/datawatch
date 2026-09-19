@@ -56,8 +56,8 @@ else:
   if [[ $cli_exit -ne 0 ]]; then
     _cleanup
     # Some versions may not have this flag yet
-    if echo "$cli_out" | grep -qi "unknown flag\|no such command\|not found"; then
-      skip "CLI prd-set-llm --decomposition-profile flag not available in this build"
+    if echo "$cli_out" | grep -qi "unknown flag\|no such command\|not found\|unknown planning LLM"; then
+      skip "CLI prd-set-llm --decomposition-profile not available or planning LLM not configured in this build"
       return
     fi
     ko "CLI prd-set-llm --decomposition-profile=$profile exited $cli_exit: $cli_out"

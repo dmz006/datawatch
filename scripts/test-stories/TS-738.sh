@@ -9,7 +9,7 @@ _story_ts_738() {
   # Find a session with a block verdict to approve
   local sessions
   sessions=$(api GET /api/sessions 2>/dev/null || echo "[]")
-  local session_id guard_name
+  local session_id="" guard_name=""
   while IFS= read -r line; do
     local sid gname
     sid=$(echo "$line" | python3 -c 'import json,sys; r=json.loads(sys.stdin.read()); print(r.get("id",""))' 2>/dev/null || echo "")

@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.37"
+var Version = "8.33.38"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5177,6 +5177,18 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// BL369 — propagate autonomous.* config changes to the live manager so
+	// injection_guard and other knobs take effect without a daemon restart.
+	for k := range patch {
+		if strings.HasPrefix(k, "autonomous.") {
+			if s.autonomousMgr != nil {
+				if b, err := json.Marshal(s.cfg.Autonomous); err == nil {
+					_ = s.autonomousMgr.SetConfig(json.RawMessage(b))
+				}
+			}
+			break
+		}
 	}
 	// Invalidate backend version cache so next /api/backends reflects changes.
 	s.versionCacheMu.Lock()

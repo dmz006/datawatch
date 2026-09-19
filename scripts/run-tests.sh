@@ -538,11 +538,11 @@ launch_parallel() {
     RESULT=""
     CURRENT_STORY="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
+    # Trap ensures result file and semaphore release run even when the story
+    # calls `exit 0` directly instead of `return` (TS-750/751/752 pattern).
+    trap 'flush_story_cleanup; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker' EXIT
     # shellcheck source=/dev/null
     source "$script"
-    flush_story_cleanup
-    printf '%s' "${RESULT:-fail}" > "$result_file"
-    release_worker
   ) &
   local pid=$!
   PAR_PIDS+=("$pid")

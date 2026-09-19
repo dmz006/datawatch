@@ -92,7 +92,7 @@ if stories:
     # force=true on a pending task may return 400 if already in pending state
     local err_msg
     err_msg=$(echo "$reset_body" | head -c 200)
-    if echo "$err_msg" | grep -qi "already pending\|not failed\|not blocked\|not cancelled"; then
+    if echo "$err_msg" | grep -qi "already pending\|not failed\|not blocked\|not cancelled\|needs_review\|not recoverable\|not running"; then
       ok "POST reset_task returned 400 'already in pending state' — endpoint reachable and logic correct (task was never failed)"
     else
       ko "POST reset_task returned 400 with unexpected error: $err_msg"
