@@ -318,6 +318,14 @@ run_pwa_story() {
 
   local pwa_rc=0
   "$node_bin" "$pwa_script" 2>"${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log" || pwa_rc=$?
+  # Retry once on known transient Playwright errors (navigation race, context destroyed).
+  if [[ $pwa_rc -ne 0 && $pwa_rc -ne 2 ]]; then
+    local pw_log="${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log"
+    if grep -qi "execution context was destroyed\|context was destroyed\|Target closed\|browser has disconnected" "$pw_log" 2>/dev/null; then
+      pwa_rc=0
+      "$node_bin" "$pwa_script" 2>"$pw_log" || pwa_rc=$?
+    fi
+  fi
   if [[ $pwa_rc -eq 0 ]]; then
     ok "PWA visual test passed"
   elif [[ $pwa_rc -eq 2 ]]; then
