@@ -99,7 +99,7 @@ vision:
 webhook:
   enabled: true
   addr: 127.0.0.1:19082
-  token: ""
+  token: "WEBHOOK_NOAUTH"
 
 compute_nodes:
   - name: datawatch-ollama

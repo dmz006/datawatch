@@ -1601,16 +1601,15 @@ function updateSessionDetailButtons(sessionId) {
   }
   const btnContainer = document.getElementById('actionBtns');
   if (btnContainer) {
-    // BL359 — Restart is available on all states.
     const restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>`;
     const stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`;
     const deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`;
     if (isActive) {
-      btnContainer.innerHTML = stopBtn + restartBtn;
+      btnContainer.innerHTML = stopBtn;
     } else if (isDone) {
       btnContainer.innerHTML = restartBtn + deleteBtn;
     } else {
-      btnContainer.innerHTML = restartBtn;
+      btnContainer.innerHTML = '';
     }
   }
   // Refresh schedule bar — removes executed schedules from the UI
@@ -2797,16 +2796,15 @@ function renderSessionDetail(sessionId) {
     }
   }
 
-  // BL359 — Restart is available on all states.
   // btn-label spans allow CSS to hide text on narrow screens (mobile).
   const _restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635;<span class="btn-label"> ${escHtml(t('action_restart')||'Restart')}</span></button>`;
   const _stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632;<span class="btn-label"> ${escHtml(t('action_stop')||'Stop')}</span></button>`;
   const _deleteBtn = `<button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465;<span class="btn-label"> ${escHtml(t('action_delete')||'Delete')}</span></button>`;
   const actionButtons = isActive
-    ? _stopBtn + _restartBtn
+    ? _stopBtn
     : isDone
     ? _restartBtn + _deleteBtn
-    : _restartBtn;
+    : '';
 
   // Dual output areas: channel tab visible whenever the session uses MCP
   // channel mode (claude / claude-code), regardless of channel-ready state.

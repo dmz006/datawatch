@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.36"
+var Version = "8.33.37"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1489,8 +1489,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigCh
-		fmt.Println("\nShutting down...")
+		sig := <-sigCh
+		fmt.Printf("\nShutting down... (signal=%v)\n", sig)
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.KillAll(); err != nil {

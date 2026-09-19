@@ -70,6 +70,7 @@ start_test_daemon() {
     -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
     -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
+    -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
     -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:${TEST_DNS_PORT}\"|g" \
     -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:${TEST_WEBHOOK_PORT}|g" \
     -e "s|server_url: http://127\.0\.0\.1:19180|server_url: http://127.0.0.1:${TEST_NTFY_PORT}|g" \
@@ -618,6 +619,7 @@ if [[ $NO_DAEMON -eq 0 ]]; then
         -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
         -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
         -e "s|token: \"\"|token: \"${TEST_TOKEN:-}\"|g" \
+        -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
         "$REPO_DIR/testdata/datawatch.yaml" > "$TEST_DATA/config.yaml"
     fi
     # Discover actual MCP SSE port from the daemon's config so TS-624 and
