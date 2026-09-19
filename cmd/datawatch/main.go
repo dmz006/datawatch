@@ -8,6 +8,8 @@ import (
 	"compress/gzip"
 	"context"
 	crypto_tls "crypto/tls"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -3693,9 +3695,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if req.ProjectDir == "" {
 				return "", fmt.Errorf("session-based decompose requires project_dir on the PRD (set it with autonomous_prd_set_llm or at PRD creation)")
 			}
-			outputFile := filepath.Join(req.ProjectDir, ".decompose-output.json")
-			// If a prior run already produced output, reuse it — this handles daemon
-			// restart recovery without wiping a successfully-completed decompose run.
+			// Content-addressed output file: hash of the spec so different PRDs
+			// sharing the same project_dir never reuse each other's output, but a
+			// daemon restart mid-decompose still finds the in-progress file intact.
+			specHash := sha256.Sum256([]byte(req.Spec))
+			outputFile := filepath.Join(req.ProjectDir, ".decompose-output-"+hex.EncodeToString(specHash[:8])+".json")
+			// Restart-recovery: reuse output written by a previous run of the same spec.
 			if existingContent, readErr := os.ReadFile(outputFile); readErr == nil && len(existingContent) > 0 {
 				fmt.Printf("[decompose-session] reusing prior output file %s (%d bytes)\n", outputFile, len(existingContent))
 				return string(existingContent), nil

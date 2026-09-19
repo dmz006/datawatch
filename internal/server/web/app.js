@@ -11092,18 +11092,7 @@ function openPRDCreateModal() {
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
     : fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llms || []).filter(l => !l.disabled); }).catch(() => {});
-  const ensureModels = (state._availableModels !== undefined)
-    ? Promise.resolve()
-    : Promise.all([
-        fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-      ]).then(([oll, owui]) => {
-        state._availableModels = {};
-        if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
-        else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
-        if (owui && Array.isArray(owui.data)) state._availableModels.openwebui = owui.data.map(m => m.id || m.name || m).filter(Boolean);
-        else if (Array.isArray(owui)) state._availableModels.openwebui = owui.map(m => m.id || m.name || m).filter(Boolean);
-      });
+  const ensureModels = ensureLLMModelLists;
   const ensureProfiles = Promise.all([
     fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -11166,7 +11155,10 @@ function openPRDCreateModal() {
           <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
           <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdNewModelInner"></div></div>
         </div>
-        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_planning_label')||'Planning backend (decompose — ollama/openwebui only, empty = global default)'}</label>${renderBackendSelect('prdNewDecompositionProfile', '', '', true)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_planning_label')||'Planning backend (decompose)'}</label>${renderBackendSelect('prdNewDecompositionProfile', '', `refreshLLMModelField('prdNewDecompModelWrap','prdNewDecompModelInner','prdNewDecompositionProfile','')`, true)}</div>
+          <div id="prdNewDecompModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Planning model (optional)</label><div id="prdNewDecompModelInner"></div></div>
+        </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
           <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_create')||'Create'}</button>
@@ -11220,6 +11212,8 @@ function openPRDCreateModal() {
       const modelEl = document.getElementById('prdNewModelInner')?.querySelector('input,select');
       const model = modelEl ? modelEl.value.trim() : '';
       const decompositionProfile = document.getElementById('prdNewDecompositionProfile')?.value || '';
+      const decompModelEl = document.getElementById('prdNewDecompModelInner')?.querySelector('input,select');
+      const decompositionModel = decompModelEl ? decompModelEl.value.trim() : '';
       apiFetch('/api/autonomous/prds', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -11227,10 +11221,10 @@ function openPRDCreateModal() {
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
-        if (model || body.backend || body.effort || decompositionProfile) {
+        if (model || body.backend || body.effort || decompositionProfile || decompositionModel) {
           return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prd.id) + '/set_llm', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ backend: body.backend, effort: body.effort, model, decomposition_profile: decompositionProfile, actor: 'operator' }),
+            body: JSON.stringify({ backend: body.backend, effort: body.effort, model, decomposition_profile: decompositionProfile, decomposition_model: decompositionModel, actor: 'operator' }),
           });
         }
       }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
@@ -11314,7 +11308,11 @@ window.updatePRDNewModelField = function() {
 // pre-fetched these inline; the helper hoists the same logic so the
 // edit-task and set-llm modals don't have to duplicate it.
 window.ensureLLMModelLists = function() {
-  if (state._availableModels !== undefined) return Promise.resolve();
+  // Check all three sources were fetched, not just that the object exists.
+  // openPRDCreateModal previously used a separate ensureModels that only
+  // fetched ollama/openwebui, leaving state._availableModels set but with
+  // opencode missing — causing ensureLLMModelLists to skip the fetch.
+  if (state._availableModels !== undefined && state._llmModelListsFull) return Promise.resolve();
   return Promise.all([
     fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -11332,6 +11330,7 @@ window.ensureLLMModelLists = function() {
       state._availableModels['opencode-prompt'] = ocModels;
       if (oc.default_model) state._openCodeDefaultModel = oc.default_model;
     }
+    state._llmModelListsFull = true;
   });
 };
 
