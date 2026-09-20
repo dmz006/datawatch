@@ -429,6 +429,119 @@ print(",".join(have))
 # The plugin is named "dw-test-plugin" and listens on the pre_session_start
 # and on_alert hooks; it always responds with {"ok":true,"action":"pass"}.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# start_channel_server — start datawatch-channel against the sandbox daemon,
+# bound to SESSION_ID. Returns 0 when channel_ready=true is confirmed on the
+# session; 1 otherwise (caller should skip).
+#
+# Requires: SESSION_ID must be set (call ensure_test_session first).
+# Sets _CHAN_PID, _CHAN_TAIL_PID, _CHAN_PIPE for stop_channel_server.
+#
+# How it works: a named FIFO keeps stdin open so the channel server doesn't
+# exit on EOF. `tail -f /dev/null` holds the FIFO write end; killing it
+# delivers EOF to the channel server stdin → clean shutdown.
+# postToParent inside datawatch-channel uses InsecureSkipVerify so the
+# self-signed test TLS cert is fine. DATAWATCH_CHANNEL_PORT=0 lets the OS
+# pick a free port; the daemon learns the actual port via POST /api/channel/ready.
+#
+# Usage:
+#   ensure_test_session || return
+#   start_channel_server || return
+#   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"hi"}')
+#   stop_channel_server
+# ---------------------------------------------------------------------------
+: "${_CHAN_PID:=}"; : "${_CHAN_TAIL_PID:=}"; : "${_CHAN_PIPE:=}"
+
+start_channel_server() {
+  local chan_bin
+  chan_bin=$(command -v datawatch-channel 2>/dev/null || echo "$HOME/.local/bin/datawatch-channel")
+  if [[ ! -x "$chan_bin" ]]; then
+    skip "datawatch-channel binary not found at $chan_bin"
+    return 1
+  fi
+  if [[ -z "${SESSION_ID:-}" ]]; then
+    skip "start_channel_server: SESSION_ID not set; call ensure_test_session first"
+    return 1
+  fi
+
+  _CHAN_PIPE=$(mktemp -u /tmp/dw-chan-pipe-XXXXXX)
+  mkfifo "$_CHAN_PIPE"
+  tail -f /dev/null >"$_CHAN_PIPE" &
+  _CHAN_TAIL_PID=$!
+
+  DATAWATCH_API_URL="https://127.0.0.1:${TEST_TLS_PORT:-18443}" \
+  DATAWATCH_TOKEN="$TEST_TOKEN" \
+  DATAWATCH_CHANNEL_PORT=0 \
+  CLAUDE_SESSION_ID="$SESSION_ID" \
+  "$chan_bin" <"$_CHAN_PIPE" 2>/dev/null &
+  _CHAN_PID=$!
+
+  local i
+  for i in $(seq 1 20); do
+    sleep 0.5
+    kill -0 "$_CHAN_PID" 2>/dev/null || break
+    local sess_json
+    sess_json=$(api GET "/api/sessions/$SESSION_ID" 2>/dev/null || echo "{}")
+    if echo "$sess_json" | python3 -c 'import json,sys;d=json.load(sys.stdin);exit(0 if d.get("channel_ready") else 1)' 2>/dev/null; then
+      return 0
+    fi
+  done
+
+  stop_channel_server
+  skip "datawatch-channel did not register with sandbox daemon within 10s"
+  return 1
+}
+
+stop_channel_server() {
+  [[ -n "$_CHAN_TAIL_PID" ]] && kill "$_CHAN_TAIL_PID" 2>/dev/null || true
+  [[ -n "$_CHAN_PID" ]]      && kill "$_CHAN_PID"      2>/dev/null || true
+  wait "$_CHAN_TAIL_PID" "$_CHAN_PID" 2>/dev/null || true
+  [[ -n "$_CHAN_PIPE" ]]     && rm -f "$_CHAN_PIPE"
+  _CHAN_PID=""; _CHAN_TAIL_PID=""; _CHAN_PIPE=""
+}
+
+# ---------------------------------------------------------------------------
+# Scan-guardrail fixture — creates a shell session with a project dir
+# containing a fake AWS secret, so secrets-scan produces a block verdict
+# without requiring an LLM. Scan guardrails are pure-regex.
+#
+# Sets SCAN_SESSION_ID and SCAN_PROJECT_DIR. Call cleanup_scan_session after.
+#
+# Usage:
+#   create_secrets_scan_session || return
+#   verdict=$(api POST "/api/sessions/$SCAN_SESSION_ID/guardrail" '{"name":"secrets-scan"}')
+#   cleanup_scan_session
+# ---------------------------------------------------------------------------
+: "${SCAN_SESSION_ID:=}"; : "${SCAN_PROJECT_DIR:=}"
+
+create_secrets_scan_session() {
+  SCAN_PROJECT_DIR=$(mktemp -d /tmp/dw-scan-XXXXXX)
+  # Fake AWS key recognized by the secrets scanner pattern.
+  printf 'AWS_SECRET_ACCESS_KEY="AKIAIOSFODNN7EXAMPLE12345678901234"\n' > "$SCAN_PROJECT_DIR/.env"
+
+  local sess_raw
+  sess_raw=$(curl "${curl_args[@]}" -s -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"task\":\"scan-fixture\",\"project_dir\":\"$SCAN_PROJECT_DIR\",\"backend\":\"shell\"}" \
+    "$TEST_TLS/api/sessions/start" 2>/dev/null || echo "")
+  SCAN_SESSION_ID=$(echo "$sess_raw" | python3 -c "import json,sys;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+
+  if [[ -z "$SCAN_SESSION_ID" ]]; then
+    rm -rf "$SCAN_PROJECT_DIR"; SCAN_PROJECT_DIR=""
+    skip "could not create scan-fixture session: $sess_raw"
+    return 1
+  fi
+  return 0
+}
+
+cleanup_scan_session() {
+  [[ -n "$SCAN_SESSION_ID" ]] && api POST /api/sessions/state "{\"id\":\"$SCAN_SESSION_ID\",\"state\":\"killed\"}" >/dev/null 2>&1 || true
+  [[ -n "$SCAN_PROJECT_DIR" ]] && rm -rf "$SCAN_PROJECT_DIR"
+  SCAN_SESSION_ID=""; SCAN_PROJECT_DIR=""
+}
+
+# ---------------------------------------------------------------------------
 ensure_test_plugin() {
   local plugin_dir="${TEST_DATA}/plugins/dw-test-plugin"
   mkdir -p "$plugin_dir"

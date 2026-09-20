@@ -580,6 +580,8 @@ story_tags() {
 }
 
 is_parallel_ok() {
+  # conflict:llm tests must not run concurrently — Ollama saturation causes transient skips
+  echo "$1" | grep -q "conflict:llm" && return 1
   echo "$1" | grep -q "parallel:ok"
 }
 

@@ -1564,6 +1564,112 @@ When a request involves more than one distinct task or fix, you MUST:
 
 ---
 
+## E2E Test Infrastructure
+
+The e2e test suite lives in `scripts/run-tests.sh` + `scripts/test-stories/TS-NNN.sh`.
+Shared helpers are in `scripts/test-stories/lib.sh`. This section documents required
+configuration, known skip categories, and reusable patterns so future stories build from
+established learnings.
+
+### Sandbox configuration (`testdata/datawatch.yaml`)
+
+Tests run against a sandboxed daemon. The config file is `testdata/datawatch.yaml`.
+Required configuration for the test suite to run without excess skips:
+
+| Feature | Config key | Value |
+|---------|-----------|-------|
+| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-johnnyjohnny` |
+| Multiple LLM backends | `llm.backends` list | `ollama-johnnyjohnny` (http://johnnyjohnny:11434) and `ollama-localhost` |
+| Vision backend | `vision.backend` + model | `moondream:latest` on localhost:11434 |
+| Webhook comms | `comms.webhook.url` | `127.0.0.1:19080` (for TS-comms tests) |
+| Web search | `web_search.enabled` | true, engine=bing provider=searxng |
+| Goose backend | `llm.backends[goose]` | binary at `~/.local/bin/goose` |
+| OpenCode backend | `llm.backends[opencode]` | session-path backend for decompose tests |
+
+Sandbox ports: HTTP 18080, TLS 18443 (self-signed cert). Token: `dw-test-token-12345`.
+Do NOT use HTTP port for tests — Go's `http.Client` drops `Authorization` on 307 redirects.
+Always use `https://127.0.0.1:18443` directly.
+
+### Infrastructure-floor skips (~15 skips, always expected)
+
+These skips are not regressions; they reflect hardware/service limits of the dev environment:
+
+| Category | Stories | Reason |
+|----------|---------|--------|
+| External services | TS-057, TS-094 | 1Password op CLI, Signal not configured |
+| Tailscale | TS-226, TS-298, TS-321 | Requires Tailscale sidecar |
+| Vision/VRAM | TS-667, TS-668, TS-670 | moondream requires GPU VRAM |
+| GPU observer | TS-722 | Compute node `datawatch-ollama` unreachable |
+| Transient LLM | TS-534, TS-695, TS-723–725, TS-754, TS-281, TS-710 | Ollama load-dependent; pass when not under load |
+
+Current baseline (run 15, 2026-09-20): **666 passed, 0 failed, ~15 skipped**.
+
+### LLM parallelism rule
+
+Tests tagged `conflict:llm` must NOT run concurrently — parallel execution exhausts
+Ollama capacity and causes transient skips. `run-tests.sh` enforces this: `is_parallel_ok()`
+returns false when `conflict:llm` is present, regardless of `parallel:ok`.
+
+**Do not tag a story `parallel:ok` if it also has `conflict:llm`.**
+
+Stories that make LLM calls (council, decompose, session spawn with LLM backend) should use
+`conflict:llm` so they never run in parallel with other LLM-heavy stories.
+
+### Channel server pattern (reusable)
+
+When a test needs a live MCP channel server, use `start_channel_server` / `stop_channel_server`
+from `lib.sh`. These helpers encapsulate the FIFO+tail stdin-keepalive pattern.
+
+```bash
+# In a story that needs the channel server:
+ensure_test_session || return
+start_channel_server || return   # sets _CHAN_PID, _CHAN_TAIL_PID, _CHAN_PIPE; polls channel_ready
+
+# ... test code using api POST /api/channel/send ...
+
+stop_channel_server              # kills tail+chan, removes FIFO
+```
+
+**Why FIFO+tail:** `datawatch-channel` exits when stdin gets EOF (MCP stdio goroutine calls
+`stop()`). Opening a FIFO for writing with `exec 8>"$pipe"` blocks until a reader exists.
+`tail -f /dev/null >"$pipe" &` holds the write end open in a killable background process;
+killing the tail PID delivers EOF cleanly. Using `exec 8<>"$pipe"` (O_RDWR) avoids the
+open-blocking but leaks fd 8 into the child, so killing the parent fd doesn't deliver EOF.
+
+**Environment variables for `datawatch-channel`:**
+- `DATAWATCH_API_URL=https://127.0.0.1:$TEST_TLS_PORT` — must be HTTPS directly
+- `DATAWATCH_TOKEN=$TEST_TOKEN`
+- `DATAWATCH_CHANNEL_PORT=0` — auto-selects a free port
+- `CLAUDE_SESSION_ID=$SESSION_ID` — NOT `DATAWATCH_SESSION_ID`
+
+**Registration detection:** poll `GET /api/sessions/$SESSION_ID` until `channel_ready: true`
+(JSON field, `omitempty` — only present when set). The daemon learns the auto-assigned port
+from `POST /api/channel/ready` sent by the channel binary at startup.
+
+### Scan guardrail pattern (reusable)
+
+When a test needs to trigger secrets-scan or sast-scan guardrails, use
+`create_secrets_scan_session` / `cleanup_scan_session` from `lib.sh`.
+
+```bash
+create_secrets_scan_session || return   # creates temp dir + .env with fake AWS key; sets SCAN_SESSION_ID
+# ... test guardrail approval flow on SCAN_SESSION_ID ...
+cleanup_scan_session
+```
+
+Scan guardrails are pure-regex (no LLM). Fake AWS key for secrets-scan:
+`AKIAIOSFODNN7EXAMPLE12345678901234` in `.env`. Python `eval("1+1")` triggers sast-scan.
+Both produce `SeverityCritical` → `block` verdict.
+
+### Multiple LLM backends
+
+The sandbox has two Ollama backends. Tests needing a specific backend should reference
+`ollama-johnnyjohnny` (http://johnnyjohnny:11434) for the primary backend, and
+`ollama-localhost` (http://localhost:11434) for the secondary. Moondream vision runs on
+`ollama-localhost`. When both are under load, LLM-dependent tests skip — this is expected.
+
+---
+
 *These guardrails apply when Claude operates on this repository. They do not restrict what
 users can instruct datawatch sessions to do within their own project directories.*
 
