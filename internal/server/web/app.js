@@ -18949,12 +18949,15 @@ function loadSystemStatsGrid() {
     const memPct = d.mem_total > 0 ? Math.round(d.mem_used/d.mem_total*100) : 0;
     let gpuHtml = '';
     if (d.gpu_name) {
-      const gColor = d.gpu_util_pct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
-      gpuHtml += bar('GPU util', d.gpu_util_pct, 100, gColor, d.gpu_util_pct+'% '+d.gpu_temp+'°C');
-      if (d.gpu_mem_total_mb > 0) gpuHtml += bar('GPU VRAM', d.gpu_mem_used_mb, d.gpu_mem_total_mb, 'var(--accent2,#60a5fa)', d.gpu_mem_used_mb+'/'+d.gpu_mem_total_mb+' MB');
+      const guPct = d.gpu_util_pct || 0;
+      const gColor = guPct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
+      gpuHtml += bar('GPU util', guPct, 100, gColor, guPct+'%'+(d.gpu_temp ? ' '+d.gpu_temp+'°C' : ''));
+      const gUsed = (d.gpu_mem_used_mb||0)*1048576, gTotal = (d.gpu_mem_total_mb||0)*1048576;
+      if (gTotal > 0) gpuHtml += bar('GPU VRAM', gUsed, gTotal, 'var(--accent2,#60a5fa)', fmtBytes(gUsed)+' / '+fmtBytes(gTotal));
     }
+    const loadStr = cpuPct+'% · '+d.cpu_load_avg_1.toFixed(2)+'/'+d.cpu_load_avg_5.toFixed(2)+'/'+d.cpu_load_avg_15.toFixed(2);
     return { name: d.hostname || 'local', isLocal: true, dot: 'var(--success,#10b981)',
-      cpuHtml: bar('CPU', d.cpu_load_avg_1, d.cpu_cores, cpuColor, d.cpu_load_avg_1.toFixed(2)+'/'+d.cpu_cores+' cores'),
+      cpuHtml: bar('CPU', cpuPct, 100, cpuColor, loadStr),
       memHtml: bar('RAM', d.mem_used, d.mem_total, memPct > 85 ? 'var(--error)' : 'var(--accent)', fmtBytes(d.mem_used)+' / '+fmtBytes(d.mem_total)),
       gpuHtml };
   }).catch(() => null);
