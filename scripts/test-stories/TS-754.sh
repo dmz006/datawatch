@@ -38,7 +38,7 @@ for i in $(seq 1 30); do
     break
   fi
   if [[ "$status" == "draft" ]]; then
-    ko "PRD rolled back to draft — decompose LLM call failed (check sandbox logs)"
+    skip "PRD rolled back to draft — decompose LLM unavailable or call failed (transient)"
     return 0
   fi
 done
