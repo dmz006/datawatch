@@ -4,8 +4,9 @@ import { runStory, connectToPWA, navigateTo, screenshot } from './lib.mjs';
 await runStory(async (page) => {
   await connectToPWA(page);
 
-  // Try dedicated dashboard nav first, fall back to sessions (dashboard may be embedded there)
-  const dashNav = await page.$('[data-view="dashboard"]');
+  // Try dedicated dashboard nav first, fall back to sessions (dashboard may be embedded there).
+  // Use .catch to handle protocol context races after page reload.
+  const dashNav = await page.$('[data-view="dashboard"]').catch(() => null);
   if (dashNav) {
     await navigateTo(page, 'dashboard');
   } else {
