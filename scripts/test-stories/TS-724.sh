@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # TS-724 — Verifier diff grounding: PRD task exposes pre_task_sha field after run
-# tags: surface:api feature:automata parallel:ok
+# tags: surface:api feature:automata
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-724"
 story_preflight "surface:api feature:automata" || return 0

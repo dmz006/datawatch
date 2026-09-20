@@ -28,11 +28,20 @@ for item in items:
     return
   fi
 
-  # Check detail endpoint
+  # Check detail endpoint — retry once on 502/503 (transient: ollama model runner may be restarting)
   local resp code body
   resp=$(api_code GET "/api/compute/nodes/$node_name/detail")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+
+  if [[ "$code" == "502" || "$code" == "503" ]]; then
+    echo "  [TS-722] $node_name returned $code — waiting 10s for ollama to recover before retry"
+    sleep 10
+    resp=$(api_code GET "/api/compute/nodes/$node_name/detail")
+    code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+    body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+  fi
+
   save_evidence TS-722 "detail.json" "$body"
 
   if [[ "$code" == "404" ]]; then

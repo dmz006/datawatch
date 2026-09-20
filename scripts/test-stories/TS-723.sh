@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # TS-723 — PRD task session visibility: GET /api/autonomous/prds/{id} task has session_id field
-# tags: surface:api feature:automata parallel:ok
+# tags: surface:api feature:automata
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-723"
 story_preflight "surface:api feature:automata" || return 0

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # TS-725 — Automata memory: GET /api/autonomous/prds/{id} includes memory_report/memory_report_at fields
-# tags: surface:api feature:automata feature:memory parallel:ok
+# tags: surface:api feature:automata feature:memory
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-725"
 story_preflight "surface:api feature:automata feature:memory" || return 0

@@ -26,15 +26,16 @@ _story_ts_740() {
 
   _cleanup() { api DELETE "/api/autonomous/prds/$prd_id" >/dev/null 2>&1 || true; }
 
-  # Find the datawatch binary
-  local dw_bin
-  dw_bin=$(which datawatch 2>/dev/null || echo "/home/dmz/.local/bin/datawatch")
-  if [[ ! -x "$dw_bin" ]]; then
-    _cleanup; skip "datawatch binary not found at $dw_bin"
-    return
-  fi
+  # Find the sandbox config — needed so CLI trusts the sandbox TLS cert and hits the right URL.
+  local sandbox_cfg=""
+  for d in /tmp/dw-test-sandbox-* /tmp/dw-test-*; do
+    if [[ -f "$d/config.yaml" ]]; then
+      sandbox_cfg="$d/config.yaml"
+      break
+    fi
+  done
 
-  # Use the first registered LLM or fall back to "ollama"
+  # Use the first registered LLM from the sandbox config as the decomposition profile.
   local profile
   profile=$(api GET /api/config \
     | python3 -c '
@@ -42,20 +43,27 @@ import json,sys
 d=json.load(sys.stdin)
 llms=d.get("llm",{}).get("registered",[])
 if llms:
-    print(llms[0].get("name","ollama"))
-else:
-    print("ollama")
-' 2>/dev/null || echo "ollama")
+    print(llms[0].get("name",""))
+' 2>/dev/null || echo "")
+  if [[ -z "$profile" ]]; then
+    _cleanup; skip "no registered LLMs in sandbox config — cannot determine a valid decomposition profile"
+    return
+  fi
 
   local cli_out cli_exit
-  cli_out=$("$dw_bin" autonomous prd-set-llm "$prd_id" \
-    --decomposition-profile "$profile" 2>&1)
-  cli_exit=$?
+  if [[ -n "$sandbox_cfg" ]]; then
+    cli_out=$(DATAWATCH_TOKEN="$TEST_TOKEN" "$TEST_BINARY" \
+      --config "$sandbox_cfg" --url "$TEST_TLS" \
+      autonomous prd-set-llm "$prd_id" --decomposition-profile "$profile" 2>&1)
+    cli_exit=$?
+  else
+    _cleanup; skip "sandbox config not found — cannot pass --config for CLI TLS trust"
+    return
+  fi
   save_evidence TS-740 "cli-output.txt" "$cli_out"
 
   if [[ $cli_exit -ne 0 ]]; then
     _cleanup
-    # Some versions may not have this flag yet
     if echo "$cli_out" | grep -qi "unknown flag\|no such command\|not found\|unknown planning LLM"; then
       skip "CLI prd-set-llm --decomposition-profile not available or planning LLM not configured in this build"
       return

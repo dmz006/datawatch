@@ -50,8 +50,21 @@ _story_ts_670() {
     return
   fi
   if [[ "$code" == "500" ]] && echo "$body" | grep -qi "image description failed\|vision.*500\|vision.*unavailable"; then
-    skip "council returned 500 — vision backend unavailable ($(echo "$body" | head -c 120))"
-    return
+    # Ollama model runner may have crashed — wait 20s for restart and retry once.
+    echo "  [TS-670] vision unavailable ($code) — waiting 20s for ollama recovery before retry"
+    sleep 20
+    resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
+      -H "Content-Type: application/json" \
+      -d "{\"proposal\":\"What is in the image?\",\"image_path\":\"$tmp_png\"}" \
+      "$TEST_BASE/api/council/run" \
+      -w "\n__HTTP_CODE_%{http_code}__" 2>/dev/null)
+    code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+    body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+    save_evidence TS-670 "council_submit_retry.json" "$body"
+    if [[ "$code" == "500" ]] && echo "$body" | grep -qi "image description failed\|vision.*500\|vision.*unavailable"; then
+      skip "council returned 500 after retry — vision backend unavailable ($(echo "$body" | head -c 120))"
+      return
+    fi
   fi
   if [[ ! "$code" =~ ^2 ]]; then
     ko "POST /api/council/run with image_path returned HTTP $code: $(echo "$body" | head -c 200)"

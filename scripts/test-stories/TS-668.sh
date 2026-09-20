@@ -66,8 +66,8 @@ print('data:image/png;base64,'+base64.b64encode(make_png(64,64,255,0,0)).decode(
     return
   fi
 
-  # Give the session a moment to process the image attachment
-  sleep 4
+  # Give the daemon time to run vision describe (moondream can take 10-30s)
+  sleep 20
 
   # Find the most recent session and check its output for [image:
   local sessions sess_id output

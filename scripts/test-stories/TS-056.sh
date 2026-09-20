@@ -7,10 +7,6 @@ CURRENT_STORY="TS-056"
 story_preflight "surface:api feature:secrets conflict:keepassxc" || return 0
 
 _story_ts_056() {
-  if ! command -v keepassxc-cli >/dev/null 2>&1; then
-    skip "keepassxc-cli not installed"
-    return
-  fi
   local put_resp
   put_resp=$(api PUT /api/config '{"secrets.keepass.path":"/tmp/test-dw-e2e.kdbx"}')
   save_evidence TS-056 "put.json" "$put_resp"

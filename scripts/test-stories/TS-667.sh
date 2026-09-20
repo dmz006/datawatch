@@ -39,7 +39,18 @@ _story_ts_667() {
     return
   fi
   if [[ "$code" == "502" || "$code" == "500" ]]; then
-    skip "vision endpoint returned $code — ollama vision model unavailable or crashed ($(echo "$body" | head -c 100))"
+    # Ollama model runner may have crashed — wait 20s for restart then retry once.
+    echo "  [TS-667] vision returned $code — waiting 20s for ollama recovery before retry"
+    sleep 20
+    resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
+      -F "image=@$tmp_png;type=image/png" \
+      "$TEST_BASE/api/vision/describe" \
+      -w "\n__HTTP_CODE_%{http_code}__" 2>/dev/null)
+    code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
+    body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
+  fi
+  if [[ "$code" == "502" || "$code" == "500" ]]; then
+    skip "vision endpoint returned $code after retry — ollama vision model unavailable or crashed ($(echo "$body" | head -c 100))"
     return
   fi
   if [[ ! "$code" =~ ^2 ]]; then
