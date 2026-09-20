@@ -1568,52 +1568,193 @@ When a request involves more than one distinct task or fix, you MUST:
 
 The e2e test suite lives in `scripts/run-tests.sh` + `scripts/test-stories/TS-NNN.sh`.
 Shared helpers are in `scripts/test-stories/lib.sh`. This section documents required
-configuration, known skip categories, and reusable patterns so future stories build from
-established learnings.
+configuration, known skip categories, reusable patterns, and hard-won tuning from
+past runs so future stories build from established learnings rather than rediscovering them.
 
 ### Sandbox configuration (`testdata/datawatch.yaml`)
 
-Tests run against a sandboxed daemon. The config file is `testdata/datawatch.yaml`.
-Required configuration for the test suite to run without excess skips:
+Tests run against a sandboxed daemon started by `run-tests.sh`. The template config is
+`testdata/datawatch.yaml`; the runner seds port/token/data-dir values before writing to
+`$TEST_DATA/config.yaml`. Required configuration for the test suite to run without excess skips:
 
-| Feature | Config key | Value |
-|---------|-----------|-------|
-| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-johnnyjohnny` |
-| Multiple LLM backends | `llm.backends` list | `ollama-johnnyjohnny` (http://johnnyjohnny:11434) and `ollama-localhost` |
-| Vision backend | `vision.backend` + model | `moondream:latest` on localhost:11434 |
-| Webhook comms | `comms.webhook.url` | `127.0.0.1:19080` (for TS-comms tests) |
-| Web search | `web_search.enabled` | true, engine=bing provider=searxng |
+| Feature | Config field | Required value |
+|---------|-------------|---------------|
+| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-johnnyjohnny` — missing causes TS-721/730 503 |
+| Primary LLM backend | `llm.backends[ollama-johnnyjohnny]` | `http://johnnyjohnny:11434` — primary for decompose/summarize |
+| Secondary LLM backend | `llm.backends[ollama-localhost]` | `http://localhost:11434` — qwen3:1.7b fallback |
+| Vision backend | `vision.backend` + `vision.model` | `ollama`, `moondream:latest` on localhost:11434 |
+| Webhook comms | `comms.webhook.url` | `127.0.0.1:19080` — must use sentinel `WEBHOOK_NOAUTH` for token field (see token sed rule below) |
+| Ntfy comms | `comms.ntfy.server_url` | templated by run-tests.sh to local ntfy (port `$TEST_NTFY_PORT`) |
+| Web search | `web_search.enabled`, `web_search.engine` | `true`, `bing`, provider `searxng` |
 | Goose backend | `llm.backends[goose]` | binary at `~/.local/bin/goose` |
-| OpenCode backend | `llm.backends[opencode]` | session-path backend for decompose tests |
+| OpenCode backend | `llm.backends[opencode]` | session-path decompose backend |
 
-Sandbox ports: HTTP 18080, TLS 18443 (self-signed cert). Token: `dw-test-token-12345`.
-Do NOT use HTTP port for tests — Go's `http.Client` drops `Authorization` on 307 redirects.
-Always use `https://127.0.0.1:18443` directly.
+**Sandbox ports:** HTTP 18080, TLS 18443 (self-signed cert). Token: `dw-test-token-12345`.
+
+**HTTPS only for tests:** Do NOT use the HTTP port (18080) for API calls. Go's `http.Client`
+drops the `Authorization` header on 307 redirects to HTTPS. All tests must call
+`https://127.0.0.1:18443` directly.
+
+**CLI tests need HTTP:** The `datawatch` CLI binary cannot verify the self-signed sandbox TLS
+cert. CLI tests must use `TEST_HTTP` (http://127.0.0.1:18080) with the generated
+`$TEST_DATA/config.yaml` via `--config`. The `cli()` helper in lib.sh handles this.
+
+**Webhook token sentinel:** `testdata/datawatch.yaml` uses `WEBHOOK_NOAUTH` as the webhook
+token placeholder. `run-tests.sh` runs a targeted sed to clear it AFTER the blanket
+`token: ""` replacement — so the blanket sed doesn't accidentally set webhook.token to
+`TEST_TOKEN`, which would cause 401 on unauthenticated `POST /task` requests (TS-207).
 
 ### Infrastructure-floor skips (~15 skips, always expected)
 
-These skips are not regressions; they reflect hardware/service limits of the dev environment:
+These are NOT regressions. They reflect hardware/service limits of the dev environment.
+Current baseline (2026-09-20): **666 passed, 0 failed, ~15 skipped**.
 
 | Category | Stories | Reason |
 |----------|---------|--------|
 | External services | TS-057, TS-094 | 1Password op CLI, Signal not configured |
 | Tailscale | TS-226, TS-298, TS-321 | Requires Tailscale sidecar |
-| Vision/VRAM | TS-667, TS-668, TS-670 | moondream requires GPU VRAM |
-| GPU observer | TS-722 | Compute node `datawatch-ollama` unreachable |
-| Transient LLM | TS-534, TS-695, TS-723–725, TS-754, TS-281, TS-710 | Ollama load-dependent; pass when not under load |
+| Vision/VRAM | TS-667, TS-668, TS-670 | moondream crashes under concurrent load; skip on 500/502 |
+| GPU observer | TS-722 | Compute node `datawatch-ollama` unreachable (503) |
+| Transient LLM | TS-534, TS-695, TS-723–725, TS-754, TS-281, TS-710 | Ollama load-dependent; pass when Ollama not under load |
 
-Current baseline (run 15, 2026-09-20): **666 passed, 0 failed, ~15 skipped**.
+Any skip count > ~15 on a clean sandbox is a regression worth investigating.
 
 ### LLM parallelism rule
 
 Tests tagged `conflict:llm` must NOT run concurrently — parallel execution exhausts
-Ollama capacity and causes transient skips. `run-tests.sh` enforces this: `is_parallel_ok()`
-returns false when `conflict:llm` is present, regardless of `parallel:ok`.
+Ollama capacity and causes transient skips for downstream LLM tests.
 
-**Do not tag a story `parallel:ok` if it also has `conflict:llm`.**
+`run-tests.sh` enforces this: `is_parallel_ok()` returns false when `conflict:llm` is
+present, regardless of `parallel:ok`. Do NOT tag a story both `parallel:ok` and
+`conflict:llm` — the conflict tag wins and the story runs serially after any outstanding
+parallel jobs are drained.
 
-Stories that make LLM calls (council, decompose, session spawn with LLM backend) should use
-`conflict:llm` so they never run in parallel with other LLM-heavy stories.
+Stories that spawn sessions with LLM backends, run decompose, or call council must use
+`conflict:llm`.
+
+### Parallelism mechanics
+
+- `parallel:ok` tagged stories run in a named-pipe semaphore worker pool.
+- Non-`parallel:ok` stories first drain all outstanding parallel jobs, then run serially.
+- Worker count is auto-tuned by `suggest_workers()` based on nproc; override with `--workers=N`.
+- Use `--serial` / `--no-parallel` to force full serial execution (useful for debugging
+  or when Ollama is known to be under heavy load from other work).
+
+### Sequential story `return` vs `exit` rule
+
+Stories run serially are **sourced** into the main harness shell (not subshells). Using
+`exit 0` inside a sourced serial story exits the entire harness, silently dropping all
+remaining tests. Always use `return 0` (or `return`) to bail from a serial story. This
+burned runs 2–3 where TS-754/775 used `exit 0` and killed TS-776–778.
+
+Stories run in parallel (via `launch_parallel`) run in a subshell — `exit` is safe there
+and the EXIT trap ensures the result file is written and the semaphore slot is released.
+
+### Python bool JSON bug
+
+When using `python3 -c "import json,sys; print(...)"` to extract values and then PUT
+them back, Python outputs `True`/`False` (uppercase) which is invalid JSON. The server
+silently ignores invalid JSON booleans, leaving the field at its previous value and
+causing subsequent tests that depend on the restored value to fail.
+
+**Fix:** Always normalize Python bool output to lowercase before using in a JSON body:
+```bash
+orig=$(api GET /api/config | python3 -c "import json,sys;print(json.load(sys.stdin).get('feature',{}).get('enabled','false'))" | tr '[:upper:]' '[:lower:]')
+# ... test ...
+api PUT /api/config "{\"feature.enabled\":$orig}" >/dev/null
+```
+This bit TS-732 (goose.enabled restore → broke TS-774) and TS-736 (web_search.enabled
+restore → broke TS-750/751/752).
+
+### Vision test timeouts
+
+moondream under concurrent test load takes 60–120s per request. Default curl `--max-time`
+of 30s is too short. Override for vision calls:
+```bash
+curl "${curl_args[@]}" --max-time 120 ...
+```
+TS-667/670 use this; TS-668 needs `sleep 60` (not 4s or 20s) after requesting the vision
+describe so the model has time to respond.
+
+### LLM inference timeouts
+
+The `/api/assist` endpoint and LLM-enable pretests run full inference round-trips. Under
+parallel suite load these take 60–120s. Use `--max-time 120` for those curl calls (TS-354,
+TS-377). Default 30s causes HTTP 000 (timeout before connect is released).
+
+### TS-695 verifier timeout
+
+TS-695 runs a full Automata PRD on `datawatch-ollama` (qwen3:8b, 128GB GPU node) with
+parallel tasks. Poll timeout: **1800s** (30 min). With `qwen3:1.7b` on localhost the
+prior 480s/720s budgets were not enough — model takes 60–120s per story, execution adds
+more. If TS-695 still times out: check whether both Ollama nodes are alive first
+(`GET /api/backends`), then consider whether the model has changed.
+
+For decomposition: use `qwen3:8b` on `johnnyjohnny` (128GB GPU, faster) not `qwen3:1.7b`
+on localhost. The TS-695 story spec should reference `ollama-johnnyjohnny` for the
+decompose backend.
+
+### TS-723/724/725 sequencing dependency
+
+TS-723/724/725 assert presence of fields on a PRD that has already run tasks
+(`session_id`, `pre_task_sha`, `memory_report`). They must run AFTER TS-754 (which
+creates the PRD with tasks). Remove `parallel:ok` from TS-723–725 so they drain after
+TS-754. If no completed PRD exists in the sandbox, they skip — this is expected on a
+fresh sandbox.
+
+### Playwright / PWA test resilience
+
+Chromium navigation is subject to transient failures unrelated to test logic:
+
+- `ERR_CERT_VERIFIER_CHANGED` — Chrome refreshed its cert store mid-navigation
+- `ERR_NETWORK_CHANGED`, `ERR_CONNECTION_RESET` — transient OS network event
+- "Cannot find context with specified id" from `page.$()` — browser context reset during post-reload frame transition
+
+The `run_pwa_story()` helper in `lib.sh` retries once on these errors. `page.$()`
+calls must use `.catch(() => null)` consistent with the `waitForSelector`/`page.evaluate`
+guards elsewhere.
+
+These errors are NOT real failures. Do not convert them to `ko()`.
+
+### K8s test prerequisites (TS-172/174/176)
+
+K8s tests require a `kind` cluster named `testing` with the `datawatch-e2e` image loaded.
+`run-tests.sh` calls `prepare_k8s_image()` before the daemon starts:
+1. Checks for `kind` cluster `testing` — skips if absent (TS-172/174/176 then skip)
+2. Builds `harbor.dmzs.com/library/datawatch-e2e:latest` from `Dockerfile.dev` if not in local Docker
+3. Loads into `testing` cluster via `kind load docker-image`
+
+**Critical:** K8s pods must use `imagePullPolicy: IfNotPresent` (not `Always`). The
+`:latest` tag makes kubectl default to `Always`, causing `ErrImagePull` when
+`harbor.dmzs.com` is unreachable even after `kind load`. Set it explicitly in every
+test pod spec.
+
+### Stale plan files (TS-557 / smoke check)
+
+`release-smoke.sh --check` fails when stale plan files exist under `docs/plans/` (files
+that were never moved to `historical-plans/`). TS-557 verifies this. If it fails, run:
+```bash
+bash scripts/tidy-plans.sh
+```
+This moves completed/obsolete plans to `historical-plans/`. Check after any sprint that
+creates plan files. TS-557 was fixed by tidying BL370/380/382.
+
+### Config state isolation between tests
+
+Tests that PUT config changes (enabling/disabling features, changing values) MUST save
+and restore the original value. Failure to restore leaves the sandbox in a modified state
+that causes subsequent tests in the same run to fail, even if the modifying test passes.
+
+Pattern:
+```bash
+orig=$(api GET /api/config | python3 -c "..." | tr '[:upper:]' '[:lower:]')
+# test work here
+api PUT /api/config "{\"key\":$orig}" >/dev/null
+```
+
+Tests that race on the same config key (e.g. `goose.enabled`) must NOT both have
+`parallel:ok` — one of them must be serialized (TS-732 vs TS-774 raced on `goose.enabled`;
+removing `parallel:ok` from TS-732 fixed it).
 
 ### Channel server pattern (reusable)
 
@@ -1621,52 +1762,63 @@ When a test needs a live MCP channel server, use `start_channel_server` / `stop_
 from `lib.sh`. These helpers encapsulate the FIFO+tail stdin-keepalive pattern.
 
 ```bash
-# In a story that needs the channel server:
 ensure_test_session || return
 start_channel_server || return   # sets _CHAN_PID, _CHAN_TAIL_PID, _CHAN_PIPE; polls channel_ready
-
 # ... test code using api POST /api/channel/send ...
-
-stop_channel_server              # kills tail+chan, removes FIFO
+stop_channel_server
 ```
 
-**Why FIFO+tail:** `datawatch-channel` exits when stdin gets EOF (MCP stdio goroutine calls
-`stop()`). Opening a FIFO for writing with `exec 8>"$pipe"` blocks until a reader exists.
-`tail -f /dev/null >"$pipe" &` holds the write end open in a killable background process;
-killing the tail PID delivers EOF cleanly. Using `exec 8<>"$pipe"` (O_RDWR) avoids the
-open-blocking but leaks fd 8 into the child, so killing the parent fd doesn't deliver EOF.
+**Why FIFO+tail:** `datawatch-channel` exits when stdin gets EOF (MCP stdio goroutine
+calls `stop()`). Opening a FIFO for writing with `exec 8>"$pipe"` BLOCKS until a reader
+exists. `tail -f /dev/null >"$pipe" &` holds the write end open in a killable background
+process; killing the tail PID delivers EOF cleanly. Using `exec 8<>"$pipe"` (O_RDWR)
+avoids the blocking but leaks fd 8 into the child — killing the parent fd doesn't deliver
+EOF to the child.
 
 **Environment variables for `datawatch-channel`:**
-- `DATAWATCH_API_URL=https://127.0.0.1:$TEST_TLS_PORT` — must be HTTPS directly
+- `DATAWATCH_API_URL=https://127.0.0.1:$TEST_TLS_PORT` — must be HTTPS directly (HTTP redirects drop auth header)
 - `DATAWATCH_TOKEN=$TEST_TOKEN`
 - `DATAWATCH_CHANNEL_PORT=0` — auto-selects a free port
-- `CLAUDE_SESSION_ID=$SESSION_ID` — NOT `DATAWATCH_SESSION_ID`
+- `CLAUDE_SESSION_ID=$SESSION_ID` — NOT `DATAWATCH_SESSION_ID` (wrong var does nothing)
 
 **Registration detection:** poll `GET /api/sessions/$SESSION_ID` until `channel_ready: true`
-(JSON field, `omitempty` — only present when set). The daemon learns the auto-assigned port
-from `POST /api/channel/ready` sent by the channel binary at startup.
+(`omitempty` — only present when set). The daemon learns the auto-assigned port from
+`POST /api/channel/ready` sent by the channel binary at startup.
 
 ### Scan guardrail pattern (reusable)
 
 When a test needs to trigger secrets-scan or sast-scan guardrails, use
-`create_secrets_scan_session` / `cleanup_scan_session` from `lib.sh`.
+`create_secrets_scan_session` / `cleanup_scan_session` from `lib.sh`. Guardrails are
+pure-regex (no LLM required) — they work on any sandbox regardless of Ollama state.
 
 ```bash
-create_secrets_scan_session || return   # creates temp dir + .env with fake AWS key; sets SCAN_SESSION_ID
-# ... test guardrail approval flow on SCAN_SESSION_ID ...
+create_secrets_scan_session || return   # temp dir + .env with fake AWS key → sets SCAN_SESSION_ID
+api POST "/api/sessions/$SCAN_SESSION_ID/guardrail" '{"scan":"secrets-scan"}' >/dev/null
+# ... test approval/telemetry flow ...
 cleanup_scan_session
 ```
 
-Scan guardrails are pure-regex (no LLM). Fake AWS key for secrets-scan:
-`AKIAIOSFODNN7EXAMPLE12345678901234` in `.env`. Python `eval("1+1")` triggers sast-scan.
-Both produce `SeverityCritical` → `block` verdict.
+Fake AWS key that triggers secrets-scan: `AKIAIOSFODNN7EXAMPLE12345678901234` in `.env`.
+Python `eval("1+1")` in a `.py` file triggers sast-scan. Both produce `SeverityCritical`
+→ `block` verdict.
+
+**Multi-block test (TS-739):** approving one block when a second active block remains keeps
+`session_unblocked=false`. The second block must also be approved before the session
+unblocks. Test both conditions explicitly.
 
 ### Multiple LLM backends
 
-The sandbox has two Ollama backends. Tests needing a specific backend should reference
-`ollama-johnnyjohnny` (http://johnnyjohnny:11434) for the primary backend, and
-`ollama-localhost` (http://localhost:11434) for the secondary. Moondream vision runs on
-`ollama-localhost`. When both are under load, LLM-dependent tests skip — this is expected.
+| Backend name | URL | Primary use |
+|---|---|---|
+| `ollama-johnnyjohnny` | http://johnnyjohnny:11434 | Primary: decompose, summarize, large model (qwen3:8b) |
+| `ollama-localhost` | http://localhost:11434 | Secondary: qwen3:1.7b fallback, moondream vision |
+
+Moondream vision runs on `ollama-localhost`. When both are under load, LLM-dependent
+tests skip — this is expected and within the infrastructure floor.
+
+Tests asserting LLM backend names in API responses should accept either backend as
+valid rather than hard-coding one name, unless the test specifically validates which
+backend was used.
 
 ---
 
