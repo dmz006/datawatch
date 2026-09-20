@@ -50,8 +50,10 @@ _story_ts_736() {
   local got_val
   got_val=$(echo "$cfg2" | python3 -c "import json,sys; print(json.load(sys.stdin).get('web_search',{}).get('enabled',''))" 2>/dev/null || echo "")
 
-  # Restore
-  api PUT /api/config "{\"web_search.enabled\":$orig_ws}" >/dev/null 2>&1 || true
+  # Restore (Python prints True/False uppercase; JSON needs lowercase).
+  local restore_ws
+  if [[ "$orig_ws" == "True" || "$orig_ws" == "true" ]]; then restore_ws=true; else restore_ws=false; fi
+  api PUT /api/config "{\"web_search.enabled\":$restore_ws}" >/dev/null 2>&1 || true
 
   local expected
   if [[ "$new_val" == "true" ]]; then expected="True"; else expected="False"; fi
