@@ -19,6 +19,9 @@ session:
   auto_git_init: false
   auto_git_commit: false
   kill_sessions_on_exit: true
+  summarizer:
+    enabled: true
+    llm_ref: ollama-johnnyjohnny
 
 server:
   enabled: true
