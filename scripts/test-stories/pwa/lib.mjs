@@ -134,17 +134,26 @@ export async function saveLog(name, content) {
 
 // Wrap a story function: launches browser, runs fn(page), tears down.
 // Exits 0 on pass, 1 on fail. Call this from every TS-NNN.mjs.
-export async function runStory(fn) {
-  let browser;
+// Transient Chromium errors that warrant a single retry with a fresh browser.
+const TRANSIENT_NAV_ERRORS = [
+  'ERR_CERT_VERIFIER_CHANGED',
+  'ERR_NETWORK_CHANGED',
+  'ERR_CONNECTION_RESET',
+];
+
+function isTransientNavError(err) {
+  return TRANSIENT_NAV_ERRORS.some((e) => (err.message || '').includes(e));
+}
+
+async function runStoryOnce(fn) {
+  const browser = await launchBrowser();
   try {
-    browser = await launchBrowser();
     const context = await browser.newContext({
       ignoreHTTPSErrors: true,
       viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();
 
-    // Capture console errors as evidence.
     const consoleErrors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
@@ -154,19 +163,30 @@ export async function runStory(fn) {
     if (consoleErrors.length > 0) {
       await saveLog('console-errors', consoleErrors.join('\n'));
     }
-
-    await browser.close();
-    process.exit(0);
+    return null; // success
   } catch (err) {
-    if (browser) {
-      try {
-        const pages = browser.contexts()[0]?.pages() || [];
-        if (pages[0]) await screenshot(pages[0], 'failure').catch(() => {});
-      } catch { /* best-effort */ }
-      await browser.close().catch(() => {});
-    }
-    await saveLog('error', err.stack || err.message).catch(() => {});
-    console.error('FAIL:', err.message);
-    process.exit(1);
+    try {
+      const pages = browser.contexts()[0]?.pages() || [];
+      if (pages[0]) await screenshot(pages[0], 'failure').catch(() => {});
+    } catch { /* best-effort */ }
+    return err;
+  } finally {
+    await browser.close().catch(() => {});
   }
+}
+
+export async function runStory(fn) {
+  let err = await runStoryOnce(fn);
+  if (!err) { process.exit(0); }
+
+  // Retry once for transient Chromium navigation errors (cert store refresh etc.)
+  if (isTransientNavError(err)) {
+    await new Promise((r) => setTimeout(r, 2000));
+    err = await runStoryOnce(fn);
+    if (!err) { process.exit(0); }
+  }
+
+  await saveLog('error', err.stack || err.message).catch(() => {});
+  console.error('FAIL:', err.message);
+  process.exit(1);
 }
