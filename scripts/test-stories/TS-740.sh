@@ -26,15 +26,6 @@ _story_ts_740() {
 
   _cleanup() { api DELETE "/api/autonomous/prds/$prd_id" >/dev/null 2>&1 || true; }
 
-  # Find the sandbox config — needed so CLI trusts the sandbox TLS cert and hits the right URL.
-  local sandbox_cfg=""
-  for d in /tmp/dw-test-sandbox-* /tmp/dw-test-*; do
-    if [[ -f "$d/config.yaml" ]]; then
-      sandbox_cfg="$d/config.yaml"
-      break
-    fi
-  done
-
   # Use the first registered LLM from the backends API as the decomposition profile.
   # GET /api/backends returns {"llm": [{"name":"...","available":true,...}], "active":"..."}.
   local profile
@@ -53,16 +44,12 @@ for l in d.get("llm", []):
     return
   fi
 
+  # Use HTTP endpoint (same as the cli helper in lib.sh) to avoid self-signed cert issues.
   local cli_out cli_exit
-  if [[ -n "$sandbox_cfg" ]]; then
-    cli_out=$(DATAWATCH_TOKEN="$TEST_TOKEN" "$TEST_BINARY" \
-      --config "$sandbox_cfg" --url "$TEST_TLS" \
-      autonomous prd-set-llm "$prd_id" --decomposition-profile "$profile" 2>&1)
-    cli_exit=$?
-  else
-    _cleanup; skip "sandbox config not found — cannot pass --config for CLI TLS trust"
-    return
-  fi
+  cli_out=$(DATAWATCH_TOKEN="$TEST_TOKEN" "$TEST_BINARY" \
+    --config "$TEST_DATA/config.yaml" --url "$TEST_HTTP" \
+    autonomous prd-set-llm "$prd_id" --decomposition-profile "$profile" 2>&1)
+  cli_exit=$?
   save_evidence TS-740 "cli-output.txt" "$cli_out"
 
   if [[ $cli_exit -ne 0 ]]; then
