@@ -18951,7 +18951,11 @@ function loadSystemStatsGrid() {
     if (d.gpu_name) {
       const guPct = d.gpu_util_pct || 0;
       const gColor = guPct > 80 ? 'var(--error)' : 'var(--accent2,#60a5fa)';
-      gpuHtml += bar('GPU util', guPct, 100, gColor, guPct+'%'+(d.gpu_temp ? ' '+d.gpu_temp+'°C' : ''));
+      gpuHtml += bar('GPU util', guPct, 100, gColor, guPct+'%');
+      if (d.gpu_temp) {
+        const tc = d.gpu_temp >= 80 ? 'var(--error)' : d.gpu_temp >= 60 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+        gpuHtml += bar('GPU temp', d.gpu_temp, 100, tc, d.gpu_temp+'°C');
+      }
       const gUsed = (d.gpu_mem_used_mb||0)*1048576, gTotal = (d.gpu_mem_total_mb||0)*1048576;
       if (gTotal > 0) gpuHtml += bar('GPU VRAM', gUsed, gTotal, 'var(--accent2,#60a5fa)', fmtBytes(gUsed)+' / '+fmtBytes(gTotal));
     }
