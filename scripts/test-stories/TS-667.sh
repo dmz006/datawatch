@@ -39,9 +39,15 @@ _story_ts_667() {
     return
   fi
   if [[ "$code" == "502" || "$code" == "500" ]]; then
-    # Ollama model runner may have crashed — wait 20s for restart then retry once.
-    echo "  [TS-667] vision returned $code — waiting 20s for ollama recovery before retry"
-    sleep 20
+    # Ollama model runner may have crashed — poll for ollama health then retry.
+    echo "  [TS-667] vision returned $code — polling ollama health (up to 90s) before retry"
+    local _deadline=$(( $(date +%s) + 90 ))
+    while [[ $(date +%s) -lt $_deadline ]]; do
+      if curl -s --max-time 3 "http://localhost:11434/api/tags" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
     resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
       -F "image=@$tmp_png;type=image/png" \
       "$TEST_BASE/api/vision/describe" \

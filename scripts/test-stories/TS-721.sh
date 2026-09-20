@@ -6,14 +6,42 @@ CURRENT_STORY="TS-721"
 story_preflight "surface:api feature:sessions" || return 0
 
 _story_ts_721() {
-  # Get a session to test
-  local sid
+  # current-status returns 409 for non-running sessions — find or create a running one.
+  local sid created=false
+
+  # Prefer an existing running session.
   sid=$(api GET /api/sessions 2>/dev/null \
-    | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+    | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+for s in d:
+    if s.get("status","") == "running":
+        print(s["id"])
+        break
+' 2>/dev/null || echo "")
+
+  # No running session — start a short-lived shell session.
   if [[ -z "$sid" ]]; then
-    skip "no sessions available for current_status test"
+    local sess_raw
+    sess_raw=$(curl "${curl_args[@]}" -s -X POST \
+      -H "Content-Type: application/json" \
+      -d '{"task":"ts721-current-status-test","project_dir":"/tmp","backend":"shell"}' \
+      "$TEST_TLS/api/sessions/start" 2>/dev/null || echo "")
+    sid=$(echo "$sess_raw" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+    created=true
+    sleep 1
+  fi
+
+  if [[ -z "$sid" ]]; then
+    skip "no sessions available and could not create one for current-status test"
     return
   fi
+
+  _cleanup() {
+    if [[ "$created" == "true" && -n "$sid" ]]; then
+      api POST /api/sessions/state "{\"id\":\"$sid\",\"state\":\"killed\"}" >/dev/null 2>&1 || true
+    fi
+  }
 
   local resp code body
   resp=$(api_code GET "/api/sessions/$sid/current-status")
@@ -22,30 +50,35 @@ _story_ts_721() {
   save_evidence TS-721 "current_status.json" "$body"
 
   if [[ "$code" == "404" ]]; then
-    skip "current-status endpoint not found (HTTP 404) — may not be enabled on this session"
+    _cleanup; skip "current-status endpoint not found (HTTP 404) — may not be enabled on this session"
+    return
+  fi
+  if [[ "$code" == "503" ]]; then
+    _cleanup; skip "current-status returned 503 — summarizer not configured"
     return
   fi
 
   # The key fix in v8.19.8 was changing 204→200 so PWA's r.json() doesn't throw
   if [[ "$code" == "204" ]]; then
-    ko "GET /api/sessions/{id}/current-status returned HTTP 204 (regression) — should be 200 per v8.19.8 contract; PWA r.json() will throw"
+    _cleanup; ko "GET /api/sessions/{id}/current-status returned HTTP 204 (regression) — should be 200 per v8.19.8 contract; PWA r.json() will throw"
     return
   fi
 
   if [[ "$code" != "200" ]]; then
-    ko "GET /api/sessions/{id}/current-status returned HTTP $code (expected 200): $(echo "$body" | head -c 200)"
+    _cleanup; ko "GET /api/sessions/{id}/current-status returned HTTP $code (expected 200): $(echo "$body" | head -c 200)"
     return
   fi
 
   # Verify body is non-empty JSON
   if ! echo "$body" | python3 -c "import json,sys;json.load(sys.stdin)" 2>/dev/null; then
-    ko "current-status returned 200 but non-JSON body: $(echo "$body" | head -c 200)"
+    _cleanup; ko "current-status returned 200 but non-JSON body: $(echo "$body" | head -c 200)"
     return
   fi
 
   local no_change
   no_change=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('no_change',''))" 2>/dev/null || echo "")
 
+  _cleanup
   ok "GET /api/sessions/{id}/current-status returns HTTP 200 with JSON body (no_change=$no_change) — v8.19.8 contract satisfied"
 }
 

@@ -35,18 +35,21 @@ _story_ts_740() {
     fi
   done
 
-  # Use the first registered LLM from the sandbox config as the decomposition profile.
+  # Use the first registered LLM from the backends API as the decomposition profile.
+  # GET /api/backends returns {"llm": [{"name":"...","available":true,...}], "active":"..."}.
   local profile
-  profile=$(api GET /api/config \
+  profile=$(api GET /api/backends \
     | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
-llms=d.get("llm",{}).get("registered",[])
-if llms:
-    print(llms[0].get("name",""))
+for l in d.get("llm", []):
+    n = l.get("name", "")
+    if n:
+        print(n)
+        break
 ' 2>/dev/null || echo "")
   if [[ -z "$profile" ]]; then
-    _cleanup; skip "no registered LLMs in sandbox config — cannot determine a valid decomposition profile"
+    _cleanup; skip "no registered LLMs reported by /api/backends — cannot determine a valid decomposition profile"
     return
   fi
 

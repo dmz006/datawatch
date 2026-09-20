@@ -35,8 +35,8 @@ for item in items:
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
 
   if [[ "$code" == "502" || "$code" == "503" ]]; then
-    echo "  [TS-722] $node_name returned $code — waiting 10s for ollama to recover before retry"
-    sleep 10
+    echo "  [TS-722] $node_name returned $code — waiting 30s for ollama to recover before retry"
+    sleep 30
     resp=$(api_code GET "/api/compute/nodes/$node_name/detail")
     code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
     body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')

@@ -6,33 +6,49 @@ CURRENT_STORY="TS-730"
 story_preflight "surface:api feature:sessions" || return 0
 
 _story_ts_730() {
-  # Find a session that is not actively running (done/idle) — least likely to produce new output
-  local sid
+  # current-status returns 409 for non-running sessions; 200+no_change:true for running
+  # but quiet sessions (no new output). Start a fresh shell session and make two calls.
+  local sid created=false
+
+  # Prefer an existing running session.
   sid=$(api GET /api/sessions 2>/dev/null \
     | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
 for s in d:
-    st = s.get("status","")
-    if st in ("done","failed","stopped","idle",""):
+    if s.get("status","") == "running":
         print(s["id"])
         break
 ' 2>/dev/null || echo "")
+
+  # No running session — start one.
   if [[ -z "$sid" ]]; then
-    # Fall back to any session
-    sid=$(api GET /api/sessions 2>/dev/null \
-      | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+    local sess_raw
+    sess_raw=$(curl "${curl_args[@]}" -s -X POST \
+      -H "Content-Type: application/json" \
+      -d '{"task":"ts730-no-change-test","project_dir":"/tmp","backend":"shell"}' \
+      "$TEST_TLS/api/sessions/start" 2>/dev/null || echo "")
+    sid=$(echo "$sess_raw" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+    created=true
+    sleep 1
   fi
+
   if [[ -z "$sid" ]]; then
-    skip "no sessions available for no_change test"
+    skip "no sessions available and could not create one for no_change test"
     return
   fi
+
+  _cleanup() {
+    if [[ "$created" == "true" && -n "$sid" ]]; then
+      api POST /api/sessions/state "{\"id\":\"$sid\",\"state\":\"killed\"}" >/dev/null 2>&1 || true
+    fi
+  }
 
   # Call once to establish a baseline
   api GET "/api/sessions/$sid/current-status" >/dev/null 2>&1 || true
   sleep 1
 
-  # Call again — for an idle session this should return no_change:true
+  # Call again — session is idle/quiet, so no_change:true is expected
   local resp code body
   resp=$(api_code GET "/api/sessions/$sid/current-status")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
@@ -40,21 +56,26 @@ for s in d:
   save_evidence TS-730 "current_status.json" "$body"
 
   if [[ "$code" == "204" ]]; then
-    ko "GET current-status returned 204 (regression) — should be 200 per v8.19.8 contract"
+    _cleanup; ko "GET current-status returned 204 (regression) — should be 200 per v8.19.8 contract"
     return
   fi
   if [[ "$code" == "404" ]]; then
-    skip "current-status endpoint not found (404)"
+    _cleanup; skip "current-status endpoint not found (404)"
+    return
+  fi
+  if [[ "$code" == "503" ]]; then
+    _cleanup; skip "current-status returned 503 — summarizer not configured"
     return
   fi
   if [[ "$code" != "200" ]]; then
-    ko "GET current-status returned HTTP $code: $(echo "$body" | head -c 200)"
+    _cleanup; ko "GET current-status returned HTTP $code: $(echo "$body" | head -c 200)"
     return
   fi
 
   local no_change
   no_change=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('no_change',''))" 2>/dev/null || echo "")
 
+  _cleanup
   if [[ "$no_change" == "True" || "$no_change" == "true" ]]; then
     ok "GET /api/sessions/{id}/current-status returns no_change:true for idle session — v8.19.8 no-change contract works"
     return

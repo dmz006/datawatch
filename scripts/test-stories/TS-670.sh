@@ -50,9 +50,15 @@ _story_ts_670() {
     return
   fi
   if [[ "$code" == "500" ]] && echo "$body" | grep -qi "image description failed\|vision.*500\|vision.*unavailable"; then
-    # Ollama model runner may have crashed — wait 20s for restart and retry once.
-    echo "  [TS-670] vision unavailable ($code) — waiting 20s for ollama recovery before retry"
-    sleep 20
+    # Ollama model runner may have crashed — poll for ollama health then retry.
+    echo "  [TS-670] vision unavailable ($code) — polling ollama health (up to 90s) before retry"
+    local _deadline=$(( $(date +%s) + 90 ))
+    while [[ $(date +%s) -lt $_deadline ]]; do
+      if curl -s --max-time 3 "http://localhost:11434/api/tags" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
     resp=$(curl "${curl_args[@]}" --max-time 120 -X POST \
       -H "Content-Type: application/json" \
       -d "{\"proposal\":\"What is in the image?\",\"image_path\":\"$tmp_png\"}" \
