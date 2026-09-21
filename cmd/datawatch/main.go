@@ -3718,7 +3718,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"one_shot":    true,
 			})
 
-			timeout := 20 * time.Minute
+			timeout := 60 * time.Minute
 			if req.TimeoutSeconds > 0 {
 				timeout = time.Duration(req.TimeoutSeconds) * time.Second
 			}
@@ -3782,7 +3782,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			for {
 				select {
 				case <-ctx.Done():
-					return "", fmt.Errorf("decompose session %s timed out after 20m", startOut.ID)
+					return "", fmt.Errorf("decompose session %s timed out after %v", startOut.ID, timeout)
 				case <-tick.C:
 					pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 						loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
