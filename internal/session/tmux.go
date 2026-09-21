@@ -117,6 +117,10 @@ func trimTrailingNewlines(s string) string {
 // the race against every TUI I've tested.
 const defaultSendSettle = 120 * time.Millisecond
 
+// tmuxSendChunk is the max bytes per send-keys -l call. tmux rejects
+// commands above ~16 KB with "command too long"; 8 KB is a safe bound.
+const tmuxSendChunk = 8192
+
 // SendKeys sends keystrokes to a tmux session followed by Enter.
 // Trailing newlines in `keys` are stripped before the explicit Enter
 // is appended, and the push is always split into two tmux calls
@@ -147,8 +151,19 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 		settle = defaultSendSettle
 	}
 	keys = trimTrailingNewlines(keys)
-	if err := exec.Command("tmux", "send-keys", "-t", session, "-l", keys).Run(); err != nil {
-		return err
+	// Chunk large inputs: tmux rejects send-keys -l arguments above ~16 KB.
+	for len(keys) > 0 {
+		chunk := keys
+		if len(chunk) > tmuxSendChunk {
+			chunk = keys[:tmuxSendChunk]
+		}
+		keys = keys[len(chunk):]
+		if err := exec.Command("tmux", "send-keys", "-t", session, "-l", chunk).Run(); err != nil {
+			return err
+		}
+		if len(keys) > 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 	time.Sleep(settle)
 	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
