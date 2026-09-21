@@ -10769,10 +10769,18 @@ window.submitPRDEdit = function(id) {
 // panel is currently visible (Automata tab uses loadAutomataPanel, legacy
 // views fall back to loadPRDPanel).
 function _refreshAutomataOrPRD() {
-  // When inside a PRD detail view, re-render it in place so status changes
-  // (reset_to_draft, cancel, approve, etc.) are immediately visible.
-  if (_automataDetailId && typeof renderPRDDetailView === 'function') {
-    renderPRDDetailView(_automataDetailId);
+  // When inside a PRD detail view, re-fetch and re-render in place WITHOUT
+  // the loading-state wipe that renderPRDDetailView uses.  The loading wipe
+  // races with WS prd_update events: the event handler (_liveUpdateDetail)
+  // looks for '.prd-detail-tab-body' to decide where to call
+  // _renderStatusGraphs; when the slot doesn't exist (loading state) the
+  // graph call is skipped and the slot is never populated after the fetch
+  // returns.  Calling _renderDetailContent directly keeps the existing DOM
+  // intact so concurrent WS events always find the slot they need.
+  if (_automataDetailId && typeof _renderDetailContent === 'function') {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
+      .then(prd => { if (prd && prd.id) _renderDetailContent(prd); })
+      .catch(() => {});
     return;
   }
   if (state.activeView === 'autonomous' && typeof loadAutomataPanel === 'function') {
