@@ -90,6 +90,13 @@ func (a *API) resumeRunningPRDs() {
 	for _, prd := range a.M.Store().ListPRDs() {
 		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, prd.Status)
 		switch prd.Status {
+		case PRDPlanning:
+			// A PRD stuck in planning means the daemon was restarted while
+			// decomposeFnSession was running. The goroutine is gone; reset to
+			// draft so the operator can re-trigger decompose.
+			prd.Status = PRDDraft
+			_ = a.M.store.SavePRD(prd)
+			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
 		case PRDRunning:
 			// Kill any orphaned sessions from in-progress tasks and reset them
 			// to pending so the new executor re-runs them cleanly instead of
