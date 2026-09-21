@@ -3820,6 +3820,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// the session completed but didn't write the file.
 						return "", fmt.Errorf("decompose session %s completed but output file %s not found", startOut.ID, outputFile)
 					case "failed", "killed", "cancelled":
+						// Give the output file one last chance: the LLM may have
+						// written it in the same instant the session was killed.
+						time.Sleep(3 * time.Second)
+						if content, ferr := os.ReadFile(outputFile); ferr == nil && len(bytes.TrimSpace(content)) > 0 {
+							fmt.Printf("[decompose-session] %s state=%q, output file appeared after kill (%d bytes)\n", startOut.ID, s.State, len(content))
+							return string(content), nil
+						}
 						return "", fmt.Errorf("decompose session %s ended with state %q and no output file", startOut.ID, s.State)
 					}
 				}
