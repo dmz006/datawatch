@@ -469,6 +469,26 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 
 		if !skipSpawn {
+			// Kill any session left over from a previous attempt (a failed-
+			// verification retry within this call, or a session inherited from
+			// disk after a daemon restart whose liveness check above came back
+			// false) before spawning its replacement. Without this, the old
+			// session's tmux pane and backend process (opencode/claude) keep
+			// running as an orphan — wasting resources and confusing session
+			// tracking — while t.SessionID gets silently overwritten below.
+			if t.SessionID != "" {
+				m.mu.Lock()
+				killerFn := m.sessionKillerFn
+				m.mu.Unlock()
+				if killerFn != nil {
+					if err := killerFn(t.SessionID); err != nil {
+						log.Printf("[autonomous] executeOne: kill stale session %s for task %s before respawn: %v", t.SessionID, t.ID, err)
+					} else {
+						log.Printf("[autonomous] executeOne: killed stale session %s for task %s before respawn", t.SessionID, t.ID)
+					}
+				}
+				t.SessionID = ""
+			}
 			now := time.Now()
 			t.StartedAt = &now
 			t.Status = TaskInProgress

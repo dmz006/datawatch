@@ -224,6 +224,11 @@ channels:  # see comm-channels.md
 - **`datawatch stop` leaves orphan tmux sessions.** That's by design
   — the LLM keeps working. To fully stop including sessions, kill
   them first: `datawatch sessions list | xargs -L1 datawatch sessions kill`.
+- **Autonomous task session left running after a restart.** The
+  executor reconciles this on boot — a task's session is killed and
+  the task reset to pending if the session didn't survive, and left
+  alone (resumed, not duplicated) if it did. See
+  [`../flow/task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md).
 - **Update mid-session.** Safe — `datawatch update` swaps the binary;
   `datawatch restart` re-attaches via pipe-pane. Sessions reach
   `LastChannelEventAt = now` and continue.

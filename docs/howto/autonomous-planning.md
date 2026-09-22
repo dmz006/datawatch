@@ -292,6 +292,10 @@ spec without re-planning. (Use `decompose` alias if scripts require it.)
 - **Spec changes mid-run.** Edit-Spec + Run-Continue is supported,
   but the LLM only sees the new spec on the next task spawn; in-flight
   tasks finish under the old spec.
+- **Duplicate session for the same task after a retry or daemon
+  restart.** Fixed — the executor now kills a task's previous session
+  before spawning its replacement, on every path (retry, boot-resume).
+  See [`task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md).
 
 ## Linked references
 
@@ -299,6 +303,7 @@ spec without re-planning. (Use `decompose` alias if scripts require it.)
 - See also: [`automata-orchestrator.md`](automata-orchestrator.md) — composing Automata into DAGs.
 - See also: [`evals.md`](evals.md) — per-story graded verification.
 - See also: [`profiles.md`](profiles.md) — Project + Cluster Profiles.
+- See also: [`../flow/task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md) — session/task tracking + cleanup on retry and restart.
 - Architecture: `../architecture-overview.md` § Autonomous executor.
 
 ## Screenshots

@@ -424,13 +424,22 @@ func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectD
 	m.memoryReportFn = fn
 }
 
-// resetInProgressTasksForResume kills any sessions associated with
-// TaskInProgress tasks, clears their SessionID, and resets their status to
-// TaskPending so the executor re-runs them cleanly after a daemon restart.
+// resetInProgressTasksForResume resets tasks left mid-flight by a prior
+// daemon instance so the executor re-runs them cleanly instead of spawning
+// a duplicate alongside an orphaned session. TaskInProgress tasks are always
+// reset (the spawn goroutine never reached TaskVerifying, so any session is
+// necessarily orphaned). TaskVerifying/TaskRunningTests tasks are reset only
+// when sessionAliveFn confirms the session is gone — a genuinely live session
+// is left alone so executeOne's own skip-spawn check picks it up and verifies
+// it directly, matching reconcileStuckTasks' logic (B90/B93). This is the
+// canonical boot-time task/session reconciliation; executeOne's own
+// kill-before-respawn guard (executor.go) is the second line of defense if
+// this pass or its liveness check is wrong.
 // Called from api.resumeRunningPRDs before re-launching the executor.
 func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	m.mu.Lock()
-	fn := m.sessionKillerFn
+	killerFn := m.sessionKillerFn
+	aliveFn := m.sessionAliveFn
 	m.mu.Unlock()
 	if prd == nil {
 		return
@@ -438,18 +447,27 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
-			if t.Status != TaskInProgress {
+			prevStatus := t.Status
+			switch t.Status {
+			case TaskInProgress:
+				// Spawn goroutine died with the prior daemon before reaching
+				// TaskVerifying — any session is necessarily orphaned.
+			case TaskVerifying, TaskRunningTests:
+				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
+					continue // session still live; leave it for executeOne to resume
+				}
+			default:
 				continue
 			}
-			if fn != nil && t.SessionID != "" {
-				if err := fn(t.SessionID); err != nil {
+			if killerFn != nil && t.SessionID != "" {
+				if err := killerFn(t.SessionID); err != nil {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
 			t.SessionID = ""
 			t.Status = TaskPending
 			_ = m.store.SaveTask(t)
-			log.Printf("[autonomous] boot-resume: reset task %s (was in_progress) for prd=%s", t.ID, prd.ID)
+			log.Printf("[autonomous] boot-resume: reset task %s (was %s) for prd=%s", t.ID, prevStatus, prd.ID)
 		}
 	}
 }
