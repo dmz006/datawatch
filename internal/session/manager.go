@@ -3952,6 +3952,40 @@ func (m *Manager) IsTrustDialogShowing(fullID string) bool {
 		strings.Contains(lower, "yes, i trust")
 }
 
+// IsOpenCodeAtPrompt returns true when the live pane for fullID shows
+// the opencode interactive input prompt ("Ask anything" or "⏎ Send"),
+// meaning opencode is idle and ready to receive the next task via send_input.
+// Used by the TUI task delivery goroutine to avoid injecting into a session
+// that is still mid-processing.
+func (m *Manager) IsOpenCodeAtPrompt(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	if sess.TmuxSession == "" {
+		return false
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil || content == "" {
+		return false
+	}
+	stripped := strings.ToLower(StripANSI(content))
+	// Actively generating — not at the interactive prompt.
+	if strings.Contains(stripped, "esc interrupt") {
+		return false
+	}
+	// Footer indicators for the opencode interactive idle state.
+	// "tab agents  ctrl+p commands" appears in the bottom navigation bar
+	// when opencode is at the input prompt waiting for a new message.
+	// Older builds show "ask anything" / "⏎ send" / "shift+enter for newline"
+	// as placeholder text in the input field.
+	return strings.Contains(stripped, "tab agents") ||
+		strings.Contains(stripped, "ctrl+p commands") ||
+		strings.Contains(stripped, "ask anything") ||
+		strings.Contains(stripped, "⏎ send") ||
+		strings.Contains(stripped, "shift+enter for newline")
+}
+
 // SendTrustDialogAccept accepts the workspace-trust TUI dialog for sessID
 // by delegating to tmux.SendTrustPromptAccept (Down then Enter).
 func (m *Manager) SendTrustDialogAccept(fullID string) error {

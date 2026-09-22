@@ -5960,7 +5960,22 @@ Return STRICT JSON:
 					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
 				}
 				go func() {
-					time.Sleep(time.Second) // let TUI input handler settle
+					// For opencode TUI sessions: wait until the interactive
+					// prompt is actually visible before injecting the task.
+					// Without this guard, a recovered session that is still
+					// mid-processing receives the task text as stray keystrokes,
+					// causing an "eval: syntax error" inside the opencode TUI.
+					if backendFamily == "opencode" {
+						deadline := time.Now().Add(10 * time.Minute)
+						for time.Now().Before(deadline) {
+							time.Sleep(2 * time.Second)
+							if mgr.IsOpenCodeAtPrompt(sessID) {
+								break
+							}
+						}
+					} else {
+						time.Sleep(time.Second) // let TUI input handler settle
+					}
 					// Mark before SendInput so StartScreenCapture's task-echo
 					// suppression is active during the entire input rendering window
 					// (the task text with DATAWATCH_COMPLETE: placeholder is visible
