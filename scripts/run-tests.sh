@@ -11,6 +11,7 @@
 #   bash scripts/run-tests.sh --surface=api         # filter by surface
 #   bash scripts/run-tests.sh --feature=sessions    # filter by feature
 #   bash scripts/run-tests.sh --story=TS-042        # single story
+#   bash scripts/run-tests.sh --stories=TS-042,TS-056  # comma-separated set
 #   bash scripts/run-tests.sh --resume-from=TS-042  # resume after a blocker
 #   bash scripts/run-tests.sh --workers=4           # override max parallel workers
 #   bash scripts/run-tests.sh --serial              # force serial execution
@@ -46,10 +47,33 @@ mkdir -p "$TEST_DIR"
 FAILED=0
 DAEMON_PID=""
 
-# Prune stale artifacts left by runs that were SIGKILL'd or stories run standalone.
-# Anything older than 1 day is fair game; active runs are always recent.
-find /tmp -maxdepth 1 \( -name "dw-docker-sim-*" -o -name "dw-test-[0-9]*" \) -mtime +1 \
-  -exec rm -rf {} + 2>/dev/null || true
+# Prune stale artifacts left by runs that were SIGKILL'd or stories run
+# standalone. A SIGKILL'd run's EXIT trap (cleanup(), below) never fires, so
+# its daemon process is orphaned — killing the daemon and removing its
+# directory only (without the other) either leaks a process forever or
+# yanks the directory out from under a still-running daemon. Do both,
+# daemon first. Anything older than 1 day (3 for the workspace TEST_DIR
+# copies — cleanup() deliberately keeps those on failure for --resume-from,
+# so give a real resume window before auto-reaping them) is fair game;
+# active runs are always recent.
+_kill_orphan_daemon_for() {
+  local dir="$1"
+  local pid
+  pid=$(pgrep -f "config.*${dir}/config.yaml" 2>/dev/null || true)
+  [[ -n "$pid" ]] && kill $pid 2>/dev/null || true
+}
+for d in /tmp/dw-docker-sim-* /tmp/dw-test-[0-9]* /tmp/dw-test-sandbox-*; do
+  [[ -e "$d" ]] || continue
+  find "$d" -maxdepth 0 -mtime +1 2>/dev/null | grep -q . || continue
+  _kill_orphan_daemon_for "$d"
+  rm -rf "$d" 2>/dev/null || true
+done
+for d in "$REPO_PARENT"/datawatch-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]; do
+  [[ -e "$d" ]] || continue
+  find "$d" -maxdepth 0 -mtime +3 2>/dev/null | grep -q . || continue
+  _kill_orphan_daemon_for "$d"
+  rm -rf "$d" 2>/dev/null || true
+done
 
 # --- daemon lifecycle --------------------------------------------------------
 start_test_daemon() {
@@ -412,6 +436,7 @@ echo ""
 FILTER_SURFACE=""
 FILTER_FEATURE=""
 FILTER_STORY=""
+FILTER_STORIES=""
 RESUME_FROM=""
 FAIL_FAST=0
 SERIAL_MODE=0
@@ -423,6 +448,7 @@ for arg in "$@"; do
     --surface=*)          FILTER_SURFACE="${arg#*=}" ;;
     --feature=*)          FILTER_FEATURE="${arg#*=}" ;;
     --story=*)            FILTER_STORY="${arg#*=}" ;;
+    --stories=*)          FILTER_STORIES="${arg#*=}" ;;
     --resume-from=*)      RESUME_FROM="${arg#*=}" ;;
     --fail-fast*)         FAIL_FAST=1 ;;
     --workers=*)          WORKER_FLAG="${arg#*=}" ;;
@@ -432,7 +458,7 @@ for arg in "$@"; do
   esac
 done
 
-export FILTER_SURFACE FILTER_FEATURE FILTER_STORY RESUME_FROM FAIL_FAST
+export FILTER_SURFACE FILTER_FEATURE FILTER_STORY FILTER_STORIES RESUME_FROM FAIL_FAST
 
 # --- resource monitoring (Linux /proc) --------------------------------------
 # Returns CPU usage % (0-100) based on 200ms /proc/stat sample
@@ -686,8 +712,11 @@ for story_script in "$STORIES_DIR"/TS-*.sh; do
     [[ "$story_id" == "$RESUME_FROM" ]] && PAST_RESUME=1 || continue
   fi
 
-  # story filter
+  # story filter — single (--story=) or comma-separated set (--stories=)
   [[ -n "$FILTER_STORY" && "$story_id" != "$FILTER_STORY" ]] && continue
+  if [[ -n "$FILTER_STORIES" ]] && ! echo ",$FILTER_STORIES," | grep -q ",$story_id,"; then
+    continue
+  fi
 
   # surface/feature filter from tags
   tags=$(story_tags "$story_script")

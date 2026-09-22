@@ -778,6 +778,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T47 | TS-703 | B104/B105: automata status locale keys present in all 5 locale bundles | surface:locale feature:automata group:b104-status-parity-v9 parallel:ok | ✅ ready | Keys may be added in future sprint |
 | T47 | TS-704 | B106: _showFileViewer and _fileChip functions present in app.js (static check) | surface:pwa feature:automata group:b106-file-viewer-v9 parallel:ok | ✅ ready | Static analysis — no server needed |
 | T47 | TS-705 | B102: files_touched paths are absolute (start with /) after hook Stop in git repo | surface:api feature:sessions group:b102-files-touched-v9 parallel:ok | ✅ ready | Uses repo root as project_dir |
+| T47 | TS-779 | Full Automaton lifecycle: decompose→approve→run→verify→complete; asserts no task ever has two live sessions across a retry (2026-09-22 session-leak regression guard) | surface:api feature:automata feature:journey conflict:llm | ✅ ready | — | See docs/flow/task-session-reconcile-flow.md |
 
 ---
 
