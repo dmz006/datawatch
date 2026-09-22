@@ -409,6 +409,12 @@ type Manager struct {
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
 
+	// startupDialogSent prevents multiple goroutines from firing for the same
+	// startup dialog (channels consent, workspace-trust) when processOutputLine
+	// is called across multiple screen-capture ticks while the dialog is visible.
+	// Key: "fullID:dialog-type" (e.g. "johnnyjohnny-abc1:channels").
+	startupDialogSent sync.Map
+
 	// summaries stores the last generated summary per session ID.
 	// Access is protected by the summariesMu mutex.
 	summariesMu sync.Mutex
@@ -5611,24 +5617,34 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 		// Auto-approve claude-code startup dialogs so executor/automated sessions
 		// don't block waiting for user input.
+		// Each handler fires at most once per session per dialog type — the
+		// startupDialogSent guard prevents duplicate goroutines when the same
+		// dialog text appears across multiple screen-capture ticks.
 		if sess.BackendFamily == "claude-code" && sess.TmuxSession != "" {
+			tmuxSess := sess.TmuxSession
 			// Channels dialog: with --channels pre-selecting option 1 ("I am using
 			// this for local development"), pressing Enter confirms it. Trigger on
 			// the specific option text only (not "Please use --channels") to avoid
 			// sending two Enters that would also dismiss the subsequent trust dialog.
 			if strings.Contains(line, "I am using this for local development") {
-				go func() {
-					time.Sleep(300 * time.Millisecond)
-					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
-				}()
+				key := sess.FullID + ":channels"
+				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
+					go func() {
+						time.Sleep(300 * time.Millisecond)
+						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Enter").Run()
+					}()
+				}
 			}
 			// Trust dialog: "❯ No, exit / Yes, I trust this folder" — press Down to
 			// select "Yes, I trust this folder" and Enter to confirm.
 			if strings.Contains(line, "Yes, I trust this folder") {
-				go func() {
-					time.Sleep(300 * time.Millisecond)
-					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Down", "Enter").Run()
-				}()
+				key := sess.FullID + ":trust"
+				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
+					go func() {
+						time.Sleep(300 * time.Millisecond)
+						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Down", "Enter").Run()
+					}()
+				}
 			}
 		}
 		// Check for explicit completion pattern — applies to all backends, including
