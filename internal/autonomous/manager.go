@@ -256,6 +256,11 @@ type Manager struct {
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
 
+	// sessionDeleteFn — when set, called after a task reaches a terminal
+	// state (completed/failed/cancelled) to remove the ephemeral executor
+	// session from the session list. Nil = sessions remain as killed entries.
+	sessionDeleteFn func(sessionID string)
+
 	// memorySeedFn (BL386 Phase 1) — when set, called after each spawn
 	// when the PRD's MemorySeedConfig.Enabled=true. Seeds session-local
 	// from applicable scopes. Nil = seeding silently skipped.
@@ -343,6 +348,16 @@ func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionAliveFn = fn
+}
+
+// SetSessionDeleteFn wires the post-completion session cleanup callback.
+// When set, it is called after each task reaches a terminal state so the
+// ephemeral executor session is removed from the session list automatically.
+// Nil = sessions remain visible as killed entries (pre-v8.33.42 behavior).
+func (m *Manager) SetSessionDeleteFn(fn func(sessionID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionDeleteFn = fn
 }
 
 // SetMemorySeedFn (BL386 Phase 1) wires the warm-start seeding callback.

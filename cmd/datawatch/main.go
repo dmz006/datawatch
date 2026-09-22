@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.33.38"
+var Version = "8.33.39"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4387,6 +4387,15 @@ Reply with STRICT JSON:
 				return s.State != session.StateComplete &&
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
+			})
+			// Wire session cleanup so executor sessions are removed from the list
+			// once their task reaches a terminal state (completed/failed).
+			amgr.SetSessionDeleteFn(func(sessionID string) {
+				sess, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return
+				}
+				_ = mgr.Delete(sess.FullID, false)
 			})
 			// BL387 — wire memory callbacks so verifier findings, decompose
 			// context enrichment, and cross-PRD seeding flow into episodic memory.

@@ -119,9 +119,11 @@ func (b *Backend) preFlagsStr(channelName string) string {
 		if channelName == "" {
 			channelName = "datawatch"
 		}
-		// --dangerously-load-development-channels is variadic; it must come before --add-dir
-		// so --add-dir terminates the variadic argument list.
-		flags += " --dangerously-load-development-channels server:" + channelName
+		// --channels pre-selects option 1 ("I am using this for local development")
+		// in the consent dialog that --dangerously-load-development-channels shows.
+		// Both flags are variadic and must come before --add-dir.
+		flags += " --dangerously-load-development-channels server:" + channelName +
+			" --channels server:" + channelName
 	}
 	return flags
 }

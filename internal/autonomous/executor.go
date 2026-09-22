@@ -617,7 +617,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			return m.store.SaveTask(t)
+			if err := m.store.SaveTask(t); err != nil {
+				return err
+			}
+			m.deleteTaskSession(t.SessionID)
+			return nil
 		}
 		// BL387 Phase 1a — write each verifier issue to prd-shared so subsequent
 		// retry tasks can seed from it and avoid repeating the same mistake.
@@ -640,7 +644,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}
 	t.Status = TaskFailed
 	t.Error = "verification failed after retries"
-	return m.store.SaveTask(t)
+	if err := m.store.SaveTask(t); err != nil {
+		return err
+	}
+	m.deleteTaskSession(t.SessionID)
+	return nil
+}
+
+// deleteTaskSession calls sessionDeleteFn (if wired) to remove an ephemeral
+// executor session from the session list after its task reaches terminal state.
+func (m *Manager) deleteTaskSession(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	m.mu.Lock()
+	fn := m.sessionDeleteFn
+	m.mu.Unlock()
+	if fn != nil {
+		fn(sessionID)
+	}
 }
 
 // flattenTasks extracts every Task from the PRD's stories.

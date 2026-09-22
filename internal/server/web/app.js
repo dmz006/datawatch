@@ -1405,7 +1405,7 @@ function appendOutput(sessionId, lines) {
           inputField.placeholder = t('input_ph_message')||'Send message…';
         }
         // Re-render send button
-        const sess = state.sessions.find(s => s.full_id === sessionId);
+        const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
         const mode = sess ? getSessionMode(sess.backend_family || '') : 'tmux';
         const wrap = document.getElementById('sendBtnWrap');
         if (!wrap && inputBar) {
@@ -1569,7 +1569,7 @@ window.maybeReplayPendingNeedsInputPopup = function(sessionId) {
   delete state.pendingNeedsInputPopup[sessionId];
   // Skip popups older than 1 hour — likely irrelevant.
   if (Date.now() - pending.ts > 60 * 60 * 1000) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const sessLabel = sess ? sess.id : sessionId;
   showToast(`[${sessLabel}] needs input — ${pending.prompt.slice(0, 80)}`, 'info', 6000);
   // Also highlight the input bar.
@@ -1583,7 +1583,7 @@ window.maybeReplayPendingNeedsInputPopup = function(sessionId) {
 // without re-rendering the whole view (preserves scroll position / input).
 function updateSessionDetailButtons(sessionId) {
   if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   if (!sess) return;
   // Keep header name in sync (name may have been updated via WS)
   updateHeaderSessName(sessionId);
@@ -1901,7 +1901,7 @@ window.addEventListener('popstate', function(e) {
 function updateHeaderSessName(sessionId) {
   const titleEl = document.getElementById('headerTitle');
   if (!titleEl) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const sessName = sess ? (sess.name || '') : '';
   const shortId = sess ? (sess.id || (sessionId || '').split('-').pop() || '') : (sessionId || '').split('-').pop();
   const taskSnip = sess ? (sess.task || '') : '';
@@ -1912,7 +1912,7 @@ function updateHeaderSessName(sessionId) {
 function startHeaderRename(sessionId) {
   const titleEl = document.getElementById('headerTitle');
   if (!titleEl) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const currentName = sess ? (sess.name || '') : '';
   titleEl.innerHTML = `<input type="text" id="headerRenameInput" class="header-rename-input" value="${escHtml(currentName)}" placeholder="Session name…" /><button class="btn-icon" onclick="confirmHeaderRename('${escHtml(sessionId)}')">✓</button><button class="btn-icon" onclick="cancelHeaderRename('${escHtml(sessionId)}')">✕</button>`;
   const input = document.getElementById('headerRenameInput');
@@ -1932,7 +1932,7 @@ function confirmHeaderRename(sessionId) {
   const name = input.value.trim();
   apiFetch('/api/sessions/rename', { method: 'POST', body: JSON.stringify({ id: sessionId, name }) })
     .then(() => {
-      const sess = state.sessions.find(s => s.full_id === sessionId);
+      const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
       if (sess) sess.name = name;
       updateHeaderSessName(sessionId);
       showToast('Session renamed', 'success', 2000);
@@ -2718,7 +2718,7 @@ function renderSessionDetail(sessionId) {
       .catch(() => {});
   }
   const view = document.getElementById('view');
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
 
   const taskText = sess ? (sess.task || '') : '';
   const stateText = sess ? (sess.state || 'unknown') : 'unknown';
@@ -3841,7 +3841,7 @@ function renderSessionStats(sessionId) {
   const area = document.getElementById('statusSubpaneStats') || document.getElementById('outputAreaStats');
   if (!area || !sessionId) return;
   area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('loading')||'Loading…')}</div>`;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const _fetchStatsOnce = () => {
     const cnRef = sess && sess.compute_node_ref;
     const p1 = apiFetch('/api/observer/envelopes');
@@ -4373,7 +4373,7 @@ function killSession(sessionId) {
       if (r.ok) {
         showToast('Session stopped', 'success', 2000);
         // Optimistic UI update — server will confirm via WebSocket state_change
-        const sess = state.sessions.find(s => s.full_id === sessionId);
+        const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
         if (sess) sess.state = 'killed';
         updateSessionDetailButtons(sessionId);
       } else {
@@ -4385,7 +4385,7 @@ function killSession(sessionId) {
 }
 
 function restartSession(sessionId) {
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   if (!sess) return;
   // Restart in-place: reuse the same session ID and resume the LLM conversation
   apiFetch('/api/sessions/restart', { method: 'POST', body: JSON.stringify({ id: sess.full_id }) })
@@ -14339,7 +14339,7 @@ function renderResponseModal(sessionId, content, loading) {
     }
   }
   if (existing) existing.remove();
-  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const label = sess ? (sess.name || sess.id) : sessionId;
   const staleBadge = loading
     ? `<span id="responseStaleBadge" style="font-size:10px;color:var(--text2);margin-left:8px;">(updating…)</span>`
@@ -17312,7 +17312,7 @@ window._loadPRDActiveSessionCard = function(prd) {
       const matches = list.filter(s => {
         const fid = s.full_id || s.id;
         const matchesPrd = (s.prd_id || s.parent_prd_id) === prd.id;
-        const matchesTask = taskSessionIds.has(fid);
+        const matchesTask = taskSessionIds.has(fid) || taskSessionIds.has(s.id);
         if (!matchesPrd && !matchesTask) return false;
         if (terminalStates.has(s.state) && !matchesTask) return false;
         return true;
@@ -17366,7 +17366,7 @@ window._loadPRDActiveSessionCard = function(prd) {
         const detailP = cnRef
           ? fetchNodeDetail(cnRef)
           : (function() {
-              const bkName = (sessionTaskMap[fid] && sessionTaskMap[fid].task.backend) || prd.backend;
+              const bkName = ((sessionTaskMap[fid] || sessionTaskMap[s.id]) && (sessionTaskMap[fid] || sessionTaskMap[s.id]).task.backend) || prd.backend;
               if (!bkName) return fetchLocalStats();
               return getBackendNodes(bkName).then(nodes => nodes.length ? fetchNodeDetail(nodes[0]) : fetchLocalStats());
             })();
@@ -17391,7 +17391,7 @@ window._loadPRDActiveSessionCard = function(prd) {
             ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(board.last_event.event)}${board.last_event.tool ? ' · ' + escHtml(board.last_event.tool) : ''}</div>`
             : '';
           // Story + task context for this session.
-          const ctx = sessionTaskMap[fid];
+          const ctx = sessionTaskMap[fid] || sessionTaskMap[sess.id];
           const ctxLine = ctx
             ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml((ctx.story.title||'')+(ctx.task.title?' · '+ctx.task.title:''))}"><span style="opacity:0.6;">${escHtml(ctx.story.title||ctx.story.id||'')}</span>${ctx.task.title ? ` <span style="opacity:0.4;">·</span> <span>${escHtml(ctx.task.title)}</span>` : ''}</div>`
             : '';

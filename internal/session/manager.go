@@ -5575,6 +5575,28 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				}
 			}
 		}
+		// Auto-approve claude-code startup dialogs so executor/automated sessions
+		// don't block waiting for user input.
+		if sess.BackendFamily == "claude-code" && sess.TmuxSession != "" {
+			// Channels dialog: with --channels pre-selecting option 1 ("I am using
+			// this for local development"), pressing Enter confirms it. Trigger on
+			// the specific option text only (not "Please use --channels") to avoid
+			// sending two Enters that would also dismiss the subsequent trust dialog.
+			if strings.Contains(line, "I am using this for local development") {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
+				}()
+			}
+			// Trust dialog: "❯ No, exit / Yes, I trust this folder" — press Down to
+			// select "Yes, I trust this folder" and Enter to confirm.
+			if strings.Contains(line, "Yes, I trust this folder") {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Down", "Enter").Run()
+				}()
+			}
+		}
 		// Check for explicit completion pattern — applies to all backends, including
 		// structured-channel ones (claude-code emits DATAWATCH_COMPLETE: when its
 		// shell wrapper runs `echo` after claude exits).

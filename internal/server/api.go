@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.38"
+var Version = "8.33.39"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2392,12 +2392,19 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 // folder" affordance).
 func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Path string `json:"path"`
-		Name string `json:"name"`
+		Path   string `json:"path"`
+		Name   string `json:"name"`
+		Action string `json:"action"` // legacy clients send action:"mkdir" with full path
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	// Legacy clients (PWA pre-v5.26.47, Android) send {path: fullTarget, action:"mkdir"}.
+	// New contract is {path: parent, name: folderName}. Accept both.
+	if strings.TrimSpace(req.Name) == "" && strings.TrimSpace(req.Path) != "" {
+		req.Name = filepath.Base(req.Path)
+		req.Path = filepath.Dir(req.Path)
 	}
 	if strings.TrimSpace(req.Path) == "" || strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "path + name required", http.StatusBadRequest)
