@@ -11,21 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
-
-// fakeWSClient is a minimal in-process client that records messages sent to it.
-type fakeWSClient struct {
-	mu       sync.Mutex
-	received [][]byte
-	ch       chan []byte
-}
-
-func newFakeWSClient() *fakeWSClient {
-	return &fakeWSClient{ch: make(chan []byte, 16)}
-}
 
 // TC-1: hub.BroadcastHookUpdate fires after approve when hub is wired up.
 func TestGH153_WS_BroadcastFiresOnApprove(t *testing.T) {

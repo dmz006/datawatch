@@ -8,7 +8,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -82,18 +81,8 @@ func TestBL372_AutoPRDResetTask_NoWebPort_ReturnsError(t *testing.T) {
 		"task_id": "task-test",
 	}
 
-	// handleAutonomousPRDResetTask calls proxyJSON which returns error when webPort=0
-	res, err := s.handleAutonomousPRDResetTask(context.Background(), req)
-	if err == nil && res != nil {
-		// Check the result contains an error message
-		if len(res.Content) > 0 {
-			if txt, ok := res.Content[0].(mcpsdk.TextContent); ok {
-				if !strings.Contains(txt.Text, "REST loopback") && !strings.Contains(txt.Text, "disabled") {
-					// proxyJSON may return error which propagates up — that's fine
-				}
-			}
-		}
-	}
-	// Either err != nil or res contains error text — either is fine for this path
-	// The important thing is no panic
+	// handleAutonomousPRDResetTask calls proxyJSON which returns error when webPort=0.
+	// Either err != nil or res contains error text — either is fine for this path;
+	// the important thing is no panic.
+	_, _ = s.handleAutonomousPRDResetTask(context.Background(), req)
 }
