@@ -33,7 +33,7 @@ type LSPServer struct {
 // ProjectConfigOpts groups all datawatch-managed opencode.json fields.
 type ProjectConfigOpts struct {
 	// Model sets the active model in provider/model format
-	// (e.g. "anthropic/claude-sonnet-4-6", "ollama/llama3").
+	// (e.g. "anthropic/claude-sonnet-5", "ollama/llama3").
 	// Empty leaves the global opencode.jsonc model in effect.
 	Model string
 

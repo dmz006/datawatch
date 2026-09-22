@@ -395,7 +395,7 @@ vision:
   enabled: false
   backend: ""          # compute node name or adapter key (e.g. "ollama-gpu-1", "anthropic")
   model: ""            # model name — MUST be vision-capable (e.g. "llava:latest", "gpt-4o",
-                       # "claude-sonnet-4-6", "gemini-1.5-pro"); no auto-detection
+                       # "claude-sonnet-5", "gemini-1.5-pro"); no auto-detection
   default_prompt: "Describe this image in technical detail, including any visible text, errors, UI elements, or code."
   max_image_bytes: 5242880   # 5 MB hard cap before refusal
 ```

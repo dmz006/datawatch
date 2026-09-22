@@ -185,7 +185,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&kind, "kind", "ollama", "ollama | openwebui | opencode | claude | claude-code | aider | goose | gemini | shell")
-	cmd.Flags().StringVar(&model, "model", "", "model name (e.g. llama3:8b, claude-sonnet-4-6)")
+	cmd.Flags().StringVar(&model, "model", "", "model name (e.g. llama3:8b, claude-sonnet-5)")
 	cmd.Flags().StringVar(&computeNodesCSV, "compute-nodes", "", "comma-separated ordered ComputeNode names for failover (local kinds only)")
 	cmd.Flags().StringVar(&apiKeyRef, "api-key-ref", "", "literal key OR ${secret:name} reference (cloud kinds)")
 	cmd.Flags().IntVar(&timeoutSeconds, "timeout-seconds", 0, "per-call timeout (0 = adapter default; local 300s, cloud 60s)")

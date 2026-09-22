@@ -615,7 +615,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `goose.console_cols` | int | `0` | Terminal width for goose sessions (0 = session default) |
 | `goose.console_rows` | int | `0` | Terminal height for goose sessions (0 = session default) |
 | `goose.provider` | string | `""` | Provider injected as `GOOSE_PROVIDER` env var (e.g. `anthropic`, `openai`, `google`) |
-| `goose.model` | string | `""` | Model injected as `GOOSE_MODEL` env var (e.g. `claude-sonnet-4-6`) |
+| `goose.model` | string | `""` | Model injected as `GOOSE_MODEL` env var (e.g. `claude-sonnet-5`) |
 | `goose.api_key_ref` | string | `""` | API key (literal or `${secret:name}`) injected as the provider-specific key env var; resolved at startup |
 | `goose.channel_enabled` | bool | `false` | When true, inject `GOOSE_MCP__DATAWATCH__*` env vars so Goose connects back as an MCP client (stdio transport) |
 | `autonomous.verifier_diff_max_bytes` | int | `0` | Byte cap on the git diff injected into the verifier prompt for evidence grounding. `0` = 8192. Raise for large changesets; lower to reduce token cost. |

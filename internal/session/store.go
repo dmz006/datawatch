@@ -205,7 +205,7 @@ type Session struct {
 	// Model (v8.7.0) — LLM model selected at session creation, stored for
 	// audit and re-launch. For claude-code: passed as --model flag.
 	// For OpenCode: written to <projectDir>/opencode.json as "model".
-	// Format: "provider/model" for OpenCode (e.g. "anthropic/claude-sonnet-4-6",
+	// Format: "provider/model" for OpenCode (e.g. "anthropic/claude-sonnet-5",
 	// "ollama/llama3") or a bare model name for claude-code.
 	Model string `json:"model,omitempty"`
 

@@ -37,7 +37,7 @@ func ListBuiltinModels(binary string) []string {
 //	"opencode/big-pickle"          → "Big Pickle (Free)"
 //	"opencode/deepseek-v4-flash-free" → "Deepseek v4 Flash (Free)"
 //	"opencode/nemotron-3-super-free"  → "Nemotron 3 Super (Free)"
-//	"anthropic/claude-sonnet-4-6"     → "Claude Sonnet 4.6"
+//	"anthropic/claude-sonnet-5"     → "Claude Sonnet 4.6"
 func ModelLabel(id string) string {
 	parts := strings.SplitN(id, "/", 2)
 	provider := ""

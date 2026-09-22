@@ -271,7 +271,7 @@ model lists against the upstream provider's current set:
 - `internal/server/api.go` `handleClaudeModels` — refresh the
   `aliases` and `full_names` slices to match Anthropic's current
   alias map (currently `opus` / `sonnet` / `haiku` plus full
-  names like `claude-opus-4-7` / `claude-sonnet-4-6` / `claude-haiku-4-5-…`).
+  names like `claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5-…`).
   Same drill for any future provider that lands a similar
   hardcoded-list endpoint.
 

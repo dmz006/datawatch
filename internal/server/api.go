@@ -175,7 +175,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.33.39"
+var Version = "8.34.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7556,14 +7556,16 @@ func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"aliases": []map[string]string{
-			{"value": "opus", "label": "opus", "description": "Opus 4.7 — most capable, slowest, most expensive"},
-			{"value": "sonnet", "label": "sonnet", "description": "Sonnet 4.6 — balanced speed/capability"},
+			{"value": "opus", "label": "opus", "description": "Opus 5 — most capable, slowest, most expensive"},
+			{"value": "sonnet", "label": "sonnet", "description": "Sonnet 5 — balanced speed/capability"},
 			{"value": "haiku", "label": "haiku", "description": "Haiku 4.5 — fastest + cheapest"},
+			{"value": "fable", "label": "fable", "description": "Fable 5.1 — latest, fast-output variant"},
 		},
 		"full_names": []map[string]string{
-			{"value": "claude-opus-4-7", "label": "claude-opus-4-7"},
-			{"value": "claude-sonnet-4-6", "label": "claude-sonnet-4-6"},
+			{"value": "claude-opus-5", "label": "claude-opus-5"},
+			{"value": "claude-sonnet-5", "label": "claude-sonnet-5"},
 			{"value": "claude-haiku-4-5-20251001", "label": "claude-haiku-4-5-20251001"},
+			{"value": "claude-fable-5-1", "label": "claude-fable-5-1"},
 		},
 		"source":      "hardcoded",
 		"refresh_cadence": "major-release",

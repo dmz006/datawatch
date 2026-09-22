@@ -68,7 +68,7 @@ Pick one from a list.
 {
   "schema": "choice",
   "prompt": "Which LLM should handle this decomposition?",
-  "options": ["ollama (fast)", "claude-sonnet-4-6 (thorough)", "skip"]
+  "options": ["ollama (fast)", "claude-sonnet-5 (thorough)", "skip"]
 }
 ```
 

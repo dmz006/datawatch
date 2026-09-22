@@ -32,7 +32,7 @@ type Backend struct {
 	permissionMode string
 	// model (v5.27.5) — passed to claude as `--model <value>`.
 	// Either an alias ("sonnet", "opus", "haiku") or a full name
-	// ("claude-sonnet-4-6"). Empty = claude default.
+	// ("claude-sonnet-5"). Empty = claude default.
 	model string
 	// effort (v5.27.5) — passed to claude as `--effort <value>`.
 	// One of: low | medium | high | xhigh | max. Empty = default.

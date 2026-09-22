@@ -1322,6 +1322,7 @@ function updateSession(sess) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
+    refreshLastActivityIndicator(sess);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
     // refresh." During the disconnect window the session may have been
@@ -2921,6 +2922,7 @@ function renderSessionDetail(sessionId) {
               still show their mode (no tab system in tmux-only mode). */
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
+          ${isActive ? `<span class="session-last-activity" data-last-activity="${escHtml(sess?.last_channel_event_at || sess?.updated_at || '')}" title="${t('session_last_activity_title')||'Time since the backend last produced any output — the only signal for headless/non-interactive sessions (e.g. opencode run) that show no visible screen activity between generations'}" style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:3px;"><span class="session-last-activity-dot" style="width:6px;height:6px;border-radius:50%;background:var(--success,#22c55e);display:inline-block;"></span><span class="session-last-activity-text">–</span></span>` : ''}
           <span id="actionBtns">${actionButtons}</span>
           <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
                are icon-only on narrow / phone screens — labels were
@@ -11323,7 +11325,8 @@ window.ensureLLMModelLists = function() {
     fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/opencode/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]).then(([oll, owui, oc]) => {
+    fetch('/api/llm/claude/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([oll, owui, oc, claude]) => {
     state._availableModels = {};
     if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
     else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
@@ -11335,6 +11338,17 @@ window.ensureLLMModelLists = function() {
       state._availableModels['opencode-acp'] = ocModels;
       state._availableModels['opencode-prompt'] = ocModels;
       if (oc.default_model) state._openCodeDefaultModel = oc.default_model;
+    }
+    // claude-code's model list is the alias + full-name set from
+    // handleClaudeModels (internal/server/api.go) — hardcoded, refreshed
+    // each major release per AGENT.md "Major release alias refresh".
+    // Aliases lead the dropdown (what most operators want — "opus" tracks
+    // the latest Opus automatically); full names follow for anyone pinning
+    // an exact snapshot.
+    if (claude && (Array.isArray(claude.aliases) || Array.isArray(claude.full_names))) {
+      const aliasVals = (claude.aliases || []).map(a => a.value).filter(Boolean);
+      const fullVals = (claude.full_names || []).map(f => f.value).filter(Boolean);
+      state._availableModels['claude-code'] = [...aliasVals, ...fullVals];
     }
     state._llmModelListsFull = true;
   });
@@ -14896,6 +14910,38 @@ function updateElapsedClocks() {
 }
 setInterval(updateElapsedClocks, 1000);
 
+// "Last activity" indicator for the session detail header — the only
+// signal an operator has that a headless/non-interactive backend (e.g.
+// opencode launched via `opencode run` for one-shot PRD tasks) is still
+// alive between generations, since those sessions show no TUI redraw or
+// pane movement for minutes at a time while the model is thinking.
+// Dot color bands by staleness: green (<30s, actively producing output),
+// amber (30s-5m, normal thinking gap for slow local models), red (>5m,
+// worth checking the session hasn't stalled).
+function updateLastActivityClocks() {
+  document.querySelectorAll('.session-last-activity[data-last-activity]').forEach(el => {
+    const ts = el.getAttribute('data-last-activity');
+    const textEl = el.querySelector('.session-last-activity-text');
+    const dotEl = el.querySelector('.session-last-activity-dot');
+    if (!ts || !textEl || !dotEl) { if (textEl) textEl.textContent = 'no activity yet'; return; }
+    const secs = (Date.now() - new Date(ts).getTime()) / 1000;
+    textEl.textContent = timeAgo(ts);
+    dotEl.style.background = secs < 30 ? 'var(--success,#22c55e)' : secs < 300 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)';
+  });
+}
+setInterval(updateLastActivityClocks, 1000);
+
+// Patches the last-activity element's timestamp attribute in place from a
+// fresh WS session push, without a full renderSessionDetail re-render —
+// same pattern as refreshGeneratingIndicator/refreshNeedsInputBanner. The
+// 1s interval above then picks up the new value on its next tick.
+function refreshLastActivityIndicator(sess) {
+  if (!sess) return;
+  const el = document.querySelector('.session-last-activity[data-last-activity]');
+  if (!el) return;
+  el.setAttribute('data-last-activity', sess.last_channel_event_at || sess.updated_at || '');
+}
+
 function escHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -14916,7 +14962,11 @@ function _fileChip(path) {
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const viewableExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
-  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path);
+  // A plain <a href> download link can't carry an Authorization header, so
+  // the token rides along as a query param — the server's fedAuthMiddleware
+  // already accepts either form.
+  const _tok = localStorage.getItem('cs_token') || '';
+  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_tok ? '&token=' + encodeURIComponent(_tok) : '');
   if (viewableExts.has(ext)) {
     const icon = ext === 'md' ? '📄' : '📃';
     const viewFn = `event.stopPropagation();_showFileViewer(${JSON.stringify(path)})`;
@@ -14934,7 +14984,12 @@ window._showFileViewer = function(path) {
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const isMd = ext === 'md';
-  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path);
+  // Same as _fileChip: neither the download <a href> nor this plain fetch()
+  // call can attach an Authorization header, so the token rides along as a
+  // query param (accepted by fedAuthMiddleware) — without it every viewer
+  // fetch and download link 403s.
+  const _tok = localStorage.getItem('cs_token') || '';
+  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_tok ? '&token=' + encodeURIComponent(_tok) : '');
   const viewUrl = dlUrl + '&inline=1';
 
   const modal = document.createElement('div');

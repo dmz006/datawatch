@@ -10,7 +10,7 @@ exec_params:
     description: "LLM kind: ollama | openwebui | opencode | claude | claude-code | aider | goose | gemini | shell"
     required: true
   - name: model
-    description: Model name (e.g. llama3.1:8b, claude-sonnet-4-6)
+    description: Model name (e.g. llama3.1:8b, claude-sonnet-5)
     required: false
     default: ""
 exec_steps:
@@ -157,7 +157,7 @@ datawatch secrets set ANTHROPIC_KEY "sk-ant-..."
 # Register the LLM — no compute-nodes for SaaS kinds.
 datawatch llm add claude-api \
   --kind claude \
-  --model claude-sonnet-4-6 \
+  --model claude-sonnet-5 \
   --api-key-ref '${secret:ANTHROPIC_KEY}'
 
 datawatch llm test claude-api
@@ -172,7 +172,7 @@ datawatch llm add claude-code \
 
 # Optionally specify a model list (presented to users in the session wizard).
 datawatch llm models add claude-code --model claude-opus-4-5
-datawatch llm models add claude-code --model claude-sonnet-4-6
+datawatch llm models add claude-code --model claude-sonnet-5
 ```
 
 ## Dispatch by use case
@@ -264,7 +264,7 @@ Use-case entries are otherwise identical to any other LLM entry — they appear 
 # 1. List what's registered.
 datawatch llm list
 #  → name            kind         enabled  models
-#    claude-api      claude       yes      claude-sonnet-4-6
+#    claude-api      claude       yes      claude-sonnet-5
 #    my-ollama       ollama       yes      llama3.1:8b  (node: gpu-box)
 #    claude-code     claude-code  yes      —
 
@@ -497,7 +497,7 @@ launching:
   {
     "name": "claude-api",
     "kind": "claude",
-    "models": [{"model": "claude-sonnet-4-6"}],
+    "models": [{"model": "claude-sonnet-5"}],
     "api_key_ref": "${secret:ANTHROPIC_KEY}",
     "cost_per_1k_input": 0.003,
     "cost_per_1k_output": 0.015
