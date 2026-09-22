@@ -4224,6 +4224,24 @@ Pre-existing files written by task (not tracked by git):
 %s
 </overwritten_files>`, strings.Join(overwrittenFilesSections, "\n---\n"))
 				}
+			} else if prd.ProjectDir != "" && task.StartedAt != nil {
+				// Non-git project dir (PreTaskSHA not set): use mtime to detect output files.
+				// TouchedFiles walks the dir and returns files whose mtime is after since.
+				projGit := session.NewProjectGit(prd.ProjectDir)
+				newFiles := projGit.TouchedFiles(*task.StartedAt)
+				if len(newFiles) == 0 && len(task.FilesPlanned) > 0 {
+					// Task had planned output files but nothing was created/modified.
+					return autonomouspkg.VerificationResult{
+						OK: false, Severity: "medium",
+						Summary:    "verifier: no output files detected (non-git project dir, no files modified since task start)",
+						VerifiedAt: time.Now(),
+					}, nil
+				}
+				if len(newFiles) > 0 {
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
+					diffSection = fmt.Sprintf("\n\nFiles created or modified since task started (mtime-based, non-git dir):\n<new_files>\n%s\n</new_files>",
+						strings.Join(newFiles, "\n"))
+				}
 			}
 			// BL369 — security preamble + data-boundary tag + Layer 3 federation trust notice.
 			specPart := fmt.Sprintf("Task spec:\n<user_data>\n%s\n</user_data>", task.Spec)

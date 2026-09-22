@@ -10449,7 +10449,7 @@ function renderTask(prd, story, task, editable) {
       : '');
   const filesT = hasTaskTouched
     ? `<div class="prd-task-touched">
-         <span class="prd-task-touched-label">&#9989; Touched:</span>
+         <span class="prd-task-touched-label">Output files:</span>
          ${task.files_touched.map(f => _fileChip(f)).join('')}
        </div>`
     : '';
@@ -10472,7 +10472,7 @@ function renderTask(prd, story, task, editable) {
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${errRow}${verifRow}
-    ${filesP}${filesT}
+    ${filesT}
   </div>`;
 
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
