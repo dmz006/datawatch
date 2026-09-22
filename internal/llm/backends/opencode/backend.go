@@ -96,8 +96,17 @@ func (b *Backend) Version() string {
 }
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	// Always start in interactive TUI mode — task is ignored (user sends via TUI directly)
-	cmd := fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
+	var cmd string
+	if task != "" {
+		// Use non-interactive 'opencode run' mode when a task is provided (e.g. PRD
+		// worker sessions). TUI send-keys delivery fails on task text containing '('
+		// characters — opencode's eval treats the text as a shell command and errors.
+		escaped := strings.ReplaceAll(task, "'", `'\''`)
+		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, escaped)
+	} else {
+		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
+	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
@@ -108,12 +117,12 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	var cmd string
-	if task == "" {
-		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
-	} else {
+	if task != "" {
 		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
 			escapedDir, b.binary, escaped)
+	} else {
+		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
 	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }

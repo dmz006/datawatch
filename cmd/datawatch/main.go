@@ -5956,11 +5956,13 @@ Return STRICT JSON:
 		// never fires. Watch for waiting_input on any one-shot TUI session and
 		// deliver the task via send_input exactly once, mirroring the OneShot path
 		// in handleChannelReady. Excluded: claude-code (channel bridge),
-		// opencode-acp (ACP structured API), subprocess (shell task wrapping).
+		// opencode-acp (ACP structured API), subprocess (shell task wrapping),
+		// opencode (task delivered at launch via 'opencode run', not via send-keys).
 		isTUITask := sess.State == session.StateWaitingInput &&
 			sess.OneShot && sess.Task != "" &&
 			sess.BackendFamily != "claude-code" &&
 			sess.BackendFamily != "opencode-acp" &&
+			sess.BackendFamily != "opencode" &&
 			sess.BackendFamily != "subprocess" &&
 			sess.BackendFamily != ""
 		if isTUITask {
