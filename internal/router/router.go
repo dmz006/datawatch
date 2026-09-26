@@ -56,6 +56,7 @@ type Router struct {
 	channelInfoFn        func() string // v5.27.10 — channel bridge introspection
 	channelDiagnosticsFn func() string // BL362 — per-session bridge diagnostics
 	statsFn     func() string // optional func returning system stats summary
+	capacityFn  func() string // optional func returning the capacity ledger summary
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
 	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
@@ -173,6 +174,7 @@ func (r *Router) handleReload(cmd Command) {
 	r.send(fmt.Sprintf("[%s] reload %s: %s", r.hostname, sub, out))
 }
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
+func (r *Router) SetCapacityFunc(fn func() string)                  { r.capacityFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
 
 // SetChannelTracker sets the per-channel stats counters for this router.
@@ -838,11 +840,11 @@ func (r *Router) handleConfigure(cmd Command) {
 	}
 	text := strings.TrimSpace(cmd.Text)
 	if text == "" || text == "help" {
-		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown\n  server.host, server.port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  session.reserved_interactive\n  server.host, server.port", r.hostname))
 		return
 	}
 	if text == "list" {
-		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  session.reserved_interactive\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
 		return
 	}
 	eqIdx := strings.Index(text, "=")
@@ -857,6 +859,14 @@ func (r *Router) handleConfigure(cmd Command) {
 	} else {
 		r.send(fmt.Sprintf("[%s] Set %s = %s. Restart may be required.", r.hostname, key, value))
 	}
+}
+
+func (r *Router) handleCapacity() {
+	if r.capacityFn == nil {
+		r.send(fmt.Sprintf("[%s] Capacity admission not available.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Capacity:\n%s", r.hostname, r.capacityFn()))
 }
 
 func (r *Router) handleStats() {
@@ -1011,6 +1021,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAlerts(cmd)
 	case CmdStats:
 		r.handleStats()
+	case CmdCapacity:
+		r.handleCapacity()
 	case CmdConfigure:
 		r.handleConfigure(cmd)
 	case CmdCopy:

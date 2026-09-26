@@ -112,6 +112,10 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/autonomous/prds/{id}` | `autonomous_prd_get` | Complete | |
 | `DELETE /api/autonomous/prds/{id}` | `autonomous_prd_cancel` | Complete | |
 | `POST /api/autonomous/prds/{id}/decompose` | `autonomous_prd_decompose` | Complete | |
+| `POST /api/autonomous/prds/{id}/set_priority` | `autonomous_prd_set_priority` | Complete | capacity-queue priority; higher runs first |
+| `GET /api/capacity` | `capacity_status` | Complete | admission ledger: pools, leases, wait queue |
+| `PUT /api/compute/nodes/{name}` (`max_concurrent_sessions`) | `compute_node_update` / `compute_node_add` | Complete | per-node cap on autonomous sessions |
+| `PUT /api/llms/{name}` (`max_inflight`) | `llm_update` / `llm_add` | Complete | per-LLM cap on autonomous sessions |
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 

@@ -227,6 +227,10 @@ type Node struct {
 	// Nodes are eligible for the same workload. Default 50.
 	SchedulingPriority int `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
 
+	// MaxConcurrentSessions caps autonomous sessions in flight on this node
+	// (0 = unlimited). Enforced by the capacity ledger.
+	MaxConcurrentSessions int `yaml:"max_concurrent_sessions,omitempty" json:"max_concurrent_sessions,omitempty"`
+
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
 
@@ -361,6 +365,9 @@ func (n *Node) Validate() error {
 		if strings.TrimSpace(n.Address) == "" {
 			return fmt.Errorf("compute node: kind %q requires address", n.Kind)
 		}
+	}
+	if n.MaxConcurrentSessions < 0 {
+		return fmt.Errorf("compute node: max_concurrent_sessions %d must be >= 0", n.MaxConcurrentSessions)
 	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)

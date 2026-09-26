@@ -239,6 +239,22 @@ topic for paired mobile devices:
 To disable push for a specific session backend, use the per-deployment
 `detection` block (see `channel-state-engine.md`).
 
+### Too many "waiting for input" alerts
+
+A session that pauses briefly (a long tool call, a slow model load) is not
+waiting for you. datawatch only alerts once a session has stayed waiting for
+`detection.alert_settle` seconds (default 45) and does not repeat an identical
+alert for the same session within `detection.alert_repeat` seconds (default
+300). Raise either to be quieter:
+
+```bash
+datawatch config set detection.alert_settle 90
+```
+
+The same keys work from YAML, `PUT /api/config`, `configure
+detection.alert_settle=90` in a chat channel, the MCP `detection_config_set`
+tool, and Settings > Detection timing in the PWA.
+
 ## Diagram
 
 ```

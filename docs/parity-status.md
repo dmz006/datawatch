@@ -33,6 +33,7 @@ Legend:
 | Council run + results | ✅ | ✅ v8.0 (app#127 closed) | ❌ (tracked: app#182) |
 | Monitor tab (stats) | ✅ | ✅ v8.22.0 (app#164 closed) | ❌ (tracked: app#182) |
 | Orchestrator graphs | ✅ | ❌ (tracked: app#184) | ❌ (tracked: app#184) |
+| Capacity admission (pools, wait queue, priority, per-node/LLM limits) | ✅ (REST, MCP, CLI, comm all shipped) | ❌ (pending app issue) | ❌ (pending app issue) |
 | Compute nodes | ✅ | ✅ v8.25.3 (app#168,#173 closed) | ❌ (tracked: app#182) |
 | Summarize last response | ✅ | ✅ v8.8.13 (app#146,#147 closed) | ❌ (tracked: app#182) |
 | Chrome session flag | ✅ | ✅ v8.8.3 (app#146 closed) | ❌ (tracked: app#182) |

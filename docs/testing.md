@@ -594,7 +594,7 @@ See [test-coverage plan](plans/2026-04-12-test-coverage.md) for roadmap to impro
 | Go vet | `rtk go vet ./...` | Clean |
 | gosec | `gosec -exclude=G104 ./...` | 202 issues (all pre-existing daemon patterns) |
 | Dependencies | `go mod verify` | All verified, no deprecated |
-| API config GET | `curl /api/config` | detection.prompt_debounce, notify_cooldown present |
+| API config GET | `curl /api/config` | detection.prompt_debounce, notify_cooldown, alert_settle, alert_repeat present |
 | API config PUT | `PUT /api/config` | detection fields settable |
 | Comm help | `/api/test/message help` | All commands listed |
 | Comm configure | `configure detection.prompt_debounce=5` | Set and confirmed |

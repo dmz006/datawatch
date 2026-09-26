@@ -24,6 +24,24 @@ var (
 		[]string{"backend"},
 	)
 
+	// Capacity admission metrics
+	CapacityHeld = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_capacity_pool_used",
+		Help: "Slots in use per capacity pool (leases plus external sessions)",
+	}, []string{"pool"})
+	CapacityLimit = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_capacity_pool_limit",
+		Help: "Configured limit per capacity pool (0 = unlimited)",
+	}, []string{"pool"})
+	CapacityWaiting = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_capacity_waiting",
+		Help: "Tasks waiting for a capacity lease",
+	})
+	CapacityLeasesReaped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_capacity_leases_reaped_total",
+		Help: "Leaked capacity leases reclaimed by the reaper",
+	})
+
 	// System metrics
 	CPUUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "datawatch_cpu_load_avg_1",
@@ -116,6 +134,7 @@ var (
 // Register registers all Prometheus metrics.
 func Register() {
 	prometheus.MustRegister(
+		CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
 		SessionsActive, SessionsTotal,
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,

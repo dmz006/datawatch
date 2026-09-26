@@ -91,6 +91,8 @@ func (s *Server) toolDetectionConfigSet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Update global detection timing. Pattern lists (prompt_patterns, completion_patterns, rate_limit_patterns, input_needed_patterns) require JSON-array values — use config_set with key=detection.<field> for those. Requires mcp.allow_self_config=true."),
 		mcpsdk.WithNumber("prompt_debounce", mcpsdk.Description("Seconds to wait after detecting a prompt before transitioning to waiting_input (0 = disabled). Default 3.")),
 		mcpsdk.WithNumber("notify_cooldown", mcpsdk.Description("Minimum seconds between repeated needs-input notifications for the same session. Default 15.")),
+		mcpsdk.WithNumber("alert_settle", mcpsdk.Description("Seconds a session must stay waiting_input before a needs-input alert/push is sent; returning to running cancels it. Default 45.")),
+		mcpsdk.WithNumber("alert_repeat", mcpsdk.Description("Seconds an identical needs-input alert for the same session is suppressed. Default 300.")),
 	)
 }
 
@@ -107,6 +109,12 @@ func (s *Server) handleDetectionConfigSet(ctx context.Context, req mcpsdk.CallTo
 	}
 	if v := req.GetFloat("notify_cooldown", -1); v >= 0 {
 		patch["detection.notify_cooldown"] = int(v)
+	}
+	if v := req.GetFloat("alert_settle", -1); v >= 0 {
+		patch["detection.alert_settle"] = int(v)
+	}
+	if v := req.GetFloat("alert_repeat", -1); v >= 0 {
+		patch["detection.alert_repeat"] = int(v)
 	}
 	if len(patch) == 0 {
 		return textOK("no fields provided — nothing updated"), nil

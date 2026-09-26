@@ -7986,6 +7986,8 @@ function buildComputeNodeForm(n) {
     </div>
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
     <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
+    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
@@ -8022,6 +8024,7 @@ function collectComputeNodeForm(originalRecord) {
   out.hardware.cpu_cores = parseInt((document.getElementById('fe_hw_cpu_cores')||{}).value || '0', 10) || 0;
   out.declared_capacity = out.declared_capacity || {};
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
+  out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
   out.tags = getBadgeInputValue('fe_compute_tags').split(',').map(s => s.trim()).filter(Boolean);
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
@@ -8240,6 +8243,8 @@ function buildLLMForm(l) {
     <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="$\{secret:anthropic-key\}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
     <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
+    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
   `;
@@ -8252,6 +8257,7 @@ function collectLLMForm(originalRecord) {
   out.compute_nodes = sel ? Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean) : [];
   out.api_key_ref = (document.getElementById('fe_llm_api_key_ref')||{}).value || '';
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
+  out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
@@ -8452,6 +8458,10 @@ window._renderLLMEditPanel = function(existing) {
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
         <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
+        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
@@ -8730,6 +8740,7 @@ window._llmSaveDraft = function() {
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
+  const maxInflight = parseInt((document.getElementById('llmEditMaxInflight')||{}).value||'0', 10) || 0;
   const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
   const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
@@ -8752,7 +8763,7 @@ window._llmSaveDraft = function() {
     body: JSON.stringify({
       name: isEdit ? editName : name, kind, models, model: firstModel,
       auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
-      timeout_seconds: timeoutSec, tags,
+      timeout_seconds: timeoutSec, max_inflight: maxInflight, tags,
       binary, console_cols: consoleCols, console_rows: consoleRows,
       output_mode: outputMode, input_mode: inputMode,
       auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
@@ -10377,7 +10388,7 @@ function renderTask(prd, story, task, editable) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   // Default expansion: active/running tasks open so progress is visible without a click.
   if (!(taskID in state._prdTaskExpanded)) {
-    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','blocked','failed'];
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed'];
     state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
   }
   const isExpanded = !!state._prdTaskExpanded[taskID];
@@ -10413,7 +10424,7 @@ function renderTask(prd, story, task, editable) {
   // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
   // BL382 — also add cancel-task (pending/in_progress) + requeue (completed/cancelled).
   const canRetry = (task.status === 'failed' || task.status === 'blocked') && prd.status === 'running';
-  const canCancelTask = ['pending','in_progress','running','verifying','running_tests'].includes(task.status||'') && prd.status === 'running';
+  const canCancelTask = ['pending','in_progress','running','verifying','running_tests','waiting_capacity'].includes(task.status||'') && prd.status === 'running';
   const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && prd.status === 'running';
   const retryBtn = canRetry
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
@@ -10426,9 +10437,13 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔'})[task.status] || '';
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳'})[task.status] || '';
+  const _waitTitle = task.status === 'waiting_capacity'
+    ? (t('prd_task_waiting_capacity')||'Waiting for capacity') + (task.wait_reason ? ': ' + task.wait_reason : '')
+    : '';
   const statusGlyphSpan = statusGlyph
-    ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}">${statusGlyph}</span>`
+    ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}"${_waitTitle ? ` title="${escHtml(_waitTitle)}"` : ''}>${statusGlyph}</span>`
+      + (task.status === 'waiting_capacity' ? `<span class="prd-task-wait-badge" title="${escHtml(_waitTitle)}">${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}</span>` : '')
     : '';
 
   // Expanded body: always rendered in DOM (hidden when collapsed) so
@@ -10473,6 +10488,7 @@ function renderTask(prd, story, task, editable) {
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
+    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
     ${errRow}${verifRow}
     ${filesT}
   </div>`;
@@ -11571,6 +11587,9 @@ function openPRDSettingsModal(prdID) {
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
+        priority:             prd.priority || 0,
+        read_dirs:            (prd.read_dirs || []).join(', '),
+        write_dirs:           (prd.write_dirs || []).join(', '),
       };
       ensureLLMModelLists().then(() => {
         _prdMountModal(`
@@ -11632,6 +11651,18 @@ function openPRDSettingsModal(prdID) {
               <input type="number" id="prdSettingsConcurrency" class="form-input" min="0" max="32" value="${cur.max_concurrent_tasks}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">0 or 1 = sequential · 2+ = fan out independent tasks in parallel</div>
             </div>
+            <div class="wizard-field" style="margin-top:2px;">
+              <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
+              <input type="number" id="prdSettingsPriority" class="form-input" min="-100" max="100" value="${cur.priority}" placeholder="0" style="width:80px;" />
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_priority_hint')||'Used when tasks wait for free capacity.')}</div>
+            </div>
+            <div class="wizard-field" style="margin-top:2px;">
+              <label class="wizard-label">${escHtml(t('prd_settings_write_dirs_label')||'Writable directories (comma-separated, absolute; empty = project dir)')}</label>
+              <input type="text" id="prdSettingsWriteDirs" class="form-input" value="${escHtml(cur.write_dirs)}" placeholder="${escHtml(prd.project_dir||'')}" />
+              <label class="wizard-label" style="margin-top:6px;">${escHtml(t('prd_settings_read_dirs_label')||'Read-only directories (comma-separated, absolute)')}</label>
+              <input type="text" id="prdSettingsReadDirs" class="form-input" value="${escHtml(cur.read_dirs)}" />
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_dirs_hint')||'Workers may not read or write outside these directories.')}</div>
+            </div>
             <!-- v6.13.2 — operator: "guided mode is weirdly right justified
                  but checkbox is left". Switched to a single .wizard-checkbox-row
                  with the iOS-style switch (per the global mobile-first
@@ -11690,6 +11721,22 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_concurrency', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ max_concurrent_tasks: newConcurrency }),
+            }));
+          }
+          const _splitDirs = v => (v || '').split(',').map(x => x.trim()).filter(Boolean);
+          const newWriteStr = (document.getElementById('prdSettingsWriteDirs')?.value || '').trim();
+          const newReadStr  = (document.getElementById('prdSettingsReadDirs')?.value || '').trim();
+          if (newWriteStr !== cur.write_dirs || newReadStr !== cur.read_dirs) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_dirs', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ read_dirs: _splitDirs(newReadStr), write_dirs: _splitDirs(newWriteStr) }),
+            }));
+          }
+          const newPriority = parseInt(document.getElementById('prdSettingsPriority')?.value || '0', 10) || 0;
+          if (newPriority !== cur.priority) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_priority', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ priority: newPriority }),
             }));
           }
           if (calls.length === 0) { _prdCloseModal(); return; }
@@ -11889,6 +11936,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Section title "Sessions" → slug "sessions" → matches ## Sessions in datawatch-definitions.md
   { id: 'sess', section: 'Sessions', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
+    { key: 'session.reserved_interactive', label: 'Slots reserved for interactive sessions', labelKey: 'settings_reserved_interactive', type: 'number', placeholder: '1' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
@@ -11926,6 +11974,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
+    { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
+    { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
+    { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     // v5.26.16 — operator-reported: backend fields should be the
     // same dropdown as the New PRD modal (enabled+available, no
     // shell), with a paired model dropdown that refreshes on backend
@@ -14959,6 +15010,7 @@ function escHtml(str) {
 // A small ⬇ download icon is always available alongside the view action.
 function _fileChip(path) {
   if (!path) return '';
+  if (path.charAt(0) !== '/' && window._fileChipBaseDir) path = window._fileChipBaseDir.replace(/\/$/, '') + '/' + path;
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const viewableExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
@@ -17035,7 +17087,7 @@ function _liveUpdateDetail(prd) {
 }
 
 function _taskStatusIcon(status) {
-  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', failed: '✗', blocked: '✗', cancelled: '○', pending: '○' };
+  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', cancelled: '○', pending: '○' };
   return icons[status] || '○';
 }
 
@@ -17062,7 +17114,7 @@ function renderDetailStoriesTree(prd) {
     const taskRows = tasks.map((t, ti) => {
       const sts = t.status || t.Status || 'pending';
       const icon = _taskStatusIcon(sts);
-      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
         ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
@@ -17173,6 +17225,7 @@ function renderPRDDetailView(prdId, breadcrumbAppend) {
 window.renderPRDDetailView = renderPRDDetailView;
 
 function _renderDetailContent(prd) {
+  window._fileChipBaseDir = prd.project_dir || '';
   _automataDetailPRD = prd;  // cache for in-place tab switching
   const id = prd.id || '';
   const title = prd.title || '(no title)';
@@ -17282,9 +17335,46 @@ function _renderDetailContent(prd) {
 
 // BL380 — Enhanced active session card: shows story/task context per session
 // and embeds CPU/GPU/RAM resource bars. Refreshes every 5 seconds.
+// Capacity admission card: per-pool used/limit bars + wait queue. Polled every 5s;
+// the interval lives on window so re-renders never stack timers.
+window._loadPRDCapacityCard = function() {
+  const slot = document.getElementById('prdCapacityCard');
+  if (!slot) return;
+  if (window._prdCapacityInterval) clearInterval(window._prdCapacityInterval);
+  const fmtWait = since => {
+    const s = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000));
+    return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
+  };
+  const render = () => {
+    if (!document.getElementById('prdCapacityCard')) { clearInterval(window._prdCapacityInterval); return; }
+    apiFetch('/api/capacity').then(cap => {
+      const pools = ((cap && cap.pools) || []).filter(p => p.limit > 0);
+      const waiting = (cap && cap.waiting) || [];
+      if (pools.length === 0 && waiting.length === 0) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
+      const bars = pools.map(p => {
+        const used = (p.held || 0) + (p.external || 0);
+        const pct = Math.min(100, Math.round(100 * used / p.limit));
+        const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+        return `<div style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(p.name)}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div></div>`;
+      }).join('');
+      const unlimited = (cap.pools || []).filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
+        .map(p => `<div style="color:var(--text2);">${escHtml(p.name)}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>`).join('');
+      const queue = waiting.length
+        ? `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
+          waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
+        : '';
+      slot.style.display = 'block';
+      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${queue}</div>`;
+    }).catch(() => {});
+  };
+  render();
+  window._prdCapacityInterval = setInterval(render, 5000);
+};
+
 window._loadPRDActiveSessionCard = function(prd) {
   const slot = document.getElementById('prdActiveSessionCard');
   if (!slot) return;
+  if (window._loadPRDCapacityCard) window._loadPRDCapacityCard();
   if (window._prdActiveSessionInterval) clearInterval(window._prdActiveSessionInterval);
 
   const fmtB = b => {
@@ -17363,13 +17453,13 @@ window._loadPRDActiveSessionCard = function(prd) {
     apiFetch('/api/sessions').then(allSessions => {
       const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
       const taskSessionIds = new Set(Object.keys(sessionTaskMap));
-      const terminalStates = new Set(['killed','complete','failed','cancelled']);
+      const terminalStates = new Set(['killed','complete','completed','failed','cancelled','stopped','error']);
       const matches = list.filter(s => {
         const fid = s.full_id || s.id;
         const matchesPrd = (s.prd_id || s.parent_prd_id) === prd.id;
         const matchesTask = taskSessionIds.has(fid) || taskSessionIds.has(s.id);
         if (!matchesPrd && !matchesTask) return false;
-        if (terminalStates.has(s.state) && !matchesTask) return false;
+        if (terminalStates.has(s.state)) return false;
         return true;
       });
 
@@ -17548,7 +17638,12 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
   const stories = prd.stories || [];
   const storySessionIds = stories.map(st => {
     const ids = new Set();
-    (st.tasks || []).forEach(tk => { if (tk.session_id) ids.add(tk.session_id); });
+    (st.tasks || []).forEach(tk => {
+      if (!tk.session_id || !['running', 'verifying', 'running_tests'].includes(tk.status || '')) return;
+      const live = state.sessions && state.sessions[tk.session_id];
+      if (live && ['killed','complete','completed','failed','cancelled','stopped','error'].includes(live.state)) return;
+      ids.add(tk.session_id);
+    });
     return ids;
   });
 
@@ -17575,9 +17670,10 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
       const bySession = {};
       envList.forEach(e => { if (e.session_id) bySession[e.session_id] = e; });
       stories.forEach((st, idx) => {
-        if (storySessionIds[idx].size === 0) return;
         const computeEl = slotEl.querySelector(`.prd-sg-compute[data-story-idx="${idx}"]`);
         if (!computeEl) return;
+        computeEl.textContent = '';
+        if (storySessionIds[idx].size === 0) return;
         let cpuSum = 0, rssSum = 0, count = 0;
         storySessionIds[idx].forEach(sid => {
           const e = bySession[sid];
@@ -17598,6 +17694,7 @@ window._loadStatusGraphsCompute = function(prd, slotEl) {
     // Compute node GPU/CPU card.
     const cnDiv = slotEl.querySelector('#prdSgComputeResources');
     if (!cnDiv) return;
+    if (!cnRef) { cnDiv.style.display = 'none'; cnDiv.innerHTML = ''; return; }
     if (!cnDetail) {
       if (cnRef) {
         cnDiv.style.display = '';
@@ -17969,6 +18066,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       </div>` : ''}
       <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
+      <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
@@ -18025,10 +18123,15 @@ function _renderDetailOverview(prd) {
       ${prd.project_dir ? `<dt>${escHtml(t('automata_detail_project'))}</dt><dd>${escHtml(prd.project_dir)}</dd>` : ''}
       ${prd.depth     ? `<dt>${escHtml(t('automata_detail_depth'))}</dt><dd>${prd.depth}</dd>` : ''}
       ${prd.guided_mode ? `<dt>${escHtml(t('automata_detail_guided_mode'))}</dt><dd>✓</dd>` : ''}
+      ${prd.write_dirs && prd.write_dirs.length ? `<dt>${escHtml(t('automata_detail_writable_dirs')||'Writable dirs')}</dt><dd>${escHtml(prd.write_dirs.join(', '))}</dd>` : ''}
+      ${prd.read_dirs && prd.read_dirs.length ? `<dt>${escHtml(t('automata_detail_readonly_dirs')||'Read-only dirs')}</dt><dd>${escHtml(prd.read_dirs.join(', '))}</dd>` : ''}
       ${prd.max_concurrent_tasks > 1 ? `<dt>${escHtml(t('automata_detail_concurrency')||'Concurrency')}</dt><dd>${prd.max_concurrent_tasks} tasks</dd>` : ''}
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
+    ${prd.scope_warnings && prd.scope_warnings.length ? `<div style="margin-top:10px;padding:8px;border:1px solid var(--warning,#d90);border-radius:4px;font-size:11px;">
+      <strong>${escHtml(t('prd_scope_warnings_title')||'Scope warnings')}</strong> — ${escHtml(t('prd_scope_warnings_body')||'The plan references paths outside this Automaton\'s allowed directories; tasks that do will not start until fixed.')}
+      <ul style="margin:4px 0 0 16px;">${prd.scope_warnings.map(w => `<li>${escHtml(w)}</li>`).join('')}</ul></div>` : ''}
     ${totalTasks > 0 ? `<div class="prd-detail-progress" style="margin-top:10px;">
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
@@ -19919,6 +20022,8 @@ function loadDetectionFilters() {
     // Debounce/cooldown numeric settings
     const debounce = d.prompt_debounce || 3;
     const cooldown = d.notify_cooldown || 15;
+    const alertSettle = d.alert_settle || 45;
+    const alertRepeat = d.alert_repeat || 300;
     let html = '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">Global patterns applied to all backends without structured channels.</div>';
     html += `<div style="padding:6px 12px;border-bottom:1px solid var(--border);">
       <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:4px;">Timing</div>
@@ -19931,8 +20036,16 @@ function loadDetectionFilters() {
           Notify cooldown (sec):
           <input type="number" min="0" max="300" value="${cooldown}" id="det_notify_cooldown" class="form-input" style="width:50px;font-size:10px;padding:2px 4px;" onchange="saveDetTiming()" />
         </label>
+        <label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+          ${escHtml(t('settings_detection_alert_settle')||'Alert settle (sec):')}
+          <input type="number" min="0" max="600" value="${alertSettle}" id="det_alert_settle" class="form-input" style="width:50px;font-size:10px;padding:2px 4px;" onchange="saveDetTiming()" />
+        </label>
+        <label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+          ${escHtml(t('settings_detection_alert_repeat')||'Alert repeat (sec):')}
+          <input type="number" min="0" max="3600" value="${alertRepeat}" id="det_alert_repeat" class="form-input" style="width:60px;font-size:10px;padding:2px 4px;" onchange="saveDetTiming()" />
+        </label>
       </div>
-      <div style="font-size:9px;color:var(--text2);margin-top:2px;">Debounce: wait N sec after prompt detected before alerting. Cooldown: min sec between repeat alerts.</div>
+      <div style="font-size:9px;color:var(--text2);margin-top:2px;">Debounce: wait N sec after prompt detected before alerting. Cooldown: min sec between repeat alerts. Settle: session must stay waiting N sec before an alert/push is sent. Repeat: don't re-alert the same prompt within N sec.</div>
     </div>`;
     for (const s of sections) {
       const patterns = d[s.key] || [];
@@ -19976,9 +20089,13 @@ function addDetPattern(key) {
 function saveDetTiming() {
   const debounce = parseInt(document.getElementById('det_prompt_debounce')?.value) || 3;
   const cooldown = parseInt(document.getElementById('det_notify_cooldown')?.value) || 15;
+  const alertSettle = parseInt(document.getElementById('det_alert_settle')?.value) || 45;
+  const alertRepeat = parseInt(document.getElementById('det_alert_repeat')?.value) || 300;
   apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({
     'detection.prompt_debounce': debounce,
     'detection.notify_cooldown': cooldown,
+    'detection.alert_settle': alertSettle,
+    'detection.alert_repeat': alertRepeat,
   })}).then(() => showToast('Detection timing saved', 'success', 1500))
     .catch(err => showToast('Failed: ' + err.message, 'error'));
 }

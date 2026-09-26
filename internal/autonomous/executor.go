@@ -11,9 +11,11 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/metrics"
@@ -225,7 +227,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				// Roll up story status when all its tasks reached a terminal state.
 				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
-					s.Status = StoryCompleted
+					s.Status = storyRollupStatus(s)
 					_ = m.store.SavePRD(latest)
 				}
 				prd = latest
@@ -362,7 +364,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						}
 					}
 					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
-						s.Status = StoryCompleted
+						s.Status = storyRollupStatus(s)
 						_ = m.store.SavePRD(latest)
 					}
 					prd = latest
@@ -449,6 +451,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
 	hint := ""
+	defer m.releaseCapacity(t.ID)
+	spawn = m.capacityRetrySpawn(t, spawn)
 	for attempt := 0; attempt <= retries; attempt++ {
 		var err error
 
@@ -538,13 +542,22 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
+			if aerr := m.admit(ctx, prd, t, backend, model); aerr != nil {
+				if errors.Is(aerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return aerr
+			}
+			if problems := LintTaskScope(prd, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
+				return fmt.Errorf("scope: %s (edit the task or widen the PRD read/write dirs)", strings.Join(problems, "; "))
+			}
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:         t.ID,
 				StoryID:        t.StoryID,
 				PRDID:          t.PRDID,
 				Title:          t.Title,
-				Spec:           t.Spec,
+				Spec:           ScopeBlock(prd) + "\n" + t.Spec,
 				ProjectDir:     prd.ProjectDir,
 				Backend:        backend,
 				Effort:         effort,
@@ -558,7 +571,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
 			})
 			if err != nil {
+				if errors.Is(err, errCancelledWhileWaiting) {
+					return nil
+				}
 				return fmt.Errorf("spawn: %w", err)
+			}
+			if led := m.Capacity(); led != nil {
+				led.Bind(t.ID, sr.SessionID)
 			}
 			t.SessionID = sr.SessionID
 			_ = m.store.SaveTask(t) // persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
@@ -1029,6 +1048,16 @@ func storyAllTasksDone(s *Story) bool {
 		}
 	}
 	return true
+}
+
+// storyRollupStatus is StoryFailed when any task failed, else StoryCompleted.
+func storyRollupStatus(s *Story) StoryStatus {
+	for _, t := range s.Tasks {
+		if t.Status == TaskFailed {
+			return StoryFailed
+		}
+	}
+	return StoryCompleted
 }
 
 // findStory returns the Story in prd whose ID matches storyID, or nil.

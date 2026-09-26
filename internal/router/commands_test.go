@@ -1,6 +1,7 @@
 package router
 
 import (
+	"time"
 	"strings"
 	"testing"
 )
@@ -470,5 +471,28 @@ func TestParse_ScheduleSpawn(t *testing.T) {
 	}
 	if !cmd.SpawnOneShot {
 		t.Error("SpawnOneShot should default to true")
+	}
+}
+
+func TestParse_Capacity(t *testing.T) {
+	if cmd := Parse("capacity"); cmd.Type != CmdCapacity {
+		t.Fatalf("Parse(capacity).Type = %q", cmd.Type)
+	}
+	if !strings.Contains(HelpText("h"), "capacity") {
+		t.Fatal("help text must list the capacity command")
+	}
+}
+
+func TestHandleCapacity_UsesCapacityFn(t *testing.T) {
+	var sent []string
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) { sent = append(sent, s) }}}
+	r.handleCapacity()
+	r.SetCapacityFunc(func() string { return "host: 1/2" })
+	r.handleCapacity()
+	// send is asynchronous-safe in tests via captureBackend; give it a tick.
+	time.Sleep(50 * time.Millisecond)
+	joined := strings.Join(sent, "|")
+	if !strings.Contains(joined, "not available") || !strings.Contains(joined, "host: 1/2") {
+		t.Fatalf("sent=%q", joined)
 	}
 }

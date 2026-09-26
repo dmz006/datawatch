@@ -340,6 +340,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 		newServerCmd(),     // BL312 S1 — multi-server registry
 		newFederationCmd(), // BL316 S2 — federation peer and group registry
+		newCapacityCmd(),   // capacity admission ledger status
 		newAlertRulesCmd(), // S14b — per-pod alert rules + observer-driven autoscaling
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
@@ -2525,6 +2526,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
 			return nil
 		})
+		r.SetCapacityFunc(func() string {
+			if capacityTextFn == nil {
+				return "not available"
+			}
+			return capacityTextFn()
+		})
 		r.SetStatsFunc(func() string {
 			if statsCollector == nil {
 				return "Stats collector not available."
@@ -3611,6 +3618,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningEffort:      acfgIn.PlanningEffort,
 			VerificationEffort:  acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds: acfgIn.PlanningTimeoutSeconds,
+			CapacityEnabled:        acfgIn.CapacityEnabled,
+			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
@@ -3707,7 +3716,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
-			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, outputFile, req.Spec)
+			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, req.ScopeBlock, outputFile, req.Spec)
 
 			body, _ := json.Marshal(map[string]any{
 				"task":        sessionTask,
@@ -3716,6 +3725,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"model":       req.Model,
 				"name":        "autonomous:decompose",
 				"one_shot":    true,
+				"prd_id":      req.PRDID,
 			})
 
 			timeout := 60 * time.Minute
@@ -3725,25 +3735,38 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				loopbackBaseURL(cfg)+"/api/sessions/start",
-				bytes.NewReader(body))
-			if err != nil {
-				return "", err
-			}
-			httpReq.Header.Set("Content-Type", "application/json")
-			if cfg.Server.Token != "" {
-				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-			}
-
-			resp, err := http.DefaultClient.Do(httpReq)
-			if err != nil {
-				return "", fmt.Errorf("decompose session start: %w", err)
-			}
-			rb, _ := io.ReadAll(resp.Body)
-			resp.Body.Close() //nolint:errcheck
-			if resp.StatusCode != http.StatusOK {
-				return "", fmt.Errorf("decompose session start: %s — %s", resp.Status, string(rb))
+			// A full session cap is a wait, not a failure: retry until a slot
+			// frees or the planning timeout expires.
+			var rb []byte
+			for {
+				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+					loopbackBaseURL(cfg)+"/api/sessions/start",
+					bytes.NewReader(body))
+				if err != nil {
+					return "", err
+				}
+				httpReq.Header.Set("Content-Type", "application/json")
+				if cfg.Server.Token != "" {
+					httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				resp, err := http.DefaultClient.Do(httpReq)
+				if err != nil {
+					return "", fmt.Errorf("decompose session start: %w", err)
+				}
+				rb, _ = io.ReadAll(resp.Body)
+				resp.Body.Close() //nolint:errcheck
+				if resp.StatusCode == http.StatusOK {
+					break
+				}
+				if !strings.Contains(string(rb), "max sessions") {
+					return "", fmt.Errorf("decompose session start: %s — %s", resp.Status, string(rb))
+				}
+				fmt.Printf("[decompose-session] waiting for a free session slot: %s\n", strings.TrimSpace(string(rb)))
+				select {
+				case <-ctx.Done():
+					return "", fmt.Errorf("decompose session start: %w while waiting for capacity", ctx.Err())
+				case <-time.After(15 * time.Second):
+				}
 			}
 			var startOut struct {
 				ID string `json:"id"`
@@ -4228,7 +4251,7 @@ Pre-existing files written by task (not tracked by git):
 				// Non-git project dir (PreTaskSHA not set): use mtime to detect output files.
 				// TouchedFiles walks the dir and returns files whose mtime is after since.
 				projGit := session.NewProjectGit(prd.ProjectDir)
-				newFiles := projGit.TouchedFiles(*task.StartedAt)
+				newFiles := append(projGit.TouchedFiles(*task.StartedAt), touchedInExtraWriteDirs(prd, *task.StartedAt)...)
 				if len(newFiles) == 0 && len(task.FilesPlanned) > 0 {
 					// Task had planned output files but nothing was created/modified.
 					return autonomouspkg.VerificationResult{
@@ -4392,9 +4415,22 @@ Reply with STRICT JSON:
 				}
 				httpServer.BroadcastPRDUpdate(payload)
 			})
+			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
+			})
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(func(sessionID string) error {
 				return mgr.Kill(sessionID)
+			})
+			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
+				var ids []string
+				for _, s := range mgr.ListSessions() {
+					if s.PRDID == prdID && s.Name == "autonomous:decompose" &&
+						s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled {
+						ids = append(ids, s.FullID)
+					}
+				}
+				return ids
 			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
@@ -4605,6 +4641,9 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				// TouchedFiles covers git-tracked edits + new untracked files
 				// + non-git dirs (find-newer since session start).
 				files := projGit.TouchedFiles(sess.CreatedAt)
+				if prd, ok := amgr.Store().GetPRD(prdID); ok {
+					files = append(files, touchedInExtraWriteDirs(prd, sess.CreatedAt)...)
+				}
 				if len(files) == 0 {
 					return
 				}
@@ -5433,6 +5472,12 @@ Return STRICT JSON:
 		go statsCollector.Start(ctx)
 		httpServer.SetStatsCollector(statsCollector)
 		// Wire stats to the test router now that the collector exists
+		testRouter.SetCapacityFunc(func() string {
+			if capacityTextFn == nil {
+				return "not available"
+			}
+			return capacityTextFn()
+		})
 		testRouter.SetStatsFunc(func() string {
 			if statsCollector == nil { return "Stats not available." }
 			s := statsCollector.Latest()
@@ -5915,7 +5960,11 @@ Return STRICT JSON:
 	}
 
 	// Wire state-change callbacks — web fires immediately, remote channels bundled
+	needsInputGate := session.NewAlertGate()
 	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
+		if sess.State != session.StateWaitingInput {
+			needsInputGate.Cancel(sess.FullID)
+		}
 		// GH#128 v8.11.7 — auto-accept claude startup prompts via state change.
 		// The earlier DetectPrompt path (filter engine) only fires for non-channel
 		// sessions. Channel-enabled sessions (e.g. spawned one-shot) transition to
@@ -6127,7 +6176,7 @@ Return STRICT JSON:
 			}
 		}
 	})
-	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
+	needsInputFire := func(sess *session.Session, prompt string) {
 		// Build alert body: prompt (what user asked) + response (what LLM said)
 		// This ensures alerts and comm channels show both sides of the conversation.
 		var alertParts []string
@@ -6185,18 +6234,10 @@ Return STRICT JSON:
 				"task":         truncate(sess.Task, 100),
 				"last_response": truncate(sess.LastResponse, 200),
 			}
-			server.PublishToTopic("session-"+sess.FullID, server.PushEvent{
+			server.PublishToTopics([]string{"session-" + sess.FullID, "alerts"}, server.PushEvent{
 				Title:    sessionLabel(sess) + " · waiting input",
 				Message:  alertBody,
 				Priority: 4, // ntfy-compat: 1=min, 5=max — input-needed is high
-				Tags:     []string{"waiting_input", sess.BackendFamily},
-				Click:    "/sessions/" + sess.FullID,
-				Extras:   sessionPushExtras,
-			})
-			server.PublishToTopic("alerts", server.PushEvent{
-				Title:    sessionLabel(sess) + " · waiting input",
-				Message:  alertBody,
-				Priority: 4,
 				Tags:     []string{"waiting_input", sess.BackendFamily, "session:" + sess.FullID},
 				Click:    "/sessions/" + sess.FullID,
 				Extras:   sessionPushExtras,
@@ -6225,6 +6266,23 @@ Return STRICT JSON:
 			sess.FullID,
 		)
 		fireInputSchedules(schedStore, mgr, sess)
+	}
+	// Alert gate: a needs-input detection becomes a real alert only after the
+	// session stays waiting for detection.alert_settle seconds, and an identical
+	// prompt is not re-alerted within detection.alert_repeat seconds.
+	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
+		det := cfg.GetDetection(sess.BackendFamily)
+		key := strings.TrimSpace(prompt) + "\x00" + sess.LastInput
+		fullID := sess.FullID
+		needsInputGate.Schedule(fullID, key,
+			time.Duration(det.AlertSettle)*time.Second, time.Duration(det.AlertRepeat)*time.Second,
+			func() {
+				cur, ok := mgr.GetSession(fullID)
+				if !ok || cur.State != session.StateWaitingInput {
+					return
+				}
+				needsInputFire(cur, prompt)
+			})
 	})
 
 	// BL355: zombie detection — alert when Claude process dies in active session.
@@ -15205,3 +15263,23 @@ Each result has:
 Always cite your sources. If a snippet is truncated, note that further detail
 is at the URL.
 `
+
+// touchedInExtraWriteDirs lists files changed since `since` in the PRD's
+// declared write dirs other than its project dir, as absolute paths.
+func touchedInExtraWriteDirs(prd *autonomouspkg.PRD, since time.Time) []string {
+	var out []string
+	proj := filepath.Clean(prd.ProjectDir)
+	for _, d := range autonomouspkg.EffectiveWriteDirs(prd) {
+		if d == proj {
+			continue
+		}
+		for _, f := range session.NewProjectGit(d).TouchedFiles(since) {
+			if filepath.IsAbs(f) {
+				out = append(out, f)
+			} else {
+				out = append(out, filepath.Join(d, f))
+			}
+		}
+	}
+	return out
+}

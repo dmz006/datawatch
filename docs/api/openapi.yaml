@@ -820,6 +820,44 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/capacity:
+    get:
+      summary: Capacity admission status
+      description: Pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of Automata tasks waiting for capacity with reasons.
+      operationId: capacityStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Ledger snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pools: {type: array, items: {type: object}}
+                  leases: {type: array, items: {type: object}}
+                  waiting: {type: array, items: {type: object}}
+
+  /api/autonomous/prds/{id}/set_priority:
+    post:
+      summary: Set a PRD's capacity-queue priority
+      description: Higher priority PRDs are admitted first when compute capacity is contended. Default 0.
+      operationId: autonomousPRDSetPriority
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priority]
+              properties:
+                priority: {type: integer}
+      responses:
+        "200": {description: Updated PRD}
+
   /api/alerts:
     get:
       summary: List alerts

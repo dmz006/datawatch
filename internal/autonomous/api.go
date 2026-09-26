@@ -96,6 +96,7 @@ func (a *API) resumeRunningPRDs() {
 			// draft so the operator can re-trigger decompose.
 			prd.Status = PRDDraft
 			_ = a.M.store.SavePRD(prd)
+			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
 		case PRDRunning:
 			// Kill any orphaned sessions from in-progress tasks and reset them
@@ -716,6 +717,26 @@ func (a *API) SetPRDSkills(prdID string, skills []string) (any, error) {
 // SetPRDConcurrency (BL370) sets per-PRD max_concurrent_tasks override.
 func (a *API) SetPRDConcurrency(prdID string, n int) (any, error) {
 	if err := a.M.SetPRDConcurrency(prdID, n); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+// SetPRDPriority sets the PRD's capacity-queue priority.
+func (a *API) SetPRDPriority(prdID string, n int) (any, error) {
+	if err := a.M.SetPRDPriority(prdID, n); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+// SetPRDDirs sets per-PRD read-only/writable directory scope.
+func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error) {
+	if err := a.M.SetPRDDirs(prdID, readDirs, writeDirs); err != nil {
 		return nil, err
 	}
 	a.M.EmitPRDUpdate(prdID)

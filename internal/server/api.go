@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/dmz006/datawatch/internal/capacity"
 	"bufio"
 	"context"
 	"crypto/rand"
@@ -258,6 +259,7 @@ type Server struct {
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg  *inference.Registry
+	capacityLedger *capacity.Ledger
 	inferenceDisp *inference.Dispatcher
 
 	// summarizerSvc is the response summarizer (nil when disabled).
@@ -600,6 +602,8 @@ type AutonomousAPI interface {
 
 	// BL370 — per-PRD max_concurrent_tasks override.
 	SetPRDConcurrency(prdID string, n int) (any, error)
+	SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error)
+	SetPRDPriority(prdID string, n int) (any, error)
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
@@ -4814,6 +4818,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			m := map[string]interface{}{
 				"llm_backend":        s.cfg.Session.LLMBackend,
 				"max_sessions":       s.cfg.Session.MaxSessions,
+				"reserved_interactive": s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
 				"tail_lines":         s.cfg.Session.TailLines,
 				"alert_context_lines": s.cfg.Session.AlertContextLines,
@@ -4867,6 +4872,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_needed_patterns": s.cfg.Detection.InputNeededPatterns,
 			"prompt_debounce":       s.cfg.Detection.PromptDebounce,
 			"notify_cooldown":       s.cfg.Detection.NotifyCooldown,
+			"alert_settle":          s.cfg.GetDetection("").AlertSettle,
+			"alert_repeat":          s.cfg.GetDetection("").AlertRepeat,
 		},
 		"update": map[string]interface{}{
 			"enabled":     s.cfg.Update.Enabled,
@@ -5007,6 +5014,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
 			"verification_effort":   s.cfg.Autonomous.VerificationEffort,
 			"planning_timeout_seconds": s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"capacity_enabled":            s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_gpu_util_pct":       s.cfg.Autonomous.CapacityGPUUtilPct,
 			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
 			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
@@ -5612,6 +5622,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.PromptDebounce = n }
 		case "detection.notify_cooldown":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.NotifyCooldown = n }
+		case "detection.alert_settle":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.AlertSettle = n }
+		case "detection.alert_repeat":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.AlertRepeat = n }
 
 		// Signal config
 		case "signal.config_dir":
@@ -5840,6 +5854,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Autonomous.VerificationModel = toString(v)
 		case "autonomous.planning_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PlanningTimeoutSeconds = n }
+		case "autonomous.capacity_enabled":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityEnabled = &b
+			}
+		case "autonomous.capacity_wait_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.CapacityWaitTimeoutSeconds = n }
+		case "autonomous.capacity_gpu_util_pct":
+			if n, ok := toInt(v); ok && n >= 0 && n <= 100 { cfg.Autonomous.CapacityGPUUtilPct = n }
+		case "session.reserved_interactive":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Session.ReservedInteractive = &n }
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
 		case "autonomous.auto_fix_retries":

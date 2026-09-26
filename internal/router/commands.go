@@ -26,6 +26,7 @@ const (
 	CmdScheduleSpawn CommandType = "schedule_spawn" // GH#128
 	CmdAlerts      CommandType = "alerts"
 	CmdStats       CommandType = "stats"
+	CmdCapacity    CommandType = "capacity"
 	CmdConfigure   CommandType = "configure"
 	CmdCopy        CommandType = "copy"
 	CmdPrompt      CommandType = "prompt"
@@ -1018,6 +1019,9 @@ func Parse(text string) Command {
 	case lower == "stats":
 		return Command{Type: CmdStats}
 
+	case lower == "capacity":
+		return Command{Type: CmdCapacity}
+
 	case strings.HasPrefix(lower, "configure ") || strings.HasPrefix(lower, "config ") || strings.HasPrefix(lower, "set "):
 		rest := text[strings.Index(lower, " ")+1:]
 		return Command{Type: CmdConfigure, Text: strings.TrimSpace(rest)}
@@ -1593,6 +1597,7 @@ schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
 schedule cancel id=<id>|name=<sched-name>
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
+capacity                        show Automata capacity pools, holders and wait queue
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)

@@ -12,6 +12,9 @@ session:
   llm_backend: claude-code
   # Maximum concurrent active sessions (0 = unlimited)
   max_sessions: 10
+  # Slots of max_sessions held back for operator sessions so autonomous work
+  # never uses them. Default: 1 when max_sessions >= 3, otherwise 0.
+  reserved_interactive: 1
   # Seconds of idle output before declaring a session is waiting for input
   input_idle_timeout: 10
   # Default number of output lines returned by tail/status commands
@@ -468,6 +471,8 @@ detection:
   # Minimum seconds between repeated needs-input notifications per session.
   # Prevents notification floods. Default: 15
   notify_cooldown: 15
+  alert_settle: 45     # seconds a session must stay waiting before a needs-input alert/push is sent (0 = default)
+  alert_repeat: 300    # seconds an identical needs-input alert for the same session is suppressed (0 = default)
 
 # ── RTK (Rust Token Killer) ──
 # Token savings tracking via RTK proxy. See: https://github.com/rtk-ai/rtk
@@ -611,6 +616,15 @@ autonomous:
   poll_interval_seconds: 30
   # Per-PRD in-flight worker cap.
   max_parallel_tasks: 3
+  # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
+  # slot (status waiting_capacity) instead of failing. Default true.
+  # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
+  # (0 = unlimited); per-Automaton queue order: priority (set_priority).
+  capacity_enabled: true
+  # Longest a task may wait for capacity before failing (seconds). Default 14400.
+  capacity_wait_timeout_seconds: 14400
+  # Hold new tasks while a node's busiest GPU is at/above this percent (0 = off).
+  capacity_gpu_util_pct: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:
   # opencode/claude-code spawn a full session with codebase tool access (recommended);
   # ollama/openwebui run headless via /api/ask. Old key "decomposition_backend" accepted on read.

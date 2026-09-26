@@ -113,6 +113,9 @@ type LLM struct {
 	// TimeoutSeconds overrides the adapter default (300s for ollama
 	// per v5.26.9 cold-model latency observation; 60s for claude).
 	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	// MaxInflight caps autonomous sessions in flight on this LLM across all
+	// PRDs (0 = unlimited). Enforced by the capacity ledger.
+	MaxInflight int `yaml:"max_inflight,omitempty" json:"max_inflight,omitempty"`
 	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
 	// (Q7): PWA strips these from the user-visible tag list.
@@ -186,6 +189,9 @@ func (l *LLM) ApplyModelMigration() {
 
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {
+	if l.MaxInflight < 0 {
+		return fmt.Errorf("llm: max_inflight %d must be >= 0", l.MaxInflight)
+	}
 	if strings.TrimSpace(l.Name) == "" {
 		return errors.New("llm: name required")
 	}

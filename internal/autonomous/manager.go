@@ -4,6 +4,7 @@
 package autonomous
 
 import (
+	"github.com/dmz006/datawatch/internal/capacity"
 	"context"
 	"fmt"
 	"log"
@@ -120,6 +121,11 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+
+	// Capacity admission. nil = enabled (default on).
+	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
+	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
+	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -255,6 +261,12 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// decomposeSessionsFn lists live planning sessions linked to a PRD.
+	decomposeSessionsFn func(prdID string) []string
+
+	// Capacity admission (see capacity.go).
+	capacity     *capacity.Ledger
+	capacityKeys CapacityKeysFn
 
 	// sessionDeleteFn — when set, called after a task reaches a terminal
 	// state (completed/failed/cancelled) to remove the ephemeral executor
@@ -339,6 +351,36 @@ func (m *Manager) SetSessionKillerFn(fn func(sessionID string) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionKillerFn = fn
+}
+
+// SetDecomposeSessionsFn wires the lookup of live planning (decompose)
+// sessions for a PRD, used by boot-resume to clean up orphans.
+func (m *Manager) SetDecomposeSessionsFn(fn func(prdID string) []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.decomposeSessionsFn = fn
+}
+
+// killOrphanDecomposeSessions kills any live planning session for the PRD.
+// After a daemon restart the decompose goroutine that would consume its output
+// is gone, so the session is an orphan burning compute.
+func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
+	m.mu.Lock()
+	find, kill := m.decomposeSessionsFn, m.sessionKillerFn
+	m.mu.Unlock()
+	if find == nil || kill == nil {
+		return 0
+	}
+	n := 0
+	for _, id := range find(prdID) {
+		if err := kill(id); err != nil {
+			log.Printf("[autonomous] boot-resume: kill orphan decompose session %s (prd=%s): %v", id, prdID, err)
+			continue
+		}
+		log.Printf("[autonomous] boot-resume: killed orphan decompose session %s (prd=%s)", id, prdID)
+		n++
+	}
+	return n
 }
 
 // SetSessionAliveFn wires the liveness check used by reconcileStuckTasks (B90).
@@ -449,6 +491,8 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			t := &prd.Story[si].Tasks[ti]
 			prevStatus := t.Status
 			switch t.Status {
+			case TaskWaitingCapacity:
+				// Waiter died with the prior daemon; it holds no session.
 			case TaskInProgress:
 				// Spawn goroutine died with the prior daemon before reaching
 				// TaskVerifying — any session is necessarily orphaned.
@@ -749,7 +793,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if planModel == "" {
 		planModel = prd.Model
 	}
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		// Roll back to draft so the operator can re-trigger.
 		prd.Status = PRDDraft
@@ -779,6 +823,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
+	prd.ScopeWarnings = LintPlanScope(prd, stories)
 	if err := m.store.SetStories(prdID, stories); err != nil {
 		return nil, err
 	}
@@ -848,7 +893,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if planModel2 == "" {
 		planModel2 = prd.Model
 	}
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 	if err != nil {
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()
@@ -874,6 +919,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
+	prd.ScopeWarnings = LintPlanScope(prd, stories)
 	if err := m.store.SetStories(prdID, stories); err != nil {
 		return nil, err
 	}
@@ -2348,6 +2394,41 @@ func (m *Manager) SetPRDConcurrency(prdID string, n int) error {
 		n = 0
 	}
 	prd.MaxConcurrentTasks = n
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// SetPRDPriority sets the PRD's capacity-queue priority.
+func (m *Manager) SetPRDPriority(prdID string, n int) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.Priority = n
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// SetPRDDirs sets the per-PRD read-only and writable directory scope. Nil
+// leaves a list unchanged; an empty non-nil slice clears it.
+func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := ValidateScopeDirs(readDirs); err != nil {
+		return err
+	}
+	if err := ValidateScopeDirs(writeDirs); err != nil {
+		return err
+	}
+	if readDirs != nil {
+		prd.ReadDirs = cleanDirs(readDirs)
+	}
+	if writeDirs != nil {
+		prd.WriteDirs = cleanDirs(writeDirs)
+	}
+	prd.ScopeWarnings = LintPlanScope(prd, prd.Story)
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
 }

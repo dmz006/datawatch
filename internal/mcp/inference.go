@@ -33,6 +33,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout (0=adapter default)")),
+		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited)")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		// Session-backend fields
@@ -62,6 +63,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout")),
+		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited)")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		// Session-backend fields
@@ -204,6 +206,11 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "api_key_ref"); v != "" {
 		body["api_key_ref"] = v
+	}
+	if v := optString(req, "max_inflight"); v != "" {
+		var n int
+		_, _ = fmtSscanf(v, &n)
+		body["max_inflight"] = n
 	}
 	if v := optString(req, "timeout_seconds"); v != "" {
 		var n int

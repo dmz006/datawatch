@@ -69,9 +69,17 @@ Feature request:
 
 // PlanningPromptSession is the task delivered to a one-shot coding session
 // when decompose_backend is a session-capable backend (claude-code, opencode …).
-// First %s = absolute path of the JSON output file.
-// Second %s = the raw PRD spec (feature request text).
+// First %s = scope block (see ScopeBlock).
+// Second %s = absolute path of the JSON output file.
+// Third %s = the raw PRD spec (feature request text).
 const PlanningPromptSession = `You are decomposing a feature request into a structured Product Requirements Document.
+
+%s
+The project directory above is the ONLY place this work happens. Every task you
+write must be doable inside the directories above; never tell a worker to work in
+another repository or directory, and use paths relative to the project directory.
+If the feature request names another repository or URL, treat it as a subject to
+research (web or read-only), not as a place to work.
 
 Before writing the plan, explore the project to understand what already exists —
 read files that are relevant to the feature request (source code, config, docs,
@@ -127,6 +135,8 @@ type DecomposeRequest struct {
 	Model      string // empty = backend default; passed to session-based decompose path
 	Effort     Effort
 	ProjectDir string // for session-based decompose path
+	ScopeBlock string // boundary contract rendered by ScopeBlock
+	PRDID      string // links the planning session to its PRD so boot-resume can clean it up
 	// TimeoutSeconds, when > 0, overrides the effort-scaled default
 	// timeout used by decomposeFn (5 min normal, 15 min high/max).
 	// Set from autonomous.planning_timeout_seconds config.

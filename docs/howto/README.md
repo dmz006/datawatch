@@ -30,6 +30,8 @@ you already have a daemon you can talk to.
 | [Voice input](voice-input.md) | Transcription backends (whisper / openai / openai_compat / openwebui / ollama) and chat-channel voice notes |
 | [Autonomous planning](autonomous-planning.md) | Submit a free-form spec, watch it decompose into stories + tasks, run them with verification |
 | [Autonomous review + approve](autonomous-review-approve.md) | The Automaton lifecycle gate: review the decomposition, approve / reject / request-revision before run |
+| [Container image refresh](container-image-refresh.md) | Daily pipeline that rebuilds, scans and promotes the published container images so OS/base fixes reach released versions |
+| [Automata capacity](automata-capacity.md) | Wait for free sessions / node / LLM slots instead of failing; fair queue, priority, reserved interactive slots |
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Guardrail Library](guardrail-library.md) | Named guardrail registry, profiles, per-Automaton overrides, skill-declared guardrails, scan unification |
 | [Project + Cluster Profiles](profiles.md) | Operator walkthrough for both profile sets — REST/MCP/CLI/comm CRUD, the unified Automaton profile dropdown, common multi-cluster patterns, troubleshooting |

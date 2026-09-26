@@ -1425,6 +1425,14 @@ After a prompt pattern is first detected, datawatch waits this many seconds befo
 
 Minimum time between repeated "needs input" notifications for the same session. Even if the session oscillates between `running` and `waiting_input`, only one notification is sent per cooldown window.
 
+### `detection.alert_settle` (default: 45 seconds)
+
+A "needs input" alert or push is only sent once the session has stayed in `waiting_input` for this long. If it goes back to `running` first (a pause, a long tool call), the alert is dropped. Set higher to be quieter.
+
+### `detection.alert_repeat` (default: 300 seconds)
+
+An identical "needs input" alert for the same session (same prompt, no new input from you in between) is not sent again within this window. A new prompt, or a prompt after you reply, alerts normally.
+
 ### Configure
 
 ```bash

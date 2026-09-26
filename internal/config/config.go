@@ -583,6 +583,12 @@ type DetectionConfig struct {
 	// NotifyCooldown is the minimum seconds between repeated needs-input notifications
 	// for the same session. Prevents notification floods. Default: 15 seconds.
 	NotifyCooldown int `yaml:"notify_cooldown,omitempty"`
+	// AlertSettle is the seconds a session must stay in waiting_input before a
+	// needs-input alert/push is sent; returning to running cancels it. Default: 45.
+	AlertSettle int `yaml:"alert_settle,omitempty"`
+	// AlertRepeat is the seconds an identical needs-input alert for the same
+	// session is suppressed. Default: 300.
+	AlertRepeat int `yaml:"alert_repeat,omitempty"`
 }
 
 // ---- LLM backends ----
@@ -1204,6 +1210,10 @@ type ExitHookConfigEntry struct {
 type SessionConfig struct {
 	// MaxSessions is the max number of concurrent AI sessions
 	MaxSessions int `yaml:"max_sessions"`
+	// ReservedInteractive holds back this many of max_sessions for operator
+	// sessions so autonomous work never starves them (default 1 when
+	// max_sessions >= 3, otherwise 0).
+	ReservedInteractive *int `yaml:"reserved_interactive,omitempty" json:"reserved_interactive,omitempty"`
 
 	// InputIdleTimeout is how long to wait for idle output before
 	// declaring a session is waiting for input (seconds)
@@ -1491,6 +1501,14 @@ type AutonomousConfig struct {
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.
 	PlanningTimeoutSeconds int `yaml:"planning_timeout_seconds,omitempty" json:"planning_timeout_seconds,omitempty"`
+	// CapacityEnabled turns capacity-aware admission on (default true when
+	// unset): tasks wait for a free host/node/LLM slot instead of failing.
+	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
+	// CapacityWaitTimeoutSeconds bounds one capacity wait (default 14400).
+	CapacityWaitTimeoutSeconds int `yaml:"capacity_wait_timeout_seconds,omitempty" json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
+	// or above this utilisation percent (0 = off).
+	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
 	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
@@ -2156,6 +2174,18 @@ func (c *Config) GetDetection(backend string) DetectionConfig {
 	if base.NotifyCooldown == 0 {
 		base.NotifyCooldown = 15
 	}
+	if llmDet.AlertSettle > 0 {
+		base.AlertSettle = llmDet.AlertSettle
+	}
+	if llmDet.AlertRepeat > 0 {
+		base.AlertRepeat = llmDet.AlertRepeat
+	}
+	if base.AlertSettle == 0 {
+		base.AlertSettle = 45
+	}
+	if base.AlertRepeat == 0 {
+		base.AlertRepeat = 300
+	}
 	return base
 }
 
@@ -2385,4 +2415,23 @@ func (s *SessionConfig) ResolveProjectDir(in string) string {
 		return in
 	}
 	return abs
+}
+
+// EffectiveReservedInteractive returns the number of max_sessions slots held
+// back for operator sessions: the configured value, or 1 when max_sessions
+// is at least 3 (otherwise 0). Never more than max_sessions-1.
+func (c SessionConfig) EffectiveReservedInteractive() int {
+	n := 0
+	if c.ReservedInteractive != nil {
+		n = *c.ReservedInteractive
+	} else if c.MaxSessions >= 3 {
+		n = 1
+	}
+	if c.MaxSessions > 0 && n > c.MaxSessions-1 {
+		n = c.MaxSessions - 1
+	}
+	if n < 0 {
+		n = 0
+	}
+	return n
 }

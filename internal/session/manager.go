@@ -439,6 +439,9 @@ type Manager struct {
 // maxSessions limits concurrent active sessions (0 means no limit).
 // An optional encKey (32 bytes) enables AES-256-GCM encryption of the session store.
 // llmBin is the fallback binary path used only when no launchFn is configured (legacy claude-code path).
+// Hostname returns this daemon's host name as recorded on sessions.
+func (m *Manager) Hostname() string { return m.hostname }
+
 func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, encKey ...[]byte) (*Manager, error) {
 	storePath := filepath.Join(dataDir, "sessions.json")
 	var key []byte

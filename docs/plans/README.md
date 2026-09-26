@@ -121,7 +121,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
  | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — (B102 ✅ v8.33.27; B103 ✅ v8.33.27) |
-| Open features | 2 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28) |
+| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release) |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
@@ -963,6 +963,20 @@ step** (per the plan's §7 DoD item 6). Root-cause fixes: per-session scoped cre
 capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in audit log
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
+
+#### BL389 — Capacity-aware Automata admission and queueing (filed 2026-09-24, implemented in the v9.0.0 tree, all three phases)
+
+Operator-raised gap: PRDs do not observe each other and nothing makes a PRD wait for compute
+capacity. The only cross-PRD limit is the host-wide `session.max_sessions` (it counts the
+operator's interactive sessions too); hitting it fails the task and the failure cascades to
+dependents. Node `declared_capacity` and `scheduling_priority` are stored but never consulted at
+spawn. Plan: a capacity ledger with per-host, per-node and per-LLM pools, leases tied to session
+lifetime, a new `waiting_capacity` task status with a fair cross-PRD queue, reserved interactive
+headroom, and visibility on every surface. Phase 1 (wait-and-retry instead of failing on the
+session cap) ships alone. Targeted v9.0.0. BL388 skipped: the BL387 plan reserves it.
+
+**Plan doc:** [`2026-09-24-bl389-capacity-admission.md`](2026-09-24-bl389-capacity-admission.md)
+**Status:** Implemented (all three phases) in the v9.0.0 tree; awaiting release.
 
 ---
 

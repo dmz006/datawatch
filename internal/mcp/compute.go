@@ -54,6 +54,7 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("max_concurrent_models", mcpsdk.Description("declared capacity")),
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100")),
+		mcpsdk.WithString("max_concurrent_sessions", mcpsdk.Description("cap on autonomous sessions in flight on this node (0 = unlimited)")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 	)
 }
@@ -310,6 +311,11 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		var n int
 		_, _ = fmt.Sscanf(v, "%d", &n)
 		body["scheduling_priority"] = n
+	}
+	if v := optString(req, "max_concurrent_sessions"); v != "" {
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		body["max_concurrent_sessions"] = n
 	}
 	cap := map[string]any{}
 	if v := optString(req, "max_concurrent_models"); v != "" {

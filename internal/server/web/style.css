@@ -1727,6 +1727,12 @@ body {
 .prd-task-status-glyph.status-verifying     { color: var(--accent); animation: spin 1.5s linear infinite; }
 .prd-task-status-glyph.status-running_tests { color: var(--accent2,#8b5cf6); }
 .prd-task-status-glyph.status-blocked       { color: var(--error); }
+.prd-task-status-glyph.status-waiting_capacity { color: var(--warning,#f59e0b); }
+.prd-task-wait-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--warning,#f59e0b); color: var(--warning,#f59e0b); white-space: nowrap; }
+.prd-task-wait-reason { font-size: 11px; color: var(--warning,#f59e0b); margin: 4px 0; }
+.prd-capacity-card { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--warning,#f59e0b); border-radius: 6px; padding: 8px 12px; margin-top: 4px; font-size: 11px; }
+.prd-capacity-card .cap-title { font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.prd-capacity-wait { color: var(--text2); margin-top: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .prd-task-id {
   font-size: 10px;

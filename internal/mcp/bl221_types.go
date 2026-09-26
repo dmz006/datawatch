@@ -67,6 +67,36 @@ func (s *Server) handleAutonomousPRDSetType(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDSetPriority() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_priority",
+		mcpsdk.WithDescription("Set a PRD's capacity-queue priority. Higher priority tasks are admitted first when compute capacity is contended (default 0)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithNumber("priority", mcpsdk.Required(), mcpsdk.Description("integer priority; higher runs first")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetPriority(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]int{"priority": int(req.GetFloat("priority", 0))})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_priority", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolCapacityStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("capacity_status",
+		mcpsdk.WithDescription("Read the capacity admission ledger: pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of tasks waiting for capacity with reasons."),
+	)
+}
+func (s *Server) handleCapacityStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/capacity", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDSetGuidedMode() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_guided_mode",
 		mcpsdk.WithDescription("BL221 Phase 4 — enable or disable Guided Mode on a PRD (step-by-step operator checkpoints)."),

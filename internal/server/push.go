@@ -78,6 +78,22 @@ var globalPushHub = &pushHub{subscribers: map[string]map[string]*pushClient{}}
 // an event of interest happens (waiting_input, council decision, etc.).
 // Fans out to live SSE subscribers + registered mobile push endpoints.
 func PublishToTopic(topic string, ev PushEvent) {
+	publishToTopic(topic, ev, true)
+}
+
+// PublishToTopics delivers one event to the SSE subscribers of every topic
+// but to each registered mobile endpoint only once, so a phone does not get
+// the same alert once per topic.
+func PublishToTopics(topics []string, ev PushEvent) {
+	if ev.ID == "" {
+		ev.ID = fmt.Sprintf("dw-%d", time.Now().UnixNano())
+	}
+	for i, t := range topics {
+		publishToTopic(t, ev, i == len(topics)-1)
+	}
+}
+
+func publishToTopic(topic string, ev PushEvent, fanout bool) {
 	if topic == "" {
 		return
 	}
@@ -105,6 +121,9 @@ func PublishToTopic(topic string, ev PushEvent) {
 	globalPushHub.mu.RUnlock()
 
 	// Fan out to registered mobile endpoints in a goroutine.
+	if !fanout {
+		return
+	}
 	for _, r := range regs {
 		go publishToEndpoint(r, ev)
 	}

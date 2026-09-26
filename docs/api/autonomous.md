@@ -44,6 +44,7 @@ POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/re
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
 POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override                                             [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override                                                 [v5.4.0  / BL203]
+POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 

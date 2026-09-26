@@ -136,6 +136,33 @@ Each active session has a dedicated `monitorOutput` goroutine that uses **fsnoti
 6. When new output arrives after `waiting_input`: marks `running` again
 7. The goroutine exits when the session reaches a terminal state or the context is cancelled
 
+### Needs-input alert gating
+
+`onNeedsInput` detections pass through `session.AlertGate` (`internal/session/alertgate.go`)
+before any alert, push or comm message is sent. Config (`DetectionConfig` in
+`internal/config/config.go`, read via `Config.GetDetection`):
+
+| Field | Default | Meaning |
+|---|---|---|
+| `detection.alert_settle` | 45 | seconds a session must stay `waiting_input` before alerting; leaving the state cancels it |
+| `detection.alert_repeat` | 300 | seconds an identical prompt for the same session is not re-alerted |
+
+Both are settable via YAML, `PUT /api/config`, comm `configure detection.alert_settle=N`,
+MCP `detection_config_set`, CLI `datawatch config set`, and the PWA Settings > Detection timing.
+Android/iPhone reflect the behaviour through push (no client setting; see datawatch-app#190).
+
+### Capacity admission
+
+`internal/capacity.Ledger` holds named pools (`host`, `node:<n>`, `llm:<n>`) with
+limits. `Manager.admit` (`internal/autonomous/capacity.go`) acquires an all-or-nothing
+lease before each task spawn and releases it when `executeOne` returns; waiting shows
+as `waiting_capacity` with `wait_reason`. `cmd/datawatch/capacity_wiring.go` builds the
+ledger, syncs limits every 10 s from `session.max_sessions`/`reserved_interactive`,
+compute node `max_concurrent_sessions` and LLM `max_inflight`, reaps leaked leases and
+raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
+`autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
+`session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:

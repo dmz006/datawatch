@@ -83,6 +83,9 @@ const (
 	TaskFailed       TaskStatus = "failed"
 	TaskBlocked      TaskStatus = "blocked"
 	TaskCancelled    TaskStatus = "cancelled"
+	// TaskWaitingCapacity: admitted by the executor but waiting for a capacity
+	// lease (host / node / LLM slot). Not a failure and not a retry.
+	TaskWaitingCapacity TaskStatus = "waiting_capacity"
 )
 
 // Effort mirrors session.EffortLevels (BL41) but kept separate so
@@ -202,6 +205,10 @@ type PRD struct {
 	// the global default (effectively 1 = sequential).
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 
+	// Priority orders this PRD's tasks in the capacity wait queue (higher
+	// first; default 0).
+	Priority int `json:"priority,omitempty"`
+
 	// BL386 Phase 1 — warm-start seeding. When Enabled, the executor
 	// seeds each spawned task's session-local scope from project-shared,
 	// prd-shared, and story-shared before the task begins work.
@@ -217,6 +224,13 @@ type PRD struct {
 	// MemoryReportAt is the UTC timestamp when the report was generated.
 	MemoryReport   string     `json:"memory_report,omitempty"`
 	MemoryReportAt *time.Time `json:"memory_report_at,omitempty"`
+
+	// Scope boundary. WriteDirs (default: ProjectDir) are the directories
+	// workers may modify; ReadDirs are extra read-only directories.
+	// ScopeWarnings lists plan entries that reference paths outside them.
+	ReadDirs      []string `json:"read_dirs,omitempty"`
+	WriteDirs     []string `json:"write_dirs,omitempty"`
+	ScopeWarnings []string `json:"scope_warnings,omitempty"`
 }
 
 // MemorySeedConfig (BL386 Phase 1 + BL387 Phase 2b) controls warm-start seeding at task spawn.
@@ -376,6 +390,7 @@ type Task struct {
 	Status        TaskStatus `json:"status"`
 	DependsOn     []string   `json:"depends_on,omitempty"` // other Task IDs
 	SessionID     string     `json:"session_id,omitempty"` // datawatch session ID once running
+	WaitReason    string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`

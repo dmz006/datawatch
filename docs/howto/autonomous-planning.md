@@ -297,6 +297,20 @@ spec without re-planning. (Use `decompose` alias if scripts require it.)
   before spawning its replacement, on every path (retry, boot-resume).
   See [`task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md).
 
+- **Tasks fail with `scope: ...`, or the Overview shows Scope warnings.**
+  Workers and the planner are confined to the project directory (the
+  PRD's *writable* directories) plus any *read-only* directories. A plan
+  that names a path outside them (for example "work in another repo")
+  is flagged at planning time and its tasks are refused at start rather
+  than wandering. Fix the task text, or open Settings and add the
+  directory under Read-only or Writable directories (REST:
+  `POST /api/autonomous/prds/{id}/set_dirs`). Put a research
+  Automaton's output folder in the project directory, not elsewhere.
+- **Tasks show "waiting for capacity".** The host, a compute node or an LLM is full; the task starts when a slot frees and is not failed. See [`automata-capacity.md`](automata-capacity.md).
+- **A story shows failed although its files exist.** A story is marked
+  completed only when none of its tasks failed. Reset the failed task
+  after fixing the cause and the story rolls up again.
+
 ## Linked references
 
 - See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — the review flow.
