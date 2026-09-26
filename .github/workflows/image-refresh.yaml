@@ -1,0 +1,263 @@
+# Daily container image refresh.
+#
+# Released images are built once, at release time, so OS-package and base-image
+# fixes published afterwards never reach them. This workflow runs daily:
+#
+#   1. plan   — resolve the latest published release, scan its published images
+#               with the same blocking Trivy policy the release uses. A rebuild
+#               is triggered when any image fails that scan, an image is missing,
+#               it is Monday (weekly baseline refresh), or a manual run forces it.
+#   2. base   — rebuild agent-base / validator / stats-cluster from the release
+#               tag's source with no cache and freshly pulled bases, push to a
+#               staging tag, scan it (blocking), and only then promote it to the
+#               release version tag and :latest.
+#   3. agents — same for the agent-* images and parent-full, layered on the
+#               freshly promoted agent-base.
+#
+# A failing scan never replaces a published image: the staging tag is simply
+# left for ghcr-cleanup to prune. The workflow run then fails, which emails the
+# owner. Build recipes (docker/dockerfiles) and .trivyignore are taken from main
+# so recipe and policy fixes reach released versions; the datawatch source built
+# into agent-base is always the release tag's.
+#
+# See docs/howto/container-image-refresh.md.
+
+name: image-refresh
+
+on:
+  schedule:
+    - cron: '30 5 * * *'   # daily 05:30 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild even if published images scan clean'
+        required: false
+        default: 'false'
+      version:
+        description: 'Release version to refresh (e.g. 8.34.1); default = latest release'
+        required: false
+        default: ''
+
+concurrency:
+  group: image-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  TRIVY_VERSION: v0.73.0
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      rebuild: ${{ steps.decide.outputs.rebuild }}
+      stamp: ${{ steps.decide.outputs.stamp }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          ref: main
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve release version
+        id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          v="${INPUT_VERSION:-}"
+          if [[ -z "$v" ]]; then
+            v="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          fi
+          v="${v#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Refreshing images for release $v"
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+      - name: Decide whether to rebuild
+        id: decide
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -uo pipefail
+          echo "stamp=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          reason=""
+          if [[ "${FORCE:-false}" == "true" ]]; then reason="forced"; fi
+          if [[ -z "$reason" && "$(date -u +%u)" == "1" ]]; then reason="weekly baseline refresh"; fi
+          if [[ -z "$reason" ]]; then
+            for name in agent-base validator stats-cluster agent-claude agent-opencode agent-aider agent-gemini agent-goose parent-full; do
+              img="ghcr.io/dmz006/datawatch-$name:$VERSION"
+              if ! trivy image --quiet --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 --format table "$img" > /tmp/scan-$name.txt 2>&1; then
+                reason="$name has HIGH/CRITICAL findings or is missing"
+                cat /tmp/scan-$name.txt | tail -40
+                break
+              fi
+            done
+          fi
+          if [[ -n "$reason" ]]; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            echo "reason=$reason" >> "$GITHUB_OUTPUT"
+            echo "::notice::Rebuilding images for $VERSION: $reason"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "reason=all published images scan clean" >> "$GITHUB_OUTPUT"
+            echo "::notice::No rebuild needed for $VERSION: all published images scan clean"
+          fi
+
+  base:
+    name: refresh / ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.rebuild == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent-base
+            file: docker/dockerfiles/Dockerfile.agent-base
+          - name: validator
+            file: docker/dockerfiles/Dockerfile.validator
+          - name: stats-cluster
+            file: docker/dockerfiles/Dockerfile.stats-cluster
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          ref: v${{ needs.plan.outputs.version }}
+          fetch-depth: 0
+      - name: Overlay build recipes and scan policy from main
+        run: |
+          git fetch --no-tags origin main
+          git checkout origin/main -- docker/dockerfiles .trivyignore
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push ${{ matrix.name }} (staging tag)
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ needs.plan.outputs.version }}
+          no-cache: true
+          pull: true
+          tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
+          push: true
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+      - name: Scan ${{ matrix.name }} staging image (blocking)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 1 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
+      - name: Promote ${{ matrix.name }} to release tag and latest
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          STAMP: ${{ needs.plan.outputs.stamp }}
+          NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          src="ghcr.io/dmz006/datawatch-$NAME:refresh-$STAMP"
+          args=(-t "ghcr.io/dmz006/datawatch-$NAME:$VERSION" -t "ghcr.io/dmz006/datawatch-$NAME:latest")
+          if [[ "$NAME" == "agent-base" ]]; then
+            # Slash-namespaced path used as FROM by the agent-* images.
+            args+=(-t "ghcr.io/dmz006/datawatch/agent-base:$VERSION" -t "ghcr.io/dmz006/datawatch/agent-base:latest")
+          fi
+          docker buildx imagetools create "${args[@]}" "$src"
+
+  agents:
+    name: refresh / ${{ matrix.name }}
+    needs: [plan, base]
+    if: needs.plan.outputs.rebuild == 'true' && needs.base.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent-claude
+            file: docker/dockerfiles/Dockerfile.agent-claude
+          - name: agent-opencode
+            file: docker/dockerfiles/Dockerfile.agent-opencode
+          - name: agent-aider
+            file: docker/dockerfiles/Dockerfile.agent-aider
+          - name: agent-gemini
+            file: docker/dockerfiles/Dockerfile.agent-gemini
+          - name: agent-goose
+            file: docker/dockerfiles/Dockerfile.agent-goose
+          - name: parent-full
+            file: docker/dockerfiles/Dockerfile.parent-full
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          ref: v${{ needs.plan.outputs.version }}
+          fetch-depth: 0
+      - name: Overlay build recipes and scan policy from main
+        run: |
+          git fetch --no-tags origin main
+          git checkout origin/main -- docker/dockerfiles .trivyignore
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push ${{ matrix.name }} (staging tag)
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ needs.plan.outputs.version }}
+            REGISTRY=ghcr.io/dmz006/datawatch
+            BASE_TAG=${{ needs.plan.outputs.version }}
+          no-cache: true
+          pull: true
+          tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
+          push: true
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+      - name: Scan ${{ matrix.name }} staging image (blocking)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore \
+            --exit-code 1 \
+            --format table \
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
+      - name: Promote ${{ matrix.name }} to release tag and latest
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          STAMP: ${{ needs.plan.outputs.stamp }}
+          NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "ghcr.io/dmz006/datawatch-$NAME:$VERSION" \
+            -t "ghcr.io/dmz006/datawatch-$NAME:latest" \
+            "ghcr.io/dmz006/datawatch-$NAME:refresh-$STAMP"

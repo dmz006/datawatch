@@ -12,26 +12,6 @@
 # operator-configured remotes. Not network-exposed via datawatch APIs.
 CVE-2023-45853
 
-# libgnutls30 — no fix in bookworm (5 CVEs across CRITICAL and HIGH)
-# datawatch uses Go crypto/tls, not gnutls; gnutls is pulled transitively
-# by curl and git. None of these affect the datawatch TLS listener.
-#   CVE-2026-33845 (CRITICAL): DTLS zero-length DoS. Container runs no
-#     DTLS listener; not reachable.
-#   CVE-2026-42010 (CRITICAL): Auth bypass via NUL in cert CN. Only
-#     triggerable by a malicious TLS server; git/curl connect only to
-#     operator-configured remotes.
-#   CVE-2026-33846 (HIGH): heap buffer overflow in DTLS. Same surface
-#     as CVE-2026-33845; unreachable without DTLS listener.
-#   CVE-2026-3833 (HIGH): policy bypass via case-sensitive comparison.
-#     Affects cert policy enforcement; mitigated by use of trusted CAs.
-#   CVE-2026-42011 (HIGH): security bypass via incorrect name matching.
-#     Same mitigation as CVE-2026-3833.
-CVE-2026-33845
-CVE-2026-42010
-CVE-2026-33846
-CVE-2026-3833
-CVE-2026-42011
-
 # libsqlite3-0 — no fix in bookworm (3 CVEs, 1 CRITICAL + 2 HIGH)
 # SQLite is used internally by the gh CLI binary; not exposed via
 # datawatch REST/MCP APIs. Processes only trusted local state.
@@ -51,7 +31,6 @@ CVE-2026-11824
 #     used by curl in this image (no SMB server configured).
 #   CVE-2026-6276: Cookie leak on cross-origin redirect. curl is used
 #     by agent tooling for REST API calls; operator-configured endpoints.
-CVE-2026-5773
 CVE-2026-6276
 
 # libldap-2.5-0 CVE-2023-2953 — HIGH, no fix in bookworm
@@ -66,26 +45,6 @@ CVE-2023-2953
 # by attacker-controlled terminal output inside a tmux session. Requires
 # prior container shell access.
 CVE-2025-69720
-
-# libssh2-1 — no fix in bookworm (4 HIGH)
-# libssh2 is used by git for SSH transport. All SSH remotes are
-# operator-configured; no attacker-controlled SSH servers are contacted.
-#   CVE-2026-7598 (HIGH): Integer overflow in username/password handling.
-#     Only triggerable by a malicious SSH server.
-#   CVE-2026-55200 (HIGH): Out-of-bounds write via unchecked packet_length
-#     in transport.c. Same surface — requires a malicious SSH server.
-#   CVE-2026-55199 (HIGH): No fix in bookworm. Same SSH server attack surface.
-#   CVE-2026-58050 (HIGH): No fix in bookworm. Same SSH server attack surface.
-CVE-2026-7598
-CVE-2026-55200
-CVE-2026-55199
-CVE-2026-58050
-
-# libgcrypt20 CVE-2026-41989 — HIGH, no fix in bookworm
-# DoS / buffer overflow in gnupg crypto backend. gnupg is used for
-# package signature verification during apt installs (build-time only).
-# Not present in the runtime attack surface of a deployed container.
-CVE-2026-41989
 
 # perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (6 CVEs)
 # Perl is installed as a transitive dependency (git and gnupg pull it in).
@@ -107,7 +66,6 @@ CVE-2026-42497
 CVE-2026-48962
 CVE-2026-8376
 CVE-2026-9538
-CVE-2026-48959
 
 # git-lfs CVE-2025-26625 — HIGH, no fix available
 # git-lfs may write to arbitrary files via crafted LFS pointer refs returned
@@ -115,19 +73,6 @@ CVE-2026-48959
 # attacker-controlled git remote. All git remotes in this image are
 # operator-configured; no untrusted LFS servers are contacted.
 CVE-2025-26625
-
-# jq / libjq1 — no fix in bookworm (3 HIGH)
-# jq is installed as a general-purpose JSON tool for agent shell use.
-#   CVE-2026-32316 (HIGH): DoS or potential code execution via crafted JSON.
-#     jq processes JSON from operator-controlled sources (API responses, config).
-#   CVE-2026-40164 (HIGH): DoS via crafted JSON object causing excessive memory.
-#     Same surface; no untrusted JSON piped through jq by the datawatch service.
-#   CVE-2026-49839 (HIGH): heap-buffer-overflow in jq --rawfile via invalid-state
-#     reuse after string-too-long error. Only reachable via operator-invoked jq
-#     with attacker-controlled input files; no such execution path in the container.
-CVE-2026-32316
-CVE-2026-40164
-CVE-2026-49839
 
 # libexpat1 — no fix in bookworm (3 CVEs, 2 HIGH + 1 will_not_fix)
 # expat is pulled transitively by Python, dbus, and other system libs.
@@ -154,24 +99,11 @@ CVE-2026-45186
 #     No publicly-available exploit details; status affected, no fix in bookworm.
 CVE-2026-7210
 CVE-2025-69534
-CVE-2026-6100
-
-# python3-pip CVE-2026-8643 — HIGH, no fix in bookworm
-# pip is only used for package installation (during docker build via pipx).
-# Not exposed at runtime; pip itself does not accept untrusted input in
-# a deployed container.
-CVE-2026-8643
 
 # python3-click CVE-2026-7246 — HIGH, no fix in bookworm
 # click is a CLI framework used by aider and other Python tools. This CVE
 # affects click's argument parsing. Not directly exposed via datawatch APIs.
 CVE-2026-7246
-
-# picomatch (npm) CVE-2026-33671 — HIGH
-# Picomatch 4.0.3 is a transitive dependency of @google/gemini-cli. A fix
-# exists (4.0.4+) but requires gemini-cli to release an update. picomatch is
-# used for glob pattern matching in the CLI; not exposed to untrusted web input.
-CVE-2026-33671
 
 # libcups2 CVE-2026-34980 — HIGH, no fix in bookworm
 # CUPS printing library, pulled as a Java runtime dependency (openjdk-17-jre).
@@ -184,41 +116,6 @@ CVE-2026-34980
 # Triggerable via attacker-controlled font files; no font files are processed
 # by the datawatch service or signal-cli in normal operation.
 CVE-2023-25193
-
-# litellm (pip METADATA) CVE-2026-35030 — CRITICAL
-# litellm is an aider transitive dependency for LLM API routing. This CVE
-# is a METADATA-level finding (no binary package version pinned by Debian).
-# Aider uses litellm for model calls to operator-configured endpoints only.
-CVE-2026-35030
-
-# GitPython (pip METADATA) CVE-2026-42215 — HIGH
-# GitPython is an aider dependency used to interact with git repos. The CVE
-# affects git operations on attacker-controlled repositories. Aider runs in
-# operator-controlled workspaces; untrusted repo cloning is not a default
-# use case for the agent container.
-CVE-2026-42215
-
-# pillow CVE-2026-42311 — HIGH, no fix version in Trivy DB
-# Pillow image processing vulnerability; no patched release identified yet.
-# pillow is an aider transitive dep used for image handling; not directly
-# exposed via datawatch APIs. Suppress until upstream releases a fix.
-CVE-2026-42311
-
-# Python pip-level transitive deps (METADATA) — misc HIGH, no fix available
-# These are CVEs in aider's transitive dependencies reported at the pip
-# METADATA level. All affect components not directly exposed by the
-# datawatch service: async HTTP (aiohttp), network protocols (urllib3),
-# ASN.1 (pyasn1), protobuf serialisation, image processing (pillow).
-#   CVE-2025-69223: aiohttp — DoS via malformed chunked encoding
-#   CVE-2025-66418: urllib3 — information leakage via redirects
-#   CVE-2026-23490: pyasn1 — DoS via crafted ASN.1 data
-#   CVE-2026-0994: protobuf — DoS via deeply nested messages
-#   CVE-2026-25990: pillow — information disclosure or DoS via crafted image
-CVE-2025-69223
-CVE-2025-66418
-CVE-2026-23490
-CVE-2026-0994
-CVE-2026-25990
 
 # python3.11 / libpython3.11-* — 3 new HIGH CVEs, no fix in bookworm
 # Affect libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal.
@@ -233,14 +130,6 @@ CVE-2026-25990
 #     exploitable if bz2 decompressor is called on attacker-controlled data;
 #     no bz2 decompression of untrusted streams by gemini-cli.
 CVE-2026-3644
-CVE-2026-4224
-CVE-2026-9669
-
-# util-linux family (bsdutils, libblkid1, libmount1, libsmartcols1, util-linux) — CVE-2026-53615 (HIGH, affected, no fix in bookworm)
-# Integer overflow in libblkid partition table parsing. Exploitable only when
-# parsing attacker-controlled block device data. The container reads no raw
-# block devices; libblkid is a transitive dependency of util-linux utilities.
-CVE-2026-53615
 
 # curl / libcurl3-gnutls / libcurl4 — 5 CVEs (HIGH, fix_deferred by Debian)
 #   CVE-2026-12064: SSH host verification bypass via schemeless SFTP/SCP URLs.
@@ -259,7 +148,6 @@ CVE-2026-53615
 CVE-2026-12064
 CVE-2026-8286
 CVE-2026-8927
-CVE-2026-8932
 CVE-2026-8458
 
 # gawk — 4 CVEs (CRITICAL + HIGH, affected, no fix in bookworm)
@@ -285,16 +173,6 @@ CVE-2026-41992
 # write access to a directory containing symlinks. No untrusted filesystem
 # content is mounted into the container by default.
 CVE-2026-54369
-
-# libexpat1 — 3 new CVEs (HIGH, affected, no fix in bookworm)
-# New expat CVEs in addition to those already suppressed above.
-# datawatch does not parse XML; expat is a transitive dependency.
-#   CVE-2026-56131: Lacks handler call depth tracking for namespace declarations
-#   CVE-2026-56407: Integer overflow in doProlog
-#   CVE-2026-56408: Integer overflow in copyString
-CVE-2026-56131
-CVE-2026-56407
-CVE-2026-56408
 
 # perl / perl-base / perl-modules-5.36 / libperl5.36 — 3 new CVEs (CRITICAL + HIGH)
 # Perl is a transitive dependency of git/gnupg. Not executed at runtime.
@@ -322,14 +200,6 @@ CVE-2026-60000
 #   CVE-2026-58472: Arbitrary code execution or denial of service
 CVE-2026-58471
 CVE-2026-58472
-
-# Go stdlib CVE-2026-39822 — HIGH, fixed in go1.26.5 / go1.25.12
-# os.Root symlink following vulnerability. datawatch does not call os.Root
-# or os.OpenRoot anywhere in cmd/ or internal/ (verified by source search;
-# govulncheck with full call-graph reachability analysis passes cleanly).
-# golang:1.26.5-bookworm is not yet available on Docker Hub; the builder
-# image resolves to go1.26.4. Remove this entry once golang:1.26.5 ships.
-CVE-2026-39822
 
 # libpython3.11-minimal CVE-2026-11940 — HIGH, fix_deferred in bookworm
 # tarfile.extractall() with 'data' or 'tar' filter can be bypassed.
@@ -360,46 +230,6 @@ CVE-2026-58013
 CVE-2026-58014
 CVE-2026-58015
 
-# npm package brace-expansion CVE-2026-13149 — HIGH, fixed in 2.1.2/1.1.16/5.0.7
-# ReDoS via crafted brace-expansion pattern string. brace-expansion is a
-# transitive dep of @google/gemini-cli and Node.js tooling; not invoked
-# with untrusted web input at runtime. Fix requires gemini-cli dep update.
-CVE-2026-13149
-
-# npm package sigstore CVE-2026-48815 — HIGH, fixed in 4.1.1
-# Unauthorized certificate acceptance in sigstore package verification.
-# sigstore is used for npm package integrity during install, not at
-# container runtime. datawatch does not invoke sigstore at runtime.
-CVE-2026-48815
-
-# npm package tar CVE-2026-59873 (CRITICAL) + CVE-2026-59874 (HIGH)
-# tar: DoS via crafted gzip bomb (CRITICAL, fixed 7.5.19) and DoS via
-# malformed tar archive (HIGH, fixed 7.5.18). tar is a transitive dep of
-# npm itself, used for extracting packages at build/install time. Not
-# invoked by the datawatch service or Gemini CLI on untrusted archives at
-# container runtime. Fix requires gemini-cli's npm dep tree to update.
-CVE-2026-59873
-CVE-2026-59874
-
-# google.golang.org/grpc GHSA-hrxh-6v49-42gf — HIGH, fixed in v1.82.1
-# gRPC-Go xDS RBAC and HTTP/2 vulnerabilities. Trivy finds grpc v1.81.1
-# embedded in /usr/bin/gh (GitHub CLI binary installed from cli.github.com
-# apt repo). Not present in the datawatch Go module graph (absent from
-# go.mod and go.sum). The vulnerability affects gRPC servers using xDS RBAC
-# configuration; gh uses grpc as a client for GitHub API communication only.
-# Remove once gh releases a build with grpc ≥ v1.82.1.
-GHSA-hrxh-6v49-42gf
-
-# openjdk-17-jre-headless — 2 CVEs (HIGH, no fix in bookworm, Oracle CPU 2026-07)
-# Java is installed in parent-full solely for signal-cli (Signal messenger
-# bridge). signal-cli connects to operator-configured Signal servers only;
-# no untrusted Java class loading or deserialization occurs at runtime.
-#   CVE-2026-41254 (HIGH): unspecified Java vulnerability, Oracle CPU 2026-07.
-#   CVE-2026-47063 (HIGH): "Enhance Jar handling" — crafted JAR file exploitation.
-#     No untrusted JAR loading by signal-cli; operator-controlled Signal servers only.
-CVE-2026-41254
-CVE-2026-47063
-
 # python3.11 / libpython3.11-* — CVE-2026-15308 (HIGH, no fix in bookworm)
 # CPU exhaustion via crafted HTML input to Python's built-in HTML parser.
 # Python is installed in agent images (gemini, aider) for tooling compatibility.
@@ -407,46 +237,19 @@ CVE-2026-47063
 # html.parser to untrusted web content at runtime.
 CVE-2026-15308
 
-# npm brace-expansion — 2 CVEs (HIGH, fixed in newer releases)
-# ReDoS / CPU exhaustion via crafted brace-expansion pattern strings.
-# brace-expansion is a transitive dep of @google/gemini-cli Node.js tooling;
-# not invoked with untrusted web input at runtime. Fix requires gemini-cli
-# dep tree update.
-#   CVE-2026-14257 (HIGH): ReDoS in brace-expansion 2.x
-#   CVE-2026-69152 (HIGH): ReDoS in brace-expansion 1.x
-CVE-2026-14257
-CVE-2026-69152
-
-# npm ip-address CVE-2026-69192 — HIGH, no fix identified
-# Information disclosure or bypass via crafted IP address input. ip-address
-# is a transitive dep of @google/gemini-cli; not invoked on untrusted IP
-# input by the datawatch service or gemini-cli at container runtime.
-CVE-2026-69192
-
-# aiohttp CVE-2026-69244 — HIGH, no fix in current release
-# DoS or security bypass via crafted HTTP request to aiohttp server.
-# aiohttp is an aider transitive dependency for async HTTP; the datawatch
-# service does not expose an aiohttp server. No untrusted HTTP requests
-# processed by aiohttp in the container at runtime.
-CVE-2026-69244
-
-# httplib2 CVE-2026-59939 — HIGH, no fix available
-# Information disclosure via crafted HTTP response headers in httplib2.
-# httplib2 is an aider transitive dependency; aider connects only to
-# operator-configured LLM API endpoints. No untrusted HTTP servers contacted.
-CVE-2026-59939
-
 # msgpack / MessagePack GHSA-6v7p-g79w-8964 — HIGH
 # Denial of service via crafted MessagePack data. MessagePack is an aider
-# transitive dependency used for serialization between aider and the LLM
-# backend. Not exposed to untrusted MessagePack streams from external sources.
+# copy vendored inside pip itself (pip/_vendor), so it cannot be bumped from the
+# image; fixed when pip ships a newer vendored msgpack. Not exposed to untrusted
+# MessagePack streams from external sources.
 GHSA-6v7p-g79w-8964
 
 # setuptools CVE-2025-47273 — HIGH, fixed in 78.1.1
 # Path traversal in setuptools during egg extraction. setuptools is used
 # at pip install time for package management; not invoked at container
 # runtime by the datawatch service. Fix requires aider's dependency chain
-# to update setuptools; suppress until upstream resolves.
+# to update setuptools (the affected copy is vendored inside another package);
+# suppress until upstream resolves.
 CVE-2025-47273
 
 # util-linux family (bsdutils, libmount1, util-linux) — CVE-2026-53613 (HIGH, affected, no fix in bookworm)
@@ -454,20 +257,6 @@ CVE-2025-47273
 # container never calls mount(8) directly; the binary runs as an unprivileged
 # non-root user with no mount capabilities. Not exploitable in this context.
 CVE-2026-53613
-
-# libevent-core-2.1-7 — no fix in bookworm (4 CVEs, all HIGH)
-# These CVEs affect libevent's RPC, integer handling, and DTLS subsystems.
-# libevent is a transitive dependency of openssh-client in the runtime image;
-# datawatch never exposes a libevent RPC listener, so the attack surface
-# for all four issues is absent.
-#   CVE-2026-63383: DoS via malformed RPC data.
-#   CVE-2026-63384: DoS via integer conversion.
-#   CVE-2026-63387: Off-by-one stack buffer overflow (DTLS).
-#   CVE-2026-63388: Arbitrary code execution via heap (DTLS).
-CVE-2026-63383
-CVE-2026-63384
-CVE-2026-63387
-CVE-2026-63388
 
 # libexpat1 — CVE-2026-66046 (HIGH, affected, no fix in bookworm)
 # DoS in Expat (libexpat) through 2.8.3. libexpat is a transitive dependency
@@ -520,26 +309,6 @@ CVE-2026-70461
 CVE-2026-70463
 CVE-2026-70464
 
-# golang.org/x/mod in gh CLI binary — CVE-2026-56864 and CVE-2026-56865 (HIGH, fixed in v0.40.0)
-# Trivy detects golang.org/x/mod v0.38.0 in the GitHub CLI (gh) binary installed from
-# the GitHub apt repo (cli.github.com). The datawatch binary itself uses v0.40.0 (see go.mod).
-# We have no control over Go module versions embedded in the pre-compiled gh binary.
-# Both CVEs concern a malicious GOSUMDB being able to serve arbitrary module data. The
-# gh binary's GOSUMDB interactions are internal to CLI usage against api.github.com —
-# not an attack surface exposed by the datawatch service.
-CVE-2026-56864
-CVE-2026-56865
-
-# agent-gemini npm deps: pacote CVE-2026-9496 + tar CVE-2026-73566 (HIGH, fixed upstream)
-# pacote is npm's own package-fetching library; tar is node-tar.
-# Both are transitive dependencies of @google/gemini-cli installed by npm.
-# The gemini agent container is not internet-facing; the CVE surfaces
-# (malicious package.json fetch and crafted tar archives) are only
-# reachable via deliberate npm install-time operations, not at gemini-cli
-# runtime. Suppress pending upstream gemini-cli dependency updates.
-CVE-2026-9496
-CVE-2026-73566
-
 # libsystemd0 / libudev1 — CVE-2026-16742 (HIGH, no fix in bookworm)
 # systemd/udev vulnerability with no patched release in Debian bookworm.
 # libsystemd0 and libudev1 are transitive dependencies of the base image;
@@ -547,14 +316,6 @@ CVE-2026-73566
 # D-Bus APIs directly. No systemd socket activation or udev rule evaluation
 # occurs inside the running container.
 CVE-2026-16742
-
-# libevent-core-2.1-7 — CVE-2026-63382 + CVE-2026-63385 (HIGH, no fix in bookworm)
-# Two additional libevent CVEs in the same family as CVE-2026-63383/63384/
-# 63387/63388 already suppressed above. libevent is a transitive dependency
-# of openssh-client; datawatch exposes no libevent RPC, DTLS, or HTTP server
-# through this library, so the vulnerable code paths are unreachable at runtime.
-CVE-2026-63382
-CVE-2026-63385
 
 # util-linux family — CVE-2026-76642 + CVE-2026-78408/78409/78410 (HIGH, no fix in bookworm)
 # Four new CVEs in util-linux and its split packages (bsdutils, libblkid1,
@@ -569,11 +330,23 @@ CVE-2026-78408
 CVE-2026-78409
 CVE-2026-78410
 
-# python3.11 family — CVE-2026-82049 (HIGH, no fix in bookworm)
+# python3.11 family — CVE-2026-8328 (HIGH, no fix in bookworm)
 # Affects libpython3.11-minimal, libpython3.11-stdlib, python3.11,
-# python3.11-minimal, and python3.11-venv (agent-aider only). The
-# vulnerability is in the tarfile module's handling of crafted archives.
-# These agent containers do not process untrusted tar archives at runtime;
-# aider/gemini tooling unpacks archives only from the operator-controlled
-# pip/git infrastructure. No fix is available in Debian bookworm 3.11.2.
-CVE-2026-82049
+# python3.11-minimal (agent-gemini, agent-aider) and python3.11-venv
+# (agent-aider). The flaw is FTP connection redirection through ftplib's
+# ftpcp(). These agent containers never use ftplib or FTP; all network
+# access is HTTPS to operator-configured endpoints. No fix is available in
+# Debian bookworm 3.11.2. Reviewed 2026-09-25; re-review each release cycle.
+CVE-2026-8328
+
+# expat (libexpat1) — CVE-2026-93990 (HIGH, no fix in bookworm 2.5.0-1+deb12u3)
+# Malformed UTF-16 input handling in the XML parser. Agent containers parse XML
+# only from trusted tooling output (git/npm/pip metadata) and expose no XML
+# input surface. Present in every agent image via the base. Reviewed 2026-09-26.
+CVE-2026-93990
+
+# sudo — CVE-2026-96512 (HIGH, no fix in bookworm 1.9.13p3-1+deb12u4)
+# TZ-based bypass of sudoers NOTBEFORE/NOTAFTER time restrictions. The
+# containers configure no time-restricted sudoers rules and run a single
+# trusted agent user. Present in every agent image via the base. Reviewed 2026-09-26.
+CVE-2026-96512

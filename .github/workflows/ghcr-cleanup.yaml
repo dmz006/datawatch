@@ -13,6 +13,12 @@
 #     still reproduce a past minor's last build for forensics)
 #   - except `latest` and explicitly-marked semver pre-release tags
 #
+# Every published image is its own package (datawatch-agent-base,
+# datawatch-agent-aider, ...), so the job runs once per package. It also
+# prunes the `refresh-YYYYMMDD` staging tags that the daily image-refresh
+# workflow leaves behind (older than 3 days) — that pruning is always live;
+# closed-minor deletion stays a dry run unless dispatched with dry_run=false.
+#
 # The workflow uses GITHUB_TOKEN with packages:write — the same
 # repo-scoped token that publishes images. No PAT required.
 # Operator confirmed 2026-04-28: "ghcr also can be done" via the
@@ -41,103 +47,133 @@ permissions:
 
 jobs:
   cleanup:
+    name: cleanup / ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - datawatch-agent-base
+          - datawatch-validator
+          - datawatch-stats-cluster
+          - datawatch-agent-claude
+          - datawatch-agent-opencode
+          - datawatch-agent-aider
+          - datawatch-agent-gemini
+          - datawatch-agent-goose
+          - datawatch-parent-full
+          - datawatch%2Fagent-base
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
-
       - name: List GHCR versions
         id: list
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
-          PKG: datawatch
+          PKG: ${{ matrix.pkg }}
         run: |
           set -euo pipefail
-          # Both user-owned and org-owned package endpoints exist; try
-          # user first since dmz006 is a user account.
+          # User-owned first (dmz006 is a user account), then org-owned.
           if ! gh api "/users/$OWNER/packages/container/$PKG/versions" \
-               --paginate > versions.json 2>/dev/null; then
-            gh api "/orgs/$OWNER/packages/container/$PKG/versions" \
-              --paginate > versions.json
+               --paginate > versions.json 2>err.txt; then
+            if ! gh api "/orgs/$OWNER/packages/container/$PKG/versions" \
+                 --paginate > versions.json 2>>err.txt; then
+              echo "::warning::could not list versions of $PKG: $(tr '\n' ' ' < err.txt)"
+              echo '[]' > versions.json
+            fi
           fi
-          echo "Total versions: $(jq 'length' versions.json)"
+          echo "Total versions of $PKG: $(jq 'length' versions.json)"
 
-      - name: Compute closed-minor candidates
-        id: plan
+      - name: Compute deletion candidates
+        env:
+          KEEP_LATEST: ${{ inputs.keep_latest_per_minor || 'true' }}
         run: |
           set -euo pipefail
           python3 <<'EOF'
-          import json, re, os, collections
+          import json, re, os, collections, datetime
 
           with open('versions.json') as f:
               versions = json.load(f)
 
-          # Map each version → list of tags. Exclude `latest` and any
-          # tag carrying a pre-release suffix (e.g. -rc1, -beta).
-          tagged = []  # (version_id, semver_tuple, tag_strings)
           semver = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)$')
+          staging = re.compile(r'^refresh-(\d{8})$')
+          today = datetime.datetime.utcnow().date()
+
+          tagged = []
+          stale_staging = []
           for v in versions:
               tags = (v.get('metadata') or {}).get('container', {}).get('tags') or []
               picks = []
+              only_staging = bool(tags)
               for t in tags:
                   m = semver.match(t)
                   if m:
                       picks.append((int(m.group(1)), int(m.group(2)), int(m.group(3)), t))
+                  sm = staging.match(t)
+                  if sm:
+                      d = datetime.datetime.strptime(sm.group(1), '%Y%m%d').date()
+                      if (today - d).days < 3:
+                          only_staging = False
+                  else:
+                      only_staging = False
+              if only_staging:
+                  stale_staging.append((v['id'], ','.join(tags)))
               if picks:
                   tagged.append((v['id'], picks, tags))
 
-          # Find minor lines that have a higher minor with at least one tag —
-          # those are "closed".
-          minors = collections.defaultdict(list)  # (major, minor) → patches
+          minors = collections.defaultdict(list)
           for vid, picks, tags in tagged:
               for major, minor, patch, t in picks:
                   minors[(major, minor)].append((patch, vid, t))
           all_minors = sorted(minors.keys())
-          closed = set()
-          for i, mm in enumerate(all_minors[:-1]):
-              # If any later minor exists, this one is closed.
-              closed.add(mm)
+          closed = set(all_minors[:-1])
 
           keep_latest = os.environ.get('KEEP_LATEST', 'true') == 'true'
           to_delete = []
           for mm in closed:
-              patches = sorted(minors[mm], reverse=True)  # highest patch first
+              patches = sorted(minors[mm], reverse=True)
               if keep_latest and patches:
                   patches = patches[1:]
               for patch, vid, tag in patches:
                   to_delete.append((vid, tag))
 
           print(f'Closed minors: {len(closed)} of {len(all_minors)}')
-          print(f'Versions to delete: {len(to_delete)}')
+          print(f'Closed-minor versions to delete: {len(to_delete)}')
           for vid, tag in to_delete[:20]:
               print(f'  - {tag} (id={vid})')
-          if len(to_delete) > 20:
-              print(f'  … and {len(to_delete) - 20} more')
+          print(f'Stale staging versions to delete: {len(stale_staging)}')
+          for vid, tag in stale_staging[:20]:
+              print(f'  - {tag} (id={vid})')
 
           with open('to_delete.json', 'w') as f:
               json.dump([vid for vid, _ in to_delete], f)
+          with open('stale_staging.json', 'w') as f:
+              json.dump([vid for vid, _ in stale_staging], f)
           EOF
-        env:
-          KEEP_LATEST: ${{ inputs.keep_latest_per_minor || 'true' }}
 
       - name: Delete (or dry-run)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
-          PKG: datawatch
+          PKG: ${{ matrix.pkg }}
           DRY: ${{ inputs.dry_run || 'true' }}
         run: |
           set -euo pipefail
+          delete_ids() {
+            jq -r '.[]' "$1" | while read -r vid; do
+              if ! gh api -X DELETE "/users/$OWNER/packages/container/$PKG/versions/$vid" 2>/dev/null; then
+                gh api -X DELETE "/orgs/$OWNER/packages/container/$PKG/versions/$vid"
+              fi
+              echo "  deleted version $vid"
+            done
+          }
+          stale=$(jq 'length' stale_staging.json)
+          echo "Deleting $stale stale refresh staging versions"
+          delete_ids stale_staging.json
           count=$(jq 'length' to_delete.json)
           if [[ "$DRY" == "true" ]]; then
-            echo "DRY RUN — would delete $count versions"
+            echo "DRY RUN — would delete $count closed-minor versions"
             exit 0
           fi
-          echo "Deleting $count versions"
-          jq -r '.[]' to_delete.json | while read -r vid; do
-            if ! gh api -X DELETE "/users/$OWNER/packages/container/$PKG/versions/$vid" 2>/dev/null; then
-              gh api -X DELETE "/orgs/$OWNER/packages/container/$PKG/versions/$vid"
-            fi
-            echo "  deleted version $vid"
-          done
+          echo "Deleting $count closed-minor versions"
+          delete_ids to_delete.json

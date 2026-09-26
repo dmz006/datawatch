@@ -117,18 +117,13 @@ All entries are Debian bookworm `affected` or `will_not_fix`; no upstream fix av
 | CVE | Package | Severity | Rationale |
 |-----|---------|----------|-----------|
 | CVE-2023-45853 | zlib1g | CRITICAL | Debian will_not_fix; only exploitable processing attacker-controlled deflate streams; curl/git decompress trusted responses from operator-configured remotes only |
-| CVE-2026-33845 | libgnutls30 | CRITICAL | DTLS zero-length DoS; container runs no DTLS listener; not reachable |
-| CVE-2026-42010 | libgnutls30 | CRITICAL | Auth bypass via NUL in cert CN; only triggerable by malicious TLS server; git/curl connect to operator-configured remotes only |
 | CVE-2025-7458 | libsqlite3-0 | CRITICAL | No fix in bookworm; SQLite used internally by gh CLI; not network-exposed via datawatch APIs |
-| CVE-2026-33846 | libgnutls30 | HIGH | DTLS heap overflow; same surface as CVE-2026-33845; unreachable |
-| CVE-2026-3833 | libgnutls30 | HIGH | Policy bypass via case-sensitive comparison; mitigated by use of trusted CAs |
-| CVE-2026-42011 | libgnutls30 | HIGH | Security bypass via incorrect name matching; same mitigation |
-| CVE-2026-5773 | curl, libcurl4 | HIGH | SMB protocol bug; SMB not used in this image |
 | CVE-2026-6276 | curl, libcurl4 | HIGH | Cookie leak on cross-origin redirect; curl used for REST API calls to operator-configured endpoints |
 | CVE-2023-2953 | libldap-2.5-0 | HIGH | Null pointer via malformed LDAP response; OpenLDAP not used directly; no LDAP connections from container |
 | CVE-2025-69720 | libncursesw6, libtinfo6, ncurses-base | HIGH | Buffer overflow in terminal escape parsing (tmux dep); requires prior container shell access |
-| CVE-2026-7598 | libssh2-1 | HIGH | Integer overflow in SSH username/password; only triggerable by malicious SSH server; git SSH remotes are operator-configured |
-| CVE-2026-41989 | libgcrypt20 | HIGH | DoS/buffer overflow in gnupg crypto backend; gnupg used for apt package signature verification (build-time), not in runtime attack surface |
+| CVE-2026-93990 | libexpat1 | HIGH | Malformed UTF-16 handling in XML parser; no fix in bookworm; containers parse XML only from trusted tooling output and expose no XML input surface. Reviewed 2026-09-26 |
+| CVE-2026-96512 | sudo | HIGH | TZ bypass of sudoers NOTBEFORE/NOTAFTER; no fix in bookworm; no time-restricted sudoers rules, single trusted agent user. Reviewed 2026-09-26 |
+| CVE-2026-8328 | libpython3.11-*, python3.11, python3.11-minimal, python3.11-venv | HIGH | FTP connection redirection via ftplib ftpcp(); no fix in bookworm 3.11.2; agent images never use ftplib/FTP (HTTPS to operator-configured endpoints only). Reviewed 2026-09-25 |
 
 Re-review: each release cycle — check if Debian bookworm has published fixes for any accepted entry.
 To lower an accepted CVE once fixed: remove from `.trivyignore` and rebuild.

@@ -17,6 +17,9 @@ USER root
 RUN install_packages curl gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     install_packages nodejs && \
+    # Upgrade the npm bundled with the distro nodejs: its vendored tar, brace-expansion,
+    # pacote, sigstore, ip-address and picomatch carry HIGH findings fixed in npm 11.20+.
+    npm install -g --no-audit --no-fund npm@11 && \
     npm install -g --omit=optional --no-audit --no-fund \
         @google/gemini-cli@${GEMINI_CLI_VERSION} && \
     npm cache clean --force && \
