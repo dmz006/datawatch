@@ -53,6 +53,10 @@ const (
 // better than no indicator for minutes".
 const DefaultRunningToWaitingGap = 15 * time.Second
 
+// acpSilenceGap is the silence window for opencode-acp sessions, which report
+// idle themselves; see runChannelStateWatcherTick.
+const acpSilenceGap = 5 * time.Minute
+
 // MarkChannelEvent records a structural channel event for a session.
 // kind drives the state transition; ts records when the event happened
 // (zero → time.Now). All transitions are write-locked through the store
@@ -196,7 +200,14 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 		// internal housekeeping into a permanent watcher bypass — gap
 		// would never fire even when LCE was minutes stale. LCE only.
 		ref := sess.LastChannelEventAt
-		if now.Sub(ref) < gap {
+		sessGap := gap
+		if sess.BackendFamily == "opencode-acp" && sessGap < acpSilenceGap {
+			// ACP reports idle explicitly (session.status idle / session.idle), and a
+			// slow model can be silent for well over 15 s mid-turn. The fallback
+			// only guards a dropped event stream.
+			sessGap = acpSilenceGap
+		}
+		if now.Sub(ref) < sessGap {
 			continue
 		}
 		oldState := sess.State
@@ -247,10 +258,59 @@ func classifyACPEventType(eventType, statusType string) (ChannelEventKind, bool)
 func (m *Manager) MarkACPEvent(fullID, eventType, statusType string) {
 	kind, ok := classifyACPEventType(eventType, statusType)
 	if !ok {
-		// Unknown event — treat as activity (bump timestamp, no transition).
-		m.MarkChannelEvent(fullID, EventRunning)
+		// Unmapped event (server.heartbeat, message.updated, session.diff, …).
+		// Heartbeats say nothing about the session; other unmapped events are
+		// housekeeping that can trail a finished turn, so they must never
+		// resurrect a waiting session. Only refresh the activity timestamp of a
+		// session that is already running.
+		if eventType == "server.heartbeat" || eventType == "server.connected" {
+			return
+		}
+		m.touchIfRunning(fullID)
 		return
 	}
+	switch kind {
+	case EventRunning:
+		m.acpTurnSeen(fullID, true)
+	case EventIdle:
+		// A one-shot ACP worker is done when its first working turn goes idle:
+		// opencode never emits session.completed, and without a terminal state
+		// the autonomous verifier waits forever.
+		if m.acpTurnSeen(fullID, false) {
+			if sess, ok := m.store.Get(fullID); ok && sess != nil && sess.OneShot {
+				kind = EventComplete
+			}
+		}
+	}
 	m.MarkChannelEvent(fullID, kind)
+}
+
+// touchIfRunning refreshes LastChannelEventAt without changing state, and only
+// when the session is currently Running.
+func (m *Manager) touchIfRunning(fullID string) {
+	if m == nil || m.store == nil {
+		return
+	}
+	sess, ok := m.store.Get(fullID)
+	if !ok || sess == nil || sess.State != StateRunning {
+		return
+	}
+	sess.LastChannelEventAt = time.Now()
+	_ = m.store.Save(sess)
+}
+
+// acpTurnSeen records (set=true) or reports (set=false) whether an ACP session
+// has had a working turn.
+func (m *Manager) acpTurnSeen(fullID string, set bool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.acpBusySeen == nil {
+		m.acpBusySeen = map[string]bool{}
+	}
+	if set {
+		m.acpBusySeen[fullID] = true
+		return true
+	}
+	return m.acpBusySeen[fullID]
 }
 

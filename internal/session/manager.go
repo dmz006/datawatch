@@ -316,6 +316,9 @@ type Manager struct {
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
+	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
+	acpBusySeen map[string]bool
+
 	// onOutput is called for each new line of output from a session (ANSI stripped).
 	onOutput func(sess *Session, line string)
 
@@ -3428,6 +3431,7 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	delete(m.promptFirstSeen, fullID)
 	delete(m.promptLastNotify, fullID)
 	delete(m.promptOscillation, fullID)
+	delete(m.acpBusySeen, fullID)
 	delete(m.inputSentAt, fullID)
 	trackingDir := ""
 	if t, ok := m.trackers[fullID]; ok {

@@ -3205,7 +3205,11 @@ function renderCaptureFrame(lines) {
 function _scrollIsOpenCodeTUI() {
   const sess = state.sessions && state.sessions.find(
     s => s.full_id === state.activeSession || s.id === state.activeSession);
-  return sess && (sess.backend_family || '') === 'opencode';
+  // Only the interactive opencode TUI (started without a task) renders in
+  // place and leaves no tmux scrollback. A session started with a task runs
+  // `opencode run` (plain streamed output), which has normal tmux history, so
+  // it uses the tmux copy-mode path like shell sessions.
+  return !!sess && (sess.backend_family || '') === 'opencode' && !(sess.task || '').trim();
 }
 
 function toggleScrollMode() {
