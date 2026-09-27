@@ -4104,6 +4104,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				defer tick.Stop()
 				var stallErr error
 				waitTick := 0
+				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
+				// mtime, not session liveness state, which a cosmetic pane change can
+				// refresh without any real output.
+				staleThreshold := time.Duration(amgrCfg.StaleTaskSeconds) * time.Second
+				if staleThreshold <= 0 {
+					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
+				}
+				var staleLogPath string
+				if s, ok := mgr.GetSession(task.SessionID); ok {
+					staleLogPath = s.LogFile
+				}
 			waitLoop:
 				for {
 					select {
@@ -4132,6 +4143,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									break waitLoop
 								}
 							}
+							if stale, since, serr := staleWorkerCheck(staleLogPath, staleThreshold, time.Now()); serr == nil && stale {
+								log.Printf("[autonomous] worker stall detected in session %s task %s/%s (no output for %s); killing for retry",
+									task.SessionID, task.PRDID, task.ID, since.Round(time.Second))
+								_ = mgr.Kill(task.SessionID)
+								stallErr = fmt.Errorf("worker produced no output for %s (stale_task_seconds=%ds); retrying task", since.Round(time.Second), int(staleThreshold.Seconds()))
+								break waitLoop
+							}
 						}
 					}
 				}
@@ -4157,6 +4175,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						Summary:    fmt.Sprintf("verifier: git diff failed: %v", diffErr),
 						VerifiedAt: time.Now(),
 					}, nil
+				}
+				// Uncommitted changes to already-tracked files, modified during THIS
+				// task's own run (see gitWorkingTreeDiffSince) — the common case with the
+				// operator default session.auto_git_commit=false.
+				var workingDiffOut []byte
+				if task.StartedAt != nil {
+					workingDiffOut, _ = gitWorkingTreeDiffSince(ctx, prd.ProjectDir, *task.StartedAt)
 				}
 				// v8.25.12 — detect newly created untracked files (e.g. new docs, test
 				// fixtures) that don't appear in git diff because they haven't been committed.
@@ -4198,9 +4223,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
-				if len(diffOut) == 0 && len(newUntrackedFiles) == 0 && len(overwrittenFilesSections) == 0 {
-					// No tracked changes, no new untracked files, no overwritten pre-existing
-					// files — task produced nothing.
+				if taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections) {
+					// No committed or uncommitted tracked changes, no new untracked files,
+					// no overwritten pre-existing files — task produced nothing.
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
 						Summary:    "verifier: no changes detected (diff empty and no new files); task produced no output",
@@ -4228,6 +4253,25 @@ Git diff (actual change%s):
 <diff>
 %s
 </diff>`, note, string(diffOut))
+				}
+				if len(workingDiffOut) > 0 {
+					wd := workingDiffOut
+					truncated := false
+					if len(wd) > maxBytes {
+						wd = wd[:maxBytes]
+						truncated = true
+					}
+					note := ""
+					if truncated {
+						note = " (truncated to " + fmt.Sprintf("%d", maxBytes) + " bytes)"
+					}
+					metricsPkg.VerifierDiffInjectionsTotal.Inc()
+					diffSection += fmt.Sprintf(`
+
+Uncommitted changes to tracked files (actual change%s):
+<uncommitted_diff>
+%s
+</uncommitted_diff>`, note, string(wd))
 				}
 				if len(newUntrackedFiles) > 0 {
 					metricsPkg.VerifierDiffInjectionsTotal.Inc()
