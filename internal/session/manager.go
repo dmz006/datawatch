@@ -5462,8 +5462,32 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					current, ok := m.store.Get(sess.FullID)
 					if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 						oldState := current.State
+						// Run the post-session commit/tag BEFORE the state is saved as
+						// Complete: a poller (e.g. the autonomous verifier) reads session
+						// state to decide when to compute its git diff, and must never see
+						// Complete while the worker's own changes are still uncommitted —
+						// that race produced spurious "no changes detected" verification
+						// failures against a file the worker had, in fact, just written and
+						// committed correctly.
+						var diffSummary string
+						if !m.hasStructuredChannel(sess) {
+							if m.autoGit && projGit.IsRepo() {
+								if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+									fmt.Printf("[warn] post-session commit: %v\n", err)
+								}
+								if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+									diffSummary = stat.Summary
+								}
+								if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+									fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
+								}
+							}
+						}
 						current.State = StateComplete
 						current.UpdatedAt = time.Now()
+						if diffSummary != "" {
+							current.DiffSummary = diffSummary
+						}
 						_ = m.store.Save(current)
 
 						if !m.hasStructuredChannel(sess) {
@@ -5471,18 +5495,6 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if tracker != nil {
 								if err := tracker.RecordComplete(StateComplete); err != nil {
 									fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
-								}
-							}
-							if m.autoGit && projGit.IsRepo() {
-								if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-									fmt.Printf("[warn] post-session commit: %v\n", err)
-								}
-								if stat, _ := projGit.DiffStat(); !stat.IsZero() {
-									current.DiffSummary = stat.Summary
-									_ = m.SaveSession(current)
-								}
-								if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-									fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
 								}
 							}
 						}
@@ -5909,27 +5921,33 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 					}
 					return
 				}
+				// Run the post-session commit/tag BEFORE the state is saved as
+				// Complete — see the identical comment on the livenessTicker branch
+				// above; a poller must never observe Complete before the worker's
+				// changes are actually committed.
+				var diffSummary string
+				if m.autoGit && projGit.IsRepo() {
+					if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+						fmt.Printf("[warn] post-session commit: %v\n", err)
+					}
+					if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+						diffSummary = stat.Summary
+					}
+					if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+						fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
+					}
+				}
 				current.State = StateComplete
 				current.UpdatedAt = time.Now()
+				if diffSummary != "" {
+					current.DiffSummary = diffSummary
+				}
 				_ = m.store.Save(current)
 
 				tracker := getTracker()
 				if tracker != nil {
 					if err := tracker.RecordComplete(StateComplete); err != nil {
 						fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
-					}
-				}
-
-				if m.autoGit && projGit.IsRepo() {
-					if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-						fmt.Printf("[warn] post-session commit: %v\n", err)
-					}
-					if stat, _ := projGit.DiffStat(); !stat.IsZero() {
-						current.DiffSummary = stat.Summary
-						_ = m.SaveSession(current)
-					}
-					if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-						fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
 					}
 				}
 
