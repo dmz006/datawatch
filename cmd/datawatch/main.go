@@ -4139,7 +4139,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
 										task.SessionID, task.PRDID, task.ID, pat)
 									_ = mgr.Kill(task.SessionID)
-									stallErr = fmt.Errorf("opencode SSE stall detected (%q); retrying task", pat)
+									stallErr = fmt.Errorf("opencode SSE stall detected (%q): %w", pat, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
 								}
 							}
@@ -4147,7 +4147,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								log.Printf("[autonomous] worker stall detected in session %s task %s/%s (no output for %s); killing for retry",
 									task.SessionID, task.PRDID, task.ID, since.Round(time.Second))
 								_ = mgr.Kill(task.SessionID)
-								stallErr = fmt.Errorf("worker produced no output for %s (stale_task_seconds=%ds); retrying task", since.Round(time.Second), int(staleThreshold.Seconds()))
+								stallErr = fmt.Errorf("worker produced no output for %s (stale_task_seconds=%ds): %w", since.Round(time.Second), int(staleThreshold.Seconds()), autonomouspkg.ErrWorkerStalled)
 								break waitLoop
 							}
 						}

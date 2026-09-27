@@ -602,6 +602,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if verify != nil {
 			vr, err = verify(ctx, prd, t)
 			if err != nil {
+				if errors.Is(err, errCancelledWhileWaiting) {
+					return nil
+				}
+				if errors.Is(err, ErrWorkerStalled) {
+					// A stall (SSE, or no log output past stale_task_seconds) is a
+					// retryable verification failure, not a fatal error — it consumes
+					// the same auto_fix_retries budget as a normal failed verification.
+					hint = err.Error()
+					t.Error = hint
+					_ = m.store.SaveTask(t)
+					continue
+				}
 				return fmt.Errorf("verify: %w", err)
 			}
 		} else {

@@ -16,6 +16,14 @@ type CapacityKeysFn func(backend, model string) (pools []string, node string)
 
 var errCancelledWhileWaiting = errors.New("task cancelled while waiting for capacity")
 
+// ErrWorkerStalled marks a verify() error as a worker-stall detection (SSE
+// stall, or the log-mtime staleWorkerCheck) rather than a hard fault. The
+// executor's retry budget applies to it exactly like a normal verification
+// failure — the previous behavior (a bare error return) exited executeOne
+// immediately on the FIRST stall, silently ignoring auto_fix_retries and
+// contradicting the "retrying task" wording in the error message itself.
+var ErrWorkerStalled = errors.New("worker stalled")
+
 const defaultCapacityWait = 4 * time.Hour
 
 // capRetryPause is the pause between session-cap retries (var for tests).

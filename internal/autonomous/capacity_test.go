@@ -222,3 +222,63 @@ func TestCapacity_BootResumeRequeuesWaitingTasks(t *testing.T) {
 		t.Fatalf("waiting task must be re-queued as pending on boot, got %s", got.Story[0].Tasks[0].Status)
 	}
 }
+
+// A stall (ErrWorkerStalled) must consume the normal auto_fix_retries budget
+// like any other verification failure, not fail the task on the first
+// occurrence — the error text itself says "retrying task".
+func TestExecutor_WorkerStallRespectsRetryBudget(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDApproved
+	_ = m.Store().SavePRD(p)
+
+	spawns := 0
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		spawns++
+		return SpawnResult{SessionID: fmt.Sprintf("s-%d", spawns)}, nil
+	}
+	verifyCalls := 0
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		verifyCalls++
+		if verifyCalls == 1 {
+			return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
+		}
+		return VerificationResult{OK: true}, nil
+	}
+	api.SetExecutors(spawn, verify)
+	if err := api.Run(prd.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDCompleted {
+		t.Fatalf("a stalled-then-recovered task must complete, got %s", got.Status)
+	}
+	if spawns != 2 {
+		t.Fatalf("want 2 spawns (initial + 1 retry after stall), got %d", spawns)
+	}
+	if got.Story[0].Tasks[0].Error == "" {
+		t.Fatal("the stall reason should be recorded on the task even after it recovers")
+	}
+}
+
+func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDApproved
+	_ = m.Store().SavePRD(p)
+
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
+	}
+	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDFailed {
+		t.Fatalf("repeated stalls must still fail once retries are exhausted, got %s", got.Status)
+	}
+}
