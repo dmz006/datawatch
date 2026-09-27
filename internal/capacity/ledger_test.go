@@ -192,7 +192,7 @@ func TestReapReleasesDeadHolders(t *testing.T) {
 	l := New(fast())
 	l.SetLimit("p", 1)
 	_ = l.Acquire(context.Background(), Request{Holder: "dead", Pools: []string{"p"}}, time.Second, nil, nil)
-	if got := l.Reap(func(h string) bool { return false }); len(got) != 1 || got[0] != "dead" {
+	if got := l.Reap(func(Lease) bool { return false }); len(got) != 1 || got[0] != "dead" {
 		t.Fatalf("reaped %v", got)
 	}
 	if err := l.Acquire(context.Background(), Request{Holder: "n", Pools: []string{"p"}}, 100*time.Millisecond, nil, nil); err != nil {
@@ -244,5 +244,46 @@ func TestConcurrentNeverExceedsLimit(t *testing.T) {
 	wg.Wait()
 	if peak > 2 {
 		t.Fatalf("peak %d exceeded limit 2", peak)
+	}
+}
+
+// Regression: the reaper callback used to run under the ledger lock, and the
+// daemon's callback called Snapshot(), deadlocking the whole ledger (and every
+// task admission behind it) the first time a lease existed at a sync tick.
+func TestReapCallbackMayCallBackIntoLedger(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("p", 2)
+	_ = l.Acquire(context.Background(), Request{Holder: "a", Pools: []string{"p"}}, time.Second, nil, nil)
+	done := make(chan []string, 1)
+	go func() {
+		done <- l.Reap(func(ls Lease) bool {
+			_ = l.Snapshot() // must not deadlock
+			return ls.Holder != "a"
+		})
+	}()
+	select {
+	case got := <-done:
+		if len(got) != 1 || got[0] != "a" {
+			t.Fatalf("reaped %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Reap deadlocked when its callback re-entered the ledger")
+	}
+	if err := l.Acquire(context.Background(), Request{Holder: "b", Pools: []string{"p"}}, time.Second, nil, nil); err != nil {
+		t.Fatalf("ledger unusable after Reap: %v", err)
+	}
+}
+
+func TestReapSkipsLeaseReplacedWhileCallbackRan(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("p", 2)
+	_ = l.Acquire(context.Background(), Request{Holder: "a", Pools: []string{"p"}}, time.Second, nil, nil)
+	got := l.Reap(func(ls Lease) bool {
+		l.Release("a")
+		_ = l.Acquire(context.Background(), Request{Holder: "a", Pools: []string{"p"}}, time.Second, nil, nil)
+		return false
+	})
+	if len(got) != 0 || !l.Held("a") {
+		t.Fatalf("a re-acquired lease must survive a stale reap verdict: reaped=%v held=%v", got, l.Held("a"))
 	}
 }

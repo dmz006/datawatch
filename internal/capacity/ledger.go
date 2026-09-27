@@ -360,16 +360,35 @@ func (l *Ledger) Held(holder string) bool {
 	return ok
 }
 
-// Reap releases leases whose holder is not live. It returns the released
-// holders. Call periodically so a missed Release cannot leak capacity.
-func (l *Ledger) Reap(live func(holder string) bool) []string {
+// Reap releases leases the callback reports as not live and returns the
+// released holders. Call periodically so a missed Release cannot leak
+// capacity. The callback runs WITHOUT the ledger lock held, so it may call back
+// into the ledger or the session manager; a lease that changed while the
+// callback ran is left alone.
+func (l *Ledger) Reap(live func(Lease) bool) []string {
+	l.mu.Lock()
+	cand := make([]Lease, 0, len(l.leases))
+	for _, ls := range l.leases {
+		cand = append(cand, *ls)
+	}
+	l.mu.Unlock()
+
+	var dead []Lease
+	for _, ls := range cand {
+		if !live(ls) {
+			dead = append(dead, ls)
+		}
+	}
+	if len(dead) == 0 {
+		return nil
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	var out []string
-	for h := range l.leases {
-		if !live(h) {
-			delete(l.leases, h)
-			out = append(out, h)
+	for _, d := range dead {
+		if cur, ok := l.leases[d.Holder]; ok && cur.Acquired.Equal(d.Acquired) {
+			delete(l.leases, d.Holder)
+			out = append(out, d.Holder)
 		}
 	}
 	if len(out) > 0 {

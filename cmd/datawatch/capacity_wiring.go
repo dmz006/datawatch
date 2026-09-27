@@ -96,18 +96,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				led.SetLimit("llm:"+l.Name, l.MaxInflight)
 			}
 		}
-		live := func(holder string) bool {
-			for _, ls := range led.Snapshot().Leases {
-				if ls.Holder != holder {
-					continue
-				}
-				if ls.SessionID == "" {
-					return time.Since(ls.Acquired) < 10*time.Minute // spawn in progress
-				}
-				s, ok := mgr.GetSession(ls.SessionID)
-				return ok && s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled
+		live := func(ls capacity.Lease) bool {
+			if ls.SessionID == "" {
+				return time.Since(ls.Acquired) < 10*time.Minute // spawn in progress
 			}
-			return false
+			s, ok := mgr.GetSession(ls.SessionID)
+			return ok && s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled
 		}
 		for _, h := range led.Reap(live) {
 			fmt.Printf("[capacity] reaped leaked lease holder=%s\n", h)
