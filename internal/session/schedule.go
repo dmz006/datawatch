@@ -96,6 +96,9 @@ type ScheduledCommand struct {
 	LastFireAt     time.Time `json:"last_fire_at,omitempty"`
 	LastFireResult string    `json:"last_fire_result,omitempty"` // "spawned", "skipped", "failed"
 	FireCount      int       `json:"fire_count,omitempty"`
+	// ConsecutiveFailures counts spawn fires that failed to start in a row;
+	// reset by a successful spawn.
+	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
 }
 
 // DeferredSession holds parameters for creating a new session at a scheduled time.
@@ -609,10 +612,54 @@ func (s *ScheduleStore) RecordFire(id, sessionID, result string) error {
 			sc.LastFireAt = time.Now()
 			sc.LastFireResult = result
 			sc.FireCount++
+			if result == "spawned" {
+				sc.ConsecutiveFailures = 0
+			}
 			return s.save()
 		}
 	}
 	return fmt.Errorf("scheduled command %q not found", id)
+}
+
+// RecordSpawnFailure records a spawn fire that failed to start a session. A
+// recurring schedule (cron or fixed interval) is re-armed for its next fire and
+// stays pending, so one transient start failure (session cap, tmux error, global
+// cooldown) does not silently end an hourly job; a one-time schedule becomes
+// failed. Returns the number of consecutive failures and whether the schedule was
+// re-armed.
+func (s *ScheduleStore) RecordSpawnFailure(id string) (consecutive int, rearmed bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sc := range s.entries {
+		if sc.ID != id {
+			continue
+		}
+		if sc.State == SchedCancelled {
+			return sc.ConsecutiveFailures, false, nil
+		}
+		now := time.Now()
+		sc.LastFireAt = now
+		sc.LastFireResult = "failed"
+		sc.FireCount++
+		sc.ConsecutiveFailures++
+		switch {
+		case sc.CronExpr != "":
+			if next, cerr := CronNext(sc.CronExpr, now); cerr == nil && (sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil)) {
+				sc.RunAt, sc.State, rearmed = next, SchedPending, true
+			}
+		case sc.RecurEverySeconds > 0:
+			next := now.Add(time.Duration(sc.RecurEverySeconds) * time.Second)
+			if sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil) {
+				sc.RunAt, sc.State, rearmed = next, SchedPending, true
+			}
+		}
+		if !rearmed {
+			sc.State = SchedFailed
+			sc.DoneAt = now
+		}
+		return sc.ConsecutiveFailures, rearmed, s.save()
+	}
+	return 0, false, fmt.Errorf("scheduled command %q not found", id)
 }
 
 // SkipFire advances the cron RunAt without spawning (overlap guard).

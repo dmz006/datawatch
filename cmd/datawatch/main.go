@@ -10120,9 +10120,18 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 				}
 				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {
-					_ = store.MarkDone(sc.ID, true)
-					_ = store.RecordFire(sc.ID, "", "failed")
-					fmt.Printf("[scheduler] failed to spawn session (type=%s sched=%s): %v\n", sc.Type, sc.ID, err)
+					// A failed start must not end a recurring schedule: re-arm it
+					// for the next fire and alert (first failure, then daily).
+					n, rearmed, _ := store.RecordSpawnFailure(sc.ID)
+					fmt.Printf("[scheduler] failed to spawn session (type=%s sched=%s, %d in a row, rearmed=%v): %v\n", sc.Type, sc.ID, n, rearmed, err)
+					if n == 1 || n%24 == 0 || !rearmed {
+						next := "it will retry at the next scheduled time"
+						if !rearmed {
+							next = "it is one-time or out of recurrences and is now marked failed"
+						}
+						alertspkg.EmitSystem(alertspkg.LevelWarn, "Scheduled spawn failed: "+sc.ScheduleName,
+							fmt.Sprintf("Schedule %s could not start its session (%d in a row): %v — %s.", sc.ID, n, err, next))
+					}
 				} else {
 					_ = store.MarkDone(sc.ID, false)
 					_ = store.RecordFire(sc.ID, sess.FullID, "spawned")

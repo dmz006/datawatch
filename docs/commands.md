@@ -752,6 +752,11 @@ Includes **overlap guard**: if the previous spawn for this schedule is still run
 | `--ephemeral` | Reap workspace directory when session is deleted |
 | `--subprocess` | Run via `bash -c`; exit code signals completion. No Claude Code TUI. |
 
+A recurring spawn (`--cron`) survives a failed start: if a fire cannot start its session (for example the
+session cap is reached), the failure is recorded (`last_fire_result: failed`, `consecutive_failures`), a
+system alert is raised on the first failure and daily after, and the schedule is re-armed for its next time.
+A one-time spawn that fails to start is marked `failed`.
+
 ```bash
 # Pure shell job — run imap-mcp rule engine hourly (no LLM needed)
 datawatch schedule spawn \
