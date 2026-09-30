@@ -586,6 +586,11 @@ func (s *Server) toolDeleteSession() mcpsdk.Tool {
 	return mcpsdk.NewTool("delete_session",
 		mcpsdk.WithDescription("Delete a completed/failed/killed session and its data."),
 		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID to delete")),
+		// v8.36.0 — memory-strategy on delete, matching the PRD hard-delete
+		// BL386/#175 feature (REST: POST /api/sessions/delete).
+		mcpsdk.WithString("memory_strategy", mcpsdk.Description("keep (default) | purge | archive — what happens to this session's memories")),
+		mcpsdk.WithString("archive_role_filter", mcpsdk.Description("Optional role prefix filter, only used when memory_strategy=archive")),
+		mcpsdk.WithString("archive_to_scope", mcpsdk.Description("Target scope for memory_strategy=archive (default project-shared)")),
 	)
 }
 
@@ -594,10 +599,29 @@ func (s *Server) handleDeleteSession(_ context.Context, req mcpsdk.CallToolReque
 	if id == "" {
 		return mcpsdk.NewToolResultError("session_id is required"), nil
 	}
-	if err := s.manager.Delete(id, true); err != nil {
+	memStrat := req.GetString("memory_strategy", "")
+	if memStrat == "" {
+		// No memory-strategy fields requested — the direct in-process path
+		// avoids a needless loopback HTTP round-trip for the common case.
+		if err := s.manager.Delete(id, true); err != nil {
+			return mcpsdk.NewToolResultError(fmt.Sprintf("delete error: %v", err)), nil
+		}
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s", id)), nil
+	}
+	// memory_strategy handling lives in the REST handler (internal/server's
+	// handleDeleteSession) — proxy through it rather than duplicating the
+	// PurgeScope/ArchiveScope wiring here.
+	body := map[string]any{"id": id, "delete_data": true, "memory_strategy": memStrat}
+	if rf := req.GetString("archive_role_filter", ""); rf != "" {
+		body["archive_role_filter"] = rf
+	}
+	if scope := req.GetString("archive_to_scope", ""); scope != "" {
+		body["archive_to_scope"] = scope
+	}
+	if _, err := s.proxyJSON(http.MethodPost, "/api/sessions/delete", body); err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("delete error: %v", err)), nil
 	}
-	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s", id)), nil
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s (memory_strategy=%s)", id, memStrat)), nil
 }
 
 func (s *Server) toolRestartSession() mcpsdk.Tool {

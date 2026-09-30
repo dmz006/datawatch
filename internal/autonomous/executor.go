@@ -107,13 +107,28 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// BL191 Q1 (v5.2.0) — Run requires explicit operator approval. Legacy
 	// PRDActive value (pre-v5.2.0 stores) is honored for back-compat so
 	// upgraded daemons don't strand in-flight work.
+	//
+	// The Store's mutex only protects its id->*PRD map; once a caller holds
+	// a *PRD, field access on it (e.g. .Status) is unsynchronized against
+	// any other goroutine holding the same pointer (GetPRD/ListPRDs never
+	// copy). resumeRunningPRDs (api.go) reads prd.Status on every stored
+	// PRD from a background goroutine right after SetExecutors — racing
+	// with an immediate Run() call on a PRD that's still Approved, both
+	// touching the same shared pointer. Scoped fix: serialize the
+	// read-check-write of prd.Status here against resumeRunningPRDs'
+	// read via the Manager's own mutex (does not address unsynchronized
+	// access to other PRD/Task fields elsewhere).
+	m.mu.Lock()
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
-		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", prdID, prd.Status)
+		status := prd.Status
+		m.mu.Unlock()
+		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", prdID, status)
 	}
 	// BL387 Phase 2b — cross-PRD seeding at first run.
 	// Only fires when PRD is transitioning from approved (not a resume from Running).
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	prd.Status = PRDRunning
+	m.mu.Unlock()
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err

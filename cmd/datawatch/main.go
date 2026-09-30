@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.35.1"
+var Version = "8.36.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4323,13 +4323,28 @@ Pre-existing files written by task (not tracked by git):
 Verify whether the diff plausibly implements the spec. Reply with STRICT JSON only — no prose before or after:
 {"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
 				trustNotice, specPart, diffSection)
-			vbackend := amgrCfg.VerificationBackend
-			if vbackend == "" { vbackend = "ollama" }
-			// BL306: resolve named LLMs for verification backend too.
-			vkind, vmodel, _ := resolveAskBackend(vbackend)
-			if !askCompatible(vkind) { vkind = "ollama" }
-			verifyModel := amgrCfg.VerificationModel
-			if verifyModel == "" { verifyModel = vmodel }
+			vbackend, vkind, verifyModel := resolveVerifierBackendModel(
+				amgrCfg.VerificationBackend, amgrCfg.VerificationModel,
+				prd.Backend, prd.Model, resolveAskBackend, askCompatible)
+			// v8.36.0 — acquire the same node:/llm: pool a task on vbackend
+			// would use before firing the ask call, and hold it for the
+			// call's duration. Previously this HTTP call had zero capacity
+			// interaction: no queueing, no admission, just an unmanaged
+			// request straight to whatever the default endpoint was — so it
+			// could silently contend with other tasks (or, before this
+			// release, interactive sessions too) on a fully-busy node
+			// instead of waiting its turn.
+			if verifierCapacityAdmit != nil {
+				release, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID)
+				if aerr != nil {
+					return autonomouspkg.VerificationResult{
+						OK: false, Severity: "medium",
+						Summary:    "verifier: capacity: " + aerr.Error(),
+						VerifiedAt: time.Now(),
+					}, nil
+				}
+				defer release()
+			}
 			askBody := map[string]any{
 				"question": prompt,
 				"backend":  vkind,

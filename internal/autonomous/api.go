@@ -89,8 +89,16 @@ func (a *API) resumeRunningPRDs() {
 	}
 
 	for _, prd := range a.M.Store().ListPRDs() {
-		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, prd.Status)
-		switch prd.Status {
+		// See the matching comment in executor.go's Run(): GetPRD/ListPRDs
+		// return a shared *PRD, so reading .Status here races against an
+		// immediate Run() call mutating it on another goroutine. Read it
+		// once under the Manager's mutex instead of touching prd.Status
+		// again in the switch below.
+		a.M.mu.Lock()
+		status := prd.Status
+		a.M.mu.Unlock()
+		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, status)
+		switch status {
 		case PRDPlanning:
 			// A PRD stuck in planning means the daemon was restarted while
 			// decomposeFnSession was running. The goroutine is gone; reset to
@@ -100,6 +108,22 @@ func (a *API) resumeRunningPRDs() {
 			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
 		case PRDRunning:
+			// A PRD can be legitimately Running because something else (an
+			// operator's Run() call, or a Run() started earlier in this same
+			// boot-resume pass) is already actively driving it — not because
+			// it's an orphan left behind by a dead process. resetInProgressTasksForResume
+			// unconditionally treats any in-progress task as orphaned and kills
+			// its session (sessionAliveFn only covers the Verifying/RunningTests
+			// cases, not InProgress), so running it against a PRD that already
+			// has a live executor would kill a session that's actually still
+			// in flight. runCancels is the same liveness signal API.Run() uses
+			// for its own idempotency — skip recovery entirely when it's set.
+			a.runMu.Lock()
+			_, alreadyLive := a.runCancels[prd.ID]
+			a.runMu.Unlock()
+			if alreadyLive {
+				continue
+			}
 			// Kill any orphaned sessions from in-progress tasks and reset them
 			// to pending so the new executor re-runs them cleanly instead of
 			// re-spawning a duplicate alongside an already-running old session.

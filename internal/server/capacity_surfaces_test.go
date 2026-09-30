@@ -75,10 +75,11 @@ func TestHandleAutonomousPRDs_SetPriority(t *testing.T) {
 func TestApplyConfigPatch_CapacityKeys(t *testing.T) {
 	cfg := &config.Config{}
 	applyConfigPatch(cfg, map[string]interface{}{
-		"autonomous.capacity_enabled":                 false,
-		"autonomous.capacity_wait_timeout_seconds":    900,
-		"autonomous.capacity_gpu_util_pct":            85,
-		"session.reserved_interactive":                2,
+		"autonomous.capacity_enabled":              false,
+		"autonomous.capacity_wait_timeout_seconds": 900,
+		"autonomous.capacity_gpu_util_pct":         85,
+		"session.reserved_interactive":             2,
+		"session.capacity_wait_seconds":            5,
 	})
 	if cfg.Autonomous.CapacityEnabled == nil || *cfg.Autonomous.CapacityEnabled {
 		t.Fatal("capacity_enabled=false not applied")
@@ -88,6 +89,9 @@ func TestApplyConfigPatch_CapacityKeys(t *testing.T) {
 	}
 	if cfg.Session.ReservedInteractive == nil || *cfg.Session.ReservedInteractive != 2 {
 		t.Fatal("session.reserved_interactive not applied")
+	}
+	if cfg.Session.CapacityWaitSeconds != 5 {
+		t.Fatalf("session.capacity_wait_seconds not applied: got %d", cfg.Session.CapacityWaitSeconds)
 	}
 	applyConfigPatch(cfg, map[string]interface{}{"autonomous.capacity_gpu_util_pct": 150})
 	if cfg.Autonomous.CapacityGPUUtilPct != 85 {

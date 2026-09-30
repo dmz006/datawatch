@@ -328,3 +328,34 @@ edit-story/edit-task gate.
 | REST `POST .../add_story` 400 on missing title | **Yes** | Yes | Manual curl against a live PRD | PASS — 400 `"title required"` |
 | PWA `renderStory`/`renderTask`/`_renderDetailStories` emit well-formed onclick for all 4 new buttons | **Yes** | Yes | Playwright: rendered a fake `needs_review` PRD through the real functions, read `getAttribute('onclick')` on each new button | PASS — `prdRemoveStory("fake123","story1","S1")`, `openPRDAddTaskModal("fake123","story1")`, `prdRemoveTask("fake123","story1","task1","T1")`, `openPRDAddStoryModal("fake123")`; zero page errors |
 | Full click-through (open Add-story modal, submit, verify story appears) | No | Not yet | — | Attempted via a live decompose on a throwaway PRD; the local qwen3.8:27b planning backend didn't finish within ~7 min so the attempt was abandoned in favor of the REST/render-level checks above, which already cover the new code paths. Revisit with a faster planning backend if a full click-through is needed. |
+
+## Capacity-aware admission for interactive sessions + verifier; session-delete memory strategy; capacity-card fixes (2026-09-29/30)
+
+Operator-reported while diagnosing why PRD a2833a5e's verifier used a weak
+model and why its capacity card showed an unrelated node: (1) a genuine data
+race in daemon-restart boot-resume that could kill a live in-flight session;
+(2) capacity ledger only ever listed nodes/pools an operator had explicitly
+capped, and `/api/capacity` was never scoped to a specific PRD; (3)
+interactive session starts and the verifier's own `/api/ask` call had zero
+capacity interaction at all; (4) verifier backend/model always fell back to
+a hardcoded `ollama` default, ignoring the PRD's own backend; (5) found and
+fixed a real pre-existing data-loss bug in `PurgeScope`/`ArchiveScope` while
+wiring session-delete's memory strategy (session-local purge/archive
+discarded the session ID and operated on the whole project).
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| `resumeRunningPRDs` skips a PRD with an already-live executor (runCancels) | **Yes** | No | `TestResumeRunningPRDs_SkipsPRDWithLiveExecutor` in `internal/autonomous/executor_retry_kill_test.go` | PASS — regression test for the boot-resume/live-Run race; also confirmed via 1000 repeated runs of the original flaky test (`go test -count=200`, 5×) with zero failures, matching CI's exact conditions (no `-race`) |
+| `handleCapacity` always lists every registered compute node, even unconfigured/idle | **Yes** | No | `TestHandleCapacity_ListsUnconfiguredNodes` in `internal/server/capacity_node_scope_test.go` | PASS |
+| `handleCapacity?prd_id=` scopes pools to that PRD's own backend + per-story/per-task overrides | **Yes** | No | `TestHandleCapacity_PRDScoping` | PASS — covers both "no override" (Claude-only PRD excludes an unrelated node) and "task-level backend override" (node appears) |
+| `handleStartSession` admits a genuine interactive start through `capacityAdmit`, binds the real session ID | **Yes** | No | `TestHandleStartSession_CapacityAdmit_Gated` in `internal/server/capacity_interactive_test.go` | PASS |
+| `handleStartSession` skips capacity admission entirely for `one_shot` (autonomous) starts | **Yes** | No | `TestHandleStartSession_CapacityAdmit_SkippedForOneShot` | PASS — this is the double-admission/deadlock-avoidance guard |
+| `handleStartSession` denies + returns 503 without starting a session when admission fails | **Yes** | No | `TestHandleStartSession_CapacityAdmit_DeniedReturns503` | PASS |
+| `resolveVerifierBackendModel` defaults to the PRD's own ask-compatible backend/model | **Yes** | No | `TestResolveVerifierBackendModel_DefaultsToPRDBackend` in `cmd/datawatch/verifier_diff_test.go` | PASS |
+| `resolveVerifierBackendModel` falls back to `ollama` for a session-only PRD backend (claude-code) | **Yes** | No | `TestResolveVerifierBackendModel_SessionOnlyBackendFallsBackToOllama` | PASS — documents the real architectural limit (no single-shot ask adapter for session-only kinds) |
+| `resolveVerifierBackendModel` explicit config always wins over PRD defaults | **Yes** | No | `TestResolveVerifierBackendModel_ExplicitConfigWins` | PASS |
+| `PurgeScope`/`ArchiveScope` on a session-local scope only touch that session, not the whole project | **Yes** | No | `TestBL386_PurgeScope_SessionLocal_OnlyPurgesThatSession`, `TestBL386_ArchiveScope_SessionLocal_OnlyArchivesThatSession` in `internal/memory/bl386_phase3_test.go` | PASS — regression tests for the data-loss bug; two sessions in the same project, purge/archive one, confirm the other survives |
+| `handleDeleteSession` purge removes only the target session's memories | **Yes** | No | `TestHandleDeleteSession_MemoryStrategyPurge` in `internal/server/session_delete_memory_test.go` | PASS |
+| `handleDeleteSession` default (keep) leaves memories untouched | **Yes** | No | `TestHandleDeleteSession_MemoryStrategyKeep_Default` | PASS |
+| `session.capacity_wait_seconds` / config-patch keys apply correctly | **Yes** | No | `TestApplyConfigPatch_CapacityKeys` in `internal/server/capacity_surfaces_test.go` | PASS |
+| Live daemon restart with these changes | No | Yes | Manual restart of the production daemon, boot-resume log inspected | Confirmed clean boot-resume (correctly re-launched the one genuinely-running PRD, left cancelled ones untouched) — but this was validated for the *prior* release's changes at the time of restart, not yet re-validated against this specific v8.36.0 batch live. Live click-through of the new session-delete memory picker, the PWA capacity card's node-visibility/PRD-scoping, and the verifier actually using a PRD's own backend end-to-end have not yet been performed. |

@@ -44,6 +44,29 @@ func (m *Manager) Capacity() *capacity.Ledger {
 	return m.capacity
 }
 
+// CapacityKeys returns the pool-resolution function wired via SetCapacity
+// (nil when not wired). Exposed so callers outside the executor loop (the
+// verifier's own /api/ask call, wired in cmd/datawatch/main.go) can acquire
+// the same node:/llm: pools a task on that backend+model would use, even
+// when the verifier's resolved backend differs from the task's own worker
+// backend (BL25's "cross-backend independence" design).
+func (m *Manager) CapacityKeys() CapacityKeysFn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.capacityKeys
+}
+
+// CapacityWaitDuration returns the configured capacity-wait bound (mirrors
+// the private capacityWait() used inside the executor loop).
+func (m *Manager) CapacityWaitDuration() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cfg.CapacityWaitTimeoutSeconds > 0 {
+		return time.Duration(m.cfg.CapacityWaitTimeoutSeconds) * time.Second
+	}
+	return defaultCapacityWait
+}
+
 func (m *Manager) capacityOn() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

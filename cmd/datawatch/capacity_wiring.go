@@ -18,6 +18,15 @@ import (
 // capacityTextFn renders the ledger for the comm-channel `capacity` command.
 var capacityTextFn func() string
 
+// verifierCapacityAdmit lets the verifier's own /api/ask call (main.go's
+// autonomousVerify closure, defined before amgr exists and so unable to
+// close over it directly — mirrors capacityTextFn's package-level pattern)
+// acquire the same node:/llm: pools a task on that backend+model would use,
+// even when the verifier's resolved backend differs from the task's own
+// worker backend (BL25's "cross-backend independence" design). Set once at
+// daemon startup by wireCapacity; nil until then, so callers must check.
+var verifierCapacityAdmit func(ctx context.Context, backend, model, holder string) (release func(), err error)
+
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
@@ -71,6 +80,32 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetCapacity(led, keys)
 	capacityTextFn = func() string { return capacity.FormatText(led.Snapshot()) }
 	httpServer.SetCapacity(led)
+
+	// v8.36.0 — interactive (non-autonomous) session starts also admit on
+	// the same node:/llm: pools an autonomous task would use for the same
+	// backend+model. See handleStartSession's req.OneShot check for why
+	// autonomous spawns skip this (they already admit via m.admit()).
+	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string) error {
+		pools, node := keys(backend, model)
+		if len(pools) == 0 {
+			return nil
+		}
+		return led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model}, 0, func() bool { return false }, func(string) {})
+	})
+	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
+	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
+
+	verifierCapacityAdmit = func(ctx context.Context, backend, model, holder string) (func(), error) {
+		pools, node := keys(backend, model)
+		if len(pools) == 0 {
+			return func() {}, nil
+		}
+		waitDur := amgr.CapacityWaitDuration()
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+			return func() {}, err
+		}
+		return func() { led.Release(holder) }, nil
+	}
 
 	syncPools := func() {
 		max := cfg.Session.MaxSessions

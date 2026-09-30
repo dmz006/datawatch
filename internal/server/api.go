@@ -176,7 +176,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.35.1"
+var Version = "8.36.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -260,7 +260,15 @@ type Server struct {
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg  *inference.Registry
 	capacityLedger *capacity.Ledger
-	inferenceDisp *inference.Dispatcher
+	// capacityAdmit gates an interactive (non-autonomous) session start on
+	// the same node:/llm: capacity pools an autonomous task would use for
+	// the same backend+model — nil when capacity isn't wired at all.
+	// Autonomous task spawns skip this (they already admit via the
+	// executor's own m.admit()); see handleStartSession's req.OneShot check.
+	capacityAdmit   CapacityAdmitFn
+	capacityBind    CapacityBindFn
+	capacityRelease CapacityReleaseFn
+	inferenceDisp   *inference.Dispatcher
 
 	// summarizerSvc is the response summarizer (nil when disabled).
 	// Wired from main.go after daemon init via SetSummarizerSvc.
@@ -3869,10 +3877,42 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID         string `json:"id"`
 		DeleteData bool   `json:"delete_data"` // also remove tracking dir from disk
+		// v8.36.0 — memory-strategy on session delete (keep/purge/archive),
+		// matching the PRD hard-delete BL386/#175 feature this endpoint
+		// never had: a session's memories were always silently kept with
+		// no operator choice.
+		MemoryStrategy    string `json:"memory_strategy,omitempty"`
+		ArchiveRoleFilter string `json:"archive_role_filter,omitempty"`
+		ArchiveToScope    string `json:"archive_to_scope,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+	if (req.MemoryStrategy == "purge" || req.MemoryStrategy == "archive") && s.memoryBackend != nil {
+		// Look up the session's project dir BEFORE deleting it (the
+		// PurgeScope/ArchiveScope calls only need the SessionID, but
+		// ArchiveScope's target ref benefits from Project for scoping the
+		// destination correctly, matching the PRD hard-delete pattern).
+		var projectDir string
+		if sess, ok := s.manager.GetSession(req.ID); ok {
+			projectDir = sess.ProjectDir
+		}
+		sessRef := memory.ScopeRef{Scope: memory.ScopeSessionLocal, Project: projectDir, SessionID: req.ID}
+		if req.MemoryStrategy == "archive" {
+			archiveFilter := memory.SeedFilter{}
+			if req.ArchiveRoleFilter != "" {
+				archiveFilter.RolePrefix = req.ArchiveRoleFilter
+			}
+			archiveTo := req.ArchiveToScope
+			if archiveTo == "" {
+				archiveTo = "project-shared"
+			}
+			toRef := memory.ScopeRef{Scope: memory.Scope(archiveTo), Project: projectDir}
+			_, _, _ = memory.ArchiveScope(s.memoryBackend, sessRef, toRef, archiveFilter, req.ID, 1000)
+		} else { // purge
+			_, _ = memory.PurgeScope(s.memoryBackend, sessRef)
+		}
 	}
 	if err := s.manager.Delete(req.ID, req.DeleteData); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -4302,10 +4342,46 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			opts.Env = profile.Env
 		}
 	}
+	// v8.36.0 — gate a genuine interactive session start on the same
+	// node:/llm: capacity pools an autonomous task would use for this same
+	// backend+model, so a manual session against a shared compute node
+	// actually contends with autonomous tasks for its real capacity instead
+	// of being invisible to the ledger. Autonomous task spawns (OneShot)
+	// skip this — they already admit via the executor's own m.admit()
+	// before ever reaching this handler; gating them here too would
+	// double-acquire the same pool and could deadlock a node capped at 1.
+	// Short timeout (a few seconds, not the autonomous path's hours-long
+	// default) because this blocks a synchronous HTTP request.
+	capacityHolder := ""
+	if !req.OneShot && s.capacityAdmit != nil {
+		holder, herr := generateStreamID()
+		if herr != nil {
+			http.Error(w, "capacity: could not generate holder id: "+herr.Error(), http.StatusInternalServerError)
+			return
+		}
+		waitSecs := 8
+		if s.cfg != nil && s.cfg.Session.CapacityWaitSeconds > 0 {
+			waitSecs = s.cfg.Session.CapacityWaitSeconds
+		}
+		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
+		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder)
+		cancel()
+		if aerr != nil {
+			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
+			return
+		}
+		capacityHolder = holder
+	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {
+		if capacityHolder != "" && s.capacityRelease != nil {
+			s.capacityRelease(capacityHolder)
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if capacityHolder != "" && s.capacityBind != nil {
+		s.capacityBind(capacityHolder, sess.FullID)
 	}
 	// BL386 Phase 1 — optional warm-start seed after session creation.
 	if req.MemorySeed != nil && req.MemorySeed.FromScope != "" && s.memoryBackend != nil {
@@ -5875,6 +5951,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 && n <= 100 { cfg.Autonomous.CapacityGPUUtilPct = n }
 		case "session.reserved_interactive":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Session.ReservedInteractive = &n }
+		case "session.capacity_wait_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Session.CapacityWaitSeconds = n }
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
 		case "autonomous.auto_fix_retries":

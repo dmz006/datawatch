@@ -5395,16 +5395,23 @@ function sendSavedCmd(cmd) {
   }
 }
 
+// v8.36.0 — memory-strategy (keep/purge/archive) on session delete, matching
+// the same picker added to PRD delete (confirmPRDDelete) — a session's
+// memories were previously always silently kept with no choice.
 function deleteSession(sessionId) {
-  showConfirmModal(t('dialog_delete_session_title'), () => {
+  const doDelete = (memoryStrategy, roleFilter, archiveToScope) => {
     const token = localStorage.getItem('cs_token') || '';
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
-    fetch('/api/sessions/delete', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ id: sessionId, delete_data: true }),
-    })
+    const payload = { id: sessionId, delete_data: true };
+    if (memoryStrategy && memoryStrategy !== 'keep') {
+      payload.memory_strategy = memoryStrategy;
+      if (memoryStrategy === 'archive') {
+        if (roleFilter) payload.archive_role_filter = roleFilter;
+        payload.archive_to_scope = archiveToScope || 'project-shared';
+      }
+    }
+    fetch('/api/sessions/delete', { method: 'POST', headers, body: JSON.stringify(payload) })
       .then(r => {
         if (r.ok) {
           showToast('Session deleted', 'success', 2000);
@@ -5413,8 +5420,41 @@ function deleteSession(sessionId) {
           showToast('Delete failed', 'error');
         }
       })
-    .catch(() => showToast('Delete failed', 'error'));
+      .catch(() => showToast('Delete failed', 'error'));
+  };
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${escHtml(t('dialog_delete_session_title')||'Delete this session?')}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">${t('prd_delete_memory_strategy')||'What should happen to this session\'s memories?'}</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="sessDeleteMemStrat" value="keep" checked> ${t('prd_delete_memory_keep')||'Keep'}</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="sessDeleteMemStrat" value="purge"> ${t('prd_delete_memory_purge')||'Purge'}</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="sessDeleteMemStrat" value="archive"> ${t('prd_delete_memory_archive')||'Archive'}</label>
+      <div id="sessDeleteArchiveOpts" style="display:none;flex-direction:column;gap:6px;padding-left:20px;">
+        <input type="text" id="sessDeleteArchiveRoles" placeholder="${t('prd_delete_memory_archive_roles_hint')||'role prefix filter (optional)'}" style="font-size:12px;padding:4px 6px;">
+        <select id="sessDeleteArchiveScope" style="font-size:12px;padding:4px 6px;">
+          <option value="project-shared" selected>${t('memory_scope_project_shared')||'Project (shared)'}</option>
+          <option value="global-shared">${t('memory_scope_global_shared')||'Global (shared)'}</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-primary" style="background:var(--error);border-color:var(--error);">${t('prd_btn_delete')||'Delete'}</button>
+      </div>
+    </form>
+  `, () => {
+    const strat = (document.querySelector('input[name="sessDeleteMemStrat"]:checked')||{}).value || 'keep';
+    const roles = (document.getElementById('sessDeleteArchiveRoles')||{}).value || '';
+    const scope = (document.getElementById('sessDeleteArchiveScope')||{}).value || 'project-shared';
+    _prdCloseModal();
+    doDelete(strat, roles, scope);
   });
+  document.querySelectorAll('input[name="sessDeleteMemStrat"]').forEach(r => r.addEventListener('change', () => {
+    const opts = document.getElementById('sessDeleteArchiveOpts');
+    if (opts) opts.style.display = document.querySelector('input[name="sessDeleteMemStrat"]:checked').value === 'archive' ? 'flex' : 'none';
+  }));
 }
 
 // ── New session view ──────────────────────────────────────────────────────────
@@ -10838,6 +10878,9 @@ function renderPRDActions(prd) {
 //     surface the daemon's actual message in the toast — pre-v5.26.8
 //     toasts said "PRD delete failed: Error: prd ... is running ..."
 //     which buried the actionable bit under double-prefix noise.
+// v8.36.0 — memory-strategy picker (keep/purge/archive) on hard-delete,
+// matching the existing datawatch-app (Android) BL386/#175 feature the PWA
+// never had — deleting a PRD silently kept its memories with no choice.
 window.confirmPRDDelete = function(id) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/children')
     .catch(() => ({ children: [] }))
@@ -10845,22 +10888,64 @@ window.confirmPRDDelete = function(id) {
       const kids = (data && data.children) || [];
       const nKids = kids.length;
       const runningKid = kids.find(c => c.status === 'running');
-      let msg = 'Delete Automaton ' + id + '?';
+      let msg = 'This permanently removes it';
       if (nKids > 0) {
-        msg += ' This permanently removes it AND ' + nKids + ' child automaton' + (nKids === 1 ? '' : 's') +
-               ' spawned via spawn-automaton' + (runningKid ? ' (one of which is running — daemon will refuse until you Cancel it first)' : '') + '.';
-      } else {
-        msg += ' This permanently removes it.';
+        msg += ' AND ' + nKids + ' child automaton' + (nKids === 1 ? '' : 's') +
+               ' spawned via spawn-automaton' + (runningKid ? ' (one of which is running — daemon will refuse until you Cancel it first)' : '');
       }
-      msg += ' Cancelling first is reversible — deletion is not.';
-      if (!window.confirm(msg)) return;
-      apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' })
-        .then(() => { showToast('PRD ' + id + ' deleted' + (nKids > 0 ? ' (+' + nKids + ' child)' : ''), 'success', 1800); _refreshAutomataOrPRD(); })
-        .catch(err => {
-          const raw = String((err && err.message) || err);
-          const trimmed = raw.replace(/^Error:\s*/, '');
-          showToast('Delete failed: ' + trimmed, 'error', 4500);
-        });
+      msg += '. Cancelling first is reversible — deletion is not.';
+      const doDelete = (memoryStrategy, roleFilter, archiveToScope) => {
+        let url = '/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true';
+        if (memoryStrategy && memoryStrategy !== 'keep') {
+          url += '&memory_strategy=' + encodeURIComponent(memoryStrategy);
+          if (memoryStrategy === 'archive') {
+            if (roleFilter) url += '&archive_role_filter=' + encodeURIComponent(roleFilter);
+            url += '&archive_to_scope=' + encodeURIComponent(archiveToScope || 'project-shared');
+          }
+        }
+        apiFetch(url, { method: 'DELETE' })
+          .then(() => { showToast('PRD ' + id + ' deleted' + (nKids > 0 ? ' (+' + nKids + ' child)' : ''), 'success', 1800); _refreshAutomataOrPRD(); })
+          .catch(err => {
+            const raw = String((err && err.message) || err);
+            const trimmed = raw.replace(/^Error:\s*/, '');
+            showToast('Delete failed: ' + trimmed, 'error', 4500);
+          });
+      };
+      _prdMountModal(`
+        <div class="response-modal-header">
+          <strong>${escHtml(t('prd_delete_confirm_title')||'Delete Automaton')} ${escHtml(id)}?</strong>
+          <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+        </div>
+        <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="font-size:12px;color:var(--text2);">${escHtml(msg)}</div>
+          <label style="font-size:11px;color:var(--text2);margin-top:6px;">${t('prd_delete_memory_strategy')||'What should happen to this Automaton\'s memories?'}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="prdDeleteMemStrat" value="keep" checked> ${t('prd_delete_memory_keep')||'Keep'}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="prdDeleteMemStrat" value="purge"> ${t('prd_delete_memory_purge')||'Purge'}</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="radio" name="prdDeleteMemStrat" value="archive"> ${t('prd_delete_memory_archive')||'Archive'}</label>
+          <div id="prdDeleteArchiveOpts" style="display:none;flex-direction:column;gap:6px;padding-left:20px;">
+            <input type="text" id="prdDeleteArchiveRoles" placeholder="${t('prd_delete_memory_archive_roles_hint')||'role prefix filter (optional)'}" style="font-size:12px;padding:4px 6px;">
+            <select id="prdDeleteArchiveScope" style="font-size:12px;padding:4px 6px;">
+              <option value="project-shared" selected>${t('memory_scope_project_shared')||'Project (shared)'}</option>
+              <option value="global-shared">${t('memory_scope_global_shared')||'Global (shared)'}</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+            <button type="submit" class="btn-primary" style="background:var(--error);border-color:var(--error);">${t('prd_btn_delete')||'Delete'}</button>
+          </div>
+        </form>
+      `, () => {
+        const strat = (document.querySelector('input[name="prdDeleteMemStrat"]:checked')||{}).value || 'keep';
+        const roles = (document.getElementById('prdDeleteArchiveRoles')||{}).value || '';
+        const scope = (document.getElementById('prdDeleteArchiveScope')||{}).value || 'project-shared';
+        _prdCloseModal();
+        doDelete(strat, roles, scope);
+      });
+      const radios = document.querySelectorAll('input[name="prdDeleteMemStrat"]');
+      const archiveOpts = document.getElementById('prdDeleteArchiveOpts');
+      radios.forEach(r => r.addEventListener('change', () => {
+        if (archiveOpts) archiveOpts.style.display = (r.value === 'archive' && r.checked) ? 'flex' : (document.querySelector('input[name="prdDeleteMemStrat"]:checked').value === 'archive' ? 'flex' : 'none');
+      }));
     });
 };
 
@@ -12163,6 +12248,7 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'sess', section: 'Sessions', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.reserved_interactive', label: 'Slots reserved for interactive sessions', labelKey: 'settings_reserved_interactive', type: 'number', placeholder: '1' },
+    { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
@@ -17623,7 +17709,7 @@ function _renderDetailContent(prd) {
 // and embeds CPU/GPU/RAM resource bars. Refreshes every 5 seconds.
 // Capacity admission card: per-pool used/limit bars + wait queue. Polled every 5s;
 // the interval lives on window so re-renders never stack timers.
-window._loadPRDCapacityCard = function() {
+window._loadPRDCapacityCard = function(prdId) {
   const slot = document.getElementById('prdCapacityCard');
   if (!slot) return;
   if (window._prdCapacityInterval) clearInterval(window._prdCapacityInterval);
@@ -17654,24 +17740,34 @@ window._loadPRDCapacityCard = function() {
   };
   const render = () => {
     if (!document.getElementById('prdCapacityCard')) { clearInterval(window._prdCapacityInterval); return; }
-    apiFetch('/api/capacity').then(cap => {
-      const pools = ((cap && cap.pools) || []).filter(p => p.limit > 0);
+    const url = '/api/capacity' + (prdId ? '?prd_id=' + encodeURIComponent(prdId) : '');
+    apiFetch(url).then(cap => {
+      const allPools = (cap && cap.pools) || [];
+      const pools = allPools.filter(p => p.limit > 0);
       const waiting = (cap && cap.waiting) || [];
-      if (pools.length === 0 && waiting.length === 0) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
+      // v8.36.0 — a registered compute node with no configured session cap
+      // and no current activity used to be entirely invisible (the server
+      // always includes every registered node now, but with limit=0 and no
+      // held/external it fell through both the bars and the "unlimited"
+      // bucket below). List it plainly so real hardware isn't hidden just
+      // because nobody capped it.
+      const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
+        .map(p => `<div style="color:var(--text2);opacity:0.7;" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>`).join('');
+      if (pools.length === 0 && waiting.length === 0 && !idleNodes) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
       const bars = pools.map(p => {
         const used = (p.held || 0) + (p.external || 0);
         const pct = Math.min(100, Math.round(100 * used / p.limit));
         const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
         return `<div style="margin-bottom:4px;" title="${escHtml(poolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(poolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div></div>`;
       }).join('');
-      const unlimited = (cap.pools || []).filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
+      const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
         .map(p => `<div style="color:var(--text2);" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>`).join('');
       const queue = waiting.length
         ? `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
           waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
         : '';
       slot.style.display = 'block';
-      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${queue}</div>`;
+      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${idleNodes}${queue}</div>`;
     }).catch(() => {});
   };
   render();
@@ -17681,7 +17777,7 @@ window._loadPRDCapacityCard = function() {
 window._loadPRDActiveSessionCard = function(prd) {
   const slot = document.getElementById('prdActiveSessionCard');
   if (!slot) return;
-  if (window._loadPRDCapacityCard) window._loadPRDCapacityCard();
+  if (window._loadPRDCapacityCard) window._loadPRDCapacityCard(prd && prd.id);
   if (window._prdActiveSessionInterval) clearInterval(window._prdActiveSessionInterval);
 
   const fmtB = b => {

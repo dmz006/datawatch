@@ -1232,6 +1232,14 @@ type SessionConfig struct {
 	// LLMBackend selects which LLM backend to use. Default: "claude-code".
 	LLMBackend string `yaml:"llm_backend"`
 
+	// CapacityWaitSeconds bounds how long an interactive (non-autonomous)
+	// session start blocks waiting for a free node:/llm: capacity slot
+	// before returning 503, when capacity is wired (default 8). Kept short
+	// deliberately — this blocks a synchronous HTTP request, unlike the
+	// much longer autonomous.capacity_wait_timeout_seconds default, which
+	// bounds a background task retry loop instead.
+	CapacityWaitSeconds int `yaml:"capacity_wait_seconds,omitempty" json:"capacity_wait_seconds,omitempty"`
+
 	// AutoInstallHooks (alpha.34a #202) — when true (default), the daemon
 	// auto-writes .claude/sprint/{post-event.sh, .dw-env} into project_dir
 	// at session spawn for claude-code sessions. The hook scripts then POST

@@ -324,7 +324,7 @@ func PurgeScope(b Backend, ref ScopeRef) (int, error) {
 	if b == nil {
 		return 0, errors.New("memory backend nil")
 	}
-	dir, role, _ := ref.Resolve()
+	dir, role, sessionID := ref.Resolve()
 	var rows []Memory
 	var err error
 	if role != "" {
@@ -334,6 +334,21 @@ func PurgeScope(b Backend, ref ScopeRef) (int, error) {
 	}
 	if err != nil {
 		return 0, fmt.Errorf("purge scope: list: %w", err)
+	}
+	// ScopeSessionLocal resolves to (dir, role="", sessionID) — role is
+	// empty so the branch above falls through to ListRecent, which returns
+	// every row for the whole project, not just this session's. Without
+	// this filter, purging one session's memories would delete the entire
+	// project's memory store — PurgeScope previously discarded the
+	// sessionID Resolve() already computes (`dir, role, _ := ref.Resolve()`).
+	if sessionID != "" {
+		filtered := rows[:0]
+		for _, m := range rows {
+			if m.SessionID == sessionID {
+				filtered = append(filtered, m)
+			}
+		}
+		rows = filtered
 	}
 	count := 0
 	for _, m := range rows {
@@ -357,7 +372,7 @@ func ArchiveScope(b Backend, from, to ScopeRef, filter SeedFilter, breadcrumbLab
 	if n <= 0 {
 		n = 1000
 	}
-	srcDir, srcRole, _ := from.Resolve()
+	srcDir, srcRole, srcSession := from.Resolve()
 	dstDir, _, dstSession := to.Resolve()
 	var src []Memory
 	if filter.RolePrefix != "" || srcRole != "" {
@@ -371,6 +386,19 @@ func ArchiveScope(b Backend, from, to ScopeRef, filter SeedFilter, breadcrumbLab
 	}
 	if err != nil {
 		return 0, 0, fmt.Errorf("archive scope: list source: %w", err)
+	}
+	// Same fix as PurgeScope: a ScopeSessionLocal source resolves to
+	// role="" so the branch above lists the whole project via ListRecent —
+	// without this filter, archiving one session's memories would copy
+	// (and then purge, via PurgeScope below) every memory in the project.
+	if srcSession != "" {
+		filtered := src[:0]
+		for _, m := range src {
+			if m.SessionID == srcSession {
+				filtered = append(filtered, m)
+			}
+		}
+		src = filtered
 	}
 	for _, m := range src {
 		if filter.ContentSubstring != "" && !strings.Contains(strings.ToLower(m.Content), strings.ToLower(filter.ContentSubstring)) {

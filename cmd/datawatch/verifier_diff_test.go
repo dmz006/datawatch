@@ -193,3 +193,80 @@ func TestVerifierDiff_CommittedChangeAloneCounts(t *testing.T) {
 		t.Fatal("committed change alone must count as output")
 	}
 }
+
+// fakeAskResolver simulates resolveAskBackend/askCompatible for
+// resolveVerifierBackendModel tests without needing a real inference
+// registry: raw strings that appear in namedKinds resolve as a "named LLM"
+// with that kind + a fixed model; anything else resolves as a bare kind
+// string with no model (mirroring the real resolveAskBackend's fallback).
+func fakeAskResolver(namedKinds map[string]string, namedModels map[string]string) (
+	resolve func(string) (string, string, error), compatible func(string) bool,
+) {
+	compatible = func(kind string) bool { return kind == "ollama" || kind == "openwebui" }
+	resolve = func(raw string) (string, string, error) {
+		if kind, ok := namedKinds[raw]; ok {
+			return kind, namedModels[raw], nil
+		}
+		return raw, "", nil
+	}
+	return resolve, compatible
+}
+
+// TestResolveVerifierBackendModel_DefaultsToPRDBackend covers the v8.36.0
+// fix: an unconfigured verification_backend/model must default to the
+// PRD's own ask-compatible backend/model, not a hardcoded "ollama" ignoring
+// the PRD entirely.
+func TestResolveVerifierBackendModel_DefaultsToPRDBackend(t *testing.T) {
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"ollama-datawatch": "ollama", "ollama": "ollama"},
+		map[string]string{"ollama-datawatch": "qwen3.8:27b", "ollama": "qwen3:1.7b"},
+	)
+	backend, kind, model := resolveVerifierBackendModel("", "", "ollama-datawatch", "qwen3.8:27b", resolve, compatible)
+	if backend != "ollama-datawatch" || kind != "ollama" || model != "qwen3.8:27b" {
+		t.Fatalf("got backend=%q kind=%q model=%q, want the PRD's own ollama-datawatch/qwen3.8:27b", backend, kind, model)
+	}
+}
+
+// TestResolveVerifierBackendModel_SessionOnlyBackendFallsBackToOllama covers
+// the real architectural limit: a claude-code (session-only) PRD backend has
+// no single-shot ask adapter, so it must fall back to the global "ollama"
+// default exactly as before this change — not silently pass "claude-code"
+// through to /api/ask, which would just fail differently.
+func TestResolveVerifierBackendModel_SessionOnlyBackendFallsBackToOllama(t *testing.T) {
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"claude-code": "claude-code", "ollama": "ollama"},
+		map[string]string{"ollama": "qwen3:1.7b"},
+	)
+	backend, kind, model := resolveVerifierBackendModel("", "", "claude-code", "claude-sonnet-5", resolve, compatible)
+	if backend != "ollama" || kind != "ollama" {
+		t.Fatalf("got backend=%q kind=%q, want fallback to ollama (claude-code has no single-shot ask adapter)", backend, kind)
+	}
+	if model != "qwen3:1.7b" {
+		t.Fatalf("model = %q, want ollama's own default (qwen3.8:27b would be a stale pairing from the discarded claude-code backend)", model)
+	}
+}
+
+// TestResolveVerifierBackendModel_ExplicitConfigWins verifies an explicitly
+// configured verification_backend/model always takes priority over the
+// PRD's own backend/model.
+func TestResolveVerifierBackendModel_ExplicitConfigWins(t *testing.T) {
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"ollama-strong": "ollama", "ollama-datawatch": "ollama"},
+		map[string]string{"ollama-strong": "gpt-oss:120b"},
+	)
+	backend, _, model := resolveVerifierBackendModel("ollama-strong", "gpt-oss:120b", "ollama-datawatch", "qwen3.8:27b", resolve, compatible)
+	if backend != "ollama-strong" || model != "gpt-oss:120b" {
+		t.Fatalf("got backend=%q model=%q, want the explicitly configured verification_backend/model to win", backend, model)
+	}
+}
+
+// TestResolveVerifierBackendModel_NoPRDBackendFallsBackToOllama verifies an
+// empty PRD backend (no config, no PRD backend set) still falls back to
+// "ollama" — the pre-existing default, unaffected by this change.
+func TestResolveVerifierBackendModel_NoPRDBackendFallsBackToOllama(t *testing.T) {
+	resolve, compatible := fakeAskResolver(map[string]string{"ollama": "ollama"}, map[string]string{"ollama": "qwen3:1.7b"})
+	backend, kind, model := resolveVerifierBackendModel("", "", "", "", resolve, compatible)
+	if backend != "ollama" || kind != "ollama" || model != "qwen3:1.7b" {
+		t.Fatalf("got backend=%q kind=%q model=%q, want the ollama default", backend, kind, model)
+	}
+}

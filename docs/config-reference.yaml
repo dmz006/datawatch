@@ -15,6 +15,13 @@ session:
   # Slots of max_sessions held back for operator sessions so autonomous work
   # never uses them. Default: 1 when max_sessions >= 3, otherwise 0.
   reserved_interactive: 1
+  # Seconds an interactive (non-autonomous) session start blocks waiting for
+  # a free node:/llm: capacity slot on a shared compute node before
+  # returning 503, when capacity is wired. Default: 8. Kept short
+  # deliberately — this blocks a synchronous HTTP request, unlike
+  # autonomous.capacity_wait_timeout_seconds below, which bounds a
+  # background task's retry loop instead.
+  capacity_wait_seconds: 8
   # Seconds of idle output before declaring a session is waiting for input
   input_idle_timeout: 10
   # Default number of output lines returned by tail/status commands
@@ -620,6 +627,11 @@ autonomous:
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
   # (0 = unlimited); per-Automaton queue order: priority (set_priority).
+  # v8.36.0 — the same node:/llm: pools are now also enforced for: (1) an
+  # interactive session start (see session.capacity_wait_seconds above —
+  # short timeout, since that's a synchronous HTTP request, not a background
+  # retry loop), and (2) the BL25 verifier's own /api/ask call, which
+  # previously had zero capacity interaction at all.
   capacity_enabled: true
   # Longest a task may wait for capacity before failing (seconds). Default 14400.
   capacity_wait_timeout_seconds: 14400
@@ -636,10 +648,20 @@ autonomous:
   # session.llm_backend. Set to "opencode" to ensure all autonomous tasks run
   # via opencode even after a reset_to_draft clears the PRD's backend field.
   execution_backend: ""
-  # BL25 verifier backend. Empty = inherit. Set to a different backend
-  # (e.g. ollama when planning backend is claude-code) for cross-backend
-  # independence.
+  # BL25 verifier backend. Empty = default to the PRD's own backend (v8.36.0)
+  # when it resolves to an ask-compatible kind (ollama/openwebui, or a
+  # directly-configured Claude API entry) — falls back to the global
+  # "ollama" default when the PRD's backend is session-only (claude-code,
+  # opencode, ...), which has no single-shot /api/ask adapter regardless of
+  # whose backend it is. Set explicitly to force a different backend (e.g.
+  # ollama when planning backend is claude-code) for cross-backend
+  # independence, or to pin a specific model via verification_model below.
   verification_backend: ""
+  # BL25 verifier model override. Empty = default to the PRD's own model
+  # when verification_backend was also left empty and the PRD's backend was
+  # ask-compatible (v8.36.0); otherwise the resolved backend's own default
+  # model.
+  verification_model: ""
   # BL41 effort hint for the planning LLM call.
   # BL304: renamed from decomposition_effort; old key still accepted on read.
   planning_effort: "thorough"

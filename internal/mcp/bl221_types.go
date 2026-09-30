@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -87,10 +88,17 @@ func (s *Server) handleAutonomousPRDSetPriority(_ context.Context, req mcpsdk.Ca
 func (s *Server) toolCapacityStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("capacity_status",
 		mcpsdk.WithDescription("Read the capacity admission ledger: pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of tasks waiting for capacity with reasons."),
+		// v8.36.0 — scope the pool list to one PRD's own backend usage
+		// instead of the whole machine's ledger.
+		mcpsdk.WithString("prd_id", mcpsdk.Description("Optional — scope pools to this PRD's own backend/model usage (always includes host)")),
 	)
 }
-func (s *Server) handleCapacityStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := s.proxyGet("/api/capacity", nil)
+func (s *Server) handleCapacityStatus(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	var q url.Values
+	if prdID := req.GetString("prd_id", ""); prdID != "" {
+		q = url.Values{"prd_id": {prdID}}
+	}
+	out, err := s.proxyGet("/api/capacity", q)
 	if err != nil {
 		return nil, err
 	}

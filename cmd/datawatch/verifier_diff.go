@@ -9,6 +9,54 @@ import (
 	"time"
 )
 
+// resolveVerifierBackendModel decides which backend+model the verifier's
+// /api/ask call should use. v8.36.0 — previously this always fell back to a
+// hardcoded "ollama" (and whatever model that resolved to daemon-wide) when
+// verification_backend/model were unconfigured, ignoring the PRD's own
+// backend entirely — so a Claude-backed PRD's work still got judged by
+// whatever the global Ollama default happened to be (often a small model
+// picked for other purposes). Default to the PRD's own backend/model
+// instead when unconfigured — but only take effect when that backend
+// resolves to an ask-compatible kind (ollama/openwebui, or a
+// directly-configured Claude API entry): session-only kinds (claude-code,
+// opencode, ...) have no single-shot ask adapter and can never serve this
+// call regardless of whose backend it is (see inference.IsSessionBackendKind),
+// so those fall through to the "ollama" default exactly as before this change.
+//
+// resolveAskBackend and askCompatible are passed in rather than closed over
+// so this decision logic is a pure, independently testable function.
+func resolveVerifierBackendModel(
+	cfgBackend, cfgModel, prdBackend, prdModel string,
+	resolveAskBackend func(raw string) (kind, model string, err error),
+	askCompatible func(kind string) bool,
+) (vbackend, vkind, verifyModel string) {
+	usingPRDBackend := false
+	vbackend = cfgBackend
+	if vbackend == "" {
+		vbackend = prdBackend
+		usingPRDBackend = vbackend != ""
+	}
+	if vbackend == "" {
+		vbackend = "ollama"
+	}
+	var vmodel string
+	vkind, vmodel, _ = resolveAskBackend(vbackend)
+	if !askCompatible(vkind) {
+		vbackend = "ollama"
+		usingPRDBackend = false
+		vkind, vmodel, _ = resolveAskBackend(vbackend)
+	}
+	verifyModel = cfgModel
+	if verifyModel == "" {
+		if usingPRDBackend && prdModel != "" {
+			verifyModel = prdModel
+		} else {
+			verifyModel = vmodel
+		}
+	}
+	return vbackend, vkind, verifyModel
+}
+
 // gitWorkingTreeDiffSince returns the diff of UNCOMMITTED changes to tracked
 // files that were modified at or after `since` — evidence the worker
 // specifically produced during this task's own run, not a leftover from an

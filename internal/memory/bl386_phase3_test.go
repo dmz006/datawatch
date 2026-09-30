@@ -52,6 +52,39 @@ func TestBL386_PurgeScope_DeletesAllInScope(t *testing.T) {
 	}
 }
 
+// TestBL386_PurgeScope_SessionLocal_OnlyPurgesThatSession is a regression
+// test for a bug found 2026-09-29 while adding session-delete memory
+// strategy: ScopeSessionLocal resolves to (dir, role="", sessionID) — role
+// is empty, so PurgeScope fell through to ListRecent(dir, ...) and deleted
+// every memory in the project, silently discarding the sessionID Resolve()
+// already computed. Two sessions in the same project: purging one must
+// leave the other's memories untouched.
+func TestBL386_PurgeScope_SessionLocal_OnlyPurgesThatSession(t *testing.T) {
+	b := newScopeTestStore(t)
+
+	sessA := ScopeRef{Scope: ScopeSessionLocal, Project: "/proj", SessionID: "sess-a"}
+	sessB := ScopeRef{Scope: ScopeSessionLocal, Project: "/proj", SessionID: "sess-b"}
+
+	dirA, roleA, sidA := sessA.Resolve()
+	_, _ = b.Save(dirA, "session A memory 1", "", roleA, sidA, nil)
+	_, _ = b.Save(dirA, "session A memory 2", "", roleA, sidA, nil)
+	dirB, roleB, sidB := sessB.Resolve()
+	_, _ = b.Save(dirB, "session B memory 1", "", roleB, sidB, nil)
+
+	n, err := PurgeScope(b, sessA)
+	if err != nil {
+		t.Fatalf("PurgeScope: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 purged from session A, got %d", n)
+	}
+
+	remaining, _ := b.ListRecent("/proj", 100)
+	if len(remaining) != 1 || remaining[0].SessionID != "sess-b" {
+		t.Fatalf("session B's memory must survive purging session A, got: %+v", remaining)
+	}
+}
+
 func TestBL386_PurgeScope_EmptyScope_ReturnsZero(t *testing.T) {
 	b := newScopeTestStore(t)
 	ref := ScopeRef{Scope: ScopePRDShared, Project: "/proj", PRDID: "nonexistent"}
@@ -103,6 +136,45 @@ func TestBL386_ArchiveScope_CopiesWithBreadcrumb_ThenPurges(t *testing.T) {
 		if !strings.Contains(m.Content, "archived from prd:prd-del") {
 			t.Errorf("missing breadcrumb in archived memory: %q", m.Content)
 		}
+	}
+}
+
+// TestBL386_ArchiveScope_SessionLocal_OnlyArchivesThatSession is the
+// ArchiveScope counterpart of the PurgeScope regression above — from.Resolve()
+// discarded its sessionID the same way, so archiving one session's memories
+// would have copied (then purged) every memory in the whole project.
+func TestBL386_ArchiveScope_SessionLocal_OnlyArchivesThatSession(t *testing.T) {
+	b := newScopeTestStore(t)
+
+	sessA := ScopeRef{Scope: ScopeSessionLocal, Project: "/proj", SessionID: "sess-a"}
+	sessB := ScopeRef{Scope: ScopeSessionLocal, Project: "/proj", SessionID: "sess-b"}
+	projRef := ScopeRef{Scope: ScopeProjectShared, Project: "/proj"}
+
+	dirA, roleA, sidA := sessA.Resolve()
+	_, _ = b.Save(dirA, "session A memory", "", roleA, sidA, nil)
+	dirB, roleB, sidB := sessB.Resolve()
+	_, _ = b.Save(dirB, "session B memory", "", roleB, sidB, nil)
+
+	copied, purged, err := ArchiveScope(b, sessA, projRef, SeedFilter{}, "sess-a", 100)
+	if err != nil {
+		t.Fatalf("ArchiveScope: %v", err)
+	}
+	if copied != 1 || purged != 1 {
+		t.Fatalf("expected 1 copied and 1 purged from session A only, got copied=%d purged=%d", copied, purged)
+	}
+
+	remaining, _ := b.ListRecent("/proj", 100)
+	found := false
+	for _, m := range remaining {
+		if m.SessionID == "sess-b" {
+			found = true
+		}
+		if m.SessionID == "sess-a" {
+			t.Fatalf("session A's memory must be purged, still found: %+v", m)
+		}
+	}
+	if !found {
+		t.Fatal("session B's memory must survive archiving session A")
 	}
 }
 
