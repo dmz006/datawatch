@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.37.3 — fix(session): opening a session on a differently-sized device flipped it from waiting_input to running
+
+### Fixed
+- **Merely opening/viewing a session (PWA, Android/Android Auto) could flip it from `waiting_input` to `running` with no input sent** — operator-reported: "whenever I connect to a session to view it somehow ... the state is going to an active running state". Root cause: every client sends `resize_term` unconditionally on session open, fitting the tmux window to whatever size that specific device's viewport computes — Android Auto's car display is a very different size than a phone or desktop browser, so opening the same session from a different device (or even the same device after a window resize) almost always triggers a real tmux `resize-window` call. Any resize — even, on some terminals, a same-size one — makes the TUI repaint on a fresh SIGWINCH, and `StartScreenCapture`'s 200ms poll reads that repaint as "pane content changed", unconditionally firing `MarkChannelEvent(EventRunning)`, which transitions `WaitingInput` → `Running` regardless of whether any real backend activity occurred. `ResizeTmux` now checks the tmux window's current size first (new `TmuxAPI.WindowSize`) and skips the resize call entirely when it already matches, falling back to always resizing if the current size can't be read. 3 new regression tests.
+
 ## v8.37.2 — fix(autonomous): per-task backend override left a stale model string from a different backend
 
 ### Fixed

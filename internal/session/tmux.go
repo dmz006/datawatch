@@ -18,6 +18,7 @@ type TmuxAPI interface {
 	SendKeysWithSettle(session, keys string, settle time.Duration) error
 	SendKeysLiteral(session, data string) error
 	ResizePane(session string, cols, rows int) error
+	WindowSize(session string) (cols, rows int, err error) // v8.37.3 — lets ResizeTmux skip a no-op resize
 	CapturePaneVisible(session string) (string, error)
 	CapturePaneLiveTail(session string) (string, error)      // v5.27.6 — state detection
 	CapturePaneScrollback(session string, lines int) (string, error) // v8.20.11 — scrollback for one-shot completion
@@ -178,6 +179,33 @@ func (t *TmuxManager) SendText(session, text string) error {
 func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 	return exec.Command("tmux", "resize-window", "-t", session,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
+}
+
+// WindowSize returns a tmux window's current width/height, so callers can
+// skip a redundant ResizePane call. v8.37.3 — every client connection
+// (PWA, Android/Android Auto) unconditionally sends resize_term on open
+// with whatever size its own viewport fits to; ResizeTmux previously
+// called ResizePane every time regardless of whether the size actually
+// changed. tmux genuinely reflows pane content on ANY resize-window call
+// (even a same-size one, since the TUI just sees a fresh SIGWINCH and
+// repaints), and StartScreenCapture's next poll sees that reflow as
+// "content changed" — incorrectly firing MarkChannelEvent(EventRunning)
+// and flipping a WaitingInput session to Running purely from opening it
+// on a device with (or without) a different screen size than whoever
+// last viewed it.
+func (t *TmuxManager) WindowSize(session string) (cols, rows int, err error) {
+	out, err := exec.Command("tmux", "display-message", "-t", session, "-p",
+		"#{window_width} #{window_height}").Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("unexpected tmux display-message output: %q", out)
+	}
+	cols, _ = strconv.Atoi(fields[0])
+	rows, _ = strconv.Atoi(fields[1])
+	return cols, rows, nil
 }
 
 // CapturePaneLiveTail (v5.27.6 — BL211) captures the live bottom of the

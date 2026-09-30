@@ -2503,6 +2503,14 @@ func (m *Manager) SetState(fullID string, newState State) error {
 }
 
 // ResizeTmux resizes a tmux pane to match the web terminal dimensions.
+//
+// v8.37.3 — skips the actual tmux resize when the pane is already the
+// requested size. Every client sends resize_term unconditionally on
+// session open (fitting to its own viewport); a redundant same-size
+// resize-window call still triggers a genuine TUI repaint that
+// StartScreenCapture's poll picks up as "content changed", incorrectly
+// flipping a WaitingInput session to Running purely from opening it.
+// Falls back to always resizing if the current size can't be read.
 func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -2510,6 +2518,9 @@ func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 		if !ok {
 			return
 		}
+	}
+	if curCols, curRows, err := m.tmux.WindowSize(sess.TmuxSession); err == nil && curCols == cols && curRows == rows {
+		return
 	}
 	_ = m.tmux.ResizePane(sess.TmuxSession, cols, rows)
 }

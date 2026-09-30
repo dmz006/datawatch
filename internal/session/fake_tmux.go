@@ -25,6 +25,12 @@ type FakeTmux struct {
 
 	// Pane simulates visible pane content returned by CapturePane*.
 	Pane map[string]string
+
+	// WindowSizes simulates each session's current tmux window size, for
+	// WindowSize/ResizePane. Unset sessions return an error (callers fall
+	// back to always resizing), matching a real tmux session that hasn't
+	// had NewSessionWithSize called yet.
+	WindowSizes map[string][2]int
 }
 
 // FakeTmuxCall records one method invocation.
@@ -108,7 +114,26 @@ func (f *FakeTmux) SendKeysLiteral(session, data string) error {
 }
 
 func (f *FakeTmux) ResizePane(session string, cols, rows int) error {
-	return f.record("resize", session, fmt.Sprintf("%dx%d", cols, rows))
+	if err := f.record("resize", session, fmt.Sprintf("%dx%d", cols, rows)); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	if f.WindowSizes == nil {
+		f.WindowSizes = map[string][2]int{}
+	}
+	f.WindowSizes[session] = [2]int{cols, rows}
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *FakeTmux) WindowSize(session string) (cols, rows int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sz, ok := f.WindowSizes[session]
+	if !ok {
+		return 0, 0, fmt.Errorf("no known window size for %s", session)
+	}
+	return sz[0], sz[1], nil
 }
 
 func (f *FakeTmux) CapturePaneVisible(session string) (string, error) {
