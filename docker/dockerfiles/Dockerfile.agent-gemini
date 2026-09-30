@@ -6,7 +6,7 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
-ARG GEMINI_CLI_VERSION=0.39.1
+ARG GEMINI_CLI_VERSION=0.62.0
 ARG NODE_MAJOR=22
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
@@ -20,6 +20,10 @@ RUN install_packages curl gnupg && \
     # Upgrade the npm bundled with the distro nodejs: its vendored tar, brace-expansion,
     # pacote, sigstore, ip-address and picomatch carry HIGH findings fixed in npm 11.20+.
     npm install -g --no-audit --no-fund npm@11 && \
+    # GEMINI_CLI_VERSION bumped 0.39.1 -> 0.62.0 (v8.36.1) — the pinned 0.39.1's
+    # own transitive deps carried brace-expansion (CVE-2026-102276/102278) and
+    # undici (CVE-2026-19534) HIGH findings, fixed upstream in newer brace-expansion/
+    # undici releases that later gemini-cli versions pull in.
     npm install -g --omit=optional --no-audit --no-fund \
         @google/gemini-cli@${GEMINI_CLI_VERSION} && \
     npm cache clean --force && \
