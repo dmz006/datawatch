@@ -10508,10 +10508,12 @@ function renderTask(prd, story, task, editable) {
   // Also allow retry when the PRD itself is blocked (guardrail block, or the
   // default story-failure halt) — reset_task on a blocked PRD flips it back
   // to running server-side, but the button must be visible first for the
-  // operator to ever click it.
-  const canRetry = (task.status === 'failed' || task.status === 'blocked') && (prd.status === 'running' || prd.status === 'blocked');
+  // operator to ever click it. Also allow retry/requeue when the PRD is
+  // cancelled (operator cancelled to fix a task's spec) — reset_task on a
+  // cancelled PRD flips it back to running server-side too.
+  const canRetry = (task.status === 'failed' || task.status === 'blocked') && (prd.status === 'running' || prd.status === 'blocked' || prd.status === 'cancelled');
   const canCancelTask = ['pending','in_progress','running','verifying','running_tests','waiting_capacity'].includes(task.status||'') && prd.status === 'running';
-  const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && prd.status === 'running';
+  const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && (prd.status === 'running' || prd.status === 'cancelled');
   const retryBtn = canRetry
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
     : '';

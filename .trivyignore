@@ -350,3 +350,11 @@ CVE-2026-93990
 # containers configure no time-restricted sudoers rules and run a single
 # trusted agent user. Present in every agent image via the base. Reviewed 2026-09-26.
 CVE-2026-96512
+
+# libssl3 — CVE-2026-84782 (HIGH, affected, no fix in bookworm 3.0.20-1~deb12u2)
+# DTLS retransmission logic flaw in OpenSSL. DTLS is TLS over UDP (used by
+# WebRTC, CoAP, some VPNs); the stats-cluster container serves and calls only
+# regular TCP-based TLS/HTTPS — it never originates or accepts a DTLS
+# connection, so the flawed code path is never reached. Blocked v8.35.0's
+# release CI (containers/stats-cluster). Reviewed 2026-09-29.
+CVE-2026-84782

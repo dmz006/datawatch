@@ -1933,9 +1933,9 @@ a.prd-file-chip-dl:hover { opacity: 1; }
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid var(--accent);
+  border: 1px solid #60a5fa;
   background: transparent;
-  color: var(--accent);
+  color: #60a5fa;
   cursor: pointer;
   flex-shrink: 0;
   line-height: 1.4;

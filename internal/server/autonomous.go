@@ -18,6 +18,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -252,6 +253,31 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Query().Get("hard") == "true" {
 				// BL386 Phase 3 — optional memory_strategy before hard-delete.
 				memStrat := r.URL.Query().Get("memory_strategy") // keep | purge | archive
+				archiveRoleFilterIn := r.URL.Query().Get("archive_role_filter")
+				archiveToIn := r.URL.Query().Get("archive_to_scope")
+				// The mobile client sends these three fields in a JSON body
+				// instead of as query params (query params only covered the
+				// PWA/curl case) — fall back to the body when the query
+				// didn't carry a strategy, so a DELETE from mobile isn't
+				// silently treated as "keep".
+				if memStrat == "" && r.Body != nil {
+					var bodyReq struct {
+						MemoryStrategy    string   `json:"memory_strategy"`
+						ArchiveRoleFilter []string `json:"archive_role_filter"`
+						ArchiveToScope    string   `json:"archive_to_scope"`
+					}
+					if b, readErr := io.ReadAll(r.Body); readErr == nil && len(b) > 0 {
+						if jsonErr := json.Unmarshal(b, &bodyReq); jsonErr == nil {
+							memStrat = bodyReq.MemoryStrategy
+							if len(bodyReq.ArchiveRoleFilter) > 0 {
+								archiveRoleFilterIn = bodyReq.ArchiveRoleFilter[0]
+							}
+							if bodyReq.ArchiveToScope != "" {
+								archiveToIn = bodyReq.ArchiveToScope
+							}
+						}
+					}
+				}
 				if (memStrat == "purge" || memStrat == "archive") && s.memoryBackend != nil {
 					// Look up the PRD for projectDir before deleting it.
 					if prd, ok := s.autonomousMgr.GetPRD(id); ok {
@@ -260,11 +286,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 							prdRef := memory.ScopeRef{Scope: memory.ScopePRDShared, Project: projectDir, PRDID: id}
 							if memStrat == "archive" {
 								archiveFilter := memory.SeedFilter{}
-								archiveRoleFilter := r.URL.Query().Get("archive_role_filter")
-								if archiveRoleFilter != "" {
-									archiveFilter.RolePrefix = archiveRoleFilter
+								if archiveRoleFilterIn != "" {
+									archiveFilter.RolePrefix = archiveRoleFilterIn
 								}
-								archiveTo := r.URL.Query().Get("archive_to_scope")
+								archiveTo := archiveToIn
 								if archiveTo == "" {
 									archiveTo = "project-shared"
 								}

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.35.1 — fix(memory): PRD hard-delete's memory_strategy was silently ignored from mobile; PWA retry-button contrast; CI CVE suppression
+
+### Fixed
+- **`memory_strategy` on PRD hard-delete was silently ignored when sent by the mobile client** — the REST handler (`DELETE /api/autonomous/prds/{id}?hard=true`) only ever read `memory_strategy`/`archive_role_filter`/`archive_to_scope` from URL query params, but the Android client sends them in the JSON request body. Choosing "purge" or "archive" on Android had no effect — the PRD's memories were silently kept. The handler now falls back to the JSON body when the query string doesn't carry a strategy.
+- **PWA task "Re-run" button was low-contrast** — used `var(--accent)` (a dark purple, `#7c3aed`) for both border and text on a near-black card background. Its own `:hover` state already used a lighter blue (`#60a5fa`); the static state now matches.
+- **CI: `containers/stats-cluster` release job blocked by an unfixed OpenSSL CVE** — `CVE-2026-84782` (DTLS retransmission logic flaw, no fix in Debian bookworm) added to `.trivyignore`; the container never originates or accepts DTLS connections.
+
 ## v8.35.0 — feat(autonomous): structural editing works on a cancelled Automaton; halt-on-story-failure default
 
 ### Added
