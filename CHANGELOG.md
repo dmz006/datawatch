@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.10 — fix(autonomous): a verifier/guardrail ask-call timeout was misreported as an unparseable model response
+
+### Fixed
+- **A verifier/guardrail `/api/ask` call that itself failed (backend timeout, unreachable node) was indistinguishable from the model successfully answering with malformed text** — found live diagnosing why PRD `a2833a5e`'s `6024876e` kept failing even after v8.36.8's JSON-tolerance fix: the real cause was `/api/ask`'s own 300s Ollama call timing out (`context deadline exceeded`) under real node contention, returning `{"error": "..."}` with no `answer` field at all. Every raw-HTTP `/api/ask` consumer (verifier, guardrail, orchestrator guardrail) fed that error body straight into the same "did the model's answer parse" path, reporting the misleading `verifier: unparseable response` with zero indication anything had actually timed out. New shared `askFailureReason` helper (5 unit tests) checks the HTTP status and an `error` field *before* treating the body as a model answer, now reporting `verifier: ask call failed: <actual reason>` / `guardrail: ask call failed: <actual reason>` instead. (The scan-grader's `askFn` already did this correctly — not affected.)
+
 ## v8.36.9 — feat(autonomous): verifier capacity load-balances across multiple configured ollama nodes; fixes capacity-card PRD attribution and a config-merge bug
 
 ### Added

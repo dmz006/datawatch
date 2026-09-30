@@ -171,6 +171,36 @@ func TestResolveVerifierCandidates_Empty(t *testing.T) {
 	}
 }
 
+func TestAskFailureReason(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantFailed bool
+		wantReason string
+	}{
+		{"ok with answer", 200, `{"answer": "{\"ok\": true}"}`, false, ""},
+		{
+			"timeout error body", 503,
+			`{"error":"LLM unavailable: no reachable ComputeNode for this LLM: compute node \"datawatch\" (transient): ollama: Post \"http://datawatch:11434/api/generate\": context deadline exceeded"}`,
+			true, `LLM unavailable: no reachable ComputeNode for this LLM: compute node "datawatch" (transient): ollama: Post "http://datawatch:11434/api/generate": context deadline exceeded`,
+		},
+		{"non-200 no error field", 500, `not even json`, true, "HTTP 500"},
+		{"200 but error field present", 200, `{"error":"something odd"}`, true, "something odd"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reason, failed := askFailureReason(c.statusCode, []byte(c.body))
+			if failed != c.wantFailed {
+				t.Fatalf("failed = %v, want %v", failed, c.wantFailed)
+			}
+			if reason != c.wantReason {
+				t.Fatalf("reason = %q, want %q", reason, c.wantReason)
+			}
+		})
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	cases := []struct {
 		name string

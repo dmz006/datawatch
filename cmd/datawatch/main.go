@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.36.9"
+var Version = "8.36.10"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4456,6 +4456,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
+			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+				return autonomouspkg.VerificationResult{
+					OK: false, Severity: "medium",
+					Summary:    "verifier: ask call failed: " + reason,
+					VerifiedAt: time.Now(),
+				}, nil
+			}
 			var ask struct{ Answer string `json:"answer"` }
 			_ = json.Unmarshal(rb, &ask)
 			// v8.25.9: unparseable LLM response is a verification failure, not a pass.
@@ -4522,6 +4529,13 @@ Reply with STRICT JSON:
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
+			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+				return autonomouspkg.GuardrailVerdict{
+					Outcome: "block", Severity: "medium",
+					Summary:   "guardrail: ask call failed: " + reason,
+					VerdictAt: time.Now(),
+				}, nil
+			}
 			var ask struct{ Answer string `json:"answer"` }
 			_ = json.Unmarshal(rb, &ask)
 			// v8.25.11: unparseable guardrail response is a block, not a pass.
@@ -4987,6 +5001,15 @@ Return STRICT JSON:
 				}
 				defer resp.Body.Close() //nolint:errcheck
 				rb, _ := io.ReadAll(resp.Body)
+				if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+					// Matches the network-failure branch above: the ask call
+					// itself failed (e.g. backend timeout), not the model
+					// giving a malformed answer — warn, not block.
+					return orchestratorpkg.Verdict{
+						Outcome: "warn", Severity: "low",
+						Summary: fmt.Sprintf("%s: ask call failed: %s", req.Guardrail, reason),
+					}, nil
+				}
 				var ask struct{ Answer string `json:"answer"` }
 				_ = json.Unmarshal(rb, &ask)
 				// v8.25.11: unparseable orchestrator guardrail response is a block.

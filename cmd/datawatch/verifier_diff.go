@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,6 +73,30 @@ func ensureProjectDirOwnGitRepo(ctx context.Context, projectDir, homeDir string,
 // production runGit implementation.
 func execGit(ctx context.Context, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, "git", args...).Output()
+}
+
+// askFailureReason (v8.36.10) distinguishes a /api/ask proxy call that
+// itself failed (non-2xx status, or a {"error": "..."} body — no "answer"
+// field at all) from one that succeeded and produced text worth trying to
+// parse as the model's own (possibly malformed) answer. Found live: a
+// verifier call against a real-sized diff hit /api/ask's own 300s Ollama
+// timeout ("context deadline exceeded") under real node contention, and
+// the resulting {"error": "..."} response — which was never a model
+// answer to begin with — got silently treated as "the model returned text
+// that didn't parse", reported as the misleading "verifier: unparseable
+// response" with zero indication anything had actually timed out.
+func askFailureReason(statusCode int, body []byte) (reason string, failed bool) {
+	var e struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &e)
+	if statusCode == http.StatusOK && e.Error == "" {
+		return "", false
+	}
+	if e.Error != "" {
+		return e.Error, true
+	}
+	return fmt.Sprintf("HTTP %d", statusCode), true
 }
 
 // extractJSON (v8.36.8) recovers a JSON object from raw LLM output that
