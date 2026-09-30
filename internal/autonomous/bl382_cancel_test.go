@@ -302,6 +302,52 @@ func TestResetTask_PRDBlocked_ResetsTaskAndRestoresRunning(t *testing.T) {
 	}
 }
 
+// TestResetTask_PopulatesPriorAttemptHint is a regression test for a hang
+// found live on PRD a2833a5e: reset_task previously cleared t.Error/
+// t.Verification with no record of why the attempt failed, so a fresh
+// Run() redelivered the identical original task spec — indistinguishable
+// from brand-new work. A capable worker noticed a prior attempt's output
+// already existed and stopped to ask what to do, which hangs forever with
+// no human present in a one-shot session. reset_task must fold the prior
+// failure into PriorAttemptHint so the retry's worker gets told upfront.
+func TestResetTask_PopulatesPriorAttemptHint(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	wantIssues := []string{"docs/01-current-state.md is not created or modified in the diff", "README.md is not created or modified in the diff"}
+	prd.Story[0].Tasks[1].Status = TaskFailed
+	prd.Story[0].Tasks[1].Error = "verification failed after retries"
+	prd.Story[0].Tasks[1].Verification = &VerificationResult{
+		OK: false, Severity: "critical", Summary: "verifier: unparseable response",
+		Issues: wantIssues,
+	}
+	_ = m.Store().SavePRD(prd)
+
+	updated, err := m.ResetTask(prd.ID, "task-1b", "operator", false)
+	if err != nil {
+		t.Fatalf("ResetTask: %v", err)
+	}
+	hint := updated.Story[0].Tasks[1].PriorAttemptHint
+	if hint == "" {
+		t.Fatal("PriorAttemptHint was not populated from the cleared Error/Verification")
+	}
+	// v8.36.2 — the detailed Issues list is the actually-actionable part of
+	// a verification failure; a hint carrying only Summary lost it.
+	for _, issue := range wantIssues {
+		if !strings.Contains(hint, issue) {
+			t.Fatalf("PriorAttemptHint missing verification issue %q: %q", issue, hint)
+		}
+	}
+	if updated.Story[0].Tasks[1].Verification != nil {
+		t.Fatalf("Verification should still be cleared after reset: %+v", updated.Story[0].Tasks[1].Verification)
+	}
+	if !strings.Contains(hint, "verification failed after retries") || !strings.Contains(hint, "verifier: unparseable response") {
+		t.Fatalf("PriorAttemptHint missing expected content: %q", hint)
+	}
+	// The cleared fields themselves must still be gone.
+	if updated.Story[0].Tasks[1].Error != "" || updated.Story[0].Tasks[1].Verification != nil {
+		t.Fatalf("Error/Verification should still be cleared: %+v", updated.Story[0].Tasks[1])
+	}
+}
+
 // TestResetTask_PRDCancelled_ResetsTaskAndRestoresRunning covers the operator
 // path for "I realized something needs to change mid-run": the operator
 // cancels the PRD, wants to edit a task's spec (e.g. add a missing

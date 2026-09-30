@@ -7,7 +7,33 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
+
+// waitingInputStallThreshold is how many consecutive ticks (each 3s in the
+// verify wait loop, so ~9s) of session.StateWaitingInput a one-shot task
+// session must show before it's treated as genuinely stuck asking an
+// interactive question — not a momentary disclaimer-prompt flicker (see
+// claude_auto_accept_disclaimer) — and killed for retry. Found live on PRD
+// a2833a5e (v8.36.1): every autonomous task session is one_shot=true and
+// expected to reach DATAWATCH_COMPLETE without ever needing a human to
+// answer a prompt, so sustained StateWaitingInput here always means stuck.
+const waitingInputStallThreshold = 3
+
+// waitingInputTick advances the debounce counter the verify wait loop uses
+// to decide whether a one-shot session's StateWaitingInput has become a
+// genuine stall: consecutiveTicks resets to 0 on any other state (so a
+// flicker back to Running before the threshold doesn't count towards it),
+// and increments while StateWaitingInput persists. stalled reports whether
+// the threshold was just crossed on this tick.
+func waitingInputTick(consecutiveTicks int, state session.State) (newTicks int, stalled bool) {
+	if state != session.StateWaitingInput {
+		return 0, false
+	}
+	newTicks = consecutiveTicks + 1
+	return newTicks, newTicks >= waitingInputStallThreshold
+}
 
 // resolveVerifierBackendModel decides which backend+model the verifier's
 // /api/ask call should use. v8.36.0 — previously this always fell back to a

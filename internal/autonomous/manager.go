@@ -1301,6 +1301,36 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 					}
 					return nil, fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
 				}
+				// v8.36.1 — capture why the previous attempt didn't land
+				// before clearing it, so the retry's worker gets told what
+				// happened instead of the bare original spec (see
+				// PriorAttemptHint's doc comment on Task).
+				hintParts := make([]string, 0, 2)
+				if t.Error != "" {
+					hintParts = append(hintParts, "Previous attempt error: "+t.Error)
+				}
+				if t.Verification != nil && !t.Verification.OK {
+					vSummary := fmt.Sprintf("Previous verification failed (%s): %s", t.Verification.Severity, t.Verification.Summary)
+					if len(t.Verification.Issues) > 0 {
+						vSummary += " Specific issues: " + strings.Join(t.Verification.Issues, "; ")
+					}
+					hintParts = append(hintParts, vSummary)
+				}
+				if len(hintParts) > 0 {
+					// v8.36.2 — found live retrying this exact hint on PRD
+					// a2833a5e: the original wording ("verify/finish it
+					// rather than starting over") was ambiguous enough that
+					// the worker checked the files looked fine, wrote only a
+					// CHECKPOINT.md note, and produced no diff touching the
+					// actual required files — which the verifier (correctly
+					// scoped to just this run's diff) then rejected as no
+					// output at all. Now explicit: touching/recommitting
+					// the real deliverables themselves is what's required,
+					// not just a checkpoint note about them.
+					t.PriorAttemptHint = "This is a retry of a previous attempt on this task. " +
+						strings.Join(hintParts, " ") +
+						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing and re-committing the actual required deliverable files themselves — verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
+				}
 				t.Status = ""
 				t.Error = ""
 				t.SessionID = ""

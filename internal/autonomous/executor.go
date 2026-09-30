@@ -486,7 +486,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
-	hint := ""
+	// v8.36.1 — a fresh Run() (operator reset_task, boot-resume) starts
+	// executeOne with no in-loop retry history, but the task itself may
+	// carry context from a previous, separately-triggered attempt (see
+	// PriorAttemptHint's doc comment on Task). Seed the first attempt's
+	// hint from it and clear it — single-use, matching the in-loop hint's
+	// own lifecycle.
+	hint := t.PriorAttemptHint
+	if hint != "" {
+		t.PriorAttemptHint = ""
+		_ = m.store.SaveTask(t)
+	}
 	defer m.releaseCapacity(t.ID)
 	spawn = m.capacityRetrySpawn(t, spawn)
 	for attempt := 0; attempt <= retries; attempt++ {

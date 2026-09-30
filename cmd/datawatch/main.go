@@ -3980,6 +3980,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if req.RetryHint != "" {
 				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
 			}
+			// v8.36.1 — found live on PRD a2833a5e: a one-shot claude-code
+			// session noticed its task's target files already existed
+			// (committed by an earlier attempt whose *verification* had
+			// failed, not the work itself) and correctly stopped at Claude
+			// Code's own interactive disambiguation menu ("what would you
+			// like me to do?") to ask — reasonable behavior for an
+			// interactive user, fatal for a one-shot autonomous session
+			// with no human present to answer it. It hung indefinitely.
+			// Every one-shot task now states this explicitly up front, not
+			// just retries — any ambiguity (not only "output already
+			// exists") could otherwise trigger the same kind of pause.
+			spec = "You are running non-interactively as part of an automated pipeline. " +
+				"No human is available to answer questions or confirm choices — if you would " +
+				"otherwise pause to ask, make the most reasonable judgment call yourself and continue.\n\n" + spec
 			// v8.25.6 — memory checkpointing: append checkpoint protocol to
 			// every task spec so the worker saves progress periodically.
 			// Two mechanisms run independently:
@@ -4105,6 +4119,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				defer tick.Stop()
 				var stallErr error
 				waitTick := 0
+				waitingInputTicks := 0
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
@@ -4129,6 +4144,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+							break waitLoop
+						}
+						// v8.36.1 — every autonomous task session spawns with
+						// one_shot=true (it's expected to run to completion via
+						// the DATAWATCH_COMPLETE marker, never via a human
+						// answering a prompt), so StateWaitingInput here means
+						// the worker asked a clarifying question instead of
+						// proceeding — genuinely stuck, not merely slow. Found
+						// live: Claude Code saw a prior attempt's output already
+						// on disk and stopped to ask what to do next rather than
+						// completing the task. staleWorkerCheck below only fires
+						// on log-mtime staleness and was fully disabled on this
+						// daemon (stale_task_seconds and session.stale_timeout_seconds
+						// both unset), so this session would otherwise have polled
+						// forever with no safety net at all. Debounced 3 ticks
+						// (~9s) so a momentary state flicker (see
+						// isPromptOscillation elsewhere) or the disclaimer prompt
+						// claude_auto_accept_disclaimer normally dismisses on its
+						// own isn't mistaken for a genuine stall.
+						var stalled bool
+						waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
+						if stalled {
+							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",
+								task.SessionID, task.PRDID, task.ID)
+							_ = mgr.Kill(task.SessionID)
+							stallErr = fmt.Errorf("worker stopped and asked an interactive question instead of completing the one-shot task — this is a one-shot run, no one will answer; make the most reasonable judgment call yourself (e.g. if output already exists from a prior attempt, verify it's still correct and either finish or redo it) and continue to DATAWATCH_COMPLETE without asking: %w", autonomouspkg.ErrWorkerStalled)
 							break waitLoop
 						}
 						// Every ~30s scan scrollback for SSE stall patterns that

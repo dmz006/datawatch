@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 func gitInit(t *testing.T, dir string) {
@@ -191,6 +193,63 @@ func TestVerifierDiff_CommittedChangeAloneCounts(t *testing.T) {
 	}
 	if taskProducedNoOutput(committedDiff, workingDiff, nil, nil) {
 		t.Fatal("committed change alone must count as output")
+	}
+}
+
+// TestWaitingInputTick_ResetsOnAnyOtherState verifies a session that
+// flickers back to Running (or any non-WaitingInput state) before the
+// stall threshold doesn't accumulate towards it — the debounce exists
+// specifically so a momentary disclaimer-prompt flicker (or a state
+// transition still settling) isn't mistaken for a genuine stall.
+func TestWaitingInputTick_ResetsOnAnyOtherState(t *testing.T) {
+	ticks := 0
+	for _, state := range []session.State{session.StateWaitingInput, session.StateWaitingInput, session.StateRunning, session.StateWaitingInput} {
+		var stalled bool
+		ticks, stalled = waitingInputTick(ticks, state)
+		if stalled {
+			t.Fatalf("stalled=true too early at ticks=%d (state=%s) — the Running tick in between should have reset the counter", ticks, state)
+		}
+	}
+	if ticks != 1 {
+		t.Fatalf("ticks = %d, want 1 (only the single WaitingInput tick after the reset counts)", ticks)
+	}
+}
+
+// TestWaitingInputTick_StallsAtThreshold verifies sustained WaitingInput
+// crosses the threshold at exactly waitingInputStallThreshold consecutive
+// ticks, not before and not indefinitely after.
+func TestWaitingInputTick_StallsAtThreshold(t *testing.T) {
+	ticks := 0
+	var stalled bool
+	for i := 0; i < waitingInputStallThreshold-1; i++ {
+		ticks, stalled = waitingInputTick(ticks, session.StateWaitingInput)
+		if stalled {
+			t.Fatalf("stalled=true after only %d tick(s), want it to hold off until %d", i+1, waitingInputStallThreshold)
+		}
+	}
+	ticks, stalled = waitingInputTick(ticks, session.StateWaitingInput)
+	if !stalled {
+		t.Fatalf("stalled=false at exactly the threshold (%d consecutive ticks)", waitingInputStallThreshold)
+	}
+	if ticks != waitingInputStallThreshold {
+		t.Fatalf("ticks = %d, want %d", ticks, waitingInputStallThreshold)
+	}
+}
+
+// TestWaitingInputTick_TerminalAndRunningStatesNeverStall verifies states
+// that aren't StateWaitingInput never trigger a stall, regardless of prior
+// tick count — the wait loop already breaks out on terminal states before
+// this function is ever consulted, but the function itself must be safe
+// either way.
+func TestWaitingInputTick_TerminalAndRunningStatesNeverStall(t *testing.T) {
+	for _, state := range []session.State{session.StateRunning, session.StateComplete, session.StateFailed, session.StateKilled} {
+		ticks, stalled := waitingInputTick(waitingInputStallThreshold+5, state)
+		if stalled {
+			t.Fatalf("state=%s stalled=true, want false (not StateWaitingInput)", state)
+		}
+		if ticks != 0 {
+			t.Fatalf("state=%s ticks = %d, want reset to 0", state, ticks)
+		}
 	}
 }
 

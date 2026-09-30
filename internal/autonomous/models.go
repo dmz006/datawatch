@@ -440,6 +440,19 @@ type Task struct {
 	// Nil when quality gates are disabled for this PRD.
 	QualityGateResult *pipeline.QualityGateResult `json:"quality_gate_result,omitempty"`
 
+	// PriorAttemptHint (v8.36.1) — set by ResetTask from the outgoing
+	// Error/Verification of the attempt it's about to clear, so a fresh
+	// Run() after an operator-triggered retry seeds executeOne's RetryHint
+	// with why the last attempt failed, instead of redelivering the
+	// identical original spec with no context. Without this, a retry of a
+	// task whose prior attempt genuinely succeeded but only failed
+	// *verification* looks to the worker like brand-new, already-done work
+	// — capable models notice the discrepancy and stop to ask what to do,
+	// which hangs forever in a one-shot session with no human present.
+	// Cleared once consumed (single-use, like the in-loop retry hint it
+	// mirrors).
+	PriorAttemptHint string `json:"prior_attempt_hint,omitempty"`
+
 	// BL191 Q6 (v5.10.0) — guardrail verdicts at the task level.
 	// Populated when Config.PerTaskGuardrails is non-empty; one entry
 	// per guardrail named in that list. Block on any block outcome.
