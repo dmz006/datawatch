@@ -85,6 +85,20 @@ func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn,
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(id)
 		if got.Status == PRDCompleted || got.Status == PRDFailed {
+			// v8.36.14 — API.Run's executor goroutine writes the terminal
+			// PRD status deep inside Manager.Run, then RETURNS to the
+			// wrapping goroutine, which still has its own deferred
+			// cleanup (clearing runCancels) and an EmitPRDUpdate call
+			// left to run. This poll can observe the terminal status the
+			// instant it's persisted, well before that goroutine tail
+			// actually finishes — a real, reproduced flake: found live,
+			// TestExecutor_WorkerStallRespectsRetryBudget's own
+			// t.TempDir() cleanup intermittently failed with "directory
+			// not empty" in CI, consistent with the goroutine still
+			// touching the autonomous store directory at teardown. A
+			// short settle avoids racing t.TempDir()'s automatic
+			// RemoveAll against that tail.
+			time.Sleep(50 * time.Millisecond)
 			return got
 		}
 		time.Sleep(20 * time.Millisecond)

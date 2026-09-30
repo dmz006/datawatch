@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.14 — fix(test): shared runToTerminal helper raced its own executor goroutine's teardown, flaking CI
+
+### Fixed
+- **`TestExecutor_WorkerStallRespectsRetryBudget` (and potentially any other test using the shared `runToTerminal` helper) intermittently failed in CI with `TempDir RemoveAll cleanup: unlinkat .../autonomous: directory not empty`** — recurred 3+ times across today's releases, never locally. `API.Run`'s executor goroutine writes the terminal PRD status deep inside `Manager.Run`, then returns to the wrapping goroutine, which still has its own deferred cleanup (clearing `runCancels`) and an `EmitPRDUpdate` call left to run. `runToTerminal`'s poll loop could observe that terminal status the instant it was persisted, well before the goroutine's tail actually finished, letting the test return and `t.TempDir()`'s automatic cleanup race that still-running tail. Added a short settle period after observing the terminal state. Verified with 20 repeated runs of the specific flaking test plus 3 repeated full-package runs, all clean.
+
 ## v8.36.13 — fix(session): a subprocess session orphaned by a daemon restart permanently wedged its recurring schedule
 
 ### Fixed
