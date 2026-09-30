@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.13 — fix(session): a subprocess session orphaned by a daemon restart permanently wedged its recurring schedule
+
+### Fixed
+- **A recurring `spawn`-type schedule (e.g. `imap-hourly-rules-spawn`) could get permanently stuck skipping every fire** — found live: the schedule's overlap guard (`cmd/datawatch/main.go`) checks its last spawned session's `State` and skips the next fire while it's non-terminal; `ResumeMonitors` (run once, at daemon boot) unconditionally `continue`d past any subprocess-type session (`TmuxSession == ""`) to avoid an earlier false-failure bug, leaving a session whose owning goroutine died with the previous daemon generation stuck at `StateRunning` forever — even though its own `output.log` showed it had completed cleanly minutes after that restart. Reproduced live: `imap-hourly-rules-spawn` skipped every hourly fire for ~12 hours straight. `ResumeMonitors` now marks an orphaned subprocess session `StateFailed` specifically at boot time — the one context where "the owning goroutine is definitely gone" is known for certain rather than guessed at from a stale tmux-liveness check — and fires the same `onStateChange`/`onSessionEnd` callbacks `subprocessFinish` would have, so the scheduler's overlap guard sees a terminal state on its next fire. Manually unstuck the live orphaned session so the next hourly fire wasn't also skipped.
+
 ## v8.36.12 — fix(test): 5 tests leaked real tmux sessions on every run; cleaned up 197 accumulated orphans
 
 ### Fixed

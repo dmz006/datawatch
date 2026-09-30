@@ -4190,12 +4190,37 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			continue
 		}
 		// Subprocess/virtual sessions (schedule type=spawn, council, agent, etc.)
-		// have no TmuxSession — they were never tmux-backed, so a tmux liveness
-		// check against "" always reports false and force-fails them even when
-		// the underlying subprocess is still running (or already completed
-		// successfully via subprocessFinish). Same exemption as
-		// reconcile.go:ReconcileLiveSessions and probeClaudeAlive.
+		// have no TmuxSession — a tmux liveness check against "" always
+		// reports false and would force-fail them even while genuinely
+		// still running, which is why reconcile.go:ReconcileLiveSessions
+		// and probeClaudeAlive exempt them (those run inside a LIVE
+		// daemon, where the owning goroutine might still be executing).
+		// ResumeMonitors is different: it runs only at boot, so reaching
+		// this exact point means the daemon just restarted — the
+		// goroutine that would have called subprocessFinish on exit is
+		// unconditionally gone (a subprocess, unlike a tmux pane, has no
+		// independent existence a new daemon generation can re-attach
+		// to). Silently skipping left the record stuck at "running"
+		// forever, which in turn wedges any recurring schedule's overlap
+		// guard (cmd/datawatch/main.go's scheduler loop) permanently —
+		// found live: PRD imap-hourly-rules-spawn skipped every hourly
+		// fire for ~12h after a subprocess run outlived a same-morning
+		// restart, even though the run itself had completed cleanly
+		// minutes after the restart. Mark it failed here instead — the
+		// one context where "the goroutine is definitely gone" is known
+		// for certain — firing the same callbacks subprocessFinish would
+		// have, so listeners (e.g. the scheduler) see a terminal state.
 		if sess.TmuxSession == "" {
+			oldState := sess.State
+			sess.State = StateFailed
+			sess.UpdatedAt = time.Now()
+			_ = m.store.Save(sess)
+			if m.onStateChange != nil {
+				m.onStateChange(sess, oldState)
+			}
+			if m.onSessionEnd != nil {
+				m.onSessionEnd(sess)
+			}
 			continue
 		}
 		// Check if tmux session still exists (retry once to handle transient failures)
