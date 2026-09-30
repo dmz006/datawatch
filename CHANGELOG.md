@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.1 — fix(autonomous): one-shot sessions no longer hang on Claude Code's interactive prompts; agent-gemini CVE bump
+
+### Fixed
+- **A one-shot claude-code session could hang indefinitely on Claude Code's own interactive disambiguation menu** — found live on the first real end-to-end claude-code Automaton run: `reset_task` retried a task whose prior attempt had genuinely succeeded (files written, committed) but only failed *verification*; the retry redelivered the identical original spec with no indication it was a retry, so Claude Code — reasonably, for an interactive user — noticed the target files already existed and stopped to ask what to do. A one-shot session has no human to answer that; it hung forever with no existing safety net (`stale_task_seconds`/`session.stale_timeout_seconds` unset). Three complementary fixes: every one-shot task spec now states up front that no human is present and the worker should make its own judgment call rather than pause to ask; `reset_task` now folds the cleared error/verification (including the verifier's specific issues, not just its summary) into a new retry hint so a retry explains what happened instead of looking like brand-new work; and the verifier's wait loop now detects a one-shot session stuck at `waiting_input` for ~9s and kills+retries it as a safety net. Verified live, twice — including catching and fixing an ambiguous retry-hint wording that let a worker satisfy the letter of "verify or redo" with only a checkpoint note instead of the actual required files.
+- **CI: `containers/agent-gemini` blocked by fixed-but-outdated npm transitive deps** — `brace-expansion` (CVE-2026-102276/102278) and `undici` (CVE-2026-19534), both fixed upstream; bumped the pinned `gemini-cli` 0.39.1 → 0.62.0 to pull in the patched versions.
+
 ## v8.36.0 — feat(capacity): interactive sessions and the verifier admit through the same ledger as autonomous tasks; session-delete memory-strategy; capacity-card node visibility + PRD scoping
 
 ### Added
