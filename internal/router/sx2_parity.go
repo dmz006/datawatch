@@ -413,6 +413,69 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous reset-task", prettyJSON(out))
+	case "edit-story", "edit_story":
+		if len(args) < 4 {
+			r.reply("autonomous edit-story failed", "usage: autonomous edit-story <prd-id> <story-id> <new-title-or-desc…>")
+			return
+		}
+		rest := strings.TrimSpace(strings.Join(args[3:], " "))
+		body, _ := json.Marshal(map[string]string{"story_id": args[2], "new_title": rest, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_story", string(body))
+		if err != nil {
+			r.reply("autonomous edit-story failed", err.Error())
+			return
+		}
+		r.reply("autonomous edit-story", prettyJSON(out))
+	case "add-story", "add_story":
+		if len(args) < 3 {
+			r.reply("autonomous add-story failed", "usage: autonomous add-story <prd-id> <title…>")
+			return
+		}
+		title := strings.TrimSpace(strings.Join(args[2:], " "))
+		body, _ := json.Marshal(map[string]string{"title": title, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/add_story", string(body))
+		if err != nil {
+			r.reply("autonomous add-story failed", err.Error())
+			return
+		}
+		r.reply("autonomous add-story", prettyJSON(out))
+	case "remove-story", "remove_story":
+		if len(args) < 3 {
+			r.reply("autonomous remove-story failed", "usage: autonomous remove-story <prd-id> <story-id>")
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"story_id": args[2], "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/remove_story", string(body))
+		if err != nil {
+			r.reply("autonomous remove-story failed", err.Error())
+			return
+		}
+		r.reply("autonomous remove-story", prettyJSON(out))
+	case "add-task", "add_task":
+		if len(args) < 4 {
+			r.reply("autonomous add-task failed", "usage: autonomous add-task <prd-id> <story-id> <title…>")
+			return
+		}
+		title := strings.TrimSpace(strings.Join(args[3:], " "))
+		body, _ := json.Marshal(map[string]string{"story_id": args[2], "title": title, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/add_task", string(body))
+		if err != nil {
+			r.reply("autonomous add-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous add-task", prettyJSON(out))
+	case "remove-task", "remove_task":
+		if len(args) < 4 {
+			r.reply("autonomous remove-task failed", "usage: autonomous remove-task <prd-id> <story-id> <task-id>")
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"story_id": args[2], "task_id": args[3], "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/remove_task", string(body))
+		if err != nil {
+			r.reply("autonomous remove-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous remove-task", prettyJSON(out))
 	case "set-llm", "set_llm":
 		if len(args) < 3 {
 			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> <backend> [effort] [model]")

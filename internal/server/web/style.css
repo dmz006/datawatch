@@ -73,46 +73,41 @@ body {
 }
 
 /* ── Splash screen ── */
+/* Splash overlay — Canvas port of datawatch-app's MatrixSplashScreen
+   (Earthrise scene: stars/earth/moon/tablet/eye), drawn by splash-art.js
+   so the PWA's load splash visually matches Android (operator: "each
+   should look like in android"). Canvas fills the overlay behind the
+   title/subtitle/version text, which sits at the bottom like Compose's
+   Column(verticalArrangement = Bottom). */
 .splash-overlay {
   position: fixed;
   inset: 0;
   z-index: 999;
   background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: opacity 0.6s ease, visibility 0.6s ease;
 }
 .splash-overlay.fade-out {
   opacity: 0;
   visibility: hidden;
 }
-.splash-content {
-  text-align: center;
-}
-.splash-logo {
-  position: relative;
-  width: 96px;
-  height: 96px;
-  margin: 0 auto 16px;
-}
-.splash-icon {
-  width: 96px;
-  height: 96px;
-  animation: splash-pulse 2s ease-in-out infinite;
-}
-.splash-ring {
+.splash-canvas {
   position: absolute;
-  inset: -8px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  border-top-color: transparent;
-  animation: splash-spin 1.5s linear infinite;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.splash-content {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: max(56px, env(safe-area-inset-bottom, 0px) + 32px);
+  text-align: center;
 }
 .splash-title {
   font-size: 24px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--accent2);
   letter-spacing: 2px;
   text-transform: lowercase;
 }
@@ -122,32 +117,12 @@ body {
   margin-top: 4px;
   letter-spacing: 1px;
 }
-.splash-dots {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-  margin-top: 20px;
-}
-.splash-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: splash-bounce 1.4s ease-in-out infinite;
-}
-.splash-dots span:nth-child(2) { animation-delay: 0.2s; }
-.splash-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes splash-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.9; }
-  50% { transform: scale(1.05); opacity: 1; }
-}
-@keyframes splash-spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes splash-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-  40% { transform: translateY(-8px); opacity: 1; }
+.splash-version {
+  font-size: 11px;
+  color: var(--accent2);
+  opacity: 0.85;
+  margin-top: 8px;
+  letter-spacing: 0.5px;
 }
 
 /* ── App layout ── */
@@ -1569,6 +1544,34 @@ body {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* Structural edits (operator-requested: add/remove a story or task without
+   re-running decompose). Remove icon reuses the edit-icon shape but with
+   the same red treatment as cancel — a destructive action among
+   non-destructive ones. */
+.prd-story-remove-icon {
+  color: var(--error);
+}
+.prd-story-remove-icon:hover {
+  background: rgba(239,68,68,0.12);
+  border-color: var(--error);
+  color: var(--error);
+}
+.prd-story-add-task-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  margin-top: 6px;
+}
+.prd-story-add-task-btn:hover {
+  background: rgba(96,165,250,0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+  border-style: solid;
+}
 
 /* 5(a) — verdicts on a dedicated row below the title. */
 .prd-story-verdicts {
@@ -1869,6 +1872,50 @@ a.prd-file-chip-dl {
   transition: opacity 0.1s;
 }
 a.prd-file-chip-dl:hover { opacity: 1; }
+
+/* PRD file viewer — GFM tables + mermaid diagrams via marked.js/mermaid.js
+   (see _renderMarkdownFileInto in app.js). Default browser table rendering
+   has no borders or header shading, which reads poorly for the wide,
+   many-row tables autonomous research tasks tend to produce. */
+#fileViewerContent table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12px;
+}
+#fileViewerContent th,
+#fileViewerContent td {
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+#fileViewerContent th {
+  background: var(--bg2);
+  font-weight: 700;
+}
+#fileViewerContent tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+#fileViewerContent blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text2);
+}
+#fileViewerContent pre code {
+  display: block;
+  padding: 8px;
+  background: var(--bg2);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: var(--mono, monospace);
+}
+#fileViewerContent .file-viewer-mermaid-slot {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+#fileViewerContent .file-viewer-mermaid-slot svg { max-width: 100%; height: auto; }
 
 /* v8.23.0 — task session link, error, verification, retry button. */
 .prd-task-session-link {
@@ -2311,6 +2358,32 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .state-badge-running { animation: none; opacity: 1; }
+}
+
+/* Composer status banner — voice transcribing / image uploading. Matches
+   datawatch-app's SessionDetailScreen Surface(primaryContainer) purple
+   banner treatment (operator: "replicate that here"). */
+.composer-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(168,85,247,0.16); /* accent2 (#a855f7) tint, matches mobile primaryContainer */
+  border-top: 1px solid var(--accent2);
+  font-size: 12px;
+  color: var(--text);
+}
+.composer-status-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid var(--accent2);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-status-spinner { animation: none; opacity: 0.6; }
 }
 
 /* v5.27.7 (BL208 / datawatch#26) — 3-dot "generating" indicator that

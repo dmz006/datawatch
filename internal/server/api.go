@@ -176,7 +176,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.34.1"
+var Version = "8.35.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -537,6 +537,12 @@ type AutonomousAPI interface {
 	// EditTaskSpec; same gate: needs_review / revisions_asked).
 	EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error)
 
+	// Structural edits — add/remove a story or task without re-decomposing.
+	AddStory(prdID, title, description, actor string) (any, error)
+	RemoveStory(prdID, storyID, actor string) (any, error)
+	AddTask(prdID, storyID, title, spec, actor string) (any, error)
+	RemoveTask(prdID, storyID, taskID, actor string) (any, error)
+
 	// Phase 3 (v5.26.60) — per-story execution profile + approval.
 	SetStoryProfile(prdID, storyID, profile, actor string) (any, error)
 	ApproveStory(prdID, storyID, actor string) (any, error)
@@ -607,6 +613,10 @@ type AutonomousAPI interface {
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
+
+	// Per-PRD override for whether a story failure halts the PRD (default)
+	// or the executor continues into later, independent stories.
+	SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
@@ -5022,6 +5032,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"security_scan":             s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":    s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -5878,6 +5889,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case "autonomous.continue_on_story_failure":
+			// Daemon-wide default: false (halt) so a story failure stops
+			// the PRD for operator re-edit/rerun instead of continuing
+			// into later, independent stories. Per-PRD override via
+			// POST .../set_continue_on_story_failure takes precedence.
+			cfg.Autonomous.ContinueOnStoryFailure = toBool(v)
 		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
 		// surface. Pre-v5.17.0 these keys silently no-op'd through
 		// the PUT /api/config path because the case wasn't here.

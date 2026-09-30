@@ -60,7 +60,32 @@ type NVMLProbe struct {
 	interval time.Duration
 	mu       sync.RWMutex
 	latest   []GPU
+	lastErr  string
 	stopCh   chan struct{}
+}
+
+// lastNVMLInitErr records why NewNVMLProbe most recently returned nil, so a
+// caller that falls through to another probe can still report a specific
+// reason instead of the two failure modes ("no NVIDIA GPU here" and "GPU
+// present but the driver is broken") looking identical. Guarded by
+// nvmlInitErrMu; set once per NewNVMLProbe call, read via NVMLInitError.
+var (
+	nvmlInitErrMu  sync.RWMutex
+	lastNVMLInitErr string
+)
+
+func setNVMLInitError(msg string) {
+	nvmlInitErrMu.Lock()
+	lastNVMLInitErr = msg
+	nvmlInitErrMu.Unlock()
+}
+
+// NVMLInitError returns why the most recent NewNVMLProbe call returned nil,
+// or "" if the last call succeeded (or none has run yet).
+func NVMLInitError() string {
+	nvmlInitErrMu.RLock()
+	defer nvmlInitErrMu.RUnlock()
+	return lastNVMLInitErr
 }
 
 // nvmlLibCandidates lists library paths tried in order. The bare name relies
@@ -88,6 +113,7 @@ func NewNVMLProbe(interval time.Duration) *NVMLProbe {
 		}
 	}
 	if lib == 0 {
+		setNVMLInitError("libnvidia-ml.so not found (no NVIDIA driver, or NVML not installed)")
 		return nil
 	}
 
@@ -114,7 +140,9 @@ func NewNVMLProbe(interval time.Duration) *NVMLProbe {
 	for _, s := range syms {
 		addr, err := purego.Dlsym(lib, s.name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[nvml] symbol %s not found: %v\n", s.name, err)
+			msg := fmt.Sprintf("NVML symbol %s not found: %v (mismatched or incomplete NVML install)", s.name, err)
+			fmt.Fprintf(os.Stderr, "[nvml] %s\n", msg)
+			setNVMLInitError(msg)
 			purego.Dlclose(lib) //nolint:errcheck
 			return nil
 		}
@@ -122,10 +150,13 @@ func NewNVMLProbe(interval time.Duration) *NVMLProbe {
 	}
 
 	if ret := p.fns.init(); ret != nvmlSuccess {
-		fmt.Fprintf(os.Stderr, "[nvml] nvmlInit_v2 returned %d\n", ret)
+		msg := fmt.Sprintf("nvmlInit_v2 failed (code %d) — likely a driver/library version mismatch; a reboot after a driver update usually fixes this", ret)
+		fmt.Fprintf(os.Stderr, "[nvml] %s\n", msg)
+		setNVMLInitError(msg)
 		purego.Dlclose(lib) //nolint:errcheck
 		return nil
 	}
+	setNVMLInitError("")
 	return p
 }
 
@@ -175,9 +206,32 @@ func (p *NVMLProbe) Latest() []GPU {
 	return out
 }
 
+// LastError returns why the most recent poll produced no devices, or "" if
+// the last poll succeeded (or none has run yet). Nil-safe. Init failures are
+// reported by NVMLInitError instead, since a failed init never yields a
+// live *NVMLProbe to call this on.
+func (p *NVMLProbe) LastError() string {
+	if p == nil {
+		return ""
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.lastErr
+}
+
 func (p *NVMLProbe) poll() {
 	var count uint32
-	if p.fns.count(&count) != nvmlSuccess || count == 0 {
+	if ret := p.fns.count(&count); ret != nvmlSuccess {
+		p.mu.Lock()
+		p.lastErr = fmt.Sprintf("nvmlDeviceGetCount_v2 failed (code %d)", ret)
+		p.mu.Unlock()
+		return
+	}
+	if count == 0 {
+		p.mu.Lock()
+		p.lastErr = ""
+		p.latest = nil
+		p.mu.Unlock()
 		return
 	}
 
@@ -232,5 +286,6 @@ func (p *NVMLProbe) poll() {
 
 	p.mu.Lock()
 	p.latest = gpus
+	p.lastErr = ""
 	p.mu.Unlock()
 }

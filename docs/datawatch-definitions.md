@@ -548,11 +548,14 @@ The "+" FAB on the Automata view launches a wizard.
 4-tab layout reached by clicking any Automaton row.
 
 - **Overview** — PRD spec + current status + persistent toolbar (Edit Spec, Settings, Request Revision, Clone to Template, Delete).
-- **Stories** — per-story state + Edit / Profile / Files / Approve / Reject. Each task under a story exposes a triangle/expand button; click once to expand inline — the expanded state persists until clicked again.
+- **Stories** — per-story state + Edit / Profile / Files / Approve / Reject / Add story / Remove story. Each task under a story exposes a triangle/expand button; click once to expand inline — the expanded state persists until clicked again, and each task has its own Edit / Add task / Remove task actions. Adding or removing a story or task is a structural edit that skips the LLM entirely — use it to correct or extend a decompose result without re-running planning. Only available pre-approval (`needs_review` / `revisions_asked`); once a PRD is approved the structure locks.
+- **Capacity** — shown on a running Automaton's active-session card: per-pool used/limit bars (host sessions, compute node, LLM in-flight) plus a wait queue when a task is waiting for a free slot. "Host sessions" is a machine-wide cap shared with interactive sessions — not specific to this Automaton.
 - **Decisions** — every state-changing event for this Automaton; click any row to expand the raw `details` payload. Filter by source (operator / autonomous / scan / etc.).
 - **Scan** — Run Scan kicks off a verifier sweep against the spec; shows pass/fail across SAST / secrets / deps / LLM grader. History persists.
 
 The header strip carries the **initial spec** (expandable — first 280 characters shown; click "show full" to reveal the complete spec inline, "collapse" to restore); **Status badge**; **Status graphs** (visible while running or decomposing — shows ✓/✗ decompose indicator, total story + task counts, per-story progress bars with X/Y tasks and %, and async CPU%/RSS from active compute envelopes); **Settings** (`openPRDSettingsModal` — type, execution backend, planning backend / decomposition profile, effort, model, skills, guided mode); **Cancel** (always visible for non-cancelled automata, including while running); **Request Revision**; **Clone to Template**; **Delete**; and **⋯ Edit** dropdown (Edit Spec, View Sessions, and other state-appropriate actions).
+
+**Story-failure behavior:** by default, a story failing halts the whole Automaton (`status: blocked`) instead of continuing into later, independent stories — so a broken first story can't let the run barrel ahead unattended. Fix or retry the failed task (Settings → task Retry, or the CLI/MCP `reset_task`), which also un-blocks the Automaton automatically. To restore the old "keep going regardless" behavior, set `continue_on_story_failure` — a global default in Settings → General, or per-Automaton in Settings.
 
 **See also:**
 [howto/autonomous-planning](howto/autonomous-planning.md) ·

@@ -64,6 +64,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 	)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -134,6 +135,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
+	}
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["continue_on_story_failure"]; ok {
+			body["continue_on_story_failure"] = req.GetBool("continue_on_story_failure", false)
+		}
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
 	if err != nil {
@@ -329,6 +335,120 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 		"actor":    "operator",
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDEditStory() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_edit_story",
+		mcpsdk.WithDescription("Rewrite a story's title/description before approving."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to rewrite")),
+		mcpsdk.WithString("new_title", mcpsdk.Description("New title (leave empty to keep unchanged)")),
+		mcpsdk.WithString("new_description", mcpsdk.Description("New description (leave empty to keep unchanged)")),
+	)
+}
+func (s *Server) handleAutonomousPRDEditStory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id":        req.GetString("story_id", ""),
+		"new_title":       req.GetString("new_title", ""),
+		"new_description": req.GetString("new_description", ""),
+		"actor":           "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_story", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// ----- structural edits: add/remove a story or task without re-decomposing --
+
+func (s *Server) toolAutonomousPRDAddStory() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_add_story",
+		mcpsdk.WithDescription("Add a new, empty story to a PRD without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Story title")),
+		mcpsdk.WithString("description", mcpsdk.Description("Story description")),
+	)
+}
+func (s *Server) handleAutonomousPRDAddStory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"title":       req.GetString("title", ""),
+		"description": req.GetString("description", ""),
+		"actor":       "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_story", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDRemoveStory() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_remove_story",
+		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to remove")),
+	)
+}
+func (s *Server) handleAutonomousPRDRemoveStory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id": req.GetString("story_id", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/remove_story", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_add_task",
+		mcpsdk.WithDescription("Add a new task to an existing story without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to add the task to")),
+		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
+		mcpsdk.WithString("spec", mcpsdk.Description("Task spec — concrete instructions for the worker session")),
+	)
+}
+func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id": req.GetString("story_id", ""),
+		"title":    req.GetString("title", ""),
+		"spec":     req.GetString("spec", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_task", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDRemoveTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_remove_task",
+		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID the task belongs to")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to remove")),
+	)
+}
+func (s *Server) handleAutonomousPRDRemoveTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id": req.GetString("story_id", ""),
+		"task_id":  req.GetString("task_id", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/remove_task", body)
 	if err != nil {
 		return nil, err
 	}

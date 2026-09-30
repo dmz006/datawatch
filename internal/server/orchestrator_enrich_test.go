@@ -47,6 +47,13 @@ func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, 
 func (f *fakeOrchAutonomous) ResetTask(string, string, string, bool) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) CancelTask(string, string, string, string) (any, error)  { return nil, nil }
+func (f *fakeOrchAutonomous) AddStory(string, string, string, string) (any, error)      { return nil, nil }
+func (f *fakeOrchAutonomous) RemoveStory(string, string, string) (any, error)           { return nil, nil }
+func (f *fakeOrchAutonomous) AddTask(string, string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) RemoveTask(string, string, string, string) (any, error) { return nil, nil }
+
 func (f *fakeOrchAutonomous) EditStory(string, string, string, string, string) (any, error) {
 	return nil, nil
 }
@@ -124,6 +131,10 @@ func (f *fakeOrchAutonomous) InvokeGuardrailByName(string, string) (any, error) 
 
 // BL367 — per-PRD quality gate config stub.
 func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool) (any, error) {
+	return nil, nil
+}
+
+func (f *fakeOrchAutonomous) SetPRDContinueOnStoryFailure(string, bool) (any, error) {
 	return nil, nil
 }
 

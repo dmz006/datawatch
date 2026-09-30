@@ -282,6 +282,144 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	return t, ok
 }
 
+// reindexPRDLocked rebuilds the s.stories/s.tasks lookup maps for every
+// story/task currently in prd.Story. Callers must hold s.mu. Required after
+// any append/remove on prd.Story or a nested Tasks slice: Go's append can
+// reallocate the backing array, which would silently orphan any pointer
+// previously stored in s.stories/s.tasks (SetStories only ever populates
+// these once from a freshly-decoded slice, so this reallocation hazard was
+// never hit before AddStory/AddTask/RemoveStory/RemoveTask started
+// mutating an existing PRD's slices incrementally).
+func (s *Store) reindexPRDLocked(prd *PRD) {
+	for i := range prd.Story {
+		s.stories[prd.Story[i].ID] = &prd.Story[i]
+		for j := range prd.Story[i].Tasks {
+			s.tasks[prd.Story[i].Tasks[j].ID] = &prd.Story[i].Tasks[j]
+		}
+	}
+}
+
+// AddStory appends a new, empty (no tasks yet) story to a PRD. Operator-
+// requested: structural edits (add/remove a story or task) without having
+// to re-run decompose and hand the whole structure back to the LLM.
+func (s *Store) AddStory(prdID, title, description string) (*Story, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prd, ok := s.prds[prdID]
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	story := Story{
+		ID:          newID(),
+		PRDID:       prdID,
+		Title:       title,
+		Description: description,
+		Status:      StoryPending,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	prd.Story = append(prd.Story, story)
+	prd.UpdatedAt = time.Now()
+	s.reindexPRDLocked(prd)
+	if err := s.persist(); err != nil {
+		return nil, err
+	}
+	return &prd.Story[len(prd.Story)-1], nil
+}
+
+// RemoveStory deletes a story and all of its tasks from a PRD.
+func (s *Store) RemoveStory(prdID, storyID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prd, ok := s.prds[prdID]
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	idx := -1
+	for i := range prd.Story {
+		if prd.Story[i].ID == storyID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	for _, t := range prd.Story[idx].Tasks {
+		delete(s.tasks, t.ID)
+	}
+	delete(s.stories, storyID)
+	prd.Story = append(prd.Story[:idx], prd.Story[idx+1:]...)
+	prd.UpdatedAt = time.Now()
+	s.reindexPRDLocked(prd)
+	return s.persist()
+}
+
+// AddTask appends a new task to an existing story.
+func (s *Store) AddTask(prdID, storyID, title, spec string) (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prd, ok := s.prds[prdID]
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	for i := range prd.Story {
+		if prd.Story[i].ID != storyID {
+			continue
+		}
+		task := Task{
+			ID:        newID(),
+			StoryID:   storyID,
+			PRDID:     prdID,
+			Title:     title,
+			Spec:      spec,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		prd.Story[i].Tasks = append(prd.Story[i].Tasks, task)
+		prd.Story[i].UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		s.reindexPRDLocked(prd)
+		if err := s.persist(); err != nil {
+			return nil, err
+		}
+		return &prd.Story[i].Tasks[len(prd.Story[i].Tasks)-1], nil
+	}
+	return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+}
+
+// RemoveTask deletes one task from a story.
+func (s *Store) RemoveTask(prdID, storyID, taskID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prd, ok := s.prds[prdID]
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	for i := range prd.Story {
+		if prd.Story[i].ID != storyID {
+			continue
+		}
+		idx := -1
+		for j := range prd.Story[i].Tasks {
+			if prd.Story[i].Tasks[j].ID == taskID {
+				idx = j
+				break
+			}
+		}
+		if idx == -1 {
+			return fmt.Errorf("task %q not found in story %q", taskID, storyID)
+		}
+		delete(s.tasks, taskID)
+		prd.Story[i].Tasks = append(prd.Story[i].Tasks[:idx], prd.Story[i].Tasks[idx+1:]...)
+		prd.Story[i].UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		s.reindexPRDLocked(prd)
+		return s.persist()
+	}
+	return fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+}
+
 // maxLearnings (BL292, v5.6.0) — cap on the in-memory + JSONL learnings
 // store. BL57 KG learnings get appended on every PRD task completion;
 // over a long-lived daemon the slice + the rewrite-everything persist

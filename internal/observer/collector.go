@@ -57,6 +57,11 @@ type Collector struct {
 	// gpuFn is an optional provider for snap.GPU. Wired in Shape B/C
 	// via SetGPUFn (nvidia-smi or tegrastats probe). Nil = no GPU data.
 	gpuFn func() []GPU
+	// gpuErrFn reports why the wired GPU probe produced no data on its most
+	// recent poll ("" = no error / no probe wired). Lets a broken driver
+	// (probe selected, but every poll fails) be told apart from "no GPU
+	// hardware" (no probe was ever selected) everywhere snap.GPU is empty.
+	gpuErrFn func() string
 }
 
 // NewCollector returns a Collector with defaults filled in.
@@ -88,6 +93,10 @@ func (c *Collector) SetClusterNodesFn(fn ClusterNodesFn) { c.clusterNodes = fn }
 // SetGPUFn wires an external GPU probe (e.g. SMIProbe.Latest or
 // TegraStatsProbe.Latest) into snap.GPU. nil clears.
 func (c *Collector) SetGPUFn(fn func() []GPU) { c.gpuFn = fn }
+
+// SetGPUErrFn wires the same probe's LastError (e.g. SMIProbe.LastError or
+// NVMLProbe.LastError) into snap.GPUError. nil clears.
+func (c *Collector) SetGPUErrFn(fn func() string) { c.gpuErrFn = fn }
 
 // Start kicks a background goroutine that collects on every tick
 // until Stop is called. Also runs one synchronous collection so
@@ -300,6 +309,9 @@ func (c *Collector) collect() *StatsResponse {
 
 	if c.gpuFn != nil {
 		snap.GPU = c.gpuFn()
+	}
+	if c.gpuErrFn != nil {
+		snap.GPUError = c.gpuErrFn()
 	}
 
 	// v1 aliases so old clients still parse.

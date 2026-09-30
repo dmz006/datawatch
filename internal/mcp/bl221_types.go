@@ -160,6 +160,27 @@ func (s *Server) handleAutonomousPRDSetQualityGates(_ context.Context, req mcpsd
 	return textOK(string(out)), nil
 }
 
+// ----- autonomous_prd_set_continue_on_story_failure --------------------------
+
+func (s *Server) toolAutonomousPRDSetContinueOnStoryFailure() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_continue_on_story_failure",
+		mcpsdk.WithDescription("Set per-PRD override for whether a story failure halts the PRD. Default (false) halts the PRD as soon as a story fails, so the operator can re-edit/rerun before more work happens; true restores the old behavior of continuing into later, independent stories."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Required(), mcpsdk.Description("true = keep running later stories after a failure; false = halt the PRD (recommended default)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetContinueOnStoryFailure(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]any{
+		"continue_on_story_failure": req.GetBool("continue_on_story_failure", false),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_continue_on_story_failure", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- autonomous_prd_set_memory_seed (BL386 Phase 1) -----------------------
 
 func (s *Server) toolAutonomousPRDSetMemorySeed() mcpsdk.Tool {

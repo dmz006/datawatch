@@ -259,6 +259,9 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
 - **`autonomous_prd_edit_task`** (v5.9.0+) — edit task `spec` / `backend` / `effort` / `model` while a PRD is in `needs_review` or `revisions_asked`.
+- **`autonomous_prd_edit_story`** — rewrite a story's `title`/`description` while a PRD is in `needs_review` or `revisions_asked`.
+- **`autonomous_prd_add_story`** / **`autonomous_prd_remove_story`** — add a new, empty story, or remove a story (and its tasks), without re-running decompose. Only allowed pre-approval.
+- **`autonomous_prd_add_task`** / **`autonomous_prd_remove_task`** — add a new task to an existing story, or remove one, without re-running decompose. Only allowed pre-approval. `remove_task` is distinct from `autonomous_prd_cancel_task`, which stops a running/queued task without deleting it from the PRD.
 - **`autonomous_prd_set_llm`** (v5.4.0; v8.20.0 extended; v8.33.9 priority fix) — operator-pinned LLM override at the PRD level. Parameters: `backend` (task-execution backend — opencode, claude-code, goose, etc.), `effort`, `model`, and `decomposition_profile` (planning/decompose backend — any configured LLM; opencode/claude-code spawn a full session with codebase tool access, ollama/openwebui run headless; empty = use global `autonomous.planning_backend`). Per-PRD `decomposition_profile` takes priority over the global setting.
 - **`autonomous_prd_set_task_llm`** (v5.4.0) — operator-pinned LLM override at the task level (overrides the PRD-level execution backend for that specific task).
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.

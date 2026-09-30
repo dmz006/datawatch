@@ -17,6 +17,11 @@ type NVMLProbe struct{}
 // NewNVMLProbe always returns nil on non-Linux.
 func NewNVMLProbe(_ time.Duration) *NVMLProbe { return nil }
 
+// NVMLInitError mirrors the linux build's diagnostic hook; NVML is
+// Linux-only, so this platform never has a failure reason to report.
+func NVMLInitError() string { return "" }
+
 func (p *NVMLProbe) Start(_ context.Context) {}
 func (p *NVMLProbe) Stop()                   {}
 func (p *NVMLProbe) Latest() []GPU           { return nil }
+func (p *NVMLProbe) LastError() string       { return "" }

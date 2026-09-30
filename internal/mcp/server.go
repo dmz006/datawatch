@@ -449,6 +449,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDReject(), tracked(s.handleAutonomousPRDReject))
 	mcpSrv.AddTool(s.toolAutonomousPRDRequestRevision(), tracked(s.handleAutonomousPRDRequestRevision))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditTask(), tracked(s.handleAutonomousPRDEditTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDEditStory(), tracked(s.handleAutonomousPRDEditStory))
+	mcpSrv.AddTool(s.toolAutonomousPRDAddStory(), tracked(s.handleAutonomousPRDAddStory))
+	mcpSrv.AddTool(s.toolAutonomousPRDRemoveStory(), tracked(s.handleAutonomousPRDRemoveStory))
+	mcpSrv.AddTool(s.toolAutonomousPRDAddTask(), tracked(s.handleAutonomousPRDAddTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDRemoveTask(), tracked(s.handleAutonomousPRDRemoveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDResetTask(), tracked(s.handleAutonomousPRDResetTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelStory(), tracked(s.handleAutonomousPRDCancelStory))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelTask(), tracked(s.handleAutonomousPRDCancelTask))
@@ -474,6 +479,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCapacityStatus(), tracked(s.handleCapacityStatus))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
+	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemorySeed(), tracked(s.handleAutonomousPRDSetMemorySeed))     // BL386 P1
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemoryHarvest(), tracked(s.handleAutonomousPRDSetMemoryHarvest)) // BL386 P2
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.

@@ -81,6 +81,7 @@ self.addEventListener('fetch', event => {
     url.pathname === '/' ||
     url.pathname === '/index.html' ||
     url.pathname === '/app.js' ||
+    url.pathname === '/splash-art.js' ||
     url.pathname === '/style.css' ||
     url.pathname === '/manifest.json' ||
     url.pathname === '/diagrams.html' ||

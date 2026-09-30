@@ -205,6 +205,13 @@ type PRD struct {
 	// the global default (effectively 1 = sequential).
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 
+	// ContinueOnStoryFailure overrides the daemon-wide
+	// autonomous.continue_on_story_failure default for this PRD. nil
+	// inherits the global default (itself false unless the operator
+	// opts in), which HALTS the PRD (-> PRDBlocked) as soon as a story
+	// fails rather than continuing into later, independent stories.
+	ContinueOnStoryFailure *bool `json:"continue_on_story_failure,omitempty"`
+
 	// Priority orders this PRD's tasks in the capacity wait queue (higher
 	// first; default 0).
 	Priority int `json:"priority,omitempty"`

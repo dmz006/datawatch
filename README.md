@@ -89,6 +89,8 @@ datawatch skills sync community
 
 ## Current release
 
+**[Unreleased](CHANGELOG.md)** — Structural Automaton editing: add/remove a story or task within a story without re-running decompose, across PWA/REST/MCP/CLI/comm channel. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams. Animated splash screens (load screen, Settings → About, session-connect overlay) matching datawatch-app. Fixed: decompose silently using the daemon's global default model instead of the Automaton's configured one; a blocked Automaton having no path back except destructive Reset-to-Draft; a widespread HTML-attribute-escaping bug that made several buttons (voice-dictation mic, guardrail approve, LLM delete, dashboard links, and more) silently do nothing when clicked.
+
 **[v8.33.1](CHANGELOG.md) (2026-09-15)** — Fix: autonomous SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config for large local models.
 
 **[v8.28.7](CHANGELOG.md) (2026-09-14)** — Fix: memory tools proxy to HTTP loopback in subprocess MCP mode; searxng MCP timeout bumped + multi-engine fallback.

@@ -24,6 +24,11 @@ type StatsResponse struct {
 	Mem         Mem         `json:"mem"`
 	Disk        []Disk      `json:"disk,omitempty"`
 	GPU         []GPU       `json:"gpu,omitempty"`
+	// GPUError explains why GPU is empty when a GPU probe was selected but its
+	// most recent poll failed (e.g. a driver/library version mismatch) — as
+	// opposed to GPU being empty because no GPU hardware/driver was found at
+	// all, which leaves this "". Set by whichever probe SetGPUErrFn wires.
+	GPUError    string      `json:"gpu_error,omitempty"`
 	Net         Net         `json:"net"`
 	Sessions    Sessions    `json:"sessions"`
 	Backends    []Backend   `json:"backends,omitempty"`

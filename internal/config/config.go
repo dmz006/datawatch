@@ -1542,6 +1542,14 @@ type AutonomousConfig struct {
 	// per story.
 	PerStoryApproval bool `yaml:"per_story_approval,omitempty" json:"per_story_approval,omitempty"`
 
+	// ContinueOnStoryFailure: default false (halt). The moment a story
+	// rolls up to "failed", the PRD stops (status -> blocked) instead of
+	// the executor continuing into later, independent stories, so the
+	// operator can re-edit/rerun the failed story first. Set true to
+	// restore the old continue-regardless behavior. Per-PRD
+	// continue_on_story_failure field overrides this default.
+	ContinueOnStoryFailure bool `yaml:"continue_on_story_failure,omitempty" json:"continue_on_story_failure,omitempty"`
+
 	// BL367 — default quality gate config applied to every PRD whose
 	// quality_gates field is nil. Disabled (Enabled: false) by default
 	// to preserve v8.15.x behavior. Per-PRD quality_gates field overrides.

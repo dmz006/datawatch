@@ -1,6 +1,9 @@
 package observer
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -173,5 +176,78 @@ func TestNewTegraStatsProbe_NotInPATH(t *testing.T) {
 	// On a Jetson the test is a no-op (probe is non-nil but that's fine).
 	if probe != nil {
 		t.Skip("tegrastats found in PATH — skipping nil-return assertion (Jetson host)")
+	}
+}
+
+// fakeNvidiaSMI writes a "nvidia-smi" script into a fresh temp dir that
+// prints stderrMsg to stderr and exits non-zero, then points PATH at only
+// that directory so exec.LookPath finds nothing else on the real host.
+func fakeNvidiaSMI(t *testing.T, stderrMsg string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho '" + stderrMsg + "' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "nvidia-smi"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestSMIProbe_Fails_SurfacesRealReasonAndClearsStaleData(t *testing.T) {
+	fakeNvidiaSMI(t, "Failed to initialize NVML: Driver/library version mismatch")
+	p := NewSMIProbe(0)
+	if p == nil {
+		t.Fatal("NewSMIProbe must succeed when nvidia-smi is in PATH, even if it later fails")
+	}
+	p.poll(context.Background())
+	if p.LastError() != "Failed to initialize NVML: Driver/library version mismatch" {
+		t.Fatalf("LastError should be nvidia-smi's own stderr text, got %q", p.LastError())
+	}
+	if len(p.Latest()) != 0 {
+		t.Fatalf("a failed poll must not report stale GPU data, got %v", p.Latest())
+	}
+}
+
+func TestSMIProbe_SucceedsAfterFailure_ClearsLastError(t *testing.T) {
+	dir := t.TempDir()
+	failScript := filepath.Join(dir, "nvidia-smi")
+	os.WriteFile(failScript, []byte("#!/bin/sh\necho bad >&2\nexit 1\n"), 0o755) //nolint:errcheck
+	t.Setenv("PATH", dir)
+	p := NewSMIProbe(0)
+	p.poll(context.Background())
+	if p.LastError() == "" {
+		t.Fatal("setup: expected an initial failure")
+	}
+
+	os.WriteFile(failScript, []byte("#!/bin/sh\necho '0, Test GPU, 10, 1024, 512, 40'\n"), 0o755) //nolint:errcheck
+	p.poll(context.Background())
+	if p.LastError() != "" {
+		t.Fatalf("a subsequent successful poll must clear LastError, got %q", p.LastError())
+	}
+	if len(p.Latest()) != 1 {
+		t.Fatalf("expected 1 GPU after recovery, got %v", p.Latest())
+	}
+}
+
+func TestSMIProbe_LastError_NilSafe(t *testing.T) {
+	var p *SMIProbe
+	if p.LastError() != "" {
+		t.Fatal("nil *SMIProbe.LastError() must return \"\"")
+	}
+}
+
+func TestCollector_SetGPUErrFn_PopulatesSnapGPUError(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	c.SetGPUErrFn(func() string { return "driver broken" })
+	snap := c.collect()
+	if snap.GPUError != "driver broken" {
+		t.Fatalf("GPUError not populated from gpuErrFn: got %q", snap.GPUError)
+	}
+}
+
+func TestCollector_SetGPUErrFn_NilLeavesGPUErrorEmpty(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	snap := c.collect()
+	if snap.GPUError != "" {
+		t.Fatalf("GPUError should be empty with no gpuErrFn wired, got %q", snap.GPUError)
 	}
 }

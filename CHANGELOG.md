@@ -3,6 +3,31 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## v8.35.0 — feat(autonomous): structural editing works on a cancelled Automaton; halt-on-story-failure default
+
+### Added
+- **Structural Automaton editing** — add or remove a story, or add or remove a task within a story, without re-running decompose and handing the whole structure back to the LLM. Available via PWA, REST (`add_story`/`remove_story`/`add_task`/`remove_task`), MCP, CLI (`prd-add-story`, `prd-remove-story`, `prd-add-task`, `prd-remove-task`), and comm channel. Only allowed pre-approval (`needs_review`/`revisions_asked`), matching the existing edit-story/edit-task gate. Filled a matching gap for `edit_story` on MCP/CLI/comm-channel, which previously only had a REST endpoint.
+- **Cancelled Automaton is now editable in place** — `edit_story`, `edit_task_spec`, `add_story`/`remove_story`, `add_task`/`remove_task`, `set_story_profile`, `set_story_files`/`set_task_files`, `set_story_llm`/`set_task_llm`, and `reset_task` now also accept a `cancelled` Automaton, not just `needs_review`/`revisions_asked`. Lets an operator cancel a run to fix a task's spec (e.g. add a missing reference), edit it, then retry via `reset_task` without the destructive `reset_to_draft` (which discards all story/task state and re-decomposes). `reset_task` restores the Automaton to `running` (matching the existing `failed`/`blocked` behavior); the operator calls `run` again afterward. PWA's Stories-tab edit affordances widened to match.
+- **Halt-on-story-failure default** — a story failing now halts the Automaton (`status: blocked`) by default instead of the executor continuing into later, independent stories. Configurable globally (`autonomous.continue_on_story_failure`) or per-Automaton.
+- **PRD file viewer renders tables and diagrams** — the inline file viewer (opened from a task's file chips) now renders GFM tables and Mermaid diagrams properly instead of showing raw text/code blocks.
+- **Animated splash screens matching datawatch-app** — the PWA's load splash, Settings → About, and the session-connect loading overlay now use a Canvas port of the mobile app's Earthrise/eye artwork instead of a static icon.
+- **Purple status banner for voice/image upload** — matches datawatch-app's session-detail composer treatment.
+
+### Fixed
+- **Decompose silently used the daemon's global default model instead of the Automaton's configured one** — the async decompose path (`decomposeStreamingCore`, used by the PWA and REST) was a drifted duplicate of the legacy sync path and was missing the per-PRD `decomposition_model` priority tier entirely.
+- **Stale project CLAUDE.md guardrails header** — a project directory's `CLAUDE.md` "Session Guardrails" header was stamped once by whichever session first created the file and never refreshed for later sessions sharing the same project directory, so a task-execution session could inherit an unrelated, much earlier session's stale task description.
+- **A blocked Automaton had no path back except the destructive Reset-to-Draft** — `reset_task` and the PWA retry button both refused to act while an Automaton was `blocked` (from a guardrail block or the new story-failure halt).
+- **PRD Settings dialog could show almost no real backend options** — the backend/planning-backend dropdowns depended on a list only populated as a side effect of having visited the Automata list view first in the same session; a direct deep-link or page reload could skip that.
+- **New-Automaton wizard's planning backend didn't default to match execution backend** — silently falling back to the daemon's global planning default when left untouched.
+- **Story-level "Files:" list was not clickable** — rendered as inert text instead of using the same working file-viewer chip as task-level files.
+- **Voice-dictation mic buttons did nothing when clicked** — and a wider sweep of the same HTML-attribute-escaping bug across 29 other buttons (guardrail approve, LLM delete/reassign, dashboard node clicks, session-nav links, etc.).
+- **Capacity card mislabeled machine-wide session capacity as if it were the Automaton's own LLM capacity.**
+- GPU probe failures (driver/library mismatch) now surface the real reason instead of silently showing no GPU data.
+
+---
+
 ## v8.33.8 — fix(autonomous): executor goroutines re-launched after daemon restart; reset_task re-starts stuck Automata
 
 ### Fixed

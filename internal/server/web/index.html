@@ -59,16 +59,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
     integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU"
     crossorigin="anonymous"></script>
-  <!-- Splash screen — hidden until auth check resolves; fades out when WebSocket connects -->
+  <!-- Splash screen — hidden until auth check resolves; fades out when WebSocket connects.
+       Canvas artwork (Earthrise scene matching datawatch-app) driven by splash-art.js. -->
   <div id="splash" class="splash-overlay" style="visibility:hidden">
+    <canvas id="splashCanvas" class="splash-canvas"></canvas>
     <div class="splash-content">
-      <div class="splash-logo">
-        <img src="/favicon.svg" alt="Datawatch" class="splash-icon" />
-        <div class="splash-ring"></div>
-      </div>
       <div class="splash-title">datawatch</div>
       <div class="splash-subtitle">AI Orchestration</div>
-      <div class="splash-dots"><span></span><span></span><span></span></div>
+      <div class="splash-version">%%DW_VERSION%%</div>
     </div>
   </div>
 
@@ -152,6 +150,7 @@
     </nav>
     <button id="newSessionFab" class="new-session-fab" onclick="openNewSessionModal()" title="Start a new session" aria-label="New session">+</button>
   </div>
+  <script src="/splash-art.js?v=%%DW_VERSION%%"></script>
   <script src="/app.js?v=%%DW_VERSION%%"></script>
 </body>
 </html>

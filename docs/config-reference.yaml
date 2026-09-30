@@ -657,6 +657,13 @@ autonomous:
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
+  # Default false (halt): the moment any story rolls up to "failed", the
+  # PRD stops (status -> blocked) instead of continuing into later,
+  # independent stories — so the operator can re-edit/rerun the failed
+  # story rather than the executor barreling ahead unattended. Set true
+  # to restore the old "continue regardless" behavior. Per-PRD override:
+  # POST /api/autonomous/prds/{id}/set_continue_on_story_failure.
+  continue_on_story_failure: false
   # BL191 Q4 (v5.9.0) — recursive child-PRDs. Tasks with spawn_prd=true
   # treat their spec as a child PRD spec and recurse through Decompose
   # → (auto-)Approve → Run. max_recursion_depth caps the parent→child

@@ -228,6 +228,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				// Roll up story status when all its tasks reached a terminal state.
 				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
 					s.Status = storyRollupStatus(s)
+					// A story failure halts the PRD by default so the operator
+					// can re-edit/rerun the failed story instead of the executor
+					// barreling ahead into later, independent stories unattended.
+					// Opt out per-PRD or globally via ContinueOnStoryFailure.
+					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+						latest.Status = PRDBlocked
+						_ = m.store.SavePRD(latest)
+						return nil
+					}
 					_ = m.store.SavePRD(latest)
 				}
 				prd = latest
@@ -365,6 +374,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
 						s.Status = storyRollupStatus(s)
+						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+							latest.Status = PRDBlocked
+							_ = m.store.SavePRD(latest)
+							// Drain remaining goroutines already in flight — they were
+							// launched before this failure was known, so let them
+							// finish, but launch() below is skipped so nothing new starts.
+							for len(inFlight) > 0 {
+								dr := <-results
+								delete(inFlight, dr.tid)
+							}
+							return nil
+						}
 						_ = m.store.SavePRD(latest)
 					}
 					prd = latest
@@ -1060,6 +1081,23 @@ func storyAllTasksDone(s *Story) bool {
 		}
 	}
 	return true
+}
+
+// anyNonTerminalTasksRemain reports whether the PRD still has tasks that
+// haven't reached a terminal state. Used to decide whether a just-failed
+// story's halt actually protects any later, independent work — if this
+// was the PRD's only (or last) story, there's nothing left to halt before,
+// so the normal end-of-Run rollup should produce PRDFailed rather than an
+// operator-facing PRDBlocked with no pending work to review.
+func anyNonTerminalTasksRemain(prd *PRD) bool {
+	for _, s := range prd.Story {
+		for _, t := range s.Tasks {
+			if !isTaskTerminal(t.Status) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // storyRollupStatus is StoryFailed when any task failed, else StoryCompleted.

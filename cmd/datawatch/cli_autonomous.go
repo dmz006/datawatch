@@ -37,6 +37,11 @@ Subcommands:
   prd-reject <id>                 Reject a PRD plan
   prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
+  prd-edit-story <id>             Rewrite a story's title/description before approving
+  prd-add-story <id>              Add a new story without re-running decompose
+  prd-remove-story <id>           Remove a story (and its tasks) without re-running decompose
+  prd-add-task <id>               Add a new task to an existing story without re-running decompose
+  prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
@@ -72,6 +77,11 @@ Subcommands:
 		newAutonomousPRDRejectCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
+		newAutonomousPRDEditStoryCmd(),
+		newAutonomousPRDAddStoryCmd(),
+		newAutonomousPRDRemoveStoryCmd(),
+		newAutonomousPRDAddTaskCmd(),
+		newAutonomousPRDRemoveTaskCmd(),
 		newAutonomousPRDInstantiateCmd(),
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
@@ -360,6 +370,97 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (required)")
 	_ = cmd.MarkFlagRequired("task")
 	_ = cmd.MarkFlagRequired("spec")
+	return cmd
+}
+
+func newAutonomousPRDEditStoryCmd() *cobra.Command {
+	var storyID, newTitle, newDescription string
+	cmd := &cobra.Command{
+		Use:   "prd-edit-story <prd-id> --story <story-id> [--title <t>] [--description <d>]",
+		Short: "Rewrite a story's title/description before approving",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "new_title": newTitle, "new_description": newDescription, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_story", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to rewrite (required)")
+	cmd.Flags().StringVar(&newTitle, "title", "", "new title (empty = keep unchanged)")
+	cmd.Flags().StringVar(&newDescription, "description", "", "new description (empty = keep unchanged)")
+	_ = cmd.MarkFlagRequired("story")
+	return cmd
+}
+
+// Structural edits (operator-requested: add/remove a story or task
+// without re-running decompose and handing the structure back to the
+// LLM). Only allowed pre-approval (needs_review/revisions_asked).
+func newAutonomousPRDAddStoryCmd() *cobra.Command {
+	var title, description string
+	cmd := &cobra.Command{
+		Use:   "prd-add-story <prd-id> --title <t> [--description <d>]",
+		Short: "Add a new story without re-running decompose",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"title": title, "description": description, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_story", body)
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "story title (required)")
+	cmd.Flags().StringVar(&description, "description", "", "story description")
+	_ = cmd.MarkFlagRequired("title")
+	return cmd
+}
+
+func newAutonomousPRDRemoveStoryCmd() *cobra.Command {
+	var storyID string
+	cmd := &cobra.Command{
+		Use:   "prd-remove-story <prd-id> --story <story-id>",
+		Short: "Remove a story (and its tasks) without re-running decompose",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/remove_story", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to remove (required)")
+	_ = cmd.MarkFlagRequired("story")
+	return cmd
+}
+
+func newAutonomousPRDAddTaskCmd() *cobra.Command {
+	var storyID, title, spec string
+	cmd := &cobra.Command{
+		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>]",
+		Short: "Add a new task to an existing story without re-running decompose",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to add the task to (required)")
+	cmd.Flags().StringVar(&title, "title", "", "task title (required)")
+	cmd.Flags().StringVar(&spec, "spec", "", "task spec — concrete instructions for the worker session")
+	_ = cmd.MarkFlagRequired("story")
+	_ = cmd.MarkFlagRequired("title")
+	return cmd
+}
+
+func newAutonomousPRDRemoveTaskCmd() *cobra.Command {
+	var storyID, taskID string
+	cmd := &cobra.Command{
+		Use:   "prd-remove-task <prd-id> --story <story-id> --task <task-id>",
+		Short: "Remove one task from a story without re-running decompose (distinct from cancel-task, which stops a running/queued task without removing it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "task_id": taskID, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/remove_task", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID the task belongs to (required)")
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to remove (required)")
+	_ = cmd.MarkFlagRequired("story")
+	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
 

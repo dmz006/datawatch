@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.34.1"
+var Version = "8.35.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3634,6 +3634,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
 			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
 			PerStoryApproval:    acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
+			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
 			// BL367 — bridge default quality gate config.
 			DefaultQualityGates: pipelinePkg.QualityGateConfig{
 				Enabled:           acfgIn.DefaultQualityGates.Enabled,
@@ -4996,18 +4997,44 @@ Return STRICT JSON:
 			})
 			// GPU probe: NVML > tegrastats > nvidia-smi (parity with datawatch-stats).
 			// Wired here so the daemon's built-in observer reports local GPU stats.
-			if np := observerpkg.NewNVMLProbe(5 * time.Second); np != nil {
+			// nvmlInitReason (read AFTER the NewNVMLProbe call below, which sets
+			// it) is carried into a fallback probe's own error so a driver/
+			// library mismatch (NVML fails, then the nvidia-smi CLI fails for
+			// the identical reason) reports one clear cause instead of two
+			// unrelated-looking failures.
+			np := observerpkg.NewNVMLProbe(5 * time.Second)
+			if np != nil {
 				np.Start(context.Background())
 				obsCollector.SetGPUFn(np.Latest)
+				obsCollector.SetGPUErrFn(np.LastError)
 				fmt.Printf("[observer] GPU probe: nvml\n")
-			} else if tp := observerpkg.NewTegraStatsProbe(5 * time.Second); tp != nil {
-				tp.Start(context.Background())
-				obsCollector.SetGPUFn(tp.Latest)
-				fmt.Printf("[observer] GPU probe: tegrastats\n")
-			} else if sp := observerpkg.NewSMIProbe(5 * time.Second); sp != nil {
-				sp.Start(context.Background())
-				obsCollector.SetGPUFn(sp.Latest)
-				fmt.Printf("[observer] GPU probe: nvidia-smi\n")
+			} else {
+				nvmlInitReason := observerpkg.NVMLInitError()
+				if tp := observerpkg.NewTegraStatsProbe(5 * time.Second); tp != nil {
+					tp.Start(context.Background())
+					obsCollector.SetGPUFn(tp.Latest)
+					obsCollector.SetGPUErrFn(tp.LastError)
+					fmt.Printf("[observer] GPU probe: tegrastats\n")
+				} else if sp := observerpkg.NewSMIProbe(5 * time.Second); sp != nil {
+					sp.Start(context.Background())
+					obsCollector.SetGPUFn(sp.Latest)
+					obsCollector.SetGPUErrFn(func() string {
+						e := sp.LastError()
+						if e == "" {
+							return ""
+						}
+						if nvmlInitReason != "" {
+							return "NVML unavailable (" + nvmlInitReason + "); nvidia-smi fallback also failed: " + e
+						}
+						return e
+					})
+					fmt.Printf("[observer] GPU probe: nvidia-smi\n")
+				} else if nvmlInitReason != "" {
+					// No probe could even be constructed, and NVML specifically
+					// failed (as opposed to simply being absent) — surface that
+					// even though nothing is available to poll.
+					obsCollector.SetGPUErrFn(func() string { return nvmlInitReason })
+				}
 			}
 			obsCollector.Start(context.Background())
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))

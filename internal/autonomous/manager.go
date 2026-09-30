@@ -122,6 +122,15 @@ type Config struct {
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 
+	// ContinueOnStoryFailure controls whether the executor keeps running
+	// later, independent stories after one story fails. Default false
+	// (zero value) HALTS the PRD (status -> PRDBlocked) the moment a
+	// story rolls up to StoryFailed, so a broken first story can't let
+	// the run barrel ahead into stories 2-4 unattended. Set true to
+	// restore the old "continue regardless" behavior. Per-PRD
+	// PRD.ContinueOnStoryFailure overrides this when non-nil.
+	ContinueOnStoryFailure bool `json:"continue_on_story_failure,omitempty"`
+
 	// Capacity admission. nil = enabled (default on).
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
@@ -173,6 +182,20 @@ func (m *Manager) resolveQualityGates(prd *PRD) pipeline.QualityGateConfig {
 	}
 	m.mu.Lock()
 	d := m.cfg.DefaultQualityGates
+	m.mu.Unlock()
+	return d
+}
+
+// resolveContinueOnStoryFailure returns whether the executor should keep
+// running independent later stories after a story fails: per-PRD override
+// takes precedence over the daemon-wide default (which itself defaults to
+// false — halt — unless the operator opts in globally).
+func (m *Manager) resolveContinueOnStoryFailure(prd *PRD) bool {
+	if prd.ContinueOnStoryFailure != nil {
+		return *prd.ContinueOnStoryFailure
+	}
+	m.mu.Lock()
+	d := m.cfg.ContinueOnStoryFailure
 	m.mu.Unlock()
 	return d
 }
@@ -889,7 +912,18 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 	}
 
-	planModel2 := m.cfg.PlanningModel
+	// Operator-reported: a PRD configured for claude-code kept running
+	// decompose against the daemon's global qwen default instead. Root
+	// cause: this streaming path is a drifted duplicate of Decompose()'s
+	// setup and was missing the per-PRD DecompositionModel tier entirely,
+	// jumping straight to the global default whenever one was configured
+	// — backend resolution above was correct (so the claude CLI launched
+	// fine), but the --model argument fed into it was always wrong.
+	// Restored to the same 3-tier fallback Decompose() already uses.
+	planModel2 := prd.DecompositionModel
+	if planModel2 == "" {
+		planModel2 = m.cfg.PlanningModel
+	}
 	if planModel2 == "" {
 		planModel2 = prd.Model
 	}
@@ -1201,8 +1235,8 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept task edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept task edits", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
@@ -1243,8 +1277,15 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDRunning && prd.Status != PRDFailed {
-		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning or PRDFailed", prdID, prd.Status)
+	// PRDBlocked included: a guardrail block or (default) story-failure halt
+	// both leave the PRD blocked with no other way to retry the offending
+	// task — without this the operator has no path back except the
+	// destructive reset_to_draft (which wipes all story/task state).
+	// PRDCancelled included: operator-requested — cancelling a run to fix a
+	// task's spec (e.g. adding a missing reference) shouldn't force a full
+	// reset_to_draft + fresh decompose just to retry that one task.
+	if prd.Status != PRDRunning && prd.Status != PRDFailed && prd.Status != PRDBlocked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning, PRDFailed, PRDBlocked, or PRDCancelled", prdID, prd.Status)
 	}
 	found := false
 	foundSI := -1
@@ -1292,8 +1333,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	prd.UpdatedAt = now
 	// B97: when called on a PRDFailed PRD, restore it to PRDRunning so the
 	// executor picks it back up without the operator having to reset_to_draft
-	// (which would discard all completed task work).
-	if prd.Status == PRDFailed {
+	// (which would discard all completed task work). Same for PRDBlocked
+	// (guardrail block or story-failure halt) and PRDCancelled (operator
+	// cancelled to fix a task's spec) — but the executor's Run loop has
+	// already exited by the time a PRD reaches any of these, so restoring
+	// the status alone isn't enough; the operator (or PWA) must call Run
+	// again (boot-resume does this automatically on the next restart, but
+	// that's not required for it to take effect).
+	if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled {
 		prd.Status = PRDRunning
 	}
 	kind := "reset_task"
@@ -1427,13 +1474,122 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 // EditTaskSpec — only allowed in needs_review or revisions_asked,
 // records a Decision so the timeline shows the edit. Operator-asked:
 // "i don't see a story review or approval or story edit option."
+// AddStory (operator-requested: structural edits without re-decomposing
+// and handing the whole structure back to the LLM) appends a new, empty
+// story to a PRD. Same review-phase gate as EditStory — the story/task
+// structure is only mutable before the PRD is approved and workers start.
+func (m *Manager) AddStory(prdID, title, description, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	}
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	story, err := m.store.AddStory(prdID, title, description)
+	if err != nil {
+		return nil, err
+	}
+	prd, _ = m.store.GetPRD(prdID)
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "add_story", Actor: actor,
+		Note: fmt.Sprintf("story=%s title=%q", story.ID, title),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// RemoveStory deletes a story (and its tasks) from a PRD.
+func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	}
+	if err := m.store.RemoveStory(prdID, storyID); err != nil {
+		return nil, err
+	}
+	prd, _ = m.store.GetPRD(prdID)
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "remove_story", Actor: actor,
+		Note: fmt.Sprintf("story=%s", storyID),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// AddTask appends a new task to an existing story.
+func (m *Manager) AddTask(prdID, storyID, title, spec, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	}
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	task, err := m.store.AddTask(prdID, storyID, title, spec)
+	if err != nil {
+		return nil, err
+	}
+	prd, _ = m.store.GetPRD(prdID)
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "add_task", Actor: actor,
+		Note: fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// RemoveTask deletes one task from a story (structural edit — distinct
+// from CancelTask, which stops a task that's already running/queued
+// without removing it from the PRD).
+func (m *Manager) RemoveTask(prdID, storyID, taskID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept structural edits", prdID, prd.Status)
+	}
+	if err := m.store.RemoveTask(prdID, storyID, taskID); err != nil {
+		return nil, err
+	}
+	prd, _ = m.store.GetPRD(prdID)
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "remove_task", Actor: actor,
+		Note: fmt.Sprintf("story=%s task=%s", storyID, taskID),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 func (m *Manager) EditStory(prdID, storyID, newTitle, newDescription, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story edits", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
@@ -1479,8 +1635,8 @@ func (m *Manager) SetStoryProfile(prdID, storyID, profile, actor string) (*PRD, 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story profile changes", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story profile changes", prdID, prd.Status)
 	}
 	if profile != "" && m.profileResolver != nil {
 		if !m.profileResolver.HasProjectProfile(profile) {
@@ -1629,8 +1785,8 @@ func (m *Manager) SetStoryFiles(prdID, storyID string, files []string, actor str
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story file edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story file edits", prdID, prd.Status)
 	}
 	if len(files) > 50 {
 		files = files[:50]
@@ -1666,8 +1822,8 @@ func (m *Manager) SetTaskFiles(prdID, taskID string, files []string, actor strin
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept task file edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept task file edits", prdID, prd.Status)
 	}
 	if len(files) > 50 {
 		files = files[:50]
@@ -1744,8 +1900,8 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept LLM overrides", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
 	}
 	found := false
 	for i := range prd.Story {
@@ -1783,8 +1939,8 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept LLM overrides", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
@@ -2396,6 +2552,20 @@ func (m *Manager) SetPRDConcurrency(prdID string, n int) error {
 	prd.MaxConcurrentTasks = n
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// SetPRDContinueOnStoryFailure sets the per-PRD override for whether the
+// executor continues into later, independent stories after one story
+// fails. nil would mean "inherit the daemon default" but a REST/MCP call
+// always supplies an explicit true/false, so this always sets an override.
+func (m *Manager) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.ContinueOnStoryFailure = &continueOnFailure
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
 }
 
 // SetPRDPriority sets the PRD's capacity-queue priority.

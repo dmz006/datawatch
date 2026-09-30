@@ -42,6 +42,11 @@ type SystemStats struct {
 	GPUUtilPct    int     `json:"gpu_util_pct,omitempty"`   // 0-100
 	GPUMemUsedMB  int     `json:"gpu_mem_used_mb,omitempty"`
 	GPUMemTotalMB int     `json:"gpu_mem_total_mb,omitempty"`
+	// GPUError explains why the GPU fields above are empty when nvidia-smi
+	// exists but failed (e.g. a driver/library version mismatch after an
+	// unattended driver update, before a reboot) — as opposed to being empty
+	// because no GPU/nvidia-smi was found at all, which leaves this "".
+	GPUError string `json:"gpu_error,omitempty"`
 
 	// Process
 	DaemonRSSBytes uint64 `json:"daemon_rss_bytes"`
@@ -525,20 +530,36 @@ func (c *Collector) readDiskUsage(s *SystemStats) {
 }
 
 func (c *Collector) readGPU(s *SystemStats) {
-	// Try nvidia-smi first
-	out, err := exec.Command("nvidia-smi",
+	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+		// No nvidia-smi at all — leave everything empty, no error. This is
+		// the normal "no NVIDIA GPU on this host" case.
+		return
+	}
+	cmd := exec.Command("nvidia-smi",
 		"--query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total",
-		"--format=csv,noheader,nounits").Output()
-	if err == nil {
-		parts := strings.Split(strings.TrimSpace(string(out)), ", ")
-		if len(parts) >= 5 {
-			s.GPUName = strings.TrimSpace(parts[0])
-			s.GPUTemp, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
-			s.GPUUtilPct, _ = strconv.Atoi(strings.TrimSpace(parts[2]))
-			s.GPUMemUsedMB, _ = strconv.Atoi(strings.TrimSpace(parts[3]))
-			s.GPUMemTotalMB, _ = strconv.Atoi(strings.TrimSpace(parts[4]))
+		"--format=csv,noheader,nounits")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// nvidia-smi exists but failed — e.g. "Failed to initialize NVML:
+		// Driver/library version mismatch" after an unattended driver update
+		// with no reboot yet. Surface the real reason rather than silently
+		// looking identical to "no GPU present".
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			s.GPUError = msg
+		} else {
+			s.GPUError = err.Error()
 		}
 		return
+	}
+	parts := strings.Split(strings.TrimSpace(string(out)), ", ")
+	if len(parts) >= 5 {
+		s.GPUName = strings.TrimSpace(parts[0])
+		s.GPUTemp, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+		s.GPUUtilPct, _ = strconv.Atoi(strings.TrimSpace(parts[2]))
+		s.GPUMemUsedMB, _ = strconv.Atoi(strings.TrimSpace(parts[3]))
+		s.GPUMemTotalMB, _ = strconv.Atoi(strings.TrimSpace(parts[4]))
 	}
 	// Could add rocm-smi support here for AMD GPUs
 }

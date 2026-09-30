@@ -23,6 +23,7 @@ type SMIProbe struct {
 	interval time.Duration
 	mu       sync.RWMutex
 	latest   []GPU
+	lastErr  string
 	stopCh   chan struct{}
 }
 
@@ -86,16 +87,44 @@ func (p *SMIProbe) Latest() []GPU {
 func (p *SMIProbe) poll(ctx context.Context) {
 	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx2, "nvidia-smi",
+	cmd := exec.CommandContext(ctx2, "nvidia-smi",
 		"--query-gpu=index,name,utilization.gpu,memory.total,memory.used,temperature.gpu",
-		"--format=csv,noheader,nounits").Output()
+		"--format=csv,noheader,nounits")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
+		// nvidia-smi prints the real reason (e.g. "Failed to initialize NVML:
+		// Driver/library version mismatch") to stderr, not in the exec error
+		// itself (just "exit status N") — surface that text so a broken
+		// driver is distinguishable from "no GPU present" everywhere this
+		// probe's data reaches: /api/observer/stats, /api/compute/nodes, and
+		// the MCP tools built on top of them.
+		p.mu.Lock()
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			p.lastErr = msg
+		} else {
+			p.lastErr = err.Error()
+		}
+		p.mu.Unlock()
 		return
 	}
 	gpus := parseSMIOutput(string(out))
 	p.mu.Lock()
 	p.latest = gpus
+	p.lastErr = ""
 	p.mu.Unlock()
+}
+
+// LastError returns the most recent nvidia-smi failure reason, or "" if the
+// last poll succeeded (or none has run yet). Nil-safe.
+func (p *SMIProbe) LastError() string {
+	if p == nil {
+		return ""
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.lastErr
 }
 
 // parseSMIOutput converts CSV output from nvidia-smi into GPU entries.

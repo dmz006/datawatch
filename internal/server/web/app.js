@@ -1,5 +1,15 @@
 window._splashStart = Date.now();
 
+// Start the splash Canvas animation immediately — #splashCanvas already has
+// real layout dimensions even while the overlay is visibility:hidden (only
+// display:none would prevent that), so there's no need to wait for the
+// show/hide decision below. window._splashStopFn is called from every path
+// that removes or replaces the splash (see _splashStart usages).
+(function () {
+  const c = document.getElementById('splashCanvas');
+  if (c && window.DWSplashArt) window._splashStopFn = window.DWSplashArt.startScene(c, { compact: false });
+})();
+
 // ── i18n (BL214 / v5.28.0) ────────────────────────────────────────────────
 // Lightweight zero-dep translation layer. Locale JSON files are served from
 // /locales/{en,de,es,fr,ja}.json (see internal/server/web/locales). Strings
@@ -323,10 +333,11 @@ function connect() {
         const remaining = Math.max(0, 3000 - elapsed);
         setTimeout(() => {
           splash.classList.add('fade-out');
-          setTimeout(() => splash.remove(), 700);
+          setTimeout(() => { if (window._splashStopFn) window._splashStopFn(); splash.remove(); }, 700);
         }, remaining);
       } else {
         // Skip splash — remove immediately
+        if (window._splashStopFn) window._splashStopFn();
         splash.remove();
       }
     }
@@ -2978,11 +2989,18 @@ function renderSessionDetail(sessionId) {
   const sessOutputMode = sess?.output_mode || 'terminal';
   const tmuxArea = document.getElementById('outputAreaTmux');
   if (tmuxArea && isActive && !isSameSession && sessOutputMode === 'terminal') {
-    tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:12px;">
-      <img src="/favicon.svg" alt="" style="width:64px;opacity:0.3;" />
-      <div style="font-size:13px;" id="termLoadingText">${t('term_connecting')||'Connecting to session…'}</div>
+    tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:8px;">
+      <canvas id="termLoadingCanvas" style="width:120px;height:120px;"></canvas>
+      <div style="font-size:12px;font-weight:600;letter-spacing:2px;color:#00E5A0;" id="termLoadingText">${(t('term_connecting')||'Connecting to session…').toUpperCase()}</div>
       <div style="font-size:10px;color:var(--text2);opacity:0.6;" id="termLoadingRetry"></div>
     </div>`;
+    // Session-connect animated splash (eye + matrix rain + lightning bolt) —
+    // matches datawatch-app's SessionLoadingOverlay (operator: "replicate
+    // that"). Self-stops via splash-art.js's canvas.isConnected check once
+    // termLoadingSplash is removed below (pane_capture arrival, or the
+    // retry watchdog's own cleanup).
+    const termLoadingCanvas = document.getElementById('termLoadingCanvas');
+    if (termLoadingCanvas && window.DWSplashArt) window.DWSplashArt.startSessionLoading(termLoadingCanvas);
     // Retry logic: if no pane_capture arrives within 5s, re-subscribe
     startTermConnectWatchdog(sessionId);
   }
@@ -3142,7 +3160,7 @@ function retryTermConnect(sessionId) {
   state._termConnectRetries = 0;
   const textEl = document.getElementById('termLoadingText');
   const retryEl = document.getElementById('termLoadingRetry');
-  if (textEl) textEl.textContent = t('term_connecting') || 'Connecting to session…';
+  if (textEl) textEl.textContent = (t('term_connecting') || 'Connecting to session…').toUpperCase();
   if (retryEl) retryEl.textContent = '';
   send('subscribe', { session_id: sessionId });
   startTermConnectWatchdog(sessionId);
@@ -4260,7 +4278,7 @@ function renderSessionGuardrailVerdicts(verdicts, sessionId) {
   const chips = verdicts.map(v => {
     const cl = v.outcome === 'pass' ? 'var(--success,#10b981)' : v.outcome === 'block' ? 'var(--error,#ef4444)' : 'var(--warning,#f59e0b)';
     const approveBtn = (v.outcome === 'block' && !v.approved && sessionId)
-      ? `<button onclick="approveGuardrailVerdict(${JSON.stringify(sessionId)},${JSON.stringify(v.guardrail)},this)" style="margin-left:4px;font-size:9px;padding:0 4px;border:1px solid var(--error,#ef4444);border-radius:3px;background:none;color:var(--error,#ef4444);cursor:pointer;line-height:14px;" title="Approve this blocked verdict">approve</button>`
+      ? `<button onclick="${escHtml(`approveGuardrailVerdict(${JSON.stringify(sessionId)},${JSON.stringify(v.guardrail)},this)`)}" style="margin-left:4px;font-size:9px;padding:0 4px;border:1px solid var(--error,#ef4444);border-radius:3px;background:none;color:var(--error,#ef4444);cursor:pointer;line-height:14px;" title="Approve this blocked verdict">approve</button>`
       : (v.approved ? `<span style="margin-left:3px;font-size:9px;opacity:0.7;" title="Approved">✓</span>` : '');
     return `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg);border:1px solid ${cl};border-radius:4px;padding:1px 5px;font-size:10px;color:${cl};" title="${escHtml(v.summary||'')}">
       ${escHtml(v.guardrail)} · ${escHtml(v.outcome)}${approveBtn}
@@ -4611,6 +4629,11 @@ function onSessionImageSelected(input) {
 function _refreshAttachmentPreview() {
   const bar = document.getElementById('inputBar');
   if (!bar || !bar.parentNode) return;
+  // Purple status banner while any attachment is still uploading — same
+  // treatment as the voice-transcribing banner (operator: "replicate that
+  // here" for both voice and image upload, matching datawatch-app).
+  const anyUploading = state._pendingAttachments.some(a => a.uploading);
+  _composerBanner(anyUploading ? (t('image_uploading_banner')||'Uploading image…') : null);
   let preview = document.getElementById('sessionImagePreview');
   if (!state._pendingAttachments.length) {
     if (preview) preview.remove();
@@ -4633,6 +4656,27 @@ function _refreshAttachmentPreview() {
     + `<button class="btn-icon" onclick="_removeAttachment(${i})" style="padding:0 2px;font-size:11px;line-height:1;flex-shrink:0;" title="Remove">✕</button>`
     + `</span>`
   ).join('');
+}
+
+// _composerBanner shows/updates/hides a full-width status banner above the
+// session composer input — mirrors datawatch-app's SessionDetailScreen
+// purple "Transcribing voice message…" Surface(primaryContainer) banner
+// (operator: "replicate that here"). Used for both voice transcribing and
+// image uploading so the two functions read consistently. One banner at a
+// time; a falsy text hides it.
+function _composerBanner(text) {
+  const bar = document.getElementById('inputBar');
+  if (!bar || !bar.parentNode) return;
+  let el = document.getElementById('composerStatusBanner');
+  if (!text) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'composerStatusBanner';
+    el.className = 'composer-status-banner';
+    el.innerHTML = '<span class="composer-status-spinner"></span><span class="composer-status-text"></span>';
+    bar.parentNode.insertBefore(el, bar);
+  }
+  el.querySelector('.composer-status-text').textContent = text;
 }
 
 function _removeAttachment(idx) {
@@ -4724,6 +4768,7 @@ async function toggleVoiceInput(sessionId) {
     // v7.0.0-alpha.14 — capture original placeholder so the finally block restores it instead of wiping to empty.
     const originalPlaceholder = inputEl ? inputEl.placeholder : '';
     if (inputEl) { inputEl.disabled = true; inputEl.placeholder = t('voice_transcribing')||'Transcribing…'; }
+    _composerBanner(t('voice_transcribing_banner')||'Transcribing voice message…');
     try {
       const ext = (mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm');
       const fd = new FormData();
@@ -4755,6 +4800,7 @@ async function toggleVoiceInput(sessionId) {
       showError('Voice transcribe error', err.message);
     } finally {
       if (inputEl) { inputEl.disabled = false; inputEl.placeholder = originalPlaceholder; }
+      _composerBanner(null);
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop_recording')||'Click to stop recording'; }
@@ -4782,7 +4828,14 @@ async function toggleVoiceInput(sessionId) {
 window.micButtonHTML = function(targetId) {
   if (!state._whisperEnabled) return '';
   const safeId = String(targetId).replace(/'/g, '&#39;');
-  return `<button type="button" class="btn-icon" data-mic-for="${escHtml(safeId)}" onclick="startGenericVoiceInput(${JSON.stringify(targetId)},this)" title="Voice input — click to start / stop" style="margin-left:4px;">&#127908;</button>`;
+  // Operator-reported: clicking this button did nothing. Root cause: the
+  // onclick attribute embedded JSON.stringify(targetId) (double-quoted)
+  // raw inside an already double-quoted HTML attribute, truncating it to
+  // `onclick="startGenericVoiceInput("` at parse time — clicking then threw
+  // a SyntaxError (Unexpected end of input) instead of calling the
+  // function. Use the already HTML-safe single-quoted safeId instead, same
+  // as the data-mic-for attribute right next to it.
+  return `<button type="button" class="btn-icon" data-mic-for="${escHtml(safeId)}" onclick="startGenericVoiceInput('${safeId}',this)" title="Voice input — click to start / stop" style="margin-left:4px;">&#127908;</button>`;
 };
 
 // BL292 (v6.22.2) — auto-attach mic buttons to every large textarea that
@@ -5143,7 +5196,7 @@ window._badgeDrop = function(e, containerId, targetIdx) {
 
 // Legacy CSV modal kept for any remaining inline usages not yet migrated.
 window.csvExpandButtonHTML = function(targetId, label) {
-  return `<button type="button" class="btn-icon" onclick="openCsvEditModal(${JSON.stringify(targetId)},${JSON.stringify(label || 'list')})" title="Edit list in a larger dialog" style="margin-left:4px;">&#9998;</button>`;
+  return `<button type="button" class="btn-icon" onclick="${escHtml(`openCsvEditModal(${JSON.stringify(targetId)},${JSON.stringify(label || 'list')})`)}" title="Edit list in a larger dialog" style="margin-left:4px;">&#9998;</button>`;
 };
 
 window.openCsvEditModal = function(targetId, label) {
@@ -7345,8 +7398,8 @@ function renderSettingsView() {
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
           <div style="text-align:center;padding:16px 0 8px;">
-            <img src="/favicon.svg" alt="Datawatch" style="width:64px;height:64px;margin-bottom:8px;" />
-            <div style="font-size:18px;font-weight:700;color:var(--text);letter-spacing:1px;">datawatch</div>
+            <canvas id="aboutSplashCanvas" style="width:100%;max-width:320px;height:180px;border-radius:8px;display:block;margin:0 auto 8px;"></canvas>
+            <div style="font-size:18px;font-weight:700;color:var(--accent2);letter-spacing:1px;">datawatch</div>
             <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Orchestration</div>
           </div>
           <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
@@ -7590,6 +7643,15 @@ function renderSettingsView() {
   // every tab switch.
   if (typeof _applyCardOrderForTab === 'function') {
     _applyCardOrderForTab(_settingsTab);
+  }
+  // The whole settings panel re-renders as one innerHTML assignment on every
+  // tab switch, so #aboutSplashCanvas is a fresh DOM node each call — stop
+  // any previous loop (same stacking hazard as setInterval on re-render)
+  // before starting a new one on the fresh canvas.
+  if (window._aboutSplashStopFn) { window._aboutSplashStopFn(); window._aboutSplashStopFn = null; }
+  const aboutCanvas = document.getElementById('aboutSplashCanvas');
+  if (aboutCanvas && window.DWSplashArt) {
+    window._aboutSplashStopFn = window.DWSplashArt.startScene(aboutCanvas, { compact: true });
   }
 }
 
@@ -9616,7 +9678,7 @@ window._llmShowDeleteBlockModal = function(name, activeBindings) {
           <select id="llmDeleteReassignTo" class="form-select" style="flex:1;font-size:11px;">
             <option value="">— pick replacement LLM —</option>
           </select>
-          <button class="btn-primary" style="font-size:11px;white-space:nowrap;" onclick="_llmReassignThenDelete(${JSON.stringify(name)})">Reassign + Delete</button>
+          <button class="btn-primary" style="font-size:11px;white-space:nowrap;" onclick="${escHtml(`_llmReassignThenDelete(${JSON.stringify(name)})`)}">Reassign + Delete</button>
         </div>
       </div>
       <details style="margin-top:4px;">
@@ -9626,7 +9688,7 @@ window._llmShowDeleteBlockModal = function(name, activeBindings) {
             <input type="checkbox" id="llmForceDeleteConfirm" />
             I understand this terminates active work
           </label>
-          <button class="btn-primary" style="font-size:11px;margin-top:6px;background:var(--error);border-color:var(--error);" onclick="_llmForceDelete(${JSON.stringify(name)})">Force Delete</button>
+          <button class="btn-primary" style="font-size:11px;margin-top:6px;background:var(--error);border-color:var(--error);" onclick="${escHtml(`_llmForceDelete(${JSON.stringify(name)})`)}">Force Delete</button>
         </div>
       </details>
     </div>
@@ -9996,7 +10058,7 @@ function renderPRDRow(prd) {
     : '';
   const actions = renderPRDActions(prd);
   // BL303 S4 T10 — maximize button opens automaton in dashboard expand mode.
-  const dashExpandBtn = `<button class="sess-maximize-btn" onclick="event.stopPropagation();window.openDashExpand(${JSON.stringify(id)})" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
+  const dashExpandBtn = `<button class="sess-maximize-btn" onclick="${escHtml(`event.stopPropagation();window.openDashExpand(${JSON.stringify(id)})`)}" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
   // v5.27.8 — .prd-card replaces inline border/padding so the card
   // visual matches the Sessions card style (BL208 #30). Status drives
   // the left-border colour via .prd-card-status-<status>.
@@ -10107,7 +10169,7 @@ window.scrollToPRD = function(id) {
 //   5(a) — verdicts get a dedicated row below the title
 //   6(d) — read-only state shows progress + files-touched + worker-session link
 function renderStory(prd, story) {
-  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked' || prd.status === 'cancelled');
   const tasks = (story.tasks || []).map(t => renderTask(prd, story, t, editable)).join('');
   const conflicts = story._conflictSet || {};
   const storyID = story.id || '';
@@ -10142,12 +10204,17 @@ function renderStory(prd, story) {
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
   const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
   const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')})`;
+  // Operator-requested: structural edits (add/remove a story or task)
+  // without re-running decompose. Only offered while editable — the same
+  // gate the manager enforces server-side (needs_review/revisions_asked).
+  const removeStoryFn = `prdRemoveStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')})`;
   const editIcons = editable
     ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">
          <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>
+         <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeStoryFn)}" title="Remove this story and its tasks">&#128465;</button>
        </span>`
     : '';
 
@@ -10175,11 +10242,16 @@ function renderStory(prd, story) {
     : '';
 
   // 2(b) — "Files:" text label + 📂 button.
+  // Operator-reported: these planned-file paths rendered as inert <code>
+  // text with no click handler at all — unlike task.files/files_touched,
+  // which use _fileChip() for a working view+download action. Switched to
+  // _fileChip() so story-level files are clickable too, same as task-level.
   const hasFiles = story.files && story.files.length;
+  const _storyProjDir = (prd && prd.project_dir) ? prd.project_dir : '';
   const filesPlannedRow = hasFiles
     ? `<div class="prd-story-files">
          <span class="prd-story-files-label">Files:</span>
-         ${story.files.map(f => `<code class="prd-story-file-chip" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '&#9888; ' : ''}${escHtml(f)}</code>`).join('')}
+         ${story.files.map(f => (conflicts[f] ? '<span class="prd-story-file-conflict" title="conflicts with story ' + escHtml(conflicts[f]) + '">&#9888;</span>' : '') + _fileChip(_storyProjDir ? _storyProjDir + '/' + f : f)).join('')}
          ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
        </div>`
     : '';
@@ -10203,6 +10275,7 @@ function renderStory(prd, story) {
       ${story.rejected_reason ? `<div class="prd-story-rejected">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
       ${readOnlyExtras}
       ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
+      ${editable ? `<button class="prd-story-add-task-btn" onclick="event.stopPropagation();openPRDAddTaskModal(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(story.id))})">+ ${escHtml(t('prd_add_task_btn')||'Add task')}</button>` : ''}
     </div>
   </div>`;
 }
@@ -10386,7 +10459,7 @@ window.openPRDSetStoryProfileModal = openPRDSetStoryProfileModal;
 function renderTask(prd, story, task, editable) {
   // editable is now passed from caller; fall back when called standalone.
   if (typeof editable === 'undefined') {
-    editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+    editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked' || prd.status === 'cancelled');
   }
   const taskID = task.id || '';
   state._prdTaskExpanded = state._prdTaskExpanded || {};
@@ -10401,10 +10474,15 @@ function renderTask(prd, story, task, editable) {
   // Edit affordances — distinct icons per 1(b).
   const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
+  // Operator-requested: structural edit — remove a task without re-running
+  // decompose. Distinct from the cancel/retry buttons below, which act on
+  // a task that's already running/queued rather than deleting it.
+  const removeTaskFn = `prdRemoveTask(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(task.id)},${JSON.stringify(task.title || '')})`;
   const editIcons = editable
     ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
          <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
+         <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>
        </span>`
     : '';
 
@@ -10427,7 +10505,11 @@ function renderTask(prd, story, task, editable) {
     : '';
   // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
   // BL382 — also add cancel-task (pending/in_progress) + requeue (completed/cancelled).
-  const canRetry = (task.status === 'failed' || task.status === 'blocked') && prd.status === 'running';
+  // Also allow retry when the PRD itself is blocked (guardrail block, or the
+  // default story-failure halt) — reset_task on a blocked PRD flips it back
+  // to running server-side, but the button must be visible first for the
+  // operator to ever click it.
+  const canRetry = (task.status === 'failed' || task.status === 'blocked') && (prd.status === 'running' || prd.status === 'blocked');
   const canCancelTask = ['pending','in_progress','running','verifying','running_tests','waiting_capacity'].includes(task.status||'') && prd.status === 'running';
   const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && prd.status === 'running';
   const retryBtn = canRetry
@@ -10564,6 +10646,35 @@ function prdCancelStory(prdID, storyID, title) {
   }).catch(e => showToast((window._t && window._t('prd_cancel_story_fail')) || 'Cancel failed: ' + e.message, 'error'));
 }
 window.prdCancelStory = prdCancelStory;
+
+// Structural edits (operator-requested: add/remove a story or task without
+// re-running decompose). Distinct from cancel_story/cancel_task, which stop
+// already-running/queued work without deleting it from the PRD.
+function prdRemoveStory(prdID, storyID, title) {
+  if (!confirm((window._t && window._t('prd_remove_story_confirm')) || ('Remove story "' + (title||storyID) + '" and all its tasks? This cannot be undone.'))) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/remove_story', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_id: storyID, actor: 'operator' }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_remove_story_ok')) || 'Story removed.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_remove_story_fail')) || 'Remove failed: ' + e.message, 'error'));
+}
+window.prdRemoveStory = prdRemoveStory;
+
+function prdRemoveTask(prdID, storyID, taskID, title) {
+  if (!confirm((window._t && window._t('prd_remove_task_confirm')) || ('Remove task "' + (title||taskID) + '"? This cannot be undone.'))) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/remove_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_id: storyID, task_id: taskID, actor: 'operator' }),
+  }).then(() => {
+    showToast((window._t && window._t('prd_remove_task_ok')) || 'Task removed.');
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast((window._t && window._t('prd_remove_task_fail')) || 'Remove failed: ' + e.message, 'error'));
+}
+window.prdRemoveTask = prdRemoveTask;
 
 // v6.13.9 — toggle expanded state for a task. Does an in-place DOM
 // operation to avoid re-rendering the entire PRD detail view.
@@ -11184,7 +11295,9 @@ function openPRDCreateModal() {
           <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdNewModelInner"></div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_planning_label')||'Planning backend (decompose)'}</label>${renderBackendSelect('prdNewDecompositionProfile', '', `refreshLLMModelField('prdNewDecompModelWrap','prdNewDecompModelInner','prdNewDecompositionProfile','')`, true)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_planning_label')||'Planning backend (decompose)'}</label>${renderBackendSelect('prdNewDecompositionProfile', '', `this.dataset.userTouched='true';refreshLLMModelField('prdNewDecompModelWrap','prdNewDecompModelInner','prdNewDecompositionProfile','')`, true)}
+            <div style="font-size:10px;color:var(--text2);margin-top:2px;">${t('prd_new_planning_hint')||'Defaults to match Execution backend — pick a different one here only if you want decompose to plan with something else.'}</div>
+          </div>
           <div id="prdNewDecompModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Planning model (optional)</label><div id="prdNewDecompModelInner"></div></div>
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -11328,6 +11441,19 @@ window.refreshLLMModelField = function(wrapId, innerId, backendId, currentValue)
 
 window.updatePRDNewModelField = function() {
   refreshLLMModelField('prdNewModelWrap', 'prdNewModelInner', 'prdNewBackend', '');
+  // Operator-reported: PRD set up to use claude, but decompose used qwen
+  // instead. Root cause: Execution backend and Planning backend (decompose)
+  // are separate dropdowns; decompose falls back to the daemon-wide
+  // autonomous.planning_backend default (opencode/qwen here) whenever the
+  // planning dropdown is left empty — regardless of the execution backend
+  // chosen. Auto-sync planning to match execution by default, so a PRD only
+  // plans with a different backend when the operator explicitly picks one.
+  const planningSel = document.getElementById('prdNewDecompositionProfile');
+  const execSel = document.getElementById('prdNewBackend');
+  if (planningSel && execSel && planningSel.dataset.userTouched !== 'true') {
+    planningSel.value = execSel.value;
+    refreshLLMModelField('prdNewDecompModelWrap', 'prdNewDecompModelInner', 'prdNewDecompositionProfile', '');
+  }
 };
 
 // v5.26.8 — ensure /api/ollama/models + /api/openwebui/models are
@@ -11340,13 +11466,30 @@ window.ensureLLMModelLists = function() {
   // openPRDCreateModal previously used a separate ensureModels that only
   // fetched ollama/openwebui, leaving state._availableModels set but with
   // opencode missing — causing ensureLLMModelLists to skip the fetch.
-  if (state._availableModels !== undefined && state._llmModelListsFull) return Promise.resolve();
+  //
+  // Operator-reported: PRD Settings backend dropdown (and the per-task
+  // edit modal) could render with almost no real options — just "" and
+  // "council" — so a backend the operator clearly selected didn't actually
+  // exist as a choice and silently fell back. Root cause: both modals only
+  // await this function, assuming it makes every LLM-picker dropdown
+  // ready, but it never fetched /api/llms — state._prdBackends was only
+  // ever populated as a side effect of loadPRDPanel() (the Automata list
+  // view) having run first in the same session. Opening Settings via a
+  // direct deep-link, or after a page reload that restores straight into
+  // a PRD detail view, skipped that entirely. Fetch it here too so every
+  // caller of ensureLLMModelLists is self-sufficient.
+  const needBackends = state._prdBackends == null;
+  if (state._availableModels !== undefined && state._llmModelListsFull && !needBackends) return Promise.resolve();
   return Promise.all([
     fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/opencode/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('/api/llm/claude/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]).then(([oll, owui, oc, claude]) => {
+    needBackends ? fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+  ]).then(([oll, owui, oc, claude, backendsResp]) => {
+    if (needBackends && backendsResp) {
+      state._prdBackends = (backendsResp.llms || []).filter(l => !l.disabled);
+    }
     state._availableModels = {};
     if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
     else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
@@ -11473,8 +11616,73 @@ function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription)
 }
 window.openPRDEditStoryModal = openPRDEditStoryModal;
 
+// Structural edits (operator-requested: "I should also be able to edit a
+// story so I can make changes without having to decompose and rely on the
+// LLM") — add a new story, or a new task within an existing story, without
+// re-running decompose.
+function openPRDAddStoryModal(prdID) {
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${t('prd_add_story_title')||'Add story'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">${t('prd_new_title_label')||'Title'}</label>
+      <input id="prdAddStoryTitle" type="text" class="form-input" placeholder="${t('prd_add_story_title_ph')||'Short story title'}" />
+      <label style="font-size:11px;color:var(--text2);">${t('prd_story_desc_label')||'Description'}</label>
+      <textarea id="prdAddStoryDesc" class="form-input" rows="4" style="resize:vertical;font-family:inherit;"></textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_add')||'Add'}</button>
+      </div>
+    </form>
+  `, () => {
+    const title = document.getElementById('prdAddStoryTitle').value.trim();
+    const description = document.getElementById('prdAddStoryDesc').value;
+    if (!title) { showToast('Title required', 'error', 2000); return; }
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/add_story', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, actor: 'operator' }),
+    })
+      .then(() => { showToast('Story added', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .catch(err => showToast('Add failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDAddStoryModal = openPRDAddStoryModal;
+
+function openPRDAddTaskModal(prdID, storyID) {
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${t('prd_add_task_title')||'Add task'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">${t('prd_new_title_label')||'Title'}</label>
+      <input id="prdAddTaskTitle" type="text" class="form-input" placeholder="${t('prd_add_task_title_ph')||'Short task title'}" />
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_spec_label')||'Spec'} ${micButtonHTML('prdAddTaskSpec')}</label>
+      <textarea id="prdAddTaskSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;" placeholder="${t('prd_add_task_spec_ph')||'Concrete instructions for the worker session — include file paths and context'}"></textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_add')||'Add'}</button>
+      </div>
+    </form>
+  `, () => {
+    const title = document.getElementById('prdAddTaskTitle').value.trim();
+    const spec = document.getElementById('prdAddTaskSpec').value;
+    if (!title) { showToast('Title required', 'error', 2000); return; }
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/add_task', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ story_id: storyID, title, spec, actor: 'operator' }),
+    })
+      .then(() => { showToast('Task added', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .catch(err => showToast('Add failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDAddTaskModal = openPRDAddTaskModal;
+
 // BL381 — per-story LLM override modal. Mirrors openPRDEditTaskModal's LLM
-// section; calls set_story_llm. Available in needs_review + revisions_asked.
+// section; calls set_story_llm. Available in needs_review + revisions_asked
+// + cancelled (see renderStory's editable gate).
 function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel) {
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
@@ -11590,6 +11798,7 @@ function openPRDSettingsModal(prdID) {
         decomposition_model:  prd.decomposition_model || '',
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
+        continue_on_story_failure: !!prd.continue_on_story_failure,
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
         priority:             prd.priority || 0,
         read_dirs:            (prd.read_dirs || []).join(', '),
@@ -11675,6 +11884,10 @@ function openPRDSettingsModal(prdID) {
               <input type="checkbox" id="prdSettingsGuidedMode" ${cur.guided_mode?'checked':''}>
               <span>${escHtml(t('prd_settings_guided_label')||'Guided mode — pause for operator after each story for review')}</span>
             </label>
+            <label class="wizard-checkbox-row" style="margin-top:4px;">
+              <input type="checkbox" id="prdSettingsContinueOnStoryFailure" ${cur.continue_on_story_failure?'checked':''}>
+              <span>${escHtml(t('prd_settings_continue_on_story_failure_label')||'Continue past a failed story instead of halting (default: halt for re-edit/rerun)')}</span>
+            </label>
             <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);">
               <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
               <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
@@ -11719,6 +11932,13 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_guided_mode', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ guided_mode: newGuided, actor: 'operator' }),
+            }));
+          }
+          const newContinueOnStoryFailure = !!document.getElementById('prdSettingsContinueOnStoryFailure').checked;
+          if (newContinueOnStoryFailure !== cur.continue_on_story_failure) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_continue_on_story_failure', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ continue_on_story_failure: newContinueOnStoryFailure }),
             }));
           }
           if (newConcurrency !== cur.max_concurrent_tasks) {
@@ -12006,6 +12226,7 @@ const GENERAL_CONFIG_FIELDS = [
     // the runner skips those until the operator approves each
     // individually via the per-story Approve button on the PRD card.
     { key: 'autonomous.per_story_approval', label: 'Per-story approval gate (each story needs explicit approve)', type: 'toggle' },
+    { key: 'autonomous.continue_on_story_failure', label: 'Continue past a failed story instead of halting (default: halt)', type: 'toggle' },
     // BL367 (v8.17.0) — default quality gate config for all PRDs.
     { key: 'autonomous.default_quality_gates.enabled', label: 'Quality gates enabled (default for all PRDs)', labelKey: 'settings_quality_gates_enabled', type: 'toggle' },
     { key: 'autonomous.default_quality_gates.test_command', label: 'Quality gate test command', labelKey: 'settings_quality_gates_test_command', type: 'text', placeholder: 'go test ./...' },
@@ -14017,9 +14238,9 @@ function loadServersList() {
           ${(s.federated && s.capabilities && s.capabilities.length)?`<div style="font-size:10px;color:var(--accent2);margin-top:1px;">${escHtml(s.capabilities.join(', '))}</div>`:''}
         </div>
         <span style="font-size:11px;padding:2px 6px;border-radius:10px;background:${s.enabled!==false?'var(--accent2,#4f8)':'var(--bg3,#2d3148)'};color:${s.enabled!==false?'#fff':'var(--text-dim,#888)'};">${s.enabled!==false?'on':'off'}</span>
-        <button onclick="testServerEntry(${JSON.stringify(s.name)},this)" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('server_test_btn')||'Test'}</button>
-        ${s.builtin?'':`<button onclick="showServerForm(${JSON.stringify(s)})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">Edit</button>`}
-        ${s.builtin?'':`<button onclick="deleteServer(${JSON.stringify(s.name)})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--danger,#f66);border:1px solid var(--border);cursor:pointer;">${t('server_delete_btn')||'Delete'}</button>`}
+        <button onclick="${escHtml(`testServerEntry(${JSON.stringify(s.name)},this)`)}" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('server_test_btn')||'Test'}</button>
+        ${s.builtin?'':`<button onclick="${escHtml(`showServerForm(${JSON.stringify(s)})`)}" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">Edit</button>`}
+        ${s.builtin?'':`<button onclick="${escHtml(`deleteServer(${JSON.stringify(s.name)})`)}" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--danger,#f66);border:1px solid var(--border);cursor:pointer;">${t('server_delete_btn')||'Delete'}</button>`}
       </div>`).join('');
   }).catch(() => {
     el.innerHTML = '<div style="color:var(--danger,#f66);font-size:12px;">Failed to load servers.</div>';
@@ -14287,6 +14508,7 @@ window.splashSaveToken = function() {
   if (!tok) return;
   state.token = tok;
   localStorage.setItem('cs_token', tok);
+  if (window._splashStopFn) window._splashStopFn();
   const splash = document.getElementById('splash');
   if (splash) splash.remove();
   connect();
@@ -15031,9 +15253,65 @@ function _fileChip(path) {
   return `<a href="${escHtml(dlUrl)}" class="prd-file-chip" download="${escHtml(name)}" onclick="event.stopPropagation()" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
 }
 
+// _ensureMarkdownLibs lazy-loads marked.js (GFM tables, proper markdown) and
+// mermaid.js (real diagram rendering) the first time the file viewer needs
+// them, caching the load promise so repeat opens don't re-inject scripts.
+// Same pinned versions as diagrams.html's existing renderer, for consistency.
+// Operator-reported: the PRD file viewer's hand-rolled renderChatMarkdown had
+// no table support at all and only showed mermaid fences as a code block
+// with a "render in docs" hint instead of an actual diagram.
+window._ensureMarkdownLibs = function() {
+  if (window._markdownLibsPromise) return window._markdownLibsPromise;
+  const load = src => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('failed to load ' + src));
+    document.head.appendChild(s);
+  });
+  window._markdownLibsPromise = Promise.all([
+    typeof marked !== 'undefined' ? Promise.resolve() : load('https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js'),
+    typeof mermaid !== 'undefined' ? Promise.resolve() : load('https://cdn.jsdelivr.net/npm/mermaid@10.9.6/dist/mermaid.min.js'),
+  ]).then(() => {
+    if (typeof mermaid !== 'undefined' && !window._mermaidInitialized) {
+      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', maxTextSize: 200000 });
+      window._mermaidInitialized = true;
+    }
+  });
+  return window._markdownLibsPromise;
+};
+
+// _renderMarkdownFileInto renders full markdown (GFM tables via marked.js,
+// mermaid fences as real diagrams) into el. Mermaid blocks are extracted and
+// rendered async, same two-pass approach as diagrams.js's renderDoc: strip
+// mermaid fences from the prose passed to marked, then render each block's
+// SVG into a placeholder div afterward so one bad diagram can't block the
+// rest of the file or the surrounding prose.
+function _renderMarkdownFileInto(el, text) {
+  const mermaidRe = /```mermaid\s*\n([\s\S]*?)```/g;
+  const blocks = [];
+  let m, i = 0;
+  while ((m = mermaidRe.exec(text)) !== null) blocks.push({ index: i++, src: m[1].trim() });
+  let j = 0;
+  const proseWithSlots = text.replace(mermaidRe, () => `<div class="file-viewer-mermaid-slot" data-idx="${j++}"></div>`);
+  el.innerHTML = marked.parse(proseWithSlots);
+  blocks.forEach(b => {
+    const slot = el.querySelector(`.file-viewer-mermaid-slot[data-idx="${b.index}"]`);
+    if (!slot) return;
+    slot.innerHTML = '<div style="color:var(--text2);font-size:11px;">Rendering diagram…</div>';
+    mermaid.render('fv_mm_' + Math.random().toString(36).slice(2), b.src)
+      .then(({ svg }) => { slot.innerHTML = svg; })
+      .catch(e => {
+        slot.innerHTML = `<pre style="color:var(--error);font-size:11px;overflow:auto;">${escHtml(e.message || String(e))}\n\n--- source ---\n${escHtml(b.src)}</pre>`;
+      });
+  });
+}
+
 // _showFileViewer opens a modal that renders the file's content.
-// Markdown is rendered with renderChatMarkdown; other text files show as <pre>.
-// A download button is always in the header.
+// Markdown gets full GFM rendering (tables, mermaid diagrams) via marked.js
+// + mermaid.js, lazy-loaded on first use; falls back to the lighter
+// renderChatMarkdown if the libraries fail to load (offline, CSP, etc.).
+// Other text files show as <pre>. A download button is always in the header.
 window._showFileViewer = function(path) {
   const existing = document.getElementById('fileViewerModal');
   if (existing) existing.remove();
@@ -15071,11 +15349,13 @@ window._showFileViewer = function(path) {
     .then(text => {
       const el = document.getElementById('fileViewerContent');
       if (!el) return;
-      if (isMd) {
-        el.innerHTML = renderChatMarkdown(text);
-      } else {
+      if (!isMd) {
         el.innerHTML = `<code>${escHtml(text)}</code>`;
+        return;
       }
+      window._ensureMarkdownLibs()
+        .then(() => _renderMarkdownFileInto(el, text))
+        .catch(() => { el.innerHTML = renderChatMarkdown(text); }); // offline/CSP fallback
     })
     .catch(err => {
       const el = document.getElementById('fileViewerContent');
@@ -17029,7 +17309,7 @@ function _liveUpdateDetail(prd) {
 
   if (tab === 'stories') {
     if (!bodyEl) return;
-    const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+    const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked' || prd.status === 'cancelled');
     // Build a fast lookup of old tasks by id for change detection
     const oldTaskMap = {};
     if (oldPrd) {
@@ -17349,6 +17629,27 @@ window._loadPRDCapacityCard = function() {
     const s = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000));
     return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
   };
+  // Pool names are internal ledger keys ("host", "node:<name>", "llm:<name>")
+  // that don't explain themselves — operator-reported confusion: seeing
+  // "host: 3/9" on a PRD card reads as if it were this PRD's own LLM/compute
+  // capacity, when it's actually a machine-wide session cap shared with
+  // unrelated interactive sessions. Label + tooltip make the distinction
+  // explicit instead of showing the raw pool key.
+  const poolLabel = p => {
+    if (p.name === 'host') return t('capacity_pool_host')||'Host sessions (all tasks + interactive)';
+    if (p.name.startsWith('node:')) return (t('capacity_pool_node')||'Compute node') + ': ' + p.name.slice(5);
+    if (p.name.startsWith('llm:')) return (t('capacity_pool_llm')||'LLM') + ': ' + p.name.slice(4);
+    return p.name;
+  };
+  const poolTitle = p => {
+    if (p.name === 'host') {
+      return (t('capacity_pool_host_hint')||'Machine-wide session limit, shared with interactive sessions — not specific to this PRD.') +
+        ` (${p.held||0} ${t('capacity_held')||'held by autonomous tasks'}, ${p.external||0} ${t('capacity_external')||'other sessions on this host'})`;
+    }
+    if (p.name.startsWith('node:')) return t('capacity_pool_node_hint')||'Concurrent autonomous sessions this compute node will run at once.';
+    if (p.name.startsWith('llm:')) return t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
+    return '';
+  };
   const render = () => {
     if (!document.getElementById('prdCapacityCard')) { clearInterval(window._prdCapacityInterval); return; }
     apiFetch('/api/capacity').then(cap => {
@@ -17359,10 +17660,10 @@ window._loadPRDCapacityCard = function() {
         const used = (p.held || 0) + (p.external || 0);
         const pct = Math.min(100, Math.round(100 * used / p.limit));
         const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-        return `<div style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(p.name)}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div></div>`;
+        return `<div style="margin-bottom:4px;" title="${escHtml(poolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(poolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div></div>`;
       }).join('');
       const unlimited = (cap.pools || []).filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-        .map(p => `<div style="color:var(--text2);">${escHtml(p.name)}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>`).join('');
+        .map(p => `<div style="color:var(--text2);" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>`).join('');
       const queue = waiting.length
         ? `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
           waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
@@ -17420,6 +17721,12 @@ window._loadPRDActiveSessionCard = function(prd) {
         html += bar(vLabel, g.mem_used_bytes||0, g.mem_total_bytes, 'var(--accent2,#60a5fa)', fmtB(g.mem_used_bytes||0)+' / '+fmtB(g.mem_total_bytes));
       }
     });
+    if ((!detail.gpu || detail.gpu.length === 0) && detail.gpu_error) {
+      // A GPU probe was selected for this node but its last poll failed
+      // (e.g. a driver/library version mismatch) — say so instead of
+      // showing nothing, which looks identical to "no GPU on this node".
+      html += `<div style="font-size:10px;color:var(--error,#ef4444);margin-top:2px;" title="${escHtml(detail.gpu_error)}">${escHtml(t('stats_gpu_error_title')||'GPU probe failed')}: ${escHtml(detail.gpu_error.slice(0,80))}</div>`;
+    }
     return html;
   };
 
@@ -17446,7 +17753,7 @@ window._loadPRDActiveSessionCard = function(prd) {
     if (!d) return null;
     const gpu = [];
     if (d.gpu_name) gpu.push({ util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
-    return { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu };
+    return { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu, gpu_error: d.gpu_error };
   }).catch(() => null);
 
   function renderAndSchedule() {
@@ -18151,8 +18458,16 @@ function _renderDetailOverview(prd) {
 // which already exposes Edit / Profile / Files / Approve / Reject affordances.
 function _renderDetailStories(prd) {
   const stories = prd.stories || prd.Story || [];
-  if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_stories')||'No stories yet.')}</div>`;
-  return stories.map(st => renderStory(prd, st)).join('');
+  // Operator-requested: structural edits without re-running decompose.
+  // Same editable gate the manager enforces server-side (widened to
+  // include 'cancelled' — cancel-to-fix-then-restart shouldn't require
+  // reset_to_draft).
+  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked' || prd.status === 'cancelled');
+  const addStoryBtn = editable
+    ? `<button class="prd-story-add-task-btn" style="margin-bottom:8px;" onclick="openPRDAddStoryModal(${escHtml(JSON.stringify(prd.id))})">+ ${escHtml(t('prd_add_story_btn')||'Add story')}</button>`
+    : '';
+  if (stories.length === 0) return addStoryBtn + `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_stories')||'No stories yet.')}</div>`;
+  return addStoryBtn + stories.map(st => renderStory(prd, st)).join('');
 }
 
 // BL246 v6.6.0 — Decisions tab with full timeline + expandable detail per row.
@@ -18543,7 +18858,7 @@ function renderAlertsView() {
       }
 
       // BL344 — navigate to session from alert card
-      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="navigate('session-detail',${JSON.stringify(a.session_id)})" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
+      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(a.session_id)})`)}" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
@@ -18776,7 +19091,7 @@ function renderAlertsView() {
       } else {
         bodyHTML = flat.map(item => {
           const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
-          const sessLink = item.sess ? `<a onclick="navigate('session-detail',${JSON.stringify(item.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
+          const sessLink = item.sess ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(item.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
           return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
         }).join('');
       }
@@ -18792,7 +19107,7 @@ function renderAlertsView() {
         const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
         const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
         const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
-        const sessLink = (!isSystem && entry.sess) ? `<a onclick="navigate('session-detail',${JSON.stringify(entry.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
+        const sessLink = (!isSystem && entry.sess) ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(entry.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
         const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
         return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
           <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
@@ -19735,6 +20050,15 @@ function renderStatsData(el, data) {
     if (data.gpu_name) {
       html += bar('GPU ' + escHtml(data.gpu_name), data.gpu_util_pct, 100, data.gpu_util_pct > 80 ? 'var(--error)' : 'var(--success)', data.gpu_util_pct + '% ' + data.gpu_temp + '°C');
       if (data.gpu_mem_total_mb > 0) html += bar('GPU VRAM', data.gpu_mem_used_mb, data.gpu_mem_total_mb, 'var(--accent2)', data.gpu_mem_used_mb + ' / ' + data.gpu_mem_total_mb + ' MB');
+    } else if (data.gpu_error) {
+      // A GPU probe exists but its last poll failed (e.g. a driver/library
+      // version mismatch after an unattended update, before a reboot) —
+      // say so plainly rather than showing nothing, which looks identical
+      // to "no GPU present".
+      html += `<div class="stat-card" style="grid-column:1/-1;border-color:var(--error);">
+        <div class="stat-label" style="color:var(--error);">${escHtml(t('stats_gpu_error_title')||'GPU probe failed')}</div>
+        <div style="font-size:11px;color:var(--text);font-family:monospace;white-space:pre-wrap;">${escHtml(data.gpu_error)}</div>
+      </div>`;
     }
     // Network — line-per-stat layout
     const netLabel = data.ebpf_active ? 'Network (datawatch)' : 'Network (system)';
@@ -20648,6 +20972,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (h && h.auth_required) {
           const splash = document.getElementById('splash');
           if (splash) {
+            if (window._splashStopFn) window._splashStopFn();
             splash.innerHTML = `<div class="splash-content" style="gap:20px;">
               <div class="splash-title" style="font-size:15px;">Access token required</div>
               <div style="display:flex;flex-direction:column;gap:8px;width:240px;">
@@ -21096,8 +21421,8 @@ function _drawConstellation() {
     }
 
     // Filled node + invisible larger hit target for easier clicking
-    html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+6).toFixed(1)}" fill="transparent" style="cursor:pointer;" onclick="window._dashNodeClick(${JSON.stringify(id)})"/>`;
-    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" onclick="window._dashNodeClick(${JSON.stringify(id)})">`;
+    html += `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(r+6).toFixed(1)}" fill="transparent" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}"/>`;
+    html += `<circle class="dbn" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${n.color}" opacity="${opacity}" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(id)})`)}">`;
     html += `<title>${escHtml(n.label)} · ${escHtml(n.state)} — click to open</title></circle>`;
 
     // State initial inside node
@@ -21241,7 +21566,7 @@ function _renderSprintPipeline() {
       }
       const nodeClass = st.status || 'draft';
       const stLabel = (st.title || `Story ${i+1}`).slice(0, 14);
-      html += `<div class="dboard-pipe-node ${nodeClass}" title="${escHtml(st.title || '')}" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">${escHtml(stLabel)}</div>`;
+      html += `<div class="dboard-pipe-node ${nodeClass}" title="${escHtml(st.title || '')}" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}">${escHtml(stLabel)}</div>`;
     });
     html += `</div></div>`;
   }
@@ -22207,7 +22532,7 @@ function _dashRenderTree() {
       const expanded = _dash._ganttTreeExpand[prd.id] !== false;
       const pc = { running: 'var(--accent)', blocked: 'var(--error)', planning: 'var(--warning)' }[prd.status] || 'var(--text2)';
       html += `<div style="border-left:2px solid ${pc};margin:1px 6px 0;border-radius:0 3px 3px 0;">
-        <div style="padding:5px 7px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="window._dashToggleGanttRow(${JSON.stringify(prd.id)})">
+        <div style="padding:5px 7px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(prd.id)})`)}">
           <span style="color:${pc};font-size:9px;flex-shrink:0;">${expanded ? '▼' : '▶'}</span>
           <span style="color:var(--text);font-size:10px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(prd.title || prd.id)}">${escHtml((prd.title || prd.id).slice(0, 20))}</span>
           <span style="color:${pc};font-size:9px;flex-shrink:0;">${pct}%</span>
@@ -22220,7 +22545,7 @@ function _dashRenderTree() {
           const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
           const tDone2 = (st.tasks || []).filter(t => t.status === 'completed').length;
           const tTotal2 = (st.tasks || []).length;
-          html += `<div style="padding:2px 7px 2px 14px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">
+          html += `<div style="padding:2px 7px 2px 14px;cursor:pointer;display:flex;align-items:center;gap:3px;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}">
             <span style="color:${sc};font-size:9px;flex-shrink:0;">${sIcon}</span>
             <span style="color:var(--text);font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml((st.title || `S${si + 1}`).slice(0, 18))}</span>
             ${tTotal2 > 0 ? `<span style="color:var(--text2);font-size:8px;flex-shrink:0;">${tDone2}/${tTotal2}</span>` : ''}
@@ -22241,7 +22566,7 @@ function _dashRenderTree() {
       const hColor = !board2 ? 'var(--text2)' : board2.hook_health === 'alive' ? 'var(--success,#10b981)' : 'var(--warning)';
       const focus2 = board2 && board2.current_focus && board2.current_focus.task || '';
       const rtBadge = _runtimeBadge(s);
-      html += `<div style="padding:4px 7px;cursor:pointer;border-left:2px solid ${sc2};margin:1px 6px 0;border-radius:0 3px 3px 0;" onclick="navigate('session-detail',${JSON.stringify(s.full_id || s.id)})">
+      html += `<div style="padding:4px 7px;cursor:pointer;border-left:2px solid ${sc2};margin:1px 6px 0;border-radius:0 3px 3px 0;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(s.full_id || s.id)})`)}">
         <div style="display:flex;align-items:center;gap:3px;">
           <span style="color:${hColor};font-size:8px;">${hDot}</span>
           <span style="color:var(--text);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escHtml((s.name || s.task || s.id || '').slice(0, 20))}</span>
@@ -22336,9 +22661,9 @@ function _drawGantt() {
     const pct = tTotal > 0 ? Math.round(tDone / tTotal * 100) : 0;
     const prdColor = stC(prd.status);
     const expanded = _dash._ganttTreeExpand[prd.id] !== false;
-    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="window._dashToggleGanttRow(${JSON.stringify(prd.id)})"/>`;
+    html += `<rect x="0" y="${y}" width="${W}" height="${AUTO_H}" fill="${bg2}" style="cursor:pointer;" onclick="${escHtml(`window._dashToggleGanttRow(${JSON.stringify(prd.id)})`)}"/>`;
     html += `<text x="8" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${prdColor}" style="cursor:pointer;">${expanded ? '▼' : '▶'}</text>`;
-    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})">${escHtml((prd.title || prd.id).slice(0, 26))}</text>`;
+    html += `<text x="22" y="${y + AUTO_H / 2 + 4}" font-size="11" fill="${txt}" font-weight="600" style="cursor:pointer;" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}">${escHtml((prd.title || prd.id).slice(0, 26))}</text>`;
     const pbX = W - 96, pbY = y + AUTO_H / 2 - 5, pbW = 72, pbH = 7;
     html += `<rect x="${pbX}" y="${pbY}" width="${pbW}" height="${pbH}" rx="3" fill="${bdr}"/>`;
     html += `<rect x="${pbX}" y="${pbY}" width="${(pbW * pct / 100).toFixed(1)}" height="${pbH}" rx="3" fill="${prdColor}" opacity="0.8"/>`;
@@ -22373,7 +22698,7 @@ function _drawGantt() {
       const color = stC(st.status);
       const isPending = !st.status || st.status === 'draft' || st.status === 'not_started';
       const rowY = y + 2, rowH = STORY_H - 4;
-      html += `<rect x="0" y="${y}" width="${W}" height="${STORY_H}" fill="transparent" onclick="window._dashNodeClick(${JSON.stringify(prd.id)})" style="cursor:pointer;"/>`;
+      html += `<rect x="0" y="${y}" width="${W}" height="${STORY_H}" fill="transparent" onclick="${escHtml(`window._dashNodeClick(${JSON.stringify(prd.id)})`)}" style="cursor:pointer;"/>`;
       const sIcon = { completed: '✓', running: '▶', in_progress: '▶', blocked: '!', needs_review: '?', failed: '✗' }[st.status] || '○';
       html += `<text x="${LABEL_W - 8}" y="${y + STORY_H / 2 + 4}" text-anchor="end" font-size="10" fill="${color}">${sIcon}</text>`;
       html += `<text x="8" y="${y + STORY_H / 2 - 1}" font-size="9" fill="${txt}" opacity="0.8">${escHtml((st.title || `Story ${si + 1}`).slice(0, 24))}</text>`;
@@ -22781,8 +23106,8 @@ function loadFederationPeersPanel() {
         <span>${enabledDot}<strong>${safeName}</strong></span>
         <span style="color:var(--text2);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;" title="${safeURL}">${safeURL}</span>
         <span style="font-size:10px;background:var(--bg3,#2d3148);padding:1px 6px;border-radius:10px;" title="${t('federation_cap_group_label')||'Capability Group'}">${safeCaps}</span>
-        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;" onclick="testFedPeer(${JSON.stringify(p.name)})">${t('federation_peer_test_btn')||'Test'}</button>
-        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;color:#ef4444;" onclick="deleteFedPeer(${JSON.stringify(p.name)})">${t('federation_peer_delete_btn')||'Delete'}</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;" onclick="${escHtml(`testFedPeer(${JSON.stringify(p.name)})`)}">${t('federation_peer_test_btn')||'Test'}</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 7px;color:#ef4444;" onclick="${escHtml(`deleteFedPeer(${JSON.stringify(p.name)})`)}">${t('federation_peer_delete_btn')||'Delete'}</button>
       </div>`;
     }).join('');
   }).catch(err => {
@@ -22993,8 +23318,8 @@ function loadToolingPanel() {
         <code style="width:90px;color:var(--accent);">${escHtml(b.backend)}</code>
         <span style="flex:1;color:var(--text2);">present: ${escHtml(present)}</span>
         <span style="font-size:11px;color:${b.ignored?'var(--ok, #4caf50)':'var(--warn, #ff9800)'};">${ignored}</span>
-        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="toolingGitignore(${JSON.stringify(b.backend)})">gitignore</button>
-        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;color:var(--error);" onclick="toolingCleanup(${JSON.stringify(b.backend)})">cleanup</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="${escHtml(`toolingGitignore(${JSON.stringify(b.backend)})`)}">gitignore</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;color:var(--error);" onclick="${escHtml(`toolingCleanup(${JSON.stringify(b.backend)})`)}">cleanup</button>
       </div>`;
     }).join('');
   }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;padding:8px 12px;">Failed to load tooling status.</span>'; });
@@ -23082,7 +23407,7 @@ function loadDiscussionPanel() {
       `<div style="padding:2px 0;display:flex;align-items:center;gap:8px;">
         <code style="color:var(--accent);flex:1;">${escHtml(id)}</code>
         <button class="btn-secondary" style="font-size:11px;padding:2px 6px;"
-          onclick="discussionViewEntries(${JSON.stringify(id)})">${escHtml(t('memory_recall') || 'Recall')}</button>
+          onclick="${escHtml(`discussionViewEntries(${JSON.stringify(id)})`)}">${escHtml(t('memory_recall') || 'Recall')}</button>
       </div>`
     ).join('');
   }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load discussion scopes.</span>'; });
@@ -23149,7 +23474,7 @@ function loadDocsTrustPanel() {
       return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
         <code style="flex:1;">${escHtml(e.source)}</code>
         <span style="font-size:10px;opacity:0.7;">${escHtml(e.granted_by||'')}</span>
-        ${removable ? `<button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="docsTrustRemove(${JSON.stringify(e.source)})">×</button>` : ''}
+        ${removable ? `<button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="${escHtml(`docsTrustRemove(${JSON.stringify(e.source)})`)}">×</button>` : ''}
       </div>`;
     }).join('');
   }).catch(()=>{ trustEl.textContent = 'failed'; });
@@ -23173,8 +23498,8 @@ function loadDocsTrustPanel() {
       <input type="checkbox" class="docs-pending-cb" data-source="${escHtml(e.source)}" />
       <code style="flex:1;">${escHtml(e.source)}</code>
       <span style="font-size:10px;opacity:0.7;">${escHtml(e.detail||'')}</span>
-      <button class="btn-success" style="font-size:10px;padding:1px 6px;" onclick="docsTrustAccept(${JSON.stringify(e.source)})">${escHtml(t('docs_accept_btn')||'Trust')}</button>
-      <button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="docsTrustDismiss(${JSON.stringify(e.source)})">${escHtml(t('docs_dismiss_btn')||'Dismiss')}</button>
+      <button class="btn-success" style="font-size:10px;padding:1px 6px;" onclick="${escHtml(`docsTrustAccept(${JSON.stringify(e.source)})`)}">${escHtml(t('docs_accept_btn')||'Trust')}</button>
+      <button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="${escHtml(`docsTrustDismiss(${JSON.stringify(e.source)})`)}">${escHtml(t('docs_dismiss_btn')||'Dismiss')}</button>
     </div>`).join('');
     pendEl.innerHTML = toolbar + rows;
   }).catch(()=>{ pendEl.textContent = 'failed'; });
@@ -23713,7 +24038,7 @@ function loadPushPanel() {
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Registrations (${regs.length})</div>
       ${regs.map(r => `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;">
         <div style="flex:1;font-size:12px;word-break:break-all;opacity:0.8;">${escHtml(r.endpoint||r.id||'')}</div>
-        <button class="btn-icon" style="font-size:13px;color:var(--error);flex-shrink:0;" onclick="pushUnregister(${JSON.stringify(r.id)})">&times;</button>
+        <button class="btn-icon" style="font-size:13px;color:var(--error);flex-shrink:0;" onclick="${escHtml(`pushUnregister(${JSON.stringify(r.id)})`)}">&times;</button>
       </div>`).join('')}` : ''}`;
     panel._regs = regs;
   }).catch(err => {

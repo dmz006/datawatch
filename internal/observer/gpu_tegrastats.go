@@ -88,6 +88,12 @@ func (p *TegraStatsProbe) Latest() []GPU {
 	return out
 }
 
+// LastError always returns "" — tegrastats is expected to exit non-zero
+// (it's killed by our own poll timeout), so a failed run isn't distinguishable
+// from a normal one without deeper parsing. Present only so callers can treat
+// every probe type uniformly.
+func (p *TegraStatsProbe) LastError() string { return "" }
+
 func (p *TegraStatsProbe) poll(ctx context.Context) {
 	// tegrastats runs continuously; context timeout kills it after we
 	// have at least one line of output. --interval sets ms between lines.

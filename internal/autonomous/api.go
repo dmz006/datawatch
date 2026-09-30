@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 )
@@ -334,6 +335,11 @@ func (a *API) Cancel(id string) error {
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
 	prd.Status = PRDCancelled
+	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
+	// no trace in prd.Decisions — an operator (or a future session) had no
+	// way to tell whether/when/why a PRD was cancelled versus failing on
+	// its own. Log it the same way.
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "cancel", Actor: "operator"})
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
@@ -411,6 +417,38 @@ func (a *API) CancelTask(prdID, taskID, actor, reason string) (any, error) {
 }
 func (a *API) EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error) {
 	out, err := a.M.EditStory(prdID, storyID, newTitle, newDescription, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// Structural edits (operator-requested: add/remove a story or task
+// without re-running decompose) — distinct from EditStory/EditTask, which
+// only change an existing entry's title/spec/description.
+func (a *API) AddStory(prdID, title, description, actor string) (any, error) {
+	out, err := a.M.AddStory(prdID, title, description, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) RemoveStory(prdID, storyID, actor string) (any, error) {
+	out, err := a.M.RemoveStory(prdID, storyID, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) AddTask(prdID, storyID, title, spec, actor string) (any, error) {
+	out, err := a.M.AddTask(prdID, storyID, title, spec, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) RemoveTask(prdID, storyID, taskID, actor string) (any, error) {
+	out, err := a.M.RemoveTask(prdID, storyID, taskID, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}
@@ -747,6 +785,18 @@ func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error
 // SetPRDQualityGates (BL367) sets per-PRD quality gate config.
 func (a *API) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error) {
 	prd, err := a.M.SetPRDQualityGates(prdID, enabled, testCommand, timeout, blockOnRegression)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
+// SetPRDContinueOnStoryFailure sets the per-PRD override for whether the
+// executor continues into later, independent stories after one story
+// fails (default: halt).
+func (a *API) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error) {
+	prd, err := a.M.SetPRDContinueOnStoryFailure(prdID, continueOnFailure)
 	if err != nil {
 		return nil, err
 	}

@@ -539,6 +539,130 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	// Structural edits (operator-requested: add/remove a story or task
+	// without re-running decompose and handing the structure back to the
+	// LLM). Only allowed pre-approval (needs_review / revisions_asked),
+	// same gate as edit_story/edit_task.
+	case "add_story":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			Actor       string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Title == "" {
+			http.Error(w, "title required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.AddStory(id, req.Title, req.Description, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "remove_story":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.RemoveStory(id, req.StoryID, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "add_task":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			Title   string `json:"title"`
+			Spec    string `json:"spec"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" || req.Title == "" {
+			http.Error(w, "story_id and title required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.AddTask(id, req.StoryID, req.Title, req.Spec, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "remove_task":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			TaskID  string `json:"task_id"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" || req.TaskID == "" {
+			http.Error(w, "story_id and task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.RemoveTask(id, req.StoryID, req.TaskID, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
 	case "set_story_profile":
 		// Phase 3 (v5.26.60) — per-story execution profile override.
 		// Body: {story_id, profile, actor?}. Empty profile clears.
@@ -1154,6 +1278,30 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
+	// Per-PRD override: does a story failure halt the PRD (default) or
+	// does the executor continue into later, independent stories?
+	case "set_continue_on_story_failure":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			ContinueOnStoryFailure bool `json:"continue_on_story_failure"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDContinueOnStoryFailure(id, req.ContinueOnStoryFailure)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

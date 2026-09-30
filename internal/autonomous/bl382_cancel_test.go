@@ -271,3 +271,62 @@ func TestBL382_ResetTask_PRDNotRunning_ReturnsError(t *testing.T) {
 		t.Errorf("error should mention not recoverable: %v", err)
 	}
 }
+
+// TestResetTask_PRDBlocked_ResetsTaskAndRestoresRunning covers the operator
+// path for a story-failure halt (or a guardrail block): the PRD is Blocked,
+// its Run loop has already exited, and prior to this fix reset_task refused
+// to touch anything, leaving the operator with no path back except the
+// destructive reset_to_draft. reset_task must both accept PRDBlocked and
+// restore the PRD to PRDRunning (matching the existing PRDFailed behavior)
+// so the operator can call Run again afterward.
+func TestResetTask_PRDBlocked_ResetsTaskAndRestoresRunning(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	prd.Status = PRDBlocked
+	prd.Story[0].Status = StoryFailed
+	prd.Story[0].Tasks[1].Status = TaskFailed
+	prd.Story[0].Tasks[1].Error = "verification failed after retries"
+	_ = m.Store().SavePRD(prd)
+
+	updated, err := m.ResetTask(prd.ID, "task-1b", "operator", false)
+	if err != nil {
+		t.Fatalf("reset_task on a blocked PRD should succeed: %v", err)
+	}
+	if updated.Status != PRDRunning {
+		t.Fatalf("PRD status = %q; want PRDRunning restored", updated.Status)
+	}
+	if updated.Story[0].Status != StoryPending {
+		t.Fatalf("story status = %q; want reopened to pending", updated.Story[0].Status)
+	}
+	if updated.Story[0].Tasks[1].Status != "" {
+		t.Fatalf("task-1b status = %q; want empty (pending)", updated.Story[0].Tasks[1].Status)
+	}
+}
+
+// TestResetTask_PRDCancelled_ResetsTaskAndRestoresRunning covers the operator
+// path for "I realized something needs to change mid-run": the operator
+// cancels the PRD, wants to edit a task's spec (e.g. add a missing
+// reference), then retry that task without a destructive reset_to_draft.
+// reset_task must accept PRDCancelled and restore the PRD to PRDRunning
+// (matching the existing PRDFailed/PRDBlocked behavior) so the operator can
+// call Run again afterward.
+func TestResetTask_PRDCancelled_ResetsTaskAndRestoresRunning(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	prd.Status = PRDCancelled
+	prd.Story[0].Status = StoryCompleted
+	prd.Story[0].Tasks[1].Status = TaskCompleted
+	_ = m.Store().SavePRD(prd)
+
+	updated, err := m.ResetTask(prd.ID, "task-1b", "operator", true)
+	if err != nil {
+		t.Fatalf("reset_task on a cancelled PRD should succeed with force=true: %v", err)
+	}
+	if updated.Status != PRDRunning {
+		t.Fatalf("PRD status = %q; want PRDRunning restored", updated.Status)
+	}
+	if updated.Story[0].Status != StoryPending {
+		t.Fatalf("story status = %q; want reopened to pending", updated.Story[0].Status)
+	}
+	if updated.Story[0].Tasks[1].Status != "" {
+		t.Fatalf("task-1b status = %q; want empty (pending)", updated.Story[0].Tasks[1].Status)
+	}
+}

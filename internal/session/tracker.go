@@ -235,6 +235,30 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			existingStr := string(existing)
 			modified := false
 
+			// Operator-reported: claude-code itself noticed a contradiction
+			// and stopped mid-task to ask which job was real. Root cause:
+			// the "# Session Guardrails" header (Session: X | Task: Y) is
+			// stamped once by whichever session first creates this file
+			// and was never refreshed for later sessions sharing the same
+			// project_dir — so a task-execution session could inherit a
+			// much-earlier decompose session's stale "you are decomposing
+			// a feature request" instructions, directly contradicting the
+			// real task delivered via the live prompt. Replace the header
+			// block (up to the next top-level heading) with a fresh one
+			// for the current session on every write, not just on create.
+			if startIdx := strings.Index(existingStr, "# Session Guardrails"); startIdx >= 0 {
+				rest := existingStr[startIdx+len("# Session Guardrails"):]
+				block := existingStr[startIdx:]
+				if endOffset := strings.Index(rest, "\n# "); endOffset >= 0 {
+					block = existingStr[startIdx : startIdx+len("# Session Guardrails")+endOffset]
+				}
+				freshHeader := strings.TrimSpace(minimalSessionGuardrails(sess))
+				if strings.TrimSpace(block) != freshHeader {
+					existingStr = existingStr[:startIdx] + freshHeader + "\n" + existingStr[startIdx+len(block):]
+					modified = true
+				}
+			}
+
 			// Add memory section if enabled and not present
 			if opt.MemoryEnabled && !strings.Contains(existingStr, "Memory & Knowledge") && !strings.Contains(existingStr, "memory_recall") {
 				existingStr += "\n\n" + memoryInstructions()

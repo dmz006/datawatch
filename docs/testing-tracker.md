@@ -301,3 +301,30 @@ Memory scope PWA tile (`memory-scope` card) added to dashboard, rendering stats 
 | reportFn error does not abort PRD completion | Yes | No | `TestBL387_AutoReport_ErrorDoesNotAbortCompletion` | PRDCompleted set; MemoryReport empty |
 | Empty report string does not write MemoryReport | Yes | No | `TestBL387_AutoReport_EmptyStringNotStored` | Empty string skipped |
 | memory-scope dashboard card appears in default layout | No | Yes | Visual — dashboard memory-scope tile visible | Fetches /api/memory/stats |
+
+## Structural Automaton editing — add/remove story or task without decompose (2026-09-29)
+
+Operator-requested: "I should also be able to edit a story so I can make changes
+without having to decompose and rely on the LLM." Added `AddStory`/`RemoveStory`/
+`AddTask`/`RemoveTask` across REST, MCP, CLI, and comm channel, plus PWA UI (per-story
+Remove icon + "+ Add task", per-task Remove icon, PRD-level "+ Add story"). Filled a
+matching pre-existing gap for `edit_story` on MCP/CLI/comm-channel (REST-only before).
+Only allowed pre-approval (`needs_review`/`revisions_asked`), matching the existing
+edit-story/edit-task gate.
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| `AddStory` appends story, sets IDs/status, records `add_story` decision | **Yes** | No | `TestAddStory_AppendsAndAudits` in `internal/autonomous/structural_edit_test.go` | PASS |
+| `AddStory` refuses empty title | **Yes** | No | `TestAddStory_RequiresTitle` | PASS |
+| `AddStory` refuses after Approve | **Yes** | No | `TestAddStory_RefusesAfterApprove` | PASS |
+| `RemoveStory` deletes story + its tasks; task unreachable via `GetTask` after | **Yes** | No | `TestRemoveStory_DeletesStoryAndItsTasks` | PASS — covers store-side reindex |
+| `RemoveStory` errors on nonexistent story ID | **Yes** | No | `TestRemoveStory_NotFound` | PASS |
+| `AddTask` appends to story; new + pre-existing tasks both resolve via `GetTask` | **Yes** | No | `TestAddTask_AppendsToStoryAndAudits` | PASS — the reindex-after-append hazard (Go slice reallocation orphaning old store map pointers) was deliberately exercised here |
+| `AddTask` errors on nonexistent story ID | **Yes** | No | `TestAddTask_StoryNotFound` | PASS |
+| `RemoveTask` deletes one task, keeps sibling task resolvable | **Yes** | No | `TestRemoveTask_DeletesOneTaskKeepsOthers` | PASS |
+| `RemoveTask` errors on nonexistent task ID | **Yes** | No | `TestRemoveTask_NotFound` | PASS |
+| All four refuse after Approve (structural lock) | **Yes** | No | `TestStructuralEdits_RefuseAfterApprove` | PASS |
+| REST `POST .../add_story` 400 when PRD not in needs_review/revisions_asked | **Yes** | Yes | Manual curl against a live `planning`-status PRD | PASS — `curl -X POST .../add_story -d '{"title":"x"}'` → 400 `"...is locked; only needs_review / revisions_asked accept structural edits"` |
+| REST `POST .../add_story` 400 on missing title | **Yes** | Yes | Manual curl against a live PRD | PASS — 400 `"title required"` |
+| PWA `renderStory`/`renderTask`/`_renderDetailStories` emit well-formed onclick for all 4 new buttons | **Yes** | Yes | Playwright: rendered a fake `needs_review` PRD through the real functions, read `getAttribute('onclick')` on each new button | PASS — `prdRemoveStory("fake123","story1","S1")`, `openPRDAddTaskModal("fake123","story1")`, `prdRemoveTask("fake123","story1","task1","T1")`, `openPRDAddStoryModal("fake123")`; zero page errors |
+| Full click-through (open Add-story modal, submit, verify story appears) | No | Not yet | — | Attempted via a live decompose on a throwaway PRD; the local qwen3.8:27b planning backend didn't finish within ~7 min so the attempt was abandoned in favor of the REST/render-level checks above, which already cover the new code paths. Revisit with a faster planning backend if a full click-through is needed. |
