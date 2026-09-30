@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.37.2 — fix(autonomous): per-task backend override left a stale model string from a different backend
+
+### Fixed
+- **A per-task `set_task_llm` backend override didn't clear the inherited model, pairing a stale model string from the old backend with the new one** — found live diagnosing why PRD `8baa807b`'s task `0c56044c` kept stalling: it ran on `opencode`/`ollama/qwen3.8:27b` and repeatedly stalled on a large document-synthesis task. Overriding the task's backend to `claude-code` via `set_task_llm` (leaving `model` empty — "empty = backend default" per that tool's own documented contract) still passed the PRD's `model: "ollama/qwen3.8:27b"` straight through to the new claude-code session, because `backend` and `model` cascaded through task → story → PRD independently in `executor.go`'s resolution logic. claude-code doesn't recognize an Ollama model name and got stuck on its own interactive "There's an issue with the selected model" prompt instead of completing the one-shot task — twice, exhausting the task's retry budget and blocking the whole PRD. Extracted the resolution into `resolveTaskBackendModel` (both the primary task-execution cascade and the child-PRD-spawn cascade): model now only inherits from the same level backend was resolved from, so overriding backend alone correctly falls back to that backend's own default instead of a mismatched inherited model. 4 new regression tests.
+
 ## v8.37.1 — fix(pwa): session_state handler read the wrong payload shape, corrupting state.sessions
 
 ### Fixed

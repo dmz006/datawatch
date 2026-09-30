@@ -597,29 +597,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
 			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
-			backend := t.Backend
-			if backend == "" && story != nil {
-				backend = story.Backend
-			}
-			if backend == "" {
-				backend = prd.Backend
-			}
-			if backend == "" {
-				backend = m.cfg.ExecutionBackend
-			}
+			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
 			effort := t.Effort
 			if effort == "" && story != nil {
 				effort = story.Effort
 			}
 			if effort == "" {
 				effort = prd.Effort
-			}
-			model := t.Model
-			if model == "" && story != nil {
-				model = story.Model
-			}
-			if model == "" {
-				model = prd.Model
 			}
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
@@ -945,18 +929,19 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 
 	// Inherit LLM defaults from parent task → parent PRD; the child PRD
 	// can be re-decomposed with its own backend by the operator.
-	backend := t.Backend
+	// v8.37.2 — model only inherits from parent when backend also does
+	// (same reasoning as the sibling cascade above: a model belongs to
+	// whichever backend it was set alongside).
+	backend, model := t.Backend, t.Model
 	if backend == "" {
 		backend = parent.Backend
+		if model == "" {
+			model = parent.Model
+		}
 	}
 	effort := t.Effort
 	if effort == "" {
 		effort = parent.Effort
-	}
-
-	model := t.Model
-	if model == "" {
-		model = parent.Model
 	}
 	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
@@ -1193,4 +1178,47 @@ func findStory(prd *PRD, storyID string) *Story {
 		}
 	}
 	return nil
+}
+
+// resolveTaskBackendModel resolves a task's effective backend and model
+// (BL203 + BL381, most-specific wins: task → story → PRD → fallback).
+//
+// v8.37.2 — model is resolved from the SAME level backend was found at,
+// not independently. A model string belongs to whichever backend it was
+// configured alongside; letting it cascade past a level that overrides
+// backend pairs a stale model (e.g. an Ollama model name) with a newly
+// and incompatible backend (e.g. claude-code), which breaks the spawned
+// session outright instead of using that backend's own default. Found
+// live: overriding a stalled opencode/qwen3.8:27b task's backend to
+// claude-code via set_task_llm (leaving model empty, per its own
+// documented "empty = backend default" contract) still passed the PRD's
+// stale "ollama/qwen3.8:27b" model string through to the claude-code
+// session, which doesn't understand it and got stuck on its own
+// interactive "unknown model" prompt instead of completing.
+func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend string) (backend, model string) {
+	backend, model = t.Backend, t.Model
+	switch {
+	case backend != "":
+		// task-level backend override: model is the task's own
+		// (possibly empty = that backend's default).
+	case story != nil && story.Backend != "":
+		backend = story.Backend
+		if model == "" {
+			model = story.Model
+		}
+	case prd.Backend != "":
+		backend = prd.Backend
+		if model == "" {
+			model = prd.Model
+		}
+	default:
+		backend = fallbackBackend
+		if model == "" && story != nil {
+			model = story.Model
+		}
+		if model == "" {
+			model = prd.Model
+		}
+	}
+	return backend, model
 }
