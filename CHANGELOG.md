@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.11 — fix(pwa): verification_backends missing from the Autonomous settings card (Configuration Accessibility Rule)
+
+### Fixed
+- **`autonomous.verification_backends` (v8.36.9) had no PWA Settings field** — YAML/REST/MCP/comm-channel/CLI all covered it, but the Autonomous settings card (`internal/server/web/app.js`) was never updated, a direct gap against AGENT.md's Configuration Accessibility Rule (every configurable value must be settable through YAML, Web UI, REST, comm channel, MCP, and CLI). Added as a comma-separated text field following the existing `per_task_guardrails` pattern; verified round-trip through `PUT/GET /api/config` and YAML persistence.
+
 ## v8.36.10 — fix(autonomous): a verifier/guardrail ask-call timeout was misreported as an unparseable model response
 
 ### Fixed

@@ -12298,6 +12298,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_timeout_seconds', label: 'Planning timeout (sec, 0=effort default)', type: 'number', placeholder: '0' },
     { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
+    // v8.36.9 — ordered LLM registry names the verifier load-balances
+    // capacity across (e.g. ollama-datawatch, ollama-johnnyjohnny), tried
+    // in order, whichever has free node capacity wins. Empty = single-
+    // backend behavior via verification_backend above.
+    { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-johnnyjohnny', csv: true },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
