@@ -35,6 +35,43 @@ func waitingInputTick(consecutiveTicks int, state session.State) (newTicks int, 
 	return newTicks, newTicks >= waitingInputStallThreshold
 }
 
+// ensureProjectDirOwnGitRepo (v8.36.7) gives projectDir its own git repo
+// when git's upward repo discovery from inside it would otherwise fall
+// through all the way to homeDir — found live on PRD a2833a5e: a project
+// dir with no .git of its own doesn't make `git -C projectDir rev-parse
+// HEAD` fail, it silently returns the nearest ANCESTOR repo's SHA instead.
+// When a worker later ran `git add -A` (every one-shot task's checkpoint
+// protocol instructs this) from inside that project dir, it staged
+// relative to that ancestor repo's root — and when the ancestor turned out
+// to be the operator's own home directory, it began staging the entire
+// home directory (.gnupg, .kube, .docker, .claude.json, ...) before being
+// caught and killed. Only intervenes in that specific dangerous case;
+// a project dir intentionally nested inside some other real repo (whose
+// discovered toplevel is anything other than exactly homeDir) is left
+// untouched. runGit is injected so tests don't need a real git binary
+// side effect beyond a temp dir; production passes the real exec runner.
+func ensureProjectDirOwnGitRepo(ctx context.Context, projectDir, homeDir string, runGit func(ctx context.Context, args ...string) ([]byte, error)) {
+	if projectDir == "" || homeDir == "" {
+		return
+	}
+	top, err := runGit(ctx, "-C", projectDir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return
+	}
+	if strings.TrimSpace(string(top)) != filepath.Clean(homeDir) {
+		return
+	}
+	_, _ = runGit(ctx, "init", projectDir)
+	_, _ = runGit(ctx, "-C", projectDir, "config", "user.email", "datawatch@localhost")
+	_, _ = runGit(ctx, "-C", projectDir, "config", "user.name", "datawatch")
+}
+
+// execGit runs git with the given args, used as ensureProjectDirOwnGitRepo's
+// production runGit implementation.
+func execGit(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "git", args...).Output()
+}
+
 // resolveVerifierBackendModel decides which backend+model the verifier's
 // /api/ask call should use. v8.36.0 — previously this always fell back to a
 // hardcoded "ollama" (and whatever model that resolved to daemon-wide) when

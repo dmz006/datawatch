@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.7 — fix(autonomous): a worker's `git add -A` could reach the operator's home directory when its project dir had no git repo of its own
+
+### Fixed
+- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/dmz/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
+- Migrated the 6 other project directories found in the same exposed state (`Android`, `datawatch-intelligence`, `email`, `openrig-datawatch`, plus two ephemeral e2e/sandbox dirs) to their own repos as a one-time operational cleanup; not part of the code fix itself.
+- **CI: `attach stats-cluster tarball` release-asset upload retry window widened 3×90s → 8×60s** — observed on the v8.36.6 release: `gh release view`/`gh release upload` returned "release not found" for 3 full minutes of retries starting 6 minutes after goreleaser's own log confirmed the release was published (same tag, same repo, same token) — a read-path propagation lag, not a permissions or job-ordering bug. A manual retry ~15 minutes post-publish succeeded immediately; widened the in-job budget to comfortably cover it.
+
 ## v8.36.6 — fix(autonomous): recover a completed PRD with a never-restarted cancelled story; repair_depends_on for pre-v8.36.5 Automata
 
 ### Fixed

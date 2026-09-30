@@ -406,21 +406,33 @@ jobs:
             | gzip > datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
       - name: Upload tarball as release asset
         run: |
+          # v8.36.7 — bumped from 3x90s to 8x60s. Observed live on v8.36.6:
+          # `gh release view`/`gh release upload` returned "release not
+          # found" for a full 3 minutes of retries starting 6 minutes after
+          # goreleaser's own log confirmed "release published" for the same
+          # tag/repo, using the identical secrets.GITHUB_TOKEN — a read-path
+          # propagation lag specific to this job's gh CLI calls, not a
+          # permissions or ordering bug (goreleaser's direct REST publish
+          # was long since done; needs: [goreleaser] already serializes
+          # this job after it). A manual retry ~15 minutes after publish
+          # succeeded immediately, so the lag resolves within that window;
+          # widening the in-job retry budget to comfortably cover it.
           TAG="v${{ steps.ver.outputs.version }}"
           FILE="datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz"
           REPO="${GITHUB_REPOSITORY}"
           echo "pre-flight: TAG=$TAG FILE=$FILE REPO=$REPO"
           gh release view "$TAG" --repo "$REPO" || echo "pre-flight: release view failed"
           ls -lh "$FILE" || echo "pre-flight: file not found"
-          for attempt in 1 2 3; do
-            echo "Upload attempt $attempt of 3"
+          attempts=8
+          for attempt in $(seq 1 "$attempts"); do
+            echo "Upload attempt $attempt of $attempts"
             if gh release upload "$TAG" "$FILE" --clobber --repo "$REPO"; then
               echo "Upload succeeded on attempt $attempt"
               exit 0
             fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Upload failed; sleeping 90s before retry"
-              sleep 90
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "Upload failed; sleeping 60s before retry"
+              sleep 60
             fi
           done
           echo "All upload attempts failed"

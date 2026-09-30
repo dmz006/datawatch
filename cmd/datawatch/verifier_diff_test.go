@@ -47,6 +47,86 @@ func commitFile(t *testing.T, dir, name, content string) {
 	}
 }
 
+// TestEnsureProjectDirOwnGitRepo_FallsThroughToHome_GetsOwnRepo reproduces
+// the exact a2833a5e incident: a project dir with no .git of its own, whose
+// nearest ancestor repo is the operator's home directory, must get its own
+// repo so a worker's later `git add -A` can't reach up into $HOME.
+func TestEnsureProjectDirOwnGitRepo_FallsThroughToHome_GetsOwnRepo(t *testing.T) {
+	home := t.TempDir()
+	gitInit(t, home)
+	commitFile(t, home, "README.md", "home repo")
+
+	projectDir := filepath.Join(home, "workspace", "some-project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ensureProjectDirOwnGitRepo(context.Background(), projectDir, home, execGit)
+
+	top, err := exec.Command("git", "-C", projectDir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Fatalf("rev-parse --show-toplevel after fix: %v", err)
+	}
+	got := strings.TrimSpace(string(top))
+	// Resolve symlinks (macOS /tmp, etc.) the same way git itself does.
+	wantDir, _ := filepath.EvalSymlinks(projectDir)
+	gotDir, _ := filepath.EvalSymlinks(got)
+	if gotDir != wantDir {
+		t.Fatalf("project dir toplevel = %q, want its own dir %q (still falls through to home)", got, wantDir)
+	}
+}
+
+// TestEnsureProjectDirOwnGitRepo_AlreadyOwnRepo_NoOp verifies a project dir
+// that already has its own repo (the common case) is left untouched.
+func TestEnsureProjectDirOwnGitRepo_AlreadyOwnRepo_NoOp(t *testing.T) {
+	home := t.TempDir()
+	gitInit(t, home)
+	projectDir := t.TempDir()
+	gitInit(t, projectDir)
+
+	var calls [][]string
+	fakeRun := func(_ context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		return exec.Command("git", args...).Output()
+	}
+	ensureProjectDirOwnGitRepo(context.Background(), projectDir, home, fakeRun)
+
+	for _, c := range calls {
+		if len(c) > 0 && c[0] == "init" {
+			t.Fatalf("git init called on a project dir that already has its own repo: %v", c)
+		}
+	}
+}
+
+// TestEnsureProjectDirOwnGitRepo_NestedInOtherRepo_NoOp verifies a project
+// dir intentionally nested inside some other real (non-home) repo is left
+// alone — only falling through all the way to $HOME is treated as unsafe.
+func TestEnsureProjectDirOwnGitRepo_NestedInOtherRepo_NoOp(t *testing.T) {
+	home := t.TempDir()
+	gitInit(t, home)
+
+	outer := t.TempDir()
+	gitInit(t, outer)
+	commitFile(t, outer, "README.md", "outer repo")
+	nested := filepath.Join(outer, "internal", "some-subdir")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls [][]string
+	fakeRun := func(_ context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		return exec.Command("git", args...).Output()
+	}
+	ensureProjectDirOwnGitRepo(context.Background(), nested, home, fakeRun)
+
+	for _, c := range calls {
+		if len(c) > 0 && c[0] == "init" {
+			t.Fatalf("git init called on a dir legitimately nested inside another repo: %v", c)
+		}
+	}
+}
+
 // Reproduces PRD 0fb4e302's failure mode: a worker edits a pre-existing
 // TRACKED file without committing (session.auto_git_commit=false, the
 // operator default) — the commit-range diff the verifier used to rely on

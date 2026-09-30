@@ -2989,10 +2989,10 @@ function renderSessionDetail(sessionId) {
   const sessOutputMode = sess?.output_mode || 'terminal';
   const tmuxArea = document.getElementById('outputAreaTmux');
   if (tmuxArea && isActive && !isSameSession && sessOutputMode === 'terminal') {
-    tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:8px;">
-      <canvas id="termLoadingCanvas" style="width:120px;height:120px;"></canvas>
-      <div style="font-size:12px;font-weight:600;letter-spacing:2px;color:#00E5A0;" id="termLoadingText">${(t('term_connecting')||'Connecting to session…').toUpperCase()}</div>
-      <div style="font-size:10px;color:var(--text2);opacity:0.6;" id="termLoadingRetry"></div>
+    tmuxArea.innerHTML = `<div id="termLoadingSplash" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;color:var(--text2);gap:8px;">
+      <canvas id="termLoadingCanvas" style="width:100%;height:100%;position:absolute;inset:0;"></canvas>
+      <div style="position:relative;font-size:12px;font-weight:600;letter-spacing:2px;color:#00E5A0;" id="termLoadingText">${(t('term_connecting')||'Connecting to session…').toUpperCase()}</div>
+      <div style="position:relative;font-size:10px;color:var(--text2);opacity:0.6;" id="termLoadingRetry"></div>
     </div>`;
     // Session-connect animated splash (eye + matrix rain + lightning bolt) —
     // matches datawatch-app's SessionLoadingOverlay (operator: "replicate

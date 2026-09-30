@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.36.6"
+var Version = "8.36.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4015,6 +4015,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			var preTaskSHA string
 			var preTaskUntrackedFiles []string
 			if req.ProjectDir != "" {
+				// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
+				// (verifier_diff.go): prevents a worker's `git add -A`
+				// from silently staging the operator's whole home
+				// directory when the project dir has no git repo of its
+				// own. Found live on PRD a2833a5e.
+				if home, herr := os.UserHomeDir(); herr == nil {
+					ensureProjectDirOwnGitRepo(ctx, req.ProjectDir, home, execGit)
+				}
 				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
 					preTaskSHA = strings.TrimSpace(string(out))
 				}
