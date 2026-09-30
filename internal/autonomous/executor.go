@@ -427,13 +427,20 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 	}
 	// Roll up PRD status: completed/failed once every task is in a terminal state.
+	//
+	// v8.36.3 — found live on PRD a2833a5e: isTaskTerminal treats
+	// TaskCancelled as terminal (correctly — a cancelled task will never
+	// run again), but this loop then also counted it as a *failure*, so a
+	// PRD with one deliberately-cancelled story and every other story
+	// genuinely completed still rolled up to PRDFailed. Cancellation is not
+	// failure — only an actual TaskFailed should mark the PRD failed.
 	allDone := true
 	anyFailed := false
 	for _, s := range prd.Story {
 		for _, t := range s.Tasks {
 			if !isTaskTerminal(t.Status) {
 				allDone = false
-			} else if t.Status != TaskCompleted {
+			} else if t.Status == TaskFailed {
 				anyFailed = true
 			}
 		}

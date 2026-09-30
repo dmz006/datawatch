@@ -77,6 +77,38 @@ func TestExecutor_StoryFailureHaltsPRDByDefault(t *testing.T) {
 	}
 }
 
+// TestExecutor_CancelledStoryDoesNotFailPRDRollup is a regression test for a
+// bug found live on PRD a2833a5e (v8.36.3): isTaskTerminal treats
+// TaskCancelled as terminal (correctly), but the PRD rollup at the end of
+// Run() then also counted it as a *failure* — a PRD with one deliberately
+// cancelled story and every other story genuinely completed still rolled up
+// to PRDFailed instead of PRDCompleted. Cancellation is an operator choice,
+// not a failure.
+func TestExecutor_CancelledStoryDoesNotFailPRDRollup(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{
+		{Title: "S1-completes", Tasks: []Task{{Title: "T1", Spec: "write docs/x.md"}}},
+		{Title: "S2-was-cancelled", Tasks: []Task{{Title: "T2", Spec: "write docs/y.md"}}},
+	})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Story[1].Status = StoryCancelled
+	prd.Story[1].Tasks[0].Status = TaskCancelled
+	_ = m.Store().SavePRD(prd)
+
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "s-" + r.TaskID}, nil
+	}
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
+
+	got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDCompleted {
+		t.Fatalf("want PRDCompleted (only a pre-cancelled story + a genuinely completed story), got %s", got.Status)
+	}
+}
+
 // TestExecutor_ContinueOnStoryFailure_PRDOverride restores the pre-fix
 // "continue regardless" behavior when the operator explicitly opts in via
 // the per-PRD override, confirming the opt-out path still works.

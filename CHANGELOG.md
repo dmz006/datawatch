@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.3 — fix(autonomous): a deliberately cancelled story no longer rolls the PRD up to failed
+
+### Fixed
+- **A PRD with one deliberately cancelled story and every other story genuinely completed still rolled up to `PRDFailed`** — found live completing the first real end-to-end claude-code Automaton run: the end-of-`Run()` rollup counted any non-`TaskCompleted` terminal status (including `TaskCancelled`) as a failure. Cancellation is an operator choice, not a failure; only `TaskFailed` marks the PRD failed now.
+
+## v8.36.2 — fix(ci): agent-gemini's version bump alone didn't fix brace-expansion/undici CVEs
+
+### Fixed
+- **v8.36.1's `agent-gemini` CVE fix (bumping `gemini-cli`) didn't actually work** — the vulnerable `brace-expansion`/`undici` versions come from npm's own bundled deps (the `npm@11` upgrade a few lines above in the Dockerfile), not from `gemini-cli` at all. Verified locally: no published npm version, including `npm@latest` (12.1.0), has picked up the fix yet. Now overwrites npm's own nested copies with the patched standalone packages directly instead of waiting on npm upstream.
+
 ## v8.36.1 — fix(autonomous): one-shot sessions no longer hang on Claude Code's interactive prompts; agent-gemini CVE bump
 
 ### Fixed
