@@ -17,13 +17,24 @@ USER root
 RUN install_packages curl gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     install_packages nodejs && \
-    # Upgrade the npm bundled with the distro nodejs: its vendored tar, brace-expansion,
+    # Upgrade the npm bundled with the distro nodejs: its vendored tar,
     # pacote, sigstore, ip-address and picomatch carry HIGH findings fixed in npm 11.20+.
     npm install -g --no-audit --no-fund npm@11 && \
-    # GEMINI_CLI_VERSION bumped 0.39.1 -> 0.62.0 (v8.36.1) — the pinned 0.39.1's
-    # own transitive deps carried brace-expansion (CVE-2026-102276/102278) and
-    # undici (CVE-2026-19534) HIGH findings, fixed upstream in newer brace-expansion/
-    # undici releases that later gemini-cli versions pull in.
+    # v8.36.1 (corrected) — npm's own bundled brace-expansion (5.0.9,
+    # CVE-2026-102276/102278) and undici (6.28.0, CVE-2026-19534) are NOT
+    # fixed by any published npm release, including npm@latest (verified
+    # locally: npm 11.20.0 and 12.1.0 both still bundle these exact
+    # vulnerable versions — bumping GEMINI_CLI_VERSION below, tried first,
+    # did not help either, since these come from npm itself, not from
+    # gemini-cli). The patched packages exist standalone on the registry;
+    # overwrite npm's own nested copies with them directly.
+    NPM_ROOT="$(npm root -g)/npm" && \
+    mkdir -p /tmp/npm-cve-patch && cd /tmp/npm-cve-patch && \
+    npm install --no-audit --no-fund brace-expansion@^5.0.10 undici@^6.28.1 && \
+    rm -rf "$NPM_ROOT/node_modules/brace-expansion" "$NPM_ROOT/node_modules/undici" && \
+    cp -r node_modules/brace-expansion "$NPM_ROOT/node_modules/brace-expansion" && \
+    cp -r node_modules/undici "$NPM_ROOT/node_modules/undici" && \
+    cd / && rm -rf /tmp/npm-cve-patch && \
     npm install -g --omit=optional --no-audit --no-fund \
         @google/gemini-cli@${GEMINI_CLI_VERSION} && \
     npm cache clean --force && \
