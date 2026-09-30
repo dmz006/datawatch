@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.8 — fix(autonomous): LLM verifier/guardrail JSON responses wrapped in prose or a fence were treated as an outright failure
+
+### Fixed
+- **A verifier, guardrail, scan-grader, or orchestrator-guardrail LLM call that didn't reply with *exactly* bare JSON was always treated as a hard failure/block, even when it contained a perfectly valid verdict** — found live retrying PRD `a2833a5e`: two different tasks both failed with `verifier: unparseable response` against real, large markdown diffs, while a small synthetic probe against the same model came back clean both times. All four `json.Unmarshal([]byte(answer), ...)` call sites fed the model's raw text straight into strict unmarshal with no tolerance for a markdown code fence, a leading/trailing prose sentence, or (for reasoning models) a `<think>...</think>` preamble — all things models routinely do despite an explicit "reply with STRICT JSON only" instruction. New shared `extractJSON` helper (9 unit tests) strips a fence when present, otherwise falls back to the span from the first `{` to the last `}`; applied at all four sites (verifier, guardrail, scan grader, orchestrator guardrail).
+
 ## v8.36.7 — fix(autonomous): a worker's `git add -A` could reach the operator's home directory when its project dir had no git repo of its own
 
 ### Fixed

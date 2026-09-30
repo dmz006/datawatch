@@ -72,6 +72,45 @@ func execGit(ctx context.Context, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, "git", args...).Output()
 }
 
+// extractJSON (v8.36.8) recovers a JSON object from raw LLM output that
+// isn't itself pure JSON. Every "reply with STRICT JSON only" prompt in
+// this codebase (verifier, guardrail, scan grader, orchestrator guardrail)
+// used to feed the model's raw answer straight into json.Unmarshal and
+// treat ANY deviation as an outright failure — found live retrying PRD
+// a2833a5e: two different tasks both failed verification with "verifier:
+// unparseable response" against a real (large, markdown-heavy) diff, while
+// a synthetic small-diff probe against the same model came back as clean
+// JSON both times. Models routinely wrap JSON in a markdown code fence, a
+// leading/trailing prose sentence, or — for reasoning models — a
+// <think>...</think> preamble, despite explicit instructions not to.
+// Strips a ```json fence when present, otherwise falls back to the span
+// from the first '{' to the last '}' in the text; returns the input
+// unchanged if it already looks like bare JSON or no such span exists.
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 1 && s[0] == '{' && s[len(s)-1] == '}' {
+		return s
+	}
+	if i := strings.Index(s, "```"); i >= 0 {
+		rest := strings.TrimPrefix(s[i+3:], "json")
+		rest = strings.TrimPrefix(rest, "\n")
+		if j := strings.Index(rest, "```"); j >= 0 {
+			if fenced := strings.TrimSpace(rest[:j]); fenced != "" {
+				s = fenced
+			}
+		}
+	}
+	if len(s) > 1 && s[0] == '{' && s[len(s)-1] == '}' {
+		return s
+	}
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
 // resolveVerifierBackendModel decides which backend+model the verifier's
 // /api/ask call should use. v8.36.0 — previously this always fell back to a
 // hardcoded "ollama" (and whatever model that resolved to daemon-wide) when

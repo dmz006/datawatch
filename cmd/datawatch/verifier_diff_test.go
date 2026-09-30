@@ -127,6 +127,31 @@ func TestEnsureProjectDirOwnGitRepo_NestedInOtherRepo_NoOp(t *testing.T) {
 	}
 }
 
+func TestExtractJSON(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"already bare", `{"ok": true}`, `{"ok": true}`},
+		{"whitespace padded", "  \n{\"ok\": true}\n  ", `{"ok": true}`},
+		{"markdown fence with json tag", "```json\n{\"ok\": true}\n```", `{"ok": true}`},
+		{"markdown fence no tag", "```\n{\"ok\": true}\n```", `{"ok": true}`},
+		{"leading prose", `Sure, here is the verdict: {"ok": true}`, `{"ok": true}`},
+		{"trailing prose", `{"ok": true} Let me know if you need anything else.`, `{"ok": true}`},
+		{"thinking preamble", "<think>\nLet me check the diff... looks fine.\n</think>\n{\"ok\": true, \"severity\": \"info\"}", `{"ok": true, "severity": "info"}`},
+		{"no braces at all", "I cannot verify this.", "I cannot verify this."},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := extractJSON(c.in)
+			if got != c.want {
+				t.Fatalf("extractJSON(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
 // Reproduces PRD 0fb4e302's failure mode: a worker edits a pre-existing
 // TRACKED file without committing (session.auto_git_commit=false, the
 // operator default) — the commit-range diff the verifier used to rely on

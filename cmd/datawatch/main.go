@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.36.7"
+var Version = "8.36.8"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4445,7 +4445,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				OK: false, Severity: "medium", Summary: "verifier: unparseable response",
 				VerifiedAt: time.Now(),
 			}
-			_ = json.Unmarshal([]byte(ask.Answer), &vr)
+			_ = json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr)
 			vr.VerifiedAt = time.Now()
 			return vr, nil
 		}
@@ -4511,7 +4511,7 @@ Reply with STRICT JSON:
 				Summary:   "guardrail: unparseable LLM response — cannot verify compliance",
 				VerdictAt: time.Now(),
 			}
-			_ = json.Unmarshal([]byte(ask.Answer), &gv)
+			_ = json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv)
 			gv.VerdictAt = time.Now()
 			return gv, nil
 		}
@@ -4719,7 +4719,7 @@ Respond ONLY with a JSON object: {"verdict": "pass"|"warn"|"fail", "notes": "<br
 					Verdict string `json:"verdict"`
 					Notes   string `json:"notes"`
 				}
-				if err := json.Unmarshal([]byte(answer), &resp); err != nil {
+				if err := json.Unmarshal([]byte(extractJSON(answer)), &resp); err != nil {
 					// v8.25.11: unparseable scan grader response = fail, not warn.
 					return "fail", "scan grader: unparseable LLM response", nil
 				}
@@ -4974,7 +4974,7 @@ Return STRICT JSON:
 					Outcome: "block", Severity: "medium",
 					Summary: fmt.Sprintf("%s: unparseable LLM response — cannot verify compliance", req.Guardrail),
 				}
-				_ = json.Unmarshal([]byte(ask.Answer), &v)
+				_ = json.Unmarshal([]byte(extractJSON(ask.Answer)), &v)
 				if v.Outcome == "" {
 					v.Outcome = "block"
 				}
