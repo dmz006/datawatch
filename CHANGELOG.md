@@ -19,7 +19,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A genuine data race between daemon-restart boot-resume and a live `Run()` call** — `resumeRunningPRDs()` processed a `PRDRunning` PRD unconditionally, including one already being driven by a live executor (an operator's `Run()` landing while boot-resume was still working through a backlog, or — in the test that first caught this — a caller's own `Run()` racing the background scan `SetExecutors` kicks off). It would kill an in-flight task's session as if it were an orphan from a dead process. Now checked against the same `runCancels` liveness signal `Run()`'s own idempotency already uses.
 - **`PurgeScope`/`ArchiveScope` discarded the session ID for a session-local memory scope** — found while wiring session-delete's memory strategy above. A session-local scope resolves to an empty role (the session ID lives in a separate field both functions silently dropped), so purging or archiving *one* session's memories actually purged/archived *every* memory in the whole project. Real, pre-existing data-loss risk, now fixed with regression tests proving two sessions' memories stay isolated.
 
+---
 
+## v8.35.1 — fix(memory): PRD hard-delete's memory_strategy was silently ignored from mobile; PWA retry-button contrast; CI CVE suppression
 
 ### Fixed
 - **`memory_strategy` on PRD hard-delete was silently ignored when sent by the mobile client** — the REST handler (`DELETE /api/autonomous/prds/{id}?hard=true`) only ever read `memory_strategy`/`archive_role_filter`/`archive_to_scope` from URL query params, but the Android client sends them in the JSON request body. Choosing "purge" or "archive" on Android had no effect — the PRD's memories were silently kept. The handler now falls back to the JSON body when the query string doesn't carry a strategy.
