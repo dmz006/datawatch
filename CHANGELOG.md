@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.12 — fix(test): 5 tests leaked real tmux sessions on every run; cleaned up 197 accumulated orphans
+
+### Fixed
+- **Five tests in `internal/server` called `handleStartSession` (which spawns a genuine `cs-<hostname>-<id>` tmux session via `session.Manager.Start` — nothing about these unit tests mocks the tmux layer) and never killed what they started**, leaking one real tmux session per uncleaned call site on every `go test ./...` invocation. Found live investigating operator-reported tmux clutter: 197 orphaned sessions dating back to May, none present in the session store (confirmed via `Manager.Delete`'s kill-then-remove logic never running for them — the record was never even created, since the test never called delete/kill at all). Root-caused via direct `tmux capture-pane` on the orphans themselves — every one's pane showed the exact spawning test's own `t.TempDir()` path (`TestSessionStart_WithNamedLLM`, `TestSessionStart_NamedVsAdapterType`, `TestHandleStartSession_CapacityAdmit_Gated`, `TestHandleStartSession_CapacityAdmit_SkippedForOneShot`, `TestHandleDeleteSession_MemoryStrategyPurge`'s never-deleted control session). Fixed with a shared `cleanupStartedSession` test helper (`t.Cleanup` + `Manager.Delete`); verified a full `go test ./...` run no longer changes the live tmux session count. Cleaned up all 197 accumulated orphans (all independently confirmed via their own pane content, all with zero corresponding session-store record, none touching the 4 genuinely active sessions).
+
 ## v8.36.11 — fix(pwa): verification_backends missing from the Autonomous settings card (Configuration Accessibility Rule)
 
 ### Fixed

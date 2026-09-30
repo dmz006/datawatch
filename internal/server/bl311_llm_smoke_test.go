@@ -237,6 +237,7 @@ func TestSessionStart_WithNamedLLM(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions/start", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.handleStartSession(w, req)
+	cleanupStartedSession(t, srv, w)
 
 	// The registry lookup must NOT return 400 (which would mean the named
 	// LLM was not found). 200 or 500 are both fine — 500 means the
@@ -289,6 +290,7 @@ func TestSessionStart_NamedVsAdapterType(t *testing.T) {
 	reqA := httptest.NewRequest(http.MethodPost, "/api/sessions/start", bytes.NewReader(bodyA))
 	wA := httptest.NewRecorder()
 	srv.handleStartSession(wA, reqA)
+	cleanupStartedSession(t, srv, wA)
 
 	// The legacy backend path should NOT 400 on registry grounds.
 	// (It may 500 because "ollama" binary isn't installed in tests.)

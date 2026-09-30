@@ -58,6 +58,10 @@ func TestHandleDeleteSession_MemoryStrategyPurge(t *testing.T) {
 	projectDir := t.TempDir()
 	sessA := startTestSession(t, srv, projectDir)
 	sessB := startTestSession(t, srv, projectDir)
+	// sessA is deleted by the test itself below; sessB never is (it's the
+	// control used to verify the OTHER session's memory survives), so its
+	// spawned tmux session would otherwise leak on every run.
+	t.Cleanup(func() { _ = srv.manager.Delete(sessB, false) })
 
 	_, _ = backend.Save(projectDir, "session A memory", "", "", sessA, nil)
 	_, _ = backend.Save(projectDir, "session B memory", "", "", sessB, nil)

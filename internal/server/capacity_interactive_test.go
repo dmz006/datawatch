@@ -41,6 +41,7 @@ func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("handleStartSession: status %d body: %s", w.Code, w.Body.String())
 	}
+	cleanupStartedSession(t, srv, w)
 	if admitCalls != 1 {
 		t.Fatalf("capacityAdmit calls = %d, want 1", admitCalls)
 	}
@@ -84,6 +85,7 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("handleStartSession: status %d body: %s", w.Code, w.Body.String())
 	}
+	cleanupStartedSession(t, srv, w)
 	if admitCalls != 0 {
 		t.Fatalf("capacityAdmit calls = %d, want 0 for a OneShot (autonomous) session start", admitCalls)
 	}
@@ -118,6 +120,32 @@ func TestHandleStartSession_CapacityAdmit_DeniedReturns503(t *testing.T) {
 }
 
 var errCapacityDenied = &capacityDeniedErr{}
+
+// cleanupStartedSession (v8.36.12) tears down a session spawned via a raw
+// handleStartSession call in a test, once the test finishes. Found live:
+// internal/session.Manager.Start spawns a REAL tmux session (named
+// cs-<hostname>-<id>) even in these unit tests — nothing about the test
+// environment mocks the tmux layer — and none of this package's
+// handleStartSession-calling tests ever killed what they started. Every
+// `go test ./...` run leaked one tmux session per uncleaned call site,
+// accumulating (confirmed live: 197 such orphaned sessions going back to
+// May, none present in the session store since Manager.Delete's kill-first
+// logic was simply never reached for them). w is the httptest.ResponseRecorder
+// handleStartSession wrote its JSON response to.
+func cleanupStartedSession(t *testing.T, srv *Server, w *httptest.ResponseRecorder) {
+	t.Helper()
+	t.Cleanup(func() {
+		var r struct{ FullID, ID string }
+		_ = json.Unmarshal(w.Body.Bytes(), &r)
+		id := r.FullID
+		if id == "" {
+			id = r.ID
+		}
+		if id != "" {
+			_ = srv.manager.Delete(id, false)
+		}
+	})
+}
 
 type capacityDeniedErr struct{}
 
