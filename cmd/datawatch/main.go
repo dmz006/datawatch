@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.36.3"
+var Version = "8.36.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4163,8 +4163,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// isPromptOscillation elsewhere) or the disclaimer prompt
 						// claude_auto_accept_disclaimer normally dismisses on its
 						// own isn't mistaken for a genuine stall.
+						//
+						// v8.36.4 — found live on PRD 8baa807b: the shared
+						// promptPatterns list (session/manager.go) includes a
+						// bare "> " to catch Claude Code's menus, but that
+						// same pattern also matches opencode's own normal,
+						// persistent status line ("> build · qwen3.8:27b"),
+						// misclassifying every opencode one-shot session as
+						// StateWaitingInput within seconds of spawn — this
+						// killed every attempt at ~27s regardless of whether
+						// opencode was actually stuck. Scope the kill+retry to
+						// claude-code specifically, the only backend this was
+						// validated against; other backends fall back to
+						// staleWorkerCheck's log-mtime staleness check below.
 						var stalled bool
-						waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
+						if s.BackendFamily == "claude-code" {
+							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
+						}
 						if stalled {
 							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",
 								task.SessionID, task.PRDID, task.ID)

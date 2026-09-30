@@ -191,8 +191,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			// Skip tasks already in a terminal state (completed/failed/cancelled)
 			// so executor restarts don't re-run finished work.
+			//
+			// v8.36.5 — found live on PRD a2833a5e: only TaskFailed populated
+			// failedIDs here, so a task whose dependency was TaskCancelled
+			// (e.g. an earlier story the operator cancelled and never
+			// restarted) saw an empty depFailed check below and proceeded as
+			// if that dependency were satisfied — "Write final
+			// recommendations" completed depending on two never-produced
+			// files from a cancelled story. A cancelled dependency was never
+			// fulfilled either; it must propagate the same as a failed one.
 			if isTaskTerminal(t.Status) {
-				if t.Status == TaskFailed {
+				if t.Status == TaskFailed || t.Status == TaskCancelled {
 					failedIDs[tid] = true
 				}
 				continue
@@ -207,7 +216,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			if depFailed != "" {
 				t.Status = TaskFailed
-				t.Error = "dependency " + depFailed + " failed"
+				verb := "failed"
+				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
+					verb = "was cancelled"
+				}
+				t.Error = "dependency " + depFailed + " " + verb
 				_ = m.store.SaveTask(t)
 				failedIDs[tid] = true
 			} else {
@@ -270,6 +283,29 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		failedIDs := make(map[string]bool, len(order))
 		inFlight := make(map[string]bool, concurrency)
 		remaining := len(order)
+
+		// v8.36.5 — seed tracking for tasks that are already terminal before
+		// this Run() call even starts (a prior attempt, or — found live on
+		// PRD a2833a5e — an operator-cancelled story that was never
+		// restarted). Without this, isReady()'s `!completedIDs[dep]` check
+		// never resolves for a dependent of an already-cancelled task: it's
+		// not in completedIDs (never ran this pass) and not in failedIDs
+		// either, so the dependent never becomes ready — a silent deadlock
+		// (the "no ready tasks, nothing in-flight" safety below breaks the
+		// loop, but the dependent is left stuck pending, not visibly failed
+		// or blocked). Match the sequential path: completed tasks satisfy
+		// deps, failed/cancelled ones propagate as unmet.
+		for _, tid := range order {
+			t := lookupTask(prd, tid)
+			if t == nil || !isTaskTerminal(t.Status) {
+				continue
+			}
+			completedIDs[tid] = true
+			if t.Status == TaskFailed || t.Status == TaskCancelled {
+				failedIDs[tid] = true
+			}
+			remaining--
+		}
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
@@ -341,6 +377,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 		}
 
+		// Propagate failure from any task whose only dependency is one of
+		// the already-terminal failed/cancelled tasks seeded above, before
+		// the first launch — otherwise it's merely "not ready" (never
+		// marked failed) until some other in-flight completion happens to
+		// trigger autoFailDeps again.
+		autoFailDeps()
 		launch()
 
 		for remaining > 0 {

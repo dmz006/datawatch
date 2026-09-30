@@ -109,6 +109,51 @@ func TestExecutor_CancelledStoryDoesNotFailPRDRollup(t *testing.T) {
 	}
 }
 
+// TestExecutor_CancelledDependencyFailsDependent is a regression test for a
+// bug found live on PRD a2833a5e (v8.36.5): a task depending on an
+// already-cancelled task (an earlier story the operator cancelled and never
+// restarted) proceeded as if that dependency were satisfied — only
+// TaskFailed populated failedIDs in the sequential path's terminal-task
+// skip, not TaskCancelled. "Write final recommendations" completed
+// depending on two files a cancelled story never produced. A cancelled
+// dependency was never fulfilled either; it must propagate the same as a
+// failed one, in both the sequential and concurrent executor paths.
+func TestExecutor_CancelledDependencyFailsDependent(t *testing.T) {
+	for _, concurrency := range []int{0, 2} { // 0 = sequential path, 2 = concurrent path
+		t.Run(fmt.Sprintf("concurrency=%d", concurrency), func(t *testing.T) {
+			m, api, _, _ := apiFixture(t)
+			prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+			_ = m.Store().SetStories(prd.ID, []Story{
+				{Title: "S1-cancelled", Tasks: []Task{{Title: "T1", Spec: "write docs/x.md"}}},
+				{Title: "S2-depends-on-s1", Tasks: []Task{{Title: "T2", Spec: "write docs/y.md", DependsOn: []string{"T1"}}}},
+			})
+			prd, _ = m.Store().GetPRD(prd.ID)
+			prd.Story[0].Status = StoryCancelled
+			prd.Story[0].Tasks[0].Status = TaskCancelled
+			if concurrency > 0 {
+				prd.MaxConcurrentTasks = concurrency
+			}
+			_ = m.Store().SavePRD(prd)
+
+			spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+				return SpawnResult{SessionID: "s-" + r.TaskID}, nil
+			}
+			verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+				return VerificationResult{OK: true}, nil
+			}
+
+			got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+			t2 := got.Story[1].Tasks[0]
+			if t2.Status != TaskFailed {
+				t.Fatalf("T2 (depends on cancelled T1) status = %q, want TaskFailed — it must not silently proceed as if T1 were satisfied", t2.Status)
+			}
+			if t2.Error == "" {
+				t.Error("T2 should have an error explaining the unmet dependency")
+			}
+		})
+	}
+}
+
 // TestExecutor_ContinueOnStoryFailure_PRDOverride restores the pre-fix
 // "continue regardless" behavior when the operator explicitly opts in via
 // the per-PRD override, confirming the opt-out path still works.

@@ -260,6 +260,49 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 		}
 		s.stories[stories[i].ID] = &stories[i]
 	}
+	// v8.36.5 — resolve DependsOn from decompose's LLM-output titles to real
+	// IDs, now that every story/task above has one. DependsOn is documented
+	// as "other Task/Story IDs" and every consumer (topoSort, the
+	// sequential/concurrent executor paths) compares it against IDs — but
+	// the decompose LLM can only ever reference a sibling by its title (IDs
+	// don't exist until this exact function assigns them), so an
+	// unresolved DependsOn entry is a title, not an ID, and silently never
+	// matches anything. Found live on PRD a2833a5e: this meant dependency
+	// ordering had never actually been enforced — topoSort treated every
+	// task as having no real dependency edges, executing in ID-sort order,
+	// which happens to approximate decompose's own sequence closely enough
+	// that the gap went unnoticed until a cancelled task's dependent
+	// proceeded without it. Build title->ID maps and rewrite each
+	// unresolved entry; leave anything that matches neither an ID nor a
+	// known sibling title untouched rather than silently dropping it.
+	taskIDByTitle := make(map[string]string, len(s.tasks))
+	storyIDByTitle := make(map[string]string, len(stories))
+	for i := range stories {
+		storyIDByTitle[stories[i].Title] = stories[i].ID
+		for j := range stories[i].Tasks {
+			taskIDByTitle[stories[i].Tasks[j].Title] = stories[i].Tasks[j].ID
+		}
+	}
+	for i := range stories {
+		for k, dep := range stories[i].DependsOn {
+			if _, isID := s.stories[dep]; isID {
+				continue
+			}
+			if id, ok := storyIDByTitle[dep]; ok {
+				stories[i].DependsOn[k] = id
+			}
+		}
+		for j := range stories[i].Tasks {
+			for k, dep := range stories[i].Tasks[j].DependsOn {
+				if _, isID := s.tasks[dep]; isID {
+					continue
+				}
+				if id, ok := taskIDByTitle[dep]; ok {
+					stories[i].Tasks[j].DependsOn[k] = id
+				}
+			}
+		}
+	}
 	prd.Story = stories
 	prd.UpdatedAt = time.Now()
 	return s.persist()

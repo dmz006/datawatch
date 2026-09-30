@@ -65,6 +65,67 @@ func TestStore_SetStories_AssignsIDs(t *testing.T) {
 	}
 }
 
+// TestStore_SetStories_ResolvesDependsOnTitlesToIDs is a regression test
+// for a bug found live on PRD a2833a5e (v8.36.5): DependsOn is documented
+// as "other Task/Story IDs" and every consumer (topoSort, both executor
+// paths) compares it against IDs, but the decompose LLM can only reference
+// a sibling by its title (IDs don't exist until SetStories assigns them
+// here) — so dependency ordering silently never worked: an unresolved
+// title never matched any real ID, meaning every task behaved as if it had
+// no dependencies at all. Mirrors the exact shape decompose's LLM output
+// actually produces (depends_on: ["<sibling title>"]).
+func TestStore_SetStories_ResolvesDependsOnTitlesToIDs(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := NewStore(dir)
+	prd, _ := st.CreatePRD("spec", "/p", "", "", "")
+	stories := []Story{
+		{Title: "S1", Tasks: []Task{{Title: "T1", Spec: "do thing 1"}}},
+		{
+			Title:     "S2",
+			DependsOn: []string{"S1"},
+			Tasks: []Task{{
+				Title:     "T2",
+				Spec:      "do thing 2",
+				DependsOn: []string{"T1"}, // as decompose's LLM output actually shapes it — a title, not an ID
+			}},
+		},
+	}
+	if err := st.SetStories(prd.ID, stories); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
+	got, _ := st.GetPRD(prd.ID)
+	s1ID := got.Story[0].ID
+	t1ID := got.Story[0].Tasks[0].ID
+
+	if len(got.Story[1].DependsOn) != 1 || got.Story[1].DependsOn[0] != s1ID {
+		t.Fatalf("story S2's DependsOn = %v, want resolved to S1's ID %q", got.Story[1].DependsOn, s1ID)
+	}
+	if len(got.Story[1].Tasks[0].DependsOn) != 1 || got.Story[1].Tasks[0].DependsOn[0] != t1ID {
+		t.Fatalf("task T2's DependsOn = %v, want resolved to T1's ID %q", got.Story[1].Tasks[0].DependsOn, t1ID)
+	}
+}
+
+// TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched verifies an
+// entry matching neither a known ID nor a sibling title is left as-is
+// rather than silently dropped — e.g. a stale reference to a task/story
+// that was since removed.
+func TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := NewStore(dir)
+	prd, _ := st.CreatePRD("spec", "/p", "", "", "")
+	stories := []Story{{
+		Title: "S1",
+		Tasks: []Task{{Title: "T1", Spec: "do thing", DependsOn: []string{"does not exist"}}},
+	}}
+	if err := st.SetStories(prd.ID, stories); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
+	got, _ := st.GetPRD(prd.ID)
+	if len(got.Story[0].Tasks[0].DependsOn) != 1 || got.Story[0].Tasks[0].DependsOn[0] != "does not exist" {
+		t.Fatalf("unresolvable DependsOn entry was altered: %v", got.Story[0].Tasks[0].DependsOn)
+	}
+}
+
 func TestStore_AddLearning(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)

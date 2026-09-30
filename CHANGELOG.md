@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.5 — fix(autonomous): task dependency ordering (`depends_on`) never actually worked; cancelled dependencies now correctly block dependents; opencode false-positive stall-kill
+
+### Fixed
+- **Task `depends_on` has never actually been enforced** — found live completing PRD `a2833a5e`: a task that finished depending on two files a cancelled sibling story never produced. Root cause: `depends_on` is documented as "other Task/Story IDs" and every consumer (`topoSort`, both the sequential and concurrent executor paths) compares it against IDs — but the decompose LLM can only reference a sibling by its *title* (IDs don't exist until `SetStories` assigns them), so an entry was always a title, never an ID, and silently matched nothing. In practice this meant dependency ordering was never real — tasks just ran in ID-creation order, which happens to closely approximate decompose's own sequence, masking the gap until a cancelled dependency's dependent proceeded without it. `SetStories` now resolves each `depends_on` title to its real ID once every sibling has one; an entry matching neither a known ID nor a sibling title is left untouched (e.g. a stale reference to something since removed) rather than silently dropped.
+- **A cancelled dependency was treated as satisfied, not unmet** — a task depending on an already-cancelled sibling (an earlier story the operator cancelled and never restarted) proceeded as if the dependency had been fulfilled, in the sequential executor path. The concurrent path had the mirror-image bug: a dependent of an already-terminal task was never seeded into either tracking map, so it could deadlock (silently stuck pending) instead of either proceeding or failing visibly. Both paths now correctly treat a cancelled (or failed) dependency as unmet, propagating failure to the dependent with a message distinguishing "was cancelled" from "failed".
+- **The one-shot stall-detector (v8.36.1) killed every opencode session almost immediately, regardless of whether it was actually stuck** — found live on PRD `8baa807b`: the shared prompt-detection pattern list includes a bare `"> "` to catch Claude Code's interactive menus, but that same pattern also matches opencode's own normal, persistent status line (`"> build · qwen3.8:27b"`), misclassifying every opencode one-shot session as `waiting_input` within seconds of spawn. Scoped the kill+retry to `claude-code` specifically — the only backend this was validated against; other backends fall back to the existing log-mtime staleness check.
+
 ## v8.36.3 — fix(autonomous): a deliberately cancelled story no longer rolls the PRD up to failed
 
 ### Fixed
