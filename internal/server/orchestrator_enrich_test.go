@@ -45,6 +45,7 @@ func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, 
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) ResetTask(string, string, string, bool) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)         { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) CancelTask(string, string, string, string) (any, error)  { return nil, nil }
 func (f *fakeOrchAutonomous) AddStory(string, string, string, string) (any, error)      { return nil, nil }

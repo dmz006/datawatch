@@ -376,3 +376,52 @@ func TestResetTask_PRDCancelled_ResetsTaskAndRestoresRunning(t *testing.T) {
 		t.Fatalf("task-1b status = %q; want empty (pending)", updated.Story[0].Tasks[1].Status)
 	}
 }
+
+// TestResetTask_PRDCompleted_CancelledStoryReopens (v8.36.6) reproduces the
+// a2833a5e recovery scenario: a PRD reached PRDCompleted with one story
+// left StoryCancelled (its own cancel was never restarted, while a sibling
+// story that depends on it still ran and completed). force=true reset_task
+// on one of that cancelled story's tasks must both accept the PRDCompleted
+// status and reopen the StoryCancelled story — previously neither was
+// allowed, leaving no recovery path short of the destructive reset_to_draft.
+func TestResetTask_PRDCompleted_CancelledStoryReopens(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	prd.Status = PRDCompleted
+	prd.Story[0].Status = StoryCancelled
+	prd.Story[0].Tasks[0].Status = TaskCancelled
+	prd.Story[0].Tasks[0].SessionID = ""
+	prd.Story[0].Tasks[1].Status = TaskCancelled
+	prd.Story[1].Status = StoryCompleted
+	_ = m.Store().SavePRD(prd)
+
+	updated, err := m.ResetTask(prd.ID, "task-1a", "operator", true)
+	if err != nil {
+		t.Fatalf("reset_task on a completed PRD's cancelled story should succeed with force=true: %v", err)
+	}
+	if updated.Status != PRDRunning {
+		t.Fatalf("PRD status = %q; want PRDRunning restored", updated.Status)
+	}
+	if updated.Story[0].Status != StoryPending {
+		t.Fatalf("story status = %q; want cancelled story reopened to pending", updated.Story[0].Status)
+	}
+	if updated.Story[0].Tasks[0].Status != "" {
+		t.Fatalf("task-1a status = %q; want empty (pending)", updated.Story[0].Tasks[0].Status)
+	}
+}
+
+// TestResetTask_PRDCompleted_NoForce_StillRejectsNonRetryableTask verifies
+// the PRDCompleted allowance doesn't loosen the task-level guard: a
+// completed PRD's completed tasks still require force=true, matching every
+// other terminal-PRD-status case.
+func TestResetTask_PRDCompleted_NoForce_StillRejectsNonRetryableTask(t *testing.T) {
+	m, prd := bl382RunningPRD(t)
+	prd.Status = PRDCompleted
+	prd.Story[0].Status = StoryCompleted
+	prd.Story[0].Tasks[0].Status = TaskCompleted
+	_ = m.Store().SavePRD(prd)
+
+	_, err := m.ResetTask(prd.ID, "task-1a", "operator", false)
+	if err == nil {
+		t.Fatalf("reset_task without force on a completed task should still fail")
+	}
+}

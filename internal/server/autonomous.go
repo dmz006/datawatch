@@ -889,6 +889,30 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
 		writeJSONOK(w, updated)
+	case "repair_depends_on":
+		// v8.36.6 — one-time repair for PRDs whose SetStories call predates
+		// the v8.36.5 title->ID DependsOn fix (see Store.RepairDependsOn).
+		// Body: {actor?}.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Actor string `json:"actor"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.RepairDependsOn(id, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
 	case "cancel_story":
 		// BL382 — cancel an individual story without cancelling the whole PRD.
 		// Body: {story_id, actor?, reason?}.

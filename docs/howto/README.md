@@ -30,6 +30,7 @@ you already have a daemon you can talk to.
 | [Voice input](voice-input.md) | Transcription backends (whisper / openai / openai_compat / openwebui / ollama) and chat-channel voice notes |
 | [Autonomous planning](autonomous-planning.md) | Submit a free-form spec, watch it decompose into stories + tasks, run them with verification |
 | [Autonomous review + approve](autonomous-review-approve.md) | The Automaton lifecycle gate: review the decomposition, approve / reject / request-revision before run |
+| [Autonomous recovery](autonomous-recovery.md) | Recover a stuck/failed task, a cancelled-and-never-restarted story, or a completed Automaton with a skipped dependency; repair_depends_on for pre-v8.36.5 Automata |
 | [Container image refresh](container-image-refresh.md) | Daily pipeline that rebuilds, scans and promotes the published container images so OS/base fixes reach released versions |
 | [Automata capacity](automata-capacity.md) | Wait for free sessions / node / LLM slots instead of failing; fair queue, priority, reserved interactive slots |
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |

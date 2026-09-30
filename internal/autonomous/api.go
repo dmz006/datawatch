@@ -425,6 +425,13 @@ func (a *API) ResetTask(prdID, taskID, actor string, force bool) (any, error) {
 	}
 	return out, err
 }
+func (a *API) RepairDependsOn(prdID, actor string) (any, error) {
+	out, err := a.M.RepairDependsOn(prdID, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) CancelStory(prdID, storyID, actor, reason string) (any, error) {
 	out, err := a.M.CancelStory(prdID, storyID, actor, reason)
 	if err == nil {

@@ -1267,6 +1267,23 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	return updated, nil
 }
 
+// RepairDependsOn (v8.36.6) — see Store.RepairDependsOn's doc comment.
+func (m *Manager) RepairDependsOn(prdID, actor string) (*PRD, error) {
+	prd, err := m.store.RepairDependsOn(prdID)
+	if err != nil {
+		return nil, err
+	}
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "repair_depends_on", Actor: actor,
+		Note: "resolved DependsOn titles to real story/task IDs",
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // ResetTask (v8.23.0) resets a failed or blocked task back to pending so
 // the autonomous loop will retry it. Only allowed while the PRD is running.
 // Clears status, error, session_id, verification, and retry_count.
@@ -1284,8 +1301,15 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	// PRDCancelled included: operator-requested — cancelling a run to fix a
 	// task's spec (e.g. adding a missing reference) shouldn't force a full
 	// reset_to_draft + fresh decompose just to retry that one task.
-	if prd.Status != PRDRunning && prd.Status != PRDFailed && prd.Status != PRDBlocked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning, PRDFailed, PRDBlocked, or PRDCancelled", prdID, prd.Status)
+	// PRDCompleted included (v8.36.6): a PRD can reach "completed" with a
+	// cancelled story inside it (e.g. one story was cancelled-and-never-
+	// restarted while a sibling that depends_on it still ran and completed —
+	// see the depends_on title/ID resolution fix). The task-level check below
+	// still only allows this via force=true on a completed/cancelled task, so
+	// a non-force reset can never reach here (a truly-complete PRD has no
+	// failed/blocked tasks to reset in the first place).
+	if prd.Status != PRDRunning && prd.Status != PRDFailed && prd.Status != PRDBlocked && prd.Status != PRDCancelled && prd.Status != PRDCompleted {
+		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning, PRDFailed, PRDBlocked, PRDCancelled, or PRDCompleted", prdID, prd.Status)
 	}
 	found := false
 	foundSI := -1
@@ -1351,11 +1375,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	// B99: if the containing story was completed/failed, reopen it to pending
-	// so the progress bar and status dot reflect that work is still in flight.
+	// B99: if the containing story was completed/failed/cancelled, reopen it
+	// to pending so the progress bar and status dot reflect that work is
+	// still in flight. StoryCancelled added v8.36.6 — same recovery path as
+	// PRDCancelled/PRDCompleted above; a cancelled story force-requeued via
+	// one of its tasks needs to actually resume, not stay cancelled.
 	if foundSI >= 0 {
 		s := &prd.Story[foundSI]
-		if s.Status == StoryCompleted || s.Status == StoryFailed {
+		if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
 			s.Status = StoryPending
 		}
 	}
@@ -1370,7 +1397,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	// the status alone isn't enough; the operator (or PWA) must call Run
 	// again (boot-resume does this automatically on the next restart, but
 	// that's not required for it to take effect).
-	if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled {
+	if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled || prd.Status == PRDCompleted {
 		prd.Status = PRDRunning
 	}
 	kind := "reset_task"

@@ -176,7 +176,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.36.5"
+var Version = "8.36.6"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -538,6 +538,8 @@ type AutonomousAPI interface {
 	// v8.23.0 — reset a failed/blocked task to pending for retry.
 	// BL382 — force=true also requeues completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
+	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
+	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.
 	CancelStory(prdID, storyID, actor, reason string) (any, error)
 	CancelTask(prdID, taskID, actor, reason string) (any, error)

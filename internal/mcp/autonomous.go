@@ -477,6 +477,22 @@ func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.Call
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDRepairDependsOn() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_repair_depends_on",
+		mcpsdk.WithDescription("v8.36.6 — resolve any DependsOn entries still stuck as raw decompose titles (rather than real story/task IDs) on an existing PRD. Only needed for PRDs whose SetStories call predates the v8.36.5 fix, where dependency ordering was never actually enforced; a no-op if the PRD is already resolved."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDRepairDependsOn(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator"})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/repair_depends_on", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDCancelStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel_story",
 		mcpsdk.WithDescription("BL382 — cancel an individual story without cancelling the whole PRD. In-progress task sessions are killed. Returns 409 if the story is already in a terminal state."),

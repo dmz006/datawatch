@@ -272,10 +272,22 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 	// task as having no real dependency edges, executing in ID-sort order,
 	// which happens to approximate decompose's own sequence closely enough
 	// that the gap went unnoticed until a cancelled task's dependent
-	// proceeded without it. Build title->ID maps and rewrite each
-	// unresolved entry; leave anything that matches neither an ID nor a
-	// known sibling title untouched rather than silently dropping it.
-	taskIDByTitle := make(map[string]string, len(s.tasks))
+	// proceeded without it. See resolveDependsOnTitles for the resolution
+	// itself (extracted v8.36.6 for reuse by RepairDependsOn).
+	resolveDependsOnTitles(stories, s.stories, s.tasks)
+	prd.Story = stories
+	prd.UpdatedAt = time.Now()
+	return s.persist()
+}
+
+// resolveDependsOnTitles rewrites each DependsOn entry that names a sibling
+// by title (not yet an ID) to that sibling's real ID, leaving anything that
+// matches neither a known ID nor a known sibling title untouched rather
+// than silently dropping it. Shared by SetStories (fresh decompose output)
+// and RepairDependsOn (existing PRDs whose SetStories call predates this
+// fix and are still stuck with raw titles).
+func resolveDependsOnTitles(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) {
+	taskIDByTitle := make(map[string]string, len(taskByID))
 	storyIDByTitle := make(map[string]string, len(stories))
 	for i := range stories {
 		storyIDByTitle[stories[i].Title] = stories[i].ID
@@ -285,7 +297,7 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 	}
 	for i := range stories {
 		for k, dep := range stories[i].DependsOn {
-			if _, isID := s.stories[dep]; isID {
+			if _, isID := storyByID[dep]; isID {
 				continue
 			}
 			if id, ok := storyIDByTitle[dep]; ok {
@@ -294,7 +306,7 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 		}
 		for j := range stories[i].Tasks {
 			for k, dep := range stories[i].Tasks[j].DependsOn {
-				if _, isID := s.tasks[dep]; isID {
+				if _, isID := taskByID[dep]; isID {
 					continue
 				}
 				if id, ok := taskIDByTitle[dep]; ok {
@@ -303,9 +315,26 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 			}
 		}
 	}
-	prd.Story = stories
+}
+
+// RepairDependsOn (v8.36.6) re-runs resolveDependsOnTitles against a PRD's
+// already-stored stories/tasks. For PRDs whose SetStories call predates the
+// v8.36.5 fix, DependsOn entries are still stuck as raw titles and were
+// never actually enforced — this repairs an existing PRD in place instead
+// of losing all progress via reset_to_draft + a fresh decompose.
+func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prd, ok := s.prds[prdID]
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	resolveDependsOnTitles(prd.Story, s.stories, s.tasks)
 	prd.UpdatedAt = time.Now()
-	return s.persist()
+	if err := s.persist(); err != nil {
+		return nil, err
+	}
+	return prd, nil
 }
 
 // SaveTask updates one task's state.

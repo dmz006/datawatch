@@ -126,6 +126,42 @@ func TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched(t *testing.T) 
 	}
 }
 
+// TestStore_RepairDependsOn verifies a PRD created before the v8.36.5
+// SetStories fix (still carrying raw-title DependsOn) can be repaired in
+// place, mirroring the a2833a5e recovery this was built for.
+func TestStore_RepairDependsOn(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := NewStore(dir)
+	prd, _ := st.CreatePRD("spec", "/p", "", "", "")
+	// Bypass SetStories's own resolution so the stored state matches a PRD
+	// created before that fix existed: DependsOn left as raw titles.
+	s1 := Story{ID: newID(), PRDID: prd.ID, Title: "S1"}
+	s1.Tasks = []Task{{ID: newID(), StoryID: s1.ID, PRDID: prd.ID, Title: "T1", Spec: "do thing 1"}}
+	s2 := Story{ID: newID(), PRDID: prd.ID, Title: "S2", DependsOn: []string{"S1"}}
+	s2.Tasks = []Task{{ID: newID(), StoryID: s2.ID, PRDID: prd.ID, Title: "T2", Spec: "do thing 2", DependsOn: []string{"T1"}}}
+	prd.Story = []Story{s1, s2}
+	for i := range prd.Story {
+		st.stories[prd.Story[i].ID] = &prd.Story[i]
+		for j := range prd.Story[i].Tasks {
+			st.tasks[prd.Story[i].Tasks[j].ID] = &prd.Story[i].Tasks[j]
+		}
+	}
+	if err := st.SavePRD(prd); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+
+	got, err := st.RepairDependsOn(prd.ID)
+	if err != nil {
+		t.Fatalf("RepairDependsOn: %v", err)
+	}
+	if len(got.Story[1].DependsOn) != 1 || got.Story[1].DependsOn[0] != s1.ID {
+		t.Fatalf("story S2's DependsOn = %v, want resolved to S1's ID %q", got.Story[1].DependsOn, s1.ID)
+	}
+	if len(got.Story[1].Tasks[0].DependsOn) != 1 || got.Story[1].Tasks[0].DependsOn[0] != s1.Tasks[0].ID {
+		t.Fatalf("task T2's DependsOn = %v, want resolved to T1's ID %q", got.Story[1].Tasks[0].DependsOn, s1.Tasks[0].ID)
+	}
+}
+
 func TestStore_AddLearning(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)

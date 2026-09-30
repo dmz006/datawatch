@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.6 — fix(autonomous): recover a completed PRD with a never-restarted cancelled story; repair_depends_on for pre-v8.36.5 Automata
+
+### Fixed
+- **A PRD that reached `completed` with a story still `cancelled` inside it had no recovery path** — the exact state `a2833a5e` was left in by the v8.36.5 `depends_on` bug (a sibling story that `depends_on` the cancelled one ran and completed anyway, using the never-produced prerequisite output). `reset_task` rejected any PRD not in `running`/`failed`/`blocked`/`cancelled`, and even when a task-level reset was allowed, a `StoryCancelled` story's containing-story reopen only handled `StoryCompleted`/`StoryFailed` (v8.36.5's own B99 logic) — so a cancelled story's tasks could never be force-requeued at all. `force=true reset_task` now also accepts `PRDCompleted` (only reachable in practice via `force` on an already-terminal task, since a genuinely-complete PRD has no failed/blocked tasks to reset without it) and reopens a `StoryCancelled` story to pending, exactly like the existing `StoryCompleted`/`StoryFailed` cases.
+- **Added `repair_depends_on`** (REST `POST /api/autonomous/prds/{id}/repair_depends_on`, MCP `autonomous_prd_repair_depends_on`) — re-runs the v8.36.5 title→ID `depends_on` resolution against an existing PRD's already-stored stories/tasks. `SetStories` only resolves at decompose time, so any PRD planned before v8.36.5 shipped is permanently stuck with raw-title `depends_on` entries that still silently match nothing; this repairs one in place instead of requiring a destructive `reset_to_draft` + fresh decompose. No-op if every entry already resolves.
+
+### Docs
+- New how-to: [`docs/howto/autonomous-recovery.md`](docs/howto/autonomous-recovery.md) — recovering a stuck/failed task, a cancelled-and-never-restarted story, or a completed Automaton with a skipped dependency; `repair_depends_on` usage. Linked from `docs/howto/README.md`.
+- New e2e story `TS-784` — `repair_depends_on` endpoint reachability (LLM-free; full title→ID resolution correctness is covered deterministically by the Go unit tests).
+
 ## v8.36.5 — fix(autonomous): task dependency ordering (`depends_on`) never actually worked; cancelled dependencies now correctly block dependents; opencode false-positive stall-kill
 
 ### Fixed
