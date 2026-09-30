@@ -1505,6 +1505,22 @@ type AutonomousConfig struct {
 	// accepted on read for back-compat, never written.
 	DecompositionModelLegacy string `yaml:"decomposition_model,omitempty" json:"-"`
 	VerificationModel        string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	// VerificationBackends (v8.36.9) is an ordered list of LLM registry
+	// names to load-balance the verifier's capacity requests across — e.g.
+	// ["ollama-datawatch", "ollama-johnnyjohnny"]. Found live: a
+	// claude-code-backed PRD's verifier always fell back to a single
+	// hardcoded "ollama" default, which needed the SAME exclusive
+	// node: capacity slot a real local worker session on that node
+	// needed — so a 100%-cloud PRD's progress could be blocked
+	// indefinitely by unrelated local GPU contention. When set, the
+	// verifier tries each entry in order and uses whichever currently
+	// has free node capacity, falling back to the first entry's normal
+	// (blocking) wait only when all are full. Each candidate uses its
+	// own registry-default model — VerificationModel above is ignored
+	// in multi-backend mode, since forcing one model across
+	// heterogeneous nodes isn't safe. Empty = single-backend behavior
+	// exactly as before (VerificationBackend / PRD backend / "ollama").
+	VerificationBackends []string `yaml:"verification_backends,omitempty" json:"verification_backends,omitempty"`
 	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.

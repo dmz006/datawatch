@@ -193,7 +193,19 @@ func (a *API) SetConfig(v any) error {
 			}
 		}
 	}
-	var cfg Config
+	// v8.36.9 — merge onto the CURRENT config rather than unmarshaling into
+	// a fresh zero-valued one. Found live while adding verification_backends:
+	// every existing caller of this path (REST, MCP's autonomous_config_set,
+	// and the new comm-channel config-set) can legitimately send a PARTIAL
+	// object — a single "enabled": true toggle, say — and json.Unmarshal
+	// only touches keys actually present in the payload, so starting from a
+	// zero-valued Config silently reset every field the caller didn't
+	// happen to mention (verification_backend, security_scan, quality
+	// gates, injection guard, capacity timeouts, ...) back to its default
+	// on every partial update. Starting from the current config makes an
+	// omitted field mean "leave as-is", matching what every caller of a
+	// partial update actually expects.
+	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}

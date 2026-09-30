@@ -44,12 +44,13 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set",
-		mcpsdk.WithDescription("BL24 — replace autonomous config. Body is the full config object."),
+		mcpsdk.WithDescription("BL24 — update autonomous config. v8.36.9: merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_parallel_tasks", mcpsdk.Description("Per-PRD worker cap (default 3)")),
 		mcpsdk.WithString("planning_backend", mcpsdk.Description("LLM backend for the Automata planning call (empty = inherit); alias: decomposition_backend")),
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
+		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-johnnyjohnny\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
@@ -99,6 +100,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if v := req.GetString(k, ""); v != "" {
 			body[k] = v
 		}
+	}
+	if arr := req.GetStringSlice("verification_backends", nil); len(arr) > 0 {
+		body["verification_backends"] = arr
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}

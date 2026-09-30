@@ -64,6 +64,11 @@ type Config struct {
 	// Exposed as autonomous.planning_timeout_seconds in config.
 	PlanningTimeoutSeconds int `json:"planning_timeout_seconds,omitempty"`
 	VerificationModel    string `json:"verification_model,omitempty"`
+	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
+	// comment. Ordered list of LLM registry names to load-balance
+	// verifier/guardrail capacity across; empty = single-backend
+	// behavior via VerificationBackend/PRD backend/"ollama" fallback.
+	VerificationBackends []string `json:"verification_backends,omitempty"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier

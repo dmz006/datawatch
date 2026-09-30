@@ -25,7 +25,16 @@ var capacityTextFn func() string
 // even when the verifier's resolved backend differs from the task's own
 // worker backend (BL25's "cross-backend independence" design). Set once at
 // daemon startup by wireCapacity; nil until then, so callers must check.
-var verifierCapacityAdmit func(ctx context.Context, backend, model, holder string) (release func(), err error)
+// v8.36.9 — prdID is now required so the resulting lease/wait entry is
+// correctly attributed to its PRD (previously always blank: found live
+// retrying PRD a2833a5e — /api/capacity?prd_id= and the capacity card
+// couldn't show this PRD had anything waiting at all).
+var verifierCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
+
+// verifierCapacityTryAdmit (v8.36.9) is verifierCapacityAdmit's
+// non-blocking sibling for probing autonomous.verification_backends
+// candidates — see its assignment in wireCapacity for why this exists.
+var verifierCapacityTryAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), ok bool)
 
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
@@ -95,16 +104,35 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
 
-	verifierCapacityAdmit = func(ctx context.Context, backend, model, holder string) (func(), error) {
+	verifierCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
 		pools, node := keys(backend, model)
 		if len(pools) == 0 {
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil
+	}
+
+	// verifierCapacityTryAdmit (v8.36.9) is verifierCapacityAdmit's
+	// non-blocking sibling — used to probe a candidate in
+	// autonomous.verification_backends without committing to its
+	// normal (potentially hours-long) wait. A short, real Acquire call
+	// rather than a Snapshot-then-Acquire check: Acquire's own fast
+	// path already grants immediately when a pool has room, so this
+	// just bounds how long a genuinely-busy candidate is given before
+	// the caller moves on to the next one.
+	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), bool) {
+		pools, node := keys(backend, model)
+		if len(pools) == 0 {
+			return func() {}, true
+		}
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+			return func() {}, false
+		}
+		return func() { led.Release(holder) }, true
 	}
 
 	syncPools := func() {

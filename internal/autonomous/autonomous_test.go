@@ -408,3 +408,40 @@ func TestAPI_SetConfigUnmarshalsRawMessage(t *testing.T) {
 		t.Fatalf("config not applied: %+v", got)
 	}
 }
+
+// TestAPI_SetConfigMergesPartialUpdate (v8.36.9) reproduces the bug found
+// live while adding verification_backends: SetConfig used to unmarshal into
+// a fresh zero-valued Config, so a caller sending a genuinely partial body
+// (as every real caller does — REST, MCP's autonomous_config_set, the comm-
+// channel config-set) silently reset every field it didn't happen to
+// mention back to its zero value. A second, partial SetConfig call must
+// leave earlier fields intact.
+func TestAPI_SetConfigMergesPartialUpdate(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir, DefaultConfig(), nil)
+	a := NewAPI(m)
+
+	first := json.RawMessage(`{"enabled":true,"security_scan":true,"verification_backend":"ollama","max_parallel_tasks":5}`)
+	if err := a.SetConfig(first); err != nil {
+		t.Fatalf("SetConfig (first): %v", err)
+	}
+
+	second := json.RawMessage(`{"max_parallel_tasks":9}`)
+	if err := a.SetConfig(second); err != nil {
+		t.Fatalf("SetConfig (second, partial): %v", err)
+	}
+
+	got := m.Config()
+	if got.MaxParallelTasks != 9 {
+		t.Fatalf("MaxParallelTasks = %d, want 9 (from the partial update)", got.MaxParallelTasks)
+	}
+	if !got.Enabled {
+		t.Fatalf("Enabled was reset to false by a partial update that never mentioned it")
+	}
+	if !got.SecurityScan {
+		t.Fatalf("SecurityScan was reset to false by a partial update that never mentioned it")
+	}
+	if got.VerificationBackend != "ollama" {
+		t.Fatalf("VerificationBackend = %q, want %q to survive the partial update", got.VerificationBackend, "ollama")
+	}
+}

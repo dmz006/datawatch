@@ -111,6 +111,41 @@ func extractJSON(s string) string {
 	return s
 }
 
+// verifierCandidate is one resolved (backend, kind, model) option to try
+// for the verifier's capacity admission, in the order they should be tried.
+type verifierCandidate struct {
+	backend string
+	kind    string
+	model   string
+}
+
+// resolveVerifierCandidates (v8.36.9) resolves an ordered list of ask-
+// compatible options to try for verifier/guardrail capacity when multiple
+// autonomous.verification_backends are configured — see that field's doc
+// comment (config.AutonomousConfig) for why this exists: a claude-code PRD's
+// verifier otherwise always falls back to one hardcoded default backend,
+// which can be blocked indefinitely by unrelated local GPU contention on
+// that single node. Skips any entry that isn't ask-compatible (session-only
+// backends have no single-shot ask adapter regardless of configuration).
+// Each candidate uses its own registry-resolved default model, not any
+// single configured VerificationModel — forcing one model across
+// heterogeneous nodes isn't safe.
+func resolveVerifierCandidates(backends []string, resolveAskBackend func(raw string) (kind, model string, err error), askCompatible func(kind string) bool) []verifierCandidate {
+	var out []verifierCandidate
+	for _, b := range backends {
+		b = strings.TrimSpace(b)
+		if b == "" {
+			continue
+		}
+		kind, model, err := resolveAskBackend(b)
+		if err != nil || !askCompatible(kind) {
+			continue
+		}
+		out = append(out, verifierCandidate{backend: b, kind: kind, model: model})
+	}
+	return out
+}
+
 // resolveVerifierBackendModel decides which backend+model the verifier's
 // /api/ask call should use. v8.36.0 — previously this always fell back to a
 // hardcoded "ollama" (and whatever model that resolved to daemon-wide) when

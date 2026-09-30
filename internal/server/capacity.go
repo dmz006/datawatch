@@ -238,6 +238,27 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			}
 			st.Pools = filtered
 		}
+		// v8.36.9 — Leases/Waiting used to be returned unfiltered even when
+		// scoping by prd_id, so a PRD's own capacity card either showed
+		// every other PRD's leases/waits too, or (for entries the ledger
+		// never tagged with a PRDID at all — e.g. the verifier's own
+		// capacity request before this release) showed nothing for a PRD
+		// that genuinely had something waiting. Now that every autonomous
+		// capacity request sets PRDID, filter both to this PRD's own.
+		leasesFiltered := st.Leases[:0]
+		for _, l := range st.Leases {
+			if l.PRDID == prdID {
+				leasesFiltered = append(leasesFiltered, l)
+			}
+		}
+		st.Leases = leasesFiltered
+		waitingFiltered := st.Waiting[:0]
+		for _, wtr := range st.Waiting {
+			if wtr.PRDID == prdID {
+				waitingFiltered = append(waitingFiltered, wtr)
+			}
+		}
+		st.Waiting = waitingFiltered
 	}
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })

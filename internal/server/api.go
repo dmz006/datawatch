@@ -176,7 +176,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.36.8"
+var Version = "8.36.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5097,6 +5097,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"planning_backend":      s.cfg.Autonomous.PlanningBackend,
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
 			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
+			"verification_backends": s.cfg.Autonomous.VerificationBackends,
 			// BL304: new key + legacy alias.
 			"planning_effort":       s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
@@ -5932,6 +5933,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Autonomous.PlanningBackend = toString(v)
 		case "autonomous.verification_backend":
 			cfg.Autonomous.VerificationBackend = toString(v)
+		case "autonomous.verification_backends":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.VerificationBackends = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.VerificationBackends = splitCSV(s)
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":

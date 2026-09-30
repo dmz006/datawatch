@@ -9,10 +9,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
@@ -141,5 +143,62 @@ func TestHandleCapacity_PRDScoping(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("PRD with a task override on ollama-datawatch should include node:datawatch, got: %+v", st.Pools)
+	}
+}
+
+// TestHandleCapacity_PRDScopingFiltersLeasesAndWaiting (v8.36.9) reproduces
+// the second half of the a2833a5e capacity-card gap: ?prd_id= only ever
+// filtered Pools, never Leases or Waiting — so a PRD's own scoped card
+// either showed every other PRD's leases/waits too, or (once the ledger
+// correctly tags an entry with its PRDID) still failed to show that this
+// PRD genuinely had something waiting, since nothing matched it back up.
+func TestHandleCapacity_PRDScopingFiltersLeasesAndWaiting(t *testing.T) {
+	s := &Server{}
+	l := capacity.New(capacity.Options{})
+	l.SetLimit("host", 1)
+	s.SetCapacity(l)
+	s.autonomousMgr = &prdBackendSpy{prd: map[string]any{"id": "a2833a5e", "backend": "claude-code"}}
+
+	// Another PRD's task holds the only host slot; a2833a5e's own verifier
+	// call is queued behind it.
+	held := make(chan struct{})
+	go func() {
+		_ = l.Acquire(context.Background(), capacity.Request{Holder: "other-task", PRDID: "other-prd", Pools: []string{"host"}}, 0, nil, nil)
+		close(held)
+	}()
+	<-held
+	go func() {
+		_ = l.Acquire(context.Background(), capacity.Request{Holder: "verify:6024876e", PRDID: "a2833a5e", Pools: []string{"host"}}, time.Second, nil, nil)
+	}()
+	// Give the second Acquire time to register as a waiter.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(l.Snapshot().Waiting) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity?prd_id=a2833a5e", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var st capacity.Status
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, ls := range st.Leases {
+		if ls.PRDID != "a2833a5e" {
+			t.Fatalf("scoped view includes another PRD's lease: %+v", ls)
+		}
+	}
+	for _, w := range st.Waiting {
+		if w.PRDID != "a2833a5e" {
+			t.Fatalf("scoped view includes another PRD's waiter: %+v", w)
+		}
+	}
+	if len(st.Waiting) != 1 || st.Waiting[0].Holder != "verify:6024876e" {
+		t.Fatalf("expected a2833a5e's own verifier wait to survive scoping, got: %+v", st.Waiting)
 	}
 }

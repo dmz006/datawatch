@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.36.9 — feat(autonomous): verifier capacity load-balances across multiple configured ollama nodes; fixes capacity-card PRD attribution and a config-merge bug
+
+### Added
+- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-johnnyjohnny"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
+
+### Fixed
+- **The verifier's capacity requests never set `PRDID`** — so `/api/capacity?prd_id=<id>` and the capacity card could never show that a PRD was genuinely blocked waiting on the verifier; it just looked idle. Also: `?prd_id=` only ever filtered the `pools` list, never `leases`/`waiting`, so a PRD's scoped view could show unrelated PRDs' entries. Both fixed.
+- **`autonomous_config_set` (REST/MCP/comm) silently reset every field not included in a call** — `SetConfig` unmarshaled into a fresh zero-valued `Config` rather than merging onto the current one, so a caller sending a genuinely partial update (e.g. just `{"enabled": true}`, exactly how the MCP tool's own handler builds its request body) wiped `verification_backend`, `security_scan`, quality gates, injection guard, capacity timeouts — anything the call didn't happen to mention — back to their defaults. Found while adding the new field above; fixed at the shared `API.SetConfig` layer so every caller benefits.
+
 ## v8.36.8 — fix(autonomous): LLM verifier/guardrail JSON responses wrapped in prose or a fence were treated as an outright failure
 
 ### Fixed

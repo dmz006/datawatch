@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.36.8"
+var Version = "8.36.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3615,6 +3615,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationBackend: acfgIn.VerificationBackend,
 			PlanningModel:       acfgIn.PlanningModel,
 			VerificationModel:   acfgIn.VerificationModel,
+			VerificationBackends: append([]string(nil), acfgIn.VerificationBackends...),
 			PlanningEffort:      acfgIn.PlanningEffort,
 			VerificationEffort:  acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds: acfgIn.PlanningTimeoutSeconds,
@@ -4387,9 +4388,6 @@ Pre-existing files written by task (not tracked by git):
 Verify whether the diff plausibly implements the spec. Reply with STRICT JSON only — no prose before or after:
 {"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
 				trustNotice, specPart, diffSection)
-			vbackend, vkind, verifyModel := resolveVerifierBackendModel(
-				amgrCfg.VerificationBackend, amgrCfg.VerificationModel,
-				prd.Backend, prd.Model, resolveAskBackend, askCompatible)
 			// v8.36.0 — acquire the same node:/llm: pool a task on vbackend
 			// would use before firing the ask call, and hold it for the
 			// call's duration. Previously this HTTP call had zero capacity
@@ -4398,15 +4396,37 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// could silently contend with other tasks (or, before this
 			// release, interactive sessions too) on a fully-busy node
 			// instead of waiting its turn.
-			if verifierCapacityAdmit != nil {
-				release, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID)
-				if aerr != nil {
-					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
-						Summary:    "verifier: capacity: " + aerr.Error(),
-						VerifiedAt: time.Now(),
-					}, nil
+			// v8.36.9 — try each autonomous.verification_backends candidate
+			// (non-blocking) before committing to the single-backend
+			// default's normal, potentially hours-long wait. See
+			// resolveVerifierCandidates' doc comment for why.
+			var vbackend, vkind, verifyModel string
+			var release func()
+			if len(amgrCfg.VerificationBackends) > 0 && verifierCapacityTryAdmit != nil {
+				for _, c := range resolveVerifierCandidates(amgrCfg.VerificationBackends, resolveAskBackend, askCompatible) {
+					if r, ok := verifierCapacityTryAdmit(ctx, c.backend, c.model, "verify:"+task.ID, prd.ID); ok {
+						vbackend, vkind, verifyModel, release = c.backend, c.kind, c.model, r
+						break
+					}
 				}
+			}
+			if release == nil {
+				vbackend, vkind, verifyModel = resolveVerifierBackendModel(
+					amgrCfg.VerificationBackend, amgrCfg.VerificationModel,
+					prd.Backend, prd.Model, resolveAskBackend, askCompatible)
+				if verifierCapacityAdmit != nil {
+					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
+					if aerr != nil {
+						return autonomouspkg.VerificationResult{
+							OK: false, Severity: "medium",
+							Summary:    "verifier: capacity: " + aerr.Error(),
+							VerifiedAt: time.Now(),
+						}, nil
+					}
+					release = r
+				}
+			}
+			if release != nil {
 				defer release()
 			}
 			askBody := map[string]any{

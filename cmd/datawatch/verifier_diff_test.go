@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,6 +125,49 @@ func TestEnsureProjectDirOwnGitRepo_NestedInOtherRepo_NoOp(t *testing.T) {
 		if len(c) > 0 && c[0] == "init" {
 			t.Fatalf("git init called on a dir legitimately nested inside another repo: %v", c)
 		}
+	}
+}
+
+func TestResolveVerifierCandidates(t *testing.T) {
+	resolve := func(raw string) (string, string, error) {
+		switch raw {
+		case "ollama-datawatch":
+			return "ollama", "qwen3.8:27b", nil
+		case "ollama-johnnyjohnny":
+			return "ollama", "qwen3:1.7b", nil
+		case "claude-code":
+			return "claude-code", "sonnet", nil
+		case "bogus":
+			return "", "", fmt.Errorf("unknown backend")
+		}
+		return "", "", fmt.Errorf("unknown backend")
+	}
+	askCompatible := func(kind string) bool { return kind == "ollama" }
+
+	got := resolveVerifierCandidates(
+		[]string{"ollama-datawatch", " ", "claude-code", "bogus", "ollama-johnnyjohnny"},
+		resolve, askCompatible)
+
+	want := []verifierCandidate{
+		{backend: "ollama-datawatch", kind: "ollama", model: "qwen3.8:27b"},
+		{backend: "ollama-johnnyjohnny", kind: "ollama", model: "qwen3:1.7b"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("resolveVerifierCandidates() = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidate[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestResolveVerifierCandidates_Empty(t *testing.T) {
+	got := resolveVerifierCandidates(nil,
+		func(string) (string, string, error) { return "ollama", "m", nil },
+		func(string) bool { return true })
+	if len(got) != 0 {
+		t.Fatalf("resolveVerifierCandidates(nil) = %+v, want empty", got)
 	}
 }
 

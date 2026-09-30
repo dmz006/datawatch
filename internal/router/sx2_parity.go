@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -297,6 +297,66 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous status", prettyJSON(out))
+	// v8.36.9 — config-get/config-set: the autonomous config surface
+	// (verification_backends among others) had REST + MCP but no comm-
+	// channel parity at all. SetConfig replaces the whole object, so
+	// config-set reads the current config first and merges the
+	// requested keys onto it rather than zeroing out every other
+	// setting the operator didn't mention.
+	case "config-get", "config":
+		out, err := r.commGet("/api/autonomous/config", nil)
+		if err != nil {
+			r.reply("autonomous config-get failed", err.Error())
+			return
+		}
+		r.reply("autonomous config-get", prettyJSON(out))
+	case "config-set":
+		if len(args) < 2 {
+			r.reply("autonomous config-set failed", "usage: autonomous config-set key=value [key2=value2 ...] (list values: key=a,b,c)")
+			return
+		}
+		current, err := r.commGet("/api/autonomous/config", nil)
+		if err != nil {
+			r.reply("autonomous config-set failed", "reading current config: "+err.Error())
+			return
+		}
+		var cfgMap map[string]any
+		if err := json.Unmarshal([]byte(current), &cfgMap); err != nil {
+			r.reply("autonomous config-set failed", "parsing current config: "+err.Error())
+			return
+		}
+		listKeys := map[string]bool{
+			"verification_backends": true, "per_task_guardrails": true, "per_story_guardrails": true,
+		}
+		for _, kv := range args[1:] {
+			i := strings.IndexByte(kv, '=')
+			if i <= 0 {
+				continue
+			}
+			k := strings.TrimSpace(kv[:i])
+			v := strings.TrimSpace(kv[i+1:])
+			switch {
+			case v == "true":
+				cfgMap[k] = true
+			case v == "false":
+				cfgMap[k] = false
+			case listKeys[k]:
+				cfgMap[k] = strings.Split(v, ",")
+			default:
+				if n, nerr := strconv.Atoi(v); nerr == nil {
+					cfgMap[k] = n
+				} else {
+					cfgMap[k] = v
+				}
+			}
+		}
+		raw, _ := json.Marshal(cfgMap)
+		out, err := r.commJSON(http.MethodPut, "/api/autonomous/config", string(raw))
+		if err != nil {
+			r.reply("autonomous config-set failed", err.Error())
+			return
+		}
+		r.reply("autonomous config-set", prettyJSON(out))
 	case "list":
 		out, err := r.commGet("/api/autonomous/prds", nil)
 		if err != nil {
