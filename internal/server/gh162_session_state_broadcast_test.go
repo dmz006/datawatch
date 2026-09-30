@@ -65,7 +65,7 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 
 	var sawSessions, sawSessionState bool
 	deadline := time.After(500 * time.Millisecond)
-	for !(sawSessions && sawSessionState) {
+	for !sawSessions || !sawSessionState {
 		select {
 		case msg := <-fakeCh:
 			s := string(msg)

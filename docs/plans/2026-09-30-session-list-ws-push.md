@@ -2,7 +2,7 @@
 
 - **Date**: 2026-09-30
 - **Version at planning**: v8.36.14
-- **Status**: In Progress
+- **Status**: Done — shipped in v8.37.0 (CI green after one lint-fix respin)
 - **Ships in**: v8.37.0 (minor — new capability, not a bug fix)
 
 ## 1. Context
