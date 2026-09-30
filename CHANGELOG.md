@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.37.1 — fix(pwa): session_state handler read the wrong payload shape, corrupting state.sessions
+
+### Fixed
+- **The PWA's `session_state` WS handler passed the wrong shape to `updateSession`** — `case 'session_state': updateSession(msg.data)` assumed `msg.data` was the session object directly, but v8.37.0's `Hub.BroadcastSessionState` sends it wrapped as `{"session": {...}}` (`SessionStateData`), matching the existing `{"sessions": [...]}` envelope the `'sessions'` case already unwraps. This handler was dead code until v8.37.0 actually started broadcasting `session_state` — the mismatch was never exercised until now. Left as-is, every session state change would push a malformed `{session:{...}}` entry into `state.sessions`, corrupting session-list rendering. Fixed: `updateSession(msg.data.session)`. Caught in review before wider deployment, not from a live incident.
+
 ## v8.37.0 — feat(ws): session_state single-session broadcast for mobile/external WS clients (GH#162)
 
 ### Added

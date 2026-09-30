@@ -515,7 +515,12 @@ function handleMessage(msg) {
       onSessionsUpdated();
       break;
     case 'session_state':
-      updateSession(msg.data);
+      // v8.37.1 — msg.data is {session:{...}} (SessionStateData on the Go
+      // side, matching the {sessions:[...]} envelope the 'sessions' case
+      // above also unwraps), not the session object itself. This case was
+      // dead code until v8.37.0 actually started sending session_state, so
+      // the mismatch was never exercised until now.
+      if (msg.data && msg.data.session) updateSession(msg.data.session);
       break;
     case 'output':
       if (msg.data) {
