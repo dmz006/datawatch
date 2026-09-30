@@ -1035,9 +1035,13 @@ func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
 	s.hub.BroadcastAlert(a)
 }
 
-// NotifyStateChange broadcasts a session state change to all WS clients
+// NotifyStateChange broadcasts a session state change to all WS clients.
+// v8.37.0 (GH#162) — also emits the lighter-weight single-session
+// session_state message alongside the existing full-list broadcast; see
+// Hub.BroadcastSessionState's doc comment.
 func (s *HTTPServer) NotifyStateChange(sess *session.Session, oldState session.State) {
 	s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.hub.BroadcastSessionState(sess)
 }
 
 // NotifyNeedsInput broadcasts a needs-input event to all WS clients

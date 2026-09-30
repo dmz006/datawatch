@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.33.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.33.0)
+[![Release](https://img.shields.io/badge/release-v8.37.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.37.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,7 +89,15 @@ datawatch skills sync community
 
 ## Current release
 
-**[Unreleased](CHANGELOG.md)** — Structural Automaton editing: add/remove a story or task within a story without re-running decompose, across PWA/REST/MCP/CLI/comm channel. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams. Animated splash screens (load screen, Settings → About, session-connect overlay) matching datawatch-app. Fixed: decompose silently using the daemon's global default model instead of the Automaton's configured one; a blocked Automaton having no path back except destructive Reset-to-Draft; a widespread HTML-attribute-escaping bug that made several buttons (voice-dictation mic, guardrail approve, LLM delete, dashboard links, and more) silently do nothing when clicked.
+**[v8.37.0](CHANGELOG.md) (2026-09-30)** — Feat: `session_state` single-session WS broadcast (GH#162) — `Hub.BroadcastSessionState` fires alongside the existing full-list `sessions` push so mobile/external `/ws` clients can adopt lighter-weight single-session diffs instead of re-parsing the full list on every change.
+
+**[v8.36.9](CHANGELOG.md) (2026-09-30)** — Feat: `autonomous.verification_backends` — the verifier load-balances across an ordered list of LLM registry names by free node capacity, so a cloud-backed PRD's verifier no longer contends with unrelated local GPU work for the same capacity slot.
+
+**[v8.36.0](CHANGELOG.md) (2026-09-30)** — Feat: interactive session starts and the verifier's own `/api/ask` call now admit through the same capacity ledger autonomous tasks use. Session delete gets the same keep/purge/archive memory-strategy picker PRD hard-delete already had. `/api/capacity?prd_id=` scopes the pool list to one PRD.
+
+**[v8.35.1](CHANGELOG.md) (2026-09-30)** — Fix: PRD hard-delete's `memory_strategy` was silently ignored when sent by the Android client (REST only read query params; Android sends JSON body).
+
+**[v8.35.0](CHANGELOG.md) (2026-09-30)** — Feat: structural Automaton editing — add/remove a story or task within a story without re-running decompose, across PWA/REST/MCP/CLI/comm channel. A cancelled Automaton is now editable in place instead of requiring destructive Reset-to-Draft. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams. Animated splash screens (load screen, Settings → About, session-connect overlay) matching datawatch-app. Fixed: decompose silently using the daemon's global default model instead of the Automaton's configured one.
 
 **[v8.33.1](CHANGELOG.md) (2026-09-15)** — Fix: autonomous SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config for large local models.
 

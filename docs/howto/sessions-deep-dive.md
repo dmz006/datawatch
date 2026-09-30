@@ -279,6 +279,33 @@ default_task: |
 
 Apply: `datawatch sessions start --template audit-flow`.
 
+### 5f. WebSocket push (mobile / external clients)
+
+`GET /ws` (upgrade) takes the same Bearer token as REST — no separate
+auth path, no subscribe frame needed for session-list updates. On
+connect the server immediately sends the full list, then again on every
+session-affecting change:
+
+```json
+{"type":"sessions","data":{"sessions":[...],"version":"8.37.0"},"ts":"..."}
+```
+
+v8.37.0 adds a lighter-weight single-session message alongside it, for
+clients on a metered connection that would rather not re-parse the full
+list on every change:
+
+```json
+{"type":"session_state","data":{"session":{...}},"ts":"..."}
+```
+
+Both are sent together from the same state transition — `session_state`
+is additive, not a replacement. A client that only understands
+`"sessions"` keeps working unchanged; a client that wants smaller
+payloads can listen for `"session_state"` instead. No poll interval is
+needed either way — see `PrdHub`-style patterns in `datawatch-app` for
+the client-side "any open WS connection is a free broadcast pipe" idiom
+already used there for `prd_update`.
+
 ## Diagram
 
 ```

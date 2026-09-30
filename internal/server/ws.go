@@ -57,6 +57,12 @@ type SessionsData struct {
 	Version  string             `json:"version,omitempty"`
 }
 
+// SessionStateData carries a single updated session for the lighter-weight
+// session_state broadcast — see BroadcastSessionState's doc comment.
+type SessionStateData struct {
+	Session *session.Session `json:"session"`
+}
+
 type OutputData struct {
 	SessionID string   `json:"session_id"`
 	Lines     []string `json:"lines"`
@@ -208,6 +214,20 @@ func (h *Hub) Broadcast(msgType MessageType, data interface{}) {
 // BroadcastSessions sends the full session list to all clients
 func (h *Hub) BroadcastSessions(sessions []*session.Session) {
 	h.Broadcast(MsgSessions, SessionsData{Sessions: sessions, Version: h.version})
+}
+
+// BroadcastSessionState (v8.37.0, GH#162) sends a single updated session to
+// all clients. MsgSessionState ("session_state") was defined in the
+// protocol enum from the start but never actually constructed or broadcast
+// anywhere — every session-list update went out as the full list via
+// BroadcastSessions, even when only one session changed. Strictly
+// additive: emitted alongside the existing full-list broadcast (see
+// HTTPServer.NotifyStateChange), not a replacement, so any client that
+// only understands "sessions" keeps working unchanged. A client that
+// wants smaller payloads (e.g. a mobile client on a metered connection)
+// can listen for this instead.
+func (h *Hub) BroadcastSessionState(sess *session.Session) {
+	h.Broadcast(MsgSessionState, SessionStateData{Session: sess})
 }
 
 // SetVersion sets the daemon version included in sessions broadcasts.

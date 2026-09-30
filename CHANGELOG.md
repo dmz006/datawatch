@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.37.0 — feat(ws): session_state single-session broadcast for mobile/external WS clients (GH#162)
+
+### Added
+- **`session_state` WS message** — `MsgSessionState` (`"session_state"`) was defined in the WS protocol enum from the start but never actually constructed or broadcast anywhere; every session-list update went out as the full list via `"sessions"`, even when only one session changed. `Hub.BroadcastSessionState` now sends a single updated session, called alongside the existing full-list broadcast from `HTTPServer.NotifyStateChange` — strictly additive, not a replacement, so any client that only understands `"sessions"` keeps working unchanged. Investigated `dmz006/datawatch#162`'s request for a subscription channel and found the underlying capability (full-list push on connect + on every change) already existed unconditionally on `/ws`; this closes the one genuine scoped gap — the lighter-weight single-session "diff" the issue's own design called for. See `docs/howto/sessions-deep-dive.md` §5f and `docs/plans/2026-09-30-session-list-ws-push.md`. Cross-repo adoption tracked in `datawatch-app#204`.
+
 ## v8.36.14 — fix(test): shared runToTerminal helper raced its own executor goroutine's teardown, flaking CI
 
 ### Fixed
