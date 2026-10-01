@@ -163,7 +163,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
  | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — (B102 ✅ v8.33.27; B103 ✅ v8.33.27) |
-| Open features | 3 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release) |
+| Open features | 4 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release); BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (plan filed 2026-09-30, Phase 1 in progress) |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
@@ -1005,6 +1005,25 @@ step** (per the plan's §7 DoD item 6). Root-cause fixes: per-session scoped cre
 capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in audit log
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
+
+#### BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (filed 2026-09-30)
+
+Operator-raised gap: Council persona settings have no LLM→model picker; `Persona.Model`
+exists but is dead code (every call always uses the one orchestrator-wide `LLMRef`); council
+calls don't participate in the node:/llm: capacity ledger autonomous PRD tasks use; and
+`backend: "council"` in the PRD-creation wizard is a UI-only option with zero dispatch behind
+it — selecting it does not work today. Three-phase plan: (1) cascading LLM→model dropdown,
+multi-backend pool sourced from the existing LLM registry, per-persona backend/model
+assignment, capacity-ledger integration for parallelism; (2) named council profiles —
+multiple saved persona/backend-pool/engagement-mode (parallel vs round-robin) configurations
+instead of one global config; (3) wire a council profile into the PRD verifier gate as a
+real, working alternative to the existing single-LLM `/api/ask` verification path, plus a
+per-PRD council-profile override field (the Automata-page entry point).
+
+**Plan doc:** [`2026-09-30-council-llm-model-assignment.md`](2026-09-30-council-llm-model-assignment.md)
+**Status:** Planned — Phase 1 in progress.
+
+---
 
 #### BL389 — Capacity-aware Automata admission and queueing (filed 2026-09-24, implemented in the v9.0.0 tree, all three phases)
 
