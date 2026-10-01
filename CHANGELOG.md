@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.37.4 — feat(pwa): expand button on the PRD markdown/file viewer
+
+### Added
+- **Expand/collapse toggle on the PRD file viewer modal** — operator-requested: the PWA itself can be maximized on a desktop browser, but the markdown/file viewer was always capped at `min(860px, 95vw)`, leaving most of a wide window unused. A new button in the viewer's header widens the panel to `98vw`; pressing it again (or reopening/closing the viewer) returns it to the normal width. Also auto-reverts if the browser window itself shrinks back down to where "expanded" and "normal" would look identical anyway, so a stale expanded state can't persist after a resize. Verified with a Playwright-driven browser test (toggle, re-toggle, and auto-revert-on-shrink all confirmed at the DOM level) — no existing JS test harness in this repo to extend, consistent with how other PWA changes are validated.
+
 ## v8.37.3 — fix(session): opening a session on a differently-sized device flipped it from waiting_input to running
 
 ### Fixed

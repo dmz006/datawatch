@@ -15405,6 +15405,42 @@ function _renderMarkdownFileInto(el, text) {
   });
 }
 
+// _toggleFileViewerExpand widens the file viewer panel to use most of the
+// browser window (operator-requested: the PWA can be maximized on a desktop
+// browser, so the 860px-capped viewer left most of that width unused).
+// Toggles back to the normal capped width on a second press; also invoked
+// automatically by the resize handler in _showFileViewer when the window
+// shrinks back down.
+window._toggleFileViewerExpand = function() {
+  const panel = document.getElementById('fileViewerPanel');
+  const btn = document.getElementById('fileViewerExpandBtn');
+  if (!panel || !btn) return;
+  const expanded = panel.dataset.expanded === '1';
+  if (expanded) {
+    panel.style.maxWidth = 'min(860px,95vw)';
+    panel.dataset.expanded = '0';
+    btn.innerHTML = '&#10533;';
+    btn.title = 'Expand to use more of the window';
+  } else {
+    panel.style.maxWidth = '98vw';
+    panel.dataset.expanded = '1';
+    btn.innerHTML = '&#10534;';
+    btn.title = 'Collapse to normal width';
+  }
+};
+
+// _closeFileViewer removes the modal and its resize listener — the listener
+// must be torn down explicitly since it's on window, not the modal element,
+// and would otherwise leak across every file-viewer open/close cycle.
+window._closeFileViewer = function() {
+  const modal = document.getElementById('fileViewerModal');
+  if (!modal) return;
+  if (modal._fileViewerResizeHandler) {
+    window.removeEventListener('resize', modal._fileViewerResizeHandler);
+  }
+  modal.remove();
+};
+
 // _showFileViewer opens a modal that renders the file's content.
 // Markdown gets full GFM rendering (tables, mermaid diagrams) via marked.js
 // + mermaid.js, lazy-loaded on first use; falls back to the lighter
@@ -15412,7 +15448,12 @@ function _renderMarkdownFileInto(el, text) {
 // Other text files show as <pre>. A download button is always in the header.
 window._showFileViewer = function(path) {
   const existing = document.getElementById('fileViewerModal');
-  if (existing) existing.remove();
+  if (existing) {
+    if (existing._fileViewerResizeHandler) {
+      window.removeEventListener('resize', existing._fileViewerResizeHandler);
+    }
+    existing.remove();
+  }
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const isMd = ext === 'md';
@@ -15427,20 +15468,39 @@ window._showFileViewer = function(path) {
   const modal = document.createElement('div');
   modal.id = 'fileViewerModal';
   modal.className = 'confirm-modal-overlay';
-  modal.innerHTML = `<div class="response-modal" style="max-width:min(860px,95vw);max-height:90vh;width:95vw;">
+  modal.innerHTML = `<div class="response-modal" id="fileViewerPanel" style="max-width:min(860px,95vw);max-height:90vh;width:95vw;">
     <div class="response-modal-header">
       <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(path)}">${escHtml(name)}</span>
       <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px;">
+        <button class="btn-icon" id="fileViewerExpandBtn" onclick="_toggleFileViewerExpand()" title="Expand to use more of the window">&#10533;</button>
         <a href="${escHtml(dlUrl)}" download="${escHtml(name)}" style="text-decoration:none;font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text);background:var(--bg2);display:inline-flex;align-items:center;gap:3px;" title="Download ${escHtml(name)}">⬇ Download</a>
-        <button class="btn-icon" onclick="document.getElementById('fileViewerModal').remove()" title="Close">&#10005;</button>
+        <button class="btn-icon" onclick="_closeFileViewer()" title="Close">&#10005;</button>
       </div>
     </div>
     <div id="fileViewerContent" class="response-modal-body" style="white-space:${isMd ? 'normal' : 'pre'};font-family:${isMd ? 'inherit' : 'var(--mono,monospace)'};font-size:${isMd ? '13px' : '12px'};line-height:1.6;">
       <em style="color:var(--text2);">Loading…</em>
     </div>
   </div>`;
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener('click', e => { if (e.target === modal) _closeFileViewer(); });
   document.body.appendChild(modal);
+  // Expand widens the panel to use most of the window instead of the
+  // 860px-capped default — useful now that the PWA itself can be maximized
+  // on a desktop browser. Auto-reverts if the window shrinks back down to
+  // where "expanded" and "normal" would look identical anyway (below the
+  // 860px breakpoint, scaled for the 95vw cap both states already share),
+  // so a user who expands on a wide monitor then shrinks the window isn't
+  // left with a stale toggle state.
+  const EXPANDED_REVERT_WIDTH = 860 / 0.95;
+  const onResize = () => {
+    const panel = document.getElementById('fileViewerPanel');
+    const btn = document.getElementById('fileViewerExpandBtn');
+    if (!panel || !btn) return;
+    if (panel.dataset.expanded === '1' && window.innerWidth < EXPANDED_REVERT_WIDTH) {
+      _toggleFileViewerExpand();
+    }
+  };
+  window.addEventListener('resize', onResize);
+  modal._fileViewerResizeHandler = onResize;
 
   fetch(viewUrl)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
