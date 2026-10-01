@@ -40,8 +40,14 @@ RUN install_packages \
     # --force-depends avoids cascade-removing libc6-dev/build-essential which
     # are no longer needed but which apt's dependency solver would drag along.
     dpkg -r --force-depends linux-libc-dev && \
-    # Aggressive cleanup — pipx leaves install artifacts and pip caches
-    rm -rf /root/.cache/pip /opt/pipx/.cache /home/datawatch/.cache \
+    # Aggressive cleanup — pipx leaves install artifacts and pip caches.
+    # /opt/pipx/shared is pipx's own bootstrap venv (its bundled pip, which
+    # vendors its own pinned urllib3) — used only while running `pipx
+    # install` above, never by the installed app afterward (aider runs from
+    # its own venv at /opt/pipx/venvs/aider-chat, entrypoint-linked into
+    # PIPX_BIN_DIR). Confirmed `aider --version` still works with it removed.
+    # Deleting it removes a stale CVE surface entirely rather than patching it.
+    rm -rf /root/.cache/pip /opt/pipx/.cache /opt/pipx/shared /home/datawatch/.cache \
            /var/cache/apt/* \
            /usr/share/doc /usr/share/man /usr/include \
            /tmp/* /root/.npm
