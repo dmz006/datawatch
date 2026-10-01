@@ -45,7 +45,7 @@ func newTestOrchestrator(t *testing.T) *Orchestrator {
 	t.Helper()
 	o := NewOrchestrator(t.TempDir())
 	o.LLMRef = "mock"
-	o.InferenceFn = func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+	o.InferenceFn = func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 		return "MOCK reply for sysprompt: " + sys, "mock-node", nil
 	}
 	return o
@@ -148,7 +148,7 @@ func TestInferenceFnInjection(t *testing.T) {
 	// than the per-persona LLMFn placeholder.
 	o := NewOrchestrator(t.TempDir())
 	o.LLMRef = "test-llm"
-	o.InferenceFn = func(ctx context.Context, ref, sysPrompt, prompt, consumer string) (string, string, error) {
+	o.InferenceFn = func(ctx context.Context, ref, model, sysPrompt, prompt, consumer string) (string, string, error) {
 		return "REAL: " + sysPrompt + " sees " + prompt, "gpu-test", nil
 	}
 	run, err := o.Run("ship?", []string{"contrarian"}, ModeQuick)
@@ -166,7 +166,7 @@ func TestSynthesisProducesConsensus(t *testing.T) {
 	// labeled CONSENSUS / DISSENT block so we verify splitting works.
 	o := NewOrchestrator(t.TempDir())
 	o.LLMRef = "mock"
-	o.InferenceFn = func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+	o.InferenceFn = func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 		if strings.Contains(sys, "moderator") {
 			return "CONSENSUS: All personas agreed.\n\nDISSENT: No material dissent.", "", nil
 		}

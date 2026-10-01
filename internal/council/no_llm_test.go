@@ -43,7 +43,7 @@ func TestRunCtx_EmptyLLMRef_ReturnsErrNoInference(t *testing.T) {
 		MaxParallel: 1,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "", // empty — bug or operator forgot to set it
-		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		InferenceFn: func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 			return "ok", "gpu-1", nil
 		},
 	}
@@ -62,7 +62,7 @@ func TestRunCtx_HappyPath_RealInference(t *testing.T) {
 		MaxParallel: 2,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "test-llm",
-		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		InferenceFn: func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 			return "response from " + sys, "gpu-1", nil
 		},
 	}
@@ -91,7 +91,7 @@ func TestRunCtx_DebateMode_RunsThreeRounds(t *testing.T) {
 		MaxParallel: 1,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "test",
-		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		InferenceFn: func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 			calls++
 			return "ok", "", nil
 		},
@@ -115,7 +115,7 @@ func TestRunCtx_PerPersonaErrorContinuesRun(t *testing.T) {
 		MaxParallel: 2,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "test",
-		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		InferenceFn: func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 			if sys == "s1" {
 				return "", "", errors.New("simulated p1 failure")
 			}
@@ -142,7 +142,7 @@ func TestCancel(t *testing.T) {
 		MaxParallel: 1,
 		cancels:     map[string]context.CancelFunc{},
 		LLMRef:      "test",
-		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		InferenceFn: func(ctx context.Context, ref, model, sys, prompt, consumer string) (string, string, error) {
 			called.Store(true)
 			<-ctx.Done()
 			return "", "", ctx.Err()

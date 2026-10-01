@@ -283,6 +283,49 @@ new defaults from a future release land cleanly. Don't delete the
 marker file; if you do, the daemon will re-create every default on
 next start.
 
+## Per-persona backend + model assignment
+
+By default every persona debates through the one LLM named by
+`council.llm_ref`. To run specific personas against a different
+backend (or a different model on the same backend):
+
+1. **Configure the backend pool** — Settings → Council subsystem config
+   → check the LLM registry entries you want available (sourced from
+   the same registry `datawatch llm list` shows; nothing new to set up
+   if you already have LLMs registered). Equivalent: `datawatch council
+   config set backends ollama-datawatch,claude-code` (comma-separated,
+   no spaces), or `backends: [ollama-datawatch, claude-code]` in
+   `council.yaml`/`config.yaml`.
+2. **Assign a persona** — open its edit modal (⚙ View / edit / add
+   personas → ✎ Edit) and pick a Backend from the pool; a Model
+   dropdown appears once a backend is chosen, populated the same way
+   the per-task LLM pickers are elsewhere in the PWA. Leaving Backend
+   on "— council default —" keeps using `council.llm_ref`.
+
+A persona's YAML gains two optional fields:
+
+```yaml
+name: security-skeptic
+role: Security review
+backend: claude-code   # empty/omitted = council.llm_ref default
+model: claude-sonnet-5 # only meaningful alongside backend
+system_prompt: |
+  ...
+```
+
+Setting `model` without `backend` has no effect — a model name only
+applies alongside its own backend, never inherited onto a different,
+unrelated one. This is deliberate: it's the same reasoning the
+per-task/per-story autonomous PRD LLM overrides use, so a stale model
+string from one backend can never get silently paired with another.
+
+Parallelism: each persona call (and the final synthesis call) now
+admits through the same node:/llm: capacity ledger autonomous PRD
+tasks use, so a council run sharing a backend with busy PRD work waits
+its turn rather than over-subscribing that node — no separate council
+concurrency limit to configure beyond the existing `max_parallel`
+per-round cap.
+
 ## Built-in personas (the 12 ship-with defaults)
 
 | Name | Stance |

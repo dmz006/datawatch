@@ -495,6 +495,14 @@ type CouncilConfig struct {
 	// Default "ollama" — matches the auto-migrated entry from
 	// cfg.ollama.host.
 	LLMRef string `yaml:"llm_ref,omitempty" json:"llm_ref,omitempty"`
+	// Backends (v8.38.0, BL390) — the operator-selected subset of LLM
+	// registry names (cfg.llms) available for council use: the
+	// Settings UI's multi-select pool, and the set a persona's own
+	// Backend override may be assigned from. LLMRef remains the actual
+	// default a persona with no Backend override resolves to; this
+	// list does not replace it. Empty = no pool configured yet (the
+	// PWA falls back to listing every registry entry).
+	Backends []string `yaml:"backends,omitempty" json:"backends,omitempty"`
 	// MaxParallel is the per-round persona concurrency cap (BL295 Q2).
 	// Default 2. 0 = serial.
 	MaxParallel int `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`

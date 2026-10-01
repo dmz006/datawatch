@@ -108,6 +108,7 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
 			"llm_ref":              s.cfg.Council.LLMRef,
+			"backends":             s.cfg.Council.Backends,
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		})
@@ -120,10 +121,11 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			DraftRetentionDays *int    `json:"draft_retention_days"`
-			LLMRef             *string `json:"llm_ref"`
-			MaxParallel        *int    `json:"max_parallel"`
-			CommFirehose       *bool   `json:"comm_firehose"`
+			DraftRetentionDays *int     `json:"draft_retention_days"`
+			LLMRef             *string  `json:"llm_ref"`
+			Backends           []string `json:"backends"`
+			MaxParallel        *int     `json:"max_parallel"`
+			CommFirehose       *bool    `json:"comm_firehose"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -138,6 +140,9 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.LLMRef != nil {
 			s.cfg.Council.LLMRef = *body.LLMRef
+		}
+		if body.Backends != nil {
+			s.cfg.Council.Backends = body.Backends
 		}
 		if body.MaxParallel != nil {
 			if *body.MaxParallel < 0 {
@@ -157,6 +162,7 @@ func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{
 			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
 			"llm_ref":              s.cfg.Council.LLMRef,
+			"backends":             s.cfg.Council.Backends,
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 			"status":               "ok",

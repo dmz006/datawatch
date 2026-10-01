@@ -849,6 +849,14 @@ council:
   # name of any entry from `datawatch llm list`.
   llm_ref: "ollama"
 
+  # Backend pool: LLM registry names available for per-persona assignment
+  # (Settings UI's backend multi-select). llm_ref above stays the actual
+  # default a persona with no backend override resolves to; this list
+  # doesn't replace it — it's the set the Settings UI's per-persona
+  # "Backend" picker offers, plus whatever the operator checks here.
+  # Empty = Settings UI falls back to listing every registry entry.
+  backends: []
+
   # Per-round maximum concurrent persona calls. 0 = fully serial.
   # Higher values speed up long debates but increase load on the LLM node.
   max_parallel: 2

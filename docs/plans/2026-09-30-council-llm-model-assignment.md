@@ -2,8 +2,8 @@
 
 - **Date**: 2026-09-30
 - **Version at planning**: v8.37.4
-- **Status**: In Progress
-- **Ships in**: v8.38.0 (minor — new capability, cross-cutting)
+- **Status**: Phase 1 Done (shipped v8.38.0); Phase 2/3 Planned
+- **Ships in**: v8.38.0 (Phase 1), v8.39.0 (Phase 2), v8.40.0 (Phase 3)
 
 ## 1. Context
 
@@ -99,7 +99,16 @@ channel), `internal/server/web/app.js` (PWA — two UI locations).
 
 ### Phase 1 — Cascading LLM→model dropdown, multi-backend pool, capacity integration
 
-Status: Planned.
+Status: **Done — shipped v8.38.0.** Implemented exactly as planned below,
+plus one unplanned find-and-fix: building/testing this phase's own PWA
+UI surfaced that `/api/council/personas` returns a bare array (not
+`{personas:[...]}`, changed in a prior release for mobile-client
+compat) while `loadCouncilPanel`, `councilOpenPersonasView`, and
+`councilReinterviewPersona` still read a `.personas` property that no
+longer existed — the Council persona list and "Edit persona" modal had
+been silently broken (always empty / always "persona not found") since
+that change. Fixed alongside this phase's own new edit-modal code,
+which hit the same dead end before being traced to the root cause.
 
 **Data model** (`internal/council/council.go`, `internal/config/config.go`):
 - `Persona` gains `Backend string` (new) alongside existing `Model

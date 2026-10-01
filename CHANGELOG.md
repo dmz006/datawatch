@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.38.0 — feat(council): per-persona backend/model assignment, capacity integration (BL390 Phase 1)
+
+### Added
+- **Per-persona LLM backend + model assignment** — Council personas can now each use a different LLM than the council's single default. Settings → Council subsystem config gains a backend-pool multi-select (sourced from the existing LLM registry, the same one every other LLM picker in the PWA already uses — not a new parallel list); the persona edit modal gains a cascading Backend → Model picker (reusing the existing per-task/per-story LLM-picker pattern). `Persona.Model` existed in the data model since Council Mode shipped but was never actually passed to the inference call — every persona always used the council's one `LLMRef` regardless of its own `Model` field; this is now wired end-to-end. A persona's `Model` only applies alongside its own `Backend` override (never inherited onto a different backend it wasn't written for) — same reasoning as the per-task/per-story autonomous PRD LLM override cascade.
+- **Council persona and synthesis calls now admit through the same node:/llm: capacity ledger autonomous PRD tasks use** — previously `internal/council` had no connection to the capacity system at all, so a council run could freely over-subscribe a node also running PRD work. No new config knob: reuses `autonomous.capacity_wait_seconds`, the same wait-duration source the verifier's own capacity admission already uses, since council runs are similarly interactive/short.
+- REST (`PATCH /api/council/config` gains `backends`), MCP (`council_config_set`/`council_personas_set` gain `backends`/`backend`/`model` params), CLI (`council config set backends <a,b,c>`, `council personas set --backend --model`), and comm channel (`council config set backends <a,b,c>`) parity for the above.
+
+### Fixed
+- **The PWA's Council persona list and "Edit persona" modal have been silently broken since `/api/council/personas` was changed to return a bare array** (mobile-client compat, prior release) — `loadCouncilPanel`, `councilOpenPersonasView`, and `councilReinterviewPersona` all still read a `.personas` property off the response that no longer exists, so the persona list rendered empty and "Edit persona" always failed with "persona not found" regardless of which persona was clicked. Found while building and testing this release's own persona-edit UI changes, not from a prior report. All four call sites now read the response directly as the array it actually is.
+
 ## v8.37.4 — feat(pwa): expand button on the PRD markdown/file viewer
 
 ### Added

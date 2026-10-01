@@ -32,10 +32,12 @@ func (s *Server) toolCouncilPersonasGet() mcpsdk.Tool {
 // BL296 — council_personas_set: update an existing persona's system_prompt (and optionally role).
 func (s *Server) toolCouncilPersonasSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("council_personas_set",
-		mcpsdk.WithDescription("BL296 — update an existing Council persona's system_prompt (and optionally role). Persists to ~/.datawatch/council/personas/<name>.yaml."),
+		mcpsdk.WithDescription("BL296/BL390 — update an existing Council persona's system_prompt (and optionally role, backend, model). Persists to ~/.datawatch/council/personas/<name>.yaml."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("persona name to update")),
 		mcpsdk.WithString("system_prompt", mcpsdk.Required(), mcpsdk.Description("new system prompt text")),
 		mcpsdk.WithString("role", mcpsdk.Description("optional: new role title")),
+		mcpsdk.WithString("backend", mcpsdk.Description("optional (BL390): LLM registry name this persona uses instead of the council default; empty/omitted leaves the current value")),
+		mcpsdk.WithString("model", mcpsdk.Description("optional (BL390): model override, only meaningful alongside backend")),
 	)
 }
 
@@ -84,6 +86,12 @@ func (s *Server) handleCouncilPersonasSetMCP(_ context.Context, req mcpsdk.CallT
 	}
 	if role := optString(req, "role"); role != "" {
 		body["role"] = role
+	}
+	if backend := optString(req, "backend"); backend != "" {
+		body["backend"] = backend
+	}
+	if model := optString(req, "model"); model != "" {
+		body["model"] = model
 	}
 	out, err := s.proxyJSON("PUT", "/api/council/personas/"+name, body)
 	if err != nil {
@@ -303,9 +311,10 @@ func (s *Server) toolCouncilConfigGet() mcpsdk.Tool {
 
 func (s *Server) toolCouncilConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("council_config_set",
-		mcpsdk.WithDescription("BL297/BL295 — update Council subsystem runtime config. Persists to cfg.yaml; live ticker re-reads on next sweep."),
+		mcpsdk.WithDescription("BL297/BL295/BL390 — update Council subsystem runtime config. Persists to cfg.yaml; llm_ref/backends/max_parallel take effect for new council runs after the next daemon restart."),
 		mcpsdk.WithString("draft_retention_days", mcpsdk.Description("persona-wizard draft GC retention in days (>=0; 0 disables auto-GC)")),
 		mcpsdk.WithString("llm_ref", mcpsdk.Description("LLM registry entry name for Council debates (e.g. 'ollama', 'openwebui')")),
+		mcpsdk.WithString("backends", mcpsdk.Description("(BL390) comma-separated LLM registry names available as the council's backend pool, for per-persona assignment")),
 		mcpsdk.WithString("max_parallel", mcpsdk.Description("per-round persona concurrency cap (>=0; 0=serial)")),
 		mcpsdk.WithString("comm_firehose", mcpsdk.Description("push every persona response to comm channels: true or false")),
 	)
@@ -327,6 +336,9 @@ func (s *Server) handleCouncilConfigSetMCP(_ context.Context, req mcpsdk.CallToo
 	if v := optString(req, "llm_ref"); v != "" {
 		body["llm_ref"] = v
 	}
+	if v := optString(req, "backends"); v != "" {
+		body["backends"] = splitCSV(v)
+	}
 	if v := optString(req, "max_parallel"); v != "" {
 		body["max_parallel"] = v
 	}
@@ -334,7 +346,7 @@ func (s *Server) handleCouncilConfigSetMCP(_ context.Context, req mcpsdk.CallToo
 		body["comm_firehose"] = v == "true" || v == "1" || v == "yes"
 	}
 	if len(body) == 0 {
-		return nil, fmt.Errorf("at least one config key required (draft_retention_days, llm_ref, max_parallel, comm_firehose)")
+		return nil, fmt.Errorf("at least one config key required (draft_retention_days, llm_ref, backends, max_parallel, comm_firehose)")
 	}
 	out, err := s.proxyJSON("PATCH", "/api/council/config", body)
 	if err != nil {

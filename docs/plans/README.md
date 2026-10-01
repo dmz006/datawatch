@@ -40,7 +40,9 @@ single source of truth.
 
 ## Current state — 2026-09-30
 
-Latest release: **v8.37.4** (2026-09-30). feat(pwa): expand/collapse button on the PRD markdown/file viewer — operator-requested, since the PWA itself can be maximized on a desktop browser but the viewer stayed capped at 860px. Auto-reverts if the window shrinks back down to where expanded/normal would look identical. Verified with a Playwright-driven browser test (no existing JS test harness in this repo to extend).
+Latest release: **v8.38.0** (2026-09-30). feat(council): per-persona LLM backend/model assignment (BL390 Phase 1) — Settings gets a backend-pool multi-select (sourced from the existing LLM registry) and a cascading per-persona Backend → Model picker; `Persona.Model` existed since Council Mode shipped but was never actually passed to the inference call, always using the council's one shared `LLMRef` — now wired end-to-end, with the same backend/model pairing-cascade reasoning the per-task/per-story autonomous PRD overrides use. Persona + synthesis calls now admit through the same node:/llm: capacity ledger autonomous PRD tasks use. Found and fixed along the way: the Council persona list and "Edit persona" modal had been silently broken (always empty / "persona not found") since `/api/council/personas` was changed to a bare array in a prior release — four call sites still read a `.personas` property that no longer existed.
+
+Previous: **v8.37.4** (2026-09-30). feat(pwa): expand/collapse button on the PRD markdown/file viewer — operator-requested, since the PWA itself can be maximized on a desktop browser but the viewer stayed capped at 860px. Auto-reverts if the window shrinks back down to where expanded/normal would look identical. Verified with a Playwright-driven browser test (no existing JS test harness in this repo to extend).
 
 Previous: **v8.37.3** (2026-09-30). fix(session): opening a session on a differently-sized device (PWA vs. Android Auto) could flip it from `waiting_input` to `running` with no input sent. Root cause: every client sends `resize_term` unconditionally on open; a redundant tmux resize still makes the TUI repaint on a fresh SIGWINCH, and `StartScreenCapture`'s poll read that repaint as backend activity. `ResizeTmux` now checks the tmux window's current size first (new `TmuxAPI.WindowSize`) and skips the resize when it already matches.
 
@@ -163,7 +165,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
  | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | — (B102 ✅ v8.33.27; B103 ✅ v8.33.27) |
-| Open features | 4 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release); BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (plan filed 2026-09-30, Phase 1 in progress) |
+| Open features | 4 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release); BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (Phase 1 shipped v8.38.0; Phase 2/3 planned) |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
 | Active (in-progress) | 0 | — |
@@ -1021,7 +1023,7 @@ real, working alternative to the existing single-LLM `/api/ask` verification pat
 per-PRD council-profile override field (the Automata-page entry point).
 
 **Plan doc:** [`2026-09-30-council-llm-model-assignment.md`](2026-09-30-council-llm-model-assignment.md)
-**Status:** Planned — Phase 1 in progress.
+**Status:** Phase 1 done, shipped v8.38.0. Phase 2 (named council profiles) and Phase 3 (wire `backend: "council"` into real PRD verify-gate execution) planned.
 
 ---
 

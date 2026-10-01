@@ -109,7 +109,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.37.4"
+var Version = "8.38.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3166,12 +3166,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						maxPar = 2 // BL295 Q2 default
 					}
 					councilOrch.LLMRef = llmRef
+					councilOrch.Backends = cfg.Council.Backends
 					councilOrch.MaxParallel = maxPar
-					councilOrch.InferenceFn = func(ctx context.Context, llmRef, sysPrompt, prompt, consumer string) (string, string, error) {
+					// councilCapacityAdmit is wired later by wireCapacity
+					// (main.go, after this block runs at daemon startup) —
+					// resolve it at call time, same deferred pattern
+					// verifierCapacityAdmit's own callers already use,
+					// rather than capturing its nil value here.
+					councilOrch.CapacityAdmitFn = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
+						if councilCapacityAdmit == nil {
+							return func() {}, nil
+						}
+						return councilCapacityAdmit(ctx, backend, model, holder, prdID)
+					}
+					councilOrch.InferenceFn = func(ctx context.Context, llmRef, model, sysPrompt, prompt, consumer string) (string, string, error) {
 						req := inference.Request{
-							Prompt:       prompt,
-							SystemPrompt: sysPrompt,
-							Consumer:     consumer,
+							Prompt:        prompt,
+							SystemPrompt:  sysPrompt,
+							ModelOverride: model,
+							Consumer:      consumer,
 						}
 						resp, err := disp.Call(ctx, llmRef, req)
 						if err != nil {

@@ -25781,7 +25781,7 @@ function loadCouncilPanel() {
   if (!panel) return;
   panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('council_loading')||'Loading…')}</div>`;
   apiFetch('/api/council/personas').then(data => {
-    const personas = (data && data.personas) || [];
+    const personas = data || [];
     apiFetch('/api/council/runs?limit=5').then(rdata => {
       _renderCouncilPanel(panel, personas, (rdata && rdata.runs) || []);
     }).catch(() => _renderCouncilPanel(panel, personas, []));
@@ -25842,6 +25842,8 @@ function _renderCouncilPanel(panel, personas, runs) {
     <div style="padding:10px;display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_llm_ref_label')||'LLM registry entry for debates (e.g. ollama)')}</label>
       <input id="councilCfgLLMRef" type="text" class="form-input" style="font-size:12px;padding:4px 6px;" placeholder="ollama" />
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_backends_label')||'Backend pool — LLMs available for per-persona assignment below')}</label>
+      <div id="councilCfgBackends" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;"><em style="color:var(--text2);">loading…</em></div>
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_max_parallel_label')||'Per-round persona concurrency (0 = serial, default 2)')}</label>
       <input id="councilCfgMaxParallel" type="number" min="0" class="form-input" style="width:120px;font-size:12px;padding:4px 6px;" />
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;">
@@ -25874,7 +25876,36 @@ function _renderCouncilPanel(panel, personas, runs) {
     if (maxP) maxP.value = (d && d.max_parallel != null) ? d.max_parallel : 2;
     const fh = document.getElementById('councilCfgFirehose');
     if (fh) fh.checked = !!(d && d.comm_firehose);
+    _councilRenderBackendsPicker((d && d.backends) || []);
   }).catch(()=>{});
+}
+
+// _councilRenderBackendsPicker (BL390, v8.38.0) — checkbox list of the
+// existing LLM registry entries (same source every other LLM picker in
+// the PWA already uses via ensureLLMModelLists/state._prdBackends, not
+// a new parallel list), with `selected` pre-checked.
+function _councilRenderBackendsPicker(selected) {
+  const el = document.getElementById('councilCfgBackends');
+  if (!el) return;
+  const selSet = new Set(selected || []);
+  ensureLLMModelLists().then(() => {
+    const el2 = document.getElementById('councilCfgBackends');
+    if (!el2) return;
+    const backends = state._prdBackends || [];
+    if (backends.length === 0) {
+      el2.innerHTML = `<em style="color:var(--text2);">${escHtml(t('council_cfg_backends_none')||'No LLM registry entries configured yet.')}</em>`;
+      return;
+    }
+    el2.innerHTML = backends.map(b => {
+      const name = b.name || b;
+      return `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" class="council-cfg-backend-cb" value="${escHtml(name)}" ${selSet.has(name) ? 'checked' : ''} />
+        ${escHtml(name)}
+      </label>`;
+    }).join('');
+  }).catch(() => {
+    el.innerHTML = `<em style="color:var(--error);">${escHtml(t('council_cfg_backends_error')||'Failed to load LLM registry.')}</em>`;
+  });
 }
 
 window.councilSaveCfg = function() {
@@ -25883,13 +25914,14 @@ window.councilSaveCfg = function() {
   const v = parseInt((inp||{}).value || '', 10);
   if (isNaN(v) || v < 0) { showError('retention must be >= 0'); return; }
   const llmRef = (document.getElementById('councilCfgLLMRef')||{}).value || '';
+  const backends = Array.from(document.querySelectorAll('.council-cfg-backend-cb:checked')).map(el => el.value);
   const maxPRaw = parseInt((document.getElementById('councilCfgMaxParallel')||{}).value || '2', 10);
   const maxP = isNaN(maxPRaw) ? 2 : maxPRaw;
   const firehose = !!(document.getElementById('councilCfgFirehose')||{}).checked;
   apiFetch('/api/council/config', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ draft_retention_days: v, llm_ref: llmRef, max_parallel: maxP, comm_firehose: firehose }),
+    body: JSON.stringify({ draft_retention_days: v, llm_ref: llmRef, backends: backends, max_parallel: maxP, comm_firehose: firehose }),
   }).then(() => {
     if (status) { status.textContent = '✓ saved'; setTimeout(()=>{ status.textContent=''; }, 2500); }
   }).catch(e => showError('Save failed', String(e.message||e)));
@@ -26028,7 +26060,7 @@ window.councilViewRun = function(id) {
 // makes deletes durable across daemon restarts.
 window.councilOpenPersonasView = function() {
   apiFetch('/api/council/personas').then(data => {
-    const personas = (data && data.personas) || [];
+    const personas = data || [];
     const path = '~/.datawatch/council/personas/';
     const rows = personas.map(p => {
       // v7.0.0-alpha.20 #252 — escHtml-wrap for double-quoted-attribute safety.
@@ -26092,14 +26124,30 @@ window.councilOpenPersonasView = function() {
 // rerun interviews". Edit opens a textarea against the current YAML;
 // Re-interview seeds a fresh wizard with the existing name+role.
 window.councilEditPersona = function(name) {
-  apiFetch('/api/council/personas').then(d => {
-    const p = ((d&&d.personas)||[]).find(x => x.name===name);
+  Promise.all([
+    apiFetch('/api/council/personas'),
+    apiFetch('/api/council/config'),
+    ensureLLMModelLists(),
+  ]).then(([d, cfg]) => {
+    const p = (d||[]).find(x => x.name===name);
     if (!p) { showError('persona not found: '+name); return; }
+    // BL390 (v8.38.0) — backend options are the council's configured
+    // pool (cfg.backends); fall back to every registry entry when no
+    // pool has been configured yet, so the picker is never empty.
+    const pool = (cfg && cfg.backends && cfg.backends.length) ? cfg.backends : (state._prdBackends||[]).map(b => b.name);
+    const backendOpts = [`<option value="">${escHtml(t('council_persona_backend_default')||'— council default —')}</option>`]
+      .concat(pool.map(name2 => `<option value="${escHtml(name2)}" ${p.backend===name2?'selected':''}>${escHtml(name2)}</option>`));
     const body = `
       <div style="display:flex;flex-direction:column;gap:8px;">
         <div style="font-size:12px;color:var(--text2);">${escHtml(t('council_persona_edit_intro')||'Edit the persona directly. Save replaces the current one with the same name.')}</div>
         <label style="font-size:11px;color:var(--text2);">role</label>
         <input id="cwEditRole" class="form-input" value="${escHtml(p.role||'')}" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_persona_backend_label')||'Backend')}</label>
+        <select id="cwEditBackend" class="form-select" style="font-size:12px;" onchange="refreshLLMModelField('cwEditModelWrap','cwEditModelInner','cwEditBackend', ${escHtml(JSON.stringify(p.model||''))})">${backendOpts.join('')}</select>
+        <div id="cwEditModelWrap" style="display:${p.backend?'':'none'};flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_persona_model_label')||'Model')}</label>
+          <div id="cwEditModelInner"></div>
+        </div>
         <label style="font-size:11px;color:var(--text2);">system_prompt</label>
         <textarea id="cwEditPrompt" class="form-input" rows="14" style="font-family:monospace;font-size:12px;">${escHtml(p.system_prompt||'')}</textarea>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -26108,6 +26156,7 @@ window.councilEditPersona = function(name) {
         </div>
       </div>`;
     showModal({ title: `✎ ${escHtml(t('council_persona_edit_title')||'Edit persona')} — ${escHtml(name)}`, body });
+    if (p.backend) refreshLLMModelField('cwEditModelWrap', 'cwEditModelInner', 'cwEditBackend', p.model||'');
   }).catch(e => showError('edit failed', String(e.message||e)));
 };
 
@@ -26115,12 +26164,22 @@ window._councilEditPersonaSave = function(encodedName) {
   const name = decodeURIComponent(encodedName);
   const role = (document.getElementById('cwEditRole')||{}).value || '';
   const prompt = (document.getElementById('cwEditPrompt')||{}).value || '';
-  // BL296 — use PUT /api/council/personas/{name} (atomic update) instead of
-  // the previous delete+re-POST dance that could race or lose data.
+  const backend = (document.getElementById('cwEditBackend')||{}).value || '';
+  const modelEl = document.querySelector('#cwEditModelInner select, #cwEditModelInner input');
+  const model = modelEl ? (modelEl.value||'') : '';
+  // BL296/BL390 — use PUT /api/council/personas/{name} (atomic update)
+  // instead of the previous delete+re-POST dance that could race or
+  // lose data. backend/model only sent when non-empty — UpdatePersona
+  // on the server only overwrites a non-empty value, same merge
+  // convention role already has (can't clear an override back to
+  // "inherit" through this endpoint yet).
+  const payload = { role, system_prompt: prompt };
+  if (backend) payload.backend = backend;
+  if (model) payload.model = model;
   apiFetch('/api/council/personas/' + encodeURIComponent(name), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role, system_prompt: prompt }),
+    body: JSON.stringify(payload),
   })
     .then(() => {
       showToast('✓ Persona updated', 'success', 2000);
@@ -26132,7 +26191,7 @@ window._councilEditPersonaSave = function(encodedName) {
 
 window.councilReinterviewPersona = function(name) {
   apiFetch('/api/council/personas').then(d => {
-    const p = ((d&&d.personas)||[]).find(x => x.name===name);
+    const p = (d||[]).find(x => x.name===name);
     if (!p) { showError('persona not found: '+name); return; }
     if (!confirm(`Re-interview will rewrite "${name}" via the LLM wizard. The current prompt will be replaced after you save. Continue?`)) return;
     const backend = '';

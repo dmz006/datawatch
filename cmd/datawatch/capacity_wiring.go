@@ -36,6 +36,14 @@ var verifierCapacityAdmit func(ctx context.Context, backend, model, holder, prdI
 // candidates — see its assignment in wireCapacity for why this exists.
 var verifierCapacityTryAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), ok bool)
 
+// councilCapacityAdmit (v8.38.0, BL390) lets council persona/synthesis
+// calls acquire the same node:/llm: pools a PRD task on that
+// backend+model would use — mirrors verifierCapacityAdmit exactly. Set
+// once at daemon startup by wireCapacity; nil until then (council
+// wiring runs earlier in main.go, before wireCapacity — callers resolve
+// this var at call time, not at wiring time).
+var councilCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
+
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
@@ -105,6 +113,23 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
 
 	verifierCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
+		pools, node := keys(backend, model)
+		if len(pools) == 0 {
+			return func() {}, nil
+		}
+		waitDur := amgr.CapacityWaitDuration()
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+			return func() {}, err
+		}
+		return func() { led.Release(holder) }, nil
+	}
+
+	// councilCapacityAdmit (v8.38.0, BL390) — same shape and wait-duration
+	// source as verifierCapacityAdmit; council runs are interactive/short
+	// like the verifier's own /api/ask call, so reusing
+	// autonomous.capacity_wait_seconds avoids a third copy of the same
+	// config knob rather than inventing a council-specific one.
+	councilCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
 		pools, node := keys(backend, model)
 		if len(pools) == 0 {
 			return func() {}, nil

@@ -65,6 +65,7 @@ func newCouncilConfigCmd() *cobra.Command {
 		Long: "Supported keys:\n" +
 			"  draft-retention-days <N>   persona-wizard draft GC retention (days; 0 disables)\n" +
 			"  llm-ref <name>             LLM registry entry used for debates\n" +
+			"  backends <a,b,c>           (BL390) comma-separated LLM registry pool for per-persona assignment\n" +
 			"  max-parallel <N>           per-round persona concurrency (0 = serial)\n" +
 			"  comm-firehose <true|false>  push every persona response to comm channels",
 		Args: cobra.ExactArgs(2),
@@ -79,6 +80,12 @@ func newCouncilConfigCmd() *cobra.Command {
 				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"draft_retention_days": n})
 			case "llm-ref", "llm_ref":
 				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"llm_ref": val})
+			case "backends":
+				names := strings.Split(val, ",")
+				for i := range names {
+					names[i] = strings.TrimSpace(names[i])
+				}
+				return daemonJSON(http.MethodPatch, "/api/council/config", map[string]any{"backends": names})
 			case "max-parallel", "max_parallel":
 				n, err := strconv.Atoi(val)
 				if err != nil || n < 0 {
@@ -193,10 +200,10 @@ func newCouncilPersonasCmd() *cobra.Command {
 			return daemonGet("/api/council/personas/" + args[0])
 		},
 	})
-	var prompt, role string
+	var prompt, role, backend, model string
 	setCmd := &cobra.Command{
 		Use:   "set <name>",
-		Short: "Update a Council persona's system_prompt (and optionally role)",
+		Short: "Update a Council persona's system_prompt (and optionally role, backend, model)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if strings.TrimSpace(prompt) == "" {
@@ -206,11 +213,19 @@ func newCouncilPersonasCmd() *cobra.Command {
 			if role != "" {
 				body["role"] = role
 			}
+			if backend != "" {
+				body["backend"] = backend
+			}
+			if model != "" {
+				body["model"] = model
+			}
 			return daemonJSON(http.MethodPut, "/api/council/personas/"+args[0], body)
 		},
 	}
 	setCmd.Flags().StringVar(&prompt, "prompt", "", "new system prompt text (required)")
 	setCmd.Flags().StringVar(&role, "role", "", "optional new role title")
+	setCmd.Flags().StringVar(&backend, "backend", "", "(BL390) LLM registry name this persona uses instead of the council default")
+	setCmd.Flags().StringVar(&model, "model", "", "(BL390) model override, only meaningful alongside --backend")
 	_ = setCmd.MarkFlagRequired("prompt")
 	cmd.AddCommand(setCmd)
 	return cmd

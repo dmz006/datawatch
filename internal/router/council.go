@@ -33,6 +33,7 @@ const councilUsage = `Usage:
     config                                  read draft_retention_days etc.
     config set draft-retention-days <N>     update + persist (live)
     config set llm-ref <name>               LLM registry entry for debates
+    config set backends <a,b,c>             (BL390) backend pool, no spaces around commas
     config set max-parallel <N>             per-round persona concurrency
     config set comm-firehose <true|false>   push persona responses to comm`
 
@@ -150,9 +151,23 @@ func (r *Router) handleCouncilCmd(cmd Command) {
 		if len(bits) >= 3 && strings.EqualFold(bits[0], "set") {
 			key := strings.ToLower(bits[1])
 			val := bits[2]
-			body, _ := json.Marshal(map[string]string{
-				strings.ReplaceAll(key, "-", "_"): val,
-			})
+			// BL390 — backends is []string, not a bare scalar like
+			// every other config key here; split the comma-separated
+			// value into a real JSON array instead of the generic
+			// map[string]string passthrough below (which would send
+			// it as a JSON string and fail REST's []string decode).
+			var body []byte
+			if key == "backends" {
+				names := strings.Split(val, ",")
+				for i := range names {
+					names[i] = strings.TrimSpace(names[i])
+				}
+				body, _ = json.Marshal(map[string]any{"backends": names})
+			} else {
+				body, _ = json.Marshal(map[string]string{
+					strings.ReplaceAll(key, "-", "_"): val,
+				})
+			}
 			out, err := r.commJSON("PATCH", "/api/council/config", string(body))
 			if err != nil {
 				r.reply("council config set", err.Error())

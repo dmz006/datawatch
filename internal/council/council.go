@@ -44,7 +44,15 @@ type Persona struct {
 	Name         string `yaml:"name" json:"name"`
 	Role         string `yaml:"role,omitempty" json:"role,omitempty"`
 	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
-	Model        string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Backend (v8.38.0, BL390) — LLM registry name this persona uses
+	// instead of the council's default. Empty = inherit
+	// CouncilConfig's default backend. Model only applies when Backend
+	// is also set at this same level (or both are inherited together
+	// from the default) — see resolvePersonaBackendModel; a Model set
+	// here without a Backend would otherwise risk pairing a model
+	// string meant for one backend with a different, inherited one.
+	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
+	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
 }
 
 // Round is one round of debate; each persona's response is captured.
@@ -130,11 +138,29 @@ type Orchestrator struct {
 
 	// v7.0.0 S3 — wired by daemon at startup. nil = honest 503.
 	InferenceFn InferenceFn
-	// LLMRef is the registry name the dispatcher resolves; see
-	// internal/inference/dispatcher.go.
+	// LLMRef is the registry name the dispatcher resolves when a
+	// persona doesn't specify its own Backend; see
+	// internal/inference/dispatcher.go. Kept as the default-backend
+	// field name for backward compat with existing YAML (council.llm_ref).
 	LLMRef string
+	// Backends (v8.38.0, BL390) — the operator-selected subset of LLM
+	// registry names available to this council, for the Settings UI's
+	// multi-select pool and per-persona assignment. Informational for
+	// the UI/validation; LLMRef remains the actual default a persona
+	// with no Backend set resolves to.
+	Backends []string
 	// MaxParallel default 2 (BL295 Q2). 0 = serial.
 	MaxParallel int
+
+	// CapacityAdmitFn (v8.38.0, BL390) — optional admission hook. When
+	// set, each persona's inference call acquires a capacity lease
+	// before calling InferenceFn and releases it after, participating
+	// in the same node:/llm: ledger autonomous PRD tasks use (see
+	// cmd/datawatch/capacity_wiring.go's verifierCapacityAdmit for the
+	// identical pattern this mirrors). nil = no admission (default;
+	// preserves v7.x/v8.0-v8.37 behavior for operators who haven't
+	// wired it).
+	CapacityAdmitFn CapacityAdmitFn
 
 	// v7.0.0 S3 — cancellation registry. Run registers a cancel
 	// func keyed on Run.ID so the cancel REST endpoint can stop
@@ -191,7 +217,23 @@ type SessionUpdateFn func(sessionID, response string, errMsg string)
 // perspective. Council doesn't import internal/inference directly
 // (avoids package import cycle); the daemon wires a thin closure
 // that calls inference.Dispatcher.Call.
-type InferenceFn func(ctx context.Context, llmRef, systemPrompt, prompt, consumer string) (text string, usedNode string, err error)
+//
+// model (v8.38.0, BL390) — the resolved per-persona model override, or
+// "" to use llmRef's own registry default. Previously Persona.Model
+// existed but was never passed through to this call at all; every
+// persona used llmRef's bare default regardless of its own Model
+// field.
+type InferenceFn func(ctx context.Context, llmRef, model, systemPrompt, prompt, consumer string) (text string, usedNode string, err error)
+
+// CapacityAdmitFn (v8.38.0, BL390) — mirrors
+// cmd/datawatch/capacity_wiring.go's verifierCapacityAdmit shape
+// exactly: resolve backend+model to capacity pools, acquire a lease,
+// return a release func to defer. holder should be unique per
+// in-flight call (e.g. runID+"-"+personaName); prdID is "" for a
+// standalone council run or the real PRD id when the run was
+// triggered as a PRD gate (Phase 3), so fairness grouping attributes
+// the lease correctly either way.
+type CapacityAdmitFn func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
 
 // EventFn is the SSE/comm-push contract from the daemon's
 // perspective. Council doesn't import internal/server (avoids cycle);
@@ -411,6 +453,17 @@ func (o *Orchestrator) UpdatePersona(name string, update Persona) error {
 		existing.Role = update.Role
 	}
 	existing.SystemPrompt = update.SystemPrompt
+	// BL390 (v8.38.0) — same merge convention as Role: only overwrite
+	// when the caller actually sent a non-empty value. Clearing an
+	// existing override back to "inherit council default" isn't
+	// expressible through this endpoint yet (same pre-existing
+	// limitation Role already has) — not needed for Phase 1.
+	if update.Backend != "" {
+		existing.Backend = update.Backend
+	}
+	if update.Model != "" {
+		existing.Model = update.Model
+	}
 	dir := o.PersonasDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -691,7 +744,16 @@ func (o *Orchestrator) runRoundWithEvents(ctx context.Context, runID string, cho
 					sessID = id
 				}
 			}
-			text := o.respond(ctx, p, proposal, prior)
+			backend, model := o.resolvePersonaBackendModel(p)
+			if o.CapacityAdmitFn != nil {
+				release, admitErr := o.CapacityAdmitFn(ctx, backend, model, runID+"-"+p.Name, "")
+				if admitErr != nil {
+					out <- result{name: p.Name, text: fmt.Sprintf("[%s] error: capacity: %s", p.Name, admitErr.Error())}
+					return
+				}
+				defer release()
+			}
+			text := o.respond(ctx, p, backend, model, proposal, prior)
 			if o.SessionUpdateFn != nil && sessID != "" {
 				if strings.HasPrefix(text, "["+p.Name+"] error:") {
 					o.SessionUpdateFn(sessID, "", text)
@@ -718,12 +780,31 @@ func (o *Orchestrator) runRoundWithEvents(ctx context.Context, runID string, cho
 	return responses
 }
 
+// resolvePersonaBackendModel (v8.38.0, BL390) resolves a persona's
+// effective backend+model: persona's own Backend wins; its Model only
+// applies when read alongside that same Backend (or both inherited
+// together from the council default) — never a persona-level empty
+// Backend picking up a Model meant for a different, inherited backend.
+// Same reasoning as internal/autonomous/executor.go's
+// resolveTaskBackendModel (council does not import that package;
+// the cascade shape is deliberately mirrored, not shared, to avoid a
+// cross-package dependency for two fields).
+func (o *Orchestrator) resolvePersonaBackendModel(p Persona) (backend, model string) {
+	if p.Backend != "" {
+		return p.Backend, p.Model
+	}
+	return o.LLMRef, ""
+}
+
 // respond issues one persona-round inference call. v7.0.0 S3 —
 // always routes through InferenceFn; stub fallback removed per
-// BL295 ASK Q7 (honest 503).
-func (o *Orchestrator) respond(ctx context.Context, p Persona, proposal string, prior []Round) string {
+// BL295 ASK Q7 (honest 503). v8.38.0 (BL390) — backend/model are the
+// caller's already-resolved values (resolvePersonaBackendModel), so
+// capacity admission (bracketing this call at the caller) and the
+// inference call itself agree on exactly what was requested.
+func (o *Orchestrator) respond(ctx context.Context, p Persona, backend, model, proposal string, prior []Round) string {
 	prompt := buildPersonaPrompt(p, proposal, prior)
-	text, usedNode, err := o.InferenceFn(ctx, o.LLMRef, p.SystemPrompt, prompt, "council")
+	text, usedNode, err := o.InferenceFn(ctx, backend, model, p.SystemPrompt, prompt, "council")
 	if err != nil {
 		return fmt.Sprintf("[%s] error: %s", p.Name, err.Error())
 	}
@@ -790,7 +871,14 @@ func (o *Orchestrator) synthesize(ctx context.Context, run *Run) (consensus, dis
 		fmt.Fprintf(&sb, "%s:\n%s\n\n", name, resp)
 	}
 	systemPrompt := "You are the moderator synthesizing a multi-persona council debate. Produce TWO clearly-labeled sections:\n\n1. CONSENSUS (4-8 sentences) — the points all or most personas converged on. Be specific.\n2. DISSENT (3-6 sentences, may be empty) — the meaningful disagreements that warrant follow-up. If there are none, write 'No material dissent.'."
-	moderatorText, _, err := o.InferenceFn(ctx, o.LLMRef, systemPrompt, sb.String(), "council")
+	if o.CapacityAdmitFn != nil {
+		release, admitErr := o.CapacityAdmitFn(ctx, o.LLMRef, "", run.ID+"-synthesis", "")
+		if admitErr != nil {
+			return fmt.Sprintf("Synthesis failed: capacity: %s\n\nLast-round responses preserved in run.Rounds.", admitErr.Error()), ""
+		}
+		defer release()
+	}
+	moderatorText, _, err := o.InferenceFn(ctx, o.LLMRef, "", systemPrompt, sb.String(), "council")
 	if err != nil {
 		return fmt.Sprintf("Synthesis failed: %s\n\nLast-round responses preserved in run.Rounds.", err.Error()), ""
 	}
