@@ -186,6 +186,144 @@ jobs:
           fi
           docker buildx imagetools create "${args[@]}" "$src"
 
+  recheck-ignored-cves:
+    # Catches the scenario image-refresh's own "rebuild" decision can't:
+    # a .trivyignore entry whose CVE has since been fixed upstream, but
+    # whose PUBLISHED image still scans clean today because the scan is
+    # always run *with* --ignorefile. That comparison can never reveal a
+    # stale suppression on its own. This job tests the only thing that
+    # actually answers "would this still be unfixed if we rebuilt right
+    # now": a fresh, from-scratch pull + the Dockerfile's own
+    # apt-get update && upgrade layer (Dockerfile.agent-base's "Layer 2b"),
+    # scanned WITHOUT the ignorefile. Runs unconditionally (not gated on
+    # needs.plan.outputs.rebuild) since a suppressed CVE never makes that
+    # decision fail in the first place.
+    #
+    # Never auto-edits .trivyignore or ships an image from this job —
+    # only files/updates one tracking issue so a human reviews and
+    # removes the now-stale entry deliberately. See the "fix now" vs
+    # "trace usage first" exchange that led to the agent-base CVE
+    # suppressions this job exists to eventually retire (2026-09-30).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      issues: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          ref: main
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+      - name: Build + push a fresh, upgraded base image (mirrors Dockerfile.agent-base's security-upgrade layer)
+        # Pushed to a throwaway tag and scanned FROM the registry, same as
+        # the base/agents jobs below — not scanned as a local image. A
+        # locally-built-then-locally-scanned image hit an unrelated
+        # Trivy/Docker layer-export incompatibility in dev testing (same
+        # failure on a trivial one-line RUN layer, so not content-specific);
+        # the registry round-trip is this file's already-proven path.
+        run: |
+          cat > /tmp/recheck.Dockerfile <<'EOF'
+          FROM bitnami/minideb:bookworm
+          RUN apt-get update -qq && \
+              apt-get upgrade -y -q --no-install-recommends && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+          EOF
+          docker buildx build --pull --no-cache --provenance=false --sbom=false \
+            -f /tmp/recheck.Dockerfile \
+            -t ghcr.io/dmz006/datawatch-cve-recheck:scratch-${{ github.run_id }} \
+            --push /tmp
+      - name: Scan fresh image WITHOUT .trivyignore
+        run: |
+          trivy image --severity HIGH,CRITICAL --format json \
+            -o /tmp/fresh-scan.json \
+            ghcr.io/dmz006/datawatch-cve-recheck:scratch-${{ github.run_id }}
+      - name: Diff .trivyignore against the fresh scan
+        id: diff
+        run: |
+          set -euo pipefail
+          # Every CVE-#### line in .trivyignore that's a suppression entry
+          # (skip comments/blanks).
+          grep -oE '^CVE-[0-9]+-[0-9]+$' .trivyignore | sort -u > /tmp/suppressed.txt
+          # Every CVE ID the fresh, unsuppressed scan still finds.
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/fresh-scan.json'))
+          ids = set()
+          for res in d.get('Results', []) or []:
+              for v in res.get('Vulnerabilities', []) or []:
+                  ids.add(v['VulnerabilityID'])
+          print('\n'.join(sorted(ids)))
+          " > /tmp/still-vulnerable.txt
+          # Suppressed entries no longer in the fresh scan = stale.
+          comm -23 /tmp/suppressed.txt /tmp/still-vulnerable.txt > /tmp/stale.txt || true
+          count=$(wc -l < /tmp/stale.txt | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "--- suppressed ---"; cat /tmp/suppressed.txt
+          echo "--- still vulnerable (fresh scan) ---"; cat /tmp/still-vulnerable.txt
+          echo "--- stale (fix now available, safe to remove) ---"; cat /tmp/stale.txt
+      - name: Delete the scratch scan image
+        # datawatch-cve-recheck is a throwaway scan target, not a real
+        # product artifact — not in ghcr-cleanup.yaml's known-package
+        # matrix, so this job cleans up after itself rather than leaving
+        # an orphaned package behind. Runs even if an earlier step failed.
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          TAG: scratch-${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          versions=$(gh api "/users/$OWNER/packages/container/datawatch-cve-recheck/versions" --paginate 2>/dev/null \
+            || gh api "/orgs/$OWNER/packages/container/datawatch-cve-recheck/versions" --paginate 2>/dev/null \
+            || echo '[]')
+          vid=$(echo "$versions" | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null) | .id' | head -1)
+          if [[ -n "$vid" ]]; then
+            gh api -X DELETE "/users/$OWNER/packages/container/datawatch-cve-recheck/versions/$vid" 2>/dev/null \
+              || gh api -X DELETE "/orgs/$OWNER/packages/container/datawatch-cve-recheck/versions/$vid" 2>/dev/null \
+              || echo "::warning::failed to delete scratch image version $vid"
+          fi
+
+      - name: File or update tracking issue for stale suppressions
+        if: steps.diff.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="chore: stale .trivyignore suppressions ready to remove"
+          body_file=/tmp/issue-body.md
+          {
+            echo "Daily \`image-refresh\` CVE recheck found that the following"
+            echo "\`.trivyignore\` entries no longer appear in a fresh,"
+            echo "freshly-upgraded base-image scan — a fix has landed upstream"
+            echo "since these were suppressed. Remove the corresponding lines"
+            echo "from \`.trivyignore\`, then let the next \`image-refresh\` run"
+            echo "(or a manual \`workflow_dispatch\` with \`force: true\`)"
+            echo "rebuild and promote the patched images."
+            echo
+            echo "**Now-fixed CVE IDs:**"
+            echo
+            while read -r cve; do echo "- \`$cve\`"; done < /tmp/stale.txt
+            echo
+            echo "_Last checked: $(date -u +%Y-%m-%dT%H:%M:%SZ) — run ${{ github.run_id }}._"
+          } > "$body_file"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "in:title \"$title\"" --state open --json number -q '.[0].number' || true)
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body_file" --label "security"
+          fi
+
   agents:
     name: refresh / ${{ matrix.name }}
     needs: [plan, base]
