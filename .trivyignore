@@ -358,3 +358,24 @@ CVE-2026-96512
 # connection, so the flawed code path is never reached. Blocked v8.35.0's
 # release CI (containers/stats-cluster). Reviewed 2026-09-29.
 CVE-2026-84782
+
+# libexpat1 — CVE-2024-28757 (HIGH, affected). Trivy's advisory lists a fix
+# at 2.5.0-1+deb12u4, but the live bookworm-security mirror's highest
+# candidate is still 2.5.0-1+deb12u3 (verified directly: `apt-cache policy
+# libexpat1` against debian:bookworm) — the Dockerfile's existing
+# unconditional `apt-get upgrade` layer (Dockerfile.agent-base) genuinely
+# cannot install a version that isn't mirrored yet; this is not a missed
+# upgrade step. XML entity expansion; agent containers parse XML only from
+# trusted tooling output, no attacker-controlled XML input surface. Blocked
+# v8.38.0's release CI (containers/agent-base). Reviewed 2026-09-30 — drop
+# this suppression once bookworm-security publishes +deb12u4 or later.
+CVE-2024-28757
+
+# libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
+# verified as the mirror's current candidate — not yet backported at all).
+# Out-of-bounds write via a crafted regular expression. PCRE2 here is a
+# transitive dependency of base unix tooling (grep, etc.); none of it
+# compiles or executes attacker-supplied regular expressions — only
+# operator-authored patterns in datawatch's own config/CLI invocations.
+# Blocked v8.38.0's release CI (containers/agent-base). Reviewed 2026-09-30.
+CVE-2026-103111
