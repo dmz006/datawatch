@@ -365,17 +365,30 @@ CVE-2026-84782
 # libexpat1` against debian:bookworm) — the Dockerfile's existing
 # unconditional `apt-get upgrade` layer (Dockerfile.agent-base) genuinely
 # cannot install a version that isn't mirrored yet; this is not a missed
-# upgrade step. XML entity expansion; agent containers parse XML only from
-# trusted tooling output, no attacker-controlled XML input surface. Blocked
-# v8.38.0's release CI (containers/agent-base). Reviewed 2026-09-30 — drop
-# this suppression once bookworm-security publishes +deb12u4 or later.
+# upgrade step. XML entity expansion (worst case: resource-exhaustion DoS,
+# not code execution). Blocked v8.38.0's release CI (containers/agent-base).
+# CAVEAT (2026-09-30): this image is the shared foundation for every
+# agent-* variant (claude-code/opencode/aider/gemini/goose), each with its
+# own runtime dependency tree; whether any of those actually parse
+# attacker-influenced XML (e.g. a fetched RSS/Atom feed, a web_search
+# result) was NOT independently traced before suppressing — only asserted
+# by pattern-matching this file's existing entries. Re-review should
+# actually trace this before re-accepting on the next cycle. Drop this
+# suppression entirely once bookworm-security publishes +deb12u4 or later.
 CVE-2024-28757
 
 # libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
 # verified as the mirror's current candidate — not yet backported at all).
-# Out-of-bounds write via a crafted regular expression. PCRE2 here is a
-# transitive dependency of base unix tooling (grep, etc.); none of it
-# compiles or executes attacker-supplied regular expressions — only
-# operator-authored patterns in datawatch's own config/CLI invocations.
-# Blocked v8.38.0's release CI (containers/agent-base). Reviewed 2026-09-30.
+# Out-of-bounds WRITE (memory-corruption primitive, not just a read) via a
+# crafted regular expression PATTERN (not crafted input text — the
+# attacker needs to control the pattern itself, compiled/run through
+# PCRE2). Blocked v8.38.0's release CI (containers/agent-base).
+# CAVEAT (2026-09-30): same shared-foundation concern as the libexpat1
+# entry above — whether any agent-* runtime ever compiles a regex pattern
+# derived from untrusted/LLM-influenced input (e.g. a prompt-injected
+# search pattern) was NOT independently traced before suppressing, only
+# asserted by pattern-matching this file's existing entries. This is the
+# higher-concern of the two new entries given OOB-write is memory
+# corruption, not just a DoS — prioritize tracing this one first on
+# re-review.
 CVE-2026-103111
