@@ -229,7 +229,10 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
 ### Release-discipline rules (referenced from `docs/plans/README.md`)
 
 These rules apply to **every release commit** (patch or minor/major), and live here
-so they survive the backlog file's refactors:
+so they survive the backlog file's refactors. **[`docs/release-checklist.md`](docs/release-checklist.md)
+is the step-by-step checklist to actually run through** — these bullets are the
+rules it's derived from; use the checklist, don't re-derive it from memory each
+time.
 
 - **README.md must reflect the current release.** Every release commit updates the
   `**Current release: vX.Y.Z (DATE).**` line at the top of `/README.md` and refreshes

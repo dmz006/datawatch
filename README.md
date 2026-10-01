@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.37.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.37.0)
+[![Release](https://img.shields.io/badge/release-v8.37.4-success)](https://github.com/dmz006/datawatch/releases/tag/v8.37.4)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,14 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.37.4](CHANGELOG.md) (2026-09-30)** — Feat: expand/collapse button on the PRD markdown/file viewer, so it can use most of the window on a desktop browser instead of staying capped at 860px; auto-reverts if the window shrinks back down.
+
+**[v8.37.3](CHANGELOG.md) (2026-09-30)** — Fix: opening a session from a differently-sized device (e.g. Android Auto vs. phone/desktop) no longer flips it from `waiting_input` to `running` on its own — the server skips a redundant tmux resize when the pane is already the requested size, instead of letting every TUI repaint read as backend activity.
+
+**[v8.37.2](CHANGELOG.md) (2026-09-30)** — Fix: overriding an autonomous task's backend (`set_task_llm`) no longer leaves a stale model string from the previous backend attached, which could make the new backend fail outright on an unrecognized model name.
+
+**[v8.37.1](CHANGELOG.md) (2026-09-30)** — Fix: PWA `session_state` WS handler read the wrong payload shape, which would have corrupted the session list once v8.37.0's broadcast was deployed.
 
 **[v8.37.0](CHANGELOG.md) (2026-09-30)** — Feat: `session_state` single-session WS broadcast (GH#162) — `Hub.BroadcastSessionState` fires alongside the existing full-list `sessions` push so mobile/external `/ws` clients can adopt lighter-weight single-session diffs instead of re-parsing the full list on every change.
 
