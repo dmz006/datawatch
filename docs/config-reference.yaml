@@ -567,6 +567,9 @@ web_search:
   # Base URL of the SearXNG instance (required when enabled).
   url: ""
   # SearXNG engine to use. Use "bing" — other engines are CAPTCHA/rate-limited.
+  # Known limitation: even bing's scraped results are intermittently degraded
+  # for compound/multi-word queries (likely Bing-side anti-scraping, not
+  # fixable via config) — see docs/datawatch-definitions.md Web Search section.
   engine: bing
   # Maximum number of search results to return per query.
   num_results: 10
