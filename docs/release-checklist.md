@@ -100,6 +100,14 @@ commit that adds it, same as any other rule change.
 
 ## 6. CI — watch it properly, not just the overall conclusion
 
+- [ ] **Arm a `Monitor` on the triggered run immediately after pushing the
+  tag — this is mandatory, not optional** (operator-directed 2026-10-02).
+  Do not consider the release reportable as "done" until the Monitor (or,
+  if it expires, a re-armed one) reports a terminal `completed` status.
+  A bare `gh run watch` in a single foreground call is not a substitute —
+  release runs commonly run 30-90+ minutes (goreleaser rate-limit backoff,
+  multi-arch container builds) and a one-shot watch call will time out
+  long before the run finishes, leaving the release silently unverified.
 - [ ] Find the triggered run: `gh run list --branch vX.Y.Z --limit 3`.
 - [ ] Watch it to completion (`gh run watch <id> --exit-status`), but
   **do not stop at the overall `conclusion` field** — an unrelated job

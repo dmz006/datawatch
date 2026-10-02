@@ -1,21 +1,21 @@
 package server
 
 import (
-	"github.com/dmz006/datawatch/internal/capacity"
 	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,26 +24,27 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/compute"
-	"github.com/dmz006/datawatch/internal/council"
-	"github.com/dmz006/datawatch/internal/inference"
-	"github.com/dmz006/datawatch/internal/memory"
-	"github.com/dmz006/datawatch/internal/devices"
-	"github.com/dmz006/datawatch/internal/messaging"
-	"github.com/dmz006/datawatch/internal/profile"
-	"github.com/dmz006/datawatch/internal/proxy"
-	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/devices"
+	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
-	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/dmz006/datawatch/internal/profile"
+	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/router"
-	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/vision"
+	"github.com/dmz006/datawatch/internal/websearch"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -176,32 +177,32 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.38.1"
+var Version = "8.39.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub               *Hub
-	manager           *session.Manager
-	hostname          string
-	token             string
-	availableBackends []string // registered LLM backend names
-	cfg               *config.Config
-	cfgPath           string
-	schedStore        *session.ScheduleStore
-	exitHookStore     *session.ExitHookStore      // BL356
-	queueStore        *session.QueueStore          // BL357
+	hub                *Hub
+	manager            *session.Manager
+	hostname           string
+	token              string
+	availableBackends  []string // registered LLM backend names
+	cfg                *config.Config
+	cfgPath            string
+	schedStore         *session.ScheduleStore
+	exitHookStore      *session.ExitHookStore      // BL356
+	queueStore         *session.QueueStore         // BL357
 	discussionSubStore *session.DiscussionSubStore // BL358
-	resultStore       *session.ResultStore         // BL360
-	cmdLib            *session.CmdLibrary
-	alertStore        *alerts.Store
-	filterStore       *session.FilterStore
-	statsCollector    *stats.Collector
+	resultStore        *session.ResultStore        // BL360
+	cmdLib             *session.CmdLibrary
+	alertStore         *alerts.Store
+	filterStore        *session.FilterStore
+	statsCollector     *stats.Collector
 	// F10 sprint 2: profile stores. Wired from main.go via setters so
 	// unit tests can leave them nil (handlers return 503).
-	projectStore      *profile.ProjectStore
-	clusterStore      *profile.ClusterStore
+	projectStore *profile.ProjectStore
+	clusterStore *profile.ClusterStore
 	// F10 sprint 3: agent lifecycle manager.
-	agentMgr          *agents.Manager
+	agentMgr *agents.Manager
 
 	// BL107 — wired on startup; consumed by handleAgentAudit.
 	// Empty path or CEF format disables the REST query.
@@ -258,7 +259,7 @@ type Server struct {
 	computeReg *compute.Registry
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
-	inferenceReg  *inference.Registry
+	inferenceReg   *inference.Registry
 	capacityLedger *capacity.Ledger
 	// capacityAdmit gates an interactive (non-autonomous) session start on
 	// the same node:/llm: capacity pools an autonomous task would use for
@@ -284,7 +285,7 @@ type Server struct {
 	memoryBackend memory.Backend
 
 	linkMu      sync.Mutex
-	linkStreams  map[string]chan string // stream_id -> event channel
+	linkStreams map[string]chan string // stream_id -> event channel
 
 	// Backend version cache — avoids slow serial exec calls on every /api/backends request.
 	versionCacheMu sync.RWMutex
@@ -309,7 +310,7 @@ type Server struct {
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
-	mcpSamplingDisp   MCPSamplingAPI
+	mcpSamplingDisp    MCPSamplingAPI
 	mcpElicitationDisp MCPElicitationAPI
 
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
@@ -431,7 +432,33 @@ type Server struct {
 	// BL241 — Matrix backend handle (nil when Matrix is not configured).
 	// Used by /api/matrix/status and /api/matrix/test.
 	matrixBackend matrixBackendAPI
+
+	// BL391 — multi-provider web search registry (nil when web_search is
+	// disabled or no providers configured). Wired from main.go via
+	// SetWebSearchRegistry; handlers return 503 when nil.
+	websearchReg *websearch.Registry
+
+	// BL391 — each WebSearch provider's api_key exactly as it appeared in
+	// config.yaml at daemon startup (name -> literal value or an unresolved
+	// "${secret:name}" ref), captured BEFORE secrets.ResolveConfig mutates
+	// cfg.WebSearch.Providers[i].APIKey to the resolved plaintext secret in
+	// place. s.cfg is the same struct the daemon resolves and runs with, so
+	// without this snapshot, saving the config after any unrelated provider
+	// edit (e.g. a plain enable/disable toggle) would persist the resolved
+	// plaintext key to config.yaml, defeating the secrets store. See
+	// saveWebSearchConfig in websearch.go, which restores the ref before
+	// every save. Wired from main.go via SetWebSearchAPIKeyRefs.
+	websearchAPIKeyRefs map[string]string
 }
+
+// SetWebSearchRegistry wires the shared *websearch.Registry (BL391) used by
+// the /api/websearch/* REST handlers for stats/history/provider-test.
+func (s *Server) SetWebSearchRegistry(r *websearch.Registry) { s.websearchReg = r }
+
+// SetWebSearchAPIKeyRefs wires the pre-ResolveConfig snapshot of each
+// provider's configured api_key (see the field doc above) so REST-triggered
+// config saves never persist a resolved plaintext secret to config.yaml.
+func (s *Server) SetWebSearchAPIKeyRefs(refs map[string]string) { s.websearchAPIKeyRefs = refs }
 
 // matrixBackendAPI is the minimal interface the REST handlers need from the
 // Matrix backend. Keeping it small avoids a hard dependency on the matrix
@@ -666,8 +693,8 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		availableBackends: backends,
 		cfg:               cfg,
 		cfgPath:           cfgPath,
-		linkStreams:        make(map[string]chan string),
-		channelHist:        make(map[string][]channelHistEntry),
+		linkStreams:       make(map[string]chan string),
+		channelHist:       make(map[string][]channelHistEntry),
 	}
 	// Pre-warm backend version cache in background so first /api/backends is instant.
 	go s.warmVersionCache()
@@ -767,7 +794,7 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
@@ -1872,9 +1899,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				ResumeID: d.ResumeID,
 			}
 			if d.ProjectDir == "" {
-					d.ProjectDir, _ = os.UserHomeDir()
-				}
-				sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
+				d.ProjectDir, _ = os.UserHomeDir()
+			}
+			sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
 			var result string
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
@@ -2051,7 +2078,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":          Version,
 		"uptime_seconds":   uptime,
 		"encrypted":        encrypted,
-		"has_env_password":  hasEnvPassword,
+		"has_env_password": hasEnvPassword,
 		"auth_required":    s.token != "",
 	})
 }
@@ -2216,12 +2243,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"hostname":            s.hostname,
-		"version":             Version,
-		"llm_backend":         s.manager.ActiveBackend(),
-		"available_backends":  s.availableBackends,
-		"session_count":       len(sessions),
-		"whisper_configured":  s.transcriber != nil,
+		"hostname":           s.hostname,
+		"version":            Version,
+		"llm_backend":        s.manager.ActiveBackend(),
+		"available_backends": s.availableBackends,
+		"session_count":      len(sessions),
+		"whisper_configured": s.transcriber != nil,
 	})
 }
 
@@ -2370,10 +2397,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type Entry struct {
-		Name    string `json:"name"`
-		IsDir   bool   `json:"is_dir"`
-		Path    string `json:"path"`
-		IsLink  bool   `json:"is_link,omitempty"`
+		Name   string `json:"name"`
+		IsDir  bool   `json:"is_dir"`
+		Path   string `json:"path"`
+		IsLink bool   `json:"is_link,omitempty"`
 	}
 	result := []Entry{}
 	// Add parent directory entry (omit if at root path boundary)
@@ -2809,9 +2836,9 @@ func (s *Server) handleMemoryWakeup(w http.ResponseWriter, r *http.Request) {
 	)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"bundle":     bundle,
-		"length":     len(bundle),
-		"has_l4_l5":  q.Get("agent_id") != "" || q.Get("parent_agent_id") != "",
+		"bundle":    bundle,
+		"length":    len(bundle),
+		"has_l4_l5": q.Get("agent_id") != "" || q.Get("parent_agent_id") != "",
 	})
 }
 
@@ -2946,7 +2973,7 @@ func (s *Server) handlePipelines(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Spec        string `json:"spec"`        // "task1 -> task2 -> task3"
+			Spec        string `json:"spec"` // "task1 -> task2 -> task3"
 			ProjectDir  string `json:"project_dir"`
 			MaxParallel int    `json:"max_parallel"`
 		}
@@ -3056,12 +3083,21 @@ func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
 	}
-	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	if s.kgAPI == nil {
+		http.Error(w, "KG not enabled", http.StatusServiceUnavailable)
+		return
+	}
 	entity := r.URL.Query().Get("entity")
 	asOf := r.URL.Query().Get("as_of")
-	if entity == "" { http.Error(w, "missing entity param", http.StatusBadRequest); return }
+	if entity == "" {
+		http.Error(w, "missing entity param", http.StatusBadRequest)
+		return
+	}
 	results, err := s.kgAPI.QueryEntity(entity, asOf)
-	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
@@ -3070,8 +3106,14 @@ func (s *Server) handleKGAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.kgAPI == nil {
+		http.Error(w, "KG not enabled", http.StatusServiceUnavailable)
+		return
+	}
 	var req struct {
 		Subject   string `json:"subject"`
 		Predicate string `json:"predicate"`
@@ -3081,10 +3123,14 @@ func (s *Server) handleKGAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 	if req.Subject == "" || req.Predicate == "" || req.Object == "" {
-		http.Error(w, "subject, predicate, object required", http.StatusBadRequest); return
+		http.Error(w, "subject, predicate, object required", http.StatusBadRequest)
+		return
 	}
 	id, err := s.kgAPI.AddTriple(req.Subject, req.Predicate, req.Object, req.ValidFrom, req.Source)
-	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id}) //nolint:errcheck
 }
@@ -3093,8 +3139,14 @@ func (s *Server) handleKGInvalidate(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
 	}
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.kgAPI == nil {
+		http.Error(w, "KG not enabled", http.StatusServiceUnavailable)
+		return
+	}
 	var req struct {
 		Subject   string `json:"subject"`
 		Predicate string `json:"predicate"`
@@ -3103,7 +3155,8 @@ func (s *Server) handleKGInvalidate(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 	if err := s.kgAPI.Invalidate(req.Subject, req.Predicate, req.Object, req.Ended); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError); return
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
@@ -3113,11 +3166,20 @@ func (s *Server) handleKGTimeline(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
 	}
-	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	if s.kgAPI == nil {
+		http.Error(w, "KG not enabled", http.StatusServiceUnavailable)
+		return
+	}
 	entity := r.URL.Query().Get("entity")
-	if entity == "" { http.Error(w, "missing entity param", http.StatusBadRequest); return }
+	if entity == "" {
+		http.Error(w, "missing entity param", http.StatusBadRequest)
+		return
+	}
 	results, err := s.kgAPI.Timeline(entity)
-	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
@@ -3126,7 +3188,10 @@ func (s *Server) handleKGStats(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
 	}
-	if s.kgAPI == nil { json.NewEncoder(w).Encode(map[string]bool{"enabled": false}); return } //nolint:errcheck
+	if s.kgAPI == nil {
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": false})
+		return
+	} //nolint:errcheck
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.kgAPI.Stats()) //nolint:errcheck
 }
@@ -3209,11 +3274,11 @@ func (s *Server) handleWebSearchStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"enabled":       s.cfg.WebSearch.Enabled,
-		"provider":      s.cfg.WebSearch.Provider,
-		"url":           s.cfg.WebSearch.URL,
-		"engine":        s.cfg.WebSearch.Engine,
-		"num_results":   s.cfg.WebSearch.NumResults,
+		"enabled":     s.cfg.WebSearch.Enabled,
+		"provider":    s.cfg.WebSearch.Provider,
+		"url":         s.cfg.WebSearch.URL,
+		"engine":      s.cfg.WebSearch.Engine,
+		"num_results": s.cfg.WebSearch.NumResults,
 	})
 }
 
@@ -4271,23 +4336,23 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := &session.StartOptions{
-		Name:               req.Name,
-		Backend:            req.Backend,
-		ResumeID:           req.ResumeID,
-		AutoGitCommit:      req.AutoGitCommit,
-		AutoGitInit:        req.AutoGitInit,
-		Effort:             req.Effort,
-		PermissionMode:     req.PermissionMode,
-		Model:              req.Model,
-		ClaudeEffort:       req.ClaudeEffort,
-		EphemeralWorkspace: ephemeralWorkspace,
-		Skills:             profileSkills,
-		LLMRef:             resolvedLLMRef,
-		ComputeNodeRef:     resolvedComputeNodeRef,
-		OneShot:            req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
-		LSPLanguage:        req.LSPLanguage,
-		OllamaURL:          resolvedOllamaURL,
-		Chrome:             req.Chrome,
+		Name:                  req.Name,
+		Backend:               req.Backend,
+		ResumeID:              req.ResumeID,
+		AutoGitCommit:         req.AutoGitCommit,
+		AutoGitInit:           req.AutoGitInit,
+		Effort:                req.Effort,
+		PermissionMode:        req.PermissionMode,
+		Model:                 req.Model,
+		ClaudeEffort:          req.ClaudeEffort,
+		EphemeralWorkspace:    ephemeralWorkspace,
+		Skills:                profileSkills,
+		LLMRef:                resolvedLLMRef,
+		ComputeNodeRef:        resolvedComputeNodeRef,
+		OneShot:               req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
+		LSPLanguage:           req.LSPLanguage,
+		OllamaURL:             resolvedOllamaURL,
+		Chrome:                req.Chrome,
 		ParentID:              req.ParentID,
 		KillChildren:          req.KillChildren,
 		KillChildrenRecursive: req.KillChildrenRecursive,
@@ -4527,7 +4592,10 @@ func (s *Server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
 
 		// Read from both stdout and stderr looking for sgnl:// URI
 		qrFound := false
-		scanFn := func(stream interface{ Scan() bool; Text() string }) {
+		scanFn := func(stream interface {
+			Scan() bool
+			Text() string
+		}) {
 			for stream.Scan() {
 				line := stream.Text()
 				if strings.HasPrefix(line, "sgnl://") && !qrFound {
@@ -4821,20 +4889,20 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]interface{}{
 		"hostname": s.cfg.Hostname,
 		"server": map[string]interface{}{
-			"enabled":          s.cfg.Server.Enabled,
-			"host":             s.cfg.Server.Host,
-			"port":             s.cfg.Server.Port,
-			"public_url":       s.cfg.Server.PublicURL,
-			"token":            mask(s.cfg.Server.Token),
-			"tls":              s.cfg.Server.TLSEnabled,
-			"tls_auto_generate": s.cfg.Server.TLSAutoGenerate,
-			"tls_cert":         s.cfg.Server.TLSCert,
-			"tls_key":          s.cfg.Server.TLSKey,
-			"channel_port":              s.cfg.Server.ChannelPort,
-			"tls_port":                  s.cfg.Server.TLSPort,
-			"auto_restart_on_config":    s.cfg.Server.AutoRestartOnConfig,
-			"recent_session_minutes":    s.cfg.Server.RecentSessionMinutes,
-			"suppress_active_toasts":    s.cfg.Server.SuppressActiveToasts,
+			"enabled":                s.cfg.Server.Enabled,
+			"host":                   s.cfg.Server.Host,
+			"port":                   s.cfg.Server.Port,
+			"public_url":             s.cfg.Server.PublicURL,
+			"token":                  mask(s.cfg.Server.Token),
+			"tls":                    s.cfg.Server.TLSEnabled,
+			"tls_auto_generate":      s.cfg.Server.TLSAutoGenerate,
+			"tls_cert":               s.cfg.Server.TLSCert,
+			"tls_key":                s.cfg.Server.TLSKey,
+			"channel_port":           s.cfg.Server.ChannelPort,
+			"tls_port":               s.cfg.Server.TLSPort,
+			"auto_restart_on_config": s.cfg.Server.AutoRestartOnConfig,
+			"recent_session_minutes": s.cfg.Server.RecentSessionMinutes,
+			"suppress_active_toasts": s.cfg.Server.SuppressActiveToasts,
 		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
@@ -4844,30 +4912,30 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"device_name":    s.cfg.Signal.DeviceName,
 		},
 		"telegram": map[string]interface{}{
-			"enabled":            s.cfg.Telegram.Enabled,
-			"token":              mask(s.cfg.Telegram.Token),
-			"chat_id":            s.cfg.Telegram.ChatID,
-			"auto_manage_group":  s.cfg.Telegram.AutoManageGroup,
+			"enabled":           s.cfg.Telegram.Enabled,
+			"token":             mask(s.cfg.Telegram.Token),
+			"chat_id":           s.cfg.Telegram.ChatID,
+			"auto_manage_group": s.cfg.Telegram.AutoManageGroup,
 		},
 		"discord": map[string]interface{}{
-			"enabled":              s.cfg.Discord.Enabled,
-			"token":                mask(s.cfg.Discord.Token),
-			"channel_id":           s.cfg.Discord.ChannelID,
-			"auto_manage_channel":  s.cfg.Discord.AutoManageChannel,
+			"enabled":             s.cfg.Discord.Enabled,
+			"token":               mask(s.cfg.Discord.Token),
+			"channel_id":          s.cfg.Discord.ChannelID,
+			"auto_manage_channel": s.cfg.Discord.AutoManageChannel,
 		},
 		"slack": map[string]interface{}{
-			"enabled":              s.cfg.Slack.Enabled,
-			"token":                mask(s.cfg.Slack.Token),
-			"channel_id":           s.cfg.Slack.ChannelID,
-			"auto_manage_channel":  s.cfg.Slack.AutoManageChannel,
+			"enabled":             s.cfg.Slack.Enabled,
+			"token":               mask(s.cfg.Slack.Token),
+			"channel_id":          s.cfg.Slack.ChannelID,
+			"auto_manage_channel": s.cfg.Slack.AutoManageChannel,
 		},
 		"matrix": map[string]interface{}{
-			"enabled":           s.cfg.Matrix.Enabled,
-			"homeserver":        s.cfg.Matrix.Homeserver,
-			"user_id":           s.cfg.Matrix.UserID,
-			"access_token":      mask(s.cfg.Matrix.AccessToken),
-			"room_id":           s.cfg.Matrix.RoomID,
-			"auto_manage_room":  s.cfg.Matrix.AutoManageRoom,
+			"enabled":          s.cfg.Matrix.Enabled,
+			"homeserver":       s.cfg.Matrix.Homeserver,
+			"user_id":          s.cfg.Matrix.UserID,
+			"access_token":     mask(s.cfg.Matrix.AccessToken),
+			"room_id":          s.cfg.Matrix.RoomID,
+			"auto_manage_room": s.cfg.Matrix.AutoManageRoom,
 		},
 		"ntfy": map[string]interface{}{
 			"enabled":    s.cfg.Ntfy.Enabled,
@@ -4885,12 +4953,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"to":       s.cfg.Email.To,
 		},
 		"twilio": map[string]interface{}{
-			"enabled":       s.cfg.Twilio.Enabled,
-			"account_sid":   mask(s.cfg.Twilio.AccountSID),
-			"auth_token":    mask(s.cfg.Twilio.AuthToken),
-			"from_number":   s.cfg.Twilio.FromNumber,
-			"to_number":     s.cfg.Twilio.ToNumber,
-			"webhook_addr":  s.cfg.Twilio.WebhookAddr,
+			"enabled":      s.cfg.Twilio.Enabled,
+			"account_sid":  mask(s.cfg.Twilio.AccountSID),
+			"auth_token":   mask(s.cfg.Twilio.AuthToken),
+			"from_number":  s.cfg.Twilio.FromNumber,
+			"to_number":    s.cfg.Twilio.ToNumber,
+			"webhook_addr": s.cfg.Twilio.WebhookAddr,
 		},
 		"github_webhook": map[string]interface{}{
 			"enabled": s.cfg.GitHubWebhook.Enabled,
@@ -4904,25 +4972,25 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
-				"llm_backend":        s.cfg.Session.LLMBackend,
-				"max_sessions":       s.cfg.Session.MaxSessions,
-				"reserved_interactive": s.cfg.Session.EffectiveReservedInteractive(),
-				"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
-				"tail_lines":         s.cfg.Session.TailLines,
-				"alert_context_lines": s.cfg.Session.AlertContextLines,
-				"default_project_dir": s.cfg.Session.DefaultProjectDir,
-				"workspace_root":     s.cfg.Session.WorkspaceRoot,
-				"claude_enabled":     s.cfg.Session.ClaudeEnabled,
-				"auto_git_commit":    s.cfg.Session.AutoGitCommit,
-				"auto_git_init":      s.cfg.Session.AutoGitInit,
+				"llm_backend":           s.cfg.Session.LLMBackend,
+				"max_sessions":          s.cfg.Session.MaxSessions,
+				"reserved_interactive":  s.cfg.Session.EffectiveReservedInteractive(),
+				"input_idle_timeout":    s.cfg.Session.InputIdleTimeout,
+				"tail_lines":            s.cfg.Session.TailLines,
+				"alert_context_lines":   s.cfg.Session.AlertContextLines,
+				"default_project_dir":   s.cfg.Session.DefaultProjectDir,
+				"workspace_root":        s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":        s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":       s.cfg.Session.AutoGitCommit,
+				"auto_git_init":         s.cfg.Session.AutoGitInit,
 				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
-				"root_path":         s.cfg.Session.RootPath,
-				"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
-				"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
-				"console_cols":      s.cfg.Session.ConsoleCols,
-				"console_rows":      s.cfg.Session.ConsoleRows,
-				"log_level":         s.cfg.Session.LogLevel,
+				"root_path":             s.cfg.Session.RootPath,
+				"mcp_max_retries":       s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms":    s.cfg.Session.ScheduleSettleMs,
+				"console_cols":          s.cfg.Session.ConsoleCols,
+				"console_rows":          s.cfg.Session.ConsoleRows,
+				"log_level":             s.cfg.Session.LogLevel,
 				"summarizer": map[string]interface{}{
 					"enabled": s.cfg.Session.Summarizer.Enabled,
 					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
@@ -4943,15 +5011,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			return m
 		}(),
 		"mcp": map[string]interface{}{
-			"enabled":          s.cfg.MCP.Enabled,
-			"sse_enabled":      s.cfg.MCP.SSEEnabled,
-			"sse_host":         s.cfg.MCP.SSEHost,
-			"sse_port":         s.cfg.MCP.SSEPort,
-			"token":            mask(s.cfg.MCP.Token),
-			"tls_enabled":      s.cfg.MCP.TLSEnabled,
+			"enabled":           s.cfg.MCP.Enabled,
+			"sse_enabled":       s.cfg.MCP.SSEEnabled,
+			"sse_host":          s.cfg.MCP.SSEHost,
+			"sse_port":          s.cfg.MCP.SSEPort,
+			"token":             mask(s.cfg.MCP.Token),
+			"tls_enabled":       s.cfg.MCP.TLSEnabled,
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
-			"tls_cert":         s.cfg.MCP.TLSCert,
-			"tls_key":          s.cfg.MCP.TLSKey,
+			"tls_cert":          s.cfg.MCP.TLSCert,
+			"tls_key":           s.cfg.MCP.TLSKey,
 		},
 		"detection": map[string]interface{}{
 			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
@@ -5020,8 +5088,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.OpenCodePrompt.InputMode,
 		},
 		"aider": map[string]interface{}{
-			"enabled": s.cfg.Aider.Enabled,
-			"binary":  s.cfg.Aider.Binary,
+			"enabled":      s.cfg.Aider.Enabled,
+			"binary":       s.cfg.Aider.Binary,
 			"console_cols": s.cfg.Aider.ConsoleCols,
 			"console_rows": s.cfg.Aider.ConsoleRows,
 			"output_mode":  s.cfg.Aider.OutputMode,
@@ -5040,39 +5108,39 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"channel_enabled": s.cfg.Goose.ChannelEnabled,
 		},
 		"gemini": map[string]interface{}{
-			"enabled": s.cfg.Gemini.Enabled,
-			"binary":  s.cfg.Gemini.Binary,
+			"enabled":      s.cfg.Gemini.Enabled,
+			"binary":       s.cfg.Gemini.Binary,
 			"console_cols": s.cfg.Gemini.ConsoleCols,
 			"console_rows": s.cfg.Gemini.ConsoleRows,
 			"output_mode":  s.cfg.Gemini.OutputMode,
 			"input_mode":   s.cfg.Gemini.InputMode,
 		},
 		"openwebui": map[string]interface{}{
-			"enabled": s.cfg.OpenWebUI.Enabled,
-			"url":     s.cfg.OpenWebUI.URL,
-			"model":   s.cfg.OpenWebUI.Model,
-			"api_key": mask(s.cfg.OpenWebUI.APIKey),
+			"enabled":      s.cfg.OpenWebUI.Enabled,
+			"url":          s.cfg.OpenWebUI.URL,
+			"model":        s.cfg.OpenWebUI.Model,
+			"api_key":      mask(s.cfg.OpenWebUI.APIKey),
 			"console_cols": s.cfg.OpenWebUI.ConsoleCols,
 			"console_rows": s.cfg.OpenWebUI.ConsoleRows,
 			"output_mode":  s.cfg.OpenWebUI.OutputMode,
 			"input_mode":   s.cfg.OpenWebUI.InputMode,
 		},
 		"shell_backend": map[string]interface{}{
-			"enabled":     s.cfg.Shell.Enabled,
-			"script_path": s.cfg.Shell.ScriptPath,
+			"enabled":      s.cfg.Shell.Enabled,
+			"script_path":  s.cfg.Shell.ScriptPath,
 			"console_cols": s.cfg.Shell.ConsoleCols,
 			"console_rows": s.cfg.Shell.ConsoleRows,
 			"output_mode":  s.cfg.Shell.OutputMode,
 			"input_mode":   s.cfg.Shell.InputMode,
 		},
 		"rtk": map[string]interface{}{
-			"enabled":            s.cfg.RTK.Enabled,
-			"binary":             s.cfg.RTK.Binary,
-			"show_savings":       s.cfg.RTK.ShowSavings,
-			"auto_init":          s.cfg.RTK.AutoInit,
-			"discover_interval":       s.cfg.RTK.DiscoverInterval,
-			"auto_update":             s.cfg.RTK.AutoUpdate,
-			"update_check_interval":   s.cfg.RTK.UpdateCheckInterval,
+			"enabled":               s.cfg.RTK.Enabled,
+			"binary":                s.cfg.RTK.Binary,
+			"show_savings":          s.cfg.RTK.ShowSavings,
+			"auto_init":             s.cfg.RTK.AutoInit,
+			"discover_interval":     s.cfg.RTK.DiscoverInterval,
+			"auto_update":           s.cfg.RTK.AutoUpdate,
+			"update_check_interval": s.cfg.RTK.UpdateCheckInterval,
 		},
 		"pipeline": map[string]interface{}{
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
@@ -5099,19 +5167,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
 			"verification_backends": s.cfg.Autonomous.VerificationBackends,
 			// BL304: new key + legacy alias.
-			"planning_effort":       s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":  s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":   s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds": s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"capacity_enabled":            s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":           s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":      s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
-			"capacity_gpu_util_pct":       s.cfg.Autonomous.CapacityGPUUtilPct,
-			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
-			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
-			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
-			"security_scan":             s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":    s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
-			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
+			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
+			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
+			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
+			"security_scan":                 s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":            s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure":     s.cfg.Autonomous.ContinueOnStoryFailure,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -5120,7 +5188,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"block_on_regression": s.cfg.Autonomous.DefaultQualityGates.BlockOnRegression,
 			},
 			// BL369 — prompt injection guard.
-			"injection_guard":   s.cfg.Autonomous.InjectionGuard,
+			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
 			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
 		},
 		"plugins": map[string]interface{}{
@@ -5130,11 +5198,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"disabled":   s.cfg.Plugins.Disabled,
 		},
 		"orchestrator": map[string]interface{}{
-			"enabled":               s.cfg.Orchestrator.Enabled,
-			"default_guardrails":    s.cfg.Orchestrator.DefaultGuardrails,
-			"guardrail_timeout_ms":  s.cfg.Orchestrator.GuardrailTimeoutMs,
-			"guardrail_backend":     s.cfg.Orchestrator.GuardrailBackend,
-			"max_parallel_prds":     s.cfg.Orchestrator.MaxParallelPRDs,
+			"enabled":              s.cfg.Orchestrator.Enabled,
+			"default_guardrails":   s.cfg.Orchestrator.DefaultGuardrails,
+			"guardrail_timeout_ms": s.cfg.Orchestrator.GuardrailTimeoutMs,
+			"guardrail_backend":    s.cfg.Orchestrator.GuardrailBackend,
+			"max_parallel_prds":    s.cfg.Orchestrator.MaxParallelPRDs,
 		},
 		"profiles": s.cfg.Profiles,
 		"fallback_chain": func() []string {
@@ -5146,7 +5214,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			return nil
 		}(),
 		"whisper": map[string]interface{}{
-			"enabled":   s.cfg.Whisper.Enabled,
+			"enabled": s.cfg.Whisper.Enabled,
 			// v7.0.0-alpha.20 #253 — backend was missing here, so the
 			// PWA dropdown silently defaulted to "whisper" while the
 			// daemon was honoring the YAML value (e.g. "ollama" → BL201
@@ -5158,53 +5226,53 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"venv_path": s.cfg.Whisper.VenvPath,
 		},
 		"vision": map[string]interface{}{
-			"enabled":          s.cfg.Vision.Enabled,
-			"backend":          s.cfg.Vision.Backend,
-			"endpoint":         s.cfg.Vision.Endpoint,
-			"api_key":          mask(s.cfg.Vision.APIKey),
-			"model":            s.cfg.Vision.Model,
-			"default_prompt":   s.cfg.Vision.DefaultPrompt,
-			"max_image_bytes":  s.cfg.Vision.MaxImageBytes,
+			"enabled":         s.cfg.Vision.Enabled,
+			"backend":         s.cfg.Vision.Backend,
+			"endpoint":        s.cfg.Vision.Endpoint,
+			"api_key":         mask(s.cfg.Vision.APIKey),
+			"model":           s.cfg.Vision.Model,
+			"default_prompt":  s.cfg.Vision.DefaultPrompt,
+			"max_image_bytes": s.cfg.Vision.MaxImageBytes,
 		},
 		"memory": map[string]interface{}{
-			"enabled":          s.cfg.Memory.Enabled,
-			"backend":         s.cfg.Memory.Backend,
-			"db_path":         s.cfg.Memory.DBPath,
-			"postgres_url":    mask(s.cfg.Memory.PostgresURL),
-			"fallback_sqlite": s.cfg.Memory.FallbackSQLite,
-			"embedder":        s.cfg.Memory.Embedder,
-			"embedder_model":  s.cfg.Memory.EmbedderModel,
-			"embedder_host":   s.cfg.Memory.EmbedderHost,
-			"openai_key":      mask(s.cfg.Memory.OpenAIKey),
-			"dimensions":      s.cfg.Memory.Dimensions,
-			"top_k":           s.cfg.Memory.TopK,
-			"auto_save":       s.cfg.Memory.IsAutoSave(),
-			"learnings_enabled": s.cfg.Memory.IsLearningsEnabled(),
-			"retention_days":  s.cfg.Memory.RetentionDays,
-			"storage_mode":    s.cfg.Memory.StorageMode,
-			"entity_detection":    s.cfg.Memory.EntityDetection,
-			"auto_hooks":          s.cfg.Memory.IsAutoHooks(),
-			"hook_save_interval":  s.cfg.Memory.EffectiveHookInterval(),
-			"session_awareness":   s.cfg.Memory.IsSessionAwareness(),
-			"session_broadcast":   s.cfg.Memory.IsSessionBroadcast(),
+			"enabled":            s.cfg.Memory.Enabled,
+			"backend":            s.cfg.Memory.Backend,
+			"db_path":            s.cfg.Memory.DBPath,
+			"postgres_url":       mask(s.cfg.Memory.PostgresURL),
+			"fallback_sqlite":    s.cfg.Memory.FallbackSQLite,
+			"embedder":           s.cfg.Memory.Embedder,
+			"embedder_model":     s.cfg.Memory.EmbedderModel,
+			"embedder_host":      s.cfg.Memory.EmbedderHost,
+			"openai_key":         mask(s.cfg.Memory.OpenAIKey),
+			"dimensions":         s.cfg.Memory.Dimensions,
+			"top_k":              s.cfg.Memory.TopK,
+			"auto_save":          s.cfg.Memory.IsAutoSave(),
+			"learnings_enabled":  s.cfg.Memory.IsLearningsEnabled(),
+			"retention_days":     s.cfg.Memory.RetentionDays,
+			"storage_mode":       s.cfg.Memory.StorageMode,
+			"entity_detection":   s.cfg.Memory.EntityDetection,
+			"auto_hooks":         s.cfg.Memory.IsAutoHooks(),
+			"hook_save_interval": s.cfg.Memory.EffectiveHookInterval(),
+			"session_awareness":  s.cfg.Memory.IsSessionAwareness(),
+			"session_broadcast":  s.cfg.Memory.IsSessionBroadcast(),
 		},
 		"proxy": map[string]interface{}{
-			"enabled":                    s.cfg.Proxy.Enabled,
-			"health_interval":            s.cfg.Proxy.HealthInterval,
-			"request_timeout":            s.cfg.Proxy.RequestTimeout,
-			"offline_queue_size":         s.cfg.Proxy.OfflineQueueSize,
-			"circuit_breaker_threshold":  s.cfg.Proxy.CircuitBreakerThreshold,
-			"circuit_breaker_reset":      s.cfg.Proxy.CircuitBreakerReset,
+			"enabled":                   s.cfg.Proxy.Enabled,
+			"health_interval":           s.cfg.Proxy.HealthInterval,
+			"request_timeout":           s.cfg.Proxy.RequestTimeout,
+			"offline_queue_size":        s.cfg.Proxy.OfflineQueueSize,
+			"circuit_breaker_threshold": s.cfg.Proxy.CircuitBreakerThreshold,
+			"circuit_breaker_reset":     s.cfg.Proxy.CircuitBreakerReset,
 		},
 		// F10 sprint 3: agent layer configuration.
 		"agents": map[string]interface{}{
-			"image_prefix":                       s.cfg.Agents.ImagePrefix,
-			"image_tag":                          s.cfg.Agents.ImageTag,
-			"docker_bin":                         s.cfg.Agents.DockerBin,
-			"kubectl_bin":                        s.cfg.Agents.KubectlBin,
-			"callback_url":                       s.cfg.Agents.CallbackURL,
-			"bootstrap_token_ttl_seconds":        s.cfg.Agents.BootstrapTokenTTLSeconds,
-			"worker_bootstrap_deadline_seconds":  s.cfg.Agents.WorkerBootstrapDeadlineSeconds,
+			"image_prefix":                      s.cfg.Agents.ImagePrefix,
+			"image_tag":                         s.cfg.Agents.ImageTag,
+			"docker_bin":                        s.cfg.Agents.DockerBin,
+			"kubectl_bin":                       s.cfg.Agents.KubectlBin,
+			"callback_url":                      s.cfg.Agents.CallbackURL,
+			"bootstrap_token_ttl_seconds":       s.cfg.Agents.BootstrapTokenTTLSeconds,
+			"worker_bootstrap_deadline_seconds": s.cfg.Agents.WorkerBootstrapDeadlineSeconds,
 		},
 		// BL297 v6.22.4 — Council subsystem configuration.
 		"council": map[string]interface{}{
@@ -5389,21 +5457,31 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "ntfy.enabled":
 			cfg.Ntfy.Enabled = toBool(v)
 		case "ntfy.server_url":
-			if s := toString(v); s != "" { cfg.Ntfy.ServerURL = s }
+			if s := toString(v); s != "" {
+				cfg.Ntfy.ServerURL = s
+			}
 		case "ntfy.topic":
 			cfg.Ntfy.Topic = toString(v)
 		case "ntfy.token":
-			if s := toString(v); s != "" { cfg.Ntfy.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Ntfy.Token = s
+			}
 		case "email.enabled":
 			cfg.Email.Enabled = toBool(v)
 		case "email.host":
-			if s := toString(v); s != "" { cfg.Email.Host = s }
+			if s := toString(v); s != "" {
+				cfg.Email.Host = s
+			}
 		case "email.port":
-			if n, ok := toInt(v); ok { cfg.Email.Port = n }
+			if n, ok := toInt(v); ok {
+				cfg.Email.Port = n
+			}
 		case "email.username":
 			cfg.Email.Username = toString(v)
 		case "email.password":
-			if s := toString(v); s != "" { cfg.Email.Password = s }
+			if s := toString(v); s != "" {
+				cfg.Email.Password = s
+			}
 		case "email.from":
 			cfg.Email.From = toString(v)
 		case "email.to":
@@ -5411,45 +5489,71 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "twilio.enabled":
 			cfg.Twilio.Enabled = toBool(v)
 		case "twilio.account_sid":
-			if s := toString(v); s != "" { cfg.Twilio.AccountSID = s }
+			if s := toString(v); s != "" {
+				cfg.Twilio.AccountSID = s
+			}
 		case "twilio.auth_token":
-			if s := toString(v); s != "" { cfg.Twilio.AuthToken = s }
+			if s := toString(v); s != "" {
+				cfg.Twilio.AuthToken = s
+			}
 		case "twilio.from_number":
 			cfg.Twilio.FromNumber = toString(v)
 		case "twilio.to_number":
 			cfg.Twilio.ToNumber = toString(v)
 		case "twilio.webhook_addr":
-			if s := toString(v); s != "" { cfg.Twilio.WebhookAddr = s }
+			if s := toString(v); s != "" {
+				cfg.Twilio.WebhookAddr = s
+			}
 		case "github_webhook.enabled":
 			cfg.GitHubWebhook.Enabled = toBool(v)
 		case "github_webhook.addr":
-			if s := toString(v); s != "" { cfg.GitHubWebhook.Addr = s }
+			if s := toString(v); s != "" {
+				cfg.GitHubWebhook.Addr = s
+			}
 		case "github_webhook.secret":
-			if s := toString(v); s != "" { cfg.GitHubWebhook.Secret = s }
+			if s := toString(v); s != "" {
+				cfg.GitHubWebhook.Secret = s
+			}
 		case "webhook.enabled":
 			cfg.Webhook.Enabled = toBool(v)
 		case "webhook.addr":
-			if s := toString(v); s != "" { cfg.Webhook.Addr = s }
+			if s := toString(v); s != "" {
+				cfg.Webhook.Addr = s
+			}
 		case "webhook.token":
-			if s := toString(v); s != "" { cfg.Webhook.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Webhook.Token = s
+			}
 		case "telegram.token":
-			if s := toString(v); s != "" { cfg.Telegram.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Telegram.Token = s
+			}
 		case "telegram.chat_id":
-			if n, ok := toInt(v); ok { cfg.Telegram.ChatID = int64(n) }
+			if n, ok := toInt(v); ok {
+				cfg.Telegram.ChatID = int64(n)
+			}
 		case "discord.token":
-			if s := toString(v); s != "" { cfg.Discord.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Discord.Token = s
+			}
 		case "discord.channel_id":
 			cfg.Discord.ChannelID = toString(v)
 		case "slack.token":
-			if s := toString(v); s != "" { cfg.Slack.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Slack.Token = s
+			}
 		case "slack.channel_id":
 			cfg.Slack.ChannelID = toString(v)
 		case "matrix.homeserver":
-			if s := toString(v); s != "" { cfg.Matrix.Homeserver = s }
+			if s := toString(v); s != "" {
+				cfg.Matrix.Homeserver = s
+			}
 		case "matrix.user_id":
 			cfg.Matrix.UserID = toString(v)
 		case "matrix.access_token":
-			if s := toString(v); s != "" { cfg.Matrix.AccessToken = s }
+			if s := toString(v); s != "" {
+				cfg.Matrix.AccessToken = s
+			}
 		case "matrix.room_id":
 			cfg.Matrix.RoomID = toString(v)
 		case "server.enabled":
@@ -5514,9 +5618,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.default_effort":
 			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.console_cols":
-			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Session.ConsoleCols = n
+			}
 		case "session.console_rows":
-			if n, ok := toInt(v); ok { cfg.Session.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Session.ConsoleRows = n
+			}
 		case "session.summarizer.enabled":
 			cfg.Session.Summarizer.Enabled = toBool(v)
 		case "session.summarizer.llm_ref":
@@ -5536,7 +5644,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "server.tls":
 			cfg.Server.TLSEnabled = toBool(v)
 		case "server.token":
-			if s := toString(v); s != "" { cfg.Server.Token = s }
+			if s := toString(v); s != "" {
+				cfg.Server.Token = s
+			}
 		case "server.tls_auto_generate":
 			cfg.Server.TLSAutoGenerate = toBool(v)
 		case "server.tls_cert":
@@ -5544,13 +5654,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "server.tls_key":
 			cfg.Server.TLSKey = toString(v)
 		case "server.channel_port":
-			if n, ok := toInt(v); ok { cfg.Server.ChannelPort = n }
+			if n, ok := toInt(v); ok {
+				cfg.Server.ChannelPort = n
+			}
 		case "server.tls_port":
-			if n, ok := toInt(v); ok { cfg.Server.TLSPort = n }
+			if n, ok := toInt(v); ok {
+				cfg.Server.TLSPort = n
+			}
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
 		case "server.recent_session_minutes":
-			if n, ok := toInt(v); ok { cfg.Server.RecentSessionMinutes = n }
+			if n, ok := toInt(v); ok {
+				cfg.Server.RecentSessionMinutes = n
+			}
 		case "server.suppress_active_toasts":
 			cfg.Server.SuppressActiveToasts = toBool(v)
 		case "mcp.enabled":
@@ -5566,7 +5682,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
 		case "mcp.token":
-			if s := toString(v); s != "" { cfg.MCP.Token = s }
+			if s := toString(v); s != "" {
+				cfg.MCP.Token = s
+			}
 		case "mcp.tls_enabled":
 			cfg.MCP.TLSEnabled = toBool(v)
 		case "mcp.tls_auto_generate":
@@ -5589,29 +5707,49 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "dns_channel.enabled":
 			cfg.DNSChannel.Enabled = toBool(v)
 		case "dns_channel.mode":
-			if s := toString(v); s != "" { cfg.DNSChannel.Mode = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.Mode = s
+			}
 		case "dns_channel.domain":
-			if s := toString(v); s != "" { cfg.DNSChannel.Domain = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.Domain = s
+			}
 		case "dns_channel.listen":
-			if s := toString(v); s != "" { cfg.DNSChannel.Listen = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.Listen = s
+			}
 		case "dns_channel.upstream":
-			if s := toString(v); s != "" { cfg.DNSChannel.Upstream = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.Upstream = s
+			}
 		case "dns_channel.secret":
-			if s := toString(v); s != "" { cfg.DNSChannel.Secret = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.Secret = s
+			}
 		case "dns_channel.ttl":
-			if n, ok := toInt(v); ok { cfg.DNSChannel.TTL = n }
+			if n, ok := toInt(v); ok {
+				cfg.DNSChannel.TTL = n
+			}
 		case "dns_channel.max_response_size":
-			if n, ok := toInt(v); ok { cfg.DNSChannel.MaxResponseSize = n }
+			if n, ok := toInt(v); ok {
+				cfg.DNSChannel.MaxResponseSize = n
+			}
 		case "dns_channel.poll_interval":
-			if s := toString(v); s != "" { cfg.DNSChannel.PollInterval = s }
+			if s := toString(v); s != "" {
+				cfg.DNSChannel.PollInterval = s
+			}
 		case "dns_channel.rate_limit":
-			if n, ok := toInt(v); ok { cfg.DNSChannel.RateLimit = n }
+			if n, ok := toInt(v); ok {
+				cfg.DNSChannel.RateLimit = n
+			}
 
 		// Memory config
 		case "memory.enabled":
 			cfg.Memory.Enabled = toBool(v)
 		case "memory.backend":
-			if s := toString(v); s == "sqlite" || s == "postgres" { cfg.Memory.Backend = s }
+			if s := toString(v); s == "sqlite" || s == "postgres" {
+				cfg.Memory.Backend = s
+			}
 		case "memory.db_path":
 			cfg.Memory.DBPath = toString(v)
 		case "memory.postgres_url":
@@ -5619,33 +5757,52 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "memory.fallback_sqlite":
 			cfg.Memory.FallbackSQLite = toBool(v)
 		case "memory.embedder":
-			if s := toString(v); s == "ollama" || s == "openai" { cfg.Memory.Embedder = s }
+			if s := toString(v); s == "ollama" || s == "openai" {
+				cfg.Memory.Embedder = s
+			}
 		case "memory.embedder_model":
-			if s := toString(v); s != "" { cfg.Memory.EmbedderModel = s }
+			if s := toString(v); s != "" {
+				cfg.Memory.EmbedderModel = s
+			}
 		case "memory.embedder_host":
 			cfg.Memory.EmbedderHost = toString(v)
 		case "memory.openai_key":
 			cfg.Memory.OpenAIKey = toString(v)
 		case "memory.dimensions":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.Dimensions = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Memory.Dimensions = n
+			}
 		case "memory.top_k":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Memory.TopK = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Memory.TopK = n
+			}
 		case "memory.auto_save":
-			val := toBool(v); cfg.Memory.AutoSave = &val
+			val := toBool(v)
+			cfg.Memory.AutoSave = &val
 		case "memory.learnings_enabled":
-			val := toBool(v); cfg.Memory.LearningsEnabled = &val
+			val := toBool(v)
+			cfg.Memory.LearningsEnabled = &val
 		case "memory.retention_days":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.RetentionDays = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Memory.RetentionDays = n
+			}
 		case "memory.session_awareness":
-			val := toBool(v); cfg.Memory.SessionAwareness = &val
+			val := toBool(v)
+			cfg.Memory.SessionAwareness = &val
 		case "memory.session_broadcast":
-			val := toBool(v); cfg.Memory.SessionBroadcast = &val
+			val := toBool(v)
+			cfg.Memory.SessionBroadcast = &val
 		case "memory.auto_hooks":
-			val := toBool(v); cfg.Memory.AutoHooks = &val
+			val := toBool(v)
+			cfg.Memory.AutoHooks = &val
 		case "memory.hook_save_interval":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Memory.HookSaveInterval = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Memory.HookSaveInterval = n
+			}
 		case "memory.storage_mode":
-			if s := toString(v); s == "summary" || s == "verbatim" { cfg.Memory.StorageMode = s }
+			if s := toString(v); s == "summary" || s == "verbatim" {
+				cfg.Memory.StorageMode = s
+			}
 		case "memory.entity_detection":
 			cfg.Memory.EntityDetection = toBool(v)
 
@@ -5653,15 +5810,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "proxy.enabled":
 			cfg.Proxy.Enabled = toBool(v)
 		case "proxy.health_interval":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.HealthInterval = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Proxy.HealthInterval = n
+			}
 		case "proxy.request_timeout":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.RequestTimeout = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Proxy.RequestTimeout = n
+			}
 		case "proxy.offline_queue_size":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.OfflineQueueSize = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Proxy.OfflineQueueSize = n
+			}
 		case "proxy.circuit_breaker_threshold":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerThreshold = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Proxy.CircuitBreakerThreshold = n
+			}
 		case "proxy.circuit_breaker_reset":
-			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerReset = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.Proxy.CircuitBreakerReset = n
+			}
 
 		// F10 sprint 3: agent layer config
 		case "agents.image_prefix":
@@ -5701,27 +5868,47 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 
 		// Detection patterns
 		case "detection.prompt_patterns":
-			if arr, ok := toStringArray(v); ok { cfg.Detection.PromptPatterns = arr }
+			if arr, ok := toStringArray(v); ok {
+				cfg.Detection.PromptPatterns = arr
+			}
 		case "detection.completion_patterns":
-			if arr, ok := toStringArray(v); ok { cfg.Detection.CompletionPatterns = arr }
+			if arr, ok := toStringArray(v); ok {
+				cfg.Detection.CompletionPatterns = arr
+			}
 		case "detection.rate_limit_patterns":
-			if arr, ok := toStringArray(v); ok { cfg.Detection.RateLimitPatterns = arr }
+			if arr, ok := toStringArray(v); ok {
+				cfg.Detection.RateLimitPatterns = arr
+			}
 		case "detection.input_needed_patterns":
-			if arr, ok := toStringArray(v); ok { cfg.Detection.InputNeededPatterns = arr }
+			if arr, ok := toStringArray(v); ok {
+				cfg.Detection.InputNeededPatterns = arr
+			}
 		case "detection.prompt_debounce":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.PromptDebounce = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Detection.PromptDebounce = n
+			}
 		case "detection.notify_cooldown":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.NotifyCooldown = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Detection.NotifyCooldown = n
+			}
 		case "detection.alert_settle":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.AlertSettle = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Detection.AlertSettle = n
+			}
 		case "detection.alert_repeat":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.AlertRepeat = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Detection.AlertRepeat = n
+			}
 
 		// Signal config
 		case "signal.config_dir":
-			if s := toString(v); s != "" { cfg.Signal.ConfigDir = s }
+			if s := toString(v); s != "" {
+				cfg.Signal.ConfigDir = s
+			}
 		case "signal.device_name":
-			if s := toString(v); s != "" { cfg.Signal.DeviceName = s }
+			if s := toString(v); s != "" {
+				cfg.Signal.DeviceName = s
+			}
 		case "signal.group_id":
 			cfg.Signal.GroupID = toString(v)
 
@@ -5743,11 +5930,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "aider.enabled":
 			cfg.Aider.Enabled = toBool(v)
 		case "aider.binary":
-			if s := toString(v); s != "" { cfg.Aider.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.Aider.Binary = s
+			}
 		case "goose.enabled":
 			cfg.Goose.Enabled = toBool(v)
 		case "goose.binary":
-			if s := toString(v); s != "" { cfg.Goose.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.Goose.Binary = s
+			}
 		case "goose.provider":
 			cfg.Goose.Provider = toString(v)
 		case "goose.model":
@@ -5759,45 +5950,73 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "gemini.enabled":
 			cfg.Gemini.Enabled = toBool(v)
 		case "gemini.binary":
-			if s := toString(v); s != "" { cfg.Gemini.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.Gemini.Binary = s
+			}
 		case "ollama.enabled":
 			cfg.Ollama.Enabled = toBool(v)
 		case "ollama.model":
-			if s := toString(v); s != "" { cfg.Ollama.Model = s }
+			if s := toString(v); s != "" {
+				cfg.Ollama.Model = s
+			}
 		case "ollama.host":
-			if s := toString(v); s != "" { cfg.Ollama.Host = s }
+			if s := toString(v); s != "" {
+				cfg.Ollama.Host = s
+			}
 		case "opencode.enabled":
 			cfg.OpenCode.Enabled = toBool(v)
 		case "opencode.binary":
-			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.OpenCode.Binary = s
+			}
 		case "opencode.default_model":
 			cfg.OpenCode.DefaultModel = toString(v)
 		case "opencode.ollama_chunk_timeout_sec":
-			if n, ok := toInt(v); ok { cfg.OpenCode.OllamaChunkTimeoutSec = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCode.OllamaChunkTimeoutSec = n
+			}
 		case "opencode.ollama_header_timeout_sec":
-			if n, ok := toInt(v); ok { cfg.OpenCode.OllamaHeaderTimeoutSec = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCode.OllamaHeaderTimeoutSec = n
+			}
 		case "opencode_acp.enabled":
 			cfg.OpenCodeACP.Enabled = toBool(v)
 		case "opencode_acp.binary":
-			if s := toString(v); s != "" { cfg.OpenCodeACP.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.OpenCodeACP.Binary = s
+			}
 		case "opencode_acp.acp_startup_timeout":
-			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPStartupTimeout = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodeACP.ACPStartupTimeout = n
+			}
 		case "opencode_acp.acp_health_interval":
-			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPHealthInterval = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodeACP.ACPHealthInterval = n
+			}
 		case "opencode_acp.acp_message_timeout":
-			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPMessageTimeout = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodeACP.ACPMessageTimeout = n
+			}
 		case "opencode_prompt.enabled":
 			cfg.OpenCodePrompt.Enabled = toBool(v)
 		case "opencode_prompt.binary":
-			if s := toString(v); s != "" { cfg.OpenCodePrompt.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.OpenCodePrompt.Binary = s
+			}
 		case "openwebui.enabled":
 			cfg.OpenWebUI.Enabled = toBool(v)
 		case "openwebui.url":
-			if s := toString(v); s != "" { cfg.OpenWebUI.URL = s }
+			if s := toString(v); s != "" {
+				cfg.OpenWebUI.URL = s
+			}
 		case "openwebui.model":
-			if s := toString(v); s != "" { cfg.OpenWebUI.Model = s }
+			if s := toString(v); s != "" {
+				cfg.OpenWebUI.Model = s
+			}
 		case "openwebui.api_key":
-			if s := toString(v); s != "" { cfg.OpenWebUI.APIKey = s }
+			if s := toString(v); s != "" {
+				cfg.OpenWebUI.APIKey = s
+			}
 		case "shell_backend.enabled", "shell.enabled":
 			cfg.Shell.Enabled = toBool(v)
 		case "shell_backend.script_path":
@@ -5805,41 +6024,77 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 
 		// Per-LLM console size
 		case "aider.console_cols":
-			if n, ok := toInt(v); ok { cfg.Aider.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Aider.ConsoleCols = n
+			}
 		case "aider.console_rows":
-			if n, ok := toInt(v); ok { cfg.Aider.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Aider.ConsoleRows = n
+			}
 		case "goose.console_cols":
-			if n, ok := toInt(v); ok { cfg.Goose.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Goose.ConsoleCols = n
+			}
 		case "goose.console_rows":
-			if n, ok := toInt(v); ok { cfg.Goose.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Goose.ConsoleRows = n
+			}
 		case "gemini.console_cols":
-			if n, ok := toInt(v); ok { cfg.Gemini.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Gemini.ConsoleCols = n
+			}
 		case "gemini.console_rows":
-			if n, ok := toInt(v); ok { cfg.Gemini.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Gemini.ConsoleRows = n
+			}
 		case "ollama.console_cols":
-			if n, ok := toInt(v); ok { cfg.Ollama.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Ollama.ConsoleCols = n
+			}
 		case "ollama.console_rows":
-			if n, ok := toInt(v); ok { cfg.Ollama.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Ollama.ConsoleRows = n
+			}
 		case "opencode.console_cols":
-			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCode.ConsoleCols = n
+			}
 		case "opencode.console_rows":
-			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCode.ConsoleRows = n
+			}
 		case "opencode_acp.console_cols":
-			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodeACP.ConsoleCols = n
+			}
 		case "opencode_acp.console_rows":
-			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodeACP.ConsoleRows = n
+			}
 		case "opencode_prompt.console_cols":
-			if n, ok := toInt(v); ok { cfg.OpenCodePrompt.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodePrompt.ConsoleCols = n
+			}
 		case "opencode_prompt.console_rows":
-			if n, ok := toInt(v); ok { cfg.OpenCodePrompt.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenCodePrompt.ConsoleRows = n
+			}
 		case "openwebui.console_cols":
-			if n, ok := toInt(v); ok { cfg.OpenWebUI.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenWebUI.ConsoleCols = n
+			}
 		case "openwebui.console_rows":
-			if n, ok := toInt(v); ok { cfg.OpenWebUI.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.OpenWebUI.ConsoleRows = n
+			}
 		case "shell_backend.console_cols":
-			if n, ok := toInt(v); ok { cfg.Shell.ConsoleCols = n }
+			if n, ok := toInt(v); ok {
+				cfg.Shell.ConsoleCols = n
+			}
 		case "shell_backend.console_rows":
-			if n, ok := toInt(v); ok { cfg.Shell.ConsoleRows = n }
+			if n, ok := toInt(v); ok {
+				cfg.Shell.ConsoleRows = n
+			}
 		// output_mode per backend
 		case "opencode.output_mode":
 			cfg.OpenCode.OutputMode = toString(v)
@@ -5885,19 +6140,27 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "rtk.enabled":
 			cfg.RTK.Enabled = toBool(v)
 		case "rtk.binary":
-			if s := toString(v); s != "" { cfg.RTK.Binary = s }
+			if s := toString(v); s != "" {
+				cfg.RTK.Binary = s
+			}
 		case "rtk.show_savings":
 			cfg.RTK.ShowSavings = toBool(v)
 		case "rtk.auto_init":
 			cfg.RTK.AutoInit = toBool(v)
 		case "rtk.discover_interval":
-			if n, ok := toInt(v); ok { cfg.RTK.DiscoverInterval = n }
+			if n, ok := toInt(v); ok {
+				cfg.RTK.DiscoverInterval = n
+			}
 		case "rtk.auto_update":
 			cfg.RTK.AutoUpdate = toBool(v)
 		case "rtk.update_check_interval":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.RTK.UpdateCheckInterval = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.RTK.UpdateCheckInterval = n
+			}
 		case "pipeline.max_parallel":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Pipeline.MaxParallel = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Pipeline.MaxParallel = n
+			}
 		case "pipeline.default_backend":
 			cfg.Pipeline.DefaultBackend = toString(v)
 		// BL372 — web search config
@@ -5906,17 +6169,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "web_search.url":
 			cfg.WebSearch.URL = toString(v)
 		case "web_search.engine":
-			if s := toString(v); s != "" { cfg.WebSearch.Engine = s }
+			if s := toString(v); s != "" {
+				cfg.WebSearch.Engine = s
+			}
 		case "web_search.num_results":
-			if n, ok := toInt(v); ok && n > 0 { cfg.WebSearch.NumResults = n }
+			if n, ok := toInt(v); ok && n > 0 {
+				cfg.WebSearch.NumResults = n
+			}
 		case "whisper.enabled":
 			cfg.Whisper.Enabled = toBool(v)
 		case "whisper.model":
-			if s := toString(v); s != "" { cfg.Whisper.Model = s }
+			if s := toString(v); s != "" {
+				cfg.Whisper.Model = s
+			}
 		case "whisper.language":
 			cfg.Whisper.Language = toString(v)
 		case "whisper.venv_path":
-			if s := toString(v); s != "" { cfg.Whisper.VenvPath = s }
+			if s := toString(v); s != "" {
+				cfg.Whisper.VenvPath = s
+			}
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
 		// Without these cases the PWA + mobile-client save forms
 		// for these sections silently no-op: the handler returns
@@ -5925,9 +6196,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
 		case "autonomous.poll_interval_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PollIntervalSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.PollIntervalSeconds = n
+			}
 		case "autonomous.max_parallel_tasks":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.MaxParallelTasks = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.MaxParallelTasks = n
+			}
 		// BL304: accept both new planning_* and legacy decomposition_* keys.
 		case "autonomous.planning_backend", "autonomous.decomposition_backend":
 			cfg.Autonomous.PlanningBackend = toString(v)
@@ -5949,25 +6224,41 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
 		case "autonomous.planning_timeout_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PlanningTimeoutSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.PlanningTimeoutSeconds = n
+			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacityEnabled = &b
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.CapacityWaitTimeoutSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
+			}
 		case "autonomous.capacity_gpu_util_pct":
-			if n, ok := toInt(v); ok && n >= 0 && n <= 100 { cfg.Autonomous.CapacityGPUUtilPct = n }
+			if n, ok := toInt(v); ok && n >= 0 && n <= 100 {
+				cfg.Autonomous.CapacityGPUUtilPct = n
+			}
 		case "session.reserved_interactive":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Session.ReservedInteractive = &n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.ReservedInteractive = &n
+			}
 		case "session.capacity_wait_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Session.CapacityWaitSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.CapacityWaitSeconds = n
+			}
 		case "autonomous.stale_task_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.StaleTaskSeconds = n
+			}
 		case "autonomous.auto_fix_retries":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.AutoFixRetries = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.AutoFixRetries = n
+			}
 		case "autonomous.verifier_diff_max_bytes":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.VerifierDiffMaxBytes = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierDiffMaxBytes = n
+			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
 		case "autonomous.per_story_approval":
@@ -6024,7 +6315,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "plugins.dir":
 			cfg.Plugins.Dir = toString(v)
 		case "plugins.timeout_ms":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Plugins.TimeoutMs = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Plugins.TimeoutMs = n
+			}
 		case "orchestrator.enabled":
 			cfg.Orchestrator.Enabled = toBool(v)
 		case "orchestrator.guardrail_backend":
@@ -6032,9 +6325,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "orchestrator.guardrail_model":
 			cfg.Orchestrator.GuardrailModel = toString(v)
 		case "orchestrator.guardrail_timeout_ms":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.GuardrailTimeoutMs = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Orchestrator.GuardrailTimeoutMs = n
+			}
 		case "orchestrator.max_parallel_prds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.MaxParallelPRDs = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Orchestrator.MaxParallelPRDs = n
+			}
 		// v5.21.0 — observer.* config-parity sweep. Pre-v5.21.0 every
 		// observer.* key silently no-op'd through PUT /api/config because
 		// applyConfigPatch had zero observer cases. Operators using
@@ -6043,12 +6340,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			b := toBool(v)
 			cfg.Observer.PluginEnabled = &b
 		case "observer.tick_interval_ms":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.TickIntervalMs = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.TickIntervalMs = n
+			}
 		case "observer.process_tree_enabled":
 			b := toBool(v)
 			cfg.Observer.ProcessTreeEnabled = &b
 		case "observer.top_n_broadcast":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.TopNBroadcast = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.TopNBroadcast = n
+			}
 		case "observer.include_kthreads":
 			cfg.Observer.IncludeKthreads = toBool(v)
 		case "observer.session_attribution":
@@ -6072,7 +6373,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "observer.federation.peer_name":
 			cfg.Observer.Federation.PeerName = toString(v)
 		case "observer.federation.push_interval_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Federation.PushIntervalSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Federation.PushIntervalSeconds = n
+			}
 		case "observer.federation.token_path":
 			cfg.Observer.Federation.TokenPath = toString(v)
 		case "observer.federation.insecure":
@@ -6082,9 +6385,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "observer.peers.allow_register":
 			cfg.Observer.Peers.AllowRegister = toBool(v)
 		case "observer.peers.token_ttl_rotation_grace_s":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Peers.TokenRotationGraceS = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Peers.TokenRotationGraceS = n
+			}
 		case "observer.peers.push_interval_seconds":
-			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Peers.PushIntervalSeconds = n }
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Peers.PushIntervalSeconds = n
+			}
 		case "observer.peers.listen_addr":
 			cfg.Observer.Peers.ListenAddr = toString(v)
 		// v5.21.0 — fill in the missing whisper.* keys. Pre-v5.21.0
@@ -6108,7 +6415,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "vision.api_key":
 			cfg.Vision.APIKey = toString(v)
 		case "vision.model":
-			if s := toString(v); s != "" { cfg.Vision.Model = s }
+			if s := toString(v); s != "" {
+				cfg.Vision.Model = s
+			}
 		case "vision.default_prompt":
 			cfg.Vision.DefaultPrompt = toString(v)
 		case "session.quick_commands":
@@ -6424,8 +6733,8 @@ func splitCSV(s string) []string {
 //
 // Route forms:
 //
-//   /api/proxy/{serverName}/{...path}    → F16 remote-server proxy
-//   /api/proxy/agent/{worker_id}/{...}   → S3.5 agent-worker proxy
+//	/api/proxy/{serverName}/{...path}    → F16 remote-server proxy
+//	/api/proxy/agent/{worker_id}/{...}   → S3.5 agent-worker proxy
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigRead) {
 		return
@@ -6778,16 +7087,16 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			Type         string `json:"type"`          // "command", "new_session", or "spawn"
-			SessionID    string `json:"session_id"`    // for command type
-			SessionName  string `json:"session_name"`  // BL353 — resolve by name at fire time
-			Command      string `json:"command"`       // text to send or task for new session / spawn
-			RunAt        string `json:"run_at"`        // natural language or RFC3339
+			Type         string `json:"type"`         // "command", "new_session", or "spawn"
+			SessionID    string `json:"session_id"`   // for command type
+			SessionName  string `json:"session_name"` // BL353 — resolve by name at fire time
+			Command      string `json:"command"`      // text to send or task for new session / spawn
+			RunAt        string `json:"run_at"`       // natural language or RFC3339
 			RunAfterID   string `json:"run_after_id"`
 			CronExpr     string `json:"cron_expr"`     // BL353 — 5-field cron expression
 			ScheduleName string `json:"schedule_name"` // BL353 — human-readable label
 			// For deferred sessions and spawns
-			Name       string `json:"name"`        // spawned session name
+			Name       string `json:"name"` // spawned session name
 			ProjectDir string `json:"project_dir"`
 			Backend    string `json:"backend"`
 			// GH#128 — spawn-specific fields
@@ -7695,9 +8004,9 @@ func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
 			{"value": "claude-haiku-4-5-20251001", "label": "claude-haiku-4-5-20251001"},
 			{"value": "claude-fable-5-1", "label": "claude-fable-5-1"},
 		},
-		"source":      "hardcoded",
+		"source":          "hardcoded",
 		"refresh_cadence": "major-release",
-		"note":        "Anthropic /v1/models query is frozen — pass any alias or full model name; claude validates at launch.",
+		"note":            "Anthropic /v1/models query is frozen — pass any alias or full model name; claude validates at launch.",
 	})
 }
 
@@ -7825,9 +8134,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	// Respond immediately; the goroutine restarts the process after install.
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"status":   "installing",
-		"version":  latest,
-		"message":  "Downloading v" + latest + "… daemon will restart automatically.",
+		"status":  "installing",
+		"version": latest,
+		"message": "Downloading v" + latest + "… daemon will restart automatically.",
 	})
 
 	// Initial progress event so the PWA can pop the progress UI

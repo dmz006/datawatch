@@ -110,13 +110,17 @@ func (m MemoryConfig) EffectiveHookInterval() int {
 
 // IsSessionAwareness returns whether memory awareness is injected into sessions (default true).
 func (m MemoryConfig) IsSessionAwareness() bool {
-	if m.SessionAwareness == nil { return true }
+	if m.SessionAwareness == nil {
+		return true
+	}
 	return *m.SessionAwareness
 }
 
 // IsSessionBroadcast returns whether session summaries are broadcast (default true).
 func (m MemoryConfig) IsSessionBroadcast() bool {
-	if m.SessionBroadcast == nil { return true }
+	if m.SessionBroadcast == nil {
+		return true
+	}
 	return *m.SessionBroadcast
 }
 
@@ -301,15 +305,15 @@ type Config struct {
 	Detection DetectionConfig `yaml:"detection,omitempty"`
 
 	// LLM backends
-	Ollama    OllamaConfig    `yaml:"ollama"`
-	OpenWebUI OpenWebUIConfig `yaml:"openwebui"`
-	Aider     AiderConfig     `yaml:"aider"`
-	Goose     GooseConfig     `yaml:"goose"`
-	Gemini    GeminiConfig    `yaml:"gemini"`
+	Ollama         OllamaConfig         `yaml:"ollama"`
+	OpenWebUI      OpenWebUIConfig      `yaml:"openwebui"`
+	Aider          AiderConfig          `yaml:"aider"`
+	Goose          GooseConfig          `yaml:"goose"`
+	Gemini         GeminiConfig         `yaml:"gemini"`
 	OpenCode       OpenCodeConfig       `yaml:"opencode"`
 	OpenCodeACP    OpenCodeACPConfig    `yaml:"opencode_acp"`
 	OpenCodePrompt OpenCodePromptConfig `yaml:"opencode_prompt"`
-	Shell     ShellBackendConfig `yaml:"shell_backend"`
+	Shell          ShellBackendConfig   `yaml:"shell_backend"`
 
 	// LSP holds the operator-defined Language Server Protocol server registry.
 	// Each key is the language name shown in the session-creation UI ("go",
@@ -651,24 +655,69 @@ type GooseConfig struct {
 	ChannelEnabled bool `yaml:"channel_enabled,omitempty"` // inject GOOSE_MCP__DATAWATCH__* env vars at launch
 }
 
-// WebSearchConfig holds web search MCP injection configuration (BL372).
-// When Enabled is true, datawatch injects a `mcp-search` stdio MCP server
-// into opencode and goose sessions, giving agents a `web_search` tool that
-// proxies queries to the configured SearXNG instance.
+// SearchProvider is one named, independently enabled/disabled web search
+// backend (BL391). Multiple providers may be configured at once — the
+// websearch.Registry tries them in Priority order (lowest first) and falls
+// through to the next on error/empty results, so a free SearXNG instance
+// can sit behind a paid Brave Search API as a fallback, or vice versa.
+type SearchProvider struct {
+	// Name is a unique, operator-chosen identifier (e.g. "primary-brave").
+	Name string `yaml:"name" json:"name"`
+	// Type selects the backend implementation: "searxng" or "brave".
+	Type string `yaml:"type" json:"type"`
+	// Enabled toggles this provider without deleting its configuration.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Priority orders providers when more than one is enabled — lowest
+	// value is tried first. Ties break by registration order.
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+	// URL is the SearXNG base URL (type=searxng only), e.g.
+	// http://searxng.example.com:3001.
+	URL string `yaml:"url,omitempty" json:"url,omitempty"`
+	// Engine is the SearXNG engine list (type=searxng only), comma-separated,
+	// passed as ?engines=. Default "bing" — others are CAPTCHA/rate-limited.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+	// APIKey is the provider's API key (type=brave only). Literal value or,
+	// strongly preferred, a ${secret:name} reference resolved at startup
+	// (internal/secrets/refs.go) — same convention as every other credential
+	// field in this config (e.g. llm.api_key_ref, goose.api_key_ref).
+	APIKey string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	// NumResults is the default number of results for this provider (1–20).
+	// 0 falls back to WebSearchConfig's global default.
+	NumResults int `yaml:"num_results,omitempty" json:"num_results,omitempty"`
+	// CacheTTLSeconds overrides the global cache TTL for this provider's
+	// results. 0 falls back to WebSearchConfig.CacheTTLSeconds.
+	CacheTTLSeconds int `yaml:"cache_ttl_seconds,omitempty" json:"cache_ttl_seconds,omitempty"`
+}
+
+// WebSearchConfig holds web search MCP injection configuration (BL372,
+// extended to a multi-provider registry in BL391). When Enabled is true,
+// datawatch injects a `mcp-search` stdio MCP server into opencode and goose
+// sessions, giving agents a `web_search` tool that proxies queries through
+// the configured provider(s).
 type WebSearchConfig struct {
 	// Enabled turns on web search injection for opencode and goose sessions.
 	Enabled bool `yaml:"enabled"`
-	// Provider is the search provider type. Only "searxng" is supported today.
-	Provider string `yaml:"provider,omitempty"`
-	// URL is the SearXNG base URL, e.g. http://searxng.example.com:3001
-	// Required when Enabled is true. Never use a private hostname here;
-	// configure via YAML / REST / UI and keep default as an example placeholder.
-	URL string `yaml:"url,omitempty"`
-	// Engine is the SearXNG engine list (comma-separated) to pass in ?engines=
-	// Default: "bing". brave/duckduckgo/startpage may be rate-limited.
-	Engine string `yaml:"engine,omitempty"`
-	// NumResults is the default number of results to return (1–20). Default 10.
-	NumResults int `yaml:"num_results,omitempty"`
+	// Providers is the list of configured search backends. Tried in
+	// Priority order; first enabled provider to return results wins.
+	Providers []SearchProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
+	// CacheEnabled turns on the in-memory TTL result cache (BL391) — avoids
+	// paying for/re-scraping an identical query within the TTL window.
+	// Default true.
+	CacheEnabled bool `yaml:"cache_enabled,omitempty" json:"cache_enabled,omitempty"`
+	// CacheTTLSeconds is the default cache lifetime for a query result.
+	// Default 900 (15 minutes). A provider may override via its own
+	// CacheTTLSeconds.
+	CacheTTLSeconds int `yaml:"cache_ttl_seconds,omitempty" json:"cache_ttl_seconds,omitempty"`
+
+	// --- Legacy single-provider fields (pre-BL391) ---
+	// Deprecated: set Providers instead. Kept so existing config.yaml files
+	// keep working — applyDefaults migrates these into a single Providers[0]
+	// entry named "default" the first time a legacy config is loaded with no
+	// Providers list present. Never read directly once migration has run.
+	Provider   string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	URL        string `yaml:"url,omitempty" json:"url,omitempty"`
+	Engine     string `yaml:"engine,omitempty" json:"engine,omitempty"`
+	NumResults int    `yaml:"num_results,omitempty" json:"num_results,omitempty"`
 }
 
 // GeminiConfig holds Gemini CLI LLM backend configuration.
@@ -711,8 +760,8 @@ type OpenCodeProvider struct {
 
 // OpenCodeConfig holds opencode TUI backend configuration.
 type OpenCodeConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Binary      string `yaml:"binary"`
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
 	// DefaultModel is the model written to opencode.json when a session is
 	// started without an explicit model selection. Defaults to the first
 	// free built-in model ("opencode/big-pickle"). Override with any model
@@ -784,14 +833,14 @@ type ShellBackendConfig struct {
 type DNSChannelConfig struct {
 	Enabled         bool   `yaml:"enabled"`
 	Mode            string `yaml:"mode"`              // "server" or "client"
-	Domain          string `yaml:"domain"`             // authoritative subdomain (e.g. "ctl.example.com")
-	Listen          string `yaml:"listen"`             // server: UDP/TCP bind address (default ":53")
-	Upstream        string `yaml:"upstream"`           // client: resolver address (e.g. "8.8.8.8:53")
-	Secret          string `yaml:"secret"`             // HMAC-SHA256 shared secret
-	TTL             int    `yaml:"ttl"`                // DNS response TTL in seconds (0 = non-cacheable)
-	MaxResponseSize int    `yaml:"max_response_size"`  // max response bytes before truncation (default 512)
-	PollInterval    string `yaml:"poll_interval"`      // client polling interval (default "5s")
-	RateLimit       int    `yaml:"rate_limit"`         // max queries per IP per minute (default 30, 0 = unlimited)
+	Domain          string `yaml:"domain"`            // authoritative subdomain (e.g. "ctl.example.com")
+	Listen          string `yaml:"listen"`            // server: UDP/TCP bind address (default ":53")
+	Upstream        string `yaml:"upstream"`          // client: resolver address (e.g. "8.8.8.8:53")
+	Secret          string `yaml:"secret"`            // HMAC-SHA256 shared secret
+	TTL             int    `yaml:"ttl"`               // DNS response TTL in seconds (0 = non-cacheable)
+	MaxResponseSize int    `yaml:"max_response_size"` // max response bytes before truncation (default 512)
+	PollInterval    string `yaml:"poll_interval"`     // client polling interval (default "5s")
+	RateLimit       int    `yaml:"rate_limit"`        // max queries per IP per minute (default 30, 0 = unlimited)
 }
 
 // ---- Messaging backends ----
@@ -816,7 +865,7 @@ type SlackConfig struct {
 
 // TelegramConfig holds Telegram bot configuration.
 type TelegramConfig struct {
-	Enabled bool  `yaml:"enabled"`
+	Enabled bool   `yaml:"enabled"`
 	Token   string `yaml:"token"`
 	ChatID  int64  `yaml:"chat_id"`
 	// AutoManageGroup creates a group named after hostname if ChatID is zero.
@@ -828,16 +877,16 @@ type TelegramConfig struct {
 // AccessToken MUST be a ${secret:name} reference per the Secrets-Store Rule
 // (BL241). Plaintext tokens are rejected at config-load time.
 type MatrixConfig struct {
-	Enabled     bool   `yaml:"enabled" json:"enabled"`
-	Homeserver  string `yaml:"homeserver" json:"homeserver"`
-	UserID      string `yaml:"user_id" json:"user_id"`
+	Enabled    bool   `yaml:"enabled" json:"enabled"`
+	Homeserver string `yaml:"homeserver" json:"homeserver"`
+	UserID     string `yaml:"user_id" json:"user_id"`
 	// AccessToken must use ${secret:matrix-access-token} syntax.
 	AccessToken string `yaml:"access_token" json:"access_token,omitempty"`
 	RoomID      string `yaml:"room_id" json:"room_id"`
 	// AutoManageRoom creates a room named after hostname if RoomID is empty.
-	AutoManageRoom bool              `yaml:"auto_manage_room" json:"auto_manage_room"`
-	DeviceID       string            `yaml:"device_id,omitempty" json:"device_id,omitempty"`
-	DeviceName     string            `yaml:"device_name,omitempty" json:"device_name,omitempty"`
+	AutoManageRoom bool                `yaml:"auto_manage_room" json:"auto_manage_room"`
+	DeviceID       string              `yaml:"device_id,omitempty" json:"device_id,omitempty"`
+	DeviceName     string              `yaml:"device_name,omitempty" json:"device_name,omitempty"`
 	Encryption     MatrixEncryptionCfg `yaml:"encryption,omitempty" json:"encryption,omitempty"`
 	AS             MatrixASCfg         `yaml:"application_service,omitempty" json:"application_service,omitempty"`
 	// Bridges is reserved for v2 per-bridge ACL/policy config (BL241 out-of-scope).
@@ -848,7 +897,7 @@ type MatrixConfig struct {
 type MatrixEncryptionCfg struct {
 	// Mode: "cleartext" (default), "warn" (log warning + skip encrypted rooms),
 	// or "required" (reject rooms without encryption — P2+ only).
-	Mode      string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Mode        string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	CryptoStore string `yaml:"crypto_store,omitempty" json:"crypto_store,omitempty"`
 }
 
@@ -883,8 +932,8 @@ type SecretsConfig struct {
 	// KeePass backend (backend=keepass)
 	KeePassDB       string `yaml:"keepass_db,omitempty" json:"keepass_db,omitempty"`
 	KeePassPassword string `yaml:"keepass_password,omitempty" json:"keepass_password,omitempty"` // prefer DATAWATCH_KEEPASS_PASSWORD env
-	KeePassBinary   string `yaml:"keepass_binary,omitempty" json:"keepass_binary,omitempty"`   // default: "keepassxc-cli"
-	KeePassGroup    string `yaml:"keepass_group,omitempty" json:"keepass_group,omitempty"`     // optional group scope
+	KeePassBinary   string `yaml:"keepass_binary,omitempty" json:"keepass_binary,omitempty"`     // default: "keepassxc-cli"
+	KeePassGroup    string `yaml:"keepass_group,omitempty" json:"keepass_group,omitempty"`       // optional group scope
 
 	// 1Password backend (backend=onepassword)
 	OPBinary string `yaml:"op_binary,omitempty" json:"op_binary,omitempty"` // default: "op"
@@ -975,12 +1024,12 @@ type TailscaleConfig struct {
 
 // TwilioConfig holds Twilio SMS backend configuration.
 type TwilioConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	AccountSID  string `yaml:"account_sid"`
-	AuthToken   string `yaml:"auth_token"`
-	FromNumber  string `yaml:"from_number"`
+	Enabled    bool   `yaml:"enabled"`
+	AccountSID string `yaml:"account_sid"`
+	AuthToken  string `yaml:"auth_token"`
+	FromNumber string `yaml:"from_number"`
 	// ToNumber is the phone number to send messages to (e.g. +12125551234).
-	ToNumber    string `yaml:"to_number"`
+	ToNumber string `yaml:"to_number"`
 	// WebhookAddr is the address for the incoming SMS webhook (e.g. ":9003").
 	WebhookAddr string `yaml:"webhook_addr"`
 }
@@ -1208,7 +1257,7 @@ type SignalConfig struct {
 // ExitHookConfigEntry is one exit hook from YAML config (BL356).
 type ExitHookConfigEntry struct {
 	Name            string `yaml:"name"`
-	Action          string `yaml:"action"`                      // "restart" or "notify"
+	Action          string `yaml:"action"` // "restart" or "notify"
 	NotifySession   string `yaml:"notify_session,omitempty"`
 	NotifyMessage   string `yaml:"notify_message,omitempty"`
 	CooldownSeconds int    `yaml:"cooldown_seconds,omitempty"` // default 300
@@ -1595,7 +1644,6 @@ type AutonomousConfig struct {
 	BlockOnInjection bool `yaml:"block_on_injection,omitempty" json:"block_on_injection,omitempty"`
 }
 
-
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;
 // copied here so YAML loading + /api/config exposure don't pull in
 // the package.
@@ -1766,21 +1814,21 @@ type StatsConfig struct {
 // ProfileConfig defines a named backend profile with optional overrides.
 // Profiles allow multiple accounts/API keys for the same backend type.
 type ProfileConfig struct {
-	Backend string            `yaml:"backend" json:"backend"`               // base backend name (e.g. "claude-code")
-	Env     map[string]string `yaml:"env,omitempty" json:"env,omitempty"`   // env var overrides (ANTHROPIC_API_KEY, etc.)
+	Backend string            `yaml:"backend" json:"backend"`                   // base backend name (e.g. "claude-code")
+	Env     map[string]string `yaml:"env,omitempty" json:"env,omitempty"`       // env var overrides (ANTHROPIC_API_KEY, etc.)
 	Binary  string            `yaml:"binary,omitempty" json:"binary,omitempty"` // override binary path
 	Model   string            `yaml:"model,omitempty" json:"model,omitempty"`   // override model name
 }
 
 // RTKConfig configures the RTK (Rust Token Killer) integration for token savings.
 type RTKConfig struct {
-	Enabled            bool   `yaml:"enabled"`              // enable RTK integration
-	Binary             string `yaml:"binary"`               // path to rtk binary (default: "rtk")
-	ShowSavings        bool   `yaml:"show_savings"`         // display token savings in stats dashboard
-	AutoInit           bool   `yaml:"auto_init"`            // run 'rtk init -g' if hooks not installed
-	DiscoverInterval   int    `yaml:"discover_interval"`    // seconds between discover checks (0 = disabled)
-	AutoUpdate         bool   `yaml:"auto_update"`          // auto-update RTK binary when new version available
-	UpdateCheckInterval int   `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
+	Enabled             bool   `yaml:"enabled"`               // enable RTK integration
+	Binary              string `yaml:"binary"`                // path to rtk binary (default: "rtk")
+	ShowSavings         bool   `yaml:"show_savings"`          // display token savings in stats dashboard
+	AutoInit            bool   `yaml:"auto_init"`             // run 'rtk init -g' if hooks not installed
+	DiscoverInterval    int    `yaml:"discover_interval"`     // seconds between discover checks (0 = disabled)
+	AutoUpdate          bool   `yaml:"auto_update"`           // auto-update RTK binary when new version available
+	UpdateCheckInterval int    `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
 }
 
 // ProjectConfigEntry (BL27) — registered project directory alias.
@@ -1793,14 +1841,14 @@ type ProjectConfigEntry struct {
 // SessionTemplateEntry (BL5) — reusable bundle of session start params.
 // Empty fields fall through to the operator's defaults.
 type SessionTemplateEntry struct {
-	ProjectDir     string            `yaml:"project_dir,omitempty" json:"project_dir,omitempty"`
-	Backend        string            `yaml:"backend,omitempty" json:"backend,omitempty"`
-	Profile        string            `yaml:"profile,omitempty" json:"profile,omitempty"`
-	Effort         string            `yaml:"effort,omitempty" json:"effort,omitempty"` // BL41
-	Env            map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
-	AutoGitCommit  *bool             `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
-	AutoGitInit    *bool             `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
-	Description    string            `yaml:"description,omitempty" json:"description,omitempty"`
+	ProjectDir    string            `yaml:"project_dir,omitempty" json:"project_dir,omitempty"`
+	Backend       string            `yaml:"backend,omitempty" json:"backend,omitempty"`
+	Profile       string            `yaml:"profile,omitempty" json:"profile,omitempty"`
+	Effort        string            `yaml:"effort,omitempty" json:"effort,omitempty"` // BL41
+	Env           map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	AutoGitCommit *bool             `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+	AutoGitInit   *bool             `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
+	Description   string            `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // PipelineConfig configures session chaining (pipeline DAG executor).
@@ -1920,18 +1968,18 @@ func DefaultConfig() *Config {
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:           10,
-			InputIdleTimeout:      10,
-			TailLines:             20,
-				AlertContextLines:     10,
-			LLMBackend:            "claude-code",
-			DefaultProjectDir:     home,
-			AutoGitCommit:         true,
-			AutoGitInit:           false,
-			ClaudeEnabled:         true,
-			MCPMaxRetries:        5,
-			ScheduleSettleMs:     200,
-			StaleTimeoutSeconds:  1800,
+			MaxSessions:         10,
+			InputIdleTimeout:    10,
+			TailLines:           20,
+			AlertContextLines:   10,
+			LLMBackend:          "claude-code",
+			DefaultProjectDir:   home,
+			AutoGitCommit:       true,
+			AutoGitInit:         false,
+			ClaudeEnabled:       true,
+			MCPMaxRetries:       5,
+			ScheduleSettleMs:    200,
+			StaleTimeoutSeconds: 1800,
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
 			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
@@ -1967,7 +2015,7 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
-		Autonomous: AutonomousConfig{AutoFixRetries: 1},
+		Autonomous:    AutonomousConfig{AutoFixRetries: 1},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},
@@ -2287,7 +2335,41 @@ func applyDefaults(cfg *Config) {
 			cfg.Session.RootPath = wd
 		}
 	}
-	// BL372 — web search defaults.
+	// BL391 — migrate legacy single-provider web_search config into a
+	// Providers[0] entry. Runs before the BL372 defaults below so a legacy
+	// config's Provider/Engine/NumResults are captured before being
+	// defaulted; a config that already has a Providers list is left alone.
+	if len(cfg.WebSearch.Providers) == 0 && (cfg.WebSearch.URL != "" || cfg.WebSearch.Provider != "") {
+		legacyType := cfg.WebSearch.Provider
+		if legacyType == "" {
+			legacyType = "searxng"
+		}
+		cfg.WebSearch.Providers = []SearchProvider{{
+			Name:       "default",
+			Type:       legacyType,
+			Enabled:    cfg.WebSearch.Enabled,
+			URL:        cfg.WebSearch.URL,
+			Engine:     cfg.WebSearch.Engine,
+			NumResults: cfg.WebSearch.NumResults,
+		}}
+	}
+	if !cfg.WebSearch.CacheEnabled && cfg.WebSearch.CacheTTLSeconds == 0 {
+		cfg.WebSearch.CacheEnabled = true
+	}
+	if cfg.WebSearch.CacheTTLSeconds == 0 {
+		cfg.WebSearch.CacheTTLSeconds = 900
+	}
+	for i := range cfg.WebSearch.Providers {
+		p := &cfg.WebSearch.Providers[i]
+		if p.Type == "searxng" && p.Engine == "" {
+			p.Engine = "bing"
+		}
+		if p.NumResults == 0 {
+			p.NumResults = 10
+		}
+	}
+	// BL372 — legacy web search defaults (kept for the deprecated flat
+	// fields themselves; superseded by per-provider fields above).
 	if cfg.WebSearch.Provider == "" {
 		cfg.WebSearch.Provider = "searxng"
 	}

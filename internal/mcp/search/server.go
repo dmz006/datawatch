@@ -1,19 +1,18 @@
-// Package search implements a stdio MCP server exposing a web_search tool backed
-// by a SearXNG instance. It is launched as `datawatch mcp-search` and injected
-// into opencode and goose sessions by the daemon (BL372).
+// Package search implements a stdio MCP server exposing a web_search tool
+// backed by the BL391 multi-provider search registry (internal/websearch —
+// SearXNG and/or Brave Search API, tried in priority order with caching and
+// usage tracking). It is launched as `datawatch mcp-search` and injected
+// into opencode and goose sessions by the daemon.
 //
-// Config is read from environment variables at startup:
+// Config is read from the daemon's config.yaml at $DATAWATCH_DATA_DIR
+// (default ~/.datawatch) — the real web_search.providers[] list, with
+// ${secret:name} API key references resolved against the builtin secrets
+// store, same as the daemon itself does at startup.
 //
-//	DATAWATCH_WEB_SEARCH_URL         SearXNG base URL (required)
-//	DATAWATCH_WEB_SEARCH_ENGINE      comma-separated engine list (default: bing)
-//	DATAWATCH_WEB_SEARCH_NUM_RESULTS default result count 1-20 (default: 10)
-//
-// Or from CLI flags: --url, --engine, --num-results.
-//
-// When DATAWATCH_WEB_SEARCH_URL is not set (e.g. when the MCP host doesn't
-// forward env vars), the server falls back to reading web_search.url and
-// web_search.engine from the daemon config at $DATAWATCH_DATA_DIR/config.yaml
-// (default: ~/.datawatch/config.yaml).
+// A single-provider env var / flag override (DATAWATCH_WEB_SEARCH_URL /
+// --url, etc.) is kept for standalone testing without a full config.yaml —
+// when set, it takes priority over config.yaml and builds a one-provider
+// SearXNG registry, matching this package's pre-BL391 behavior exactly.
 //
 // Transport: NDJSON (newline-delimited JSON) — one JSON object per line,
 // no Content-Length framing. Compatible with opencode ≥1.18 and Claude Desktop.
@@ -21,47 +20,43 @@ package search
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/secrets"
+	"github.com/dmz006/datawatch/internal/websearch"
 )
 
 // Config holds the resolved configuration for one server run.
 type Config struct {
+	// Single-provider override (env/flags) — when URL is set, this wins
+	// over config.yaml and the server runs with exactly one SearXNG
+	// provider, same as pre-BL391.
 	URL        string
 	Engine     string
 	NumResults int
+
+	// DataDir is where config.yaml and the secrets store live.
+	// Default: $DATAWATCH_DATA_DIR or ~/.datawatch.
+	DataDir string
 }
 
-// ConfigFromEnv reads config from environment variables. When
-// DATAWATCH_WEB_SEARCH_URL is absent (e.g. because the MCP host doesn't
-// forward env entries from opencode.jsonc), it falls back to reading
-// web_search.{url,engine} from the daemon config at
-// $DATAWATCH_DATA_DIR/config.yaml (default: ~/.datawatch/config.yaml).
+// ConfigFromEnv reads the single-provider override from environment
+// variables, and the data dir used to load the real multi-provider config.
 func ConfigFromEnv() Config {
 	c := Config{
 		URL:        os.Getenv("DATAWATCH_WEB_SEARCH_URL"),
 		Engine:     os.Getenv("DATAWATCH_WEB_SEARCH_ENGINE"),
 		NumResults: 10,
-	}
-	if c.URL == "" || c.Engine == "" {
-		cfgURL, cfgEngine := readDaemonConfig()
-		if c.URL == "" {
-			c.URL = cfgURL
-		}
-		if c.Engine == "" {
-			c.Engine = cfgEngine
-		}
-	}
-	if c.Engine == "" {
-		c.Engine = "bing"
+		DataDir:    os.Getenv("DATAWATCH_DATA_DIR"),
 	}
 	if nr := os.Getenv("DATAWATCH_WEB_SEARCH_NUM_RESULTS"); nr != "" {
 		if n, err := strconv.Atoi(nr); err == nil && n > 0 {
@@ -71,40 +66,85 @@ func ConfigFromEnv() Config {
 	return c
 }
 
-// readDaemonConfig parses the daemon's config.yaml for web_search settings.
-// Returns empty strings if the file is absent or unparseable.
-func readDaemonConfig() (url, engine string) {
-	dataDir := os.Getenv("DATAWATCH_DATA_DIR")
-	if dataDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", ""
-		}
-		dataDir = filepath.Join(home, ".datawatch")
+func (c Config) dataDir() string {
+	if c.DataDir != "" {
+		return c.DataDir
 	}
-	raw, err := os.ReadFile(filepath.Join(dataDir, "config.yaml"))
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		return ".datawatch"
 	}
-	inSection := false
-	for _, line := range strings.Split(string(raw), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "web_search:" {
-			inSection = true
-			continue
-		}
-		if inSection {
-			if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmed != "" {
-				break // left web_search section
-			}
-			if strings.HasPrefix(trimmed, "url:") {
-				url = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "url:")), `"'`)
-			} else if strings.HasPrefix(trimmed, "engine:") {
-				engine = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "engine:")), `"'`)
-			}
-		}
+	return filepath.Join(home, ".datawatch")
+}
+
+// buildRegistry constructs the websearch.Registry this run will use: either
+// the single-provider override (standalone testing) or the full provider
+// list from config.yaml with secrets resolved.
+func buildRegistry(c Config) (*websearch.Registry, error) {
+	dataDir := c.dataDir()
+
+	if c.URL != "" {
+		// Standalone override — one SearXNG provider, no cache/store needed
+		// for a one-off manual test run.
+		specs := []websearch.ProviderSpec{{
+			Name: "override", Type: "searxng", Enabled: true,
+			URL: c.URL, Engine: c.Engine, NumResults: c.NumResults,
+		}}
+		return websearch.NewRegistry(specs, nil, nil, 0)
 	}
-	return url, engine
+
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("load daemon config %s: %w", cfgPath, err)
+	}
+
+	// Resolve ${secret:name} refs in provider API keys against the builtin
+	// secrets store — same backend+dataDir the daemon itself uses for this
+	// at startup (cmd/datawatch/main.go). A KeePass/Vault/1Password backend
+	// configured for *other* secrets still works for THOSE via the daemon;
+	// this subprocess only needs to resolve web_search provider keys, so a
+	// builtin-store-only path is a deliberate, documented scope boundary
+	// rather than replicating the daemon's full multi-backend selection.
+	store, err := secrets.NewBuiltinStore(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("open secrets store: %w", err)
+	}
+
+	specs := make([]websearch.ProviderSpec, 0, len(cfg.WebSearch.Providers))
+	for _, p := range cfg.WebSearch.Providers {
+		apiKey := p.APIKey
+		if apiKey != "" {
+			resolved, rerr := secrets.ResolveRef(apiKey, store)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "[mcp-search] provider %q: resolve api_key: %v\n", p.Name, rerr)
+			} else {
+				apiKey = resolved
+			}
+		}
+		specs = append(specs, websearch.ProviderSpec{
+			Name: p.Name, Type: p.Type, Enabled: p.Enabled, Priority: p.Priority,
+			URL: p.URL, Engine: p.Engine, APIKey: apiKey,
+			NumResults: p.NumResults, CacheTTLSeconds: p.CacheTTLSeconds,
+		})
+	}
+
+	var cache *websearch.Cache
+	if cfg.WebSearch.CacheEnabled {
+		cache = websearch.NewCache(time.Duration(cfg.WebSearch.CacheTTLSeconds) * time.Second)
+	}
+	dbPath := filepath.Join(dataDir, "websearch.db")
+	usageStore, err := websearch.NewStore(dbPath)
+	if err != nil {
+		// Usage tracking is observability, not correctness — don't fail
+		// search startup over it, just run without a store (Registry is
+		// nil-safe for a nil *Store).
+		fmt.Fprintf(os.Stderr, "[mcp-search] usage store unavailable (%v) — continuing without usage tracking\n", err)
+		usageStore = nil
+	}
+
+	return websearch.NewRegistry(specs, cache, usageStore,
+		time.Duration(cfg.WebSearch.CacheTTLSeconds)*time.Second)
 }
 
 // jsonrpc wraps a JSON-RPC 2.0 message.
@@ -132,74 +172,31 @@ func sendMsg(w io.Writer, msg interface{}) error {
 	return err
 }
 
-// searchResult is one result row returned by SearXNG.
-type searchResult struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Content string `json:"content"`
-}
-
-// searxngSearch queries SearXNG and returns up to limit results.
-func searxngSearch(cfg Config, query string, limit int) ([]searchResult, error) {
-	if cfg.URL == "" {
-		return nil, fmt.Errorf("web_search not configured: DATAWATCH_WEB_SEARCH_URL is empty")
-	}
-	if limit <= 0 || limit > 20 {
-		limit = cfg.NumResults
-	}
-	reqURL := cfg.URL + "/search?q=" + url.QueryEscape(query) +
-		"&format=json&categories=general&language=en&engines=" + url.QueryEscape(cfg.Engine)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("searxng request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var data struct {
-		Results []struct {
-			Title   string `json:"title"`
-			URL     string `json:"url"`
-			Content string `json:"content"`
-		} `json:"results"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("parse searxng response: %w", err)
-	}
-	out := make([]searchResult, 0, limit)
-	for i, r := range data.Results {
-		if i >= limit {
-			break
-		}
-		snippet := r.Content
-		if len(snippet) > 400 {
-			snippet = snippet[:400]
-		}
-		out = append(out, searchResult{Title: r.Title, URL: r.URL, Content: snippet})
-	}
-	return out, nil
-}
-
 // Run starts the stdio MCP server using NDJSON transport. It blocks until stdin is closed.
 func Run(cfg Config) error {
+	registry, err := buildRegistry(cfg)
+	if err != nil {
+		return fmt.Errorf("mcp-search: %w", err)
+	}
+
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB per line
 	writer := os.Stdout
+	sessionID := os.Getenv("DATAWATCH_SESSION_ID")
 
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
 		}
-		if err := handle(writer, cfg, []byte(line)); err != nil {
+		if err := handle(writer, registry, cfg.NumResults, sessionID, []byte(line)); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
 }
 
-func handle(w io.Writer, cfg Config, raw []byte) error {
+func handle(w io.Writer, registry *websearch.Registry, defaultNumResults int, sessionID string, raw []byte) error {
 	var msg jsonrpc
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		return nil // drop malformed frames
@@ -212,7 +209,7 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 			Result: map[string]interface{}{
 				"protocolVersion": "2025-11-25",
 				"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
-				"serverInfo":      map[string]interface{}{"name": "datawatch-web-search", "version": "1.0.0"},
+				"serverInfo":      map[string]interface{}{"name": "datawatch-web-search", "version": "2.0.0"},
 			},
 		})
 
@@ -220,7 +217,7 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 		return nil // no response
 
 	case "tools/list":
-		numDefault := cfg.NumResults
+		numDefault := defaultNumResults
 		if numDefault <= 0 {
 			numDefault = 10
 		}
@@ -230,7 +227,7 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 				"tools": []interface{}{
 					map[string]interface{}{
 						"name":        "web_search",
-						"description": "Search the web via SearXNG. Returns titles, URLs, and content snippets.",
+						"description": "Search the web. Returns titles, URLs, and content snippets from the configured search provider(s).",
 						"inputSchema": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
@@ -261,10 +258,23 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 		}
 		_ = json.Unmarshal(params.Arguments, &args)
 		if args.NumResults <= 0 {
-			args.NumResults = cfg.NumResults
+			args.NumResults = defaultNumResults
 		}
 
-		results, err := searxngSearch(cfg, args.Query, args.NumResults)
+		if !registry.Enabled() {
+			return sendMsg(w, jsonrpc{
+				JSONRPC: "2.0", ID: msg.ID,
+				Result: map[string]interface{}{
+					"content": []interface{}{map[string]interface{}{"type": "text", "text": "Search error: no enabled web_search providers configured."}},
+					"isError": true,
+				},
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		results, _, err := registry.Search(ctx, args.Query, args.NumResults, sessionID)
+		cancel()
+
 		var text string
 		if err != nil {
 			text = "Search error: " + err.Error()
@@ -299,4 +309,3 @@ func handle(w io.Writer, cfg Config, raw []byte) error {
 		return nil
 	}
 }
-

@@ -133,6 +133,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_cancel_story",
 		"prd_cancel_story_confirm",
 		"prd_cancel_story_ok",
+		// v8.39.0 BL391 — web search provider registry settings card + usage stats.
+		"websearch_providers_title",
+		"stats_web_search",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

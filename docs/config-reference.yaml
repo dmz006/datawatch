@@ -555,23 +555,55 @@ vision:
   # Maximum image size in bytes before rejection. 0 = 10 MB default.
   max_image_bytes: 0
 
-# ── Web Search (SearXNG) ──
-# Inject a web_search MCP tool into opencode and goose agent sessions.
-# The tool proxies queries through a self-hosted SearXNG instance.
-# Access: YAML | REST PATCH /api/config | Web UI Settings > LLM > Web Search.
+# ── Web Search (BL391 — multi-provider registry) ──
+# Inject a web_search MCP tool into opencode and goose agent sessions, backed
+# by one or more named search providers tried in priority order (lowest
+# first), with an internal result cache and usage tracking.
+# Access: YAML | REST /api/websearch/* | CLI (datawatch websearch ...) |
+#         MCP (websearch_* tools) | comm channel (read-only + enable/disable) |
+#         Web UI Settings > LLM > Web Search.
 web_search:
   # Set to true to enable the web_search MCP tool injection.
   enabled: false
-  # Search provider. Currently only "searxng" is supported.
+  # Internal result cache — serves repeated identical queries without a new
+  # provider call, reducing paid API usage (Brave bills per call).
+  cache_enabled: true
+  # Default cache TTL in seconds. A provider's own cache_ttl_seconds (below)
+  # overrides this per-provider.
+  cache_ttl_seconds: 900
+  # Named providers, tried in priority order (lowest first). A provider that
+  # "succeeds" with zero results is treated as a miss and the next provider
+  # is tried — defends against silent provider-side degradation (GH#165).
+  providers:
+    - name: searxng-primary
+      type: searxng           # searxng | brave
+      enabled: true
+      priority: 0
+      # Base URL of the SearXNG instance (searxng only).
+      url: ""
+      # SearXNG engine(s). Use "bing" — other engines are CAPTCHA/rate-limited.
+      # Known limitation: even bing's scraped results are intermittently
+      # degraded for compound/multi-word queries (likely Bing-side
+      # anti-scraping, not fixable via config) — see
+      # docs/datawatch-definitions.md Web Search section.
+      engine: bing
+      num_results: 10
+    # - name: brave-fallback
+    #   type: brave
+    #   enabled: true
+    #   priority: 1
+    #   # Literal key or a ${secret:name} ref — set via the secrets vault
+    #   # (CLI: datawatch secrets set <name>, or PWA Settings), never a
+    #   # plaintext key committed to this file.
+    #   api_key: "${secret:brave_search_api_key}"
+    #   num_results: 10
+  # --- Legacy single-provider fields (pre-BL391) ---
+  # Still read for backward compatibility: if providers[] above is empty and
+  # any of these are set, a single "default" provider is synthesized from
+  # them at load time. New configs should use providers[] instead.
   provider: searxng
-  # Base URL of the SearXNG instance (required when enabled).
   url: ""
-  # SearXNG engine to use. Use "bing" — other engines are CAPTCHA/rate-limited.
-  # Known limitation: even bing's scraped results are intermittently degraded
-  # for compound/multi-word queries (likely Bing-side anti-scraping, not
-  # fixable via config) — see docs/datawatch-definitions.md Web Search section.
   engine: bing
-  # Maximum number of search results to return per query.
   num_results: 10
 
 # ── Remote Servers (Proxy Mode) ──

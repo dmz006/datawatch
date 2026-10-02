@@ -261,6 +261,16 @@ const (
 	//   "memory scope {recall,borrow,seed,promote} ..."
 	CmdMemory CommandType = "memory"
 
+	// BL391 — multi-provider web search registry. Comm-channel surface is
+	// deliberately read-only + enable/disable (full provider CRUD is
+	// chat-unfriendly — same scope decision as council's "backends" list,
+	// council.go:36); use REST/CLI/MCP/PWA for add/update/delete.
+	//   "websearch"                           → usage stats summary
+	//   "websearch providers"                 → list providers
+	//   "websearch stats" / "history"         → usage detail
+	//   "websearch enable|disable|test <name>"
+	CmdWebSearch CommandType = "websearch"
+
 	// BL303 S1 — structured session telemetry over chat.
 	//   "telemetry <id>"              → GET /api/sessions/<id>/telemetry
 	//   "telemetry list"              → list telemetry summary for all sessions
@@ -1377,6 +1387,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("memory "):])
 		}
 		return Command{Type: CmdMemory, Text: rest}
+
+	case lower == "websearch" || strings.HasPrefix(lower, "websearch "):
+		rest := ""
+		if lower != "websearch" {
+			rest = strings.TrimSpace(text[len("websearch "):])
+		}
+		return Command{Type: CmdWebSearch, Text: rest}
 
 	case lower == "server" || strings.HasPrefix(lower, "server "):
 		rest := ""

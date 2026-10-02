@@ -632,6 +632,17 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolLLMAddModel(), tracked(s.handleLLMAddModelMCP))
 	mcpSrv.AddTool(s.toolLLMRemoveModel(), tracked(s.handleLLMRemoveModelMCP))
 	mcpSrv.AddTool(s.toolLLMListModels(), tracked(s.handleLLMListModelsMCP))
+	// BL391 — multi-provider web search registry.
+	mcpSrv.AddTool(s.toolWebSearchProvidersList(), tracked(s.handleWebSearchProvidersListMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderGet(), tracked(s.handleWebSearchProviderGetMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderAdd(), tracked(s.handleWebSearchProviderAddMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderUpdate(), tracked(s.handleWebSearchProviderUpdateMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderDelete(), tracked(s.handleWebSearchProviderDeleteMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderEnable(), tracked(s.handleWebSearchProviderEnableMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderDisable(), tracked(s.handleWebSearchProviderDisableMCP))
+	mcpSrv.AddTool(s.toolWebSearchProviderTest(), tracked(s.handleWebSearchProviderTestMCP))
+	mcpSrv.AddTool(s.toolWebSearchStatsV2(), tracked(s.handleWebSearchStatsV2MCP))
+	mcpSrv.AddTool(s.toolWebSearchHistory(), tracked(s.handleWebSearchHistoryMCP))
 	// v7.0.0 alpha.5.x — memory scope-hierarchy MCP tools.
 	mcpSrv.AddTool(s.toolMemoryScopeRecall(), tracked(s.handleMemoryScopeRecallMCP))
 	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))

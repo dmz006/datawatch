@@ -234,7 +234,7 @@ shape.
 |--------|-------|
 | Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
 | Vision | `vision_describe` |
-| Web Search | `web_search_stats` |
+| Web Search | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`, `web_search_stats` (deprecated alias) |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
@@ -428,9 +428,100 @@ running in a dark theme with white text.
 
 ---
 
-### `web_search_stats`
+### `websearch_providers_list` / `websearch_provider_get`
 
-Return the current web search configuration and runtime statistics for this datawatch instance. Requires `web_search.enabled: true` in config.
+List every configured web search provider (BL391), or fetch one by name. Read-only.
+
+**Parameters (`websearch_provider_get` only):**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Provider name |
+
+**Example response:**
+```json
+{"providers":[{"name":"searxng-primary","type":"searxng","enabled":true,"priority":0,"url":"http://searxng.example.com:3001","engine":"bing","num_results":10}]}
+```
+
+---
+
+### `websearch_provider_add` / `websearch_provider_update`
+
+Add a new provider, or update fields on an existing one (only provided fields change on update).
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Provider name |
+| `type` | string | add: yes | `searxng` \| `brave` |
+| `enabled` | string | No | `true`/`false`, default true |
+| `priority` | string | No | Try order, lower first |
+| `url` | string | No | SearXNG instance URL (searxng only) |
+| `engine` | string | No | Comma-separated SearXNG engines, default `bing` |
+| `api_key` | string | No | Literal key or `${secret:name}` ref (brave only) — write-only, never echoed back by a get/list call |
+| `num_results` | string | No | Default results per query |
+| `cache_ttl_seconds` | string | No | Per-provider cache TTL override, 0 = registry default |
+
+---
+
+### `websearch_provider_delete` / `websearch_provider_enable` / `websearch_provider_disable`
+
+Remove, enable, or disable a provider by name.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Provider name |
+
+---
+
+### `websearch_provider_test`
+
+Run one live connectivity test query through a single named provider, bypassing its `enabled`/priority — lets an operator validate credentials before flipping a new provider on.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Provider name |
+
+**Example response:**
+```json
+{"ok":true,"result_count":3,"sample":[{"title":"...","url":"...","content":"..."}]}
+```
+
+---
+
+### `websearch_stats`
+
+Multi-provider usage summary (total/today/this week/this month/cache hits, per provider and overall) plus a zero-filled daily time series for charting. Read-only.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `days` | string | No | Length of the daily series, default 30, max 365 |
+
+---
+
+### `websearch_history`
+
+Recent search events, newest first: query, provider, cache hit/miss, success/error, result count, session. Read-only.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `limit` | string | No | Page size, default 50 |
+| `offset` | string | No | Page offset, default 0 |
+
+---
+
+### `web_search_stats` (deprecated alias)
+
+Legacy single-provider stats tool, kept for backward compatibility. Returns the current web search configuration and runtime statistics for this datawatch instance. Requires `web_search.enabled: true` in config. Prefer `websearch_stats` above for multi-provider detail.
 
 **Parameters:** none
 

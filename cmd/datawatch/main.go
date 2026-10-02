@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	crypto_tls "crypto/tls"
 	"crypto/sha256"
+	crypto_tls "crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -30,33 +30,32 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/bwmarrin/discordgo"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	slackgo "github.com/slack-go/slack"
 
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
-	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	alertrulespkg "github.com/dmz006/datawatch/internal/alertrules"
-	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
-	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
-	"github.com/dmz006/datawatch/internal/hookinstaller"
-	observerpkg "github.com/dmz006/datawatch/internal/observer"
-	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
-	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
-	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
+	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/algorithm"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
-	gitpkg "github.com/dmz006/datawatch/internal/git"
-	devicespkg "github.com/dmz006/datawatch/internal/devices"
-	profilepkg "github.com/dmz006/datawatch/internal/profile"
-	secretspkg "github.com/dmz006/datawatch/internal/secrets"
-	docsindexpkg "github.com/dmz006/datawatch/internal/docsindex"
-	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/council"
+	devicespkg "github.com/dmz006/datawatch/internal/devices"
+	docsindexpkg "github.com/dmz006/datawatch/internal/docsindex"
+	"github.com/dmz006/datawatch/internal/evals"
+	"github.com/dmz006/datawatch/internal/federation"
+	gitpkg "github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/hookinstaller"
+	"github.com/dmz006/datawatch/internal/identity"
+	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/inference/adapters"
 	"github.com/dmz006/datawatch/internal/llm"
-	"github.com/dmz006/datawatch/internal/messaging"
-	wizardpkg "github.com/dmz006/datawatch/internal/wizard"
-	"golang.org/x/term"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
@@ -64,52 +63,54 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
-	"github.com/dmz006/datawatch/internal/channel"
-	"github.com/dmz006/datawatch/internal/algorithm"
-	"github.com/dmz006/datawatch/internal/compute"
-	"github.com/dmz006/datawatch/internal/council"
-	"github.com/dmz006/datawatch/internal/inference"
-	"github.com/dmz006/datawatch/internal/inference/adapters"
-	"github.com/dmz006/datawatch/internal/evals"
-	"github.com/dmz006/datawatch/internal/identity"
-	"github.com/dmz006/datawatch/internal/skills"
-	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
 	mcpsearchpkg "github.com/dmz006/datawatch/internal/mcp/search"
+	memoryPkg "github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
+	dnschannel "github.com/dmz006/datawatch/internal/messaging/backends/dns"
 	emailmsg "github.com/dmz006/datawatch/internal/messaging/backends/email"
-	"github.com/dmz006/datawatch/internal/messaging/backends/imapmcp"
 	ghwebhook "github.com/dmz006/datawatch/internal/messaging/backends/github"
+	"github.com/dmz006/datawatch/internal/messaging/backends/imapmcp"
 	"github.com/dmz006/datawatch/internal/messaging/backends/matrix"
 	ntfymsg "github.com/dmz006/datawatch/internal/messaging/backends/ntfy"
 	"github.com/dmz006/datawatch/internal/messaging/backends/slack"
 	"github.com/dmz006/datawatch/internal/messaging/backends/telegram"
 	"github.com/dmz006/datawatch/internal/messaging/backends/twilio"
 	"github.com/dmz006/datawatch/internal/messaging/backends/webhook"
-	dnschannel "github.com/dmz006/datawatch/internal/messaging/backends/dns"
-	"github.com/dmz006/datawatch/internal/secfile"
+	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
+	observerpkg "github.com/dmz006/datawatch/internal/observer"
+	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
+	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
+	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
+	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
+	profilepkg "github.com/dmz006/datawatch/internal/profile"
+	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/router"
-	"github.com/dmz006/datawatch/internal/federation"
+	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
+	"github.com/dmz006/datawatch/internal/secfile"
+	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
-	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
-	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
-	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
+	signalpkg "github.com/dmz006/datawatch/internal/signal"
+	"github.com/dmz006/datawatch/internal/skills"
+	statspkg "github.com/dmz006/datawatch/internal/stats"
+	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
+	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
+	"github.com/dmz006/datawatch/internal/tooling"
 	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
 	visionPkg "github.com/dmz006/datawatch/internal/vision"
-	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
-	memoryPkg "github.com/dmz006/datawatch/internal/memory"
-	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
-	statspkg "github.com/dmz006/datawatch/internal/stats"
-	signalpkg "github.com/dmz006/datawatch/internal/signal"
+	"github.com/dmz006/datawatch/internal/websearch"
+	wizardpkg "github.com/dmz006/datawatch/internal/wizard"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.38.1"
+var Version = "8.39.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -298,22 +299,22 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLogsCmd(),
 		newCompletionCmd(root),
 		// Sprint Sx (v3.7.2) — CLI parity for v3.5–v3.7 endpoints.
-		newAskCmd(),             // BL34
-		newProjectSummaryCmd(),  // BL35
-		newTemplateCmd(),        // BL5
-		newProjectsCmd(),        // BL27
-		newRollbackCmd(),        // BL29
-		newCooldownCmd(),        // BL30
-		newStaleCmd(),           // BL40
-		newCostCmd(),            // BL6
-		newAuditCmd(),           // BL9
+		newAskCmd(),            // BL34
+		newProjectSummaryCmd(), // BL35
+		newTemplateCmd(),       // BL5
+		newProjectsCmd(),       // BL27
+		newRollbackCmd(),       // BL29
+		newCooldownCmd(),       // BL30
+		newStaleCmd(),          // BL40
+		newCostCmd(),           // BL6
+		newAuditCmd(),          // BL9
 		// Sprint S4 (v3.8.0).
-		newAssistCmd(),          // BL42
-		newDeviceAliasCmd(),     // BL31
-		newSplashInfoCmd(),      // BL69
+		newAssistCmd(),      // BL42
+		newDeviceAliasCmd(), // BL31
+		newSplashInfoCmd(),  // BL69
 		// Sprint S5 (v3.9.0).
-		newRoutingRulesCmd(),    // BL20
-		newChannelRoutingCmd(),  // BL331 parity
+		newRoutingRulesCmd(),   // BL20
+		newChannelRoutingCmd(), // BL331 parity
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
@@ -327,36 +328,37 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
-		newToolingCmd(),  // BL219
-		newSecretsCmd(),    // BL242
-		newTailscaleCmd(),  // BL243
-		newSkillsCmd(),     // BL255
-		newIdentityCmd(),   // BL257 P1 v6.8.0
-		newAlgorithmCmd(),  // BL258 v6.9.0
-		newEvalsCmd(),      // BL259 P1 v6.10.0
-		newCouncilCmd(),    // BL260 v6.11.0
-		newDocsCmd(),       // BL274 v6.16.0
-		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
-		newLLMCmd(),        // v7.0.0 S2 — LLM registry
-		newServerCmd(),     // BL312 S1 — multi-server registry
-		newFederationCmd(), // BL316 S2 — federation peer and group registry
-		newCapacityCmd(),   // capacity admission ledger status
-		newAlertRulesCmd(), // S14b — per-pod alert rules + observer-driven autoscaling
-		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
-		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
-		newGuardrailCmd(),  // BL303 S2 — guardrail library + profiles
-		newDashboardCmd(),  // #57/#58 — dashboard card layout CRUD
-		newSmokeCmd(),      // #54 — smoke-run cross-instance forwarding
-		newFilterCmd(),     // top-level filter command
-		newScheduleTopCmd(),// top-level schedule command (mirrors session schedule)
-		newPushCmd(),       // BL330 — UnifiedPush registration management
-		newFilesCmd(),      // BL333 — federated file service
-		newSecurityCmd(),   // BL334 — operational data encryption status + secure wipe
-		newMatrixCmd(),     // BL241 — Matrix backend status + test
-		newExitHookCmd(),        // BL356 — session crash/exit hooks
-		newQueueCmd(),           // BL357 — durable role-based work queue
-		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
-		newResultCmd(),          // BL360 — structured agent result store
+		newToolingCmd(),       // BL219
+		newSecretsCmd(),       // BL242
+		newTailscaleCmd(),     // BL243
+		newSkillsCmd(),        // BL255
+		newIdentityCmd(),      // BL257 P1 v6.8.0
+		newAlgorithmCmd(),     // BL258 v6.9.0
+		newEvalsCmd(),         // BL259 P1 v6.10.0
+		newCouncilCmd(),       // BL260 v6.11.0
+		newDocsCmd(),          // BL274 v6.16.0
+		newComputeCmd(),       // v7.0.0 S1 — ComputeNode registry
+		newLLMCmd(),           // v7.0.0 S2 — LLM registry
+		newWebSearchCmd(),     // BL391 — multi-provider web search registry
+		newServerCmd(),        // BL312 S1 — multi-server registry
+		newFederationCmd(),    // BL316 S2 — federation peer and group registry
+		newCapacityCmd(),      // capacity admission ledger status
+		newAlertRulesCmd(),    // S14b — per-pod alert rules + observer-driven autoscaling
+		newMemoryCmd(),        // v7.0.0 S5 — scope-hierarchy memory
+		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
+		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
+		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
+		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
+		newFilterCmd(),        // top-level filter command
+		newScheduleTopCmd(),   // top-level schedule command (mirrors session schedule)
+		newPushCmd(),          // BL330 — UnifiedPush registration management
+		newFilesCmd(),         // BL333 — federated file service
+		newSecurityCmd(),      // BL334 — operational data encryption status + secure wipe
+		newMatrixCmd(),        // BL241 — Matrix backend status + test
+		newExitHookCmd(),      // BL356 — session crash/exit hooks
+		newQueueCmd(),         // BL357 — durable role-based work queue
+		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
+		newResultCmd(),        // BL360 — structured agent result store
 	)
 
 	if err := root.Execute(); err != nil {
@@ -862,10 +864,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
 	acpBin := cfg.OpenCodeACP.Binary
-	if acpBin == "" { acpBin = cfg.OpenCode.Binary } // fall back to opencode binary
+	if acpBin == "" {
+		acpBin = cfg.OpenCode.Binary
+	} // fall back to opencode binary
 	llm.Register(opencode.NewACPWithTimeouts(acpBin, cfg.OpenCodeACP.ACPStartupTimeout, cfg.OpenCodeACP.ACPHealthInterval, cfg.OpenCodeACP.ACPMessageTimeout))
 	promptBin := cfg.OpenCodePrompt.Binary
-	if promptBin == "" { promptBin = cfg.OpenCode.Binary }
+	if promptBin == "" {
+		promptBin = cfg.OpenCode.Binary
+	}
 	llm.Register(opencode.NewPrompt(promptBin))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	owuiBackend := openwebui.NewInteractive(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model)
@@ -1009,7 +1015,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Println("[stats] eBPF per-session network tracing active")
 				// Log BPF map stats periodically for debugging
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[ebpf] stats panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[ebpf] stats panic (recovered): %v\n", p)
+						}
+					}()
 					for {
 						time.Sleep(30 * time.Second)
 						txN, rxN := ebpfCollector.DumpStats()
@@ -1020,7 +1030,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}()
 				// Periodically purge BPF entries for dead PIDs (maps cap at 8192 entries).
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[ebpf] purge panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[ebpf] purge panic (recovered): %v\n", p)
+						}
+					}()
 					ticker := time.NewTicker(5 * time.Minute)
 					defer ticker.Stop()
 					for range ticker.C {
@@ -1226,8 +1240,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
-			// BL372 — inject built-in web-search-guidance skill when web search is enabled.
-			if cfg.WebSearch.Enabled && cfg.WebSearch.URL != "" && sess.ProjectDir != "" {
+			// BL372/BL391 — inject built-in web-search-guidance skill when web
+			// search is enabled via either the legacy flat URL field or the
+			// multi-provider Providers[] list (BL391) — checking URL alone
+			// would silently stop injecting for any config migrated/authored
+			// to only use Providers[].
+			webSearchActive := cfg.WebSearch.Enabled && (cfg.WebSearch.URL != "" || len(cfg.WebSearch.Providers) > 0)
+			if webSearchActive && sess.ProjectDir != "" {
 				if err := injectWebSearchSkill(sess.ProjectDir); err != nil {
 					debugf("BL372 web search skill inject: %v", err)
 				}
@@ -1245,20 +1264,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			for _, e := range cfg.Session.ExtraMCPServers {
 				extraMCPSpecs[e.Name] = channel.MCPServerSpec{Command: e.Command, Args: e.Args, Env: e.Env}
 			}
-			// BL372 — inject web search MCP server for opencode/goose/claude-code when enabled.
-			if cfg.WebSearch.Enabled && cfg.WebSearch.URL != "" {
+			// BL372/BL391 — inject web search MCP server for opencode/goose/
+			// claude-code when enabled. `mcp-search` self-loads the full
+			// provider list (and resolves ${secret:...} API keys against the
+			// builtin secrets store) from config.yaml at $DATAWATCH_DATA_DIR
+			// — no per-field env vars needed now that there can be more than
+			// one provider (pre-BL391 passed URL/ENGINE/NUM_RESULTS
+			// explicitly, which only ever supported one). DATAWATCH_SESSION_ID
+			// is still passed through so usage history/stats can attribute
+			// each search to the session that made it.
+			if webSearchActive {
 				if binaryPath, err := os.Executable(); err == nil {
-					wsEnv := map[string]string{
-						"DATAWATCH_WEB_SEARCH_URL":    cfg.WebSearch.URL,
-						"DATAWATCH_WEB_SEARCH_ENGINE": cfg.WebSearch.Engine,
-					}
-					if cfg.WebSearch.NumResults > 0 {
-						wsEnv["DATAWATCH_WEB_SEARCH_NUM_RESULTS"] = strconv.Itoa(cfg.WebSearch.NumResults)
-					}
 					extraMCPSpecs["web_search"] = channel.MCPServerSpec{
 						Command: binaryPath,
 						Args:    []string{"mcp-search"},
-						Env:     wsEnv,
+						Env:     map[string]string{"DATAWATCH_SESSION_ID": sess.ID},
 					}
 				}
 			}
@@ -1374,14 +1394,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// When disabled the tmux window stays alive so the operator can inspect output.
 			if cfg.Session.KillSessionsOnExit {
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[session] tmux kill panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[session] tmux kill panic (recovered): %v\n", p)
+						}
+					}()
 					time.Sleep(2 * time.Second) // brief delay to let final output flush
 					mgr.KillTmuxSession(sess.FullID)
 				}()
 			}
 			if sess.BackendFamily == "claude-code" {
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[mcp] unregister panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[mcp] unregister panic (recovered): %v\n", p)
+						}
+					}()
 					channel.UnregisterSessionMCP(sess.FullID)
 				}()
 			}
@@ -1389,7 +1417,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Auto-save session summary and index output to episodic memory
 			if memRetriever != nil && cfg.Memory.IsAutoSave() && sess.State == session.StateComplete {
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[memory] auto-save panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[memory] auto-save panic (recovered): %v\n", p)
+						}
+					}()
 					summary := fmt.Sprintf("Session completed. Backend: %s", sess.BackendFamily)
 					if err := memRetriever.SaveSessionSummary(sess.ProjectDir, sess.FullID, sess.Task, summary); err != nil {
 						fmt.Printf("[memory] save session summary: %v\n", err)
@@ -1416,7 +1448,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// wired or when the session isn't bound to an agent.
 			if f10PRHook != nil {
 				go func() {
-					defer func() { if p := recover(); p != nil { fmt.Printf("[pr-hook] panic (recovered): %v\n", p) } }()
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[pr-hook] panic (recovered): %v\n", p)
+						}
+					}()
 					f10PRHook(sess)
 				}()
 			}
@@ -1500,7 +1536,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		cancel()
 	}()
-
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
@@ -1818,8 +1853,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	dockerDriver := agentspkg.NewDockerDriver(
-		cfg.Agents.DockerBin,        // "" → "docker"
-		cfg.Agents.ImagePrefix,      // "" → no prefix
+		cfg.Agents.DockerBin,   // "" → "docker"
+		cfg.Agents.ImagePrefix, // "" → no prefix
 		imageTag,
 		parentCallback,
 	)
@@ -1917,7 +1952,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				kgUnified = memoryPkg.NewKGUnifiedFromPG(pgStore)
 				kgAdapter = memoryPkg.NewPGKGAdapter(pgStore)
 			}
-			_ = kgUnified // used below for HTTP/MCP wiring
+			_ = kgUnified              // used below for HTTP/MCP wiring
 			defer memRetriever.Close() //nolint:errcheck
 			fmt.Printf("[memory] enabled (backend=%s, embedder=%s, kg=active)\n", cfg.Memory.EffectiveBackend(), embedder.Name())
 		}
@@ -2040,7 +2075,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
 		if memRetriever != nil && sess.Task != "" {
 			go func() {
-				defer func() { if p := recover(); p != nil { fmt.Printf("[memory] wake-up panic (recovered): %v\n", p) } }()
+				defer func() {
+					if p := recover(); p != nil {
+						fmt.Printf("[memory] wake-up panic (recovered): %v\n", p)
+					}
+				}()
 				// Build wake-up context: L0 identity + L1 critical facts
 				layers := memoryPkg.NewLayers(expandHome(cfg.DataDir), memRetriever)
 				// BL257 P1 v6.8.0 — wire the structured identity / Telos
@@ -2072,10 +2111,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 
 	var (
-		routers    []*router.Router
-		wg         sync.WaitGroup
-		httpServer *server.HTTPServer
-		pipeExec   *pipelinePkg.Executor
+		routers     []*router.Router
+		wg          sync.WaitGroup
+		httpServer  *server.HTTPServer
+		pipeExec    *pipelinePkg.Executor
 		pipeAdapter *pipelinePkg.RouterAdapter
 		// BL309 — keep a direct pointer so the inference registry can be
 		// wired as KindResolver after both objects are created.
@@ -2152,7 +2191,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Auto-save to memory if enabled
 		if memRetriever != nil && cfg.Memory.IsAutoSave() {
 			go func() {
-				defer func() { if p := recover(); p != nil { fmt.Printf("[memory] auto-save panic (recovered): %v\n", p) } }()
+				defer func() {
+					if p := recover(); p != nil {
+						fmt.Printf("[memory] auto-save panic (recovered): %v\n", p)
+					}
+				}()
 				content := fmt.Sprintf("Prompt: %s\nResponse: %s", sess.LastInput, response)
 				if len(content) > 5000 {
 					content = content[:5000]
@@ -2165,35 +2208,37 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 	// Wire chat memory handler for ALL chat-mode backends (BL77: includes Ollama)
 	chatMemHandler := func(tmuxSession, text string) (string, bool) {
-			lower := strings.ToLower(strings.TrimSpace(text))
-			isMemoryCmd := strings.HasPrefix(lower, "remember:") || strings.HasPrefix(lower, "remember ") ||
-				strings.HasPrefix(lower, "recall:") || strings.HasPrefix(lower, "recall ") ||
-				lower == "memories" || strings.HasPrefix(lower, "memories ") ||
-				strings.HasPrefix(lower, "forget ") ||
-				lower == "learnings" || strings.HasPrefix(lower, "learnings ") ||
-				strings.HasPrefix(lower, "kg ") || lower == "kg"
-			if !isMemoryCmd {
-				return "", false
+		lower := strings.ToLower(strings.TrimSpace(text))
+		isMemoryCmd := strings.HasPrefix(lower, "remember:") || strings.HasPrefix(lower, "remember ") ||
+			strings.HasPrefix(lower, "recall:") || strings.HasPrefix(lower, "recall ") ||
+			lower == "memories" || strings.HasPrefix(lower, "memories ") ||
+			strings.HasPrefix(lower, "forget ") ||
+			lower == "learnings" || strings.HasPrefix(lower, "learnings ") ||
+			strings.HasPrefix(lower, "kg ") || lower == "kg"
+		if !isMemoryCmd {
+			return "", false
+		}
+		// Route through the test message handler to get formatted response
+		if httpServer != nil {
+			apiURL := loopbackBaseURL(cfg) + "/api/test/message"
+			body := fmt.Sprintf(`{"text":%q}`, text)
+			req, _ := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Sprintf("Error: %v", err), true
 			}
-			// Route through the test message handler to get formatted response
-			if httpServer != nil {
-				apiURL := loopbackBaseURL(cfg)+"/api/test/message"
-				body := fmt.Sprintf(`{"text":%q}`, text)
-				req, _ := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
-				req.Header.Set("Content-Type", "application/json")
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return fmt.Sprintf("Error: %v", err), true
-				}
-				defer resp.Body.Close() //nolint:errcheck
-				var result struct { Responses []string `json:"responses"` }
-				json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
-				if len(result.Responses) > 0 {
-					return strings.Join(result.Responses, "\n"), true
-				}
-				return "(no response)", true
+			defer resp.Body.Close() //nolint:errcheck
+			var result struct {
+				Responses []string `json:"responses"`
 			}
-			return "Memory not available (no HTTP server)", true
+			json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
+			if len(result.Responses) > 0 {
+				return strings.Join(result.Responses, "\n"), true
+			}
+			return "(no response)", true
+		}
+		return "Memory not available (no HTTP server)", true
 	}
 	if cfg.Memory.Enabled {
 		openwebui.SetChatMemoryHandler(chatMemHandler)
@@ -2509,7 +2554,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
-			apiURL := loopbackBaseURL(cfg)+"/api/config"
+			apiURL := loopbackBaseURL(cfg) + "/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			// Try as number or bool
 			if value == "true" || value == "false" {
@@ -2518,12 +2563,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				body = fmt.Sprintf(`{"%s":%s}`, key, value)
 			}
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
-			if err != nil { return fmt.Errorf("API call failed: %w", err) }
+			if err != nil {
+				return fmt.Errorf("API call failed: %w", err)
+			}
 			defer resp.Body.Close() //nolint:errcheck
-			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("API returned %d", resp.StatusCode)
+			}
 			return nil
 		})
 		r.SetCapacityFunc(func() string {
@@ -2538,13 +2589,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			s := statsCollector.Latest()
 			fmtB := func(b uint64) string {
-				if b > 1e9 { return fmt.Sprintf("%.1f GB", float64(b)/1e9) }
-				if b > 1e6 { return fmt.Sprintf("%.1f MB", float64(b)/1e6) }
+				if b > 1e9 {
+					return fmt.Sprintf("%.1f GB", float64(b)/1e9)
+				}
+				if b > 1e6 {
+					return fmt.Sprintf("%.1f MB", float64(b)/1e6)
+				}
 				return fmt.Sprintf("%d KB", b/1024)
 			}
 			lines := []string{
 				fmt.Sprintf("CPU: %.2f load (%d cores)", s.CPULoadAvg1, s.CPUCores),
-				fmt.Sprintf("Mem: %s / %s (%d%%)", fmtB(s.MemUsed), fmtB(s.MemTotal), func() int { if s.MemTotal > 0 { return int(100*s.MemUsed/s.MemTotal) }; return 0 }()),
+				fmt.Sprintf("Mem: %s / %s (%d%%)", fmtB(s.MemUsed), fmtB(s.MemTotal), func() int {
+					if s.MemTotal > 0 {
+						return int(100 * s.MemUsed / s.MemTotal)
+					}
+					return 0
+				}()),
 				fmt.Sprintf("Disk: %s / %s", fmtB(s.DiskUsed), fmtB(s.DiskTotal)),
 				fmt.Sprintf("Net: ↓%s ↑%s", fmtB(s.NetRxBytes), fmtB(s.NetTxBytes)),
 				fmt.Sprintf("Daemon: %s RSS, %d goroutines", fmtB(s.DaemonRSSBytes), s.Goroutines),
@@ -2556,7 +2616,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Per-session stats
 			for _, ss := range s.SessionStats {
 				line := fmt.Sprintf("  %s (%s): %s %s", ss.Name, ss.Backend, ss.State, ss.Uptime)
-				if ss.RSSBytes > 0 { line += fmt.Sprintf(" %s", fmtB(ss.RSSBytes)) }
+				if ss.RSSBytes > 0 {
+					line += fmt.Sprintf(" %s", fmtB(ss.RSSBytes))
+				}
 				if ss.NetTxBytes > 0 || ss.NetRxBytes > 0 {
 					line += fmt.Sprintf(" net:↓%s↑%s", fmtB(ss.NetRxBytes), fmtB(ss.NetTxBytes))
 				}
@@ -2722,7 +2784,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Twilio router error: %v\n", cfg.Hostname, rErr)
 			}
@@ -2752,7 +2818,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] GitHub webhook error: %v\n", cfg.Hostname, rErr)
 			}
@@ -2788,7 +2858,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Webhook error: %v\n", cfg.Hostname, rErr)
 			}
@@ -2803,7 +2877,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] DNS channel error: %v\n", cfg.Hostname, rErr)
 			}
@@ -2844,9 +2922,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
 		httpServer.SetExitHookStore(exitHookStore)
-		httpServer.SetQueueStore(queueStore)             // BL357
+		httpServer.SetQueueStore(queueStore)                 // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
-		httpServer.SetResultStore(resultStore)            // BL360
+		httpServer.SetResultStore(resultStore)               // BL360
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -3279,19 +3357,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							fullID = fmt.Sprintf("%s-r%d", fullID, roundNum)
 						}
 						sess := &session.Session{
-							ID:         sid,
-							FullID:     fullID,
-							Name:       fmt.Sprintf("Council %s persona", persona),
-							Task:       fmt.Sprintf("Council debate (%s, round %d): %s", persona, roundNum, role),
-							State:      session.StateRunning,
-							CreatedAt:  time.Now().UTC(),
-							UpdatedAt:  time.Now().UTC(),
-							Hostname:   cfg.Hostname,
-							GroupID:    cfg.Signal.GroupID,
+							ID:            sid,
+							FullID:        fullID,
+							Name:          fmt.Sprintf("Council %s persona", persona),
+							Task:          fmt.Sprintf("Council debate (%s, round %d): %s", persona, roundNum, role),
+							State:         session.StateRunning,
+							CreatedAt:     time.Now().UTC(),
+							UpdatedAt:     time.Now().UTC(),
+							Hostname:      cfg.Hostname,
+							GroupID:       cfg.Signal.GroupID,
 							BackendFamily: "council-virtual",
-							LastPrompt: prompt,
-							OutputMode: "log",
-							InputMode:  "none",
+							LastPrompt:    prompt,
+							OutputMode:    "log",
+							InputMode:     "none",
 						}
 						if err := mgr.SaveSession(sess); err != nil {
 							return "", err
@@ -3329,6 +3407,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		// BL242 — centralized secrets store.
 		var secretsStore secretspkg.Store
+		// BL391 — multi-provider web search registry (daemon-level, shared by
+		// REST/MCP/stats). Constructed after ResolveConfig below so provider
+		// API keys are resolved raw secret values, not ${secret:...} refs.
+		var websearchRegistry *websearch.Registry
 		switch cfg.Secrets.Backend {
 		case "keepass":
 			kpPass := cfg.Secrets.KeePassPassword
@@ -3410,6 +3492,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 
+		// BL391 — snapshot each WebSearch provider's api_key exactly as
+		// configured (literal, or an unresolved "${secret:name}" ref)
+		// BEFORE ResolveConfig below mutates cfg.WebSearch.Providers[i].APIKey
+		// in place. The REST provider-CRUD layer (internal/server/websearch.go
+		// saveWebSearchConfig) needs this to restore the ref before writing
+		// config.yaml on any save that doesn't itself set a new api_key —
+		// otherwise the resolved plaintext secret, kept in cfg purely for
+		// runtime Search() calls, would get persisted to disk.
+		websearchAPIKeyRefs := make(map[string]string, len(cfg.WebSearch.Providers))
+		for _, p := range cfg.WebSearch.Providers {
+			websearchAPIKeyRefs[p.Name] = p.APIKey
+		}
+		httpServer.SetWebSearchAPIKeyRefs(websearchAPIKeyRefs)
+
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
@@ -3418,6 +3514,45 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] config secret ref resolution: %v\n", err)
 			} else {
 				fmt.Printf("[secrets] config refs resolved\n")
+			}
+		}
+
+		// BL391 — build the daemon-level web search registry AFTER
+		// ResolveConfig so provider API keys are resolved raw values, not
+		// ${secret:...} refs. Mirrors internal/mcp/search's buildRegistry,
+		// but runs in-process so REST/MCP/stats share one live registry
+		// instead of each `mcp-search` subprocess building its own.
+		if cfg.WebSearch.Enabled && len(cfg.WebSearch.Providers) > 0 {
+			wsSpecs := make([]websearch.ProviderSpec, 0, len(cfg.WebSearch.Providers))
+			for _, p := range cfg.WebSearch.Providers {
+				apiKey := p.APIKey
+				if strings.HasPrefix(apiKey, "${secret:") {
+					fmt.Printf("[websearch] provider %q: api_key ref unresolved (no secrets store?) — disabling\n", p.Name)
+					continue
+				}
+				wsSpecs = append(wsSpecs, websearch.ProviderSpec{
+					Name: p.Name, Type: p.Type, Enabled: p.Enabled, Priority: p.Priority,
+					URL: p.URL, Engine: p.Engine, APIKey: apiKey,
+					NumResults: p.NumResults, CacheTTLSeconds: p.CacheTTLSeconds,
+				})
+			}
+			var wsCache *websearch.Cache
+			if cfg.WebSearch.CacheEnabled {
+				wsCache = websearch.NewCache(time.Duration(cfg.WebSearch.CacheTTLSeconds) * time.Second)
+			}
+			wsDBPath := filepath.Join(expandHome(cfg.DataDir), "websearch.db")
+			wsStore, err := websearch.NewStore(wsDBPath)
+			if err != nil {
+				fmt.Printf("[warn] websearch usage store: %v — continuing without usage tracking\n", err)
+				wsStore = nil
+			}
+			reg, err := websearch.NewRegistry(wsSpecs, wsCache, wsStore, time.Duration(cfg.WebSearch.CacheTTLSeconds)*time.Second)
+			if err != nil {
+				fmt.Printf("[warn] websearch registry: %v\n", err)
+			} else {
+				websearchRegistry = reg
+				httpServer.SetWebSearchRegistry(reg)
+				fmt.Printf("[websearch] registry ready: %d provider(s) — %s\n", len(reg.ProviderNames()), strings.Join(reg.ProviderNames(), ", "))
 			}
 		}
 
@@ -3621,33 +3756,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// rules / cost rates without re-deriving here.
 		acfgIn := cfg.Autonomous
 		amgrCfg := autonomouspkg.Config{
-			Enabled:             acfgIn.Enabled,
-			PollIntervalSeconds: acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:    acfgIn.MaxParallelTasks,
-			PlanningBackend:     acfgIn.PlanningBackend,
-			VerificationBackend: acfgIn.VerificationBackend,
-			PlanningModel:       acfgIn.PlanningModel,
-			VerificationModel:   acfgIn.VerificationModel,
-			VerificationBackends: append([]string(nil), acfgIn.VerificationBackends...),
-			PlanningEffort:      acfgIn.PlanningEffort,
-			VerificationEffort:  acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds: acfgIn.PlanningTimeoutSeconds,
-			CapacityEnabled:        acfgIn.CapacityEnabled,
+			Enabled:                    acfgIn.Enabled,
+			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:           acfgIn.MaxParallelTasks,
+			PlanningBackend:            acfgIn.PlanningBackend,
+			VerificationBackend:        acfgIn.VerificationBackend,
+			PlanningModel:              acfgIn.PlanningModel,
+			VerificationModel:          acfgIn.VerificationModel,
+			VerificationBackends:       append([]string(nil), acfgIn.VerificationBackends...),
+			PlanningEffort:             acfgIn.PlanningEffort,
+			VerificationEffort:         acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
+			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
-			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
-			AutoFixRetries:       acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:         acfgIn.SecurityScan,
+			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
+			AutoFixRetries:             acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:               acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
 			// v5.17.0 daemons silently no-op'd `datawatch config set
 			// autonomous.max_recursion_depth …`.
-			MaxRecursionDepth:   acfgIn.MaxRecursionDepth,
-			AutoApproveChildren: acfgIn.AutoApproveChildren,
-			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
-			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
-			PerStoryApproval:    acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
+			MaxRecursionDepth:      acfgIn.MaxRecursionDepth,
+			AutoApproveChildren:    acfgIn.AutoApproveChildren,
+			PerTaskGuardrails:      append([]string(nil), acfgIn.PerTaskGuardrails...),
+			PerStoryGuardrails:     append([]string(nil), acfgIn.PerStoryGuardrails...),
+			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
 			// BL367 — bridge default quality gate config.
 			DefaultQualityGates: pipelinePkg.QualityGateConfig{
@@ -3946,19 +4081,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
 				bytes.NewReader(body))
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			httpReq.Header.Set("Content-Type", "application/json")
 			if cfg.Server.Token != "" {
 				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 			}
 			resp, err := http.DefaultClient.Do(httpReq)
-			if err != nil { return "", fmt.Errorf("decompose call failed (model may be cold-loading or compute node unreachable): %w", err) }
+			if err != nil {
+				return "", fmt.Errorf("decompose call failed (model may be cold-loading or compute node unreachable): %w", err)
+			}
 			defer resp.Body.Close() //nolint:errcheck
 			b, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
 			}
-			var ans struct{ Answer string `json:"answer"` }
+			var ans struct {
+				Answer string `json:"answer"`
+			}
 			if err := json.Unmarshal(b, &ans); err != nil {
 				return string(b), nil
 			}
@@ -4085,7 +4226,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if resp.StatusCode/100 != 2 {
 					return autonomouspkg.SpawnResult{}, fmt.Errorf("agent spawn: %s — %s", resp.Status, string(rb))
 				}
-				var out struct{ ID string `json:"id"` }
+				var out struct {
+					ID string `json:"id"`
+				}
 				_ = json.Unmarshal(rb, &out)
 				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
 			}
@@ -4124,7 +4267,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if resp.StatusCode != http.StatusOK {
 				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
 			}
-			var out struct{ ID string `json:"id"` }
+			var out struct {
+				ID string `json:"id"`
+			}
 			_ = json.Unmarshal(rb, &out)
 			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles}, nil
 		}
@@ -4476,7 +4621,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					VerifiedAt: time.Now(),
 				}, nil
 			}
-			var ask struct{ Answer string `json:"answer"` }
+			var ask struct {
+				Answer string `json:"answer"`
+			}
 			_ = json.Unmarshal(rb, &ask)
 			// v8.25.9: unparseable LLM response is a verification failure, not a pass.
 			// OK: false triggers AutoFixRetries so the task is re-run rather than
@@ -4510,11 +4657,17 @@ Reply with STRICT JSON:
 {"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
 				guardTrustNotice, req.Guardrail, req.Level, req.UnitTitle, req.UnitSpec)
 			gbackend := amgrCfg.VerificationBackend
-			if gbackend == "" { gbackend = "ollama" }
+			if gbackend == "" {
+				gbackend = "ollama"
+			}
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
-			if !askCompatible(gkind) { gkind = "ollama" }
+			if !askCompatible(gkind) {
+				gkind = "ollama"
+			}
 			guardrailModel := amgrCfg.VerificationModel
-			if guardrailModel == "" { guardrailModel = gmodel }
+			if guardrailModel == "" {
+				guardrailModel = gmodel
+			}
 			askBody := map[string]any{
 				"question": prompt,
 				"backend":  gkind,
@@ -4549,7 +4702,9 @@ Reply with STRICT JSON:
 					VerdictAt: time.Now(),
 				}, nil
 			}
-			var ask struct{ Answer string `json:"answer"` }
+			var ask struct {
+				Answer string `json:"answer"`
+			}
 			_ = json.Unmarshal(rb, &ask)
 			// v8.25.11: unparseable guardrail response is a block, not a pass.
 			// Failing safe here prevents PRD from advancing on malformed output.
@@ -4734,7 +4889,9 @@ Reply with STRICT JSON:
 				if resp.StatusCode != http.StatusOK {
 					return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
 				}
-				var ans struct{ Answer string `json:"answer"` }
+				var ans struct {
+					Answer string `json:"answer"`
+				}
 				if err := json.Unmarshal(b, &ans); err != nil {
 					return string(b), nil
 				}
@@ -4984,7 +5141,9 @@ Return STRICT JSON:
 {"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}`,
 					sys, req.PRDID, req.Summary)
 				gbackend := ocfg.GuardrailBackend
-				if !askCompatible(gbackend) { gbackend = "ollama" }
+				if !askCompatible(gbackend) {
+					gbackend = "ollama"
+				}
 				askBody := map[string]any{
 					"question": prompt,
 					"backend":  gbackend,
@@ -5023,7 +5182,9 @@ Return STRICT JSON:
 						Summary: fmt.Sprintf("%s: ask call failed: %s", req.Guardrail, reason),
 					}, nil
 				}
-				var ask struct{ Answer string `json:"answer"` }
+				var ask struct {
+					Answer string `json:"answer"`
+				}
 				_ = json.Unmarshal(rb, &ask)
 				// v8.25.11: unparseable orchestrator guardrail response is a block.
 				v := orchestratorpkg.Verdict{
@@ -5272,7 +5433,7 @@ Return STRICT JSON:
 		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		testRouter.SetConfigureFunc(func(key, value string) error {
-			apiURL := loopbackBaseURL(cfg)+"/api/config"
+			apiURL := loopbackBaseURL(cfg) + "/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			if value == "true" || value == "false" {
 				body = fmt.Sprintf(`{"%s":%s}`, key, value)
@@ -5280,12 +5441,18 @@ Return STRICT JSON:
 				body = fmt.Sprintf(`{"%s":%s}`, key, value)
 			}
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
-			if err != nil { return fmt.Errorf("API call failed: %w", err) }
+			if err != nil {
+				return fmt.Errorf("API call failed: %w", err)
+			}
 			defer resp.Body.Close() //nolint:errcheck
-			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("API returned %d", resp.StatusCode)
+			}
 			return nil
 		})
 		if voiceTranscriber != nil {
@@ -5326,7 +5493,9 @@ Return STRICT JSON:
 		statsCollector.SetOrphanDetectFunc(func() (int, []string) {
 			// List tmux sessions starting with cs- and compare with datawatch sessions
 			out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
-			if err != nil { return 0, nil }
+			if err != nil {
+				return 0, nil
+			}
 			tmuxNames := strings.Split(strings.TrimSpace(string(out)), "\n")
 			csCount := 0
 			var orphaned []string
@@ -5338,7 +5507,9 @@ Return STRICT JSON:
 				}
 			}
 			for _, name := range tmuxNames {
-				if !strings.HasPrefix(name, "cs-") { continue }
+				if !strings.HasPrefix(name, "cs-") {
+					continue
+				}
 				csCount++
 				if !activeSet[name] {
 					orphaned = append(orphaned, name)
@@ -5373,7 +5544,11 @@ Return STRICT JSON:
 			}
 			msgChans := []chanDef{
 				{"Signal", cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "", func() string {
-					g := cfg.Signal.GroupID; if len(g) > 8 { g = g[:8] + "..." }; return "group:" + g
+					g := cfg.Signal.GroupID
+					if len(g) > 8 {
+						g = g[:8] + "..."
+					}
+					return "group:" + g
 				}(), "signal"},
 				{"Telegram", cfg.Telegram.Enabled, fmt.Sprintf("chat:%d", cfg.Telegram.ChatID), "telegram"},
 				{"Discord", cfg.Discord.Enabled, "channel:" + cfg.Discord.ChannelID, "discord"},
@@ -5428,10 +5603,15 @@ Return STRICT JSON:
 			})
 			for _, s := range allSessions {
 				be := s.BackendFamily
-				if be == "" { continue }
+				if be == "" {
+					continue
+				}
 				st, ok := llmStats[be]
 				if !ok {
-					st = &struct { total, active, inputs int; durations []float64 }{}
+					st = &struct {
+						total, active, inputs int
+						durations             []float64
+					}{}
 					llmStats[be] = st
 				}
 				st.total++
@@ -5460,7 +5640,9 @@ Return STRICT JSON:
 				}
 				if len(st.durations) > 0 {
 					sum := 0.0
-					for _, d := range st.durations { sum += d }
+					for _, d := range st.durations {
+						sum += d
+					}
 					cs.AvgDurationSec = sum / float64(len(st.durations))
 				}
 				channels = append(channels, cs)
@@ -5509,7 +5691,9 @@ Return STRICT JSON:
 								// Sum child processes
 								children, _ := exec.Command("pgrep", "-P", fmt.Sprintf("%d", st.PanePID)).Output()
 								for _, cline := range strings.Split(strings.TrimSpace(string(children)), "\n") {
-									if cline == "" { continue }
+									if cline == "" {
+										continue
+									}
 									cpid := 0
 									_, _ = fmt.Sscanf(cline, "%d", &cpid)
 									if cpid > 0 {
@@ -5573,38 +5757,50 @@ Return STRICT JSON:
 							fmt.Printf("[rtk] hooks initialized (rtk init -g)\n")
 						}
 					}
-				// Start RTK update checker (BL85)
-						if cfg.RTK.UpdateCheckInterval != 0 || cfg.RTK.AutoUpdate {
-							interval := time.Duration(cfg.RTK.UpdateCheckInterval) * time.Second
-							if interval <= 0 {
-								interval = 24 * time.Hour
-							}
-							rtkPkg.StartUpdateChecker(interval, cfg.RTK.AutoUpdate, func(vs rtkPkg.VersionStatus) {
-								if vs.UpdateAvailable {
-									fmt.Printf("[rtk] update available: %s → %s\n", vs.CurrentVersion, vs.LatestVersion)
-									if vs.AutoUpdatable && cfg.RTK.AutoUpdate {
-										fmt.Printf("[rtk] auto-updating...\n")
-									}
-								}
-							})
+					// Start RTK update checker (BL85)
+					if cfg.RTK.UpdateCheckInterval != 0 || cfg.RTK.AutoUpdate {
+						interval := time.Duration(cfg.RTK.UpdateCheckInterval) * time.Second
+						if interval <= 0 {
+							interval = 24 * time.Hour
 						}
-					} else {
-						fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
+						rtkPkg.StartUpdateChecker(interval, cfg.RTK.AutoUpdate, func(vs rtkPkg.VersionStatus) {
+							if vs.UpdateAvailable {
+								fmt.Printf("[rtk] update available: %s → %s\n", vs.CurrentVersion, vs.LatestVersion)
+								if vs.AutoUpdatable && cfg.RTK.AutoUpdate {
+									fmt.Printf("[rtk] auto-updating...\n")
+								}
+							}
+						})
 					}
+				} else {
+					fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
 				}
-				// Wire Ollama stats polling (BL71)
+			}
+			// Wire Ollama stats polling (BL71)
 			if cfg.Ollama.Host != "" {
 				statsCollector.SetOllamaHost(cfg.Ollama.Host)
 			}
 			// Wire RTK stats into the collector
 			statsCollector.SetRTKFunc(func(s *statspkg.SystemStats) {
 				data := rtkPkg.CollectStats()
-				if v, ok := data["installed"].(bool); ok { s.RTKInstalled = v }
-				if v, ok := data["version"].(string); ok { s.RTKVersion = v }
-				if v, ok := data["hooks_active"].(bool); ok { s.RTKHooksActive = v }
-				if v, ok := data["total_saved"].(int); ok { s.RTKTotalSaved = v }
-				if v, ok := data["avg_savings_pct"].(float64); ok { s.RTKAvgSavings = v }
-				if v, ok := data["total_commands"].(int); ok { s.RTKTotalCmds = v }
+				if v, ok := data["installed"].(bool); ok {
+					s.RTKInstalled = v
+				}
+				if v, ok := data["version"].(string); ok {
+					s.RTKVersion = v
+				}
+				if v, ok := data["hooks_active"].(bool); ok {
+					s.RTKHooksActive = v
+				}
+				if v, ok := data["total_saved"].(int); ok {
+					s.RTKTotalSaved = v
+				}
+				if v, ok := data["avg_savings_pct"].(float64); ok {
+					s.RTKAvgSavings = v
+				}
+				if v, ok := data["total_commands"].(int); ok {
+					s.RTKTotalCmds = v
+				}
 				// BL85: include update status
 				vs := rtkPkg.GetVersionStatus()
 				s.RTKLatestVersion = vs.LatestVersion
@@ -5656,8 +5852,29 @@ Return STRICT JSON:
 		// BL372 — wire web search stats into the collector.
 		statsCollector.SetWebSearchStatsFunc(func(s *statspkg.SystemStats) {
 			s.WebSearchEnabled = cfg.WebSearch.Enabled
-			s.WebSearchProvider = cfg.WebSearch.Provider
-			s.WebSearchURL = cfg.WebSearch.URL
+			if websearchRegistry == nil || !websearchRegistry.Enabled() {
+				return
+			}
+			s.WebSearchProvider = strings.Join(websearchRegistry.ProviderNames(), ",")
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			sum, err := websearchRegistry.Summary(ctx)
+			cancel()
+			if err != nil {
+				return
+			}
+			s.WebSearchQueriesTotal = int64(sum.Total)
+			var errs int
+			var last time.Time
+			for _, p := range sum.Providers {
+				errs += p.Errors
+				if p.LastQueryAt != nil && p.LastQueryAt.After(last) {
+					last = *p.LastQueryAt
+				}
+			}
+			s.WebSearchErrorsTotal = int64(errs)
+			if !last.IsZero() {
+				s.WebSearchLastQueryAt = last
+			}
 		})
 		// Update Prometheus metrics on each stats collection
 		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
@@ -5685,11 +5902,17 @@ Return STRICT JSON:
 			return capacityTextFn()
 		})
 		testRouter.SetStatsFunc(func() string {
-			if statsCollector == nil { return "Stats not available." }
+			if statsCollector == nil {
+				return "Stats not available."
+			}
 			s := statsCollector.Latest()
 			fmtB := func(b uint64) string {
-				if b > 1e9 { return fmt.Sprintf("%.1f GB", float64(b)/1e9) }
-				if b > 1e6 { return fmt.Sprintf("%.1f MB", float64(b)/1e6) }
+				if b > 1e9 {
+					return fmt.Sprintf("%.1f GB", float64(b)/1e9)
+				}
+				if b > 1e6 {
+					return fmt.Sprintf("%.1f MB", float64(b)/1e6)
+				}
 				return fmt.Sprintf("%d KB", b/1024)
 			}
 			return fmt.Sprintf("CPU: %.2f (%d cores) | Mem: %s/%s | Disk: %s/%s",
@@ -5775,7 +5998,11 @@ Return STRICT JSON:
 		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
 		go func() {
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p)
+				}
+			}()
 			if srvErr := httpServer.Start(ctx); srvErr != nil && srvErr != context.Canceled {
 				fmt.Printf("[%s] PWA server error: %v\n", cfg.Hostname, srvErr)
 			}
@@ -5785,7 +6012,11 @@ Return STRICT JSON:
 		hupCh := make(chan os.Signal, 1)
 		signal.Notify(hupCh, syscall.SIGHUP)
 		go func() {
-			defer func() { if p := recover(); p != nil { fmt.Printf("[reload] panic (recovered): %v\n", p) } }()
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[reload] panic (recovered): %v\n", p)
+				}
+			}()
 			for {
 				select {
 				case <-ctx.Done():
@@ -5854,9 +6085,9 @@ Return STRICT JSON:
 		AlertStore:    alertStore,
 		SchedStore:    schedStore,
 		ExitHookStore: exitHookStore,
-		QueueStore:    queueStore,            // BL357
-		SubStore:      discussionSubStore,    // BL358
-		ResultStore:   resultStore,           // BL360
+		QueueStore:    queueStore,         // BL357
+		SubStore:      discussionSubStore, // BL358
+		ResultStore:   resultStore,        // BL360
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
@@ -5983,10 +6214,10 @@ Return STRICT JSON:
 	// then sends a single bundled message to all remote channels.
 	// Each session gets a dedicated goroutine that waits for quiet period.
 	type pendingAlert struct {
-		events    []string
-		sess      *session.Session
-		lastPrompt string // last needs_input prompt text
-		ch        chan string // send new events to the goroutine
+		events     []string
+		sess       *session.Session
+		lastPrompt string      // last needs_input prompt text
+		ch         chan string // send new events to the goroutine
 	}
 	remoteBundleMu := &sync.Mutex{}
 	remoteBundles := make(map[string]*pendingAlert)
@@ -6000,7 +6231,11 @@ Return STRICT JSON:
 			fullID := sess.FullID
 			// Start flush goroutine for this session
 			go func() {
-				defer func() { if p := recover(); p != nil { fmt.Printf("[%s] alert bundle panic (recovered) sess=%s: %v\n", cfg.Hostname, fullID, p) } }()
+				defer func() {
+					if p := recover(); p != nil {
+						fmt.Printf("[%s] alert bundle panic (recovered) sess=%s: %v\n", cfg.Hostname, fullID, p)
+					}
+				}()
 				timer := time.NewTimer(5 * time.Second)
 				for {
 					select {
@@ -6432,12 +6667,12 @@ Return STRICT JSON:
 		// to either; daemon publishes once and both channels see it.
 		if sess != nil {
 			sessionPushExtras := map[string]any{
-				"type":         "session_state_changed",
-				"session_id":   sess.FullID,
-				"session_name": sess.Name,
-				"old_state":    "running",
-				"new_state":    "waiting_input",
-				"task":         truncate(sess.Task, 100),
+				"type":          "session_state_changed",
+				"session_id":    sess.FullID,
+				"session_name":  sess.Name,
+				"old_state":     "running",
+				"new_state":     "waiting_input",
+				"task":          truncate(sess.Task, 100),
 				"last_response": truncate(sess.LastResponse, 200),
 			}
 			server.PublishToTopics([]string{"session-" + sess.FullID, "alerts"}, server.PushEvent{
@@ -7338,7 +7573,6 @@ func ensureChannelExtracted(cfg *config.Config) error {
 	return nil
 }
 
-
 // ---- stop command ---------------------------------------------------------
 
 func newStopCmd() *cobra.Command {
@@ -7489,7 +7723,7 @@ func newStatsCmd() *cobra.Command {
 		Long:  "Display system resource usage, session statistics, and communication channel stats from the running daemon.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
-			resp, err := http.Get(loopbackBaseURL(cfg)+"/api/stats")
+			resp, err := http.Get(loopbackBaseURL(cfg) + "/api/stats")
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
@@ -7500,8 +7734,12 @@ func newStatsCmd() *cobra.Command {
 			}
 			fmtB := func(v interface{}) string {
 				b, _ := v.(float64)
-				if b > 1e9 { return fmt.Sprintf("%.1f GB", b/1e9) }
-				if b > 1e6 { return fmt.Sprintf("%.1f MB", b/1e6) }
+				if b > 1e9 {
+					return fmt.Sprintf("%.1f GB", b/1e9)
+				}
+				if b > 1e6 {
+					return fmt.Sprintf("%.1f MB", b/1e6)
+				}
 				return fmt.Sprintf("%.0f KB", b/1024)
 			}
 			getF := func(k string) float64 { v, _ := s[k].(float64); return v }
@@ -7513,7 +7751,13 @@ func newStatsCmd() *cobra.Command {
 			load := getF("cpu_load_avg_1")
 			fmt.Printf("CPU:     %.2f load / %d cores (%d%%)\n", load, cores, int(100*load/float64(cores)))
 			fmt.Printf("Memory:  %s / %s (%d%%)\n", fmtB(s["mem_used"]), fmtB(s["mem_total"]),
-				func() int { t := getF("mem_total"); if t > 0 { return int(100*getF("mem_used")/t) }; return 0 }())
+				func() int {
+					t := getF("mem_total")
+					if t > 0 {
+						return int(100 * getF("mem_used") / t)
+					}
+					return 0
+				}())
 			fmt.Printf("Disk:    %s / %s\n", fmtB(s["disk_used"]), fmtB(s["disk_total"]))
 			if getF("swap_total") > 0 {
 				fmt.Printf("Swap:    %s / %s\n", fmtB(s["swap_used"]), fmtB(s["swap_total"]))
@@ -7525,13 +7769,20 @@ func newStatsCmd() *cobra.Command {
 				}
 			}
 			fmt.Printf("Network: ↓%s ↑%s%s\n", fmtB(s["net_rx_bytes"]), fmtB(s["net_tx_bytes"]),
-				func() string { if s["ebpf_active"] == true { return " (per-process)" }; return " (system)" }())
+				func() string {
+					if s["ebpf_active"] == true {
+						return " (per-process)"
+					}
+					return " (system)"
+				}())
 
 			fmt.Println()
 			fmt.Println("── Daemon ──")
 			up := getI("uptime_seconds")
 			upStr := fmt.Sprintf("%dm%ds", up/60, up%60)
-			if up > 3600 { upStr = fmt.Sprintf("%dh%dm", up/3600, (up%3600)/60) }
+			if up > 3600 {
+				upStr = fmt.Sprintf("%dh%dm", up/3600, (up%3600)/60)
+			}
 			fmt.Printf("RSS:     %s\n", fmtB(s["daemon_rss_bytes"]))
 			fmt.Printf("Uptime:  %s\n", upStr)
 			fmt.Printf("Goroutines: %d  FDs: %d\n", getI("goroutines"), getI("open_fds"))
@@ -7558,20 +7809,26 @@ func newStatsCmd() *cobra.Command {
 					name, _ := ch["name"].(string)
 					typ, _ := ch["type"].(string)
 					enabled, _ := ch["enabled"].(bool)
-					if !enabled { continue }
+					if !enabled {
+						continue
+					}
 					if typ == "llm" {
 						total, _ := ch["total_sessions"].(float64)
 						active, _ := ch["active_sessions"].(float64)
 						avgDur, _ := ch["avg_duration_sec"].(float64)
 						durStr := fmt.Sprintf("%.0fs", avgDur)
-						if avgDur > 3600 { durStr = fmt.Sprintf("%.1fh", avgDur/3600) }
+						if avgDur > 3600 {
+							durStr = fmt.Sprintf("%.1fh", avgDur/3600)
+						}
 						fmt.Printf("  %-15s [LLM]  %d active / %d total  avg %s\n", name, int(active), int(total), durStr)
 					} else {
 						sent, _ := ch["msg_sent"].(float64)
 						recv, _ := ch["msg_recv"].(float64)
 						conn, _ := ch["connections"].(float64)
 						extra := ""
-						if conn > 0 { extra = fmt.Sprintf("  %d conn", int(conn)) }
+						if conn > 0 {
+							extra = fmt.Sprintf("  %d conn", int(conn))
+						}
 						fmt.Printf("  %-15s [%-4s] sent=%d recv=%d%s\n", name, typ, int(sent), int(recv), extra)
 					}
 				}
@@ -7597,7 +7854,7 @@ func newAlertsCmd() *cobra.Command {
 		Long:  "Show recent system alerts. Use --mark-read <id> to mark one alert as read, or --mark-all-read to mark all as read.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
-			baseURL := loopbackBaseURL(cfg)+"/api/alerts"
+			baseURL := loopbackBaseURL(cfg) + "/api/alerts"
 
 			markID, _ := cmd.Flags().GetString("mark-read")
 			markAll, _ := cmd.Flags().GetBool("mark-all-read")
@@ -7657,11 +7914,17 @@ func newAlertsCmd() *cobra.Command {
 			fmt.Printf("%d alerts (%d unread):\n\n", len(data.Alerts), data.UnreadCount)
 			for _, a := range data.Alerts {
 				marker := " "
-				if !a.Read { marker = "*" }
+				if !a.Read {
+					marker = "*"
+				}
 				ts := a.CreatedAt
-				if len(ts) > 19 { ts = ts[:19] }
+				if len(ts) > 19 {
+					ts = ts[:19]
+				}
 				msg := a.Message
-				if msg == "" { msg = "(state change)" }
+				if msg == "" {
+					msg = "(state change)"
+				}
 				fmt.Printf(" %s [%s] %s — %s\n", marker, a.Level, ts, msg)
 			}
 			return nil
@@ -7722,7 +7985,7 @@ func runStatus(cfg *config.Config) error {
 		}
 		client := &http.Client{Timeout: 2 * time.Second}
 		if resp, err := client.Do(req); err == nil {
-			defer resp.Body.Close() //nolint:errcheck
+			defer resp.Body.Close()                      //nolint:errcheck
 			json.NewDecoder(resp.Body).Decode(&sessions) //nolint:errcheck
 		}
 	}
@@ -8139,7 +8402,7 @@ func newConfigGetCmd() *cobra.Command {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
-	url := loopbackBaseURL(cfg)+"/api/config"
+	url := loopbackBaseURL(cfg) + "/api/config"
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
@@ -8153,7 +8416,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
-	url := loopbackBaseURL(cfg)+"/api/config"
+	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
@@ -9150,7 +9413,6 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-
 func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool) error {
 	// Try the structured HTTP API first
 	type startReq struct {
@@ -9553,16 +9815,16 @@ func runSessionTelemetry(cfg *config.Config, id string) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}
 	var tel struct {
-		CurrentTask       string  `json:"current_task"`
-		Tool              string  `json:"tool"`
-		File              string  `json:"file"`
-		Progress          float64 `json:"progress"`
-		ParentSessionID   string  `json:"parent_session_id"`
-		Tasks             []struct {
-			ID          string  `json:"id"`
-			Title       string  `json:"title"`
-			Status      string  `json:"status"`
-			DurationMs  int64   `json:"duration_ms"`
+		CurrentTask     string  `json:"current_task"`
+		Tool            string  `json:"tool"`
+		File            string  `json:"file"`
+		Progress        float64 `json:"progress"`
+		ParentSessionID string  `json:"parent_session_id"`
+		Tasks           []struct {
+			ID         string `json:"id"`
+			Title      string `json:"title"`
+			Status     string `json:"status"`
+			DurationMs int64  `json:"duration_ms"`
 		} `json:"tasks"`
 		Tests             map[string]any `json:"tests"`
 		GuardrailVerdicts []struct {
@@ -10100,14 +10362,14 @@ func runScheduleSpawn(cfg *config.Config, task, dir, backend, llmRef, model, eff
 	}
 	body := map[string]any{
 		"type":          "spawn",
-		"command":       task,      // API uses "command" field for the task prompt
+		"command":       task, // API uses "command" field for the task prompt
 		"project_dir":   dir,
 		"backend":       backend,
 		"llm_ref":       llmRef,
 		"model":         model,
 		"effort":        effort,
 		"cron_expr":     cronExpr,
-		"run_at":        at,        // API uses "run_at" not "at"
+		"run_at":        at, // API uses "run_at" not "at"
 		"schedule_name": schedName,
 		"name":          sessName,
 		"one_shot":      oneShot,
@@ -10256,7 +10518,11 @@ func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess
 // runScheduler is a daemon goroutine that fires time-based scheduled commands every 10 seconds.
 // On-input-prompt commands are handled by fireInputSchedules called from the NeedsInputHandler.
 func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *session.Manager) {
-	defer func() { if p := recover(); p != nil { fmt.Printf("[scheduler] panic (recovered): %v\n", p) } }()
+	defer func() {
+		if p := recover(); p != nil {
+			fmt.Printf("[scheduler] panic (recovered): %v\n", p)
+		}
+	}()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -10389,8 +10655,8 @@ func newMemoryCliCmd() *cobra.Command {
 			},
 		})
 	}
-	cmd.AddCommand(newMemoryScopeCmd())  // v7.0.0 S5 scope-hierarchy
-	cmd.AddCommand(newDiscussionCmd())   // BL332 T42c — discussion scopes
+	cmd.AddCommand(newMemoryScopeCmd()) // v7.0.0 S5 scope-hierarchy
+	cmd.AddCommand(newDiscussionCmd())  // BL332 T42c — discussion scopes
 	return cmd
 }
 
@@ -10543,24 +10809,38 @@ Remote AI config (SSE):
 	return cmd
 }
 
-// newMCPSearchCmd returns the `datawatch mcp-search` subcommand (BL372).
-// It runs a minimal stdio MCP server exposing the web_search tool backed by SearXNG.
-// Injected into opencode and goose sessions when web_search.enabled is true.
+// newMCPSearchCmd returns the `datawatch mcp-search` subcommand (BL372,
+// multi-provider registry added in BL391). It runs a minimal stdio MCP
+// server exposing the web_search tool, backed by whichever provider(s) are
+// configured in web_search.providers[] (SearXNG and/or Brave Search API,
+// tried in priority order with caching and usage tracking — see
+// internal/websearch). Injected into opencode and goose sessions when
+// web_search.enabled is true.
 func newMCPSearchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp-search",
-		Short: "Run the web search stdio MCP server (SearXNG proxy)",
-		Long: `Starts a stdio MCP server exposing a web_search tool backed by a SearXNG instance.
+		Short: "Run the web search stdio MCP server (multi-provider: SearXNG, Brave)",
+		Long: `Starts a stdio MCP server exposing a web_search tool backed by the
+configured search provider registry (web_search.providers[] in config.yaml —
+SearXNG and/or Brave Search API, tried in priority order).
 
-Config via environment variables (set automatically by the daemon):
-  DATAWATCH_WEB_SEARCH_URL         SearXNG base URL (required)
+Normal operation reads the full provider list from the daemon's config.yaml
+at $DATAWATCH_DATA_DIR (default ~/.datawatch), resolving any ${secret:name}
+API key references against the secrets store.
+
+For standalone testing without a config.yaml, a single-provider SearXNG
+override is available via environment variables (set automatically by the
+daemon in the legacy single-provider case) or flags — when set, this
+bypasses config.yaml entirely and runs exactly one SearXNG provider:
+  DATAWATCH_WEB_SEARCH_URL         SearXNG base URL
   DATAWATCH_WEB_SEARCH_ENGINE      engine list, default: bing
   DATAWATCH_WEB_SEARCH_NUM_RESULTS default result count, default: 10
 
 Or via flags (flags override env vars):
-  --url        SearXNG base URL
+  --url        SearXNG base URL (triggers the standalone override)
   --engine     engine list
-  --num-results  default result count`,
+  --num-results  default result count
+  --data-dir   override $DATAWATCH_DATA_DIR for config.yaml + secrets store`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := mcpsearchpkg.ConfigFromEnv()
 			if u, _ := cmd.Flags().GetString("url"); u != "" {
@@ -10572,12 +10852,16 @@ Or via flags (flags override env vars):
 			if n, _ := cmd.Flags().GetInt("num-results"); n > 0 {
 				cfg.NumResults = n
 			}
+			if d, _ := cmd.Flags().GetString("data-dir"); d != "" {
+				cfg.DataDir = d
+			}
 			return mcpsearchpkg.Run(cfg)
 		},
 	}
-	cmd.Flags().String("url", "", "SearXNG base URL (overrides DATAWATCH_WEB_SEARCH_URL)")
+	cmd.Flags().String("url", "", "SearXNG base URL — standalone single-provider override (overrides DATAWATCH_WEB_SEARCH_URL)")
 	cmd.Flags().String("engine", "", "Engine list (overrides DATAWATCH_WEB_SEARCH_ENGINE)")
 	cmd.Flags().Int("num-results", 0, "Default result count (overrides DATAWATCH_WEB_SEARCH_NUM_RESULTS)")
+	cmd.Flags().String("data-dir", "", "Override $DATAWATCH_DATA_DIR for config.yaml + secrets store")
 	return cmd
 }
 
@@ -10982,9 +11266,9 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                      // BL357
-	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))         // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                   // BL360
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))               // BL357
+	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg)) // BL358
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))            // BL360
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
 		AlertStore:    mcpAlertStore,
@@ -11503,7 +11787,9 @@ func runSetupTelegram(_ *cobra.Command, _ []string) error {
 }
 
 // newTelegramBot attempts to create a Telegram bot API client.
-func newTelegramBot(token string) (interface{ GetUpdates(tgbotapi.UpdateConfig) ([]tgbotapi.Update, error) }, error) {
+func newTelegramBot(token string) (interface {
+	GetUpdates(tgbotapi.UpdateConfig) ([]tgbotapi.Update, error)
+}, error) {
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, err
@@ -13545,11 +13831,11 @@ for common AI session interactions. Existing entries are not overwritten.`,
 
 // testInterfaceStatus holds non-sensitive status info for one interface.
 type testInterfaceStatus struct {
-	Name      string
-	Category  string
-	Enabled   bool
-	Details   []string // non-secret details (endpoints, binary paths, model names)
-	Checks    []string // checklist items needed to validate this interface
+	Name     string
+	Category string
+	Enabled  bool
+	Details  []string // non-secret details (endpoints, binary paths, model names)
+	Checks   []string // checklist items needed to validate this interface
 }
 
 func newTestCmd() *cobra.Command {
@@ -13694,9 +13980,9 @@ func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
 		},
 	})
 	out = append(out, testInterfaceStatus{
-		Name:    "Matrix",
+		Name:     "Matrix",
 		Category: "Messaging Backends",
-		Enabled: cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "",
+		Enabled:  cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "",
 		Details: func() []string {
 			if cfg.Matrix.Homeserver != "" {
 				return []string{
@@ -14308,7 +14594,7 @@ func diagTelegram(cfg *config.Config, sendTest bool) error {
 		var result struct {
 			OK     bool `json:"ok"`
 			Result struct {
-				Username string `json:"username"`
+				Username  string `json:"username"`
 				FirstName string `json:"first_name"`
 			} `json:"result"`
 		}
@@ -14406,9 +14692,9 @@ func diagSlack(cfg *config.Config, _ bool) error {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	var result struct {
-		OK   bool   `json:"ok"`
-		User string `json:"user"`
-		Team string `json:"team"`
+		OK    bool   `json:"ok"`
+		User  string `json:"user"`
+		Team  string `json:"team"`
 		Error string `json:"error"`
 	}
 	body, _ := io.ReadAll(resp.Body)

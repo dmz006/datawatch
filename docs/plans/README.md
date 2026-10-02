@@ -38,9 +38,11 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-09-30
+## Current state — 2026-10-02
 
-Latest release: **v8.38.0** (2026-09-30). feat(council): per-persona LLM backend/model assignment (BL390 Phase 1) — Settings gets a backend-pool multi-select (sourced from the existing LLM registry) and a cascading per-persona Backend → Model picker; `Persona.Model` existed since Council Mode shipped but was never actually passed to the inference call, always using the council's one shared `LLMRef` — now wired end-to-end, with the same backend/model pairing-cascade reasoning the per-task/per-story autonomous PRD overrides use. Persona + synthesis calls now admit through the same node:/llm: capacity ledger autonomous PRD tasks use. Found and fixed along the way: the Council persona list and "Edit persona" modal had been silently broken (always empty / "persona not found") since `/api/council/personas` was changed to a bare array in a prior release — four call sites still read a `.personas` property that no longer existed.
+Latest release: **v8.39.0** (2026-10-02). feat(websearch): multi-provider search registry (BL391) — named provider registry (SearXNG + Brave Search API, tried in priority order), internal SQLite result cache to reduce paid-API usage, per-provider usage tracking (total/today/week/month + cache hits + daily series + history), full 6-surface parity (REST/CLI/MCP/comm-channel/YAML/PWA). Closes GH#165 (confirmed Bing-via-SearXNG anti-scraping degradation) by letting a Brave provider run alongside or in front of SearXNG. Brave API key stored in the secrets vault, never plaintext.
+
+Previous: **v8.38.0** (2026-09-30). feat(council): per-persona LLM backend/model assignment (BL390 Phase 1) — Settings gets a backend-pool multi-select (sourced from the existing LLM registry) and a cascading per-persona Backend → Model picker; `Persona.Model` existed since Council Mode shipped but was never actually passed to the inference call, always using the council's one shared `LLMRef` — now wired end-to-end, with the same backend/model pairing-cascade reasoning the per-task/per-story autonomous PRD overrides use. Persona + synthesis calls now admit through the same node:/llm: capacity ledger autonomous PRD tasks use. Found and fixed along the way: the Council persona list and "Edit persona" modal had been silently broken (always empty / "persona not found") since `/api/council/personas` was changed to a bare array in a prior release — four call sites still read a `.personas` property that no longer existed.
 
 Previous: **v8.37.4** (2026-09-30). feat(pwa): expand/collapse button on the PRD markdown/file viewer — operator-requested, since the PWA itself can be maximized on a desktop browser but the viewer stayed capped at 860px. Auto-reverts if the window shrinks back down to where expanded/normal would look identical. Verified with a Playwright-driven browser test (no existing JS test harness in this repo to extend).
 
@@ -1007,6 +1009,30 @@ step** (per the plan's §7 DoD item 6). Root-cause fixes: per-session scoped cre
 capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in audit log
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
+
+#### BL391 — Multi-provider web search registry + usage tracking + caching (filed 2026-10-02)
+
+Operator-raised gap: web search was a single hardcoded SearXNG provider, with no usage
+tracking, no caching, and no way to add a second (paid, more reliable) provider. Also closes
+GH#165 (SearXNG's Bing engine is anti-scraping-degraded for compound queries — confirmed via
+~20 controlled fresh queries, not fixable via config). Built: named provider registry
+(SearXNG + Brave Search API, tried in priority order, extensible), a provider that "succeeds"
+with zero results is treated as a miss so a better lower-priority provider still gets tried,
+an internal SQLite-backed result cache (reduces paid-API usage), and a usage-tracking store
+(total/today/this week/this month + cache hits per provider and overall, a daily series for
+charting, and full search history). Operator's Brave Search API key stored in the secrets
+vault (`brave_search_api_key`), referenced from config via `${secret:...}`, never plaintext.
+Full parity: REST (`/api/websearch/*`), CLI (`datawatch websearch ...`), MCP
+(`websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`,
+`websearch_history`), comm channel (read-only stats + enable/disable — full CRUD stays off
+chat, same scope decision as Council's `backends` list), PWA (Settings provider list +
+Dashboard "Search Usage" card). Legacy single-provider config/REST/MCP surface kept as
+deprecated aliases with auto-migration into `providers[]` on load.
+
+**Plan doc:** [`2026-10-02-search-providers-registry.md`](2026-10-02-search-providers-registry.md)
+**Status:** shipped v8.39.0. Android/iPhone parity tracked via `dmz006/datawatch-app#205`, not implemented here (capability-parity target, not a config-input channel).
+
+---
 
 #### BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (filed 2026-09-30)
 

@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.0 — feat(websearch): multi-provider search registry, usage tracking, internal cache (BL391)
+
+### Added
+- **Multi-provider web search registry** — the single hardcoded SearXNG `web_search` MCP tool is replaced with a named provider registry (`internal/websearch`): SearXNG and/or Brave Search API, tried in priority order (lowest first), extensible to future provider types. A provider that "succeeds" with zero results is treated as a miss and the next provider in priority order is still tried — this directly defends against the GH#165 failure mode (SearXNG's Bing engine silently returning generic, useless results for compound queries instead of erroring).
+- **Internal result cache** — a SHA-based query cache (`internal/websearch.Cache`) with a configurable default TTL and an optional per-provider override, so a repeated identical query within the TTL window is served without a second (potentially paid) provider call. Disabled by setting `cache_enabled: false` or TTL to 0.
+- **Usage tracking** — every search attempt (cache hit, success, or failure) is recorded to a new SQLite store (`<data_dir>/websearch.db`, WAL mode). Exposes total/today/this-week/this-month + cache-hit counts per provider and overall, a zero-filled daily time series for charting, and full paginated search history (query, provider, cache hit/miss, success/error, result count, session).
+- **Operator's Brave Search API key** stored in the secrets vault (`brave_search_api_key`), referenced from `config.yaml` via `${secret:brave_search_api_key}` — never written in plaintext. Chosen after live research into SearXNG-only alternatives, proxying through a personal Google account (rejected — account-suspension risk), and a custom scraping gateway; see `docs/plans/2026-10-02-search-providers-registry.md` §1 for the full decision record.
+- **Full parity surface**: REST (`GET/POST /api/websearch/providers`, `GET/PATCH/DELETE /api/websearch/providers/{name}`, `POST .../{enable,disable,test}`, `GET /api/websearch/stats?days=N`, `GET /api/websearch/history`), CLI (`datawatch websearch providers|get|add|update|delete|enable|disable|test|stats|history`), MCP (`websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`), comm channel (read-only stats + enable/disable — full provider CRUD stays off chat, matching Council's `backends` precedent), YAML (`web_search.providers[]`, `cache_enabled`, `cache_ttl_seconds`), and PWA: a new Settings → Compute "Web Search Providers" card (add/edit/delete/enable/disable/test) and a new Dashboard "Search Usage" card (per-provider + total stats, a daily usage graph, recent history). The Monitor tab's web-search stat tile is rewritten to pull from the live multi-provider stats endpoint instead of the old flat single-provider fields, and gains a "History" button opening a full search-history modal.
+- Provider API keys are write-only everywhere: every list/get response omits the key entirely, matching the existing `handleOpenCodeProviders` secret-field convention.
+
+### Changed
+- Legacy single-provider config fields (`web_search.{provider,url,engine,num_results}` directly under `web_search:`) are still read and auto-migrated into a synthesized single `providers: [{name: "default", ...}]` entry at config-load time — no manual edit needed for existing deployments.
+- Legacy `GET /api/web_search/stats` (flat shape) and MCP `web_search_stats` are kept as deprecated aliases.
+
+### Fixed
+- Closes GH#165 — confirmed (via ~20 controlled fresh queries with cooldowns) that SearXNG's Bing engine returns intermittently degraded, generic results for compound/multi-word technical queries, consistent with Bing-side anti-scraping throttling rather than a fixable misconfiguration. A Brave provider can now be run alongside or ahead of SearXNG as a reliable, paid fallback.
+
 ## v8.38.0 — feat(council): per-persona backend/model assignment, capacity integration (BL390 Phase 1)
 
 ### Added

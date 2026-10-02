@@ -851,20 +851,34 @@ vision:
 
 **REST:** `GET /api/config` + `PUT /api/config` expose `vision.*` keys. `POST /api/vision/describe` (multipart). All routes are bearer-authenticated.
 
-#### Web Search (SearXNG)
+#### Web Search (BL391 — multi-provider registry)
 
-Self-hosted web search integration that injects a `web_search` MCP tool into opencode and goose agent sessions. Queries are proxied through an operator-configured [SearXNG](https://searxng.github.io/searxng/) instance.
+Search backend registry that injects a `web_search` MCP tool into opencode and goose agent sessions. Queries are tried against one or more named providers in priority order (lowest first), with an internal result cache to cut paid-API usage and per-provider usage tracking. Providers today: self-hosted [SearXNG](https://searxng.github.io/searxng/) and the [Brave Search API](https://brave.com/search/api/). A provider that "succeeds" with zero results is treated as a miss and the next provider is tried — this defends against the silent-degradation failure mode documented below (GH#165).
 
 **Config (`datawatch.yaml`):**
 
 ```yaml
 web_search:
   enabled: false
-  provider: searxng          # only "searxng" supported
-  url: ""                    # base URL of the SearXNG instance (required when enabled)
-  engine: bing               # use "bing" — others are CAPTCHA/rate-limited
-  num_results: 10
+  cache_enabled: true
+  cache_ttl_seconds: 900
+  providers:
+    - name: searxng-primary
+      type: searxng           # searxng | brave
+      enabled: true
+      priority: 0
+      url: ""                 # SearXNG instance URL (searxng only)
+      engine: bing             # SearXNG engine — see note below (searxng only)
+      num_results: 10
+    - name: brave-fallback
+      type: brave
+      enabled: true
+      priority: 1
+      api_key: "${secret:brave_search_api_key}"   # literal key or ${secret:name} ref
+      num_results: 10
 ```
+
+Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` directly under `web_search:`, pre-BL391) are still read: if `providers` is empty and any legacy field is set, a single `default` provider is synthesized from them at load time. New configs should use `providers[]`.
 
 **How it integrates:**
 
@@ -873,16 +887,23 @@ web_search:
 | **opencode sessions** | `web_search` added to `extraMCPSpecs` → injected into `.datawatch/.mcp.json` at session start. |
 | **goose sessions** | `GOOSE_MCP__WEB_SEARCH__TYPE/CMD/ARGS` env vars set on the goose process. |
 | **Skill** | `web-search-guidance` skill written to `<projectDir>/.datawatch/skills/web-search-guidance/` with query guidance, engine availability notes, and result interpretation tips. |
-| **Monitor tab** | Web Search card shows enabled state, queries/errors counters, and last-query timestamp. |
-| **MCP tool** | `web_search_stats` tool returns configuration and counters. |
+| **Dashboard** | "Search Usage" card: total/today/this week/this month + cache hits per provider and overall, a daily usage graph, and recent search history. |
+| **Monitor tab** | Web Search stat tile shows enabled state, active provider names, queries/errors counters, and last-query timestamp. |
+| **MCP tools** | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`. Legacy `web_search_stats` kept as a deprecated alias. |
 
-**REST:** `GET /api/config` exposes `web_search.*` keys. `PATCH /api/config` accepts `web_search.enabled`, `web_search.url`, `web_search.engine`, `web_search.num_results`. `GET /api/web_search/stats` returns runtime stats.
+**REST:** `GET/POST /api/websearch/providers`, `GET/PATCH/DELETE /api/websearch/providers/{name}`, `POST /api/websearch/providers/{name}/{enable,disable,test}`, `GET /api/websearch/stats?days=N`, `GET /api/websearch/history?limit=&offset=`. Provider API keys are never returned by GET — write-only, same convention as every other secret-backed credential field. Legacy `GET /api/web_search/stats` kept as a deprecated alias returning the old flat shape.
 
-**MCP sub-server:** `datawatch mcp-search --url <url> --engine bing` runs the stdio MCP server that provides the `web_search` tool to agents.
+**CLI:** `datawatch websearch providers | get <name> | add <name> --type ... | update <name> ... | delete <name> | enable <name> | disable <name> | test <name> | stats | history`
 
-**Engine note:** Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting immediately. Set `engine: bing` in config (the default).
+**Comm channel:** `websearch` (stats), `websearch providers`, `websearch stats`, `websearch history`, `websearch enable|disable|test <name>` — read-only + enable/disable only; full provider add/update/delete is chat-unfriendly and stays on REST/CLI/MCP/PWA (same scope decision as Council's `backends` list).
 
-**Known limitation (confirmed 2026-10-02):** even with `bing` correctly enabled on the SearXNG instance, its scraped results are *inconsistently* degraded for compound/multi-word technical queries — some return precisely, many collapse to generic top-level pages for only the first or most prominent term (e.g. "postgresql vacuum bloat monitoring dashboard" → generic PostgreSQL homepage/Wikipedia/download results, nothing about vacuum or bloat). This is intermittent, not deterministic — short or less brand-ambiguous queries often work fine. It reproduces consistently across unrelated fresh queries and persists across a 45s+ cooldown, so it isn't simple burst rate-limiting from one testing session. Most likely cause: Bing's own anti-scraping measures serving lower-fidelity results to detected automated traffic rather than blocking outright — not fixable via SearXNG or datawatch configuration. This is very likely what the LLM-research PRD's 2026-09-17 "SearXNG degraded/broken" note was observing. See `docs/plans/harness-research/candidates.md` for the original incident writeup. If an agent's search results look suspiciously generic for a specific/technical query, that's this limitation, not a tool malfunction — try rephrasing as a shorter or more distinctive query, or fall back to a direct fetch of a known documentation URL.
+**MCP sub-server:** `datawatch mcp-search` runs the stdio MCP server that provides the `web_search` tool to agents, loading the full `providers[]` list from `config.yaml` (with secrets resolved) by default, or a single-provider override via `--url`/`DATAWATCH_WEB_SEARCH_URL` for standalone testing.
+
+**Secrets:** a Brave provider's `api_key` should be a `${secret:name}` reference resolved against the configured secrets vault (builtin/KeePass/1Password/Vault) — never a plaintext key committed to `config.yaml`. Set via `datawatch secrets set <name>`, the PWA Settings secrets panel, or the provider's dedicated write-only `api_key` field in its add/update form.
+
+**Engine note (SearXNG providers):** Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting immediately. Set `engine: bing` (the default).
+
+**Known limitation (confirmed 2026-10-02):** even with `bing` correctly enabled on the SearXNG instance, its scraped results are *inconsistently* degraded for compound/multi-word technical queries — some return precisely, many collapse to generic top-level pages for only the first or most prominent term (e.g. "postgresql vacuum bloat monitoring dashboard" → generic PostgreSQL homepage/Wikipedia/download results, nothing about vacuum or bloat). This is intermittent, not deterministic — short or less brand-ambiguous queries often work fine. It reproduces consistently across unrelated fresh queries and persists across a 45s+ cooldown, so it isn't simple burst rate-limiting from one testing session. Most likely cause: Bing's own anti-scraping measures serving lower-fidelity results to detected automated traffic rather than blocking outright — not fixable via SearXNG or datawatch configuration. Filed as GH#165. This is very likely what the LLM-research PRD's 2026-09-17 "SearXNG degraded/broken" note was observing. See `docs/plans/harness-research/candidates.md` for the original incident writeup. **BL391's direct response to this limitation**: a Brave Search API provider (paid, no scraping/CAPTCHA risk) can be configured at a lower priority number than SearXNG so it's tried first, with SearXNG kept as a free fallback — or vice versa, SearXNG first with Brave as a paid-only-when-needed fallback. If an agent's search results look suspiciously generic for a specific/technical query on a SearXNG-only setup, that's this limitation, not a tool malfunction — try rephrasing as a shorter or more distinctive query, add a Brave provider, or fall back to a direct fetch of a known documentation URL.
 
 ### Settings — Compute
 

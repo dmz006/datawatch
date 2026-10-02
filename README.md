@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.38.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.38.0)
+[![Release](https://img.shields.io/badge/release-v8.39.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.39.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -88,6 +88,8 @@ datawatch skills sync community
 ---
 
 ## Current release
+
+**[v8.39.0](CHANGELOG.md) (2026-10-02)** — Feat: multi-provider web search registry (BL391) — the single hardcoded SearXNG `web_search` tool is replaced with a named provider registry (SearXNG + Brave Search API, tried in priority order), closing a confirmed Bing-via-SearXNG result-degradation bug (GH#165). Adds an internal result cache to cut paid-API usage and a SQLite usage-tracking store (total/daily/weekly/monthly + cache hits per provider, a usage graph, full search history), with full REST/CLI/MCP/comm-channel/YAML/PWA parity — a new Settings "Web Search Providers" card and Dashboard "Search Usage" card. Provider API keys are secrets-vault-backed, never plaintext.
 
 **[v8.38.0](CHANGELOG.md) (2026-09-30)** — Feat: Council personas can each use a different LLM backend + model than the council's shared default — Settings gets a backend-pool multi-select and a cascading per-persona Backend → Model picker; persona and synthesis calls now admit through the same capacity ledger autonomous PRD tasks use, so a council run can't over-subscribe a node also running PRD work. Fix: the Council persona list and "Edit persona" modal had been silently broken (always empty / "persona not found") since a prior release changed the underlying REST response shape.
 

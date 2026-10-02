@@ -1143,6 +1143,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleLLMCmd(cmd)
 	case CmdMemory:
 		r.handleMemoryCmd(cmd)
+	case CmdWebSearch:
+		r.handleWebSearchCmd(cmd)
 	case CmdTelemetry: // BL303 S1
 		r.handleTelemetryCmd(cmd)
 	case CmdGuardrail: // BL303 S2

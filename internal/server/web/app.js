@@ -6801,6 +6801,64 @@ function renderSettingsView() {
         </div>
         `).join('')}
 
+        <!-- BL391 — Web Search Providers card (named provider registry:
+             SearXNG + Brave Search API, tried in priority order). Mirrors
+             the Remote Servers list+form pattern (comms tab) rather than a
+             multi-step modal — a provider entry is small (name/type/
+             enabled/priority + 2-4 type-specific fields). -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
+          ${settingsSectionHeader('websearch_providers', t('websearch_providers_title')||'Web Search Providers', 'datawatch-definitions.md')}
+          <div id="settings-sec-websearch_providers" style="${secContent('websearch_providers')}">
+            <div style="padding:8px 0 4px;">
+              <button onclick="showWebSearchProviderForm(null)" style="background:var(--accent2);color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${t('websearch_provider_add_btn')||'Add Provider'}</button>
+            </div>
+            <div id="webSearchProvidersList" style="margin-bottom:4px;"></div>
+            <div id="webSearchProviderFormWrap" style="display:none;background:var(--bg3,#2d3148);border-radius:6px;padding:12px;margin-top:8px;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:8px;" id="webSearchProviderFormTitle">Add Provider</div>
+              <input type="hidden" id="webSearchProviderFormEditName" value="" />
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_name_label')||'Name'}<br>
+                  <input type="text" id="webSearchProviderFormName" placeholder="e.g. searxng-primary, brave-fallback" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_type_label')||'Type'}<br>
+                  <select id="webSearchProviderFormType" onchange="_webSearchProviderFormTypeChanged()" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;">
+                    <option value="searxng">SearXNG (self-hosted)</option>
+                    <option value="brave">Brave Search API</option>
+                  </select>
+                </label>
+                <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_priority_label')||'Priority (try order, lower first)'}<br>
+                  <input type="number" id="webSearchProviderFormPriority" value="0" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <div id="webSearchProviderFormSearxngFields">
+                  <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_url_label')||'SearXNG URL'}<br>
+                    <input type="text" id="webSearchProviderFormURL" placeholder="http://searxng.example.com:3001" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                  </label>
+                  <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_engine_label')||'Engine (comma-separated, default bing)'}<br>
+                    <input type="text" id="webSearchProviderFormEngine" placeholder="bing" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                  </label>
+                </div>
+                <div id="webSearchProviderFormBraveFields" style="display:none;">
+                  <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_apikey_label')||'API key'} (${t('websearch_provider_apikey_hint')||'literal or ${secret:name} — write-only, never shown again'})<br>
+                    <input type="password" id="webSearchProviderFormAPIKey" placeholder="${'${secret:brave_search_api_key}'}" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                  </label>
+                </div>
+                <label style="font-size:12px;color:var(--text2);">${t('websearch_provider_num_results_label')||'Default results per query'}<br>
+                  <input type="number" id="webSearchProviderFormNumResults" value="10" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
+                </label>
+                <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+                  <input type="checkbox" id="webSearchProviderFormEnabled" checked />
+                  ${t('websearch_provider_enabled_label')||'Enabled'}
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;">
+                <button onclick="saveWebSearchProvider()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">${t('save_btn')||'Save'}</button>
+                <button onclick="closeWebSearchProviderForm()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${t('cancel_btn')||'Cancel'}</button>
+              </div>
+              <div id="webSearchProviderFormError" style="color:var(--error,#ef4444);font-size:11px;margin-top:6px;display:none;"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- BL220-G6 — Cost rates editor -->
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)', 'api/sessions.md')}
@@ -12402,11 +12460,13 @@ const LLM_CONFIG_FIELDS = [
   { id: 'opencode', section: 'OpenCode', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'opencode.default_model', label: 'Default model (e.g. opencode/big-pickle)', type: 'text', placeholder: 'opencode/big-pickle' },
   ]},
-  { id: 'web_search', section: 'Web Search (SearXNG)', docs: 'howto/chat-and-llm-quickstart.md', fields: [
+  // BL391 — per-provider fields (url/engine/num_results/api_key) moved to the
+  // dedicated Web Search Providers card below; this section now only holds
+  // the registry-wide toggles.
+  { id: 'web_search', section: 'Web Search', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'web_search.enabled', label: 'Enable web search injection (opencode + goose sessions)', labelKey: 'settings_web_search_enabled', type: 'toggle' },
-    { key: 'web_search.url', label: 'SearXNG URL (e.g. http://searxng.example.com:3001)', labelKey: 'settings_web_search_url', type: 'text', placeholder: 'http://searxng.example.com:3001' },
-    { key: 'web_search.engine', label: 'Search engine (comma-separated, default: bing)', labelKey: 'settings_web_search_engine', type: 'text', placeholder: 'bing' },
-    { key: 'web_search.num_results', label: 'Default results per query (1–20)', labelKey: 'settings_web_search_num_results', type: 'number', placeholder: '10' },
+    { key: 'web_search.cache_enabled', label: 'Internal result cache (reduces paid-API usage)', labelKey: 'settings_web_search_cache_enabled', type: 'toggle' },
+    { key: 'web_search.cache_ttl_seconds', label: 'Default cache TTL (seconds)', labelKey: 'settings_web_search_cache_ttl', type: 'number', placeholder: '900' },
   ]},
   { id: 'rtk', section: 'RTK (Token Savings)', docs: 'rtk-integration.md', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
@@ -12550,6 +12610,7 @@ function loadCommsConfig() {
 }
 
 function loadLLMTabConfig() {
+  loadWebSearchProvidersList(); // BL391
   const nodeP = typeof window._loadComputeNodesCache === 'function'
     ? window._loadComputeNodesCache() : Promise.resolve([]);
   Promise.all([apiFetch('/api/config'), nodeP]).then(([cfg]) => {
@@ -12660,6 +12721,147 @@ function loadLLMTabConfig() {
       }
     }
   }).catch(() => {});
+}
+
+// ── BL391 — Web Search Providers card (Settings → Compute) ─────────────────
+// List + inline-form pattern, mirrors the Remote Servers card (loadServersList
+// et al., comms tab) rather than a modal — a provider entry is small enough
+// (name/type/enabled/priority + 2-4 type-specific fields) not to need one.
+
+function loadWebSearchProvidersList() {
+  const el = document.getElementById('webSearchProvidersList');
+  if (!el) return;
+  el.textContent = t('loading')||'Loading…';
+  apiFetch('/api/websearch/providers').then(d => {
+    const list = (d && d.providers) ? d.providers : [];
+    if (!list.length) {
+      el.innerHTML = `<div style="color:var(--text-dim,#888);font-size:12px;">${t('websearch_providers_empty')||'No search providers configured.'}</div>`;
+      return;
+    }
+    el.innerHTML = list.slice().sort((a,b) => (a.priority||0)-(b.priority||0)).map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(p.name)} <span style="color:var(--text2);font-weight:400;">(${escHtml(p.type)}, priority ${p.priority||0})</span></div>
+          <div style="font-size:11px;color:var(--text-dim,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.type==='searxng' ? escHtml(p.url||'') + ' · engine: ' + escHtml(p.engine||'bing') : (t('websearch_provider_apikey_set')||'API key set')}</div>
+        </div>
+        <span style="font-size:11px;padding:2px 6px;border-radius:10px;background:${p.enabled?'var(--accent2,#4f8)':'var(--bg3,#2d3148)'};color:${p.enabled?'#fff':'var(--text-dim,#888)'};">${p.enabled?(t('on_label')||'on'):(t('off_label')||'off')}</span>
+        <button onclick="testWebSearchProvider(${JSON.stringify(p.name)}, this)" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('websearch_provider_test_btn')||'Test'}</button>
+        <button onclick="toggleWebSearchProviderEnabled(${JSON.stringify(p.name)}, ${!p.enabled})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${p.enabled?(t('disable_btn')||'Disable'):(t('enable_btn')||'Enable')}</button>
+        <button onclick="showWebSearchProviderForm(${escHtml(JSON.stringify(p))})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('edit_btn')||'Edit'}</button>
+        <button onclick="deleteWebSearchProvider(${JSON.stringify(p.name)})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--danger,#f66);border:1px solid var(--border);cursor:pointer;">${t('delete_btn')||'Delete'}</button>
+      </div>`).join('');
+  }).catch(() => {
+    el.innerHTML = `<div style="color:var(--danger,#f66);font-size:12px;">${t('websearch_providers_load_failed')||'Failed to load providers.'}</div>`;
+  });
+}
+
+function _webSearchProviderFormTypeChanged() {
+  const typeEl = document.getElementById('webSearchProviderFormType');
+  const sxWrap = document.getElementById('webSearchProviderFormSearxngFields');
+  const braveWrap = document.getElementById('webSearchProviderFormBraveFields');
+  if (!typeEl || !sxWrap || !braveWrap) return;
+  const isBrave = typeEl.value === 'brave';
+  sxWrap.style.display = isBrave ? 'none' : '';
+  braveWrap.style.display = isBrave ? '' : 'none';
+}
+
+function showWebSearchProviderForm(entry) {
+  const wrap = document.getElementById('webSearchProviderFormWrap');
+  const nameEl = document.getElementById('webSearchProviderFormName');
+  const typeEl = document.getElementById('webSearchProviderFormType');
+  const priorityEl = document.getElementById('webSearchProviderFormPriority');
+  const urlEl = document.getElementById('webSearchProviderFormURL');
+  const engineEl = document.getElementById('webSearchProviderFormEngine');
+  const apiKeyEl = document.getElementById('webSearchProviderFormAPIKey');
+  const numResultsEl = document.getElementById('webSearchProviderFormNumResults');
+  const enabledEl = document.getElementById('webSearchProviderFormEnabled');
+  const editNameEl = document.getElementById('webSearchProviderFormEditName');
+  const titleEl = document.getElementById('webSearchProviderFormTitle');
+  const errEl = document.getElementById('webSearchProviderFormError');
+  if (!wrap || !nameEl) return;
+  if (titleEl) titleEl.textContent = entry ? `${t('websearch_provider_edit_title')||'Edit provider'} — ${entry.name}` : (t('websearch_provider_add_btn')||'Add Provider');
+  nameEl.value = entry ? (entry.name||'') : '';
+  nameEl.disabled = !!entry;
+  typeEl.value = entry ? (entry.type||'searxng') : 'searxng';
+  priorityEl.value = entry ? (entry.priority||0) : 0;
+  urlEl.value = entry ? (entry.url||'') : '';
+  engineEl.value = entry ? (entry.engine||'') : '';
+  apiKeyEl.value = ''; // write-only — never pre-filled, even on edit
+  numResultsEl.value = entry ? (entry.num_results||10) : 10;
+  if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
+  if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  _webSearchProviderFormTypeChanged();
+  wrap.style.display = '';
+}
+
+function closeWebSearchProviderForm() {
+  const wrap = document.getElementById('webSearchProviderFormWrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function saveWebSearchProvider() {
+  const nameEl = document.getElementById('webSearchProviderFormName');
+  const typeEl = document.getElementById('webSearchProviderFormType');
+  const priorityEl = document.getElementById('webSearchProviderFormPriority');
+  const urlEl = document.getElementById('webSearchProviderFormURL');
+  const engineEl = document.getElementById('webSearchProviderFormEngine');
+  const apiKeyEl = document.getElementById('webSearchProviderFormAPIKey');
+  const numResultsEl = document.getElementById('webSearchProviderFormNumResults');
+  const enabledEl = document.getElementById('webSearchProviderFormEnabled');
+  const editNameEl = document.getElementById('webSearchProviderFormEditName');
+  const errEl = document.getElementById('webSearchProviderFormError');
+  if (!nameEl || !typeEl) return;
+  const name = nameEl.value.trim();
+  const editName = editNameEl ? editNameEl.value : '';
+  const isEdit = !!editName;
+  if (!isEdit && !name) {
+    if (errEl) { errEl.textContent = t('websearch_provider_name_required')||'Name is required.'; errEl.style.display = ''; }
+    return;
+  }
+  const body = {
+    type: typeEl.value,
+    enabled: enabledEl ? enabledEl.checked : true,
+    priority: parseInt(priorityEl.value, 10) || 0,
+    num_results: parseInt(numResultsEl.value, 10) || 10,
+  };
+  if (!isEdit) body.name = name;
+  if (typeEl.value === 'searxng') {
+    body.url = urlEl.value.trim();
+    body.engine = engineEl.value.trim() || 'bing';
+  } else if (apiKeyEl.value.trim()) {
+    body.api_key = apiKeyEl.value.trim();
+  }
+  const method = isEdit ? 'PATCH' : 'POST';
+  const path = isEdit ? `/api/websearch/providers/${encodeURIComponent(editName)}` : '/api/websearch/providers';
+  apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+    .then(() => { closeWebSearchProviderForm(); loadWebSearchProvidersList(); })
+    .catch(e => { if (errEl) { errEl.textContent = e.message || (t('save_failed')||'Save failed.'); errEl.style.display = ''; } });
+}
+
+function deleteWebSearchProvider(name) {
+  if (!confirm((t('websearch_provider_delete_confirm')||'Delete search provider') + ` "${name}"?`)) return;
+  apiFetch(`/api/websearch/providers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    .then(() => loadWebSearchProvidersList())
+    .catch(e => showToast(e.message || (t('delete_failed')||'Delete failed.'), 'error'));
+}
+
+function toggleWebSearchProviderEnabled(name, enabled) {
+  apiFetch(`/api/websearch/providers/${encodeURIComponent(name)}/${enabled?'enable':'disable'}`, { method: 'POST' })
+    .then(() => loadWebSearchProvidersList())
+    .catch(e => showToast(e.message || (t('save_failed')||'Save failed.'), 'error'));
+}
+
+function testWebSearchProvider(name, btnEl) {
+  const origText = btnEl ? btnEl.textContent : '';
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = t('testing_label')||'Testing…'; }
+  apiFetch(`/api/websearch/providers/${encodeURIComponent(name)}/test`, { method: 'POST' })
+    .then(d => {
+      if (d && d.ok) showToast((t('websearch_provider_test_ok')||'Provider reachable') + ` (${d.result_count||0} ${t('results_label')||'results'})`, 'success');
+      else showToast((t('websearch_provider_test_failed')||'Test failed') + ': ' + ((d&&d.error)||'unknown error'), 'error');
+    })
+    .catch(e => showToast(e.message || (t('websearch_provider_test_failed')||'Test failed.'), 'error'))
+    .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = origText; } });
 }
 
 // loadOpenCodeProvidersCard fetches provider key status and appends the
@@ -20187,6 +20389,64 @@ function loadObserverClusterNodes() {
   });
 }
 
+// BL391 — Dashboard "Search Usage" card data + rendering. See the call site
+// in renderStatsData for why this is a decoupled fetch/cache/interval
+// instead of riding the main stats poll.
+function refreshWebSearchStatsCard() {
+  apiFetch('/api/websearch/stats?days=14').then(stats => {
+    window._webSearchStatsHTML = renderWebSearchStatsHTML(stats || {});
+    const el = document.getElementById('websearchStatsCardBody');
+    if (el) el.innerHTML = window._webSearchStatsHTML;
+  }).catch(() => {
+    window._webSearchStatsHTML = `<span style="color:var(--text2);">${t('websearch_stats_unavailable')||'Search usage stats unavailable.'}</span>`;
+    const el = document.getElementById('websearchStatsCardBody');
+    if (el) el.innerHTML = window._webSearchStatsHTML;
+  });
+}
+
+function renderWebSearchStatsHTML(stats) {
+  const names = stats.provider_names || [];
+  if (!names.length) {
+    return `<span style="color:var(--text2);">${t('websearch_stats_no_providers')||'No search providers enabled. Configure one in Settings → Web Search Providers.'}</span>`;
+  }
+  const s = stats.summary || {};
+  const providerRows = (s.providers || []).map(p => `
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--accent2);">${escHtml(p.name)}</span><span>${p.total||0} <span style="color:var(--text2);">(${p.today||0} ${t('websearch_today_suffix')||'today'})</span></span></div>`).join('');
+  const series = stats.daily_series || [];
+  const maxCount = Math.max(1, ...series.map(d => d.count || 0), 1);
+  const bars = series.map(d => {
+    const barH = Math.max(1, Math.round(16 * (d.count||0) / maxCount));
+    return `<div title="${escHtml(d.date)}: ${d.count||0}" style="width:5px;height:16px;display:flex;align-items:flex-end;flex:0 0 auto;"><div style="width:100%;height:${barH}px;background:var(--accent,#4f8);border-radius:1px;"></div></div>`;
+  }).join('');
+  return `
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('websearch_total')||'Total'}</span><span>${s.total||0}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('websearch_today')||'Today'}</span><span>${s.today||0}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('websearch_this_week')||'This week'}</span><span>${s.this_week||0}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('websearch_this_month')||'This month'}</span><span>${s.this_month||0}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('websearch_cache_hits')||'Cache hits'}</span><span>${s.cache_hits||0}</span></div>
+    <div style="margin:4px 0;">${providerRows}</div>
+    <div style="display:flex;align-items:flex-end;gap:1px;height:16px;margin-top:4px;" title="${t('websearch_daily_graph_title')||'Daily queries, last 14 days'}">${bars}</div>
+    <button onclick="webSearchOpenHistoryView()" style="margin-top:6px;font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);cursor:pointer;">${t('websearch_history_btn')||'History'}</button>`;
+}
+
+function webSearchOpenHistoryView() {
+  apiFetch('/api/websearch/history?limit=50').then(d => {
+    const entries = d && d.history ? d.history : [];
+    const rows = entries.map(h => {
+      const when = escHtml(new Date(h.time).toLocaleString());
+      const statusColor = h.success ? (h.cache_hit ? 'var(--accent2)' : 'var(--success)') : 'var(--error)';
+      const status = h.success ? (h.cache_hit ? (t('websearch_cache_hit')||'cache') : (t('websearch_live')||'live')) : (t('websearch_error_label')||'error');
+      return `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;">
+        <span style="color:var(--text2);flex:0 0 150px;">${when}</span>
+        <span style="flex:0 0 110px;color:var(--accent2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(h.provider_name||'')}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(h.query||'')}</span>
+        <span style="color:${statusColor};flex:0 0 50px;text-align:right;">${status}</span>
+      </div>`;
+    }).join('') || `<div style="color:var(--text2);font-size:12px;">${t('websearch_history_empty')||'No search history yet.'}</div>`;
+    showModal({ title: t('websearch_history_modal_title')||'Search history', body: rows });
+  }).catch(e => showToast(e.message || String(e), 'error'));
+}
+
 function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_not_available')||'Stats not available.'}</div>`; return; }
     // Preserve scroll position to prevent visible jump on real-time updates
@@ -20328,17 +20588,22 @@ function renderStatsData(el, data) {
       html += `<div class="stat-card"><div class="stat-label">${t('stats_ollama_server')||'Ollama Server'}</div>
         <div style="font-size:10px;color:var(--error);">${escHtml(data.ollama_stats.error || 'offline')}</div></div>`;
     }
-    // BL372 — web search stats card (always visible when enabled, hidden otherwise).
-    if (data.web_search_enabled) {
-      const wqTotal = data.web_search_queries_total || 0;
-      const weTotal = data.web_search_errors_total || 0;
-      const wEngineColor = data.web_search_engine ? 'var(--success)' : 'var(--text2)';
-      html += `<div class="stat-card"><div class="stat-label">${t('stats_web_search')||'Web Search'}</div>
-        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('web_search_queries')||'Queries'}</span><span>${wqTotal}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('web_search_errors')||'Errors'}</span><span style="color:${weTotal>0?'var(--error)':'var(--text)'};">${weTotal}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Engine</span><span style="color:${wEngineColor};">${escHtml(data.web_search_engine||'—')}</span></div>
-        </div></div>`;
+    // BL391 — Search Usage card: per-provider + total usage stats, a daily
+    // mini-graph, and a link to recent-searches history. Usage rollups live
+    // in internal/websearch's own SQLite store (not the sync `data` blob
+    // this function otherwise renders from), so this card updates via its
+    // own decoupled fetch — cached HTML (window._webSearchStatsHTML) avoids
+    // a flash-to-"Loading…" on every renderStatsData rebuild, and the
+    // window._webSearchStatsInterval guard (same fix as the BL v8.33.5 "PWA
+    // stats poll stacking" bug) ensures only one refresh timer ever exists
+    // across repeated renderStatsData calls.
+    html += `<div class="stat-card" style="grid-column:span 2;min-width:260px;">
+      <div class="stat-label">${t('stats_web_search')||'Search Usage'}</div>
+      <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+(t('loading')||'Loading…')+'</span>')}</div>
+    </div>`;
+    if (!window._webSearchStatsInterval) {
+      refreshWebSearchStatsCard();
+      window._webSearchStatsInterval = setInterval(refreshWebSearchStatsCard, 20000);
     }
     // BL367 — quality gate stats card (visible when at least one gate has run).
     if (data.quality_gate_runs > 0) {
@@ -21843,6 +22108,7 @@ function _dashLoop(ts) {
     _dashRenderBurnRate();
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
+    _dashRenderWebSearchUsage();
     _dashRenderSmoke();
   }
 
@@ -21953,6 +22219,9 @@ const DASH_CARD_DEFS = [
   // BL387 Phase 3 — memory scope stats tile.
   { id: 'memory-scope', label: 'Memory Scopes', icon: '🧠', defaultCs: 3,
     body: () => '<div id="dashMemoryScopeCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+  // BL391 — multi-provider web search usage tile.
+  { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
+    body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 ];
 
 const DASH_DEFAULT_LAYOUT = [
@@ -21964,6 +22233,7 @@ const DASH_DEFAULT_LAYOUT = [
   { id: 'heatmap',      cs: 3,  rs: 1 },
   { id: 'guardrails',   cs: 3,  rs: 1 },
   { id: 'memory-scope', cs: 3,  rs: 1 },
+  { id: 'websearch-usage', cs: 3, rs: 1 },
   { id: 'ekg',          cs: 6,  rs: 2 },
   { id: 'smoke',        cs: 6,  rs: 2 },
 ];
@@ -22050,6 +22320,7 @@ function _dashBuildGrid(layout) {
   _dashRenderBurnRate();
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
+  _dashRenderWebSearchUsage();
   _drawGantt();
   _dashForceStep();
   _drawConstellation();
@@ -22353,6 +22624,62 @@ function _dashRenderMemoryScope() {
         <div style="height:100%;width:${pct}%;background:var(--accent,#6366f1);border-radius:2px;"></div>
       </div>
     </div>`;
+  }
+  el.innerHTML = html;
+}
+
+// BL391 — multi-provider web search usage tile (Dashboard).
+if (!_dash._webSearchStats) _dash._webSearchStats = null;
+
+function _dashFetchWebSearchStats() {
+  apiFetch('/api/websearch/stats?days=14').then(d => {
+    _dash._webSearchStats = d || null;
+    _dashRenderWebSearchUsage();
+  }).catch(() => {});
+}
+
+function _dashRenderWebSearchUsage() {
+  const el = document.getElementById('dashWebSearchUsageCard');
+  if (!el) return;
+  const d = _dash._webSearchStats;
+  if (!d) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('websearch_stats_unavailable') || 'Search usage stats unavailable')}</div>`;
+    _dashFetchWebSearchStats();
+    return;
+  }
+  const sum = d.summary || {};
+  const series = (d.daily_series || []).map(p => p.count || 0);
+  const providers = sum.providers || [];
+  let html = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
+    <span style="font-size:16px;font-weight:700;color:var(--text);">${sum.total||0}</span>
+    <span style="font-size:9px;color:var(--text2);">${escHtml(t('websearch_total_searches')||'total searches')}</span>
+  </div>
+  <div style="display:flex;gap:10px;font-size:9px;color:var(--text2);margin-bottom:6px;">
+    <span>${escHtml(t('websearch_today')||'today')}: <b style="color:var(--text);">${sum.today||0}</b></span>
+    <span>${escHtml(t('websearch_week')||'week')}: <b style="color:var(--text);">${sum.this_week||0}</b></span>
+    <span>${escHtml(t('websearch_month')||'month')}: <b style="color:var(--text);">${sum.this_month||0}</b></span>
+    <span>${escHtml(t('websearch_cache')||'cached')}: <b style="color:var(--text);">${sum.cache_hits||0}</b></span>
+  </div>`;
+  if (series.length >= 2) {
+    html += `<div style="margin-bottom:6px;">${_sparkline(series, 140, 28, 'var(--accent,#6366f1)')}</div>`;
+  }
+  if (!providers.length) {
+    html += `<div style="color:var(--text2);font-size:10px;">${escHtml(d.enabled ? (t('websearch_no_providers')||'No providers configured') : (t('websearch_disabled')||'Web search disabled'))}</div>`;
+  } else {
+    const maxN = Math.max(1, ...providers.map(p => p.total||0));
+    for (const p of providers) {
+      const n = p.total || 0;
+      const pct = Math.round(n / maxN * 100);
+      html += `<div style="margin-bottom:5px;">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);margin-bottom:2px;">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.name)}">${escHtml(p.name)}${p.errors?` <span style="color:var(--error,#ef4444);">(${p.errors} err)</span>`:''}</span>
+          <span style="flex-shrink:0;margin-left:4px;color:var(--text);">${n}</span>
+        </div>
+        <div style="height:4px;background:var(--border);border-radius:2px;">
+          <div style="height:100%;width:${pct}%;background:var(--accent,#6366f1);border-radius:2px;"></div>
+        </div>
+      </div>`;
+    }
   }
   el.innerHTML = html;
 }

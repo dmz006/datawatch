@@ -3,13 +3,43 @@ package search
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/websearch"
 )
+
+// emptyRegistry is a registry with no providers — exercises the
+// "not configured" branch without needing a live backend.
+func emptyRegistry(t *testing.T) *websearch.Registry {
+	t.Helper()
+	r, err := websearch.NewRegistry(nil, nil, nil, 0)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	return r
+}
+
+// workingRegistry is a registry with one SearXNG provider pointed at an
+// httptest server that always returns one fixed result.
+func workingRegistry(t *testing.T) *websearch.Registry {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"title":"Test","url":"https://example.com","content":"A test result."}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	r, err := websearch.NewRegistry([]websearch.ProviderSpec{
+		{Name: "test", Type: "searxng", Enabled: true, URL: srv.URL, Engine: "bing", NumResults: 10},
+	}, nil, nil, 0)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	return r
+}
 
 // TestSendMsg verifies NDJSON output: one JSON object per line, no Content-Length header.
 func TestSendMsg(t *testing.T) {
@@ -38,7 +68,7 @@ func TestSendMsg(t *testing.T) {
 func TestHandlePing(t *testing.T) {
 	var buf bytes.Buffer
 	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "ping", ID: 42})
-	if err := handle(&buf, Config{Engine: "bing", NumResults: 10}, raw); err != nil {
+	if err := handle(&buf, emptyRegistry(t), 10, "", raw); err != nil {
 		t.Fatal(err)
 	}
 	var resp jsonrpc
@@ -54,7 +84,7 @@ func TestHandlePing(t *testing.T) {
 func TestHandleToolsList(t *testing.T) {
 	var buf bytes.Buffer
 	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "tools/list", ID: 1})
-	if err := handle(&buf, Config{Engine: "bing", NumResults: 5}, raw); err != nil {
+	if err := handle(&buf, emptyRegistry(t), 5, "", raw); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "web_search") {
@@ -62,20 +92,60 @@ func TestHandleToolsList(t *testing.T) {
 	}
 }
 
-// TestHandleToolsCallNoURL verifies an error is returned when URL is not set.
-func TestHandleToolsCallNoURL(t *testing.T) {
+// TestHandleToolsCallNoProviders verifies an error is returned when no
+// providers are configured/enabled.
+func TestHandleToolsCallNoProviders(t *testing.T) {
 	var buf bytes.Buffer
 	params, _ := json.Marshal(map[string]interface{}{
 		"name":      "web_search",
 		"arguments": map[string]interface{}{"query": "test"},
 	})
 	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "tools/call", ID: 1, Params: params})
-	if err := handle(&buf, Config{Engine: "bing", NumResults: 10}, raw); err != nil {
+	if err := handle(&buf, emptyRegistry(t), 10, "", raw); err != nil {
 		t.Fatal(err)
 	}
 	s := buf.String()
-	if !strings.Contains(s, "not configured") && !strings.Contains(s, "Search error") {
-		t.Errorf("expected error text about missing URL, got: %q", s)
+	if !strings.Contains(s, "no enabled web_search providers") {
+		t.Errorf("expected error text about no providers, got: %q", s)
+	}
+}
+
+// TestHandleToolsCallWithRegistry verifies a real search round-trips
+// through handle() into the registry and back out as MCP tool content.
+func TestHandleToolsCallWithRegistry(t *testing.T) {
+	var buf bytes.Buffer
+	params, _ := json.Marshal(map[string]interface{}{
+		"name":      "web_search",
+		"arguments": map[string]interface{}{"query": "test query"},
+	})
+	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "tools/call", ID: 1, Params: params})
+	if err := handle(&buf, workingRegistry(t), 10, "sess-1", raw); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	if !strings.Contains(s, "Test") || !strings.Contains(s, "example.com") {
+		t.Errorf("expected result content in response, got: %q", s)
+	}
+	if strings.Contains(s, `"isError":true`) {
+		t.Errorf("expected isError:false for a successful search, got: %q", s)
+	}
+}
+
+// TestHandleToolsCallUnknownTool verifies a request for a tool other than
+// web_search is rejected.
+func TestHandleToolsCallUnknownTool(t *testing.T) {
+	var buf bytes.Buffer
+	params, _ := json.Marshal(map[string]interface{}{"name": "not_web_search", "arguments": map[string]interface{}{}})
+	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "tools/call", ID: 1, Params: params})
+	if err := handle(&buf, emptyRegistry(t), 10, "", raw); err != nil {
+		t.Fatal(err)
+	}
+	var resp jsonrpc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if resp.Error == nil {
+		t.Error("expected error response for unknown tool name")
 	}
 }
 
@@ -83,7 +153,7 @@ func TestHandleToolsCallNoURL(t *testing.T) {
 func TestHandleUnknownMethod(t *testing.T) {
 	var buf bytes.Buffer
 	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "unknown/method", ID: 99})
-	if err := handle(&buf, Config{Engine: "bing", NumResults: 10}, raw); err != nil {
+	if err := handle(&buf, emptyRegistry(t), 10, "", raw); err != nil {
 		t.Fatal(err)
 	}
 	var resp jsonrpc
@@ -99,7 +169,7 @@ func TestHandleUnknownMethod(t *testing.T) {
 func TestHandleNotification(t *testing.T) {
 	var buf bytes.Buffer
 	raw, _ := json.Marshal(jsonrpc{JSONRPC: "2.0", Method: "notifications/initialized"})
-	if err := handle(&buf, Config{Engine: "bing", NumResults: 10}, raw); err != nil {
+	if err := handle(&buf, emptyRegistry(t), 10, "", raw); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() != 0 {
@@ -107,76 +177,8 @@ func TestHandleNotification(t *testing.T) {
 	}
 }
 
-// TestSearxngSearch verifies parsing against a mock SearXNG HTTP server.
-func TestSearxngSearch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/search" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"results":[{"title":"Test","url":"https://example.com","content":"A test result."}]}`)
-	}))
-	defer srv.Close()
-
-	cfg := Config{URL: srv.URL, Engine: "bing", NumResults: 10}
-	results, err := searxngSearch(cfg, "test query", 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Title != "Test" {
-		t.Errorf("unexpected title: %q", results[0].Title)
-	}
-}
-
-// TestSearxngSearchLimit verifies the limit parameter is respected.
-func TestSearxngSearchLimit(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"results":[
-			{"title":"R1","url":"https://r1.com","content":"c1"},
-			{"title":"R2","url":"https://r2.com","content":"c2"},
-			{"title":"R3","url":"https://r3.com","content":"c3"}
-		]}`)
-	}))
-	defer srv.Close()
-
-	results, err := searxngSearch(Config{URL: srv.URL, Engine: "bing", NumResults: 10}, "q", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 2 {
-		t.Errorf("limit=2: expected 2 results, got %d", len(results))
-	}
-}
-
-// TestSearxngSearchSnippetTrunc verifies long content is truncated to 400 chars.
-func TestSearxngSearchSnippetTrunc(t *testing.T) {
-	long := strings.Repeat("x", 500)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		body, _ := json.Marshal(map[string]interface{}{
-			"results": []map[string]interface{}{
-				{"title": "T", "url": "https://t.com", "content": long},
-			},
-		})
-		_, _ = w.Write(body)
-	}))
-	defer srv.Close()
-
-	results, err := searxngSearch(Config{URL: srv.URL, Engine: "bing", NumResults: 10}, "q", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results[0].Content) != 400 {
-		t.Errorf("expected snippet truncated to 400 chars, got %d", len(results[0].Content))
-	}
-}
-
-// TestConfigFromEnv verifies env var parsing.
+// TestConfigFromEnv verifies env var parsing (standalone single-provider
+// override path).
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("DATAWATCH_WEB_SEARCH_URL", "http://searxng.example.com:3001")
 	t.Setenv("DATAWATCH_WEB_SEARCH_ENGINE", "brave")
@@ -201,31 +203,61 @@ func TestConfigFromEnvDefaults(t *testing.T) {
 	t.Setenv("DATAWATCH_WEB_SEARCH_NUM_RESULTS", "")
 
 	cfg := ConfigFromEnv()
-	if cfg.Engine != "bing" {
-		t.Errorf("default engine should be bing, got: %q", cfg.Engine)
-	}
 	if cfg.NumResults != 10 {
 		t.Errorf("default num_results should be 10, got: %d", cfg.NumResults)
 	}
 }
 
-// TestReadDaemonConfig verifies config.yaml fallback parsing.
-func TestReadDaemonConfig(t *testing.T) {
+// TestBuildRegistryStandaloneOverride verifies the env-var single-provider
+// override path builds a working one-provider SearXNG registry without
+// needing a config.yaml at all.
+func TestBuildRegistryStandaloneOverride(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"title":"T","url":"https://t.example","content":"c"}]}`))
+	}))
+	defer srv.Close()
+
+	registry, err := buildRegistry(Config{URL: srv.URL, Engine: "bing", NumResults: 10})
+	if err != nil {
+		t.Fatalf("buildRegistry: %v", err)
+	}
+	if !registry.Enabled() {
+		t.Fatal("expected a working registry from the override path")
+	}
+	names := registry.ProviderNames()
+	if len(names) != 1 || names[0] != "override" {
+		t.Errorf("ProviderNames() = %v, want [override]", names)
+	}
+}
+
+// TestBuildRegistryFromConfigYAML verifies the real multi-provider path:
+// loading config.yaml's web_search.providers[] list (replacing the old
+// pre-BL391 single-field web_search.url/engine shape this test used to
+// exercise via readDaemonConfig).
+func TestBuildRegistryFromConfigYAML(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DATAWATCH_DATA_DIR", dir)
 	t.Setenv("DATAWATCH_WEB_SEARCH_URL", "")
 	t.Setenv("DATAWATCH_WEB_SEARCH_ENGINE", "")
 
-	yaml := "other_key: value\nweb_search:\n  url: http://searxng.local:3001\n  engine: google\nanother_key: value\n"
+	yaml := "web_search:\n" +
+		"  enabled: true\n" +
+		"  providers:\n" +
+		"    - name: searxng-local\n" +
+		"      type: searxng\n" +
+		"      enabled: true\n" +
+		"      url: http://searxng.local:3001\n" +
+		"      engine: bing\n"
 	if err := os.WriteFile(dir+"/config.yaml", []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg := ConfigFromEnv()
-	if cfg.URL != "http://searxng.local:3001" {
-		t.Errorf("URL from config.yaml: got %q, want http://searxng.local:3001", cfg.URL)
+	registry, err := buildRegistry(Config{DataDir: dir, NumResults: 10})
+	if err != nil {
+		t.Fatalf("buildRegistry: %v", err)
 	}
-	if cfg.Engine != "google" {
-		t.Errorf("Engine from config.yaml: got %q, want google", cfg.Engine)
+	names := registry.ProviderNames()
+	if len(names) != 1 || names[0] != "searxng-local" {
+		t.Errorf("ProviderNames() = %v, want [searxng-local]", names)
 	}
 }
