@@ -3189,9 +3189,9 @@ func (s *Server) handleKGStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.kgAPI == nil {
-		json.NewEncoder(w).Encode(map[string]bool{"enabled": false})
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": false}) //nolint:errcheck
 		return
-	} //nolint:errcheck
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.kgAPI.Stats()) //nolint:errcheck
 }
