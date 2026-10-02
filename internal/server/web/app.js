@@ -15416,15 +15416,20 @@ window._toggleFileViewerExpand = function() {
   const btn = document.getElementById('fileViewerExpandBtn');
   if (!panel || !btn) return;
   const expanded = panel.dataset.expanded === '1';
+  // A plain inline max-width can't win here — .confirm-modal-overlay >
+  // .response-modal carries an !important max-width cap (style.css), so the
+  // resize must go through a class (.file-viewer-expanded) with a selector
+  // specific enough to out-rank that rule, same as how the session-terminal
+  // expand toggle (toggleFullscreen) resizes via html.pwa-expanded rather
+  // than fighting inline styles.
+  panel.classList.toggle('file-viewer-expanded', !expanded);
   if (expanded) {
-    panel.style.maxWidth = 'min(860px,95vw)';
     panel.dataset.expanded = '0';
-    btn.innerHTML = '&#10533;';
+    btn.innerHTML = '&#9974;';
     btn.title = 'Expand to use more of the window';
   } else {
-    panel.style.maxWidth = '98vw';
     panel.dataset.expanded = '1';
-    btn.innerHTML = '&#10534;';
+    btn.innerHTML = '&#9645;';
     btn.title = 'Collapse to normal width';
   }
 };
@@ -15472,7 +15477,7 @@ window._showFileViewer = function(path) {
     <div class="response-modal-header">
       <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(path)}">${escHtml(name)}</span>
       <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px;">
-        <button class="btn-icon" id="fileViewerExpandBtn" onclick="_toggleFileViewerExpand()" title="Expand to use more of the window">&#10533;</button>
+        <button class="btn-icon" id="fileViewerExpandBtn" onclick="_toggleFileViewerExpand()" title="Expand to use more of the window">&#9974;</button>
         <a href="${escHtml(dlUrl)}" download="${escHtml(name)}" style="text-decoration:none;font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text);background:var(--bg2);display:inline-flex;align-items:center;gap:3px;" title="Download ${escHtml(name)}">⬇ Download</a>
         <button class="btn-icon" onclick="_closeFileViewer()" title="Close">&#10005;</button>
       </div>

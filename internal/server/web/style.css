@@ -2815,6 +2815,17 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   max-width: min(560px, calc(100% - 24px)) !important;
   box-sizing: border-box;
 }
+/* #fileViewerPanel needs to beat the !important cap above — its own ID
+   outranks the plain-class rule by specificity, so it wins regardless of
+   !important vs !important or source order. Without this, the panel's own
+   inline max-width (set in _showFileViewer / _toggleFileViewerExpand) is
+   always overridden by the rule above and the expand button is a no-op. */
+.confirm-modal-overlay > .response-modal#fileViewerPanel {
+  max-width: min(860px, 95vw) !important;
+}
+.confirm-modal-overlay > .response-modal#fileViewerPanel.file-viewer-expanded {
+  max-width: 98vw !important;
+}
 .confirm-modal-overlay .form-select,
 .confirm-modal-overlay .form-input,
 .confirm-modal-overlay select,
