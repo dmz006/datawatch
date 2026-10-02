@@ -392,3 +392,18 @@ CVE-2024-28757
 # corruption, not just a DoS — prioritize tracing this one first on
 # re-review.
 CVE-2026-103111
+
+# python3.11 / libpython3.11-* — CVE-2026-19553 (HIGH, no fix in bookworm,
+# "Fixed Version" column blank in the trivy scan output). Affects
+# libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal.
+# Certificate verification bypass via missing server_hostname validation in
+# ssl.SSLContext.wrap_bio(). Blocked v8.39.0's release CI
+# (containers/agent-gemini).
+# CAVEAT (2026-10-02): whether agent-gemini's Python runtime actually calls
+# SSLContext.wrap_bio() (vs. the higher-level wrap_socket()/create_default_context()
+# paths most HTTP clients use, which are unaffected) was NOT independently
+# traced before suppressing — only that no Debian fix exists yet, so there is
+# no alternative but to suppress or block the release entirely. Re-review
+# should actually trace which TLS call path agent-gemini's code uses before
+# re-accepting on the next cycle.
+CVE-2026-19553
