@@ -12,7 +12,11 @@ implemented** (2026-10-03, same day — see §8): `datawatch-community` has
 `.github/workflows/validate.yml` + `scripts/validate_registry.py` (schema
 validation for skill/plugin submissions), that check is now a required
 status check on `main-protection`, plus `SECURITY.md` and `CODEOWNERS`.
-Phase 2 (datawatch-app's `require_code_owner_review` flip) remains plan-only.
+**Phase 2 is now also implemented** (2026-10-03, same day — see §9):
+`datawatch-app`'s `require_code_owner_review` is flipped to `true`, making
+its existing `CODEOWNERS` file actually enforce. All three phases from §4
+are now done; only the two §3c baseline gaps (`datawatch`'s own missing
+`CODEOWNERS`, Swift CodeQL coverage for `datawatch-app`) remain open.
 Originally: plan only, no settings changed, no files written
 to any repo, per operator instruction ("build a plan... if needed"). Memory checked
 (`memory_recall`): no prior plan or decision record for GitHub-settings
@@ -349,6 +353,24 @@ the ruleset's pre-existing `deletion`/`non_fast_forward`/`pull_request`
 rules (replaced the whole `rules` array in the PUT, since the rulesets API
 takes the full set, not a diff — verified the existing three rules first so
 none were silently dropped).
+
+## 9. Phase 2 implemented, same day — `datawatch-app`
+
+Operator authorized Phase 2 directly ("go ahead and start Phase 2"). Exactly
+what §4 specified: flipped `require_code_owner_review` from `false` to
+`true` on `datawatch-app`'s `main-protection` ruleset (`id: 16600320`) via
+`PUT .../rulesets/16600320`, preserving every other rule/parameter verbatim
+(fetched the full current ruleset first, changed only that one field, and
+kept the existing `deletion`/`non_fast_forward` rules and the
+`required_status_checks` rule — `Verify Version parity` + `Build + test` —
+untouched, same "replace needs the full set" caution as §8). Verified with a
+follow-up `GET` that the field actually took, and confirmed `CODEOWNERS`
+(`* @dmz006` plus path-specific entries for `AGENT.md`, `SECURITY.md`,
+`LICENSE`, the security/threat-model docs, and `.github/workflows/`) is
+still in place — the file was already correct, it just wasn't being
+enforced until this flip. No other changes made, per the plan's own note
+not to weaken this repo's already-stricter review settings to "match"
+`datawatch`.
 
 `SECURITY.md` was scoped per the plan to "report a malicious or vulnerable
 community submission" rather than daemon-level vulnerabilities, with an

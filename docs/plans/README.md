@@ -1058,8 +1058,15 @@ under `skills/` using a non-standard `skill.yaml` instead of a real plugin
 `required_approving_review_count` stays 0 — manual operator review remains
 the real safety model; CI is a second line of defense, not a replacement.
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 covers the CodeQL follow-up, §8 covers Phase 1)
-**Status:** CodeQL/private-vuln-reporting/Dependabot-security-updates toggles AND datawatch-community's Phase 1 (validation CI + SECURITY.md + CODEOWNERS) are implemented and verified. Still open: Phase 2 (datawatch-app: flip `require_code_owner_review`), `datawatch`'s own missing CODEOWNERS, and proper Swift CodeQL coverage for datawatch-app via a custom workflow.
+Same-day Phase 2 (operator authorized directly: "go ahead and start Phase 2"):
+flipped `require_code_owner_review` to `true` on `datawatch-app`'s
+`main-protection` ruleset — its `CODEOWNERS` file already existed and
+listed real protected paths, it just wasn't being enforced. No other
+changes; this repo's review strictness was already ahead of `datawatch`'s
+own baseline and the plan explicitly said not to weaken it to "match."
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2)
+**Status:** all three phases from §4 are now implemented and verified — CodeQL/private-vuln-reporting/Dependabot-security-updates toggles, datawatch-community's Phase 1 (validation CI + SECURITY.md + CODEOWNERS), and datawatch-app's Phase 2 (`require_code_owner_review`). Still open: `datawatch`'s own missing CODEOWNERS and proper Swift CodeQL coverage for datawatch-app via a custom workflow (both §3c baseline gaps, never in scope for Phases 1/2).
 
 ---
 
