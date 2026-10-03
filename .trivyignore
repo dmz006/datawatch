@@ -74,17 +74,6 @@ CVE-2026-9538
 # operator-configured; no untrusted LFS servers are contacted.
 CVE-2025-26625
 
-# libexpat1 — no fix in bookworm (3 CVEs, 2 HIGH + 1 will_not_fix)
-# expat is pulled transitively by Python, dbus, and other system libs.
-# datawatch does not parse XML directly; Go uses encoding/xml from stdlib.
-#   CVE-2025-59375: Debian will_not_fix — mitigated by OS-level constraints.
-#   CVE-2026-25210 (HIGH): information disclosure via crafted XML. No untrusted
-#     XML is parsed inside the container by the datawatch service.
-#   CVE-2026-45186 (HIGH): DoS via crafted XML input. Same surface.
-CVE-2025-59375
-CVE-2026-25210
-CVE-2026-45186
-
 # python3.11 / libpython3.11-* — no fix in bookworm (3 CVEs)
 # Python 3.11 is installed in agent images for aider and other Python-based
 # tools. The datawatch service itself is written in Go and does not use Python.
@@ -244,25 +233,11 @@ CVE-2026-15308
 # MessagePack streams from external sources.
 GHSA-6v7p-g79w-8964
 
-# setuptools CVE-2025-47273 — HIGH, fixed in 78.1.1
-# Path traversal in setuptools during egg extraction. setuptools is used
-# at pip install time for package management; not invoked at container
-# runtime by the datawatch service. Fix requires aider's dependency chain
-# to update setuptools (the affected copy is vendored inside another package);
-# suppress until upstream resolves.
-CVE-2025-47273
-
 # util-linux family (bsdutils, libmount1, util-linux) — CVE-2026-53613 (HIGH, affected, no fix in bookworm)
 # TOCTOU race in the mount(8) program via /proc/self/mountinfo. The agent-base
 # container never calls mount(8) directly; the binary runs as an unprivileged
 # non-root user with no mount capabilities. Not exploitable in this context.
 CVE-2026-53613
-
-# libexpat1 — CVE-2026-66046 (HIGH, affected, no fix in bookworm)
-# DoS in Expat (libexpat) through 2.8.3. libexpat is a transitive dependency
-# of git and gnupg in the image; not directly invoked by the datawatch service.
-# No XML parsing of untrusted input occurs at container runtime.
-CVE-2026-66046
 
 # rsync — no fix in bookworm (14 CVEs, all HIGH, all require rsync >= 3.5.0)
 # rsync is included in the agent-base image for use as a file-sync utility
@@ -339,12 +314,6 @@ CVE-2026-78410
 # Debian bookworm 3.11.2. Reviewed 2026-09-25; re-review each release cycle.
 CVE-2026-8328
 
-# expat (libexpat1) — CVE-2026-93990 (HIGH, no fix in bookworm 2.5.0-1+deb12u3)
-# Malformed UTF-16 input handling in the XML parser. Agent containers parse XML
-# only from trusted tooling output (git/npm/pip metadata) and expose no XML
-# input surface. Present in every agent image via the base. Reviewed 2026-09-26.
-CVE-2026-93990
-
 # sudo — CVE-2026-96512 (HIGH, no fix in bookworm 1.9.13p3-1+deb12u4)
 # TZ-based bypass of sudoers NOTBEFORE/NOTAFTER time restrictions. The
 # containers configure no time-restricted sudoers rules and run a single
@@ -358,24 +327,6 @@ CVE-2026-96512
 # connection, so the flawed code path is never reached. Blocked v8.35.0's
 # release CI (containers/stats-cluster). Reviewed 2026-09-29.
 CVE-2026-84782
-
-# libexpat1 — CVE-2024-28757 (HIGH, affected). Trivy's advisory lists a fix
-# at 2.5.0-1+deb12u4, but the live bookworm-security mirror's highest
-# candidate is still 2.5.0-1+deb12u3 (verified directly: `apt-cache policy
-# libexpat1` against debian:bookworm) — the Dockerfile's existing
-# unconditional `apt-get upgrade` layer (Dockerfile.agent-base) genuinely
-# cannot install a version that isn't mirrored yet; this is not a missed
-# upgrade step. XML entity expansion (worst case: resource-exhaustion DoS,
-# not code execution). Blocked v8.38.0's release CI (containers/agent-base).
-# CAVEAT (2026-09-30): this image is the shared foundation for every
-# agent-* variant (claude-code/opencode/aider/gemini/goose), each with its
-# own runtime dependency tree; whether any of those actually parse
-# attacker-influenced XML (e.g. a fetched RSS/Atom feed, a web_search
-# result) was NOT independently traced before suppressing — only asserted
-# by pattern-matching this file's existing entries. Re-review should
-# actually trace this before re-accepting on the next cycle. Drop this
-# suppression entirely once bookworm-security publishes +deb12u4 or later.
-CVE-2024-28757
 
 # libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
 # verified as the mirror's current candidate — not yet backported at all).
@@ -424,3 +375,4 @@ CVE-2026-19553
 # is an actively maintained package (unlike most Debian-package entries
 # above, which wait on a slow OS-level security backport).
 CVE-2026-93748
+
