@@ -407,3 +407,20 @@ CVE-2026-103111
 # should actually trace which TLS call path agent-gemini's code uses before
 # re-accepting on the next cycle.
 CVE-2026-19553
+
+# http-cache-semantics (npm, node-pkg) — CVE-2026-93748 (HIGH, affected, no
+# fix released — 4.2.0 is the latest version published to npm, and it's the
+# one flagged). Information disclosure via the max-stale cache-control
+# directive. Transitive dependency of @google/gemini-cli's own package.json
+# (agent-gemini only). gemini-cli's own outbound HTTP calls are to Google's
+# Gemini API; this library's cache logic only matters for responses from
+# whatever server the HTTP client talks to. Blocked v8.39.1's image-refresh
+# run (refresh/agent-gemini). Reviewed 2026-10-03.
+# CAVEAT: whether any gemini-cli dependency path actually exercises
+# max-stale-aware caching against attacker-influenced content (vs. just
+# Google's own API responses) was NOT independently traced before
+# suppressing — only that no newer published version exists. Re-review
+# should trace this, and check for a fix on each release cycle since this
+# is an actively maintained package (unlike most Debian-package entries
+# above, which wait on a slow OS-level security backport).
+CVE-2026-93748
