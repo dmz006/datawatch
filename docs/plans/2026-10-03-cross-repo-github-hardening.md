@@ -442,3 +442,27 @@ already available since `ci.yml` already uses that action) — the issue
 asks whoever picks it up to verify the graph is actually being submitted
 before trusting the gate, not just drop the workflow in and assume it
 works.
+
+**Also filed [`datawatch-app`#207](https://github.com/dmz006/datawatch-app/issues/207)**
+for the Swift CodeQL gap from §7, at the operator's explicit prompt
+("shouldn't the datawatch-app agent take care of swift? file issues").
+Dug into `.github/workflows/ios-build.yml` first rather than filing a bare
+"fix this" issue — it already has the exact working recipe for building
+this project from a clean checkout (`xcodegen generate` from a
+CI-generated `project.yml`, after assembling the KMP shared module's
+XCFramework), which explains *why* default-setup's generic `autobuild`
+can't find a project: `DatawatchClient.xcodeproj` doesn't exist until that
+build step runs. The issue includes a worked custom-workflow draft that
+reuses `ios-build.yml`'s own steps around CodeQL's `init`/`analyze`
+actions, and flags four things to actually verify rather than assume
+(`build-mode: manual` correctness, duplicate-build cost vs. folding into
+`ios-build.yml` itself, SHA-pinning, and a default-setup/custom-workflow
+language conflict check) — deliberately not implemented directly here,
+since getting a Swift CodeQL build genuinely green needs several
+push-and-watch CI iterations against this repo's actual Xcode toolchain,
+which belongs to whoever is actively working in that codebase.
+
+With both of these filed, every actionable item from this plan that was
+within direct reach (settings toggles, a validation CI for a lightweight
+schema, a documentation file) is done; what's left is real cross-repo
+implementation work now tracked as `datawatch-app`#206 and #207.

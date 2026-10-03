@@ -1082,8 +1082,15 @@ rather than implementing cross-repo; flagged the Gradle dependency-graph
 submission caveat up front so whoever picks it up doesn't ship a gate that
 silently reviews nothing.
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2, §10 datawatch CODEOWNERS + dependency-review gap)
-**Status:** all three phases from §4 are implemented and verified, plus `datawatch`'s own CODEOWNERS gap is closed. Still open: Swift CodeQL coverage for `datawatch-app` via a custom workflow (§7), and `datawatch-app`#206 (filed, not yet implemented there).
+Also filed [`datawatch-app`#207`](https://github.com/dmz006/datawatch-app/issues/207)
+for the Swift CodeQL gap (§7), with a worked custom-workflow draft reusing
+`ios-build.yml`'s own build steps (the real reason default-setup's
+autobuild fails: the Xcode project is generated at build time by
+`xcodegen`, not committed) — not implemented directly, since getting it
+green needs real CI iteration against this repo's Xcode toolchain.
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2, §10 datawatch CODEOWNERS + both filed issues)
+**Status:** everything within direct reach is done — all three phases from §4, plus `datawatch`'s own CODEOWNERS gap. The two remaining items are real cross-repo implementation work, now tracked as `datawatch-app`#206 (dependency-review-action) and #207 (Swift CodeQL).
 
 ---
 
