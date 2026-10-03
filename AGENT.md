@@ -234,14 +234,38 @@ is the step-by-step checklist to actually run through** — these bullets are th
 rules it's derived from; use the checklist, don't re-derive it from memory each
 time.
 
-- **README.md must reflect the current release.** Every release commit updates the
-  `**Current release: vX.Y.Z (DATE).**` line at the top of `/README.md` and refreshes
-  the "Highlights since vN.0.0" bullets if anything notable shipped. The marquee is a
-  project signpost; staleness here is a worse impression than staleness in the backlog.
+- **README.md must reflect the current release — and stay short.** Every release
+  commit adds a `## Current release` entry for the new version. The marquee is a
+  project signpost; staleness here is a worse impression than staleness in the
+  backlog — but so is unbounded length (caught 2026-10-02: the section had grown to
+  ~100 lines of individual full-paragraph patch entries going back dozens of
+  versions). Keep the discipline:
+  - **At most 3–4 entries in full-paragraph form** under `## Current release` — the
+    new version plus the most recent genuinely significant ones. Everything older
+    than that gets folded into a `### vX.Y highlights` bullet list (one line per
+    feature, no paragraphs) grouped by minor version, matching the existing
+    `### v8.0 highlights` / `### v8.1 highlights` style further down the file.
+  - **A patch release (vX.Y.Z+1) does not get its own full-paragraph entry** unless
+    it's independently notable (a real bug a user would recognize) — fold ordinary
+    patches straight into the current minor version's highlights bullet instead of
+    appending a new paragraph per patch.
+  - **Never leak internal tracker IDs** (`BL###`, `B###`, `F###`) into README.md —
+    same rule as A7 below, applies here first since this is the file most readers
+    see. Describe the feature, not its ticket.
+  - Every entry keeps its `[vX.Y.Z](CHANGELOG.md)` link; the full patch-by-patch
+    history belongs in CHANGELOG.md, not README.md — say so explicitly once near the
+    top of the section rather than repeating "see CHANGELOG" on every line.
 - **Backlog refactor each release.** Every release commit also touches
   `docs/plans/README.md`: clear `## Unclassified` into BL### entries, mark just-shipped
   items as `✅ Closed in vX.Y.Z` and move them under the closed section, and confirm
-  the open table only has actually-open work.
+  the open table only has actually-open work. Unlike README.md, `docs/plans/README.md`
+  is an internal tracking ledger (not a public-facing document) and may legitimately
+  run long — but it should not grow *unbounded* either: when a closed BL### entry's
+  details are no longer load-bearing for current work (its plan doc, if any, has
+  already been archived to `historical-plans/` per the Folder hygiene rule above),
+  trim its live entry down to the one-line "shipped in vX.Y.Z" summary already kept
+  in the version-log section, rather than preserving two full-length copies of the
+  same closed feature's writeup indefinitely.
 - **Embedded docs must be current at binary build time** (added v5.23.0). The
   embedded PWA docs viewer reads from `internal/server/web/docs/` which is mirrored
   from the canonical `docs/` tree by `make sync-docs`. The Makefile's `build` and

@@ -2788,6 +2788,7 @@ func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	if m.onSessionEnd != nil {
 		m.onSessionEnd(current)
 	}
+	m.triggerSummarize(current.FullID, 200)
 }
 
 // MarkChannelActivityFromText (post-BL266 / v6.11.24) — DEMOTED to
@@ -3102,6 +3103,7 @@ func (m *Manager) Kill(fullID string) error {
 	if m.onSessionEnd != nil {
 		m.onSessionEnd(sess)
 	}
+	m.triggerSummarize(sess.FullID, 200)
 
 	// BL351 — deep recursive cascade: kill all descendants regardless of their own settings.
 	if sess.KillChildrenRecursive {
@@ -4232,6 +4234,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			if m.onSessionEnd != nil {
 				m.onSessionEnd(sess)
 			}
+			m.triggerSummarize(sess.FullID, 200)
 			continue
 		}
 		// Check if tmux session still exists (retry once to handle transient failures)
@@ -4248,6 +4251,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
+			m.triggerSummarize(sess.FullID, 200)
 			continue
 		}
 

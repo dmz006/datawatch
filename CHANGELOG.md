@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.1 — fix(session): last_summary_long never populated for completed/killed/failed sessions
+
+### Fixed
+- **`last_summary_long` was only ever populated for `waiting_input` sessions** (GH#164) — `Manager.triggerSummarize` (the async LLM summarizer) was wired into the 4 call sites inside the tmux-output-scraping goroutine that detect `DATAWATCH_COMPLETE`/opencode-exit, but never into `subprocessFinish` (subprocess exit → `StateComplete`/`StateFailed`), `KillSession` (→ `StateKilled`), or either boot-time orphan-recovery path (→ `StateFailed`). Mobile clients fell back to `last_response` — a raw mid-task LLM snippet — for the common case of a session ending via kill, subprocess exit, or daemon-restart orphan cleanup. Added the same one-line `triggerSummarize` call (nil-safe, async, fire-and-forget — already proven at the other 4 sites) to all 4 missing call sites.
+
 ## v8.39.0 — feat(websearch): multi-provider search registry, usage tracking, internal cache (BL391)
 
 ### Added

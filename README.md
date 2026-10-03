@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.39.0-success)](https://github.com/dmz006/datawatch/releases/tag/v8.39.0)
+[![Release](https://img.shields.io/badge/release-v8.39.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.39.1)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -89,108 +89,38 @@ datawatch skills sync community
 
 ## Current release
 
-**[v8.39.0](CHANGELOG.md) (2026-10-02)** — Feat: multi-provider web search registry (BL391) — the single hardcoded SearXNG `web_search` tool is replaced with a named provider registry (SearXNG + Brave Search API, tried in priority order), closing a confirmed Bing-via-SearXNG result-degradation bug (GH#165). Adds an internal result cache to cut paid-API usage and a SQLite usage-tracking store (total/daily/weekly/monthly + cache hits per provider, a usage graph, full search history), with full REST/CLI/MCP/comm-channel/YAML/PWA parity — a new Settings "Web Search Providers" card and Dashboard "Search Usage" card. Provider API keys are secrets-vault-backed, never plaintext.
+**[v8.39.1](CHANGELOG.md) (2026-10-02)** — Multi-provider web search registry: the single hardcoded SearXNG `web_search` tool is replaced with a named provider registry (SearXNG + Brave Search API, tried in priority order), closing a confirmed Bing-via-SearXNG result-degradation bug. Adds an internal result cache to cut paid-API usage and a usage-tracking store (daily/weekly/monthly + cache hits per provider, a usage graph, full search history), with full REST/CLI/MCP/comm-channel/YAML/PWA parity. Provider API keys are secrets-vault-backed, never plaintext. *(v8.39.1 patch: a session ending via kill, subprocess exit, or daemon-restart cleanup now gets an AI summary too, not just the `waiting_input` path.)*
 
-**[v8.38.0](CHANGELOG.md) (2026-09-30)** — Feat: Council personas can each use a different LLM backend + model than the council's shared default — Settings gets a backend-pool multi-select and a cascading per-persona Backend → Model picker; persona and synthesis calls now admit through the same capacity ledger autonomous PRD tasks use, so a council run can't over-subscribe a node also running PRD work. Fix: the Council persona list and "Edit persona" modal had been silently broken (always empty / "persona not found") since a prior release changed the underlying REST response shape.
+**[v8.38.0](CHANGELOG.md) (2026-09-30)** — Council personas can each use a different LLM backend + model than the council's shared default, with a cascading Backend → Model picker in Settings; council calls now admit through the same capacity ledger autonomous PRD tasks use.
 
-**[v8.37.4](CHANGELOG.md) (2026-09-30)** — Feat: expand/collapse button on the PRD markdown/file viewer, so it can use most of the window on a desktop browser instead of staying capped at 860px; auto-reverts if the window shrinks back down.
+**[v8.37.0](CHANGELOG.md) (2026-09-30)** — `session_state` single-session WS broadcast — mobile/external `/ws` clients can adopt lighter-weight single-session diffs instead of re-parsing the full session list on every change.
 
-**[v8.37.3](CHANGELOG.md) (2026-09-30)** — Fix: opening a session from a differently-sized device (e.g. Android Auto vs. phone/desktop) no longer flips it from `waiting_input` to `running` on its own — the server skips a redundant tmux resize when the pane is already the requested size, instead of letting every TUI repaint read as backend activity.
+**[v8.35.0](CHANGELOG.md) (2026-09-30)** — Structural Automaton editing — add/remove a story or task without re-running decompose, across every surface. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams.
 
-**[v8.37.2](CHANGELOG.md) (2026-09-30)** — Fix: overriding an autonomous task's backend (`set_task_llm`) no longer leaves a stale model string from the previous backend attached, which could make the new backend fail outright on an unrecognized model name.
+See [CHANGELOG.md](CHANGELOG.md) for the full patch-by-patch history, including every fix between these entries.
 
-**[v8.37.1](CHANGELOG.md) (2026-09-30)** — Fix: PWA `session_state` WS handler read the wrong payload shape, which would have corrupted the session list once v8.37.0's broadcast was deployed.
+### v8.1x–v8.3x highlights
 
-**[v8.37.0](CHANGELOG.md) (2026-09-30)** — Feat: `session_state` single-session WS broadcast (GH#162) — `Hub.BroadcastSessionState` fires alongside the existing full-list `sessions` push so mobile/external `/ws` clients can adopt lighter-weight single-session diffs instead of re-parsing the full list on every change.
+- **Capacity-ledger unification** (v8.36.0) — interactive session starts and the verifier's own LLM calls now admit through the same per-node/per-LLM capacity ledger autonomous tasks use, so they can't over-subscribe a busy node.
+- **NVML GPU probe + per-system resource grid** (v8.26.0) — no-CGO direct NVML binding in `datawatch-stats`; live CPU/GPU/mem cards in the Observer tab and PRD overview.
+- **Autonomous SSE stall detection** (v8.25.5) — a watchdog kills stalled opencode sessions for automatic retry instead of hanging indefinitely.
+- **Per-guardrail block approval** (v8.28.5) — approve one blocked guardrail at a time across CLI, comm channel, and PWA, instead of all-or-nothing.
+- **Autonomous task session visibility + retry** (v8.23.0) — task rows show a session link, error message, and verifier summary; a `↺ Retry` button on failed/blocked tasks.
+- **Image attachments + vision pipeline** (v8.15.0–v8.19.x) — 📷 upload in the PWA (and via Signal/Telegram), vision-model description injected before the session sees the message, `vision_describe` MCP tool.
+- **Prompt-injection hardening** (v8.18.0) — data-boundary tags on every LLM call site, an injection scanner at the PRD/task API boundary, and a federation trust notice when a PRD originates from a remote peer.
+- **Quality gates + verifier git-diff grounding** (v8.16.0–v8.17.0) — the autonomous executor captures a test baseline and blocks on regression; the verifier sees the actual diff, not just the task spec.
+- **Goose backend** (v8.14.0) — interactive and one-shot Goose LLM backends with full config-surface parity.
+- **Independent planning vs. execution backend** (v8.20.0) — choose which LLM runs PRD decompose separately from which backend executes tasks.
 
-**[v8.36.9](CHANGELOG.md) (2026-09-30)** — Feat: `autonomous.verification_backends` — the verifier load-balances across an ordered list of LLM registry names by free node capacity, so a cloud-backed PRD's verifier no longer contends with unrelated local GPU work for the same capacity slot.
+### v8.10–v8.11 highlights
 
-**[v8.36.0](CHANGELOG.md) (2026-09-30)** — Feat: interactive session starts and the verifier's own `/api/ask` call now admit through the same capacity ledger autonomous tasks use. Session delete gets the same keep/purge/archive memory-strategy picker PRD hard-delete already had. `/api/capacity?prd_id=` scopes the pool list to one PRD.
-
-**[v8.35.1](CHANGELOG.md) (2026-09-30)** — Fix: PRD hard-delete's `memory_strategy` was silently ignored when sent by the Android client (REST only read query params; Android sends JSON body).
-
-**[v8.35.0](CHANGELOG.md) (2026-09-30)** — Feat: structural Automaton editing — add/remove a story or task within a story without re-running decompose, across PWA/REST/MCP/CLI/comm channel. A cancelled Automaton is now editable in place instead of requiring destructive Reset-to-Draft. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams. Animated splash screens (load screen, Settings → About, session-connect overlay) matching datawatch-app. Fixed: decompose silently using the daemon's global default model instead of the Automaton's configured one.
-
-**[v8.33.1](CHANGELOG.md) (2026-09-15)** — Fix: autonomous SSE stall watchdog blind to "SSE read timed out"; opencode chunk/header timeout config for large local models.
-
-**[v8.28.7](CHANGELOG.md) (2026-09-14)** — Fix: memory tools proxy to HTTP loopback in subprocess MCP mode; searxng MCP timeout bumped + multi-engine fallback.
-
-**[v8.28.6](CHANGELOG.md) (2026-09-14)** — Fix: document and suppress false-positive ZAP WebSocket alerts [110002] [110004] after investigation (GH#154).
-
-**[v8.28.5](CHANGELOG.md) (2026-09-14)** — Feat: per-guardrail block approval on CLI, comm channel, and PWA (GH#153).
-
-**[v8.28.4](CHANGELOG.md) (2026-09-14)** — Fix: ACP SSE reconnect loop for opencode-acp stream drops.
-
-**[v8.26.1](CHANGELOG.md) (2026-09-13)** — Fix: Observer peer stats grid now correctly reads CPU%, RAM, and GPU power/temperature from the v2 stats format. GPU temperature and power render as dedicated bar rows; CPU bar label includes load averages.
-
-**[v8.26.0](CHANGELOG.md) (2026-09-13)** — NVML direct-binding GPU probe (no CGO) in datawatch-stats; per-system resource grid in Observer tab; CPU/GPU/memory stats card in PRD overview during active task execution; semaphore-bounded concurrent task executor with per-PRD and global `max_concurrent_tasks` config.
-
-**[v8.25.11](CHANGELOG.md) (2026-09-13)** — All guardrail and scan-grader LLM-response parse failures now block/fail rather than warn, completing the verifier enforcement hardening from v8.25.10.
-
-**[v8.25.5](CHANGELOG.md) (2026-09-13)** — Autonomous SSE stall detection: scrollback scan every 30 s kills stalled opencode sessions for auto-retry; PRD watchdog goroutine monitors all running PRDs every 60 s.
-
-**[v8.25.4](CHANGELOG.md) (2026-09-12)** — Observatory peer resources panel (live GPU/CPU/mem per peer), collapsible channel diagnostics, session stats compute node rich card with sparklines, and Automata Progress tab GPU/CPU live card.
-
-**[v8.25.3](CHANGELOG.md) (2026-09-12)** — nvidia-smi and tegrastats GPU probes for Shape B (datawatch-stats) peers on NVIDIA Thor/Jetson hosts.
-
-**[v8.24.2](CHANGELOG.md) (2026-09-12)** — Fix: story status transitions (in_progress/completed) now set by executor; PRD active-session card no longer shows stale killed/failed sessions; progress indicator now shows during `verifying` state.
-
-**[v8.24.1](CHANGELOG.md) (2026-09-11)** — Fix: autonomous tasks now fall back to the `execution_backend` autonomous config field when neither the task nor the PRD specifies a backend. Closes the gap where `reset_to_draft` cleared the PRD's backend field, causing tasks to silently use `claude-code` instead of the intended backend (e.g. `opencode`).
-
-**[v8.24.0](CHANGELOG.md) (2026-09-11)** — Fix: autonomous PRD sessions now use the operator-specified model instead of always falling back to the global default. The `model` field is accepted in PRD create (REST + MCP) and propagates through every task session. PRD cancel now also terminates in-flight task sessions. See [CHANGELOG.md](CHANGELOG.md) for full details.
-
-**[v8.23.0](CHANGELOG.md) (2026-09-10)** — Feature: autonomous PRD task session visibility, error display, and retry control. Task rows now show a `→ session` link, error message, and verifier summary when expanded. Failed/blocked tasks show a `↺ Retry` button. New `POST /api/autonomous/prds/{id}/reset_task` endpoint + `autonomous_prd_reset_task` MCP tool + `autonomous reset-task` comm command.
-
-**[v8.22.0](CHANGELOG.md) (2026-09-10)** — Feature: SearXNG web search MCP tool injection for opencode and goose sessions. Set `web_search.enabled: true` + `web_search.url` to give agents a `web_search` tool with Bing engine. New `datawatch mcp-search` sub-command runs the stdio MCP server. Monitor tab adds a Web Search stats card. See [CHANGELOG.md](CHANGELOG.md) for full details.
-
-**[v8.21.4](CHANGELOG.md) (2026-09-06)** — Fix: autonomous sessions now wait for task completion before verifying and are killed afterwards (prevents session accumulation). New Automaton modal now shows all backends (opencode, goose, etc.) in the execution backend field with a separate planning backend picker.
-
-**[v8.20.1](CHANGELOG.md) (2026-09-06)** — Fix: cancelled PRDs now show a **↺ Reset to Draft** button, Settings/Edit Spec options, and expose `POST /api/autonomous/prds/{id}/reset_to_draft` + `autonomous_prd_reset_to_draft` MCP tool. Restores the ability to reconfigure a cancelled PRD's backend and re-decompose without cloning.
-
-**[v8.20.0](CHANGELOG.md) (2026-09-06)** — Feature: autonomous PRD planning backend is now independent from task-execution backend. Set `decomposition_profile` per-PRD (via Settings modal or `set_llm` API) to choose which ollama/openwebui LLM runs decompose; leave it empty to use the global `autonomous.planning_backend` default. The execution `backend` field now accepts any session agent — opencode, goose, claude-code, etc. — and is no longer filtered to headless-only backends. PWA Settings modal shows two separate pickers. Android parity tracked in [datawatch-app#162](https://github.com/dmz006/datawatch-app/issues/162).
-
-**[v8.19.10](CHANGELOG.md) (2026-09-06)** — Bug fix: autonomous PRD task sessions were silently spawning with `claude-code` instead of the operator-configured LLM backend (e.g. `ollama-datawatch`). Root cause: the session manager's legacy `llm.Get()` only knows fixed kind strings and returned "unknown" for named inference-registry entries, causing a silent fallback to the manager default. `handleStartSession` now resolves named inference-registry backends to their kind string when `req.LLM` is unset.
-
-**[v8.19.9](CHANGELOG.md) (2026-09-06)** — Bug fix: PRD backend picker now filters to planning-capable backends only (ollama/openwebui); session-only backends (opencode, claude-code, etc.) are hidden from PRD-level selectors because decompose requires headless LLM inference. Approve and Reject buttons restored to the PRD detail view for `needs_review` state (dropped during a prior header restructure); lifecycle hint now correctly reflects "plan ready — review stories" instead of "planning in progress" when a review is pending.
-
-**[v8.19.8](CHANGELOG.md) (2026-09-06)** — Bug fix: PWA "What's it doing?" button crashed with `Failed to execute 'json' on 'Response': Unexpected end of JSON input` when the session had no new output since the last summary. The handler was returning HTTP 204 with an empty body (RFC 7231 §3.3 forbids a body on 204 and Go silently drops the message), which hit the PWA's `r.json()` call. Now returns 200 with `{no_change:true, current_status:"no change since last refresh", …}` and the PWA shows a friendly chip. `apiFetch` is hardened to resolve 204/205 to `null` so any future 204 endpoint can't surface the same error. Mobile parity: datawatch-app#160.
-
-**[v8.19.7](CHANGELOG.md) (2026-09-05)** — Container scan fix: suppressed 7 new HIGH CVEs in Debian bookworm base packages (util-linux family, libevent, libsystemd0) with no upstream fix available; all follow existing suppression rationale.
-
-**[v8.19.6](CHANGELOG.md) (2026-09-05)** — Lint fix: replaced unchecked `Write`/`Close` calls in `expandImageTags` tests with `os.WriteFile`; golangci-lint errcheck now passes.
-
-**[v8.19.5](CHANGELOG.md) (2026-09-05)** — Security fix: `expandImageTags` now validates image paths against `fileServiceRoot()` before reading, blocking path traversal via crafted `[image:<path>]` tags. Unit tests corrected to use a scoped `FileServiceRoot` so temp files pass the traversal guard.
-
-**[v8.19.4](CHANGELOG.md) (2026-09-05)** — Image tag now preserves the file path alongside the vision description: `[image: <description> | path: <path>]` so LLMs with file-access tools can reference the source file.
-
-**[v8.19.3](CHANGELOG.md) (2026-09-05)** — Bug fixes: PWA image attachment now runs through the vision model before reaching the session (description injected in-place, matching Signal/Telegram behavior). `file_service_root` config now defaults to `~/.datawatch/files` instead of `$HOME`.
-
-**[v8.19.2](CHANGELOG.md) (2026-09-04)** — Bug fixes: PWA session-list select-all now scopes to the filtered view (counter, selection, and bulk-delete all match what is visible); changing any filter clears the active selection. Claude workspace trust dialog auto-accepted correctly (Down+Enter instead of literal "1"). Subprocess/virtual sessions (schedule-spawn, council, agent) no longer force-fail on daemon restart.
-
-**[v8.19.0](CHANGELOG.md) (2026-09-01)** — Image attachment in PWA session input: 📷 button uploads images to the file-service root and appends `[image:<path>]` to the outgoing message. Works in tmux and channel modes; mobile camera capture via `accept="image/*"` (no runtime permissions). Android/iOS parity tracked in [datawatch-app#158](https://github.com/dmz006/datawatch-app/issues/158). Full API docs + localization (5 locales) + unit tests + smoke coverage included.
-
-**[v8.18.1](CHANGELOG.md) (2026-09-01)** — Fix: in-app update no longer leaves the daemon headless. The previous restart path used `syscall.Exec` from a goroutine; Go's pre-exec STW step closed the TLS listener socket before `execve` could succeed, leaving the process alive but unable to serve HTTP. Now exits cleanly so the updated binary starts fresh.
-
-**[v8.18.0](CHANGELOG.md) (2026-09-01)** — Autonomous prompt injection hardening: three-layer defence — (1) data-boundary `<user_data>` XML tags on all LLM call sites (decompose, verify, guardrail), (2) `ScanForInjection` scanner at the PRD/task create and spec-edit API boundary with warn-only or blocking mode, (3) federation trust notice injected into verifier and guardrail prompts when a PRD originates from a remote peer. Enable via `autonomous.injection_guard: true`; set `autonomous.block_on_injection: true` to reject requests. Prometheus counter: `datawatch_injection_guard_hits_total`.
-
-**[v8.17.0](CHANGELOG.md) (2026-08-31)** — Autonomous PRD quality gates: the executor captures a test baseline before the first task, re-runs tests after each task, and blocks on regression when configured. Set globally via `autonomous.default_quality_gates.*` or per-PRD at creation time.
-
-**[v8.16.0](CHANGELOG.md) (2026-08-31)** — Autonomous verifier git-diff grounding: the verifier now receives the actual `git diff` of changes alongside the task spec, grounding verification in code. Configurable via `autonomous.verifier_diff_max_bytes` (0 = 8 KB cap).
-
-**[v8.15.0](CHANGELOG.md) (2026-08-31)** — Vision input system: on-demand image description via `POST /api/vision/describe` (ollama, openai, openai_compat backends). Comms router auto-describes image/photo attachments and injects `[image: <desc>]` into messages before command parsing. Skill manifest `accepts_images` field. `image_path` on council run; `image_paths` on `start_session` and `send_input` MCP. `MCP vision_describe` tool.
-
-**[v8.14.0](CHANGELOG.md) (2026-08-31)** — Goose backend: `goose` (interactive TUI) and `goose-prompt` (one-shot) LLM backends with provider/model/API-key injection, MCP channel bridge, and `agent-goose` container. Full 6-surface config parity.
-
-- **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron. Supports `one_shot` (auto-terminate on `DATAWATCH_COMPLETE:`), `ephemeral` (workspace reap), and full LLM selection (`llm_ref`, `model`, `effort`). Full parity: MCP `schedule_spawn`, REST, CLI, channel comms.
-- **Recurring named schedules** (v8.10.4) — `schedule add --cron "*/5 * * * *" --session-name worker` fires a command on a cron schedule against a named session; survives session restarts. Cancel by name with `schedule cancel name=<n>`.
-- **Name-addressed session operations** (v8.10.5) — `send_input`, `kill_session`, `session_output`, `rename_session`, and 5 more MCP tools now accept `session_name` instead of requiring a hex session ID. Oldest-active tiebreak when multiple sessions share a name.
-- **Session zombie detection** (v8.10.6) — `claude_alive` field on sessions; periodic tmux pane probe detects when Claude exits and the shell remains. Fires a warning alert and `session_zombie` push event. PWA shows amber `⚠ zombie` badge.
-- **Session exit hooks** (v8.10.7) — configure `session.exit_hooks[]` in YAML (or via API/MCP/CLI) to auto-restart or notify another session when a session goes zombie or enters `failed`/`killed` state. Cooldown prevents thrash.
-- **Durable role-based work queue** (v8.10.8) — `queue_push/claim/complete/fail/list` MCP tools + REST + CLI + comm. Atomic claim with configurable lease; background lease expiry returns unclaimed items to pending.
-- **Discussion push / subscribe** (v8.10.9) — `discussion_subscribe session_name=<n> discussion_id=<id>` delivers new WAL entries to the named session as live input. `memory_discussion_wal` gains `after_seq`/`block`/`timeout` long-poll params.
-- **Restart session from any state** (v8.10.10) — `restart_session` now works when session is running, waiting, failed, or killed. Kills the live process, relaunches with the same (or new) task, preserves session ID and name.
-- **Structured agent result store** (v8.10.11) — `result_put/get/list/delete` MCP tools + REST + CLI + comm. Named JSON payloads with optional TTL; file-backed, survives daemon restart.
-- **Structured session filters** (v8.10.12) — `list_sessions` gains `name` (glob), `state`, `backend`, `alive` filter params on REST, MCP, and CLI. `format=json` returns a structured array with `claude_alive` included.
+- **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron.
+- **Name-addressed session operations** (v8.10.5) — `send_input`, `kill_session`, and friends accept `session_name` instead of requiring a hex session ID.
+- **Session zombie detection** (v8.10.6) — detects when the backend process exits but the shell remains; fires an alert and a PWA badge.
+- **Session exit hooks** (v8.10.7) — auto-restart or notify another session when one goes zombie or enters a failed state.
+- **Durable role-based work queue** (v8.10.8) — `queue_push/claim/complete/fail/list` with atomic claim + lease expiry.
+- **Discussion push / subscribe** (v8.10.9) — deliver new discussion-memory WAL entries to a named session as live input.
+- **Structured agent result store** (v8.10.11) — named, TTL-able JSON payloads, file-backed, survives a daemon restart.
 
 ### v8.10.0 highlights
 
@@ -205,40 +135,40 @@ datawatch skills sync community
 
 ### v8.6 highlights
 
-- **Full operational data encryption (BL334 T43g+T43h)** — `--secure` closes all remaining coverage gaps. JSON stores: `servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json` — all encrypted with XChaCha20-Poly1305 (DWDAT2 format). Upgrade migration runs automatically on first `--secure` startup.
-- **Encrypted daemon-app.log (T43h)** — Runtime log output redirected to `secfile.EncryptedLogWriter` (DWLOG1 format) after key derivation. Append-mode on restart preserves history. Decrypt with `datawatch security logs [--tail N]`.
+- **Full operational data encryption** — `--secure` closes all remaining coverage gaps. JSON stores: `servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json` — all encrypted with XChaCha20-Poly1305 (DWDAT2 format). Upgrade migration runs automatically on first `--secure` startup.
+- **Encrypted daemon-app.log** — Runtime log output redirected to `secfile.EncryptedLogWriter` (DWLOG1 format) after key derivation. Append-mode on restart preserves history. Decrypt with `datawatch security logs [--tail N]`.
 - **Encryption status covers all six categories** — `datawatch security encryption status` probes channel_routing, servers, skills, compute/nodes, inference/llms, and daemon-app.log.
 
 ### v8.5 highlights
 
-- **Operational Data Encryption (BL334 T43a–T43e)** — Discussion WAL lines encrypted as `ENC:<base64(nonce24+ciphertext)>`. `participants.json` and `channel_routing.json` encrypted via DWDAT2. Migration idempotent on first `--secure` startup.
+- **Operational Data Encryption** — Discussion WAL lines encrypted as `ENC:<base64(nonce24+ciphertext)>`. `participants.json` and `channel_routing.json` encrypted via DWDAT2. Migration idempotent on first `--secure` startup.
 - **Secure wipe** — `datawatch security wipe-plaintext --confirm` does 3-pass overwrite (zeros/ones/random) then unlinks plaintext files.
 - **Encryption status + migrate** — `GET /api/security/encryption/status`, `POST /api/security/encryption/migrate`. CLI: `datawatch security encryption {status,migrate}`.
 - **`${secret:name}` config references** — API keys and tokens can live exclusively in `~/.datawatch/secrets.db` (AES-256-GCM, independent of `--secure`).
 
 ### v8.4 highlights
 
-- **Discussion Scopes (BL332)** — Federated append-only WAL memory. Each discussion has `~/.datawatch/discussions/<id>/wal.jsonl` with entries timestamped, origin-peer-tagged, and sequence-numbered. Conflict detection (same-prefix writes from different peers within 5s), 60 writes/min rate throttle, participant sync via push fan-out.
+- **Discussion Scopes** — Federated append-only WAL memory. Each discussion has `~/.datawatch/discussions/<id>/wal.jsonl` with entries timestamped, origin-peer-tagged, and sequence-numbered. Conflict detection (same-prefix writes from different peers within 5s), 60 writes/min rate throttle, participant sync via push fan-out.
 - **REST**: full discussion CRUD + `/wal` + `/conflicts` + `/participants`. **CLI**: `datawatch memory discussion {list,write,recall,wal,participants}`. **MCP**: `memory_discussion_*`. **PWA**: Settings → General → Discussion Scopes card.
 
 ### v8.3 highlights
 
-- **Channel Routing (BL331)** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. CLI: `datawatch federation peer add --channel-identity`.
-- **File Service (BL333)** — Federated upload/delete/list under a configurable service root. Path-traversal guard on every write path. `POST /api/files`, `DELETE /api/files`, `GET /api/files/{peers,discussions,meta}`. CLI: `datawatch files {list,upload,delete,peer}`.
+- **Channel Routing** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. CLI: `datawatch federation peer add --channel-identity`.
+- **File Service** — Federated upload/delete/list under a configurable service root. Path-traversal guard on every write path. `POST /api/files`, `DELETE /api/files`, `GET /api/files/{peers,discussions,meta}`. CLI: `datawatch files {list,upload,delete,peer}`.
 - **14th federation builtin group: `comms-channel-agent`** — sessions+comms+alerts+autonomous without full operator access.
 
 ### v8.2 highlights
 
-- **Async PRD decompose (BL328)** — `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately. Stories stream via SSE with `Last-Event-ID` replay. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
-- **Identity POST alias (BL329)** — `POST /api/identity` aliases `PATCH` for Android compatibility. All four methods share one handler.
-- **UnifiedPush (BL330)** — `GET /.well-known/unifiedpush`, register/unregister/notify endpoints. PWA: Settings → Comms → Push Notifications card.
-- **Badge/chip multi-select (BL327)** — All comma-separated settings fields use badge inputs with dropdown completion and drag-to-reorder.
+- **Async PRD decompose** — `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately. Stories stream via SSE with `Last-Event-ID` replay. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
+- **Identity POST alias** — `POST /api/identity` aliases `PATCH` for Android compatibility. All four methods share one handler.
+- **UnifiedPush** — `GET /.well-known/unifiedpush`, register/unregister/notify endpoints. PWA: Settings → Comms → Push Notifications card.
+- **Badge/chip multi-select** — All comma-separated settings fields use badge inputs with dropdown completion and drag-to-reorder.
 
 ### v8.1 highlights
 
-- **Compute Node routing modes (BL318–BL322)** — `direct`, `docker-network` (DockerLifecycle manages container lifecycle), `datawatch-proxy` (forward through a peer's `/api/proxy/llm/<name>`). New `gemini-api` and `opencode-api` adapter kinds.
-- **Community Skills + Plugins registry (BL324–BL326)** — `dmz006/datawatch-community` is the official hub. In-app registry browser, one-click install, plugin install without restart. Connect: `datawatch skills registry connect`.
-- **Mic popup (BL326)** — animated waveform recording overlay in PWA.
+- **Compute Node routing modes** — `direct`, `docker-network` (DockerLifecycle manages container lifecycle), `datawatch-proxy` (forward through a peer's `/api/proxy/llm/<name>`). New `gemini-api` and `opencode-api` adapter kinds.
+- **Community Skills + Plugins registry** — `dmz006/datawatch-community` is the official hub. In-app registry browser, one-click install, plugin install without restart. Connect: `datawatch skills registry connect`.
+- **Mic popup** — animated waveform recording overlay in PWA.
 - **301 E2E test stories** — 142 new stories (TS-637–TS-778) across v8.2–v8.5 cohorts.
 
 ### v8.0 highlights
@@ -607,9 +537,9 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/howto/channel-routing.md](docs/howto/channel-routing.md) | Route inbound channel messages to specific federation peers (BL331) |
-| [docs/howto/file-service.md](docs/howto/file-service.md) | Federated file upload/delete/list under service root (BL333) |
-| [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) | Shared WAL-backed discussion memory scopes (BL332) |
+| [docs/howto/channel-routing.md](docs/howto/channel-routing.md) | Route inbound channel messages to specific federation peers |
+| [docs/howto/file-service.md](docs/howto/file-service.md) | Federated file upload/delete/list under service root |
+| [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) | Shared WAL-backed discussion memory scopes |
 
 ### Comm channels
 
