@@ -1,0 +1,9 @@
+# Default owner for everything in the repo
+*       @dmz006
+
+# AGENT.md and critical security/release paths — review required
+/AGENT.md               @dmz006
+/SECURITY.md            @dmz006
+/LICENSE                @dmz006
+/docs/security-review.md @dmz006
+/.github/workflows/     @dmz006
