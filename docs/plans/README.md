@@ -1065,8 +1065,25 @@ listed real protected paths, it just wasn't being enforced. No other
 changes; this repo's review strictness was already ahead of `datawatch`'s
 own baseline and the plan explicitly said not to weaken it to "match."
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2)
-**Status:** all three phases from §4 are now implemented and verified — CodeQL/private-vuln-reporting/Dependabot-security-updates toggles, datawatch-community's Phase 1 (validation CI + SECURITY.md + CODEOWNERS), and datawatch-app's Phase 2 (`require_code_owner_review`). Still open: `datawatch`'s own missing CODEOWNERS and proper Swift CodeQL coverage for datawatch-app via a custom workflow (both §3c baseline gaps, never in scope for Phases 1/2).
+Same-day cleanup of the last two §3c baseline gaps: added `datawatch`'s own
+missing `CODEOWNERS` (parse-verified clean via the `codeowners/errors`
+API; deliberately did *not* flip `require_code_owner_review` here — this
+repo's 0-approval/6-required-CI-checks review model is intentional, unlike
+`datawatch-app`). Also answered the operator's question of whether the
+Phase 2 CODEOWNERS flip needs any `datawatch-app` CI changes: no —
+`require_code_owner_review` is a native GitHub merge gate, unrelated to
+Actions workflows. But comparing the two repos' actual security workflows
+surfaced a real, separate parity gap: `datawatch` has a PR-time
+`dependency-review-action` gate (fails a PR on a newly-introduced
+HIGH-severity CVE or GPL/AGPL dependency) that `datawatch-app` lacks —
+its own security scan is cron-scheduled, not PR-gated. Filed
+[`datawatch-app`#206](https://github.com/dmz006/datawatch-app/issues/206)
+rather than implementing cross-repo; flagged the Gradle dependency-graph
+submission caveat up front so whoever picks it up doesn't ship a gate that
+silently reviews nothing.
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2, §10 datawatch CODEOWNERS + dependency-review gap)
+**Status:** all three phases from §4 are implemented and verified, plus `datawatch`'s own CODEOWNERS gap is closed. Still open: Swift CodeQL coverage for `datawatch-app` via a custom workflow (§7), and `datawatch-app`#206 (filed, not yet implemented there).
 
 ---
 

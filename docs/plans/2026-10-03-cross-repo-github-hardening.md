@@ -15,8 +15,10 @@ status check on `main-protection`, plus `SECURITY.md` and `CODEOWNERS`.
 **Phase 2 is now also implemented** (2026-10-03, same day — see §9):
 `datawatch-app`'s `require_code_owner_review` is flipped to `true`, making
 its existing `CODEOWNERS` file actually enforce. All three phases from §4
-are now done; only the two §3c baseline gaps (`datawatch`'s own missing
-`CODEOWNERS`, Swift CodeQL coverage for `datawatch-app`) remain open.
+are now done. **`datawatch`'s own missing `CODEOWNERS` is also fixed**
+(2026-10-03, same day — see §10); the only remaining open items are Swift
+CodeQL coverage for `datawatch-app` (§7) and `datawatch-app`#206 (filed,
+not implemented — PR-time `dependency-review-action`, see §10).
 Originally: plan only, no settings changed, no files written
 to any repo, per operator instruction ("build a plan... if needed"). Memory checked
 (`memory_recall`): no prior plan or decision record for GitHub-settings
@@ -384,3 +386,59 @@ replacement for it.
 **Not done, correctly out of Phase 1's scope:** Phase 2 (`datawatch-app`'s
 `require_code_owner_review` flip), `datawatch`'s own missing `CODEOWNERS`,
 and Swift CodeQL coverage for `datawatch-app` (§7).
+
+## 10. `datawatch`'s own CODEOWNERS + a real cross-repo CI gap, same day
+
+Operator asked two things: add the `CODEOWNERS` file `§3c` flagged as
+missing on `datawatch` itself, and whether flipping `datawatch-app`'s
+`require_code_owner_review` (§9) needs any CI changes there, or whether
+`datawatch-app` needs a CI workflow more like `datawatch`'s.
+
+**`datawatch` `CODEOWNERS`:** added (`* @dmz006` plus the same
+protected-path pattern `datawatch-app`'s file uses — `AGENT.md`,
+`SECURITY.md`, `LICENSE`, `.github/workflows/`, and this repo's one
+security doc, `docs/security-review.md`, since there's no separate
+threat-model doc here the way `datawatch-app` has one). Verified parse-clean
+via `GET /repos/{owner}/{repo}/codeowners/errors` → `{"errors":[]}`.
+**Deliberately did not** flip `require_code_owner_review` on `datawatch`'s
+own ruleset — this repo's review model is 0 required approvals + 6 required
+CI checks (operator is sole committer, CI is the actual gate), unlike
+`datawatch-app` where a human reviewer was already in the loop before the
+Phase 2 flip. The file documents ownership for any future non-admin
+contributor without changing that model.
+
+**CODEOWNERS/CI question, answered:** `require_code_owner_review` is a
+native GitHub ruleset merge-gate, completely independent of Actions
+workflows — confirmed by reading `datawatch-app`'s `ci.yml`, `ios-build.yml`,
+`release.yml`, `security.yml` directly; none reference CODEOWNERS, review
+state, or approvals. **No CI changes needed for the Phase 2 flip itself.**
+
+**But a real, separate parity gap exists, found by actually comparing the
+two repos' security-relevant workflows (not by assuming "more workflows =
+better"):** `datawatch`'s `.github/workflows/dependency-review.yaml` runs
+GitHub's native `dependency-review-action` on every PR, failing it at
+diff-time on a newly-introduced HIGH-severity CVE or a GPL/AGPL-licensed
+dependency — and that file's own header comment says it was added for
+"operator-asked CI parity with datawatch-app," implying parity was already
+intended both ways. `datawatch-app`'s `security.yml` only has a *scheduled*
+OWASP dependency-check (weekly cron + push to paths touching
+`gradle/libs.versions.toml`/`**/build.gradle.kts`) plus Gitleaks — no
+PR-time gate. Most of `datawatch`'s other workflows
+(`containers.yaml`/`image-refresh.yaml`/`kind-smoke.yaml`/
+`ebpf-gen-drift.yaml`/etc.) are container/K8s-infra-specific and don't apply
+to a Kotlin-Multiplatform mobile client, so this is the one real,
+scoped gap, not a blanket "copy datawatch's CI" ask.
+
+Filed [`datawatch-app`#206](https://github.com/dmz006/datawatch-app/issues/206)
+rather than implementing it directly — cross-repo work, same convention
+used for the GH#162 session-list WS-push investigation earlier. The issue
+includes a worked example mirroring `datawatch`'s actual workflow, and flags
+one real implementation risk up front rather than letting the receiving
+agent discover it blind: `dependency-review-action` reads GitHub's
+Dependency Graph, which auto-parses npm/pip-style manifests but generally
+needs an explicit submission step for Gradle/Kotlin
+(`gradle/actions/setup-gradle`'s `dependency-graph: generate-and-submit`,
+already available since `ci.yml` already uses that action) — the issue
+asks whoever picks it up to verify the graph is actually being submitted
+before trusting the gate, not just drop the workflow in and assume it
+works.
