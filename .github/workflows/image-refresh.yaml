@@ -247,12 +247,14 @@ jobs:
           import json, sys
           try:
               d = json.load(open(sys.argv[1]))
-          except Exception:
+          except Exception as e:
+              print('EXTRACT_FAILED: ' + repr(e), file=sys.stderr)
               sys.exit(0)
           ids = set()
           for res in d.get('Results', []) or []:
               for v in res.get('Vulnerabilities', []) or []:
                   ids.add(v['VulnerabilityID'])
+          print(f'DEBUG: {sys.argv[1]}: {len(d.get(\"Results\") or [])} result group(s), {len(ids)} unique vuln ID(s)', file=sys.stderr)
           print('\n'.join(sorted(ids)))
           " "$1"
           }
@@ -270,7 +272,7 @@ jobs:
                 # agent-* Dockerfiles FROM ${REGISTRY}/agent-base:${BASE_TAG} (slash path).
                 docker buildx imagetools create -t "ghcr.io/dmz006/datawatch/agent-base:${STAMP}" "$img"
               fi
-              trivy image --severity HIGH,CRITICAL --format json -o "/tmp/scan-${name}.json" "$img" || true
+              trivy image --severity HIGH,CRITICAL --ignorefile /dev/null --format json -o "/tmp/scan-${name}.json" "$img" || true
               extract_ids "/tmp/scan-${name}.json" >> /tmp/all-vulnerable.txt
             else
               echo "::warning::build failed for ${name} — skipping its scan this run"
@@ -293,7 +295,7 @@ jobs:
                  --build-arg REGISTRY=ghcr.io/dmz006/datawatch \
                  --build-arg BASE_TAG="${STAMP}" \
                  -f "$file" -t "$img" --push .; then
-              trivy image --severity HIGH,CRITICAL --format json -o "/tmp/scan-${name}.json" "$img" || true
+              trivy image --severity HIGH,CRITICAL --ignorefile /dev/null --format json -o "/tmp/scan-${name}.json" "$img" || true
               extract_ids "/tmp/scan-${name}.json" >> /tmp/all-vulnerable.txt
             else
               echo "::warning::build failed for ${name} — skipping its scan this run"
