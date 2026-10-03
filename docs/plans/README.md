@@ -1012,6 +1012,36 @@ capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in 
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
 
+#### BL393 — Nested tags for Automata/PRD organization (filed 2026-10-03)
+
+Operator-raised: Automata/PRD needs a folder or grouping mechanism to
+organize multiple unrelated projects/efforts — today's list is one flat
+stream with only status/type filter badges, no visual sectioning. Planning
+session surfaced three real design forks (grouping source, terminology,
+nesting) via direct operator decision rather than unilateral design choice
+(explicitly requested: "do not make decisions, stop and ask me"). Decided:
+**tags** (not "folder"), **both** explicit assignment and a suggested
+default derived from the existing BL27 project-alias registry, a **managed
+registry** of first-class Tag objects (`id`/`name`/`parent_id`/`color` —
+not bare strings, so renaming propagates everywhere), **nested from the
+start** (a tree, not flat), and **multiple tags per Automaton** with
+multi-section browse behavior (standard label semantics).
+
+Plan explicitly avoids repeating a real bug found in the closest existing
+precedent: the `Type` registry (BL221) is in-memory only — grep confirms no
+persistence file exists, so operator-registered custom types are silently
+lost on every daemon restart. The new Tag registry is designed to persist
+from day one (`tags.jsonl`, same JSONL pattern as the existing
+`guardrail_profiles.jsonl`). Full design covers data model, storage, REST/
+MCP/CLI/comm-channel/PWA surfaces, and four genuinely open implementation
+questions (tag deletion semantics, parent-tag browse inheritance, suggested-
+tag auto-create) flagged for the operator rather than silently decided.
+
+**Plan doc:** [`2026-10-03-bl393-automata-tags.md`](2026-10-03-bl393-automata-tags.md)
+**Status:** plan only — no code written, no settings changed. Not yet authorized for implementation.
+
+---
+
 #### BL392 — Cross-repo GitHub configuration hardening audit (filed 2026-10-03)
 
 Operator-raised: compare `datawatch`'s repo-level GitHub protections (branch/tag
