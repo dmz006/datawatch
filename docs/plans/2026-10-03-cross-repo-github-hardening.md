@@ -4,13 +4,16 @@
 **Repos in scope:** `dmz006/datawatch-app`, `dmz006/datawatch-community` (hardening targets).
 `dmz006/datawatch` audited as the reference baseline, not because it's assumed
 to already be "correct" — the audit found real gaps there too, listed below.
-**Status:** §4's Phase 3 CodeQL/vulnerability-reporting/Dependabot items are now
+**Status:** §4's Phase 3 CodeQL/vulnerability-reporting/Dependabot items are
 **implemented** across all applicable repos (2026-10-03, same day — operator
 broadened scope mid-review after spotting that `datawatch`'s own "Code
-scanning" toggle read as unconfigured; see §7). Phases 1 and 2 (datawatch-community's
-validation CI + SECURITY.md + CODEOWNERS, datawatch-app's `require_code_owner_review`
-flip) remain plan-only — those need actual workflow/file authoring, not just a
-settings toggle. Originally: plan only, no settings changed, no files written
+scanning" toggle read as unconfigured; see §7). **Phase 1 is now also
+implemented** (2026-10-03, same day — see §8): `datawatch-community` has
+`.github/workflows/validate.yml` + `scripts/validate_registry.py` (schema
+validation for skill/plugin submissions), that check is now a required
+status check on `main-protection`, plus `SECURITY.md` and `CODEOWNERS`.
+Phase 2 (datawatch-app's `require_code_owner_review` flip) remains plan-only.
+Originally: plan only, no settings changed, no files written
 to any repo, per operator instruction ("build a plan... if needed"). Memory checked
 (`memory_recall`): no prior plan or decision record for GitHub-settings
 hardening exists in datawatch's project memory; the only related prior work is
@@ -298,3 +301,64 @@ need actual workflow/file authoring, not a settings toggle): the
 `datawatch-app`'s `require_code_owner_review` flip (Phase 2) and its Swift
 CodeQL coverage (custom workflow, not default-setup), and `datawatch`'s own
 missing `CODEOWNERS` file.
+
+## 8. Phase 1 implemented, same day — `datawatch-community`
+
+Operator authorized Phase 1 directly ("go ahead and start Phase 1"). Built
+and shipped `.github/workflows/validate.yml` + `scripts/validate_registry.py`
+(commit `e6539b0`, pushed straight to `main` — same admin-bypass pattern used
+throughout this effort on `datawatch` itself): validates every
+`skills/*/*/SKILL.md`'s YAML frontmatter and every `plugins/*/*/manifest.yaml`
+against the schema `CONTRIBUTING.md` already documents — required fields
+present, `name`/`category` match the directory, a plugin's `entry` script
+exists and is executable. Deliberately checks structure only, not content
+quality or supply-chain risk (per the plan's own instruction to keep this a
+safety net, not `datawatch`-grade CI rigor) — that stays the human reviewer's
+job per `CONTRIBUTING.md`'s existing review criteria.
+
+**Before trusting it as a required check, ran it locally against the real
+repo and found three genuine pre-existing schema violations** (not
+synthetic test cases):
+
+1. `skills/vision/image-reviewer/SKILL.md` had no YAML frontmatter at all —
+   violates `CONTRIBUTING.md`'s own "at minimum a SKILL.md with YAML
+   frontmatter" spec. Added frontmatter matching the pattern used by the
+   repo's other skills.
+2. Two plugins' `run.sh` (`workspace-git-sync`, `workspace-rsync-sync`)
+   were not executable in the git tree (`100644`, confirmed via
+   `git ls-files -s` — not a local-checkout artifact) — violates
+   `CONTRIBUTING.md`'s own PR checklist item. Fixed with `chmod +x`.
+3. `skills/ops/workspace-nfs-mount` was actually a **plugin** (an
+   executable `entry: mount.sh` with a `pre_session_start` hook/trigger)
+   mis-filed under `skills/` using a non-standard `skill.yaml` instead of
+   `SKILL.md`. Moved to `plugins/ops/workspace-nfs-mount/`, renamed
+   `skill.yaml` → `manifest.yaml`, renamed its `triggers` key to `hooks`
+   (the schema plugins actually use) and added the required `mode: oneshot`
+   field it was missing. Added a `plugins/ops/README.md` (the `ops` plugin
+   category didn't have one yet) and fixed `CONTRIBUTING.md`'s category
+   table, which was missing `vision` (skills) and `sync`/`ops` (plugins) —
+   all three already existed on disk, just undocumented.
+
+Pushed, watched the resulting Actions run complete (`success`,
+`databaseId: 37139225571`), then confirmed the check's exact context name
+via `GET /repos/{owner}/{repo}/commits/{sha}/check-runs` (`"Validate registry
+entries"`, the job's `name:`, not its workflow filename) before wiring it in
+— added a `required_status_checks` rule for that exact context to the
+existing `main-protection` ruleset via `PUT .../rulesets/16600318`, alongside
+the ruleset's pre-existing `deletion`/`non_fast_forward`/`pull_request`
+rules (replaced the whole `rules` array in the PUT, since the rulesets API
+takes the full set, not a diff — verified the existing three rules first so
+none were silently dropped).
+
+`SECURITY.md` was scoped per the plan to "report a malicious or vulnerable
+community submission" rather than daemon-level vulnerabilities, with an
+explicit note that a passing CI check is schema validation only, not a
+safety guarantee. `CODEOWNERS` is `* @dmz006`, matching the plan's minimum.
+`required_approving_review_count` stays at `0` as the plan specified — the
+operator reviewing every submission manually remains the actual safety
+model; this CI check is a second line of defense under that review, not a
+replacement for it.
+
+**Not done, correctly out of Phase 1's scope:** Phase 2 (`datawatch-app`'s
+`require_code_owner_review` flip), `datawatch`'s own missing `CODEOWNERS`,
+and Swift CodeQL coverage for `datawatch-app` (§7).

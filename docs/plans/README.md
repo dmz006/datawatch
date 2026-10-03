@@ -1041,8 +1041,25 @@ from the language list (actions + java-kotlin both analyze cleanly). Proper
 Swift coverage needs a custom `codeql.yml` with an explicit build step — not
 attempted, left as a follow-up.
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 covers the follow-up)
-**Status:** CodeQL/private-vuln-reporting/Dependabot-security-updates toggles implemented and verified. Still open: Phase 1 (datawatch-community: minimal validation CI + SECURITY.md + CODEOWNERS), Phase 2 (datawatch-app: flip `require_code_owner_review`), `datawatch`'s own missing CODEOWNERS, and proper Swift CodeQL coverage for datawatch-app via a custom workflow.
+Same-day Phase 1 (operator authorized directly: "go ahead and start Phase 1"):
+`datawatch-community` now has `.github/workflows/validate.yml` +
+`scripts/validate_registry.py` — lightweight schema validation for every
+skill/plugin submission (required manifest fields, name/category match
+directory, plugin `entry` script exists and is executable), wired in as a
+required status check on the `main-protection` ruleset, plus `SECURITY.md`
+(scoped to reporting malicious/vulnerable submissions, not daemon CVEs) and
+`CODEOWNERS` (`* @dmz006`). Running the validator against the real repo
+before trusting it as a required check surfaced 3 genuine pre-existing
+violations, all fixed: a skill with no frontmatter at all
+(`image-reviewer`), two plugins' `run.sh` not executable in the git tree
+(`workspace-git-sync`, `workspace-rsync-sync`), and one plugin mis-filed
+under `skills/` using a non-standard `skill.yaml` instead of a real plugin
+`manifest.yaml` (`workspace-nfs-mount`, moved to `plugins/ops/`).
+`required_approving_review_count` stays 0 — manual operator review remains
+the real safety model; CI is a second line of defense, not a replacement.
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 covers the CodeQL follow-up, §8 covers Phase 1)
+**Status:** CodeQL/private-vuln-reporting/Dependabot-security-updates toggles AND datawatch-community's Phase 1 (validation CI + SECURITY.md + CODEOWNERS) are implemented and verified. Still open: Phase 2 (datawatch-app: flip `require_code_owner_review`), `datawatch`'s own missing CODEOWNERS, and proper Swift CodeQL coverage for datawatch-app via a custom workflow.
 
 ---
 
