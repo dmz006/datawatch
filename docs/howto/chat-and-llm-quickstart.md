@@ -244,49 +244,107 @@ channels:
   [`channel-state-engine.md`](channel-state-engine.md) — wait 15 s for the gap watcher to flip,
   or check that LCE is bumping.
 
-## Web Search (SearXNG)
+## Web Search (multi-provider registry, BL391)
 
-Agent sessions (opencode, goose) can search the web when `web_search` is configured. All five access methods are supported:
+Agent sessions (opencode, goose) can search the web when `web_search` is enabled. Queries are tried against one or more named **providers** in priority order (lowest first) — self-hosted [SearXNG](https://searxng.github.io/searxng/) and/or the [Brave Search API](https://brave.com/search/api/) today — with an internal result cache to cut paid-API usage and per-provider usage tracking. A provider that "succeeds" with zero results is treated as a miss and the next provider is still tried.
+
+All six access methods are supported:
 
 | Method | How |
 |--------|-----|
-| **YAML** | `~/.datawatch/config.yaml` → `web_search:` section (see below) |
-| **CLI** | `datawatch config set web_search.enabled true` / `datawatch config set web_search.url http://…` |
-| **Web UI** | Settings → LLM → Web Search (SearXNG) |
-| **REST API** | `PATCH /api/config` with `{"web_search.enabled": true, "web_search.url": "http://…"}` |
-| **Comm channel** | `configure web_search.enabled=true` / `configure web_search.url=http://…` |
+| **YAML** | `~/.datawatch/config.yaml` → `web_search:` section, `providers:` list (see below) |
+| **CLI** | `datawatch websearch providers` / `add` / `update` / `delete` / `enable` / `disable` / `test` / `stats` / `history` |
+| **Web UI** | Settings → Compute → Web Search Providers (provider CRUD); Dashboard → Search Usage card |
+| **REST API** | `GET/POST /api/websearch/providers`, `PATCH/DELETE /api/websearch/providers/{name}`, `GET /api/websearch/stats` |
+| **Comm channel** | `websearch` (stats), `websearch providers`, `websearch enable\|disable\|test <name>` — read-only + enable/disable only; add/update/delete a provider through one of the other four methods |
+| **MCP** | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history` |
 
 **Where to see web search activity:**
 
 | Location | What you see |
 |----------|-------------|
-| **Web UI** | Monitor tab → Web Search card (queries, errors, engine) |
-| **REST API** | `GET /api/web_search/stats` |
-| **MCP** | `web_search_stats` tool |
-| **Prometheus** | `datawatch_web_search_queries_total`, `datawatch_web_search_errors_total` |
+| **Web UI** | Dashboard → Search Usage card (total/today/week/month, cache hits, daily graph, per provider); Monitor tab → Search Usage tile + History button |
+| **REST API** | `GET /api/websearch/stats?days=N`, `GET /api/websearch/history?limit=&offset=` |
+| **MCP** | `websearch_stats`, `websearch_history` |
+| **CLI** | `datawatch websearch stats`, `datawatch websearch history` |
 
-Agent sessions (opencode, goose) can search the web when `web_search` is configured. Queries are proxied through a self-hosted [SearXNG](https://searxng.github.io/searxng/) instance. Use the `bing` engine — other engines trigger CAPTCHA or rate-limiting in default SearXNG installs.
+### Option A — SearXNG (self-hosted, free)
 
-**Quick setup:**
+Use the `bing` engine — other engines trigger CAPTCHA or rate-limiting in default SearXNG installs. No API key needed.
 
 ```yaml
-# datawatch.yaml
+# ~/.datawatch/config.yaml
 web_search:
   enabled: true
-  url: http://searxng.example.com:3001
-  engine: bing          # only bing works reliably
-  num_results: 10
+  providers:
+    - name: searxng-primary
+      type: searxng
+      enabled: true
+      priority: 0
+      url: http://searxng.example.com:3001
+      engine: bing          # only bing works reliably
+      num_results: 10
 ```
 
-Or via REST:
+Or via CLI:
 ```bash
-curl -s -X PATCH http://localhost:8080/api/config \
+datawatch websearch add searxng-primary --type searxng --url http://searxng.example.com:3001 --engine bing
+```
+
+### Option B — Brave Search API (paid, no self-hosting, no scraping/CAPTCHA risk)
+
+A good fallback or primary when you don't want to run SearXNG, or when SearXNG's scraped results are degraded for a given query (see GH#165 in [`datawatch-definitions.md`](../datawatch-definitions.md) — Bing-via-SearXNG anti-scraping degradation).
+
+**Sign up and get a key:**
+
+1. Go to [brave.com/search/api](https://brave.com/search/api/) and create an account.
+2. Pick a plan — the Free tier (2,000 queries/month, 1 req/sec) is enough to try this out; Base/Pro tiers lift the quota for production use.
+3. Open the [API dashboard](https://api-dashboard.search.brave.com/app/keys) and copy your subscription key (`X-Subscription-Token`).
+
+**Store it in the secrets vault — never paste it directly into `config.yaml`:**
+
+```bash
+datawatch secrets set brave_search_api_key "<your Brave API key>"
+```
+
+**Add the provider, referencing the secret:**
+
+```yaml
+# ~/.datawatch/config.yaml
+web_search:
+  enabled: true
+  providers:
+    - name: brave-fallback
+      type: brave
+      enabled: true
+      priority: 1          # tried after any lower-priority-number provider
+      api_key: "${secret:brave_search_api_key}"
+      num_results: 10
+```
+
+Or via CLI (the key you pass is written straight to the secrets vault, never to `config.yaml`, same write-only convention as every other credential field):
+```bash
+datawatch websearch add brave-fallback --type brave --priority 1 --api-key "<your Brave API key>"
+```
+
+Or via REST — the dedicated provider-add endpoint handles the secret write the same way:
+```bash
+curl -s -X POST http://localhost:8080/api/websearch/providers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"web_search.enabled":true,"web_search.url":"http://searxng.example.com:3001"}'
+  -d '{"name":"brave-fallback","type":"brave","enabled":true,"priority":1,"api_key":"<your Brave API key>"}'
 ```
 
-Once enabled, new opencode and goose sessions receive a `web_search` tool and a `web-search-guidance` skill. The Monitor tab shows live query/error counters.
+**Verify it before relying on it:**
+```bash
+datawatch websearch test brave-fallback
+```
+
+### Running both
+
+Run SearXNG and Brave together — set priorities so one is tried first and the other is a fallback (e.g. SearXNG at `priority: 0` for free queries, Brave at `priority: 1` only kicking in if SearXNG fails or returns nothing). `GET /api/websearch/stats` breaks usage down per provider so you can see exactly how often the fallback actually gets used.
+
+Once `web_search.enabled: true` with at least one provider, new opencode and goose sessions receive a `web_search` tool and a `web-search-guidance` skill.
 
 ## Linked references
 
