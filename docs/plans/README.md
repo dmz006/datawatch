@@ -1012,6 +1012,26 @@ capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in 
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
 
+#### BL392 — Cross-repo GitHub configuration hardening audit (filed 2026-10-03)
+
+Operator-raised: compare `datawatch`'s repo-level GitHub protections (branch/tag
+rulesets, CODEOWNERS, required checks, Dependabot, Actions permissions) against
+`datawatch-app` and `datawatch-community`, and build a hardening plan for the
+latter two. Audit found the premise only partly held — all three repos already
+share matching `main-protection`/`tag-protection` rulesets from the same setup
+date, and `datawatch-app` is actually *stricter* on PR review requirements than
+`datawatch` (1 required approval + thread resolution vs. `datawatch`'s 0, which
+instead relies on 6 required CI checks). The real gap is `datawatch-community`:
+zero CI, zero required checks, no `SECURITY.md`, no `CODEOWNERS` — notable since
+it's the one repo built specifically to accept third-party-authored submissions.
+`datawatch` itself also has two gaps (no CODEOWNERS, Dependabot security updates
+disabled) flagged but left out of scope since the ask was about the other two.
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md)
+**Status:** plan only, no settings/files changed yet. Phase 1 (datawatch-community: minimal validation CI + SECURITY.md + CODEOWNERS) is the highest-priority next step whenever implementation is authorized.
+
+---
+
 #### BL391 — Multi-provider web search registry + usage tracking + caching (filed 2026-10-02)
 
 Operator-raised gap: web search was a single hardcoded SearXNG provider, with no usage
