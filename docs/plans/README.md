@@ -1027,8 +1027,22 @@ it's the one repo built specifically to accept third-party-authored submissions.
 `datawatch` itself also has two gaps (no CODEOWNERS, Dependabot security updates
 disabled) flagged but left out of scope since the ask was about the other two.
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md)
-**Status:** plan only, no settings/files changed yet. Phase 1 (datawatch-community: minimal validation CI + SECURITY.md + CODEOWNERS) is the highest-priority next step whenever implementation is authorized.
+Same-day follow-up (operator spotted `datawatch`'s own Dependabot-alerts/code-
+scanning split in the Settings UI): implemented and verified the additive
+monitoring toggles across all three repos — CodeQL default-setup (datawatch:
+go/javascript/python/etc.; datawatch-app: actions + java-kotlin, see below;
+datawatch-community: no supported language, correctly skipped), private
+vulnerability reporting (datawatch-app, datawatch-community), and Dependabot
+security updates (datawatch, the one repo missing it). Real finding along the
+way: datawatch-app's first CodeQL run failed `Analyze (swift)` — Autobuild
+can't find an Xcode project/workspace in this Kotlin-Multiplatform iOS setup
+(genuine build-tooling limitation, not a flake); fixed by dropping `swift`
+from the language list (actions + java-kotlin both analyze cleanly). Proper
+Swift coverage needs a custom `codeql.yml` with an explicit build step — not
+attempted, left as a follow-up.
+
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 covers the follow-up)
+**Status:** CodeQL/private-vuln-reporting/Dependabot-security-updates toggles implemented and verified. Still open: Phase 1 (datawatch-community: minimal validation CI + SECURITY.md + CODEOWNERS), Phase 2 (datawatch-app: flip `require_code_owner_review`), `datawatch`'s own missing CODEOWNERS, and proper Swift CodeQL coverage for datawatch-app via a custom workflow.
 
 ---
 
