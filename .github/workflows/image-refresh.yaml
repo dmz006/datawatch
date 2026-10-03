@@ -187,29 +187,38 @@ jobs:
           docker buildx imagetools create "${args[@]}" "$src"
 
   recheck-ignored-cves:
-    # Catches the scenario image-refresh's own "rebuild" decision can't:
-    # a .trivyignore entry whose CVE has since been fixed upstream, but
-    # whose PUBLISHED image still scans clean today because the scan is
-    # always run *with* --ignorefile. That comparison can never reveal a
-    # stale suppression on its own. This job tests the only thing that
-    # actually answers "would this still be unfixed if we rebuilt right
-    # now": a fresh, from-scratch pull + the Dockerfile's own
-    # apt-get update && upgrade layer (Dockerfile.agent-base's "Layer 2b"),
-    # scanned WITHOUT the ignorefile. Runs unconditionally (not gated on
-    # needs.plan.outputs.rebuild) since a suppressed CVE never makes that
-    # decision fail in the first place.
+    # Catches the scenario image-refresh's own "rebuild" decision can't: a
+    # .trivyignore entry whose CVE has since been fixed upstream, but whose
+    # PUBLISHED image still scans clean today because the scan is always run
+    # *with* --ignorefile. That comparison can never reveal a stale
+    # suppression on its own.
     #
-    # Never auto-edits .trivyignore or ships an image from this job —
-    # only files/updates one tracking issue so a human reviews and
-    # removes the now-stale entry deliberately. See the "fix now" vs
-    # "trace usage first" exchange that led to the agent-base CVE
-    # suppressions this job exists to eventually retire (2026-09-30).
+    # v2 (2026-10-03): the original version of this job scanned a synthetic
+    # `FROM bitnami/minideb:bookworm` + upgrade image that never installed
+    # any of the packages the real suppressions are actually about (gawk,
+    # curl, rsync, python3.11, perl, ...) — every suppressed CVE scored as
+    # "stale" by construction, a 100%-false-positive bug (see GH#163). Fixed
+    # by rebuilding and scanning every REAL shipped image fresh (--no-cache
+    # --pull, same Dockerfiles the base/agents jobs below ship), unioned
+    # together — a CVE only counts as truly fixed if it's gone from all of
+    # them. Single-arch (linux/amd64) is enough: Debian package advisories
+    # don't vary by CPU arch, and this just needs to know which package
+    # versions landed, not produce a shippable multi-arch image.
+    #
+    # When it finds genuinely-stale entries, it removes them (scripts/
+    # apply-stale-cve-removal.py), bumps the patch version, adds a CHANGELOG
+    # entry, and opens a PR — never pushes straight to main. The PR is the
+    # approval gate: a normal GitHub PR notification, review the diff,
+    # merge. Merging auto-tags (see cve-patch-release.yaml), which triggers
+    # the normal release.yaml pipeline exactly like any manual tag push.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
+    needs: plan
     permissions:
-      contents: read
+      contents: write
       packages: write
       issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
@@ -224,78 +233,192 @@ jobs:
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
             sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
-      - name: Build + push a fresh, upgraded base image (mirrors Dockerfile.agent-base's security-upgrade layer)
-        # Pushed to a throwaway tag and scanned FROM the registry, same as
-        # the base/agents jobs below — not scanned as a local image. A
-        # locally-built-then-locally-scanned image hit an unrelated
-        # Trivy/Docker layer-export incompatibility in dev testing (same
-        # failure on a trivial one-line RUN layer, so not content-specific);
-        # the registry round-trip is this file's already-proven path.
+      - name: Build + scan every real shipped image fresh, without .trivyignore
+        id: scan
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          STAMP: cve-recheck-${{ github.run_id }}
         run: |
-          cat > /tmp/recheck.Dockerfile <<'EOF'
-          FROM bitnami/minideb:bookworm
-          RUN apt-get update -qq && \
-              apt-get upgrade -y -q --no-install-recommends && \
-              apt-get clean && \
-              rm -rf /var/lib/apt/lists/*
-          EOF
-          docker buildx build --pull --no-cache --provenance=false --sbom=false \
-            -f /tmp/recheck.Dockerfile \
-            -t ghcr.io/dmz006/datawatch-cve-recheck:scratch-${{ github.run_id }} \
-            --push /tmp
-      - name: Scan fresh image WITHOUT .trivyignore
-        run: |
-          trivy image --severity HIGH,CRITICAL --format json \
-            -o /tmp/fresh-scan.json \
-            ghcr.io/dmz006/datawatch-cve-recheck:scratch-${{ github.run_id }}
-      - name: Diff .trivyignore against the fresh scan
-        id: diff
-        run: |
-          set -euo pipefail
-          # Every CVE-#### line in .trivyignore that's a suppression entry
-          # (skip comments/blanks).
-          grep -oE '^CVE-[0-9]+-[0-9]+$' .trivyignore | sort -u > /tmp/suppressed.txt
-          # Every CVE ID the fresh, unsuppressed scan still finds.
-          python3 -c "
-          import json
-          d = json.load(open('/tmp/fresh-scan.json'))
+          set -uo pipefail  # no -e: a single image failing to build/scan must not abort the rest
+          : > /tmp/all-vulnerable.txt
+
+          extract_ids() {
+            python3 -c "
+          import json, sys
+          try:
+              d = json.load(open(sys.argv[1]))
+          except Exception:
+              sys.exit(0)
           ids = set()
           for res in d.get('Results', []) or []:
               for v in res.get('Vulnerabilities', []) or []:
                   ids.add(v['VulnerabilityID'])
           print('\n'.join(sorted(ids)))
-          " > /tmp/still-vulnerable.txt
-          # Suppressed entries no longer in the fresh scan = stale.
-          comm -23 /tmp/suppressed.txt /tmp/still-vulnerable.txt > /tmp/stale.txt || true
-          count=$(wc -l < /tmp/stale.txt | tr -d ' ')
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          echo "--- suppressed ---"; cat /tmp/suppressed.txt
-          echo "--- still vulnerable (fresh scan) ---"; cat /tmp/still-vulnerable.txt
-          echo "--- stale (fix now available, safe to remove) ---"; cat /tmp/stale.txt
-      - name: Delete the scratch scan image
-        # datawatch-cve-recheck is a throwaway scan target, not a real
-        # product artifact — not in ghcr-cleanup.yaml's known-package
-        # matrix, so this job cleans up after itself rather than leaving
-        # an orphaned package behind. Runs even if an earlier step failed.
+          " "$1"
+          }
+
+          # Phase 1 — images with no in-repo base dependency.
+          for pair in "agent-base:docker/dockerfiles/Dockerfile.agent-base" \
+                      "validator:docker/dockerfiles/Dockerfile.validator" \
+                      "stats-cluster:docker/dockerfiles/Dockerfile.stats-cluster"; do
+            name="${pair%%:*}"; file="${pair#*:}"
+            img="ghcr.io/dmz006/datawatch-${name}:${STAMP}"
+            echo "::group::build ${name}"
+            if docker buildx build --no-cache --pull --platform linux/amd64 \
+                 --build-arg VERSION="$VERSION" -f "$file" -t "$img" --push .; then
+              if [[ "$name" == "agent-base" ]]; then
+                # agent-* Dockerfiles FROM ${REGISTRY}/agent-base:${BASE_TAG} (slash path).
+                docker buildx imagetools create -t "ghcr.io/dmz006/datawatch/agent-base:${STAMP}" "$img"
+              fi
+              trivy image --severity HIGH,CRITICAL --format json -o "/tmp/scan-${name}.json" "$img" || true
+              extract_ids "/tmp/scan-${name}.json" >> /tmp/all-vulnerable.txt
+            else
+              echo "::warning::build failed for ${name} — skipping its scan this run"
+            fi
+            echo "::endgroup::"
+          done
+
+          # Phase 2 — images that build FROM the throwaway agent-base above.
+          for pair in "agent-claude:docker/dockerfiles/Dockerfile.agent-claude" \
+                      "agent-opencode:docker/dockerfiles/Dockerfile.agent-opencode" \
+                      "agent-aider:docker/dockerfiles/Dockerfile.agent-aider" \
+                      "agent-gemini:docker/dockerfiles/Dockerfile.agent-gemini" \
+                      "agent-goose:docker/dockerfiles/Dockerfile.agent-goose" \
+                      "parent-full:docker/dockerfiles/Dockerfile.parent-full"; do
+            name="${pair%%:*}"; file="${pair#*:}"
+            img="ghcr.io/dmz006/datawatch-${name}:${STAMP}"
+            echo "::group::build ${name}"
+            if docker buildx build --no-cache --pull --platform linux/amd64 \
+                 --build-arg VERSION="$VERSION" \
+                 --build-arg REGISTRY=ghcr.io/dmz006/datawatch \
+                 --build-arg BASE_TAG="${STAMP}" \
+                 -f "$file" -t "$img" --push .; then
+              trivy image --severity HIGH,CRITICAL --format json -o "/tmp/scan-${name}.json" "$img" || true
+              extract_ids "/tmp/scan-${name}.json" >> /tmp/all-vulnerable.txt
+            else
+              echo "::warning::build failed for ${name} — skipping its scan this run"
+            fi
+            echo "::endgroup::"
+          done
+
+          sort -u -o /tmp/all-vulnerable.txt /tmp/all-vulnerable.txt
+          echo "scanned_count=$(ls /tmp/scan-*.json 2>/dev/null | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Delete every throwaway recheck image
+        # None of the ghcr.io/dmz006/datawatch{,-*} CVE-recheck tags are real
+        # product artifacts — not in ghcr-cleanup.yaml's known-package
+        # matrix, so this job cleans up after itself. Runs even if an
+        # earlier build/scan step failed.
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
-          TAG: scratch-${{ github.run_id }}
+          TAG: cve-recheck-${{ github.run_id }}
         run: |
           set -uo pipefail
-          versions=$(gh api "/users/$OWNER/packages/container/datawatch-cve-recheck/versions" --paginate 2>/dev/null \
-            || gh api "/orgs/$OWNER/packages/container/datawatch-cve-recheck/versions" --paginate 2>/dev/null \
-            || echo '[]')
-          vid=$(echo "$versions" | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null) | .id' | head -1)
-          if [[ -n "$vid" ]]; then
-            gh api -X DELETE "/users/$OWNER/packages/container/datawatch-cve-recheck/versions/$vid" 2>/dev/null \
-              || gh api -X DELETE "/orgs/$OWNER/packages/container/datawatch-cve-recheck/versions/$vid" 2>/dev/null \
-              || echo "::warning::failed to delete scratch image version $vid"
+          for pkg in datawatch-agent-base datawatch-validator datawatch-stats-cluster \
+                     datawatch-agent-claude datawatch-agent-opencode datawatch-agent-aider \
+                     datawatch-agent-gemini datawatch-agent-goose datawatch-parent-full \
+                     "agent-base"; do
+            versions=$(gh api "/users/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
+              || gh api "/orgs/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
+              || echo '[]')
+            vid=$(echo "$versions" | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null) | .id' | head -1)
+            if [[ -n "$vid" ]]; then
+              gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
+                || gh api -X DELETE "/orgs/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
+                || echo "::warning::failed to delete $pkg:$TAG"
+            fi
+          done
+
+      - name: Diff .trivyignore against the unioned fresh scans
+        id: diff
+        run: |
+          set -euo pipefail
+          grep -oE '^CVE-[0-9]+-[0-9]+$' .trivyignore | sort -u > /tmp/suppressed.txt
+          comm -23 /tmp/suppressed.txt /tmp/all-vulnerable.txt > /tmp/stale.txt || true
+          count=$(wc -l < /tmp/stale.txt | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "images scanned this run: ${{ steps.scan.outputs.scanned_count }} / 9"
+          echo "--- suppressed ---"; cat /tmp/suppressed.txt
+          echo "--- still vulnerable across all real images (fresh, unsuppressed) ---"; cat /tmp/all-vulnerable.txt
+          echo "--- stale (fix now available in every real image, safe to remove) ---"; cat /tmp/stale.txt
+
+      - name: Open a PR removing the now-stale suppressions
+        if: steps.diff.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OLD_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "datawatch-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          python3 scripts/apply-stale-cve-removal.py .trivyignore /tmp/stale.txt > /tmp/pr-cve-body.md
+          if ! git diff --quiet .trivyignore; then
+            NEW_VERSION=$(python3 -c "
+          v = '$OLD_VERSION'.split('.')
+          v[-1] = str(int(v[-1]) + 1)
+          print('.'.join(v))
+          ")
+            sed -i "s/var Version = \"$OLD_VERSION\"/var Version = \"$NEW_VERSION\"/" \
+              cmd/datawatch/main.go internal/server/api.go
+
+            STALE_COUNT=$(wc -l < /tmp/stale.txt | tr -d ' ')
+            printf -v changelog_entry '## v%s — fix(security): remove stale CVE suppressions now fixed upstream\n\n### Fixed\n- **Removed %s .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.\n' \
+              "$NEW_VERSION" "$STALE_COUNT"
+            python3 -c "
+          import sys
+          entry = sys.argv[1]
+          path = 'CHANGELOG.md'
+          with open(path) as f:
+              content = f.read()
+          marker = '## [Unreleased]\n'
+          idx = content.index(marker) + len(marker)
+          content = content[:idx] + '\n' + entry + '\n' + content[idx:]
+          with open(path, 'w') as f:
+              f.write(content)
+          " "$changelog_entry"
+
+            BRANCH="auto/cve-cleanup-$(date -u +%Y%m%d)"
+            git checkout -b "$BRANCH"
+            git add .trivyignore cmd/datawatch/main.go internal/server/api.go CHANGELOG.md
+            git commit -m "fix(security): remove stale CVE suppressions now fixed upstream
+
+          Found by the daily image-refresh recheck-ignored-cves job: these
+          suppressions no longer appear in a fresh, unsuppressed scan of every
+          real shipped image. Patch version bump per this repo's versioning
+          convention (fix, no feature/behavior change)."
+
+            {
+              echo "Opened automatically by \`image-refresh.yaml\`'s \`recheck-ignored-cves\` job."
+              echo
+              echo "Every image this repo ships (agent-base, validator, stats-cluster, each"
+              echo "agent-*, parent-full) was rebuilt fresh (\`--no-cache --pull\`) and scanned"
+              echo "**without** \`.trivyignore\` applied. The CVEs below are suppressed in"
+              echo "\`.trivyignore\` but did not appear in ANY of those fresh scans — a fix is"
+              echo "now available upstream for all of them."
+              echo
+              cat /tmp/pr-cve-body.md
+              echo "---"
+              echo "Bumped \`$OLD_VERSION\` → \`$NEW_VERSION\` (patch — fix only, no feature/behavior"
+              echo "change) and added a CHANGELOG entry. **Merging this PR auto-tags \`v$NEW_VERSION\`**"
+              echo "(see \`cve-patch-release.yaml\`), which triggers the normal release pipeline."
+              echo
+              echo "Please skim the diff before merging — in particular any \"partially trimmed\""
+              echo "block above, where the suppression comment's prose may now overstate the"
+              echo "remaining CVE count and could use a tidy-up (not required to merge safely,"
+              echo "just a readability nit)."
+            } > /tmp/pr-full-body.md
+
+            git push origin "$BRANCH"
+            gh pr create --title "fix(security): remove $(wc -l < /tmp/stale.txt | tr -d ' ') stale CVE suppression(s) — v$NEW_VERSION" \
+              --body-file /tmp/pr-full-body.md \
+              --label security \
+              --reviewer "${{ github.repository_owner }}"
           fi
 
-      - name: File or update tracking issue for stale suppressions
-        if: steps.diff.outputs.count != '0'
+      - name: File or update tracking issue (always — audit trail even when nothing is stale)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -303,19 +426,21 @@ jobs:
           title="chore: stale .trivyignore suppressions ready to remove"
           body_file=/tmp/issue-body.md
           {
-            echo "Daily \`image-refresh\` CVE recheck found that the following"
-            echo "\`.trivyignore\` entries no longer appear in a fresh,"
-            echo "freshly-upgraded base-image scan — a fix has landed upstream"
-            echo "since these were suppressed. Remove the corresponding lines"
-            echo "from \`.trivyignore\`, then let the next \`image-refresh\` run"
-            echo "(or a manual \`workflow_dispatch\` with \`force: true\`)"
-            echo "rebuild and promote the patched images."
+            if [[ "${{ steps.diff.outputs.count }}" == "0" ]]; then
+              echo "No stale suppressions found as of this run — every currently-suppressed"
+              echo "CVE still reproduces on a fresh, unsuppressed scan of at least one real"
+              echo "shipped image."
+            else
+              echo "A PR removing these was opened automatically: see the linked PR above"
+              echo "(or search \`is:pr auto/cve-cleanup\` if this comment predates it)."
+              echo
+              echo "**Stale CVE IDs (this run):**"
+              echo
+              while read -r cve; do echo "- \`$cve\`"; done < /tmp/stale.txt
+            fi
             echo
-            echo "**Now-fixed CVE IDs:**"
-            echo
-            while read -r cve; do echo "- \`$cve\`"; done < /tmp/stale.txt
-            echo
-            echo "_Last checked: $(date -u +%Y-%m-%dT%H:%M:%SZ) — run ${{ github.run_id }}._"
+            echo "_Last checked: $(date -u +%Y-%m-%dT%H:%M:%SZ) — run ${{ github.run_id }},"
+            echo "${{ steps.scan.outputs.scanned_count }}/9 real images scanned successfully._"
           } > "$body_file"
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "in:title \"$title\"" --state open --json number -q '.[0].number' || true)
           if [[ -n "$existing" ]]; then
