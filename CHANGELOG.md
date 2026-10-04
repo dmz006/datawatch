@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.7 — hardening: explicit CRLF guard on email header values
+
+### Changed
+- **Added an explicit `hasCRLF` check on the email backend's `To`/`From` header values** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3f) — but this corrects an earlier overstatement in that review: this was flagged as "CONFIRMED REAL" email-header-injection, and verified live (not just by reading the source) that it was not actually a live, exploitable gap in this code. Go's own `net/smtp.SendMail` already calls `validateLine` on both the envelope `from` and every envelope `to` and rejects a `\r`/`\n` before ever dialing (confirmed by timing a real call against a non-routable address: it returned in ~1 microsecond with `smtp: A line must not contain CR or LF`, not a dial timeout) — and this code passes the exact same `to`/`from` strings as both the envelope parameters (validated by stdlib) and the hand-built header block (not validated by stdlib), so the injection payload never reached the wire. The new explicit check is kept anyway as real, narrower defense in depth: it fires before the tainted header string is even constructed, and — the part that actually matters longer-term — it protects a plausible future change where the header value diverges from the envelope value (e.g. adding a display name to the header while the envelope keeps the bare address), at which point stdlib's envelope-only validation would stop covering the header string. 6 new tests, including a real fake-SMTP-server end-to-end test proving a legitimate multi-line message still delivers unchanged, and a direct test of stdlib's own protection (not just asserted from reading the source).
+
 ## v8.39.6 — fix(security): `datawatch setup` echoed existing secrets in plaintext
 
 ### Fixed

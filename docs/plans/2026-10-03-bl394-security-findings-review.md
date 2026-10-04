@@ -10,9 +10,12 @@ positives were dismissed on CodeQL with documented reasons (§3, no code
 changed for these); the `push.go` SSRF (§3e, v8.39.3), the council/
 skills path-traversal pair (§3b, v8.39.4), the webhook arbitrary
 local-file-read (§3b #4, v8.39.5), and the `cliPrompt` secret echo
-(§3d, v8.39.6) are fixed. Everything else in this doc remains exactly
-what it was — a recommendation awaiting its own explicit go-ahead, not
-yet acted on.
+(§3d, v8.39.6) are fixed. The email-injection finding (§3f, v8.39.7)
+turned out, on live verification while fixing it, to have been
+mischaracterized — not a live gap, see §3f for the full correction;
+hardened anyway as defense in depth. Everything else in this doc
+remains exactly what it was — a recommendation awaiting its own
+explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -391,17 +394,49 @@ release testing to specifically watch for push regressions on the next
 verification pass against this version. Flagged to them directly (see the
 discussion WAL and the follow-up message sent after this landed).
 
-### 3f. `go/email-injection` (1) — CONFIRMED REAL
+### 3f. `go/email-injection` (1) — originally called CONFIRMED REAL; corrected to NOT A LIVE GAP, hardened anyway — v8.39.7
 
-`internal/messaging/backends/email/backend.go`'s `Send` hand-builds the
-raw RFC822 message: `fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: ...\r\n\r\n
-%s", b.from, to, message)` with **no CRLF stripping/validation** on
-`message` (the notification body) before handing it to `smtp.SendMail`.
-Textbook email-header-injection (CWE-93): a `\r\n` sequence inside the
-notification text injects arbitrary extra SMTP headers (e.g. a `Bcc:`).
-Given this product routes LLM output / webhook-relayed / comm-channel text
-into its notification pipeline, `message` content isn't guaranteed free of
-literal CRLF — this is a real, reachable gap, not theoretical.
+**Two mistakes in the original write-up, corrected here rather than quietly
+edited:**
+
+1. It named `message` (the notification body) as the vulnerable field. It
+   isn't — a value placed *after* the header/blank-line separator in a
+   hand-built message string can't inject new headers; it's just body
+   content. The actual risk, if there were one, would be in `to`/`b.from`
+   (the header *values*), not `message`.
+2. It called this "CONFIRMED REAL" without actually checking whether
+   `smtp.SendMail` itself does anything about it. It does: verified live
+   (timed a real call against a non-routable test address, `203.0.113.1`)
+   that `smtp.SendMail` calls `validateLine` on the envelope `from` and
+   every envelope `to`, and returns `smtp: A line must not contain CR or
+   LF` in ~1 *microsecond* — not a multi-second dial timeout, proving it
+   rejects before attempting any network connection at all. `internal/
+   messaging/backends/email/backend.go`'s `Send` passes the exact same
+   `to`/`b.from` strings as **both** the SMTP envelope parameters (which
+   stdlib validates) **and** the hand-built header block (which it
+   doesn't) — so in this specific code, a CRLF-laced `to`/`from` never
+   reaches the wire; `SendMail` errors out before the tainted header
+   string is ever sent anywhere. This was not a live, exploitable gap as
+   originally characterized.
+
+**Hardened anyway (v8.39.7), as real but narrower defense in depth:** a
+new `hasCRLF` check rejects `to`/`b.from` in `Send` before the header
+string is even constructed. Two reasons this is still worth having
+despite not closing a live gap today: it fires strictly before the
+tainted string exists in memory at all (stdlib's check fires slightly
+later, after already being handed the pre-built message), and — the part
+that actually matters for the future — it protects against a plausible
+later change where the header value diverges from the envelope value
+(e.g. adding a display name like `"Alice <a@example.com>"` to the header
+while the envelope keeps the bare address for SMTP purposes). At that
+point stdlib's envelope-only validation would stop covering the header
+string, and this explicit check would be the only thing still protecting
+it. Verified: full `go test ./...` (2935 tests, 82 packages) clean. 6 new
+tests, including a real fake-SMTP-server end-to-end test (hand-written,
+speaks just enough SMTP for `net/smtp.SendMail` + `PlainAuth` to
+complete) proving a legitimate multi-line notification body still
+delivers byte-for-byte unchanged, and a direct test of stdlib's own
+`validateLine` behavior (not just asserted from reading its source).
 
 ### 3g. `go/uncontrolled-allocation-size` (2) — FALSE POSITIVE, with a caveat
 

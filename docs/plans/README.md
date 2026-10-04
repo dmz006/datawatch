@@ -1074,8 +1074,19 @@ every bot token, bearer token, API key, and shared secret in the setup
 wizard had the same bug. New `cliPromptSecret` fixes all 13; the ~45
 genuinely non-secret fields keep the original `cliPrompt` unchanged.
 
+**v8.39.7** is a correction, not a new finding closed: the email-
+injection finding (§3f) was originally called "CONFIRMED REAL," but live
+verification while fixing it (timing a real `smtp.SendMail` call against
+a non-routable address) showed Go's own stdlib already rejects a
+CRLF-laced header value in ~1 microsecond, before dialing at all — this
+was never a live exploitable gap in this code, and the original write-up
+also named the wrong field (`message`, the body, when it would have been
+`to`/`from`, the header values, if it had been exploitable). Hardened
+anyway with an explicit check, kept as genuine defense in depth against
+a plausible future change, not because today's code needed it.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 5 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. 5 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6); 1 more corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
 
 ---
 
