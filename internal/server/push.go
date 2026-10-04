@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -70,9 +71,26 @@ type pushHub struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[string]*pushClient // topic → clientID → client
 	registered  []pushRegistration                 // mobile push endpoints
+	pushCfg     config.PushConfig                  // BL394 -- kept live via setPushConfig
 }
 
 var globalPushHub = &pushHub{subscribers: map[string]map[string]*pushClient{}}
+
+// setPushConfig updates the live push-validation config. Called once at
+// server startup and again on every PUT /api/config touching a push.* key
+// (see handlePutConfig) -- s.cfg is a long-lived shared pointer mutated in
+// place, so this is the one spot that needs to re-read it explicitly.
+func setPushConfig(cfg config.PushConfig) {
+	globalPushHub.mu.Lock()
+	globalPushHub.pushCfg = cfg
+	globalPushHub.mu.Unlock()
+}
+
+func getPushConfig() config.PushConfig {
+	globalPushHub.mu.RLock()
+	defer globalPushHub.mu.RUnlock()
+	return globalPushHub.pushCfg
+}
 
 // PublishToTopic — public in-process emit. Daemon code calls this when
 // an event of interest happens (waiting_input, council decision, etc.).
@@ -125,6 +143,10 @@ func publishToTopic(topic string, ev PushEvent, fanout bool) {
 		return
 	}
 	for _, r := range regs {
+		// BL394 -- SSE markers are never dialed; see push_ssrf.go header.
+		if isSSEMarkerRegistration(r) {
+			continue
+		}
 		go publishToEndpoint(r, ev)
 	}
 }
@@ -139,7 +161,8 @@ func publishToEndpoint(r pushRegistration, ev PushEvent) {
 	if r.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+r.Token)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	// BL394 -- dial-time SSRF re-check (DNS-rebinding-safe), not a bare client.
+	client := newPushHTTPClient(getPushConfig())
 	resp, err := client.Do(req)
 	if err != nil {
 		return
@@ -293,6 +316,15 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "endpoint required", http.StatusBadRequest)
 			return
 		}
+		// BL394 -- SSE markers (client_id set) are a server-own-URL
+		// bookkeeping entry the daemon never dials; the SSRF guard below
+		// only applies to real outbound WebPush/distributor endpoints.
+		if !isSSEMarkerRegistration(body) {
+			if err := validatePushEndpoint(body.Endpoint, getPushConfig()); err != nil {
+				http.Error(w, "endpoint rejected: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		body.RegisteredAt = time.Now().UTC()
 		globalPushHub.mu.Lock()
 		// Idempotent: replace existing registration matching client_id (if provided) or endpoint.
@@ -387,6 +419,9 @@ func (s *Server) handlePushNotify(w http.ResponseWriter, r *http.Request) {
 	globalPushHub.mu.RUnlock()
 	sent := 0
 	for _, reg := range regs {
+		if isSSEMarkerRegistration(reg) { // BL394 -- never dialed
+			continue
+		}
 		if body.RegistrationID == "" || reg.ID == body.RegistrationID {
 			go publishToEndpoint(reg, ev)
 			sent++

@@ -1081,6 +1081,40 @@ Every listener's bind address is fully configurable:
 | `webhook.addr` | Generic webhook bind | `host:port` format |
 | `twilio.webhook_addr` | Twilio webhook bind | `host:port` format |
 
+### Outbound Mobile Push Endpoint Validation
+
+`POST /api/push/register` lets a mobile client register an endpoint the
+daemon delivers push notifications to. By default the daemon:
+
+- Always refuses loopback, link-local, and cloud-metadata addresses — no
+  configuration can allow these.
+- Requires `https://` for the registered endpoint.
+- Allows private-range addresses (RFC1918, Tailscale CGNAT `100.64.0.0/10`,
+  IPv6 ULA) — this is deliberate, since that's where most self-hosted push
+  distributors (ntfy, Gotify) actually run.
+
+If your self-hosted push distributor runs over plain `http://` on your
+LAN (common for a local ntfy instance with no TLS in front of it), set:
+
+```yaml
+push:
+  allow_insecure_endpoints: true
+```
+
+If you want to additionally lock the daemon down so it can *only* push to
+public internet addresses (e.g. a hosted ntfy/UnifiedPush provider, never
+anything on your own network), set:
+
+```yaml
+push:
+  block_private_endpoints: true
+```
+
+Both default `false`. If push notifications stop arriving after an
+upgrade and you run a self-hosted distributor, check these two settings
+first before anything else — see `internal/server/push_ssrf.go`'s header
+comment for the full design rationale if you need to dig further.
+
 ---
 
 ## 8. Web UI Features

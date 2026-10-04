@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.3 — fix(security): SSRF in POST /api/push/register
+
+### Fixed
+- **Mobile push endpoint registration accepted any URL with zero validation** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md`) — the daemon later POSTed directly to it, letting anyone holding `CapCommWrite` make the daemon reach arbitrary internal addresses. Fixed by splitting the two registration shapes that share this endpoint: an SSE self-registration (`client_id` set, endpoint is the server's own base URL) is now never dialed at all; a real outbound WebPush/distributor endpoint (no `client_id`) is validated at registration time and again at every actual dial (a `net.Dialer.Control` hook re-checks the resolved IP after DNS resolution, closing the DNS-rebinding gap a registration-time-only check would leave open). Loopback/link-local/cloud-metadata addresses are always rejected; `https://` is required unless the new `push.allow_insecure_endpoints` is set; RFC1918/Tailscale-CGNAT/IPv6-ULA stay allowed by default (that's where real self-hosted ntfy/Gotify distributors run) unless the new `push.block_private_endpoints` is set. Coordinated with the datawatch-app agent (same node) before writing this specifically to confirm real endpoint shapes, so the fix doesn't break self-hosted push for anyone — see `internal/server/push_ssrf.go`'s header comment for the full design rationale.
+
 ## v8.39.2 — fix(security): remove stale CVE suppressions now fixed upstream
 
 ### Fixed

@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.2"
+var Version = "8.39.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -695,6 +695,9 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		cfgPath:           cfgPath,
 		linkStreams:       make(map[string]chan string),
 		channelHist:       make(map[string][]channelHistEntry),
+	}
+	if cfg != nil {
+		setPushConfig(cfg.Push) // BL394 -- initial push-SSRF-guard config
 	}
 	// Pre-warm backend version cache in background so first /api/backends is instant.
 	go s.warmVersionCache()
@@ -5048,6 +5051,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"poll_interval":     s.cfg.DNSChannel.PollInterval,
 			"rate_limit":        s.cfg.DNSChannel.RateLimit,
 		},
+		"push": map[string]interface{}{
+			"allow_insecure_endpoints": s.cfg.Push.AllowInsecureEndpoints,
+			"block_private_endpoints":  s.cfg.Push.BlockPrivateEndpoints,
+		},
 		"ollama": map[string]interface{}{
 			"enabled":      s.cfg.Ollama.Enabled,
 			"model":        s.cfg.Ollama.Model,
@@ -5333,6 +5340,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// B30: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
+	}
+	// BL394 -- re-sync the live push-SSRF-guard config on any push.* change.
+	for k := range patch {
+		if strings.HasPrefix(k, "push.") {
+			setPushConfig(s.cfg.Push)
+			break
+		}
 	}
 	// v7.0.0: BL41 default_effort and claude-code fields moved to LLM registry.
 	// Apply registry patches for the moved fields.
@@ -5742,6 +5756,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok {
 				cfg.DNSChannel.RateLimit = n
 			}
+		// Push endpoint validation (BL394 SSRF fix) — see push.go header comment.
+		case "push.allow_insecure_endpoints":
+			cfg.Push.AllowInsecureEndpoints = toBool(v)
+		case "push.block_private_endpoints":
+			cfg.Push.BlockPrivateEndpoints = toBool(v)
 
 		// Memory config
 		case "memory.enabled":

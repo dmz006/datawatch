@@ -326,6 +326,9 @@ type Config struct {
 	// DNSChannel holds DNS tunneling communication channel configuration.
 	DNSChannel DNSChannelConfig `yaml:"dns_channel"`
 
+	// Push controls outbound mobile push-endpoint validation (BL394 SSRF fix).
+	Push PushConfig `yaml:"push,omitempty"`
+
 	// Update controls automatic self-update behaviour.
 	Update UpdateConfig `yaml:"update"`
 
@@ -841,6 +844,31 @@ type DNSChannelConfig struct {
 	MaxResponseSize int    `yaml:"max_response_size"` // max response bytes before truncation (default 512)
 	PollInterval    string `yaml:"poll_interval"`     // client polling interval (default "5s")
 	RateLimit       int    `yaml:"rate_limit"`        // max queries per IP per minute (default 30, 0 = unlimited)
+}
+
+// PushConfig controls validation of outbound mobile push-notification
+// endpoints registered via POST /api/push/register (BL394 SSRF fix).
+//
+// Loopback, link-local, and cloud-metadata addresses are ALWAYS rejected
+// regardless of these flags — there is no legitimate reason a push
+// endpoint would ever need to be one of those. Both flags default false,
+// which keeps today's working self-hosted-push setups (ntfy/Gotify on a
+// LAN or Tailscale address, sometimes over plain http) working unchanged;
+// operators who want a stricter posture opt in.
+//
+// See internal/server/push.go's top-of-file comment for the full design
+// rationale and the two-registration-shape split this depends on.
+type PushConfig struct {
+	// AllowInsecureEndpoints, when false (default), rejects a registered
+	// push endpoint whose scheme is not https://. Set true to allow plain
+	// http:// (e.g. a self-hosted ntfy instance on a LAN with no TLS).
+	AllowInsecureEndpoints bool `yaml:"allow_insecure_endpoints"`
+	// BlockPrivateEndpoints, when true, additionally rejects endpoints
+	// resolving to RFC1918 / Tailscale CGNAT (100.64.0.0/10) / IPv6 ULA
+	// (fc00::/7) addresses. Default false — that's exactly where most
+	// real self-hosted push distributors live, so blocking it by default
+	// would break the operator's own working setup.
+	BlockPrivateEndpoints bool `yaml:"block_private_endpoints"`
 }
 
 // ---- Messaging backends ----

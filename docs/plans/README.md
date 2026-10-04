@@ -1012,6 +1012,41 @@ capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in 
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
 
+#### BL394 — Dependabot + Code Scanning findings review (filed 2026-10-03)
+
+Operator-raised: Dependabot/CodeQL findings "many look like false
+positives" — review, clean up, and discuss what's actually needed to fix.
+Line-by-line review of all 107 open `datawatch` alerts (not 100 — an
+earlier pagination hiccup undercounted) found two systemic reasons the
+raw count overstated the real signal (gosec's `#nosec` doesn't register
+with CodeQL; a dataflow alert's reported line is the sink, not the
+source), but also real, confirmed vulnerabilities: a capability-mismatch
+path-traversal bug (`api_smoke_progress.go`, gated by a read-sounding cap
+but reachable to write/delete arbitrary `.json` paths), a skill-registry
+sync path traversal (`skills/manager.go`, trusts unvalidated frontmatter
+`name` from any connected registry), a council-persona create path
+traversal, an SSRF in mobile push-endpoint registration, a CRLF/email-
+header-injection bug, a client-side prototype-pollution bug and a
+reflected XSS in the PWA, and 15 total call sites of one CLI setup-wizard
+bug that echoes existing secrets as the visible default when re-running
+`datawatch setup`. 74 of the 107 were confirmed false positives and
+dismissed on CodeQL with a documented reason each; `datawatch-app`'s 11
+CodeQL + 5 Dependabot findings were handed off there directly (filed as
+`datawatch-app`#208) per the node's scope split — this agent's focus stays
+`datawatch` core.
+
+Push.go's SSRF fix (§3e) is the first item actually shipped from this
+review, in **v8.39.3** — coordinated with the `datawatch-app` agent first
+(same node, discussion WAL) because a naive "block all private IPs" fix
+would have broken real self-hosted ntfy/Gotify push. Full `go test ./...`
+run caught one real regression (a nil-cfg panic in an existing test
+helper) before it shipped.
+
+**Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
+**Status:** 74 false positives dismissed. 1 of the remaining ~20 confirmed-real findings fixed (push.go SSRF, v8.39.3). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+
+---
+
 #### BL393 — Nested tags for Automata/PRD organization (filed 2026-10-03)
 
 Operator-raised: Automata/PRD needs a folder or grouping mechanism to

@@ -335,6 +335,14 @@ dns_channel:
   # Client polling interval (Go duration, e.g. 5s)
   poll_interval: ""
 
+# ── Push ──
+# Validation for outbound mobile push endpoints (POST /api/push/register). Loopback/link-local/metadata addresses are always rejected regardless of these flags.
+push:
+  # Allow http:// (not just https://) push endpoints, e.g. a LAN ntfy instance with no TLS
+  allow_insecure_endpoints: false
+  # Also reject RFC1918/Tailscale-CGNAT/IPv6-ULA endpoints -- most self-hosted push distributors live there, so this defaults off
+  block_private_endpoints: false
+
 # ── LLM Backends ──
 # AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.
 ollama:

@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 func TestPublishToTopics_RegisteredEndpointGetsOneDelivery(t *testing.T) {
@@ -19,10 +21,18 @@ func TestPublishToTopics_RegisteredEndpointGetsOneDelivery(t *testing.T) {
 	saved := globalPushHub.registered
 	globalPushHub.registered = []pushRegistration{{ID: "t", Endpoint: srv.URL}}
 	globalPushHub.mu.Unlock()
+	// BL394 -- httptest.NewServer binds to loopback, which the real
+	// SSRF-guarded client (pushHTTPClient) now always refuses to dial.
+	// That's correct for production; swap in a plain client here since
+	// this test is about fanout delivery, not the SSRF guard itself
+	// (see push_ssrf_test.go for that).
+	savedClientFn := newPushHTTPClient
+	newPushHTTPClient = func(config.PushConfig) *http.Client { return &http.Client{Timeout: 2 * time.Second} }
 	defer func() {
 		globalPushHub.mu.Lock()
 		globalPushHub.registered = saved
 		globalPushHub.mu.Unlock()
+		newPushHTTPClient = savedClientFn
 	}()
 
 	PublishToTopics([]string{"session-x", "alerts"}, PushEvent{Message: "m"})

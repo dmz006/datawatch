@@ -146,6 +146,12 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "poll_interval", cfg.DNSChannel.PollInterval, "Client polling interval (Go duration, e.g. 5s)")
 	b.WriteString("\n")
 
+	section(&b, "Push", "Validation for outbound mobile push endpoints (POST /api/push/register). Loopback/link-local/metadata addresses are always rejected regardless of these flags.")
+	b.WriteString("push:\n")
+	fieldi(&b, "allow_insecure_endpoints", cfg.Push.AllowInsecureEndpoints, "Allow http:// (not just https://) push endpoints, e.g. a LAN ntfy instance with no TLS")
+	fieldi(&b, "block_private_endpoints", cfg.Push.BlockPrivateEndpoints, "Also reject RFC1918/Tailscale-CGNAT/IPv6-ULA endpoints -- most self-hosted push distributors live there, so this defaults off")
+	b.WriteString("\n")
+
 	section(&b, "LLM Backends", "AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.")
 
 	b.WriteString("ollama:\n")
