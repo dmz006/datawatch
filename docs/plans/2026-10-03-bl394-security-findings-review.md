@@ -29,8 +29,17 @@ re-reading §3h (see the §3h addendum); fixed the two
 alerts as false-positive-after-fix or accepted-risk; migrated the JS
 regression tests to `node --test`; and documented, but deliberately did
 not fix, the `proxy.go` same-origin federation-peer-proxy finding as
-architectural (see the new §3h addendum). Everything else in this doc
-remains exactly what it was — a recommendation awaiting its own
+architectural (see the new §3h addendum). A second follow-up (v8.39.11)
+then: fixed the `api_smoke_progress.go` capability-model decision this
+doc had deliberately deferred (new `CapAnalyticsWrite` + a narrow
+`smoke-reporter` preset, chosen specifically because the write path also
+serves federation cross-instance forwarding — see the §3b addendum);
+fixed the §2 Dependabot recommendation (bumped all 4 stale override
+floors); and fixed a `js/double-escaping` bug CodeQL found in v8.39.10's
+own new test helper (see the §3h addendum). The `proxy.go` architectural
+finding is still open and still deliberately deferred — see "Discussion:
+the proxy fix" below for where that's heading. Everything else in this
+doc remains exactly what it was — a recommendation awaiting its own
 explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
@@ -75,10 +84,15 @@ to track them.
 | ip-address | `>=10.3.1` | 10.5.0 | `>=10.7.1` |
 | qs | `>=6.15.2` | 6.15.3 | `>=6.16.0` |
 
-**Recommendation (not yet done, awaiting go-ahead):** bump the four
-override floors to the versions above, run `npm install` in `channel/` to
-regenerate the lockfile, verify with `npm ls <pkg>` that each resolves to
-the patched version, then let Dependabot re-scan.
+**Fixed — v8.39.11.** Bumped all four override floors (re-checked against
+the live advisories at fix time, which had moved slightly past the table
+above: `fast-uri>=4.1.5` not `4.1.3`, `ip-address>=10.7.1` not `10.5.1`,
+`qs>=6.16.0` unchanged, `hono>=4.13.7` unchanged), ran `npm install` to
+regenerate the lockfile, confirmed `npm audit` reports 0 vulnerabilities
+and `npm ls hono fast-uri ip-address qs` resolves every one above its
+patched floor, and re-ran `make channel-build` (no diff in the tracked
+embed copy, since only transitive versions changed, not `channel/
+index.ts` itself).
 
 ## 3. `datawatch` code scanning — by rule, with verdicts
 
@@ -214,6 +228,46 @@ third instance (`api_smoke_progress.go`'s `run_id`) is **not yet fixed** —
 it also needs the separate capability-model decision (what gates the
 write/delete paths, since `CapAnalyticsWrite` doesn't exist) flagged
 earlier, so it's being done as its own pass rather than folded in here.
+
+**Fixed (`api_smoke_progress.go`, both halves) — v8.39.11.** The
+path-traversal half (left unfixed as of v8.39.10, since it needed this
+same capability decision settled first): `id`/`runID` now go through
+`pathsafe.ValidateRecordName` on every write path
+(POST/PUT body-or-path `id`, DELETE's path `runID`), plus the path-sourced
+value defense-in-depth even though ServeMux already cleans it. The
+capability half, deferred at the time for its own decision: this
+handler's write methods were discovered, while fixing the traversal, to
+also need splitting off of `CapAnalyticsRead` — that capability is handed
+to `monitor`/`analytics-viewer`/`read-only`, three presets explicitly
+documented as read-only, which could write/delete arbitrary `*.json`
+paths here with the traversal bug alone closed but the capability
+mismatch untouched. Traced who actually calls the write path before
+deciding how to split it: not just the local operator's own smoke runner
+(`scripts/release-smoke.sh`), but also the `#54` cross-instance forwarder
+— **one federation peer instance POSTing its own smoke results to
+another instance's dashboard over a bearer token checked against this
+same capability system.** That's the reason the fix isn't simply "add
+`CapAnalyticsWrite` to `full-control`": doing only that would silently
+403 any operator's already-working forwarding setup if the forwarding
+peer's identity was granted one of the three broad read presets (which
+happened to work only *because of* this bug). New `CapAnalyticsWrite` +
+a new, narrow `smoke-reporter` builtin preset (`{CapAnalyticsRead,
+CapAnalyticsWrite}`) — matching this codebase's existing pattern of
+purpose-built delegation presets (`comms-channel-agent`,
+`council-operator`) rather than a one-size-fits-all grant — now gates
+POST/PUT/DELETE on `/api/smoke/progress` and PUT on
+`/api/smoke/forward-url`; GET stays on `CapAnalyticsRead`. **Documented
+as an operator-action-required change** in the v8.39.11 CHANGELOG entry:
+anyone with existing cross-instance forwarding needs to re-grant the
+forwarding peer `smoke-reporter` (or `full-control`) after upgrading.
+New tests (`internal/server/api_smoke_progress_test.go`) cover both
+halves: the traversal rejection (body-sourced and path-sourced `id`,
+plus a legitimate id still round-tripping through write/read/delete), and
+the capability split (a `monitor`-capability peer can still GET but gets
+403 on every write method; a `smoke-reporter`-capability peer can write).
+Both validated by temporarily removing the respective guards and
+confirming the new tests fail first.
+
 **CodeQL still flagged `skills/manager.go`'s `copyDir`/`copyFile` sink
 lines after this fix shipped (5 alerts) — dismissed, v8.39.10.** These
 generic helpers sit one call frame below `Sync`, where the new
@@ -772,6 +826,24 @@ scripts existed from v8.39.8/v8.39.9 (`app_security_test.js`,
 
 All 11 tests across the three files pass under the new runner.
 
+**Addendum (v8.39.11) — the new `app-escaping.test.js` introduced a real
+alert of its own (CodeQL #629, `js/double-escaping`), caught while
+re-checking this review's current alert state, not from any original
+pass.** Its own `htmlAttrDecode` test helper decoded `&amp;` *before* the
+other four entities — order-dependent chained `.replace()` calls can
+double-unescape when the earlier replacement's output happens to look
+like a later entity, exactly as flagged. Concretely: a payload containing
+literal `&amp;lt;` text would decode, under the old order, all the way to
+`<` — a real browser's single-pass decoder stops at `&lt;`, since it
+never re-scans its own output. None of this file's existing test
+payloads happened to contain that shape, so it hadn't produced a false
+pass; fixed anyway (decode `&amp;` last, mirroring `escHtml`'s own
+`&`-first encode order) before it could become a silent footgun in a
+security test's own helper. New unit test of the decoder directly, plus
+a round-trip regression test through the real `escJsAttr`, validated by
+temporarily reverting the decode order and confirming the new test fails
+first.
+
 ## 4. `datawatch-app` — 11 code scanning + 5 Dependabot (reviewed, less deeply)
 
 Reviewed at a lighter touch than `datawatch` — this is Kotlin/Android code
@@ -821,3 +893,86 @@ been bumped. Every "CONFIRMED REAL" above is a recommendation to fix, every
 and every "NEEDS REVIEW" is exactly that — not yet resolved. All of it
 awaits an explicit operator decision, item by item or in whatever grouping
 the operator prefers, before any action is taken.
+
+## 6. Discussion: the proxy fix (not yet implemented)
+
+§3h's addendum confirmed `proxy.go`'s `handleRemotePWA` as real and
+deliberately deferred. Re-examining it for this discussion sharpened the
+severity: the PWA authenticates every API call via a Bearer token read
+straight out of `localStorage.getItem('cs_token')` (`app.js`'s
+`tokenHeader()`, ~14 call sites), not a cookie. A malicious or
+compromised federation peer's JS, proxied under the local daemon's own
+origin, doesn't need to "ride" an ambient session — it can call
+`localStorage.getItem('cs_token')` directly and exfiltrate the real
+local admin bearer token outright, since `localStorage` is shared
+per-origin with no further barrier once something runs under that
+origin. That's a full local-daemon API takeover, not just the
+proxy-channel abuse the original write-up implied.
+
+**This matters for which of the three original options (CSP / iframe+
+sandbox / separate origin) actually closes the gap, and the operator's
+own instinct to combine CSP with iframe+sandbox exposed a real gap in
+the single-option framing:**
+
+- An iframe `sandbox` attribute only blocks `localStorage`/cookie access
+  from inside it if `allow-same-origin` is *omitted*. But the proxied
+  PWA's own, unmodified code already depends on reading `cs_token` from
+  `localStorage` to make its *own* legitimate rewritten API calls work —
+  so omitting `allow-same-origin` while still serving proxied content
+  from the *same* origin breaks the feature outright (every call 401s),
+  while including it just reinstates the original vulnerability (full
+  read access to the real token) that sandboxing was supposed to remove.
+  **Sandbox alone, on the same origin, cannot both protect the token and
+  keep the feature working — that was a real gap in recommending it on
+  its own last time.**
+- A genuinely **separate serving origin** for proxied content resolves
+  this cleanly: a different origin gets its own, naturally separate
+  `localStorage`, so there is no real `cs_token` to read from inside it
+  regardless of sandbox flags. `allow-same-origin` then becomes safe to
+  grant (it only grants access to the *proxy* origin's own, harmless
+  storage), which is what actually lets the proxied PWA keep functioning
+  normally while denying it anything sensitive.
+- **Revised recommendation: all three together, layered by what each
+  one actually buys**, not three independent options to pick from:
+  1. **Separate origin** (new port/subdomain the daemon also listens
+     on) does the real credential-isolation work — structural, not
+     policy-based, so it can't be subtly misconfigured the way a CSP
+     rule can.
+  2. **Iframe + `sandbox`** (with `allow-same-origin` + `allow-scripts`,
+     *without* `allow-top-navigation`/unrestricted `allow-popups`)
+     embeds the now-harmless-if-compromised content in the dashboard
+     while still containing navigation-hijacking/popup abuse against
+     the *outer* page.
+  3. **CSP** on that separate origin's own responses as the cheap,
+     easy-to-keep-current layer — the operator's "tight and updated as
+     we add routes" concern is solved by scoping it coarsely
+     (`connect-src 'self'`, `frame-ancestors <main-daemon-origin>`,
+     `object-src 'none'`) rather than enumerating individual API paths:
+     a *new* route under the same proxy origin needs no CSP change at
+     all; only adding a genuinely new cross-origin destination would.
+
+**Does the move toward more container/sandbox instances change this?**
+Yes, in a way that favors this design rather than complicating it: the
+fix above needs exactly **one** extra origin total, shared by every
+proxied peer — it is not "one origin per peer," so it doesn't need to
+scale with how many sandboxed/containerized instances get federated.
+Separately, if that direction means containerized peers increasingly
+get their own real, independently-addressable network identity (a
+per-container hostname from an ingress/orchestrator) rather than being
+reached only through this daemon's own proxy, that opens a cleaner
+longer-term alternative worth keeping in view: stop proxying/rewriting
+peer content at all, and have the dashboard link directly to each
+peer's own real origin instead. That sidesteps `rewritePWAContent`'s
+regex-based URL rewriting entirely (already a fragile mechanism on its
+own terms) in favor of the browser's native origin model doing all the
+isolation work — a bigger redesign than what's being scoped here, not
+something to commit to without further discussion, but worth revisiting
+if containerized peers become the common case rather than the
+exception.
+
+**Status: still not implemented.** This section records the discussion
+and the revised recommendation; the actual work (standing up the second
+origin/listener, the CSP header, and reworking `handleRemotePWA`'s
+direct-serve into an iframe-embedded page) has concrete infra questions
+(port vs. subdomain, cert provisioning for the new origin) that need
+settling before writing code, not just the design direction above.

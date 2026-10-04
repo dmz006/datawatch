@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/pathsafe"
 )
 
 // smokeRunsDir returns ~/.datawatch/smoke-runs, creating it on demand.
@@ -70,6 +71,11 @@ func (s *Server) handleSmokeForwardURL(w http.ResponseWriter, r *http.Request) {
 			"forward_token": s.smokeForwardToken != "",
 		})
 	case http.MethodPut:
+		// BL394 (§3b addendum) — writing the forward URL/token is a
+		// mutation, not observability; split from the GET above.
+		if !s.fedCap(w, r, federation.CapAnalyticsWrite) {
+			return
+		}
 		var req struct {
 			ForwardURL   string `json:"forward_url"`
 			ForwardToken string `json:"forward_token"`
@@ -110,6 +116,17 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 		rest = strings.TrimPrefix(rest, "/")
 		runID = rest
 	}
+	// BL394 (docs/plans/2026-10-03-bl394-security-findings-review.md §3b) —
+	// runID is normally a URL path segment (already cleaned by ServeMux),
+	// but validate it anyway for defense in depth; the POST body-sourced
+	// "id" below is the one that actually needs this, since query/body
+	// values are never touched by ServeMux's path cleaning.
+	if runID != "" {
+		if err := pathsafe.ValidateRecordName(runID); err != nil {
+			http.Error(w, "invalid run id: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	runsDir, err := smokeRunsDir()
 	if err != nil {
@@ -141,6 +158,11 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 		// Body: JSON progress object with at least a "run_id" field.
 		// POST /api/smoke/progress        — upsert by run_id in body
 		// PUT  /api/smoke/progress/{id}   — upsert by path id
+		// BL394 (§3b addendum) — a mutation, not observability; split
+		// from the top-level CapAnalyticsRead check above.
+		if !s.fedCap(w, r, federation.CapAnalyticsWrite) {
+			return
+		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -156,6 +178,10 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "run_id required in body or path", http.StatusBadRequest)
 			return
 		}
+		if err := pathsafe.ValidateRecordName(id); err != nil {
+			http.Error(w, "invalid run_id: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		data, _ := json.Marshal(body)
 		dest := filepath.Join(runsDir, id+".json")
 		if err := os.WriteFile(dest, data, 0644); err != nil {
@@ -167,6 +193,11 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, map[string]any{"ok": true, "id": id})
 
 	case http.MethodDelete:
+		// BL394 (§3b addendum) — a mutation, not observability; split
+		// from the top-level CapAnalyticsRead check above.
+		if !s.fedCap(w, r, federation.CapAnalyticsWrite) {
+			return
+		}
 		if runID != "" {
 			// Delete single run
 			p := filepath.Join(runsDir, runID+".json")

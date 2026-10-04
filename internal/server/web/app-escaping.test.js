@@ -54,9 +54,14 @@ function callStr(sandbox, fnName, arg) {
 }
 
 function htmlAttrDecode(s) {
-  // Minimal, just the 5 entities escHtml ever produces.
-  return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  // Minimal, just the 5 entities escHtml ever produces. &amp; must decode
+  // LAST (mirroring escHtml's own &-first encode order) -- decoding it
+  // first would double-unescape a payload containing literal "&amp;lt;"
+  // text, turning it into "<" here even though a real browser's parser
+  // decodes entities in one pass and would stop at "&lt;" (CodeQL
+  // js/double-escaping, alert #629, caught on this exact line).
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 }
 
 // Simulates the FULL round trip an inline onclick="fn('${escJsAttr(x)}')"
@@ -111,4 +116,30 @@ test('escJsAttr round-trips a normal value unchanged (regression)', () => {
   const normal = 'telegram-ops-channel';
   const r = simulateInlineOnclick(sandbox, normal);
   assert.equal(r.captured, normal);
+});
+
+test('htmlAttrDecode does not double-unescape literal "&amp;lt;"-shaped text (CodeQL #629 regression)', () => {
+  // Unit test of the decoder itself, not the full escJsAttr round trip --
+  // escJsAttr always runs its result through escHtml too, so it can never
+  // hand htmlAttrDecode a *single*-layer-encoded "&amp;lt;" string to
+  // decode (any literal '&' in the input always comes out double-wrapped,
+  // e.g. "&amp;amp;lt;x"); that still round-trips correctly (see the
+  // "round-trips a normal value" test below with an '&' in the value),
+  // but it never exercises this decoder's own single-pass-vs-sequential
+  // correctness directly, which is what CodeQL's finding was actually
+  // about. A real single-pass HTML decoder, given "&amp;lt;x", decodes
+  // only the leading &amp; -> & (consuming exactly those 5 characters,
+  // never re-scanning its own output), leaving the result as "&lt;x" --
+  // not further decoding that into "<x". Decoding &amp; before the other
+  // entities (the original, buggy order) produced "<x" instead, exactly
+  // the double-unescape CodeQL flagged.
+  assert.equal(htmlAttrDecode('&amp;lt;x'), '&lt;x');
+});
+
+test('escJsAttr + htmlAttrDecode round-trips a value containing a literal "&" unchanged', () => {
+  const sandbox = loadAppJS();
+  const payload = '&amp;lt;x';
+  const r = simulateInlineOnclick(sandbox, payload);
+  assert.equal(r.captured, payload,
+    `value did not round-trip correctly -- decoded: ${r.decodedAttrValue}`);
 });

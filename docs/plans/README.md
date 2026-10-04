@@ -1152,8 +1152,42 @@ module and migrated all three JS regression tests to Node's built-in
 `node --test` runner after comparing it directly against the hand-rolled
 approach.
 
+**v8.39.11** closed the one item v8.39.10 had deliberately deferred:
+`api_smoke_progress.go`'s capability-model decision. Fixed both halves
+together — the path traversal (`pathsafe.ValidateRecordName` on
+`run_id`/`id`, every write path) and the actual capability mismatch
+(new `CapAnalyticsWrite` + a narrow `smoke-reporter` builtin preset,
+split off of `CapAnalyticsRead`, which was handed to three presets
+explicitly documented as read-only). The split mattered because the
+write path also serves `#54`'s cross-instance smoke-forwarding — one
+federation peer POSTing results to another over a bearer token checked
+against this same capability system — so a naive "just add
+`CapAnalyticsWrite` to `full-control`" would have silently 403'd any
+operator's already-working forwarding setup; documented as an
+operator-action-required change instead. Also in v8.39.11: bumped the
+4 stale Dependabot override floors in `channel/package.json` (§2,
+`npm audit` now 0 vulnerabilities), and fixed a `js/double-escaping`
+bug CodeQL found in v8.39.10's own new `app-escaping.test.js` helper
+(order-dependent entity decoding could double-unescape a crafted
+payload inside the test's own browser-decode simulation — caught while
+re-checking this review's current alert state, not from the original
+pass).
+
+Also discussed, not yet implemented: the `proxy.go` same-origin
+federation-peer-proxy risk (alert #545) turned out more severe on a
+closer look — the PWA's auth token lives in `localStorage`, not a
+cookie, so a compromised peer's proxied JS can read it directly rather
+than merely "riding" an ambient session. Revised the fix recommendation
+to all three original options layered together (a separate serving
+origin doing the actual credential isolation; iframe+sandbox for
+embedding and outer-page protection; CSP, scoped coarsely so it doesn't
+need per-route upkeep, as the third layer) rather than picking one.
+Full writeup, including why sandbox alone on the *same* origin can't
+both protect the token and keep the feature working, in the plan doc's
+new §6.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 9 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10) or deliberately not folded in pending a separate decision (`api_smoke_progress.go`'s capability model). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). 1 confirmed real and deliberately deferred as architectural, not a quick fix (`proxy.go`'s same-origin federation-peer-proxy risk, alert #545). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
+**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 10 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). 1 confirmed real, now understood as more severe than first written up, and deliberately deferred pending an infra decision, not a quick fix (`proxy.go`'s same-origin federation-peer-proxy risk, alert #545 — see plan doc §6). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
 

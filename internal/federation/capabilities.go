@@ -45,6 +45,13 @@ const (
 
 	// analytics + cost
 	CapAnalyticsRead = "analytics:read"
+	// BL394 (docs/plans/2026-10-03-bl394-security-findings-review.md §3b
+	// addendum) — smoke-run reporting (POST/PUT/DELETE
+	// /api/smoke/progress, PUT /api/smoke/forward-url) was previously
+	// gated by CapAnalyticsRead alone, a capability handed to broadly-
+	// distributed read-only presets (monitor, analytics-viewer,
+	// read-only). This is the write-side split those write paths now use.
+	CapAnalyticsWrite = "analytics:write"
 
 	// health
 	CapHealthRead = "health:read"
@@ -106,7 +113,7 @@ var allCaps = []string{
 	CapObserversList, CapObserversRead, CapObserversWrite,
 	CapLLMsList, CapLLMsRead, CapLLMsWrite,
 	CapComputeList, CapComputeRead, CapComputeWrite,
-	CapAnalyticsRead,
+	CapAnalyticsRead, CapAnalyticsWrite,
 	CapHealthRead,
 	CapConfigRead, CapConfigWrite,
 	CapSecretsList, CapSecretsRead, CapSecretsWrite,
@@ -265,6 +272,15 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapAlertsList, CapAlertsRead,
 			CapDashboardRead,
 		},
+	},
+	"smoke-reporter": {
+		Name: "smoke-reporter",
+		Description: "Reports smoke-test run progress, including cross-" +
+			"instance forwarding (POST/PUT/DELETE /api/smoke/progress, " +
+			"PUT /api/smoke/forward-url) — narrower than full-control for " +
+			"a peer instance whose only job is reporting its own smoke runs",
+		Builtin: true,
+		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite},
 	},
 	"full-control": {
 		Name:        "full-control",
