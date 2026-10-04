@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.9 — fix(security): reflected XSS in the docs viewer
+
+### Fixed
+- **The embedded docs viewer (`/diagrams.html`) reflected an attacker-controlled URL hash into the page unescaped** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3h) — a crafted link like `.../diagrams.html#docs/<img src=x onerror=alert(document.cookie)>.md` runs arbitrary script in the operator's own authenticated session, no capability token needed at all, just getting the operator to click a link. `openFromHash`'s own `startsWith('docs/') && endsWith('.md')` gate doesn't block this — it just requires the payload to be wrapped in a `docs/` prefix and `.md` suffix, which costs an attacker nothing. The original review found 2 of 5 actually-unescaped interpolations of the same tainted path value; the other 3 (in `renderDoc`'s title/path header and a "View on GitHub" link) were missed on the first pass and found while implementing this fix — one of those three sits inside an `href="..."` attribute, where the exploitable character is a literal `"`, not `<`, so this file's existing `.replace(/</g,'&lt;')`-only convention elsewhere wouldn't have closed that one anyway. Fixed with a proper `escHtml` helper (escapes `&`, `<`, `>`, `"`) applied at all 5 sites. New standalone Node test (`internal/server/web/diagrams_security_test.js`, same approach as the prototype-pollution fix's test) loads the real `diagrams.js`, sets a crafted `location.hash` before loading (the file calls `openFromHash()` at its own top level, so loading it IS the trigger), and confirms the payload lands escaped rather than verbatim — validated by temporarily reverting the fix and confirming the test fails first.
+
 ## v8.39.8 — fix(security): client-side prototype pollution via WS session_id
 
 ### Fixed

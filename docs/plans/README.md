@@ -1102,8 +1102,22 @@ a stubbed browser environment and exercises the actual `handleMessage`
 function — validated the test itself catches the bug by temporarily
 reverting the fix and confirming it fails first.
 
+**v8.39.9** fixed the last confirmed-real finding from this review: the
+embedded docs viewer reflected an attacker-controlled URL hash into
+`innerHTML` unescaped — a crafted link runs arbitrary script in the
+operator's own session, no capability token needed, just a click.
+Found 3 *more* unescaped sites sharing the same tainted value while
+implementing the fix, beyond the 2 originally identified — one inside
+an `href="..."` attribute, where the exploitable character is a
+literal `"` rather than `<`, so this file's pre-existing `<`-only
+escaping convention wouldn't have closed that one anyway. Fixed all 5
+with a proper `escHtml` helper; another standalone Node test
+(`diagrams_security_test.js`) confirms the payload lands escaped, not
+verbatim, validated the same way (revert-and-confirm-it-fails) as the
+prototype-pollution test.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 6 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8); 1 more corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. All 7 confirmed-real findings now fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9) or deliberately not folded in pending a separate decision (`api_smoke_progress.go`'s capability model); 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). This review's own "needs review, not fully checked" items (§3c git argument-injection, §3h's two `app.js` lines and the incomplete-sanitization/stack-trace-exposure findings) remain open and un-triaged.
 
 ---
 

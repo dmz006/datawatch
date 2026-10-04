@@ -16,7 +16,10 @@ mischaracterized — not a live gap, see §3f for the full correction;
 hardened anyway as defense in depth. The client-side prototype-
 pollution finding (§3h, v8.39.8) is also fixed, with a from-scratch
 Node-based regression test since no JS test framework existed for
-this PWA. Everything else in this doc remains exactly what it was — a
+this PWA. The reflected XSS in the docs viewer (§3h, v8.39.9) is also
+fixed — and turned out to have 3 more unescaped sites beyond the 2
+originally identified, found while implementing the fix, not before.
+Everything else in this doc remains exactly what it was — a
 recommendation awaiting its own explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
@@ -454,7 +457,7 @@ alert:** the SQL scan that builds `candidates` in the first place has no
 large, that's a separate, legitimate memory-growth question CodeQL isn't
 even flagging, worth a look independently of this specific finding.
 
-### 3h. JS/PWA findings (~16, mixed) — 2 CONFIRMED REAL (1 fixed), several false positive, some not fully checked
+### 3h. JS/PWA findings (~16, mixed) — 2 CONFIRMED REAL (both fixed), several false positive, some not fully checked
 
 - **CONFIRMED REAL — reflected/DOM XSS:** `internal/server/web/
   diagrams.js`'s `openDoc(path)`. Traced the actual external trigger:
@@ -463,14 +466,42 @@ even flagging, worth a look independently of this specific finding.
   fragment (a crafted link like `.../docs#<img src=x onerror=...>`), and
   two lines interpolate it into `innerHTML` **unescaped**:
   `mainEl.innerHTML = '<div class="loading">Loading ' + path + '…</div>'`
-  and the matching error-path line. Everywhere *else* in the same file
-  (`renderDoc`'s `title`/`h.path`/`h.excerpt`) is properly
-  `.replace(/</g,'&lt;')`'d — these two spots were simply missed. Since
-  this runs in the operator's own authenticated PWA session, a successful
-  hit gives script execution with the operator's own session/cookies —
-  this is the standout finding of the whole review in terms of exploit
-  simplicity (no capability token needed at all, just getting the operator
-  to click a link).
+  and the matching error-path line. **Correction, found while
+  implementing the fix:** this bullet originally said "everywhere else
+  in the same file (renderDoc's title/h.path/h.excerpt) is properly
+  escaped" — wrong, a conflation. `renderIndex`'s `h.path`/`titleText`/
+  `h.excerpt` (a *different* function, rendering search results) genuinely
+  are escaped. `renderDoc`'s *own* `title`/`path` header (`<h2>${title}
+  </h2>`, `<span class="path">${path} ...`) were not, and neither was a
+  third spot, a "View on GitHub" `href="...${path}"` link — 3 more
+  unescaped sites sharing the exact same tainted value, missed on the
+  first pass. Since `openDoc`/`renderDoc` runs in the operator's own
+  authenticated PWA session, a successful hit gives script execution
+  with the operator's own session/cookies — this is the standout finding
+  of the whole review in terms of exploit simplicity (no capability
+  token needed at all, just getting the operator to click a link).
+
+**Fixed — v8.39.9.** All 5 sites (2 directly reachable via the hash
+alone — the "Loading"/"Failed to load" messages in `openDoc`, the more
+realistically-triggered one being the error path, since the fetch for a
+nonexistent crafted path simply 404s; 3 requiring a real file to exist
+at the crafted path for `renderDoc` to even run, so lower-reachability
+but fixed anyway for defense in depth) now go through a new `escHtml`
+helper (`&`, `<`, `>`, `"`) rather than this file's pre-existing
+`.replace(/</g,'&lt;')`-only convention used elsewhere — one of the 3
+secondary sites sits inside an `href="..."` attribute, where the
+exploitable character is a literal `"`, not `<`, so the file's existing
+narrower convention wouldn't have closed that one even if applied.
+Another standalone Node test (`internal/server/web/
+diagrams_security_test.js`, same approach as the prototype-pollution
+test's): loads the real `diagrams.js`, sets a crafted `location.hash`
+*before* loading (the file calls `openFromHash()` at its own top level,
+so loading it is the trigger, no extra step needed), and confirms the
+rendered `#main.innerHTML` contains the escaped form, not the raw
+payload. Validated the same way as the other new test this session:
+reverted the fix temporarily and confirmed the test fails first.
+Verified: `node -c` syntax check, full `go test ./...` (2935 tests, 82
+packages, unaffected since this is JS-only) clean.
 - **CONFIRMED REAL — client-side prototype pollution:** `internal/server/
   web/app.js`'s WS `hook_update` handler. The sink CodeQL flags
   (`n.hookHealth = ...`, `n.state = ...`, etc.) looks like an innocuous

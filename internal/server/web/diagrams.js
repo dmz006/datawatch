@@ -101,6 +101,21 @@
     ]},
   ];
 
+  // BL394 security review (docs/plans/2026-10-03-bl394-security-findings-review.md
+  // §3h) — full escape (&, <, >, ") rather than this file's existing
+  // inline `.replace(/</g,'&lt;')` spots elsewhere, which only needed to
+  // be text-content-safe. One of the 5 sites fixed with this (the
+  // "View on GitHub" href below) sits inside an HTML attribute value,
+  // where a bare quote breaks out -- `<`-only escaping wouldn't close
+  // that one.
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   const listEl = document.getElementById('list');
   const mainEl = document.getElementById('main');
   const filterEl = document.getElementById('filter');
@@ -255,14 +270,14 @@
   async function openDoc(path) {
     Array.from(document.querySelectorAll('aside button.doc')).forEach(b =>
       b.classList.toggle('active', b.dataset.path === path));
-    mainEl.innerHTML = '<div class="loading">Loading ' + path + '…</div>';
+    mainEl.innerHTML = '<div class="loading">Loading ' + escHtml(path) + '…</div>';
     try {
       const resp = await fetch('/' + path);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const md = await resp.text();
       renderDoc(path, md);
     } catch (e) {
-      mainEl.innerHTML = '<div class="empty">Failed to load <code>' + path + '</code>: ' + (e.message || e) + '</div>';
+      mainEl.innerHTML = '<div class="empty">Failed to load <code>' + escHtml(path) + '</code>: ' + escHtml(e.message || e) + '</div>';
     }
   }
 
@@ -283,8 +298,8 @@
     const title = path.replace(/^docs\//, '').replace(/\.md$/, '');
     const diagramCount = blocks.length;
     let html = `<div class="doc-header">
-      <h2>${title}</h2>
-      <span class="path">${path} · ${diagramCount} diagram${diagramCount === 1 ? '' : 's'}</span>
+      <h2>${escHtml(title)}</h2>
+      <span class="path">${escHtml(path)} · ${diagramCount} diagram${diagramCount === 1 ? '' : 's'}</span>
     </div>`;
     blocks.forEach(b => {
       html += `
@@ -319,7 +334,7 @@
       }
       html += `<div class="prose">${proseHtml}
         <div style="margin-top:14px;font-size:11px;color:var(--text2);">
-          <a href="https://github.com/dmz006/datawatch/blob/main/${path}" target="_blank" style="color:var(--accent);">View on GitHub</a>
+          <a href="https://github.com/dmz006/datawatch/blob/main/${escHtml(path)}" target="_blank" style="color:var(--accent);">View on GitHub</a>
         </div>
       </div>`;
     }
