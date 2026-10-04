@@ -1137,6 +1137,39 @@ upgrade and you run a self-hosted distributor, check these two settings
 first before anything else — see `internal/server/push_ssrf.go`'s header
 comment for the full design rationale if you need to dig further.
 
+### Remote PWA Proxy Sandbox Origin
+
+Viewing a federation peer's own PWA (the "PWA" link next to a server in
+Settings → Servers, or `GET /remote/{name}/`) is served from a **second
+listener**, bound to `server.proxy_sandbox_port` (default `8444`) on the
+same host and TLS cert as the main server — a genuinely separate browser
+origin from your own dashboard, not just a different path. This exists
+because the PWA authenticates every API call with a token read from
+`localStorage`, not a cookie: without origin separation, a malicious or
+compromised peer's proxied JS could read that token directly out of
+`localStorage` and act with your full daemon privileges. A different
+origin has its own, naturally separate `localStorage`, so there is
+nothing for proxied content to steal regardless of what its JS does.
+
+`GET /remote/{name}/` on the **main** origin now only 301-redirects to
+the sandbox origin (old bookmarks/links still work); it never serves
+proxied content itself. If `server.proxy_sandbox_port` is `0` or
+negative, the sandbox listener is disabled and viewing a remote peer's
+PWA becomes unavailable — it does **not** fall back to the old,
+same-origin behavior. If a firewall or port conflict prevents the
+sandbox port from binding, the daemon logs a warning and starts
+normally otherwise; check the startup log for `proxy sandbox listener`
+if the "PWA" link stops working after an upgrade.
+
+The sandbox origin's own CSP names your main dashboard's origin in
+`frame-ancestors` (computed per-request from whatever hostname you used
+to reach it, so it works the same over localhost, a LAN IP, or a
+Tailscale name) rather than `'self'` — it is only ever meant to be
+embedded by your own daemon, never anyone else. See
+`docs/plans/2026-10-03-bl394-security-findings-review.md` §6 for the
+full design writeup, including why this needed a second origin rather
+than CSP or iframe sandboxing alone.
+
 ---
 
 ## 8. Web UI Features

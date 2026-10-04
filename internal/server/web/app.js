@@ -12298,6 +12298,7 @@ const COMMS_CONFIG_FIELDS = [
         </details>
       </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
+    { key: 'server.proxy_sandbox_port', label: 'Remote-PWA proxy sandbox port (0=disabled)', type: 'number', placeholder: '8444' },
   ]},
   { id: 'mcpsrv', section: 'MCP Server', docs: 'mcp.md', fields: [
     { key: 'mcp.enabled', label: 'Enabled (stdio)', type: 'toggle' },
@@ -14452,13 +14453,24 @@ function formatBytes(b) {
 function loadServers() {
   const el = document.getElementById('serverStatus');
   if (!el) return;
-  // Fetch server list and health in parallel
+  // Fetch server list, health, and config (for the sandbox-origin PWA
+  // link below) in parallel.
   Promise.all([
     fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
-  ]).then(([servers, health]) => {
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([servers, health, cfg]) => {
     if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
+    // BL394 (docs/plans/2026-10-03-bl394-security-findings-review.md §6)
+    // -- a proxied peer's PWA is served from a separate origin (a
+    // different port today; see proxy_sandbox_port) so its JS can never
+    // read this origin's own auth token out of localStorage. Falls back
+    // to the current origin (port-less) only if config didn't load,
+    // which just reproduces the pre-fix redirect-then-404 rather than
+    // silently serving it same-origin again.
+    const sandboxPort = cfg && cfg.server && cfg.server.proxy_sandbox_port;
+    const pwaOrigin = sandboxPort ? `${location.protocol}//${location.hostname}:${sandboxPort}` : '';
     if (servers.length === 0) { el.textContent = t('servers_none_available') || 'No servers available.'; return; }
     // Build health lookup: name → health info
     const healthMap = {};
@@ -14484,9 +14496,10 @@ function loadServers() {
           healthBadge += ` <span style="color:var(--text2);font-size:10px;">(${h.queued_cmds} queued)</span>`;
         }
       }
-      // Remote PWA link for non-local servers
-      const pwaLink = sv.name !== 'local' && sv.enabled
-        ? ` <a href="/remote/${encodeURIComponent(sv.name)}/" target="_blank" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="Open remote PWA">PWA</a>`
+      // Remote PWA link for non-local servers — pwaOrigin (above) points
+      // at the isolated sandbox origin, never this page's own origin.
+      const pwaLink = sv.name !== 'local' && sv.enabled && pwaOrigin
+        ? ` <a href="${pwaOrigin}/remote/${encodeURIComponent(sv.name)}/" target="_blank" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="Open remote PWA (separate, isolated origin)">PWA</a>`
         : '';
       return `<div class="settings-row" style="justify-content:space-between">
         <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>

@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.11"
+var Version = "8.39.12"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4903,6 +4903,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_key":                s.cfg.Server.TLSKey,
 			"channel_port":           s.cfg.Server.ChannelPort,
 			"tls_port":               s.cfg.Server.TLSPort,
+			"proxy_sandbox_port":     s.proxySandboxPortFor(""),
 			"auto_restart_on_config": s.cfg.Server.AutoRestartOnConfig,
 			"recent_session_minutes": s.cfg.Server.RecentSessionMinutes,
 			"suppress_active_toasts": s.cfg.Server.SuppressActiveToasts,
@@ -5680,6 +5681,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "server.tls_port":
 			if n, ok := toInt(v); ok {
 				cfg.Server.TLSPort = n
+			}
+		case "server.proxy_sandbox_port":
+			if n, ok := toInt(v); ok {
+				cfg.Server.ProxySandboxPort = n
 			}
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)

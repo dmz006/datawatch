@@ -282,10 +282,27 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	// Copy response headers
+	// Copy response headers. BL394 (docs/plans/2026-10-03-bl394-security-
+	// findings-review.md §6) -- also skip every security header, not just
+	// Content-Length/-Encoding: the remote peer's OWN response already
+	// carries its own Content-Security-Policy etc. (set by ITS OWN
+	// securityHeadersMiddleware, describing ITS OWN origin), and blindly
+	// forwarding it here would land a SECOND, conflicting CSP/X-Frame-
+	// Options/etc. alongside the proxy's own (sandboxSecurityHeadersMiddleware's,
+	// written for the proxy's actual origin) -- confirmed live while
+	// testing this fix: curl showed two Content-Security-Policy headers
+	// on one response, one with frame-ancestors naming the main origin
+	// (correct) and one with frame-ancestors 'self' (the remote peer's
+	// own, copied verbatim). Multiple CSP headers combine as an AND
+	// across directives, so the stray copy could silently make the
+	// *correct* policy more restrictive than intended, or outright wrong,
+	// depending on what the specific remote peer happens to send.
 	for k, vals := range resp.Header {
 		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Content-Encoding") {
 			continue // will be recomputed if we rewrite content
+		}
+		if isSecurityResponseHeader(k) {
+			continue // the proxy's own middleware sets these for its own origin
 		}
 		for _, v := range vals {
 			w.Header().Add(k, v)
@@ -377,5 +394,3 @@ func rewritePWAContent(body []byte, serverName string) []byte {
 func (s *Server) handleRemotePWARedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 }
-
-

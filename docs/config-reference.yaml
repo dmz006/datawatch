@@ -155,6 +155,16 @@ server:
   tls_key: ""
   # Per-session MCP channel port (0 = random; auto-selects a free port)
   channel_port: 0
+  # Second listener (same host/cert, separate origin) that serves ONLY
+  # /remote/ (a proxied federation peer's own PWA) and /api/proxy/ (its
+  # matching callback traffic). Needed so a proxied peer's JS can never
+  # read this daemon's own auth token out of localStorage -- before this
+  # existed, /remote/ was served on the SAME origin as your own session.
+  # Default: 8444. Set to 0 (or negative) to disable (not recommended --
+  # /remote/ becomes unavailable rather than falling back to the old,
+  # same-origin behavior). See docs/plans/2026-10-03-bl394-security-
+  # findings-review.md §6.
+  proxy_sandbox_port: 8444
 
 # ── datawatch-channel binary environment variables ──
 # These are injected by the daemon into each session's environment when

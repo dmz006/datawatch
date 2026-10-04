@@ -1173,6 +1173,28 @@ type ServerConfig struct {
 	// SuppressActiveToasts hides toast notifications for the currently viewed session
 	// (e.g. state change toasts while you're watching the output). Default: true.
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
+
+	// ProxySandboxPort (BL394 security review, docs/plans/2026-10-03-
+	// bl394-security-findings-review.md §6) — a second listener, bound
+	// to this port on the same host/cert, that serves ONLY /remote/ (a
+	// proxied federation peer's own PWA) and /api/proxy/ (the matching
+	// REST+WS forwarding), under a distinct origin from the main PWA.
+	// This is what actually stops a compromised/malicious peer's proxied
+	// JS from reading the real operator's auth token out of the main
+	// origin's localStorage — before this, /remote/ was served on the
+	// SAME origin as the operator's own session. Default: Port+1.
+	// Set to -1 to disable the sandbox listener (falls back to the old,
+	// same-origin behavior — not recommended).
+	//
+	// Deliberately a port today, not a per-peer subdomain: a subdomain
+	// needs real DNS/ingress the operator may not have, while a second
+	// port works out of the box on any deployment. The design keeps
+	// subdomains a drop-in upgrade for later (see proxySandboxOrigin in
+	// internal/server/proxy_sandbox.go) — every caller already asks "what
+	// origin should I use for proxying THIS peer" rather than hardcoding
+	// a port, so switching the one function that answers that question is
+	// the only change a future per-peer-subdomain scheme would need.
+	ProxySandboxPort int `yaml:"proxy_sandbox_port,omitempty"`
 }
 
 // MCPResourcesConfig controls MCP resource exposure (BL302 S1).
@@ -2028,6 +2050,7 @@ func DefaultConfig() *Config {
 			TLSAutoGenerate:      true,
 			RecentSessionMinutes: 5,
 			SuppressActiveToasts: true,
+			ProxySandboxPort:     8444,
 		},
 		MCP: MCPConfig{
 			Enabled:         true,

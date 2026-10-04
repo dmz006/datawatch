@@ -600,15 +600,14 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	mux.Handle("/api/", api.fedAuthMiddleware(apiMux))
 	mux.Handle("/ws", api.fedAuthMiddleware(http.HandlerFunc(api.handleWS)))
 
-	// Remote PWA proxy: /remote/{server}/... serves the full PWA from a remote instance
+	// Remote PWA proxy: /remote/{server}/... BL394 (docs/plans/2026-10-03-
+	// bl394-security-findings-review.md §6) moved this off the main
+	// origin entirely -- it now only lives on the sandbox listener
+	// (see proxy_sandbox.go), so a proxied peer's JS can never read the
+	// main origin's own auth token out of localStorage. This 301s any
+	// request for it (including old bookmarks) to the sandbox origin.
 	mux.Handle("/remote/", api.fedAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Redirect /remote/name to /remote/name/ for correct relative paths
-		trimmed := strings.TrimPrefix(r.URL.Path, "/remote/")
-		if !strings.Contains(trimmed, "/") {
-			api.handleRemotePWARedirect(w, r)
-			return
-		}
-		api.handleRemotePWA(w, r)
+		redirectToProxySandbox(cfg, w, r)
 	})))
 
 	// Serve PWA static files. Wrap in gzip middleware so JS / CSS /
@@ -1221,6 +1220,12 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			}
 		}
 	}
+
+	// BL394 (§6) — the sandbox origin for /remote/ + /api/proxy/. Shares
+	// tlsCfg (same cert, a second port on the same host) and the same
+	// host list as the main listener(s) above; a bind failure here is
+	// logged and skipped, not fatal to the rest of the daemon.
+	s.startProxySandboxListener(tlsCfg, hosts, errCh)
 
 	// Signal readiness: all TCP listeners are now bound and goroutines are
 	// serving. Callers waiting on ReadyCh() (e.g. Automata boot-resume) can

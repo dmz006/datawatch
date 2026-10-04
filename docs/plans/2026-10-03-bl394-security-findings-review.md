@@ -36,9 +36,15 @@ doc had deliberately deferred (new `CapAnalyticsWrite` + a narrow
 serves federation cross-instance forwarding — see the §3b addendum);
 fixed the §2 Dependabot recommendation (bumped all 4 stale override
 floors); and fixed a `js/double-escaping` bug CodeQL found in v8.39.10's
-own new test helper (see the §3h addendum). The `proxy.go` architectural
-finding is still open and still deliberately deferred — see "Discussion:
-the proxy fix" below for where that's heading. Everything else in this
+own new test helper (see the §3h addendum). A third follow-up (v8.39.12)
+then implemented the `proxy.go` fix (§6): a second, independent origin
+(`server.proxy_sandbox_port`) for `/remote/`+`/api/proxy/`, decided
+after discussion to start with a port (not a per-peer subdomain) but
+designed so subdomains are a drop-in upgrade later, not a rewrite. Live
+testing that fix (not just reading the diff) found and fixed a second,
+independent bug: `handleRemotePWA` was forwarding the proxied remote
+peer's own security headers verbatim, landing a duplicate, conflicting
+`Content-Security-Policy` on top of the new one. Everything else in this
 doc remains exactly what it was — a recommendation awaiting its own
 explicit go-ahead, not yet acted on.
 
@@ -894,7 +900,7 @@ and every "NEEDS REVIEW" is exactly that — not yet resolved. All of it
 awaits an explicit operator decision, item by item or in whatever grouping
 the operator prefers, before any action is taken.
 
-## 6. Discussion: the proxy fix (not yet implemented)
+## 6. The proxy fix (implemented — v8.39.12)
 
 §3h's addendum confirmed `proxy.go`'s `handleRemotePWA` as real and
 deliberately deferred. Re-examining it for this discussion sharpened the
@@ -970,9 +976,121 @@ something to commit to without further discussion, but worth revisiting
 if containerized peers become the common case rather than the
 exception.
 
-**Status: still not implemented.** This section records the discussion
-and the revised recommendation; the actual work (standing up the second
-origin/listener, the CSP header, and reworking `handleRemotePWA`'s
-direct-serve into an iframe-embedded page) has concrete infra questions
-(port vs. subdomain, cert provisioning for the new origin) that need
-settling before writing code, not just the design direction above.
+**Decision (operator, 2026-10-04): plan on peers eventually having their
+own real addressable name (the longer-term subdomain/per-peer-origin
+direction above); for now, start with the port-based origin, designed so
+subdomains are a drop-in upgrade later, not a rewrite.** The iframe-
+embedding half of the original three-layer plan was deliberately NOT
+built in this pass — the existing UI already opens the remote PWA link
+in a new browser tab (`target="_blank"`, `app.js`'s server-list `pwaLink`
+near the "PWA" link text), and a new tab on a genuinely separate origin
+is already fully isolated by the browser's own same-origin policy with
+no iframe/sandbox attribute needed at all for that specific UX. Iframe
+embedding (if the dashboard later wants to show a peer's PWA inline
+instead of a new tab) remains a real, separate follow-up — the sandbox
+origin's CSP already allows it (`frame-ancestors` names the main origin,
+not `'self'`), so adding an iframe later needs no further origin/CSP
+work, just the embedding UI itself.
+
+**Implemented — v8.39.12.** `internal/server/proxy_sandbox.go` (new):
+a second, independent `*http.Server` + TCP listener, bound to
+`server.proxy_sandbox_port` (new config field, default `8444`) on the
+same host(s) and sharing the same TLS cert as the main listener (a cert
+is bound to a hostname, not a port). It serves a deliberately narrow mux
+— ONLY `/remote/` (`handleRemotePWA`/`handleRemotePWARedirect`, same
+handlers as before, unmodified) and `/api/proxy/` (`handleProxy`, same
+handler, covers its WS relay too since that's dispatched internally by
+path suffix) — never the full API surface. `/remote/` is removed from
+the **main** mux entirely; it now only 301-redirects
+(`redirectToProxySandbox`) to the sandbox origin, preserving the
+original path and query string, so an old bookmark still lands in the
+isolated place rather than 404ing.
+
+**The seam for a future subdomain scheme:** every caller that needs "the
+origin a proxied peer's content should use" goes through
+`proxySandboxPortFor(peerName string) int` — today a one-line lookup
+that ignores `peerName` (every peer shares the one configured port), but
+the single function a later per-peer-subdomain scheme would need to
+change. Nothing else references the port directly.
+
+**The sandbox origin's own CSP** (`buildSandboxCSP`) mirrors the main
+origin's `buildCSP` directives (including the same `'unsafe-inline'`
+trade-off for `script-src`/`style-src` — the proxied content is
+literally another datawatch instance's `app.js`, with the identical
+inline-event-handler shape as this one, so it needs the same
+accommodation, not a weaker policy) with one deliberate difference:
+`frame-ancestors` names the real main origin instead of `'self'`.
+Computed **per request** from the incoming `Host` header
+(`counterpartOrigin`), not a single fixed string — so it's correct
+however the operator happens to reach the daemon (`localhost`, a LAN IP,
+a Tailscale name), since whichever hostname reached the sandbox port,
+the main dashboard was almost certainly reached via that same hostname's
+other port. `X-Frame-Options` is deliberately omitted on the sandbox
+origin (its same-origin-or-deny vocabulary can't express "embeddable by
+this other specific origin," and setting it would make a legacy browser
+without CSP3 support wrongly block the main dashboard's own legitimate
+framing — modern browsers already enforce `frame-ancestors` from CSP
+alone).
+
+**Config field, full accessibility per `AGENT.md`'s Configuration
+Accessibility Rule:** `server.proxy_sandbox_port` — YAML
+(`config-reference.yaml`), `GET`/`PUT /api/config` (`handleGetConfig`'s
+map, `handlePutConfig`'s switch), which automatically covers the CLI
+(`datawatch config set`), the MCP `config_set` tool, and the comm-channel
+`configure key=value` command, since all three are thin wrappers over
+the same REST endpoint — confirmed by reading each one's implementation,
+not assumed. Added to the Settings → Comms → Web Server fields array in
+`app.js` (`COMMS_CONFIG_FIELDS`) for the Web UI. `app.js`'s own
+`loadServers()` now also fetches `/api/config` to read the port and
+builds the "PWA" link against `${location.protocol}//${location.hostname}:
+${port}` — if config fails to load, the link is omitted entirely rather
+than falling back to the vulnerable same-origin path.
+
+**A second, independent bug found while live-testing this fix, not
+from reading the code in isolation:** `handleRemotePWA`'s header-copy
+loop (forwarding the proxied remote's response headers onto the local
+response) was blindly forwarding the remote's own security headers too
+— `curl` against a real running daemon showed **two**
+`Content-Security-Policy` headers on one response: the correct one (this
+fix's, naming the main origin) and the remote peer's own (`frame-
+ancestors 'self'`, copied verbatim). Multiple CSP headers combine as an
+AND across directives per the CSP spec, so this could silently make the
+*correct* policy more restrictive than intended, or wrong outright,
+depending on what a given remote peer's own CSP happens to say — a bug
+that would never have been caught by only reading the diff, only by
+actually running it. Fixed by skipping every known security-header name
+(`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy`, the three `Cross-Origin-*-Policy` headers,
+`Permissions-Policy`) when copying the upstream response, alongside the
+pre-existing `Content-Length`/`Content-Encoding` skip.
+
+**Verification — live, not just `go test`.** Built the real binary,
+ran it with the new listener against a throwaway config, registered a
+real (self-referential, pointed at the daemon's own main port) federation
+peer, and confirmed with `curl`: (1) `GET /remote/{name}/...` on the
+main origin 301s to the sandbox origin with the path and query preserved
+exactly; (2) the sandbox origin serves the real proxied PWA content
+(`rewritePWAContent`'s rewriting visibly present in the returned HTML);
+(3) exactly one `Content-Security-Policy` header on that response,
+correctly naming the main origin in `frame-ancestors`; (4) the sandbox
+origin 404s `/api/sessions` and every other main-API route — confirming
+the mux's surface is actually as narrow as intended, not just as
+documented; (5) `PUT`/`GET /api/config` round-trips
+`server.proxy_sandbox_port` correctly. The duplicate-CSP bug above was
+found at step 3 of this very pass, before being fixed — this review's
+own "verify the test actually catches the bug" discipline extended here
+to "verify the live behavior actually matches the design," which is what
+surfaced a bug neither `go build` nor the unit tests below would have
+caught on their own, since both only exercise this daemon's own
+responses, never a round trip through a second, real HTTP server.
+
+New tests (`internal/server/proxy_sandbox_test.go`): the redirect
+(target URL, and the disabled-feature 503), `counterpartOrigin`'s
+TLS-dual-mode port selection, `buildSandboxCSP`'s frame-ancestors value,
+the sandbox mux's route surface (serves `/remote/`+`/api/proxy/`, 404s
+everything else), the sandbox mux's CSP header end-to-end, and the
+header-stripping fix (`TestHandleRemotePWA_StripsUpstreamSecurityHeaders`,
+using a fake upstream `httptest.Server` that sets its own CSP/X-Frame-
+Options/Permissions-Policy — confirmed to fail without the fix before
+being trusted). Full `go test ./...` (2952 tests, 82 packages) and
+`node --test internal/server/web/*.test.js` (13 tests) both clean.

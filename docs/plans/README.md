@@ -1173,21 +1173,42 @@ payload inside the test's own browser-decode simulation — caught while
 re-checking this review's current alert state, not from the original
 pass).
 
-Also discussed, not yet implemented: the `proxy.go` same-origin
-federation-peer-proxy risk (alert #545) turned out more severe on a
-closer look — the PWA's auth token lives in `localStorage`, not a
-cookie, so a compromised peer's proxied JS can read it directly rather
-than merely "riding" an ambient session. Revised the fix recommendation
-to all three original options layered together (a separate serving
-origin doing the actual credential isolation; iframe+sandbox for
-embedding and outer-page protection; CSP, scoped coarsely so it doesn't
-need per-route upkeep, as the third layer) rather than picking one.
-Full writeup, including why sandbox alone on the *same* origin can't
-both protect the token and keep the feature working, in the plan doc's
-new §6.
+The `proxy.go` same-origin federation-peer-proxy risk (alert #545)
+turned out more severe on a closer look — the PWA's auth token lives in
+`localStorage`, not a cookie, so a compromised peer's proxied JS can
+read it directly rather than merely "riding" an ambient session.
+
+**v8.39.12** implemented the fix: a second, independent origin
+(`server.proxy_sandbox_port`, new config field, default `8444`, full
+accessibility — YAML/REST/CLI/MCP/comm-channel/Web UI per `AGENT.md`'s
+Configuration Accessibility Rule) serving only `/remote/`+`/api/proxy/`,
+with its own CSP whose `frame-ancestors` names the real main origin
+instead of `'self'`, computed per-request so it's correct regardless of
+which hostname reaches the daemon. `/remote/` on the main origin now
+only 301-redirects there. Decided, after discussion, to start with a
+port (not a per-peer subdomain, which needs real DNS/ingress) but
+designed the one function any caller uses to resolve "which origin does
+peer X's content use" so a subdomain scheme is a drop-in upgrade later,
+not a rewrite. Iframe embedding was deliberately not built in this pass
+— the existing UI already opens the remote PWA in a new tab, which a
+genuinely separate origin already fully isolates via the browser's own
+same-origin policy with no iframe/sandbox needed; the sandbox CSP
+already allows embedding later if the UI changes to want it.
+
+Live-testing the fix (not just reading the diff) found and fixed a
+second, independent bug: `handleRemotePWA` was forwarding the proxied
+remote peer's own response headers verbatim, including its own
+Content-Security-Policy — landing a second, conflicting CSP on the same
+response (multiple CSP headers combine as an AND per directive, so this
+could have silently weakened or broken the new, correct policy
+depending on what a given remote peer's own CSP said). Fixed by
+stripping every known security-header name from the forwarded response.
+Both fixes verified against a real running daemon with `curl`
+(redirect, single correct CSP header, narrow route surface, config
+round-trip), not just unit tests — full writeup in the plan doc's §6.
 
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 10 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). 1 confirmed real, now understood as more severe than first written up, and deliberately deferred pending an infra decision, not a quick fix (`proxy.go`'s same-origin federation-peer-proxy risk, alert #545 — see plan doc §6). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
+**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 11 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
 
