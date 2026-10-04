@@ -53,6 +53,14 @@ type HTTPServer struct {
 	srv     *http.Server
 	manager *session.Manager
 	api     *Server
+	// webSub (BL394 §6 iframe-embed follow-up) is the embedded PWA
+	// filesystem, kept here so the proxy sandbox mux can serve /locales/
+	// statically -- translations aren't peer-specific, so there's no
+	// reason to proxy them (and no way to, anyway: a bare runtime
+	// fetch('/locales/'+lang+'.json') in the proxied app.js is never
+	// rewritten to carry a peer name, unlike the static href/src assets
+	// rewritePWAContent does rewrite).
+	webSub fs.FS
 
 	// readyCh is closed once all TCP listeners are bound and the server
 	// is ready to accept connections. Callers that need to wait for the
@@ -642,7 +650,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           securityHeadersMiddleware(mux),
+		Handler:           securityHeadersMiddleware(cfg, mux),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0, // 0 = no timeout for WebSocket
@@ -656,6 +664,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 		srv:     srv,
 		manager: manager,
 		api:     api,
+		webSub:  webSub,
 		readyCh: make(chan struct{}),
 	}
 }
@@ -1328,10 +1337,14 @@ func generateCSPNonce() string {
 // (index.html × 11 + app.js template literals × 509) to fire. The proper
 // fix is a full addEventListener migration tracked as backlog. Until
 // then, 'unsafe-inline' is the documented, intentional regression.
-func buildCSP(scriptNonce string) string {
+// extraFrameSrc (BL394 §6 follow-up — embedding a proxied peer's PWA in
+// an iframe) adds that one additional origin to frame-src; without it,
+// frame-src falls back to default-src 'self' as before, matching the
+// exact pre-existing behavior for every route that doesn't need it.
+func buildCSP(scriptNonce string, extraFrameSrc string) string {
 	_ = scriptNonce // reserved for the post-migration nonce-only mode; see comment above
 	scriptSrc := "'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com"
-	return "default-src 'self'; " +
+	csp := "default-src 'self'; " +
 		"script-src " + scriptSrc + "; " +
 		"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
 		"connect-src 'self'; " +
@@ -1342,6 +1355,10 @@ func buildCSP(scriptNonce string) string {
 		"form-action 'self'; " +
 		"object-src 'none'; " +
 		"frame-ancestors 'self'"
+	if extraFrameSrc != "" {
+		csp += "; frame-src 'self' " + extraFrameSrc
+	}
+	return csp
 }
 
 // securityHeadersMiddleware adds OWASP-recommended security response headers to every
@@ -1349,15 +1366,28 @@ func buildCSP(scriptNonce string) string {
 //
 // For requests to / and /index.html a per-request CSP nonce is generated and
 // stored in the request context (ctxKeyCSPNonce) so the index handler can
-// substitute %%CSP_NONCE%% in the HTML template.
-func securityHeadersMiddleware(next http.Handler) http.Handler {
-	baseCSP := buildCSP("") // no nonce for non-index routes
+// substitute %%CSP_NONCE%% in the HTML template. Those same two routes also
+// get frame-src extended to the proxy sandbox origin (BL394 §6 follow-up)
+// -- the SPA lives entirely on this one page, so this is the only CSP that
+// governs whether app.js is allowed to embed a proxied peer's PWA in an
+// iframe at all; every other route never renders an iframe and is left
+// exactly as before. Computed per request (via counterpartOrigin, keyed
+// off the incoming Host header) rather than a fixed string, same reasoning
+// as the sandbox origin's own CSP: correct regardless of which hostname
+// (localhost, a LAN IP, a Tailscale name, ...) the operator used to reach
+// the daemon.
+func securityHeadersMiddleware(cfg *config.ServerConfig, next http.Handler) http.Handler {
+	baseCSP := buildCSP("", "") // no nonce, no frame-src extension for non-index routes
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		csp := baseCSP
 		ctx := r.Context()
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			nonce := generateCSPNonce()
-			csp = buildCSP(nonce)
+			extraFrameSrc := ""
+			if cfg.ProxySandboxPort > 0 {
+				extraFrameSrc = counterpartOrigin(cfg, r, cfg.ProxySandboxPort)
+			}
+			csp = buildCSP(nonce, extraFrameSrc)
 			ctx = context.WithValue(ctx, ctxKeyCSPNonce, nonce)
 		}
 		h := w.Header()

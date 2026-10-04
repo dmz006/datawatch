@@ -7,12 +7,60 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
+
+// TestSecurityHeadersMiddleware_IndexRouteGetsSandboxFrameSrc is a
+// regression test for the iframe-embed follow-up to BL394 §6: embedding
+// a proxied peer's PWA in an iframe needs the MAIN origin's own CSP to
+// allow it via frame-src, not just the sandbox origin's frame-ancestors
+// -- CSP requires both sides to agree. Without this, the browser blocks
+// the iframe outright regardless of what the sandbox origin's own CSP
+// says. Only / and /index.html (where the SPA, and so the iframe, lives)
+// should carry the extension; every other route is unaffected.
+func TestSecurityHeadersMiddleware_IndexRouteGetsSandboxFrameSrc(t *testing.T) {
+	cfg := &config.ServerConfig{Port: 8080, ProxySandboxPort: 8444}
+	handler := securityHeadersMiddleware(cfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "my-host:8080"
+	handler.ServeHTTP(rr, req)
+	csp := rr.Header().Get("Content-Security-Policy")
+	if !containsAll(csp, "frame-src 'self' http://my-host:8444") {
+		t.Errorf("index route CSP missing the sandbox-origin frame-src: %s", csp)
+	}
+
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req2.Host = "my-host:8080"
+	handler.ServeHTTP(rr2, req2)
+	csp2 := rr2.Header().Get("Content-Security-Policy")
+	if containsAll(csp2, "frame-src") {
+		t.Errorf("non-index route must not carry the frame-src extension: %s", csp2)
+	}
+}
+
+func TestSecurityHeadersMiddleware_SandboxDisabled_NoFrameSrc(t *testing.T) {
+	cfg := &config.ServerConfig{Port: 8080, ProxySandboxPort: 0}
+	handler := securityHeadersMiddleware(cfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler.ServeHTTP(rr, req)
+	csp := rr.Header().Get("Content-Security-Policy")
+	if containsAll(csp, "frame-src") {
+		t.Errorf("sandbox disabled: CSP must not carry a frame-src extension: %s", csp)
+	}
+}
 
 // TestHandleRemotePWA_StripsUpstreamSecurityHeaders is a regression test
 // for a real bug found live-testing the sandbox origin (BL394 §6): a
@@ -67,7 +115,11 @@ func sandboxTestHTTPServer(t *testing.T, cfg *config.ServerConfig) *HTTPServer {
 	t.Helper()
 	api := newTestServer(t, nil, nil)
 	api.cfg = &config.Config{Server: *cfg}
-	return &HTTPServer{cfg: cfg, api: api}
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		t.Fatalf("fs.Sub(webFS, \"web\"): %v", err)
+	}
+	return &HTTPServer{cfg: cfg, api: api, webSub: sub}
 }
 
 func TestRedirectToProxySandbox_301sToSandboxOrigin(t *testing.T) {

@@ -21,9 +21,6 @@ import (
 // handleProxyWS relays a WebSocket connection between the client and a remote
 // datawatch server. Route: /api/proxy/{serverName}/ws
 func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapConfigRead) {
-		return
-	}
 	// Extract server name: /api/proxy/<name>/ws
 	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
 	idx := strings.Index(path, "/")
@@ -32,6 +29,13 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serverName := path[:idx]
+	// BL394 §6 iframe-embed follow-up — see handleProxy's identical check.
+	// handleProxy already calls this (it dispatches here internally), so
+	// this is belt-and-suspenders for any future direct registration of
+	// this handler, not currently load-bearing on its own.
+	if !s.checkProxyAuth(w, r, serverName) {
+		return
+	}
 
 	remote := s.findServer(serverName)
 	if remote == nil {
@@ -230,9 +234,6 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 // All HTML, JS, and CSS content is rewritten so API calls, WS connections,
 // and asset URLs route back through the proxy.
 func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapConfigRead) {
-		return
-	}
 	// Extract server name and sub-path: /remote/<name>/...
 	path := strings.TrimPrefix(r.URL.Path, "/remote/")
 	idx := strings.Index(path, "/")
@@ -246,6 +247,15 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 	}
 	if subPath == "" {
 		subPath = "/"
+	}
+	// BL394 §6 iframe-embed follow-up: moved below serverName extraction
+	// (same reasoning as handleProxy/checkProxyAuth) -- every request
+	// under /remote/{name}/, including the proxied page's own css/js/
+	// image asset loads (which fedAuthMiddleware now also accepts a
+	// scoped token for, since a <link>/<script src> tag can't carry a
+	// custom header), is authorized identically to the top-level page.
+	if !s.checkProxyAuth(w, r, serverName) {
+		return
 	}
 
 	remote := s.findServer(serverName)
@@ -266,6 +276,27 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for k, vals := range r.Header {
+		// Pre-existing bug, found live-testing the iframe-embed follow-up
+		// (BL394 §6) with a real browser rather than curl (which doesn't
+		// send Accept-Encoding by default, so this never surfaced):
+		// forwarding the browser's own "Accept-Encoding: gzip" header
+		// upstream disables Go's http.Transport's normal behavior of
+		// requesting gzip itself and transparently decompressing the
+		// response -- per net/http's own documented behavior, that
+		// auto-decompression only happens when the CALLER never set
+		// Accept-Encoding explicitly. With it forwarded, resp.Body here
+		// was the raw, still-gzipped bytes, which rewritePWAContent then
+		// string-rewrote as if it were plain text (silently producing
+		// garbage) and served back with no Content-Encoding header at
+		// all -- so the browser received raw gzip binary labeled as
+		// text/javascript and failed to parse it ("Invalid or
+		// unexpected token" at line 1 col 1, confirmed against a real
+		// running daemon). Dropping it here lets Transport manage
+		// compression itself and decompress transparently, exactly the
+		// plain bytes rewritePWAContent already assumes it's getting.
+		if strings.EqualFold(k, "Accept-Encoding") {
+			continue
+		}
 		for _, v := range vals {
 			proxyReq.Header.Add(k, v)
 		}
@@ -334,7 +365,18 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rewritten := rewritePWAContent(body, serverName)
+	// BL394 §6 iframe-embed follow-up: mint a short-lived, serverName-
+	// scoped proxy token and have it injected into the proxied page's own
+	// localStorage, so the proxied app.js's own tokenHeader()-based fetch
+	// calls (and its WS connection's ?token= query param) authenticate
+	// correctly against THIS daemon's /api/proxy/ route -- the sandbox
+	// origin's localStorage is otherwise genuinely empty (that's the
+	// fix), so without this the proxied dashboard loads but every one of
+	// its own API calls 401s. See proxy_token.go's header comment for why
+	// this can't just be the real admin token.
+	token := proxyTokens.mint(serverName)
+
+	rewritten := rewritePWAContent(body, serverName, token)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(rewritten)))
 	w.WriteHeader(resp.StatusCode)
 	w.Write(rewritten) //nolint:errcheck
@@ -345,10 +387,23 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 //   - /api/... → /api/proxy/{server}/api/...
 //   - /ws      → /api/proxy/{server}/ws
 //   - Relative asset paths (href="/...", src="/...") → /remote/{server}/...
-func rewritePWAContent(body []byte, serverName string) []byte {
+//
+// scopedToken (BL394 §6 iframe-embed follow-up), if non-empty, is
+// injected as a tiny inline bootstrap script right after <head> -- before
+// the real app.js tag loads, later in the document -- so the proxied
+// page's own code can authenticate its own API calls. Hex-encoded, so no
+// escaping concerns embedding it in a JS string literal. A no-op on
+// non-HTML content (no <head> to match) or when scopedToken is empty
+// (e.g. mint() failed to read crypto/rand).
+func rewritePWAContent(body []byte, serverName string, scopedToken string) []byte {
 	content := string(body)
 	proxyAPI := "/api/proxy/" + serverName
 	remotePWA := "/remote/" + serverName
+
+	if scopedToken != "" {
+		bootstrap := `<head><script>try{localStorage.setItem('cs_token','` + scopedToken + `');}catch(e){}</script>`
+		content = strings.Replace(content, "<head>", bootstrap, 1)
+	}
 
 	// Rewrite WS endpoint: '/ws' or "/ws" → proxied WS path
 	// Match common JS patterns for WS URL construction
@@ -368,6 +423,17 @@ func rewritePWAContent(body []byte, serverName string) []byte {
 	// Exclude /api/, /remote/, /metrics, /healthz by checking the captured suffix.
 	assetRe := regexp.MustCompile(`((?:href|src|action)=["'])(/[^"']+)`)
 	skipPrefixes := []string{"/api/", "/remote/", "/metrics", "/healthz"}
+	// BL394 §6 iframe-embed follow-up: these rewritten URLs (css/js/image
+	// requests the browser issues itself via <link>/<script src>, not a
+	// JS fetch()) are under /remote/{server}/ just like the page itself --
+	// also gated by fedAuthMiddleware, and a plain tag load can no more
+	// carry a custom header than the top-level navigation can. Append
+	// the same scoped proxy token as a query param (fedAuthMiddleware's
+	// scoped-token fallback now also covers /remote/, not just
+	// /api/proxy/ -- see federation_cap.go) so these loads authenticate
+	// too, instead of silently 401ing and being served back as a
+	// text/plain error body that the browser then (correctly) refuses to
+	// parse as CSS/JS.
 	content = assetRe.ReplaceAllStringFunc(content, func(m string) string {
 		groups := assetRe.FindStringSubmatch(m)
 		if len(groups) < 3 {
@@ -379,7 +445,7 @@ func rewritePWAContent(body []byte, serverName string) []byte {
 				return m
 			}
 		}
-		return groups[1] + remotePWA + path
+		return groups[1] + appendProxyToken(remotePWA+path, scopedToken)
 	})
 
 	// Rewrite favicon and manifest references

@@ -195,8 +195,8 @@ func (s *HTTPServer) sandboxSecurityHeadersMiddleware(next http.Handler) http.Ha
 // "llm"/"comm"/"agent" would be ambiguous here the same way it already
 // is on the main mux -- a pre-existing edge case, not a new one.)
 func (s *HTTPServer) buildProxySandboxMux() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/remote/", s.api.fedAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authed := http.NewServeMux()
+	authed.Handle("/remote/", s.api.fedAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		trimmed := strings.TrimPrefix(r.URL.Path, "/remote/")
 		if !strings.Contains(trimmed, "/") {
 			s.api.handleRemotePWARedirect(w, r)
@@ -204,9 +204,21 @@ func (s *HTTPServer) buildProxySandboxMux() http.Handler {
 		}
 		s.api.handleRemotePWA(w, r)
 	})))
-	mux.HandleFunc("/api/proxy/", s.api.handleProxy)
-	wrapped := s.api.fedAuthMiddleware(mux)
-	return s.sandboxSecurityHeadersMiddleware(wrapped)
+	authed.Handle("/api/proxy/", s.api.fedAuthMiddleware(http.HandlerFunc(s.api.handleProxy)))
+
+	mux := http.NewServeMux()
+	mux.Handle("/", authed)
+	// /locales/ -- deliberately unauthenticated, matching the main
+	// origin's own behavior (static i18n strings, served directly from
+	// the same embedded FS, never gated by fedAuthMiddleware there
+	// either). Not proxied to the remote peer: translations aren't
+	// peer-specific, and there's no peer name to proxy by anyway -- the
+	// proxied app.js's own fetch('/locales/'+lang+'.json') is a runtime-
+	// built string rewritePWAContent never touches (unlike the static
+	// href/src assets it does rewrite), so it always resolves relative
+	// to the sandbox origin itself, with no peer segment in the path.
+	mux.Handle("/locales/", cacheControlMiddleware(http.FileServer(http.FS(s.webSub))))
+	return s.sandboxSecurityHeadersMiddleware(mux)
 }
 
 // startProxySandboxListener binds the sandbox origin's own TLS (or plain

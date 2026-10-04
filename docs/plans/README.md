@@ -1207,8 +1207,33 @@ Both fixes verified against a real running daemon with `curl`
 (redirect, single correct CSP header, narrow route surface, config
 round-trip), not just unit tests — full writeup in the plan doc's §6.
 
+**v8.39.13** then built the iframe-embed UX v8.39.12 deliberately
+deferred — the "PWA" link now opens the remote peer's dashboard inline
+(a modal, same conventions as the existing file viewer) instead of only
+a new tab. Driving a real headless Chrome against it (not `curl`, which
+can't evaluate CSP/iframes/JS at all) found four more real bugs, one at
+a time, each fixed before moving to the next: (1) the main dashboard's
+own CSP had no `frame-src` and would have silently blocked the iframe
+outright regardless of the sandbox origin's own policy; (2) the sandbox
+origin's now-empty localStorage (the whole point of v8.39.12's fix)
+left the embedded dashboard's own API calls with no token to send —
+fixed with a new short-lived (1-hour), single-peer-scoped proxy token,
+built only after checking in on the design with the operator first,
+since injecting the real admin token instead would have undone the
+origin split entirely; (3) static asset tag-loads (css/js under
+`/remote/`) needed the same `?token=` treatment as the top-level page
+load, since a `<link>`/`<script src>` can no more carry a header than a
+navigation can; (4) a pre-existing, unrelated bug — `handleRemotePWA`
+forwarding the browser's own `Accept-Encoding` header upstream — was
+silently corrupting every gzip-compressed script/stylesheet it proxied
+for any real browser (not `curl`, which doesn't send that header by
+default), and has existed since before this entire review began. Final
+verification included a full-page screenshot of the actual proxied
+dashboard rendering real session/alert/config data inside the embedded
+viewer. Full writeup, bug by bug, in the plan doc's new §6a.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 11 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
+**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 11 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12 + its iframe-embed follow-up, v8.39.13). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). One small, pre-existing, cosmetic gap remains by design (not fixed): `/api/health`'s unauthenticated-by-design staleness check 401s once proxied — see plan doc §6a. This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
 

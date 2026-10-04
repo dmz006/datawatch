@@ -19,12 +19,29 @@ import (
 
 type contextKey int
 
-const fedPeerKey contextKey = iota
+const (
+	fedPeerKey contextKey = iota
+	// scopedProxyPeerKey (BL394 §6 iframe-embed follow-up) holds the peer
+	// name a request was authenticated against via a short-lived,
+	// single-peer-scoped proxy token (see proxy_token.go) rather than the
+	// real admin/federation token. Set only by fedAuthMiddleware's own
+	// narrow /api/proxy/-only fallback branch below; checked by
+	// checkProxyAuth (proxy.go) instead of the normal fedCap path.
+	scopedProxyPeerKey
+)
 
 // peerFromContext returns the federated peer from the request context,
 // or nil if the request is from an admin.
 func peerFromContext(ctx context.Context) *multiserver.Entry {
 	p, _ := ctx.Value(fedPeerKey).(*multiserver.Entry)
+	return p
+}
+
+// scopedProxyPeerFromContext returns the peer name a request was
+// authenticated against via a scoped proxy token, or "" if it wasn't
+// (i.e. it came in via the real admin or federation-peer token instead).
+func scopedProxyPeerFromContext(ctx context.Context) string {
+	p, _ := ctx.Value(scopedProxyPeerKey).(string)
 	return p
 }
 
@@ -84,6 +101,29 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			peer, ok := s.serverStore.GetByToken(tok)
 			if ok && peer.Federated {
 				ctx := context.WithValue(r.Context(), fedPeerKey, peer)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+		// BL394 §6 iframe-embed follow-up: a short-lived, single-peer-
+		// scoped proxy token (minted by handleRemotePWA, never the real
+		// admin/federation token) -- deliberately narrow: only accepted
+		// for /api/proxy/ (the proxied page's own API/WS callback calls)
+		// and /remote/ (the proxied page's own static asset loads --
+		// css/js/images, which a <link>/<script src> tag can no more
+		// carry a custom header for than the top-level navigation can),
+		// and only if it's bound to the EXACT peer named in that same
+		// path, never any other route or peer.
+		if tok != "" {
+			var peerName string
+			switch {
+			case strings.HasPrefix(r.URL.Path, "/api/proxy/"):
+				peerName = proxyPeerNameFromPath(r.URL.Path)
+			case strings.HasPrefix(r.URL.Path, "/remote/"):
+				peerName = remotePWAPeerNameFromPath(r.URL.Path)
+			}
+			if peerName != "" && proxyTokens.valid(tok, peerName) {
+				ctx := context.WithValue(r.Context(), scopedProxyPeerKey, peerName)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

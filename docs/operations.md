@@ -1170,6 +1170,26 @@ embedded by your own daemon, never anyone else. See
 full design writeup, including why this needed a second origin rather
 than CSP or iframe sandboxing alone.
 
+**Embedded viewer:** the "PWA" link opens the peer's dashboard inline
+(a modal, with an "↗ New tab" link and an expand toggle, for the cases
+where you want a full separate window instead) rather than only
+switching tabs. The embedded dashboard authenticates its own API calls
+with a short-lived (1 hour), single-peer-scoped token — minted only
+after your own login already succeeded, valid for nothing except
+proxying to that one peer, and never the real admin token, so a
+compromised peer's JS reading it out of the sandbox origin's storage
+can't reach anything beyond that one peer for longer than an hour. One
+small, known, cosmetic gap: the embedded view's own staleness check
+(`/api/health`) always 401s, since that endpoint is intentionally
+unauthenticated on the main origin but the proxy path requires auth for
+its whole surface — harmless, just means that one version-mismatch
+reload guard doesn't fire for a proxied view. See
+`docs/plans/2026-10-03-bl394-security-findings-review.md` §6a for the
+full writeup, including four more bugs (a missing CSP `frame-src`, the
+token-passing gaps above, and a pre-existing `Accept-Encoding` bug that
+silently corrupted every proxied script) found only by actually driving
+a real browser against this feature.
+
 ---
 
 ## 8. Web UI Features

@@ -14471,6 +14471,7 @@ function loadServers() {
     // silently serving it same-origin again.
     const sandboxPort = cfg && cfg.server && cfg.server.proxy_sandbox_port;
     const pwaOrigin = sandboxPort ? `${location.protocol}//${location.hostname}:${sandboxPort}` : '';
+    state.proxySandboxOrigin = pwaOrigin; // reused by _showRemotePWAViewer
     if (servers.length === 0) { el.textContent = t('servers_none_available') || 'No servers available.'; return; }
     // Build health lookup: name → health info
     const healthMap = {};
@@ -14498,8 +14499,20 @@ function loadServers() {
       }
       // Remote PWA link for non-local servers — pwaOrigin (above) points
       // at the isolated sandbox origin, never this page's own origin.
+      // href still points at the real URL (not '#') so native browser
+      // affordances -- middle-click, ctrl/cmd-click, right-click "open in
+      // new tab" -- keep working unmodified; a plain left-click is
+      // intercepted to open the embedded viewer instead, which is nicer
+      // for the common case (no tab-switch) without losing the escape
+      // hatch for anyone who wants a real separate tab/window.
+      // A plain navigation (what the href itself does on ctrl/cmd-click
+      // or "open in new tab") can't carry a custom header -- fedAuthMiddleware
+      // already supports ?token= for exactly this case (same pattern as
+      // the file-download links elsewhere in this file).
+      const pwaTok = localStorage.getItem('cs_token') || '';
+      const pwaHref = `${pwaOrigin}/remote/${encodeURIComponent(sv.name)}/` + (pwaTok ? `?token=${encodeURIComponent(pwaTok)}` : '');
       const pwaLink = sv.name !== 'local' && sv.enabled && pwaOrigin
-        ? ` <a href="${pwaOrigin}/remote/${encodeURIComponent(sv.name)}/" target="_blank" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="Open remote PWA (separate, isolated origin)">PWA</a>`
+        ? ` <a href="${escHtml(pwaHref)}" target="_blank" onclick="if(!event.ctrlKey&&!event.metaKey&&event.button===0){event.preventDefault();_showRemotePWAViewer('${escHtml(sv.name)}');}" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="View remote PWA (separate, isolated origin)">PWA</a>`
         : '';
       return `<div class="settings-row" style="justify-content:space-between">
         <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
@@ -15690,6 +15703,114 @@ window._closeFileViewer = function() {
   if (!modal) return;
   if (modal._fileViewerResizeHandler) {
     window.removeEventListener('resize', modal._fileViewerResizeHandler);
+  }
+  modal.remove();
+};
+
+// _showRemotePWAViewer (BL394 §6 follow-up, docs/plans/2026-10-03-bl394-
+// security-findings-review.md) embeds a federation peer's own PWA inline
+// via an iframe, instead of making the operator switch to a new browser
+// tab. Safe to embed because the iframe's src is the proxy SANDBOX
+// origin (state.proxySandboxOrigin, a different port from this page),
+// never this page's own origin -- the whole point of that origin split
+// is that there is no local auth token in the iframe's own localStorage
+// for a compromised peer's JS to steal, so allow-same-origin is safe to
+// grant here (it only grants the iframe access to ITS OWN, harmless
+// storage). allow-popups is included because the proxied PWA's own UI
+// has legitimate target="_blank" links of its own (e.g. a "View on
+// GitHub" chip) that would otherwise silently fail inside a sandboxed
+// iframe. allow-top-navigation is deliberately NOT included: the
+// embedded page must never be able to navigate the OUTER (this) page.
+window._showRemotePWAViewer = function(name) {
+  const existing = document.getElementById('remotePWAViewerModal');
+  if (existing) {
+    if (existing._remotePWAViewerResizeHandler) {
+      window.removeEventListener('resize', existing._remotePWAViewerResizeHandler);
+    }
+    existing.remove();
+  }
+  const origin = state.proxySandboxOrigin;
+  // A plain <iframe src>/<a href> navigation can't carry a custom
+  // Authorization header (same limitation as the file-download links
+  // elsewhere in this file) -- fedAuthMiddleware already supports a
+  // ?token= query param for exactly this reason, so the real admin
+  // token rides along there for this ONE top-level page load. This is
+  // separate from, and happens before, the short-lived scoped proxy
+  // token the server mints and injects once this page actually loads
+  // (see handleRemotePWA/rewritePWAContent) -- that one authenticates
+  // the proxied dashboard's OWN subsequent API calls, not this request.
+  const _tok = localStorage.getItem('cs_token') || '';
+  const pwaURL = origin
+    ? `${origin}/remote/${encodeURIComponent(name)}/` + (_tok ? `?token=${encodeURIComponent(_tok)}` : '')
+    : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'remotePWAViewerModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="response-modal" id="remotePWAViewerPanel" style="max-width:min(1200px,95vw);max-height:92vh;width:95vw;">
+    <div class="response-modal-header">
+      <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(name)}">${escHtml(name)} — remote PWA</span>
+      <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px;">
+        <button class="btn-icon" id="remotePWAViewerExpandBtn" onclick="_toggleRemotePWAViewerExpand()" title="Expand to use more of the window">&#9974;</button>
+        ${pwaURL ? `<a href="${escHtml(pwaURL)}" target="_blank" style="text-decoration:none;font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text);background:var(--bg2);display:inline-flex;align-items:center;gap:3px;" title="Open in a new tab">&#8599; New tab</a>` : ''}
+        <button class="btn-icon" onclick="_closeRemotePWAViewer()" title="Close">&#10005;</button>
+      </div>
+    </div>
+    <div id="remotePWAViewerBody" class="response-modal-body" style="padding:0;overflow:hidden;flex:1;display:flex;">
+      ${pwaURL
+        ? `<iframe id="remotePWAViewerFrame" src="${escHtml(pwaURL)}" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" style="width:100%;height:100%;border:none;display:block;flex:1;" title="${escHtml(name)} remote PWA"></iframe>`
+        : `<div style="padding:16px;color:var(--error);">Remote PWA proxy is unavailable (server.proxy_sandbox_port is disabled or config failed to load).</div>`}
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) _closeRemotePWAViewer(); });
+  document.body.appendChild(modal);
+
+  // Same expand/revert pattern as the file viewer -- see
+  // _toggleFileViewerExpand's comment for why this needs a dedicated
+  // class rather than fighting the .response-modal !important max-width
+  // cap with an inline style.
+  const EXPANDED_REVERT_WIDTH = 1200 / 0.95;
+  const onResize = () => {
+    const panel = document.getElementById('remotePWAViewerPanel');
+    const btn = document.getElementById('remotePWAViewerExpandBtn');
+    if (!panel || !btn) return;
+    if (panel.dataset.expanded === '1' && window.innerWidth < EXPANDED_REVERT_WIDTH) {
+      _toggleRemotePWAViewerExpand();
+    }
+  };
+  window.addEventListener('resize', onResize);
+  modal._remotePWAViewerResizeHandler = onResize;
+
+  const onKeydown = e => { if (e.key === 'Escape') _closeRemotePWAViewer(); };
+  document.addEventListener('keydown', onKeydown);
+  modal._remotePWAViewerKeydownHandler = onKeydown;
+};
+
+window._toggleRemotePWAViewerExpand = function() {
+  const panel = document.getElementById('remotePWAViewerPanel');
+  const btn = document.getElementById('remotePWAViewerExpandBtn');
+  if (!panel || !btn) return;
+  const expanded = panel.dataset.expanded === '1';
+  panel.classList.toggle('remote-pwa-viewer-expanded', !expanded);
+  if (expanded) {
+    panel.dataset.expanded = '0';
+    btn.innerHTML = '&#9974;';
+    btn.title = 'Expand to use more of the window';
+  } else {
+    panel.dataset.expanded = '1';
+    btn.innerHTML = '&#9645;';
+    btn.title = 'Collapse to normal width';
+  }
+};
+
+window._closeRemotePWAViewer = function() {
+  const modal = document.getElementById('remotePWAViewerModal');
+  if (!modal) return;
+  if (modal._remotePWAViewerResizeHandler) {
+    window.removeEventListener('resize', modal._remotePWAViewerResizeHandler);
+  }
+  if (modal._remotePWAViewerKeydownHandler) {
+    document.removeEventListener('keydown', modal._remotePWAViewerKeydownHandler);
   }
   modal.remove();
 };

@@ -44,9 +44,20 @@ designed so subdomains are a drop-in upgrade later, not a rewrite. Live
 testing that fix (not just reading the diff) found and fixed a second,
 independent bug: `handleRemotePWA` was forwarding the proxied remote
 peer's own security headers verbatim, landing a duplicate, conflicting
-`Content-Security-Policy` on top of the new one. Everything else in this
-doc remains exactly what it was — a recommendation awaiting its own
-explicit go-ahead, not yet acted on.
+`Content-Security-Policy` on top of the new one. A fourth follow-up
+(v8.39.13) then built the iframe-embed UX §6 had deliberately deferred
+(§6a) — live-browser-testing it (not just reading the diff) found and
+fixed four more bugs: the main origin's own CSP had no `frame-src` and
+would have blocked the iframe outright; the sandbox origin's now-empty
+localStorage left the embedded dashboard's own API calls with no token
+(fixed with a new short-lived, single-peer-scoped proxy token system);
+static asset tag-loads under `/remote/` needed the same `?token=`
+treatment as the top-level navigation; and a pre-existing, unrelated bug
+— `handleRemotePWA` forwarding the browser's own `Accept-Encoding`
+header upstream — silently corrupted every gzip-compressed script/
+stylesheet it proxied, for any real browser, since before this review
+began. Everything else in this doc remains exactly what it was — a
+recommendation awaiting its own explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -1094,3 +1105,187 @@ using a fake upstream `httptest.Server` that sets its own CSP/X-Frame-
 Options/Permissions-Policy — confirmed to fail without the fix before
 being trusted). Full `go test ./...` (2952 tests, 82 packages) and
 `node --test internal/server/web/*.test.js` (13 tests) both clean.
+
+## 6a. Iframe embed (implemented — v8.39.13)
+
+§6's own UX decision was to keep the existing new-tab `<a href target=
+"_blank">` link (origin separation alone fully isolates that, no iframe
+needed) and defer actually embedding the remote PWA inline. The operator
+then asked for the embed to be built. It surfaced four more real bugs —
+**every one of them found by actually driving a real headless Chrome
+against the feature, not from reading the diff** — none of which showed
+up in `go build`, `go test`, or a `curl`-based check, because `curl`
+doesn't send `Accept-Encoding` by default and can't evaluate CSP, iframe
+sandboxing, or JS execution at all.
+
+**UI:** the "PWA" link in Settings → Servers now opens an embedded
+viewer modal (`_showRemotePWAViewer` in `app.js`, following the exact
+same `.response-modal`/expand-toggle/backdrop-close pattern already
+established by the file viewer, `_showFileViewer`) on a plain left
+click; `href` still points at the real sandbox-origin URL so
+middle-click/ctrl-click/right-click "open in new tab" keep working
+natively, and the modal itself has its own "↗ New tab" link. The iframe
+uses `sandbox="allow-scripts allow-same-origin allow-forms
+allow-popups"` — `allow-same-origin` is safe to grant here specifically
+*because* "same-origin" now means the harmless sandbox origin, not the
+real one; `allow-top-navigation` is deliberately never granted, so the
+embedded page can never navigate the outer page.
+
+**Bug 1 — the main origin's own CSP would have silently blocked the
+iframe outright.** `buildCSP` had no `frame-src` at all, so it fell back
+to `default-src 'self'` — meaning the browser would refuse to even
+create the iframe, regardless of what the sandbox origin's own
+`frame-ancestors` said. CSP requires **both** sides to agree: the
+embedder's `frame-src` and the embedded page's `frame-ancestors`. Fixed
+by extending `buildCSP` with an optional extra `frame-src` origin,
+applied only to `/` and `/index.html` (the one page the whole SPA, and
+so any iframe, actually lives on), computed per request the same way
+the sandbox origin's own CSP is (off the incoming `Host` header, so it's
+correct regardless of which hostname the operator uses to reach the
+daemon).
+
+**Bug 2 — the sandbox origin's own fix (empty localStorage) left the
+embedded dashboard non-functional.** This is the direct, structural
+cost of fixing the real vulnerability: the proxied `app.js` authenticates
+via `localStorage.getItem('cs_token')`, and the sandbox origin's
+localStorage is now genuinely empty (that's v8.39.12 working as
+intended) — so every one of the proxied dashboard's own API calls had
+no token to send and 401'd. Putting the *real* admin token there to fix
+it would have undone the entire point of the origin split (a compromised
+peer's JS could read it right back out). **Decision point raised with
+the operator before building anything** (see the three options
+presented): build a short-lived, peer-scoped proxy token system (chosen)
+vs. ship degraded/read-only vs. only support unsecured daemons. Built as
+`internal/server/proxy_token.go`: `handleRemotePWA` mints a random
+24-byte, hex-encoded token bound to one `serverName`, valid for
+`proxyTokenTTL` (1 hour — long enough for a normal viewing session,
+far short of "forever"), on every successful page load (so it also
+naturally refreshes on reload, no explicit renewal flow needed). The
+token is injected into the proxied page's own `localStorage` via a tiny
+inline bootstrap `<script>` placed immediately after `<head>` —
+guaranteed to run before the real `app.js` tag later in the document.
+`fedAuthMiddleware` gained one new, narrow fallback branch: a token that
+doesn't match the real admin or a registered federation peer is checked
+against the scoped-token store, but **only** for requests under
+`/api/proxy/` or `/remote/`, and **only** if the token's bound peer name
+(extracted from that same request's own path) matches exactly — a token
+minted for peer A is never valid for peer B, and never valid for any
+other route at all (verified directly:
+`TestFedAuthMiddleware_ScopedTokenRejectedForOtherPeer`,
+`...RejectedForUnrelatedRoute`). `handleProxy`/`handleProxyWS`/
+`handleRemotePWA` all now go through one shared `checkProxyAuth` helper
+that checks for this scoped-token context first, falling back to the
+original, completely unchanged admin/federation-capability check
+otherwise.
+
+**Bug 3 — a plain tag load can't carry a header either.** Not just the
+top-level `<iframe src>` navigation (same limitation as the pre-existing
+`<a href>` link, already gated by `fedAuthMiddleware` and needing the
+real admin token) — every rewritten static asset reference
+(`<link href="...style.css">`, `<script src="...app.js">`, etc.) under
+`/remote/{name}/` is *also* gated by `fedAuthMiddleware`, and a
+browser's own tag-driven resource load can no more carry a custom
+`Authorization` header than a navigation can. `rewritePWAContent` now
+appends `?token=`/`&token=` (`appendProxyToken`, handling both "no
+existing query string" and "already has one, e.g. the `?v=<version>`
+cache-buster" cases) to every asset URL it rewrites, using the same
+scoped token minted for the page itself. Before this was fixed, these
+asset requests 401'd and came back as a `text/plain` "unauthorized"
+error body — which a real browser, with strict MIME-type checking,
+correctly refused to execute/apply as JS/CSS, producing a wall of
+"Refused to execute script... MIME type ('text/plain')" console errors
+that `curl` (which doesn't enforce MIME-type-vs-execution policy at
+all) would never have shown.
+
+**Bug 4 — found at the very next layer down, entirely pre-existing,
+unrelated to anything else in this list: `handleRemotePWA` forwarded the
+browser's own `Accept-Encoding` header upstream.** Per `net/http`'s own
+documented behavior, `Transport` only requests gzip itself and
+transparently decompresses the response when the **caller** never set
+`Accept-Encoding` explicitly — forwarding the browser's real one (every
+real browser sends `Accept-Encoding: gzip, deflate, br` by default; `curl`
+does not, unless `--compressed` is passed, which is exactly why this
+never surfaced in any of this review's many `curl`-based checks) disables
+that transparent mode. `resp.Body` here was the **raw, still-gzipped
+bytes**, which `rewritePWAContent` then string-rewrote as if it were
+plain UTF-8 text (silently producing garbage — no error, no panic) and
+served back with **no** `Content-Encoding` header (already stripped by
+the pre-existing header-copy skip-list) — so the browser received raw
+gzip binary labeled `text/javascript` and
+failed outright: `Uncaught SyntaxError: Invalid or unexpected token`, at
+line 1 column 1 of `app.js`, `xterm.min.js`, every proxied script,
+confirmed via `window.onerror` instrumentation in a real headless
+Chrome. **This bug predates everything else in this entire review** — it
+would have broken the *original*, same-origin `/remote/` feature for any
+real browser too, for as long as that feature has existed, for anyone
+whose static-file layer happens to gzip-compress JS/CSS (this daemon's
+own `gzipFileServer` does). It was simply never exercised by a real
+browser during development until this exact pass. Fixed by dropping
+`Accept-Encoding` before forwarding in `handleRemotePWA`; the same fix
+was applied to `handleProxy`'s generic REST-forwarding path too, for
+consistency, even though that path is a raw `io.Copy` passthrough today
+and so isn't actually corrupted by this (it forwards the real
+`Content-Encoding` right alongside the real compressed bytes, staying
+internally consistent) — closing it there too is cheap insurance against
+the same bug reappearing the instant anyone adds text-rewriting to that
+path.
+
+**Bug 5 (cosmetic, fixed anyway) — `/locales/{lang}.json` was never
+reachable from the sandbox origin at all.** `app.js`'s own locale fetch
+(`fetch('/locales/' + lang + '.json')`) is built from a runtime string
+concatenation, not a static `href=`/`src=` attribute — the one shape
+`rewritePWAContent`'s regex rewriting actually matches — so it was never
+rewritten to carry a peer name, and the sandbox mux never registered
+`/locales/` at all, so it 401'd via `fedAuthMiddleware`'s blanket gate
+before even reaching a 404. (In the *original* same-origin version, this
+same unrewritten fetch would have silently hit the **local** daemon's
+own locale file instead of the remote peer's — translations would have
+been correct-looking by coincidence, not because the mechanism was
+actually proxying anything; now it fails honestly instead of silently
+serving the wrong content.) Fixed by registering `/locales/` on the
+sandbox mux directly, unauthenticated, serving straight from the same
+embedded filesystem the main daemon uses (`HTTPServer.webSub`, a new
+field) — translations aren't peer-specific, so there's no reason to
+proxy them and no peer name to proxy them *by* even if there were.
+
+**Known, deliberately not fixed: `/api/health`'s staleness-check 401s
+once proxied.** `index.html`'s own version-check script calls
+`fetch('/api/health')` with no auth at all, by design — `/api/health` is
+registered directly on the main mux, outside `fedAuthMiddleware`
+entirely, specifically so monitoring tools don't need a token. Once
+rewritten to `/api/proxy/{name}/api/health`, it's now going through
+`handleProxy`, which (correctly) requires real or scoped auth for the
+entire `/api/proxy/*` surface — this specific pre-existing design (one
+blanket capability check for the whole proxy surface, not per-sub-path)
+predates this review and isn't something today's fixes changed; it just
+means one version-mismatch-triggers-reload guard silently doesn't fire
+for a proxied view. Not fixed here — narrow, cosmetic, pre-existing, and
+out of scope for what was asked.
+
+**Verification — live, with a real browser, at every stage.** Used
+`puppeteer-core` driving the system's actual Chrome (no system-wide
+Playwright/chromium-cli available in this environment) against a real
+running daemon with a real registered federation peer (self-referential
+— pointed at the daemon's own main port, with its own matching
+`remote.Token` configured, the same as any real two-instance federation
+pair would need). Confirmed, in order, as each bug was found and fixed:
+zero CSP violations; the sandbox mux's narrow route surface holds; the
+bootstrap script correctly sets the scoped token; asset requests
+succeed; `window.onerror` is empty (no JS execution errors); every real
+API call the dashboard makes on load (`config`, `alerts`,
+`autonomous/config`, `observer/peers`, `migration/status`) returns 200
+with real data; and, as the final check, a full-page **screenshot**
+showing the actual rendered remote dashboard — title, correctly
+translated nav labels, "No active sessions" empty state — inside the
+modal, next to the main dashboard's own nav bar, visually confirming the
+feature works end to end rather than inferring it from logs and status
+codes alone.
+
+New tests: `internal/server/proxy_token_test.go` (the token store's
+mint/validate/expiry-and-sweep behavior; `fedAuthMiddleware`'s new
+branch, including the two rejection cases above; `appendProxyToken`'s
+query-string handling; `rewritePWAContent`'s bootstrap injection and
+per-asset token appending, including the empty-token no-op case; the
+`Accept-Encoding`-stripping fix, confirmed to fail without it; the
+unauthenticated `/locales/` route). Full `go test ./...` (2965 tests, 82
+packages) clean.

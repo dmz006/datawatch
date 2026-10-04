@@ -2826,6 +2826,23 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .confirm-modal-overlay > .response-modal#fileViewerPanel.file-viewer-expanded {
   max-width: 98vw !important;
 }
+/* #remotePWAViewerPanel — same reasoning as #fileViewerPanel above, with
+   a larger default cap (1200px) since an embedded dashboard needs more
+   room than a text viewer. */
+.confirm-modal-overlay > .response-modal#remotePWAViewerPanel {
+  max-width: min(1200px, 95vw) !important;
+  max-height: 92vh !important;
+  height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.confirm-modal-overlay > .response-modal#remotePWAViewerPanel.remote-pwa-viewer-expanded {
+  max-width: 98vw !important;
+}
+#remotePWAViewerBody {
+  flex: 1;
+  min-height: 0;
+}
 .confirm-modal-overlay .form-select,
 .confirm-modal-overlay .form-input,
 .confirm-modal-overlay select,

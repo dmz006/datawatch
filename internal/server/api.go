@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.12"
+var Version = "8.39.13"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -6766,9 +6766,6 @@ func splitCSV(s string) []string {
 //	/api/proxy/{serverName}/{...path}    → F16 remote-server proxy
 //	/api/proxy/agent/{worker_id}/{...}   → S3.5 agent-worker proxy
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapConfigRead) {
-		return
-	}
 	// Extract first segment from path: /api/proxy/<name>/...
 	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
 	idx := strings.Index(path, "/")
@@ -6783,6 +6780,13 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	if serverName == "" {
 		http.Error(w, "missing server name", http.StatusBadRequest)
+		return
+	}
+	// BL394 §6 iframe-embed follow-up: moved below serverName extraction
+	// so a scoped proxy token can be checked against the specific peer
+	// being requested (see checkProxyAuth) — same admin/federation check
+	// as before for every other caller.
+	if !s.checkProxyAuth(w, r, serverName) {
 		return
 	}
 
@@ -6827,8 +6831,17 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Forward headers
+	// Forward headers. BL394 §6 iframe-embed follow-up: drop the client's
+	// own Accept-Encoding, same reasoning as handleRemotePWA's identical
+	// fix -- this path is a raw io.Copy passthrough today so it isn't
+	// corrupted by it the way that rewrite path was, but leaving it
+	// forwarded here would silently become the same bug the moment any
+	// future change adds text-rewriting to this path too. Cheap to close
+	// now rather than rely on remembering why later.
 	for k, vals := range r.Header {
+		if strings.EqualFold(k, "Accept-Encoding") {
+			continue
+		}
 		for _, v := range vals {
 			proxyReq.Header.Add(k, v)
 		}
