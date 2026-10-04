@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/pathsafe"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -393,6 +394,12 @@ func (o *Orchestrator) AddPersona(p Persona) error {
 	if p.Name == "" {
 		return fmt.Errorf("persona name required")
 	}
+	// BL394 -- p.Name comes straight from the POST /api/council/personas
+	// body and is joined into a filesystem path below; reject a
+	// traversal attempt before os.WriteFile ever sees it.
+	if err := pathsafe.ValidateRecordName(p.Name); err != nil {
+		return fmt.Errorf("invalid persona name: %w", err)
+	}
 	if p.SystemPrompt == "" {
 		return fmt.Errorf("persona system_prompt required")
 	}
@@ -439,6 +446,12 @@ func (o *Orchestrator) GetPersona(name string) (Persona, error) {
 func (o *Orchestrator) UpdatePersona(name string, update Persona) error {
 	if name == "" {
 		return fmt.Errorf("persona name required")
+	}
+	// BL394 -- defense in depth: name can only already be a map key here
+	// (checked below) once AddPersona validates it too, but validate
+	// explicitly anyway since this writes to disk the same way.
+	if err := pathsafe.ValidateRecordName(name); err != nil {
+		return fmt.Errorf("invalid persona name: %w", err)
 	}
 	if update.SystemPrompt == "" {
 		return fmt.Errorf("persona system_prompt required")

@@ -2,6 +2,7 @@ package council
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
@@ -178,5 +179,31 @@ func TestSynthesisProducesConsensus(t *testing.T) {
 	}
 	if !strings.Contains(run.Dissent, "DISSENT") {
 		t.Errorf("dissent: %q", run.Dissent)
+	}
+}
+
+// BL394 -- AddPersona's Name field comes straight from a POST body and is
+// joined into a filesystem path (o.PersonasDir()/<name>.yaml); a traversal
+// attempt must be rejected before os.WriteFile ever sees it.
+func TestAddPersona_RejectsPathTraversalName(t *testing.T) {
+	o := NewOrchestrator(t.TempDir())
+	err := o.AddPersona(Persona{Name: "../../../../tmp/evil", SystemPrompt: "x"})
+	if err == nil {
+		t.Fatal("expected a traversal persona name to be rejected")
+	}
+	if _, statErr := os.Stat("/tmp/evil.yaml"); statErr == nil {
+		os.Remove("/tmp/evil.yaml") //nolint:errcheck
+		t.Fatal("traversal name must not have reached the filesystem")
+	}
+}
+
+// Regression safety: the fix must not reject any of the real default
+// persona names this daemon already ships.
+func TestAddPersona_AllDefaultNamesStillAccepted(t *testing.T) {
+	o := NewOrchestrator(t.TempDir())
+	for _, p := range DefaultPersonas() {
+		if err := o.AddPersona(Persona{Name: p.Name, SystemPrompt: p.SystemPrompt}); err != nil {
+			t.Errorf("default persona %q rejected after the path-traversal fix: %v", p.Name, err)
+		}
 	}
 }

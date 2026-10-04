@@ -1042,8 +1042,18 @@ would have broken real self-hosted ntfy/Gotify push. Full `go test ./...`
 run caught one real regression (a nil-cfg panic in an existing test
 helper) before it shipped.
 
+**v8.39.4** fixed the other two confirmed-real path-traversal findings
+(§3b): a council persona's `name` and a skill registry's own advertised
+`SKILL.md` frontmatter `name` were both joined into a filesystem path
+with no validation — for skills, meaning any git registry an operator
+connects to (not just `datawatch-community`) could ship a malicious
+manifest and have it exploited on sync. New shared `internal/pathsafe`
+package fixes both. The third instance from the same finding
+(`api_smoke_progress.go`'s `run_id`) is deliberately not folded in —
+it also needs a separate capability-model decision first.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 1 of the remaining ~20 confirmed-real findings fixed (push.go SSRF, v8.39.3). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. 3 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
 
 ---
 

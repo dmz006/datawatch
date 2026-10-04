@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.4 — fix(security): path traversal in persona/skill-registry name fields
+
+### Fixed
+- **Council persona creation and skill-registry sync trusted an unvalidated name field as a path segment** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3b) — `POST /api/council/personas`' `name` and a skill registry's own advertised `SKILL.md` frontmatter `name` were both joined directly into a filesystem path (`filepath.Join(dir, name+".yaml")`, and for skills, into a `copyDir` call that starts with `os.RemoveAll(dst)`). A crafted `name` containing `../` could write/delete outside the intended directory — for skills, this meant any git registry an operator connects to (not just `datawatch-community`) could ship a malicious manifest and have it exploited on the next sync. New shared `internal/pathsafe` package rejects a traversal attempt before either code path reaches disk; added to `council.AddPersona`/`UpdatePersona` and `skills.Manager.Sync`. `UpdatePersona` was already transitively safe once `AddPersona` validates (you can't rename a persona that was never let in), fixed anyway for defense in depth. New tests confirm both the rejection and that every one of the 12 real default persona names and a normal skill-name shape still work unchanged.
+
 ## v8.39.3 — fix(security): SSRF in POST /api/push/register
 
 ### Fixed

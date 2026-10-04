@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/pathsafe"
 )
 
 // CommunityDefaultRegistry is the official datawatch community registry for
@@ -164,6 +166,15 @@ func (m *Manager) Sync(registry string, skillNames []string) ([]*Synced, error) 
 	for _, av := range available {
 		if !wantAll && !want[av.Name] {
 			continue
+		}
+		// BL394 -- av.Name comes from the remote registry's SKILL.md
+		// frontmatter (parsed in git_registry.go's Browse), not from its
+		// real on-disk directory name. A malicious or compromised
+		// registry could set name: "../../../../home/user/.ssh" there;
+		// copyDir below starts with os.RemoveAll(dst), so this must be
+		// rejected before dst is ever built.
+		if err := pathsafe.ValidateRecordName(av.Name); err != nil {
+			return out, fmt.Errorf("skill %q from registry %s: invalid name: %w", av.Name, registry, err)
 		}
 		dst := filepath.Join(m.SyncedRoot, registry, av.Name)
 		if err := copyDir(m.Git.SkillSourcePath(reg, av), dst); err != nil {

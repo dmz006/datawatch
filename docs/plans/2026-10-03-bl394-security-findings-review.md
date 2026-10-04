@@ -7,8 +7,8 @@ and review and I guide all decisions") — every item needed an operator
 go-ahead before any action. The operator has since authorized specific
 items individually as the review progressed: all 74 confirmed false
 positives were dismissed on CodeQL with documented reasons (§3, no code
-changed for these); the `push.go` SSRF (§3e) is fixed in v8.39.3, the
-first and so far only code change from this review. Everything else in
+changed for these); the `push.go` SSRF (§3e, v8.39.3) and the council/
+skills path-traversal pair (§3b, v8.39.4) are fixed. Everything else in
 this doc remains exactly what it was — a recommendation awaiting its own
 explicit go-ahead, not yet acted on.
 
@@ -170,6 +170,19 @@ a *class* of bug, not three unrelated ones — worth a shared fix (one small
 `isSafeRecordName` helper reused in all three, and grepped for elsewhere
 with the same shape) rather than three one-off patches, if and when fixing
 is authorized.
+
+**Fixed (council + skills) — v8.39.4.** New shared `internal/pathsafe`
+package (`ValidateRecordName`), applied in `council.AddPersona`/
+`UpdatePersona` and `skills.Manager.Sync` before either reaches disk. The
+third instance (`api_smoke_progress.go`'s `run_id`) is **not yet fixed** —
+it also needs the separate capability-model decision (what gates the
+write/delete paths, since `CapAnalyticsWrite` doesn't exist) flagged
+earlier, so it's being done as its own pass rather than folded in here.
+Verified: `go build ./...` + full `go test ./...` (2909 tests, 82
+packages) clean; new tests confirm both the rejection (no filesystem
+trace left behind) and that every one of the 12 real default persona
+names, plus a normal `datawatch-community`-shaped skill name, still
+work unchanged after the fix.
 
 **Not independently re-verified at this depth:** `internal/evals/evals.go`'s
 write-side (`SaveRun`, uses a server-generated `uuid.NewString()`, so
