@@ -4198,7 +4198,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   if (board.tests) {
     const ts = board.tests;
     const passColor = (ts.fail || 0) > 0 ? 'var(--error)' : 'var(--success,#10b981)';
-    testsBody = `<div style="font-size:13px;"><span style="color:${passColor};font-weight:700;">${ts.pass||0} pass</span> · <span style="color:var(--error);">${ts.fail||0} fail</span>${ts.skip ? ' · <span style="color:var(--text2);">' + ts.skip + ' skip</span>' : ''}</div>`;
+    testsBody = `<div style="font-size:13px;"><span style="color:${passColor};font-weight:700;">${escHtml(ts.pass||0)} pass</span> · <span style="color:var(--error);">${escHtml(ts.fail||0)} fail</span>${ts.skip ? ' · <span style="color:var(--text2);">' + escHtml(ts.skip) + ' skip</span>' : ''}</div>`;
   }
   // Git card
   let gitBody = `<em style="color:var(--text2);">${escHtml(t('status_no_git')||'no git state — hook payload git=… expected')}</em>`;
@@ -7884,7 +7884,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
 };
 
 window.saveComputeKindMigration = function(name) {
-  const sel = document.querySelector(`.migrate-kind-select[data-name="${name.replace(/"/g, '\\"')}"]`);
+  const sel = document.querySelector(`.migrate-kind-select[data-name="${name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
   const newKind = sel ? sel.value : '';
   if (!newKind) { showError('Pick a Kind'); return; }
   apiFetch('/api/migration/compute-kinds/' + encodeURIComponent(name), {
@@ -7892,7 +7892,7 @@ window.saveComputeKindMigration = function(name) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind: newKind }),
   }).then(() => {
-    const row = document.querySelector(`tr[data-name="${name.replace(/"/g, '\\"')}"]`);
+    const row = document.querySelector(`tr[data-name="${name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
     if (row) row.remove();
     showToast('✓ ' + name + ' migrated → ' + newKind, 'success', 2000);
     // If no rows left, close modal + refresh panel.
@@ -15544,6 +15544,24 @@ function escHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// BL394 security review (docs/plans/2026-10-03-bl394-security-findings-review.md
+// SS3h) -- escHtml() above is NOT sufficient for a value embedded as a
+// single-quoted JS string literal INSIDE an inline event-handler attribute,
+// e.g. onclick="fn('${x}')". The browser HTML-decodes an attribute's value
+// (undoing escHtml's own '->&#39; back to a literal ') BEFORE compiling it
+// as JS, so an HTML-entity-encoded quote still terminates the nested JS
+// string early -- escHtml alone looks safe but isn't, for this one case.
+// The only thing that survives both the HTML-decode step AND correctly
+// closes the JS string is a real backslash-escaped quote (\'), which only
+// works if backslashes already in the data are doubled FIRST (otherwise a
+// pre-existing trailing backslash combines with the one this adds and
+// collides into an unescaped quote -- confirmed exploitable before this
+// fix: data ending in \' produced \\' in the old code, which the JS lexer
+// reads as an escaped backslash followed by an UNESCAPED quote).
+function escJsAttr(s) {
+  return escHtml(String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
 // BL374 — render a files_touched path as a viewable + downloadable chip.
 // Markdown files open in an inline rendered modal (primary action).
 // Other text/code files open in a plain-text viewer modal.
@@ -18231,7 +18249,7 @@ window._loadPRDActiveSessionCard = function(prd) {
                   : `<span style="color:var(--text2);font-size:11px;" title="No hooks">●</span>`)
             : '';
           const testStats = board && board.tests
-            ? `<span style="font-size:11px;"><span style="color:var(--success);">${board.tests.pass||0}✓</span> / <span style="color:var(--error);">${board.tests.fail||0}✗</span></span>`
+            ? `<span style="font-size:11px;"><span style="color:var(--success);">${escHtml(board.tests.pass||0)}✓</span> / <span style="color:var(--error);">${escHtml(board.tests.fail||0)}✗</span></span>`
             : '';
           const focus = board && board.last_event
             ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(board.last_event.event)}${board.last_event.tool ? ' · ' + escHtml(board.last_event.tool) : ''}</div>`
@@ -20710,9 +20728,16 @@ function renderStatsData(el, data) {
 
       const renderChanRow = (ch) => {
         const cid = ch.name;
-        const isOpen = _expandedChannels.has(cid);
+        // The onclick handler below can only safely embed the escaped
+        // form (escJsAttr) as a literal, so that's what it calls
+        // has/delete/add with at runtime -- check against the SAME
+        // escaped form here, not the raw cid, so a channel name that
+        // needed escaping doesn't track open/closed state under two
+        // different Set keys.
+        const safeCid = escJsAttr(cid);
+        const isOpen = _expandedChannels.has(safeCid);
         return `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${cid}')?_expandedChannels.delete('${cid}'):_expandedChannels.add('${cid}');loadStatsPanel()">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
             ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
@@ -20920,9 +20945,9 @@ function loadSchedulesList() {
         : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
       const actions = [];
       if (sc.state === 'pending') {
-        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${sc.id}','${escHtml(sc.command).replace(/'/g,"\\'")}','${sc.run_at||''}')" title="Edit">&#9998;</button>`);
+        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
       }
-      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${sc.id}')" title="Delete">&#128465;</button>`);
+      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
       return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
         ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
         <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>

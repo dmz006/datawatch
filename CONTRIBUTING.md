@@ -108,6 +108,28 @@ Steps:
 4. Add configuration fields as needed.
 5. Test, document, and submit a PR.
 
+## Testing
+
+- **Go:** `go build -o datawatch ./cmd/datawatch/ && go test ./...` from the
+  repo root.
+- **PWA JS (`internal/server/web/`):** there is no bundler or framework for
+  this code (every file is a classic `<script>`), but regression tests for
+  it use Node's built-in test runner — zero dependencies, ships with Node
+  18+. Name test files `*.test.js` and run them with:
+
+  ```bash
+  node --test internal/server/web/*.test.js
+  ```
+
+  Node's own directory-based auto-discovery (`node --test internal/server/web/`)
+  is unreliable for this layout — always pass the explicit glob above. A
+  test loads the real, unmodified target file into a `vm` context with a
+  minimal browser shim (`document`/`window`/`localStorage`/etc.) so the
+  file's own top-level code runs unmodified, then exercises its real,
+  hoisted top-level functions. Shared shim helpers live in
+  `internal/server/web/testutil_browser_stub.js` — reuse them rather than
+  duplicating a new stub per file.
+
 ## Code Style
 
 - Format with `gofmt -w .` before committing. No external linters are required for PRs.

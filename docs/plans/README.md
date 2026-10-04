@@ -1116,8 +1116,44 @@ with a proper `escHtml` helper; another standalone Node test
 verbatim, validated the same way (revert-and-confirm-it-fails) as the
 prototype-pollution test.
 
+**v8.39.10** closed out the rest of what this review had left open or
+mischaracterized. Two findings the doc had flagged as "not
+independently re-verified" turned out to be real: `evals.LoadSuite`'s
+`?suite=` and `layers_recursive.L0ForAgent`'s `?agent_id=` both take a
+query-string value straight into a `filepath.Join` — query params are
+never touched by `http.ServeMux`'s path-cleaning, which is exactly why
+these two didn't get the same free pass as their path-segment-sourced
+siblings earlier in the review. Both now go through the existing
+`pathsafe.ValidateRecordName`. Re-reading §3h's app.js escaping findings
+surfaced a sharper version of a bug this doc had previously called
+"cosmetic": `escHtml` already turns `'` into `&#39;`, so a schedule-
+entry onclick handler's trailing `.replace(/'/g,"\\'")` was a no-op —
+the simplest quote-breakout payload worked, not just a backslash-
+collision edge case — because the browser HTML-decodes an attribute
+value *before* compiling it as JS. New `escJsAttr` fixes that plus a
+second real site (`renderChanRow`'s onclick). Also fixed: two more
+unescaped `innerHTML` interpolations (status-board test counts), the
+`channel/index.ts` stack-trace-exposure hygiene gap, and the 2
+`missing-workflow-permissions` workflow gaps (§3i). Dismissed 10 more
+CodeQL alerts, all the same shape — a fix from an earlier version in
+this list left a validation guard one call frame above the generic
+helper function CodeQL's own sink location points at (`copyDir`/
+`copyFile`, `push.go`'s dialer, `email/backend.go`'s header line) — plus
+2 accepted-risk command-injection dismissals (`manager.go`'s subprocess
+backend, gated by a capability that already means "run arbitrary
+tasks"; `git.go`'s push URL, traced to the operator's own project
+config). Separately, confirmed one new finding as real but
+architectural and deliberately did **not** fix it: `proxy.go`'s
+`handleRemotePWA` serves a remote federation peer's own PWA content
+under the local daemon's own origin with no CSP/sandboxing — a
+malicious peer's JS would run with the local daemon's session. Also
+DRY'd up the two hand-rolled JS test scripts into one shared stub
+module and migrated all three JS regression tests to Node's built-in
+`node --test` runner after comparing it directly against the hand-rolled
+approach.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. All 7 confirmed-real findings now fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9) or deliberately not folded in pending a separate decision (`api_smoke_progress.go`'s capability model); 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). This review's own "needs review, not fully checked" items (§3c git argument-injection, §3h's two `app.js` lines and the incomplete-sanitization/stack-trace-exposure findings) remain open and un-triaged.
+**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 9 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10) or deliberately not folded in pending a separate decision (`api_smoke_progress.go`'s capability model). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). 1 confirmed real and deliberately deferred as architectural, not a quick fix (`proxy.go`'s same-origin federation-peer-proxy risk, alert #545). This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
 

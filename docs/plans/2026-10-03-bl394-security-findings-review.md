@@ -19,8 +19,19 @@ Node-based regression test since no JS test framework existed for
 this PWA. The reflected XSS in the docs viewer (§3h, v8.39.9) is also
 fixed — and turned out to have 3 more unescaped sites beyond the 2
 originally identified, found while implementing the fix, not before.
-Everything else in this doc remains exactly what it was — a
-recommendation awaiting its own explicit go-ahead, not yet acted on.
+A follow-up pass (v8.39.10) then: fixed the two §3b items this doc had
+previously left as "not independently re-verified" (both turned out to
+be real, query-param-reachable traversal bugs — see the §3b addendum);
+fixed a second, more subtle round of app.js escaping bugs found while
+re-reading §3h (see the §3h addendum); fixed the two
+`missing-workflow-permissions` hygiene items (§3i); hardened
+`channel/index.ts`'s error-message exposure; dismissed 10 more CodeQL
+alerts as false-positive-after-fix or accepted-risk; migrated the JS
+regression tests to `node --test`; and documented, but deliberately did
+not fix, the `proxy.go` same-origin federation-peer-proxy finding as
+architectural (see the new §3h addendum). Everything else in this doc
+remains exactly what it was — a recommendation awaiting its own
+explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -203,6 +214,15 @@ third instance (`api_smoke_progress.go`'s `run_id`) is **not yet fixed** —
 it also needs the separate capability-model decision (what gates the
 write/delete paths, since `CapAnalyticsWrite` doesn't exist) flagged
 earlier, so it's being done as its own pass rather than folded in here.
+**CodeQL still flagged `skills/manager.go`'s `copyDir`/`copyFile` sink
+lines after this fix shipped (5 alerts) — dismissed, v8.39.10.** These
+generic helpers sit one call frame below `Sync`, where the new
+`pathsafe.ValidateRecordName(av.Name)` guard actually runs; CodeQL's
+interprocedural taint tracking doesn't connect the validation one frame
+up the call stack to the sink inside the shared helper. Same pattern
+recurs for `push.go`/`email/backend.go` below (§3e, §3f) — confirmed by
+re-scanning after the fixes landed, not assumed.
+
 Verified: `go build ./...` + full `go test ./...` (2909 tests, 82
 packages) clean; new tests confirm both the rejection (no filesystem
 trace left behind) and that every one of the 12 real default persona
@@ -230,11 +250,48 @@ file that exists outside the configured directory, confirmed to produce
 no attachment rather than erroring the whole request — pre-existing
 "swallow the decode error" behavior, confirmed unchanged by this fix).
 
-**Not independently re-verified at this depth:** `internal/evals/evals.go`'s
-write-side (`SaveRun`, uses a server-generated `uuid.NewString()`, so
-already safe), and `internal/memory/layers_recursive.go`'s `L0ForAgent`
-(single internal caller, read-only, lower confidence — not traced to
-`agentID`'s ultimate origin).
+**Not independently re-verified at this depth (at the time):** `internal/
+evals/evals.go`'s write-side (`SaveRun`, uses a server-generated
+`uuid.NewString()`, so already safe), and `internal/memory/
+layers_recursive.go`'s `L0ForAgent` (single internal caller, read-only,
+lower confidence — not traced to `agentID`'s ultimate origin).
+
+**Addendum (v8.39.10) — both of the above turned out to be real, on the
+read side, reachable via a query-string parameter:**
+
+1. **`internal/evals.LoadSuite(name)`** — `filepath.Join(r.SuitesDir(),
+   name+".yaml")` with no check. Traced `name`'s actual origin, which the
+   original pass above didn't do: `GET /api/evals/run?suite=` (`internal/
+   server/evals.go`'s `handleEvalsRun`) and the "measure" algorithm
+   action (`internal/server/algorithm.go:176`) both read `name` straight
+   from `r.URL.Query()`. Query parameters are **not** touched by
+   `http.ServeMux`'s path-cleaning — the false-positive reasoning that
+   correctly closed out `LoadRun` (same file, a path-segment-sourced
+   sibling function) does not transfer to `LoadSuite`, which is why this
+   one needed its own look rather than being bucketed with the rest.
+2. **`internal/memory/layers_recursive.L0ForAgent(agentID)`** — same
+   shape: `GET /api/memory/wakeup?agent_id=` (`internal/server/
+   api.go:2818-2836`, gated by `CapConfigRead`) reads `agentID` from the
+   query string, then `filepath.Join(l.dataDir, "agents", agentID,
+   "identity.txt")` with no check — an arbitrary-file-read of a
+   fixed filename (`identity.txt`) anywhere the daemon can read.
+
+**Fixed — v8.39.10.** Both now call the existing `internal/pathsafe.
+ValidateRecordName` before the `filepath.Join`. `LoadSuite` returns an
+error on rejection; `L0ForAgent` falls back to the host identity
+(matching its pre-existing "any failure falls back to host L0" shape)
+rather than erroring. New tests for each: `LoadSuite`'s plants a real
+file one directory above `SuitesDir()` and confirms both a relative and
+an absolute traversal payload error out; `L0ForAgent`'s plants a real
+`secret-agents/identity.txt` containing a literal `"SECRET"` one level
+outside the retriever's own data dir and confirms traversal falls back
+to the host identity rather than leaking it. Both validated by
+temporarily removing the new guard and confirming the test fails first
+— the `L0ForAgent` test initially used only one `".."` segment (only
+cancels the `agents/` segment, landing back at `dataDir` rather than
+escaping it), which passed even without the fix in place; caught by that
+same "did removing the fix actually break the test" check and corrected
+to two `".."` segments.
 
 ### 3c. `go/command-injection` (5) — 1 by design, rest false positive/low-risk
 
@@ -247,6 +304,14 @@ already safe), and `internal/memory/layers_recursive.go`'s `L0ForAgent`
   blast radius of this one is "arbitrary shell execution," and the question
   worth settling is only "is session creation properly capability-gated to
   the actual operator," not whether the call itself is wrong.
+  **Settled and dismissed on CodeQL — v8.39.10.** Traced the capability:
+  session creation is gated by `CapSessionsWrite`, which is only ever
+  granted via the `session-operator` ("full session + agent lifecycle
+  control") and `comms-channel-agent` ("starts sessions on the operator's
+  behalf") presets — never a broadly-distributed read-only tier. Both
+  presets already mean "can run arbitrary tasks" by design, so `bash -c`
+  for the subprocess backend specifically isn't a new escalation for a
+  capability that already grants that.
 - `internal/session/tracker.go`, `internal/server/project_summary.go`:
   argv-list `exec.Command("git", args...)` calls, already carrying a
   `#nosec G702 "argv-list invocation, not shell"` comment — same
@@ -258,6 +323,11 @@ already safe), and `internal/memory/layers_recursive.go`'s `L0ForAgent`
   Traced `injectTokenIntoHTTPS`'s `rawURL` back to `originURL` but did not
   trace that further to its ultimate source before being asked to stop
   investigating. **Flagging as open, not as confirmed either way.**
+  **Traced further and dismissed — v8.39.10.** `originURL` traces only to
+  `proj.Git.URL`, set via `profile_create`/`profile_update` — the
+  operator's own project-profile config, not external/request input. Same
+  accepted-risk class as the compute-node and federation-peer URLs
+  dismissed elsewhere in this review (§3e, §3a).
 - `internal/compute/probe.go`'s SSH probe: `target` built from
   operator-registered compute-node config (`n.SSH.Host`/`User`), not
   external input. Low risk even in the worst case (operator attacking their
@@ -392,6 +462,12 @@ Validation") document the design and what to check first if push breaks
 after an upgrade, per the operator's explicit ask to keep this
 debuggable.
 
+**CodeQL still flagged `push.go`'s send-line after this fix — dismissed,
+v8.39.10.** Same interprocedural-tracking gap as §3b's `skills/
+manager.go` dismissal above: the dial-time guard lives inside the
+`Transport`'s dialer (`newPushHTTPClient`), one call frame below the
+flagged line, which CodeQL's static analysis doesn't trace through.
+
 **Still pending, not done by this fix:** real on-device verification.
 Nothing here can exercise actual SSE delivery or a real WebPush/ntfy round
 trip from an Android/iOS client — that needs `datawatch-app`'s own E2E/
@@ -442,6 +518,13 @@ speaks just enough SMTP for `net/smtp.SendMail` + `PlainAuth` to
 complete) proving a legitimate multi-line notification body still
 delivers byte-for-byte unchanged, and a direct test of stdlib's own
 `validateLine` behavior (not just asserted from reading its source).
+
+**CodeQL still flagged the header-building line after this fix shipped —
+dismissed, v8.39.10.** Same shape as the other post-fix dismissals in
+this doc: the new `hasCRLF` check runs immediately above the flagged
+line (plus `net/smtp.SendMail`'s own `validateLine`, verified live
+earlier in this section) — not a new gap, a scanner re-flagging a
+sink CodeQL already had before, now covered.
 
 ### 3g. `go/uncontrolled-allocation-size` (2) — FALSE POSITIVE, with a caveat
 
@@ -574,25 +657,77 @@ applies correctly).
   sanitizer. Also the compute-node/LLM "YAML↔Form" editor's `fBody.
   innerHTML = html` — built from the operator's own freely-edited textarea
   content in their own browser tab; can only inject into your own session.
-- **LOW SEVERITY, cosmetic:** the compute-kind-migration `name.replace(/"/
-  g, '\\"')` and schedule-entry `escHtml(sc.command).replace(/'/g,
-  "\\'")` both escape a quote character without also escaping a literal
-  backslash first — the textbook "incomplete sanitization" shape CodeQL
-  flagged them for. The first is embedded in a CSS *selector* string (not
-  raw HTML) built from an operator's own compute-node name — self-inflicted
-  at worst. The second is embedded in an HTML `onclick='...'` attribute
-  built from a scheduled command string, which is a more plausible real
-  injection surface if `sc.command` can ever originate from something less
-  trusted than the operator's own scheduling UI (not verified either way).
-- **NOT independently re-verified:** `app.js` lines 4208 and 20752 (`area.
-  innerHTML`/`el.innerHTML` from board/telemetry and channel-list data) —
-  sampled but didn't trace every interpolated value's escaping all the way
-  through; flagging as open rather than asserting a verdict I haven't
-  earned.
-- Two `js/stack-trace-exposure` alerts (`internal/channel/embed/
-  channel.js`, `channel/index.ts`) are just raw error-message disclosure to
-  the caller — low severity, info-leak only, not independently deep-dived
-  given the low ceiling on impact.
+- **Originally called LOW SEVERITY/cosmetic; corrected and fixed — v8.39.10.**
+  The compute-kind-migration `name.replace(/"/g, '\\"')` and schedule-entry
+  `escHtml(sc.command).replace(/'/g, "\\'")` were both characterized above
+  as merely "escape a quote without also escaping a pre-existing backslash
+  first." On closer reading while actually fixing these, that
+  characterization understated the schedule-entry one specifically:
+  `escHtml` has *already* converted every `'` to `&#39;` by the time that
+  trailing `.replace(/'/g,...)` runs, so the replace is a no-op regardless
+  of any backslash — meaning the *real* bug isn't a narrow backslash-
+  collision edge case, it's that HTML-entity-encoding a quote does nothing
+  at all to prevent JS-string breakout inside an inline `onclick='...'`
+  attribute, because the browser HTML-decodes the attribute value (undoing
+  `escHtml`'s own encoding, back to a literal `'`) **before** compiling it
+  as JS — so even the simplest quote-breakout payload, no backslash
+  involved, worked against the pre-existing code, not just a crafted
+  backslash-ending value. Confirmed this precisely by swapping in the old
+  pattern and checking both a simple-breakout test and a backslash-
+  collision test fail. Found two real call sites with this shape: a
+  channel-stats row's expand/collapse toggle (`renderChanRow`), and the
+  schedule-entry edit/delete buttons. Fixed both with a new `escJsAttr`
+  helper (placed next to `escHtml`), which escapes a literal backslash
+  *first*, then the quote — the order matters: escaping the quote first
+  lets a value already ending in `\` combine with the newly-added
+  backslash into an unescaped quote once decoded, a real bypass of a
+  naive single-pass fix. The compute-kind-migration CSS-selector lines
+  got the same backslash-before-quote fix for correctness, though they
+  were never an XSS vector (the string feeds `querySelector`, not
+  markup). New `app-escaping.test.js` round-trips both call sites through
+  a full simulation (escape → HTML-attribute-decode → compile as real JS
+  via `new Function`) covering a plain quote-breakout payload and a
+  trailing-backslash payload, plus a normal-value regression check.
+- **Two more unescaped `innerHTML` sites found and fixed — v8.39.10:**
+  `app.js`'s status-board renderer interpolated `board.tests.pass/fail/
+  skip` (from a hook-event payload, `POST /api/sessions/{sid}/hook-event`,
+  `CapConfigWrite`) into two separate `innerHTML` templates with no
+  escaping at all — these were the "NOT independently re-verified" lines
+  this doc previously flagged near 4208/20752 (line numbers shifted since;
+  same underlying renderers). Normally numbers, never enforced as such.
+  Both now wrapped in the existing `escHtml`.
+- **`js/stack-trace-exposure` (`internal/channel/embed/channel.js`,
+  `channel/index.ts`) — fixed, v8.39.10.** Was previously characterized as
+  "low severity, info-leak only, not independently deep-dived." Fixed
+  anyway as cheap defense-in-depth: the handler now logs the real error
+  server-side (`process.stderr.write`) and returns a generic `{error:
+  "bad request"}` to the caller. Regenerated the tracked embed copy via
+  `make channel-build` rather than hand-editing it. The listener binds
+  loopback-only (`127.0.0.1`, confirmed in `channel/index.ts`), so this
+  was never remotely reachable — the fix closes the hygiene gap, not an
+  actual remote-exposure risk.
+- **CONFIRMED REAL, architectural, deliberately NOT fixed — alert #545,
+  `go/reflected-xss`, `internal/server/proxy.go:323`.** `handleRemotePWA`
+  proxies a remote, admin-added federation peer's own PWA content
+  (fetched via `remote.URL`, an operator-registered allowlist entry —
+  same trust tier as the `go/request-forgery` false positives dismissed
+  in §3e) and serves it back to the browser **under the local daemon's
+  own origin**, at `/api/proxy/{serverName}/...`. `rewritePWAContent`
+  does rewrite the remote content's API/WS/asset URLs to route back
+  through the proxy (correct and necessary for the proxy to work at
+  all), but there is no CSP, no iframe sandboxing, and no separate
+  serving origin for the proxied content. If a federation peer is
+  malicious or its own daemon is compromised, its JS executes with the
+  *local* daemon's own cookies/session — a real privilege elevation
+  beyond what visiting that peer directly, in its own separate tab/
+  origin, would grant. This is a genuine, confirmed finding, but not a
+  quick validation-guard fix like the rest of this review — closing it
+  properly needs an architectural decision (a CSP header scoped to the
+  proxy route, iframe sandboxing instead of direct serving, or moving
+  proxied peer content to its own serving origin entirely), not a
+  one-line patch. Recorded here as open and deliberately deferred rather
+  than rushed; the alert itself remains open on CodeQL (not dismissed —
+  it's real).
 
 ### 3i. `actions/missing-workflow-permissions` (2) — real, trivial hygiene gap
 
@@ -604,6 +739,38 @@ this repo already follows elsewhere (per CodeQL's own recommendation,
 `{contents: read}`) makes the no-write intent durable even if the repo
 default ever changes. Cheapest possible fix in this whole review, whenever
 authorized.
+
+**Fixed — v8.39.10.** Added `permissions: {contents: read}` to both.
+Validated both files with `python3 -c "import yaml; yaml.safe_load(...)"`
+and `actionlint`.
+
+### JS test harness — DRY-up and `node --test` migration (v8.39.10)
+
+Two hand-rolled, nearly-identical Node/`vm` stub-browser-environment
+scripts existed from v8.39.8/v8.39.9 (`app_security_test.js`,
+`diagrams_security_test.js`), each using `console.error`/
+`process.exitCode` for reporting. Before adding a third test file
+(`app_escaping_test.js`, for the escJsAttr fixes above), did two things:
+
+1. **Factored the duplicated stub-environment setup** into one shared
+   module, `internal/server/web/testutil_browser_stub.js` (exports
+   `makeStubElement`, `buildSandbox`, `loadScript`, `flushAsync`, `vm`).
+2. **Compared Node's built-in test runner (`node:test`, zero
+   dependencies, available since Node 18+) against the hand-rolled
+   approach directly**, with a throwaway prototype test, rather than
+   assuming either is better. `node:test` won clearly: named tests,
+   file:line on failure, structured actual/expected diffs, vs. a bare
+   `console.error('FAIL: ...')`. Migrated all three files, renamed to
+   `node --test`'s own naming convention (`app-prototype-pollution.
+   test.js`, `diagrams-xss.test.js`, `app-escaping.test.js`). One real
+   quirk found during the migration: `node --test <directory>`'s own
+   auto-discovery was unreliable in this setup (treated a whole
+   directory as one opaque failing test even with a single correctly-
+   named file inside) — the reliable invocation is explicit shell glob
+   expansion, `node --test internal/server/web/*.test.js`, documented as
+   such in `CONTRIBUTING.md`'s new Testing section.
+
+All 11 tests across the three files pass under the new runner.
 
 ## 4. `datawatch-app` — 11 code scanning + 5 Dependabot (reviewed, less deeply)
 

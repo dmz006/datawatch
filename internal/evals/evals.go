@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/pathsafe"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -123,6 +124,14 @@ func (r *Runner) RunsDir() string { return filepath.Join(r.dataDir, "evals", "ru
 
 // LoadSuite reads ~/.datawatch/evals/<name>.yaml.
 func (r *Runner) LoadSuite(name string) (*Suite, error) {
+	// BL394 -- name reaches here from a ?suite= query parameter at two
+	// REST call sites (handleEvalsRun, the algorithm "measure" action),
+	// which Go's http.ServeMux path-cleaning never touches (query
+	// strings aren't part of r.URL.Path). Reject a traversal attempt
+	// before it's joined into a path at all.
+	if err := pathsafe.ValidateRecordName(name); err != nil {
+		return nil, fmt.Errorf("invalid suite name: %w", err)
+	}
 	path := filepath.Join(r.SuitesDir(), name+".yaml")
 	b, err := os.ReadFile(path)
 	if err != nil {

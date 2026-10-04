@@ -203,9 +203,15 @@ const httpServer = http.createServer((req, res) => {
             }
         }
         catch (e) {
+            // BL394 -- loopback-only listener, so the realistic severity here
+            // is low, but there's no reason to hand even a local caller the
+            // raw error text (which could include internal paths/dependency
+            // details depending on what threw). Log it server-side, return a
+            // generic message to the client.
             const msg = e instanceof Error ? e.message : String(e);
+            process.stderr.write(`[datawatch-channel] request error: ${msg}\n`);
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: msg }));
+            res.end(JSON.stringify({ error: 'bad request' }));
         }
     });
 });
@@ -254,7 +260,8 @@ async function callParent(path, method, body) {
             res.on('end', () => resolve(chunks));
         });
         req.on('error', reject);
-        if (data) req.write(data);
+        if (data)
+            req.write(data);
         req.end();
     });
 }

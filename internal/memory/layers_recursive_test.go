@@ -66,6 +66,32 @@ func TestL0ForAgent_Overlay(t *testing.T) {
 	}
 }
 
+// BL394 -- agentID reaches L0ForAgent from a ?agent_id= query parameter
+// (GET /api/memory/wakeup), which Go's http.ServeMux path-cleaning never
+// touches. A traversal attempt must fall back to the host L0 rather than
+// reading a file outside <data_dir>/agents/.
+func TestL0ForAgent_RejectsPathTraversal(t *testing.T) {
+	r, dir := retrieverFixture(t)
+	_ = os.WriteFile(filepath.Join(dir, "identity.txt"), []byte("host id"), 0644)
+	// A real file an attacker might target: a sibling directory's own
+	// identity.txt, one level above <data_dir>/agents/.
+	secretDir := filepath.Join(filepath.Dir(dir), "secret-agents")
+	_ = os.MkdirAll(secretDir, 0700)
+	_ = os.WriteFile(filepath.Join(secretDir, "identity.txt"), []byte("SECRET"), 0644)
+
+	l := NewLayers(dir, r)
+	// L0ForAgent builds dataDir/agents/<agentID>/identity.txt -- one ".."
+	// only cancels the "agents" segment (landing back at dataDir), so
+	// escaping dataDir itself needs a second one.
+	traversal := filepath.Join("..", "..", filepath.Base(secretDir))
+	if got := l.L0ForAgent(traversal); got != "host id" {
+		t.Errorf("traversal agentID got %q, want fallback to host id (SECRET must never be reachable)", got)
+	}
+	if got := l.L0ForAgent("../../../../etc"); got != "host id" {
+		t.Errorf("traversal agentID got %q, want fallback to host id", got)
+	}
+}
+
 func TestL5_ListsSiblingsExcludingSelf(t *testing.T) {
 	r, dir := retrieverFixture(t)
 	l := NewLayers(dir, r)

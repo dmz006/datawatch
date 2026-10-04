@@ -139,6 +139,29 @@ func TestRunnerListSuitesEmptyDir(t *testing.T) {
 	}
 }
 
+// BL394 -- name reaches LoadSuite from a ?suite= query parameter at two
+// REST call sites, which Go's http.ServeMux path-cleaning never touches
+// (query strings aren't part of r.URL.Path). A real .yaml file outside
+// SuitesDir() must never be readable via a traversal name.
+func TestRunnerLoadSuite_RejectsPathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRunner(dir)
+	if err := os.MkdirAll(r.SuitesDir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	secretPath := filepath.Join(filepath.Dir(r.SuitesDir()), "secret.yaml")
+	if err := os.WriteFile(secretPath, []byte("name: secret\n"), 0o644); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+
+	if _, err := r.LoadSuite("../secret"); err == nil {
+		t.Fatal("expected a traversal suite name to be rejected")
+	}
+	if _, err := r.LoadSuite("../../../../etc/passwd"); err == nil {
+		t.Fatal("expected a traversal suite name to be rejected")
+	}
+}
+
 func TestRunnerLoadSuite(t *testing.T) {
 	dir := t.TempDir()
 	r := NewRunner(dir)

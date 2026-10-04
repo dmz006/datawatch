@@ -21,6 +21,9 @@ on:
     paths:
       - 'internal/observer/ebpf/**'
 
+permissions:
+  contents: read
+
 jobs:
   drift:
     runs-on: ubuntu-latest

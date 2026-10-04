@@ -27,6 +27,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/pathsafe"
 )
 
 // PeerAgent is the narrow shape Layers needs from agents.Manager
@@ -58,6 +60,13 @@ func (l *Layers) SetPeerLister(p PeerLister) { l.peers = p }
 // orchestrator-) generated when an agent has a specialised role.
 func (l *Layers) L0ForAgent(agentID string) string {
 	if agentID == "" {
+		return l.L0()
+	}
+	// BL394 -- agentID reaches here from a ?agent_id= query parameter
+	// (GET /api/memory/wakeup), which Go's http.ServeMux path-cleaning
+	// never touches. Fall back to the host-wide L0 rather than erroring,
+	// matching this function's existing "any failure falls back" shape.
+	if err := pathsafe.ValidateRecordName(agentID); err != nil {
 		return l.L0()
 	}
 	overlayPath := filepath.Join(l.dataDir, "agents", agentID, "identity.txt")
