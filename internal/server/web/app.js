@@ -816,6 +816,21 @@ function handleMessage(msg) {
       // BL303 S3 T12 / S4 T14 — real-time Status tab + dashboard refresh.
       if (msg.data && msg.data.session_id && msg.data.board) {
         const hSid = msg.data.session_id;
+        // BL394 security review (docs/plans/2026-10-03-bl394-security-findings-review.md
+        // §3h) — hSid keys into plain objects (_dash.nodes, _dash._boards)
+        // below. On a plain {} object, obj["__proto__"] doesn't return
+        // undefined for a missing key the way every other key does -- it
+        // returns the real, shared Object.prototype via the inherited
+        // accessor. The lookup two lines down (`const n = _dash.nodes[hSid]`)
+        // would then hand back Object.prototype itself, and the plain
+        // property writes on `n` right after it (n.hookHealth = ..., etc.)
+        // would pollute Object.prototype for the entire page -- reachable
+        // by anything that can push a hook_update WS message with a
+        // crafted session_id. "constructor" is the same class of risk one
+        // level removed (resolves to the Object function, not
+        // Object.prototype). Dropping the update outright for either is
+        // correct: no real session_id is ever one of these three strings.
+        if (hSid === '__proto__' || hSid === 'constructor' || hSid === 'prototype') break;
         updateSessionStatusBadge(msg.data.board);
         // S4: cache board for dashboard expand panel
         _dash._boards[hSid] = msg.data.board;

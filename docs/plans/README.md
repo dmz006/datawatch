@@ -1085,8 +1085,25 @@ also named the wrong field (`message`, the body, when it would have been
 anyway with an explicit check, kept as genuine defense in depth against
 a plausible future change, not because today's code needed it.
 
+**v8.39.8** fixed the client-side prototype-pollution finding (§3h): the
+PWA's `hook_update` WS handler read a plain `{}` object by a server-sent
+`session_id` — on a plain object, `obj["__proto__"]` doesn't return
+`undefined` for a missing key like every other key does, it returns the
+real shared `Object.prototype`, and the code then wrote ordinary
+properties onto whatever that returned, polluting it for the whole page
+when `session_id === "__proto__"`. Traced reachability: gated by
+`CapConfigWrite` (not a broadly-distributed read-only preset), but for
+anyone at that tier this is a real privilege *escalation* — from "can
+write daemon config" to "can run JS in the operator's own browser."
+Fixed with a 3-value guard (`__proto__`/`constructor`/`prototype`). No
+JS test framework exists for this PWA, so a standalone Node script
+(`internal/server/web/app_security_test.js`) loads the real `app.js` in
+a stubbed browser environment and exercises the actual `handleMessage`
+function — validated the test itself catches the bug by temporarily
+reverting the fix and confirming it fails first.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 5 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6); 1 more corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. 6 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8); 1 more corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
 
 ---
 

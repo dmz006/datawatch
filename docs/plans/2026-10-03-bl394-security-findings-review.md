@@ -13,9 +13,11 @@ local-file-read (§3b #4, v8.39.5), and the `cliPrompt` secret echo
 (§3d, v8.39.6) are fixed. The email-injection finding (§3f, v8.39.7)
 turned out, on live verification while fixing it, to have been
 mischaracterized — not a live gap, see §3f for the full correction;
-hardened anyway as defense in depth. Everything else in this doc
-remains exactly what it was — a recommendation awaiting its own
-explicit go-ahead, not yet acted on.
+hardened anyway as defense in depth. The client-side prototype-
+pollution finding (§3h, v8.39.8) is also fixed, with a from-scratch
+Node-based regression test since no JS test framework existed for
+this PWA. Everything else in this doc remains exactly what it was — a
+recommendation awaiting its own explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -452,7 +454,7 @@ alert:** the SQL scan that builds `candidates` in the first place has no
 large, that's a separate, legitimate memory-growth question CodeQL isn't
 even flagging, worth a look independently of this specific finding.
 
-### 3h. JS/PWA findings (~16, mixed) — 2 CONFIRMED REAL, several false positive, some not fully checked
+### 3h. JS/PWA findings (~16, mixed) — 2 CONFIRMED REAL (1 fixed), several false positive, some not fully checked
 
 - **CONFIRMED REAL — reflected/DOM XSS:** `internal/server/web/
   diagrams.js`'s `openDoc(path)`. Traced the actual external trigger:
@@ -478,10 +480,58 @@ even flagging, worth a look independently of this specific finding.
   for a missing key — it returns the real `Object.prototype`. A WS message
   with `data.session_id === "__proto__"` makes `n` resolve to
   `Object.prototype` itself, and the subsequent property writes pollute it
-  for the entire page's JS runtime. Reachable by anything that can push a
-  `hook_update` WS message (worth determining exactly who that is as part
-  of any fix).
-- **FALSE POSITIVE (by design, with a documented boundary):**
+  for the entire page's JS runtime. **Reachability, traced:** the server
+  only ever broadcasts `hook_update` from `BroadcastHookUpdate`
+  (`internal/server/ws.go`), called from `POST
+  /api/sessions/{sid}/hook-event` (`internal/server/hook_events.go`) —
+  gated by `CapConfigWrite` (a meaningfully elevated capability, not one
+  of the broadly-distributed read-only presets like the `api_smoke_
+  progress.go` finding earlier in this doc), and `sid` is taken from the
+  URL path with **no check that it corresponds to a real, existing
+  session** before being recorded and broadcast. So exploitability
+  requires already holding `CapConfigWrite` — but for anything at that
+  trust tier, this is a genuine privilege *escalation*: from "can write
+  daemon config" to "can run arbitrary JS in the operator's own
+  authenticated browser tab," a meaningfully worse outcome than
+  `CapConfigWrite` alone implies.
+
+**Fixed — v8.39.8.** Added a guard rejecting `session_id` values of
+`"__proto__"`, `"constructor"`, or `"prototype"` before `hSid` is used as
+a key anywhere in this block — placed before the *first* such use
+(`_dash._boards[hSid] = ...`, one line before the flagged `_dash.
+nodes[hSid]` lookup), since both go through the identical class of risk
+and one guard covers both for free. There is no existing JS test
+framework for this PWA (no `package.json`, no bundler — `app.js` is a
+single classic `<script>` file), so this needed a standalone, dependency-
+free Node script rather than slotting into an existing suite: `internal/
+server/web/app_security_test.js` loads the real, unmodified `app.js`
+into a Node `vm` context with a minimally-stubbed browser environment
+(enough `document`/`window`/`localStorage`/`Notification`/
+`MutationObserver`/etc. that the file's real top-level code — including
+`state`/`_dash`'s actual initialization — runs to completion without
+throwing, same as in a real browser), then calls the real, hoisted
+`handleMessage` function with a crafted message and inspects whether
+`Object.prototype` got polluted in that same realm.
+
+Two real mistakes surfaced and fixed while building this test, both
+worth naming since they'd have silently produced a false "it's fine"
+result otherwise: (1) first attempt copied `Object`/`Array`/etc. from
+the Node host process into the sandbox object, which shadows the
+*identifier* `Object` for code resolving it by name, while object/array
+*literals* (`{}`/`[]`) created by code running in the vm context still
+bind to the context's own, separate native intrinsics regardless —
+the two silently diverge, which is exactly the kind of mismatch this
+test exists to catch, so injecting them was removed; `vm.createContext()`
+already provisions a complete, correct set on its own. (2) validated the
+test itself is actually meaningful, not just passing by coincidence, by
+temporarily reverting the fix and re-running it — confirmed it then
+correctly reports `POLLUTION_DETECTED: true` on all three checks (a
+fresh `{}` inheriting the polluted property, `Object.prototype` showing
+it directly, and `_dash._boards` having been reparented via the
+`__proto__` setter) before trusting it as a real regression guard.
+Final run: clean pass against the actual fixed file, including the
+positive/regression case (a normal session's status update still
+applies correctly).
   `applyI18nDOM`'s `el.innerHTML = val` for `data-i18n-html` keys — the
   code comment explicitly documents this is first-party-translation-only,
   never user input. Verified no obvious injection point feeds user text

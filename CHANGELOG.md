@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.8 — fix(security): client-side prototype pollution via WS session_id
+
+### Fixed
+- **The PWA's `hook_update` WebSocket handler could pollute `Object.prototype` for the entire page** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3h) — `_dash.nodes[hSid]` read a plain `{}` object by a server-sent `session_id`. On a plain object, `obj["__proto__"]` doesn't return `undefined` for a missing key the way every other key does — it returns the real, shared `Object.prototype` via the inherited accessor. The code then wrote ordinary properties (`hookHealth`, `state`, `threats`, `color`) onto whatever that lookup returned, so a `session_id` of `"__proto__"` meant writing those properties directly onto `Object.prototype`, affecting every plain object on the page. Fixed by rejecting `session_id` values of `"__proto__"`, `"constructor"`, or `"prototype"` before they're used as a key at all — no real session ever has one of these IDs. New Node-based regression test (`internal/server/web/app_security_test.js`, no existing JS test framework exists for this PWA so this is a standalone, dependency-free script) loads the real `app.js` in a minimally-stubbed browser environment and confirms both that the attack no longer pollutes `Object.prototype` and that a normal session's status updates still work unchanged — validated against the actual bug by temporarily reverting the fix and confirming the test fails as expected before committing it.
+
 ## v8.39.7 — hardening: explicit CRLF guard on email header values
 
 ### Changed
