@@ -7,11 +7,11 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.39.1-success)](https://github.com/dmz006/datawatch/releases/tag/v8.39.1)
+[![Release](https://img.shields.io/badge/release-v8.39.14-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-It started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It now spans a full compute abstraction layer with capability-based federation access control, three compute-node routing modes (direct, docker-network, datawatch-proxy), a multi-server proxy surface, and a comprehensive E2E test suite — on top of full PAI-parity personal AI infrastructure with structured identity, multi-phase reasoning, rubric-based grading, and multi-persona debate.
+It started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a full compute abstraction layer with capability-based federation access control, multi-mode compute-node routing, a multi-server proxy surface, and full PAI-parity personal AI infrastructure — structured identity, multi-phase reasoning, rubric-based grading, and multi-persona debate — all mirrored across 7 interchangeable surfaces.
 
 <p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
 
@@ -21,179 +21,50 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 **datawatch is now on your wrist, dashboard, and pocket.** Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
 
-**Android Auto** (steering wheel safe):
-- **Hands-free voice commands** — say "Hey Google, ask DataWatch for status" and the car reads the response aloud via vehicle TTS. Supports: status, report, what failed, cost report, server status. Command parsing and response generation run server-side; Google only captures the spoken words.
-- **Live monitoring** — session counts, system vitals, and Automata status on the infotainment display. Three distraction-safe screens: Monitor, Sessions, Server picker.
-- **Quick decisions** — Yes / No / Continue / Stop buttons for session gating without touching your phone.
-- **Push notifications** — urgent alerts (P0/P1) routed to the infotainment display.
-
-**Wear OS** (on your wrist):
-- **Automata queue dashboard** — compact tile view + full-screen detail on tap. Complications for running/queued count.
-- **Private local voice — no Google, no cloud STT.** Tap to record on the watch; audio goes directly to your datawatch server and is transcribed by your own locally-running [Whisper](https://github.com/openai/whisper) instance. Nothing leaves your infrastructure. Three-tier fallback: phone relay → direct to server → on-watch STT.
-- **Tile shortcuts** — favorite Automata templates, discussion scopes, session quick-access.
-- **Ambient mode** — running Automata task progress (tap to wake detail).
-- **Health integration** — Automata task timing cross-referenced with wear activity + sleep.
-
-**Android phone** (full workstation):
-- Full session and Automata orchestration parity with desktop (REST, MCP, CLI surfaces).
-- Discussion scopes + full message history + WAL replay.
-- File uploads/downloads from device storage.
-- Settings page (identity, federation peer config, comms routing).
-- Offline queue + automatic sync on reconnect.
-- Push notifications with bidirectional replies.
-
----
-
-### 🚀 We're looking for beta testers — the app is live!
-
-**The datawatch Android app is now in testing on Google Play. Try it now and help shape what ships.**
+- **Android Auto** — hands-free voice commands via "Hey Google, ask DataWatch for status," live session/vitals monitoring on the infotainment display, quick-decision buttons, urgent push notifications. Three distraction-safe screens.
+- **Wear OS** — Automata queue dashboard, **private local voice** (audio goes straight to your own server, transcribed by your own Whisper instance — no Google, no cloud STT), tile shortcuts, ambient progress, health-data cross-reference.
+- **Android phone** — full session and Automata orchestration parity with desktop (REST/MCP/CLI), discussion scopes, file uploads, offline queue with auto-sync, bidirectional push replies.
 
 > [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/apps/internaltest/4701534579731858967)
 >
-> **[→ https://play.google.com/apps/internaltest/4701534579731858967](https://play.google.com/apps/internaltest/4701534579731858967)**
-
-Install the app, point it at your datawatch daemon over Tailscale, and put it through its paces. Bugs, UX rough edges, missing features — all feedback welcome. Open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app) or reach out to **dmz006** directly.
-
-**We need 15 testers to unlock production release on Google Play.** If you're using datawatch, this is the fastest way to get a polished native app — join now and help get us there.
+> **We need 15 testers to unlock production release.** [Join the beta →](https://play.google.com/apps/internaltest/4701534579731858967) Feedback: open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
 
 ---
 
-## 🎉 Community skills + plugins registry is live!
+## 🎉 Community skills + plugins registry
 
-**[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** — the official community hub for datawatch Skills and Plugins is now open.
-
-Operators have been building incredible things on top of datawatch's extension surface — autonomous session patterns, multi-agent polity topologies, inter-agent proposal pipelines — and until now those patterns lived privately on individual machines with no way to share or discover them. That changes today.
-
-The registry launches with seed contributions covering autonomous workflow patterns, identity, and workspace sync:
-
-| Entry | Type | What it does |
-|---|---|---|
-| [`sibling-runner`](https://github.com/dmz006/datawatch-community/tree/main/skills/autonomous-patterns/sibling-runner) | Skill | Standard per-sibling autonomous session: mailbox-in, scratchpad continuity, Automata queue, structured output sections |
-| [`polity-topology`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/polity-topology) | Skill | Multi-instance identity layer — tells each instance which one it is, where siblings live, how to route references |
-| [`sandbox-permissions`](https://github.com/dmz006/datawatch-community/tree/main/skills/identity/sandbox-permissions) | Skill | Fixes sandbox network policy so autonomous claude-code sessions can reach the datawatch CLI and API |
-| [`inbox-integrator`](https://github.com/dmz006/datawatch-community/tree/main/plugins/comms/inbox-integrator) | Plugin | `post_session_complete` hook — moves sibling INBOX proposals into the shared InFlight workspace with attribution headers |
-| [`workspace-rsync-sync`](https://github.com/dmz006/datawatch-community/tree/main/plugins/sync/workspace-rsync-sync) | Plugin | Rsync workspace files to/from a remote datawatch host over SSH after session completes |
-| [`workspace-git-sync`](https://github.com/dmz006/datawatch-community/tree/main/plugins/sync/workspace-git-sync) | Plugin | Commits and pushes workspace changes to a git remote; pulls latest before session starts |
-| [`workspace-nfs-mount`](https://github.com/dmz006/datawatch-community/tree/main/skills/ops/workspace-nfs-mount) | Skill | Mounts an NFS share before session starts so multiple agents share a common workspace |
-
-**To connect and sync:**
+**[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** is the official hub for sharing datawatch Skills and Plugins — autonomous session patterns, multi-agent topologies, inter-agent proposal pipelines, and more, contributed by operators and installable in one command:
 
 ```bash
 datawatch skills registry connect https://github.com/dmz006/datawatch-community
 datawatch skills sync community
 ```
 
-**To contribute:** fork the repo, add your Skill or Plugin directory, open a PR. The bar is intentionally low — if it works and is safe, it gets merged. See [`CONTRIBUTING.md`](https://github.com/dmz006/datawatch-community/blob/main/CONTRIBUTING.md).
+Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To contribute: fork, add your Skill or Plugin directory, open a PR — see [`CONTRIBUTING.md`](https://github.com/dmz006/datawatch-community/blob/main/CONTRIBUTING.md).
 
 ---
 
-## Current release
+## Recent highlights
 
-**[v8.39.1](CHANGELOG.md) (2026-10-02)** — Multi-provider web search registry: the single hardcoded SearXNG `web_search` tool is replaced with a named provider registry (SearXNG + Brave Search API, tried in priority order), closing a confirmed Bing-via-SearXNG result-degradation bug. Adds an internal result cache to cut paid-API usage and a usage-tracking store (daily/weekly/monthly + cache hits per provider, a usage graph, full search history), with full REST/CLI/MCP/comm-channel/YAML/PWA parity. Provider API keys are secrets-vault-backed, never plaintext. *(v8.39.1 patch: a session ending via kill, subprocess exit, or daemon-restart cleanup now gets an AI summary too, not just the `waiting_input` path.)*
+**Current: [v8.39.14](CHANGELOG.md)** (2026-10-04). The v8.39.x patch series was a security hardening sweep — a full Dependabot + CodeQL review turned up 11 real, now-fixed findings (SSRF, path traversal, prototype pollution, reflected XSS, an origin-isolation gap in the federation-peer PWA proxy) plus 84 reviewed-and-dismissed false positives. Full writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
 
-**[v8.38.0](CHANGELOG.md) (2026-09-30)** — Council personas can each use a different LLM backend + model than the council's shared default, with a cascading Backend → Model picker in Settings; council calls now admit through the same capacity ledger autonomous PRD tasks use.
+Recent minor releases:
 
-**[v8.37.0](CHANGELOG.md) (2026-09-30)** — `session_state` single-session WS broadcast — mobile/external `/ws` clients can adopt lighter-weight single-session diffs instead of re-parsing the full session list on every change.
+- **[v8.39.0](CHANGELOG.md)** — Multi-provider web search registry (SearXNG + Brave, tried in priority order, closing a Bing-via-SearXNG result-degradation bug), with usage tracking, an internal result cache, and full 7-surface parity.
+- **[v8.38.0](CHANGELOG.md)** — Council personas can each use a different LLM backend + model than the council's shared default; council calls now admit through the same capacity ledger as autonomous tasks.
+- **[v8.37.0](CHANGELOG.md)** — Single-session WebSocket diffs (`session_state`) for mobile/external clients, instead of re-parsing the full session list on every change.
+- **[v8.36.0](CHANGELOG.md)** — Interactive session starts and the verifier's own LLM calls admit through the same per-node/per-LLM capacity ledger autonomous tasks use, closing a real over-subscription gap.
+- **[v8.35.0](CHANGELOG.md)** — Structural Automaton editing (add/remove a story or task without re-running decompose) across every surface; a failed story now halts the Automaton by default.
 
-**[v8.35.0](CHANGELOG.md) (2026-09-30)** — Structural Automaton editing — add/remove a story or task without re-running decompose, across every surface. Story-failure now halts the Automaton by default instead of continuing into later stories (configurable). PWA file viewer renders GFM tables and Mermaid diagrams.
+See [CHANGELOG.md](CHANGELOG.md) for the complete patch-by-patch history.
 
-See [CHANGELOG.md](CHANGELOG.md) for the full patch-by-patch history, including every fix between these entries.
+### Release eras
 
-### v8.1x–v8.3x highlights
+- **v8.x** — Federation era: capability-based access control (50 capabilities, 14 built-in groups) gating every REST endpoint and MCP tool, multi-mode Compute Node routing (direct / docker-network / cross-peer proxy), channel routing, federated file service, discussion-scoped shared memory, full operational data encryption, and the Android/Wear/Auto app.
+- **v7.x** — Compute abstraction era: Compute Node registry + LLM Registry with automatic failover dispatch, the Ollama Marketplace, Claude Code hooks + live status board, systematic capability enforcement across 110+ endpoints.
+- **v6.x and earlier** — PAI-parity era: operator identity, Algorithm Mode's 7-phase reasoning harness, the Evals framework, Council Mode's multi-persona debate, Skill Registries, the native Secrets Manager, Tailscale mesh, and the original Signal-bridge core.
 
-- **Capacity-ledger unification** (v8.36.0) — interactive session starts and the verifier's own LLM calls now admit through the same per-node/per-LLM capacity ledger autonomous tasks use, so they can't over-subscribe a busy node.
-- **NVML GPU probe + per-system resource grid** (v8.26.0) — no-CGO direct NVML binding in `datawatch-stats`; live CPU/GPU/mem cards in the Observer tab and PRD overview.
-- **Autonomous SSE stall detection** (v8.25.5) — a watchdog kills stalled opencode sessions for automatic retry instead of hanging indefinitely.
-- **Per-guardrail block approval** (v8.28.5) — approve one blocked guardrail at a time across CLI, comm channel, and PWA, instead of all-or-nothing.
-- **Autonomous task session visibility + retry** (v8.23.0) — task rows show a session link, error message, and verifier summary; a `↺ Retry` button on failed/blocked tasks.
-- **Image attachments + vision pipeline** (v8.15.0–v8.19.x) — 📷 upload in the PWA (and via Signal/Telegram), vision-model description injected before the session sees the message, `vision_describe` MCP tool.
-- **Prompt-injection hardening** (v8.18.0) — data-boundary tags on every LLM call site, an injection scanner at the PRD/task API boundary, and a federation trust notice when a PRD originates from a remote peer.
-- **Quality gates + verifier git-diff grounding** (v8.16.0–v8.17.0) — the autonomous executor captures a test baseline and blocks on regression; the verifier sees the actual diff, not just the task spec.
-- **Goose backend** (v8.14.0) — interactive and one-shot Goose LLM backends with full config-surface parity.
-- **Independent planning vs. execution backend** (v8.20.0) — choose which LLM runs PRD decompose separately from which backend executes tasks.
-
-### v8.10–v8.11 highlights
-
-- **Scheduled session spawn** (v8.11.0) — `schedule spawn --task "run audit" --cron "0 * * * *" --ephemeral` starts a fresh independent session at a scheduled time or on a recurring cron.
-- **Name-addressed session operations** (v8.10.5) — `send_input`, `kill_session`, and friends accept `session_name` instead of requiring a hex session ID.
-- **Session zombie detection** (v8.10.6) — detects when the backend process exits but the shell remains; fires an alert and a PWA badge.
-- **Session exit hooks** (v8.10.7) — auto-restart or notify another session when one goes zombie or enters a failed state.
-- **Durable role-based work queue** (v8.10.8) — `queue_push/claim/complete/fail/list` with atomic claim + lease expiry.
-- **Discussion push / subscribe** (v8.10.9) — deliver new discussion-memory WAL entries to a named session as live input.
-- **Structured agent result store** (v8.10.11) — named, TTL-able JSON payloads, file-backed, survives a daemon restart.
-
-### v8.10.0 highlights
-
-- **Session lineage** — every session records its spawning parent via `parent_id`. Agents pass `caller_session_id` on `start_session` to link themselves to the parent.
-- **Cascade kill** (opt-in) — set `kill_children=true` when creating a parent session; killing the parent recursively kills all running/waiting children.
-- **`session_children` / `reply_to_parent` MCP tools** — list child sessions; send a message to the spawning parent's input prompt.
-- **`GET /api/sessions?tree=1`** — session forest as a nested tree.
-- **`datawatch compute migrate` CLI** (v8.9.25) — headless LLM setup without the web UI.
-- **Federation peer health alerts** (v8.9.25) — alerts on peer unreachable / recovered.
-- **imap-mcp email command channel** (v8.9.23) — bridge to imap-mcp SSE + REST send; acts only on `inbound.command` events.
-- **Queued anti-clobber typing detection** (v8.9.17–v8.9.19) — 30 s TTY idle wait before injecting agent messages; multi-message queue drains in order.
-
-### v8.6 highlights
-
-- **Full operational data encryption** — `--secure` closes all remaining coverage gaps. JSON stores: `servers.json`, `skills.json`, `compute/nodes.json`, `inference/llms.json` — all encrypted with XChaCha20-Poly1305 (DWDAT2 format). Upgrade migration runs automatically on first `--secure` startup.
-- **Encrypted daemon-app.log** — Runtime log output redirected to `secfile.EncryptedLogWriter` (DWLOG1 format) after key derivation. Append-mode on restart preserves history. Decrypt with `datawatch security logs [--tail N]`.
-- **Encryption status covers all six categories** — `datawatch security encryption status` probes channel_routing, servers, skills, compute/nodes, inference/llms, and daemon-app.log.
-
-### v8.5 highlights
-
-- **Operational Data Encryption** — Discussion WAL lines encrypted as `ENC:<base64(nonce24+ciphertext)>`. `participants.json` and `channel_routing.json` encrypted via DWDAT2. Migration idempotent on first `--secure` startup.
-- **Secure wipe** — `datawatch security wipe-plaintext --confirm` does 3-pass overwrite (zeros/ones/random) then unlinks plaintext files.
-- **Encryption status + migrate** — `GET /api/security/encryption/status`, `POST /api/security/encryption/migrate`. CLI: `datawatch security encryption {status,migrate}`.
-- **`${secret:name}` config references** — API keys and tokens can live exclusively in `~/.datawatch/secrets.db` (AES-256-GCM, independent of `--secure`).
-
-### v8.4 highlights
-
-- **Discussion Scopes** — Federated append-only WAL memory. Each discussion has `~/.datawatch/discussions/<id>/wal.jsonl` with entries timestamped, origin-peer-tagged, and sequence-numbered. Conflict detection (same-prefix writes from different peers within 5s), 60 writes/min rate throttle, participant sync via push fan-out.
-- **REST**: full discussion CRUD + `/wal` + `/conflicts` + `/participants`. **CLI**: `datawatch memory discussion {list,write,recall,wal,participants}`. **MCP**: `memory_discussion_*`. **PWA**: Settings → General → Discussion Scopes card.
-
-### v8.3 highlights
-
-- **Channel Routing** — Map inbound channel identities (e.g., `telegram:group:-1001234567890`, `signal:+1555…`) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. CLI: `datawatch federation peer add --channel-identity`.
-- **File Service** — Federated upload/delete/list under a configurable service root. Path-traversal guard on every write path. `POST /api/files`, `DELETE /api/files`, `GET /api/files/{peers,discussions,meta}`. CLI: `datawatch files {list,upload,delete,peer}`.
-- **14th federation builtin group: `comms-channel-agent`** — sessions+comms+alerts+autonomous without full operator access.
-
-### v8.2 highlights
-
-- **Async PRD decompose** — `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately. Stories stream via SSE with `Last-Event-ID` replay. CLI: `datawatch autonomous prd decompose`. MCP: `autonomous_prd_decompose`.
-- **Identity POST alias** — `POST /api/identity` aliases `PATCH` for Android compatibility. All four methods share one handler.
-- **UnifiedPush** — `GET /.well-known/unifiedpush`, register/unregister/notify endpoints. PWA: Settings → Comms → Push Notifications card.
-- **Badge/chip multi-select** — All comma-separated settings fields use badge inputs with dropdown completion and drag-to-reorder.
-
-### v8.1 highlights
-
-- **Compute Node routing modes** — `direct`, `docker-network` (DockerLifecycle manages container lifecycle), `datawatch-proxy` (forward through a peer's `/api/proxy/llm/<name>`). New `gemini-api` and `opencode-api` adapter kinds.
-- **Community Skills + Plugins registry** — `dmz006/datawatch-community` is the official hub. In-app registry browser, one-click install, plugin install without restart. Connect: `datawatch skills registry connect`.
-- **Mic popup** — animated waveform recording overlay in PWA.
-- **301 E2E test stories** — 142 new stories (TS-637–TS-778) across v8.2–v8.5 cohorts.
-
-### v8.0 highlights
-
-- **Federation CBAC** — 50 capabilities, **14 built-in groups** (admin, observer, operator, readonly, …, comms-channel-agent), `fedCap()` guards every REST handler and MCP tool.
-- **Compute Node routing** — `direct`, `docker-network`, `datawatch-proxy` modes.
-- **MCP SSE federation** — MCP SSE transport accepts federation peer tokens with per-tool CBAC.
-- **626 E2E test stories** — full plugin, skill, and inline peer daemon coverage.
-
-### v7.x highlights (v7.0.0 → v7.4.0)
-
-- **v7.4.0** — MCP SSE federated auth + per-tool CBAC.
-- **v7.3.0** — Systematic `fedCap()` enforcement sweep: 110+ call sites.
-- **v7.0.0** — Compute Node registry, LLM Registry + dispatcher, Ollama Marketplace, Alert dock, Claude Code hooks.
-
-### Earlier highlights (v6.0.0 → v6.22.x)
-
-- **v6.22.0** — Docs-as-MCP-Interface: 22 curated howtos, hybrid vector+BM25 index.
-- **v6.15.0** — HashiCorp Vault / OpenBao secrets backend.
-- **v6.11.0** — Council Mode (multi-persona debate, 6 default personas).
-- **v6.10.x** — Evals Framework with rubric-based grading.
-- **v6.9.0** — Algorithm Mode: 7-phase structured-thinking harness.
-- **v6.8.x** — Operator identity wake-up layer.
-
-See [CHANGELOG.md](CHANGELOG.md) for full history.
+Full detail for any version: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -207,112 +78,43 @@ That uniformity is the whole point. Read once, write once, audit once.
 
 ## What it does
 
-### 💬 Discussion Scopes — *new in v8.4*
+➡ **[docs/architecture-overview.md](docs/architecture-overview.md)** has the one-screen Mermaid map of every interface, subsystem, and data path. The summary below is intentionally short — each area links to its full howto.
 
-A `discussion` memory scope shared across multiple federation peers. Entries accumulate in an append-only JSONL WAL (`~/.datawatch/discussions/<id>/wal.jsonl`), each timestamped with origin peer and sequence number. Conflict detection flags same-content-prefix writes from different peers within 5 seconds. Per-peer write throttle (60 writes/min per Bearer token). Async fan-out syncs every write to all registered participants. REST: `/api/memory/discussion/{id}` CRUD + `/wal` + `/conflicts` + `/participants`. CLI: `datawatch memory discussion {list,write,recall,wal,participants}`. MCP: `memory_discussion_*`.
+### Orchestration & autonomy
 
-### 🗂 Channel Routing + File Service — *new in v8.3*
+The **Automata PRD-DAG orchestrator** decomposes a goal into a dependency graph of stories and tasks, executes them with quality gates and git-diff-grounded verification, and supports guardrails, rubric-based grading, and structural mid-run editing. **Algorithm Mode** is PAI's 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) as a per-session state machine. **Council Mode** runs multi-persona structured debate — 6 default personas, each able to use its own LLM backend — with real-time SSE streaming. The **Evals framework** replaces binary pass/fail verification with rubric-based grading.
+→ [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md)
 
-**Channel Routing**: map inbound channel identities (Telegram groups, Signal numbers, webhook URLs) to specific federation peers with optional automata type and default project directory. `GET/PUT /api/channel/routing`. Federation peers now carry a `channel_identity[]` field. CLI: `datawatch federation peer add --channel-identity <pattern>`.
+### Compute & LLM routing
 
-**File Service**: federated upload/delete/list under a configurable service root (`session.file_service_root` or `session.root_path`). Path-traversal guard on every write. `POST /api/files`, `DELETE /api/files`, `GET /api/files/peers/{name}`, `GET /api/files/discussions/{id}`, `GET /api/files/meta`. CLI: `datawatch files {list,upload,delete,peer}`.
+Register any host, GPU box, Kubernetes cluster, or remote datawatch peer as a **Compute Node** with declared capacity, RBAC, and scheduling priority. The **LLM Registry** maps named LLM entries to an ordered failover list of nodes; every consumer (sessions, Council, Automata, `/api/ask`) routes through one dispatcher. Three routing modes — direct, docker-managed, or proxied through another datawatch peer. The **Ollama Marketplace** is a browseable, hardware-fit-checked model catalog shipped embedded in the daemon.
+→ [docs/howto/compute-nodes.md](docs/howto/compute-nodes.md) · [docs/howto/llm-registry.md](docs/howto/llm-registry.md) · [docs/howto/ollama-marketplace.md](docs/howto/ollama-marketplace.md)
 
-### 🔔 Async PRD decompose + Push — *new in v8.2*
+### Memory & intelligence
 
-**Async decompose**: `POST /api/autonomous/prds/<id>/decompose` returns `{task_id, stream_url}` immediately; stories stream via SSE with `Last-Event-ID` replay. Idempotent second calls return the same task_id. PWA: inline progress panel with reconnect. CLI: `datawatch autonomous prd decompose <id>`. MCP: `autonomous_prd_decompose`.
+Vector-indexed episodic memory (SQLite or PostgreSQL+pgvector) with a 5-scope hierarchy — persona-global, persona-in-project, project-shared, session-local, and federated **discussion scopes** shared across peers via an append-only WAL. A temporal knowledge graph with validity-windowed triples, a 6-axis spatial "memory palace" schema, and a 4-layer wake-up stack that auto-injects operator identity and relevant context into every spawned session.
+→ [docs/memory.md](docs/memory.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md)
 
-**UnifiedPush**: `POST /api/push/register` registers an endpoint, `POST /api/push/notify` fans out to all (or one) registration. `GET /.well-known/unifiedpush` for discovery. PWA: Settings → Comms → Push Notifications card.
+### Federation & multi-instance
 
-### 🔐 Federation CBAC — *new in v8.0*
+**Capability-based access control** — 50 capabilities, 14 built-in groups — gates every REST endpoint and MCP tool for federated peers; no admin-or-nothing. Peers can proxy inference, aggregate sessions, route inbound channel messages to specific peers, and share a federated file service. A remote peer's own PWA can be viewed inline from your dashboard, served from an isolated origin so a compromised peer can never read your session's credentials.
+→ [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md)
 
-50 capabilities organized into **14 built-in groups** (admin, observer, operator, readonly, …, comms-channel-agent). Every REST endpoint and MCP tool is gated with `fedCap()` / `mcpFedCap()`. Federated peers declare a group (or a custom capability set), and the daemon enforces it on every request — not admin-or-nothing. Groups are manageable at runtime: `POST /api/federation/groups` + `PUT /api/federation/peers/<name>`. MCP tools `federation_group_*`, `federation_peer_*`. CLI `datawatch federation group {list,get,add,update,delete}`.
+### Security
 
-### 🔀 Compute Node routing — *new in v8.0*
+Full operational data encryption at rest (XChaCha20-Poly1305) covering config, memory, logs, and every JSON store. A centralized native secrets manager (plus optional KeePass/1Password/Vault backends) with `${secret:name}` references everywhere a credential is needed. Bearer token auth, dual-port TLS, full audit logging, and — as of the current release — a fully reviewed and hardened CodeQL/Dependabot posture.
+→ [docs/encryption.md](docs/encryption.md) · [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md)
 
-The `routing` field on a Compute Node separates **how the daemon reaches it** (transport) from **what API it speaks** (kind). Three modes: `direct` (existing default — daemon hits `address` directly), `docker-network` (daemon manages the LLM container lifecycle via Docker CLI — spin-up, network attach, teardown), `datawatch-proxy` (forward inference through another datawatch peer's `/api/proxy/llm/<name>` endpoint). All routing modes exposed on all 7 surfaces. New `gemini-api` and `opencode-api` adapter kinds also added.
+### Interfaces & extensibility
 
-### 🌐 Multi-server proxy + MCP SSE federation — *new in v8.0*
+A manifest-driven **plugin framework** (hot-reload, declared comm verbs / CLI subcommands / MCP tools / mobile cards) and **Skill Registries** synced from git, including the community hub. **Docs-as-MCP-Interface** makes 22 curated howtos searchable and executable through MCP with a hybrid vector+BM25 index. Claude Code hooks auto-install at session spawn and drive a live status board. An MCP server exposes 60+ tools to Cursor, Claude Desktop, and VS Code.
+→ [docs/skills.md](docs/skills.md) · [docs/mcp.md](docs/mcp.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md)
 
-`GET /api/servers` enumerates Remote Server entries (formerly only visible in the Comms tab). The MCP SSE transport now accepts federation peer tokens with per-tool CBAC enforcement — matching the REST surface. A new `/api/proxy/llm/<name>` inbound endpoint accepts proxied inference from peers configured with `datawatch-proxy` routing.
+### Also included
 
-### 🖥 Compute Node registry — *new in v7.0*
+Multi-channel messaging (Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS, voice via Whisper) · pluggable LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) · Docker/Kubernetes container workers with PQC bootstrap · auto rate-limit recovery · eBPF per-process network monitoring + Prometheus `/metrics` · Tailscale mesh for the PWA and agent pods.
 
-A hardware abstraction layer: add any host, GPU box, Kubernetes cluster, or remote datawatch peer as a **Compute Node**. Each node has a name, kind (`ollama` / `openwebui` / `remote` / `k8s`), address, declared capacity (RAM / VRAM / max concurrent models), RBAC permissions, scheduling priority, and optional maintenance windows. Nodes auto-register from datawatch-stats peer push. Live health + stats via the bound observer sidecar.
-
-PWA → Settings → Compute → Compute Nodes → **+ Add**. CLI: `datawatch compute node {list,get,add,update,delete,health,detail}`.
-
-### 🤖 LLM Registry + dispatcher — *new in v7.0*
-
-Named LLM entries (e.g., `ollama`, `claude-code`, `my-gpu-llama`) each with a kind, ordered ComputeNode failover list, enabled model set, and optional API key reference. The dispatcher walks the failover list, retries one transient error per node, and surfaces final errors immediately. Four built-in adapters: **ollama**, **openwebui**, **opencode** (ollama-protocol alias), **claude** (Anthropic Messages API). Existing v6.x `cfg.ollama` / `cfg.openwebui` configs auto-migrate to `ollama-default` / `openwebui-default` LLM entries on first start — no manual migration.
-
-Every consumer (sessions, Council, `/api/ask`, Automata) routes inference through this registry.
-
-PWA → Settings → Compute → LLM Configuration → **+ Add LLM**. CLI: `datawatch llm {list,get,add,update,delete,test,models,in-use,reassign,force-delete}`.
-
-### 📦 Ollama Marketplace — *new in v7.0 alpha.33*
-
-A browseable, searchable catalog of curated models (llama3.1, qwen3, gemma3, deepseek-r1, codellama, nomic-embed-text, and more) shipped embedded in the daemon. Each model entry shows available tag variants with disk size, minimum RAM, minimum VRAM, and a **hardware-fit indicator** that checks the node's declared capacity. Pulling runs as a background goroutine with live progress in the alert dock. Delete models from the same surface.
-
-PWA → Settings → Compute → Compute Nodes → (Ollama node) → **Browse marketplace**. CLI: `datawatch compute pull-model <node> <model:tag>`.
-
-### 🔔 Alert dock — *new in v7.0 alpha.29–30*
-
-An always-on header badge shows alert count on every page. Click to open the in-app alert dock: filterable by category (prompts / errors / warnings / info), session-grouped cards with attention-first sort, quick-reply select for prompt events, and 🔕 per-session mute. Background operations (model pulls, LLM probes) surface here with live progress — no more scrolling toasts.
-
-### 📊 Claude Code hooks + Status board — *new in v7.0 alpha.34*
-
-Three Claude Code hooks (`Stop`, `PostToolUse`, `UserPromptSubmit`) call a per-session daemon endpoint. Auto-installed at session spawn for `claude-code` backends — daemon writes `.claude/sprint/post-event.sh`, the settings entries, and a `.dw-env` credential file. The session detail **Status** tab renders a live board: current focus, sprint tree, test pass/fail counts, and git branch + dirty flag. Completion detection uses Stop hook events directly — faster and more accurate than screen-buffer pattern matching.
-
-PWA → session detail → **Status** tab. REST: `GET /api/sessions/<id>/status`.
-
-### 🧠 Operator identity — *new in v6.8.x*
-
-A structured operator self-description (role, north-star goals, current projects, values, current focus, context notes) loaded from `~/.datawatch/identity.yaml` and **auto-injected into the wake-up L0 layer of every spawned session**. AI work stays anchored to operator priorities. PWA → Settings → Automata → Identity card or 🤖 robot-icon wizard. CLI: `datawatch identity {get,set,configure,edit}`.
-
-### 🔁 Algorithm Mode — *new in v6.9.0*
-
-PAI's 7-phase structured-thinking harness as a per-session state machine: **Observe → Orient → Decide → Act → Measure → Learn → Improve**. Operator-driven advance with output captured at each gate; PWA shows a color-coded phase strip per active session. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure} <session-id>`.
-
-### 📊 Evals Framework — *new in v6.10.x*
-
-Rubric-based grading replacing the binary verifier. Suites at `~/.datawatch/evals/<name>.yaml` with capability (~70% threshold) or regression (~99% threshold) modes. Four grader types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. PWA → Settings → Automata → Evals card. CLI: `datawatch evals {list,run,runs,get-run}`.
-
-### ⚖️ Council Mode — *new in v6.11.0 / wired in v7.0*
-
-Multi-persona structured debate. 6 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) editable as YAML. Modes: `debate` (3 rounds) or `quick` (1 round). In v7.0 alpha.3+, debates run real LLM inference through the registry dispatcher with per-round parallelism (`Council.MaxParallel`). Real-time SSE event streaming (`/api/council/runs/<id>/events`): `persona_responding` / `round_completed` / `run_completed` events. CLI: `datawatch council {personas,run,cancel,runs,get-run}`.
-
-### 🛠 Skill Registries — *new in v6.7.0*
-
-PAI-format skill manifests with 6 datawatch extensions, synced from git registries (PAI default ships built-in). Resolution at session spawn copies synced files into `<projectDir>/.datawatch/skills/<name>/`. CLI: `datawatch skills {list,registry,get,load}`.
-
-### 🔐 Secrets Manager — *new in v6.4.x*
-
-Centralized native AES-256-GCM encrypted store at `~/.datawatch/secrets.db`, plus optional KeePass, 1Password, and HashiCorp Vault / OpenBao backends. `${secret:name}` references resolve from any configured backend in YAML config, plugin manifests, LLM API key fields, and spawn-time env injection. Per-secret tags + scoping with caller context. Audit-logged on every read. CLI: `datawatch secrets {list,get,set,delete}`.
-
-### 🌐 Tailscale Mesh — *new in v6.5.x*
-
-Tailscale k8s sidecar injected into agent pods for private overlay networking. Headscale-first (self-hosted), commercial Tailscale supported. Pre-auth keys + OAuth device flow. ACL generator with existing-node awareness. CLI: `datawatch tailscale {status,nodes,acl-push}`.
-
-### 💬 The legacy core — still here
-
-- **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper transcription
-- **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell — all routed through the v7.0 LLM registry dispatcher
-- **Episodic memory** — vector-indexed project knowledge; SQLite (pure Go) or PostgreSQL+pgvector; Ollama / OpenAI embeddings; XChaCha20-Poly1305 content encryption with key rotation; **5-scope hierarchy** (persona-global → persona-in-project → project-shared → session-local → **discussion**)
-- **Temporal knowledge graph** — entity-relationship triples with validity windows
-- **Full mempalace 6-axis spatial schema** — floor / wing / room / hall / shelf / box auto-derived at save time; +34pp retrieval improvement
-- **4-layer wake-up stack** — L0 identity (incl. Telos) + L1 critical facts + L2 room recall + L3 deep search
-- **PWA** — installable Android/iOS web app over Tailscale; xterm.js ANSI streaming; full Settings UI for every config knob
-- **Container workers** — Docker / Kubernetes spawn with PQC bootstrap, distroless images, per-pod auth, Tailscale mesh
-- **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards
-- **Automata (PRD-DAG orchestrator)** — autonomous PRD decomposition with verification, multi-graph dependencies, guardrails, rubric-based grading, quality gates, verifier git-diff grounding, prompt injection hardening
-- **Auto rate-limit recovery** — detects rate limits, pauses session, auto-resumes with context after reset window (persisted across daemon restarts)
-- **Docs-as-MCP-Interface** — 22 curated howtos searchable + executable through MCP: hybrid vector+BM25 index, plan-then-execute with approval-token round-trip, per-step risk gate
-- **System monitoring** — CPU, memory, disk, GPU, network, per-session resource usage; eBPF per-process TCP tracking; Prometheus `/metrics`
-- **Bearer token auth + TLS** — auto-generated or custom certs with dual-port HTTP+HTTPS
-- **Full audit log** — every operator action recorded with actor / action / details / timestamp
-- **Federation** — cross-cluster proxy mode with circuit breaker, offline queue, peer registry, observer rollup; channel routing (inbound message → peer mapping); capability-based access control (14 built-in groups)
-
-See **[docs/architecture-overview.md](docs/architecture-overview.md)** for the one-screen Mermaid map of every interface, subsystem, and data path.
+See the [Documentation index](#documentation-index) below for everything else.
 
 ---
 
@@ -367,22 +169,18 @@ datawatch identity configure
 
 # 5. Review auto-migrated LLM entries and add your hardware
 datawatch llm list
-# → ollama-default (auto-migrated from cfg.ollama.host)
-# → openwebui-default (auto-migrated from cfg.openwebui.url)
-
 datawatch compute node list
-# → datawatch-ollama  kind=ollama  address=http://localhost:11434
 
 # 6. Pull a model and start chatting
 datawatch compute pull-model datawatch-ollama llama3.1:8b
 datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 
 # 7. Verify
-datawatch version            # → datawatch v8.0.0
+datawatch version
 curl -ks https://localhost:8443/api/health
 ```
 
-Send `help` in the configured channel to see the command reference.
+Send `help` in the configured channel to see the command reference, or see [docs/howto/chat-and-llm-quickstart.md](docs/howto/chat-and-llm-quickstart.md) for the fastest path from daemon to chatting.
 
 ---
 
@@ -402,72 +200,7 @@ Every datawatch feature is reachable from all of these surfaces:
 
 The mobile parity rule: every operator-visible PWA change files an issue against `dmz006/datawatch-app` so the Compose pipeline mirrors it.
 
----
-
-## Core commands (messaging + CLI)
-
-All commands work in any configured channel and as `datawatch <command>` on the CLI.
-
-### Sessions
-
-| Command | Description |
-|---|---|
-| `new: <task>` | Start a new AI coding session |
-| `list` | List sessions and their current state |
-| `status <id>` | Show recent output from a session |
-| `tail <id> [n]` | Show last N lines of output (default 20) |
-| `send <id>: <msg>` | Send input to a session waiting for input |
-| `kill <id>` | Terminate a running session |
-| `attach <id>` | Get the tmux attach command for SSH access |
-
-### Compute Nodes + LLM Registry (v7.0)
-
-| Command | Description |
-|---|---|
-| `compute node list` | List registered Compute Nodes |
-| `compute node add <name> kind=ollama address=http://...` | Register a node |
-| `compute node health <name>` | Check node reachability + stats |
-| `compute pull-model <node> <model:tag>` | Pull a model to an Ollama node |
-| `compute remove-model <node> <model:tag>` | Delete a model from a node |
-| `llm list` | List LLM registry entries |
-| `llm add <name> kind=ollama compute_nodes=gpu-1,gpu-2` | Add an LLM entry |
-| `llm test <name>` | One-shot probe via the dispatcher |
-| `llm models list <name>` | List enabled models for an LLM entry |
-| `llm models add <name> model=llama3.1:8b node=gpu-1` | Enable a model |
-| `llm in-use <name>` | Show active session + automata bindings |
-| `llm reassign <name> --to-llm <other>` | Reassign all active bindings |
-
-### PAI parity
-
-| Verb | Purpose |
-|---|---|
-| `identity` / `identity show` | Print operator identity / Telos |
-| `identity configure` | Run the 6-step interview wizard |
-| `algorithm start <id>` | Register a session at Observe phase |
-| `algorithm advance <id>` | Close current phase + advance |
-| `evals run <suite>` | Execute eval suite |
-| `council run <mode> <proposal>` | Run debate (mode = quick / debate) |
-
-### Memory + KG
-
-| Command | Description |
-|---|---|
-| `remember <text>` | Save to operator memory |
-| `recall <query>` | Semantic search |
-| `learnings` | Distilled per-task learnings |
-| `kg query <subject>` | Knowledge-graph entity lookup |
-| `kg add <s> <p> <o>` | Append a temporal triple |
-
-### Skills + Secrets + Tailscale
-
-| Command | Description |
-|---|---|
-| `skills list` | List synced skills |
-| `skills sync community` | Sync the community registry ([dmz006/datawatch-community](https://github.com/dmz006/datawatch-community)) |
-| `secrets list/get <name>/set <name>` | Manage centralized secrets |
-| `tailscale status/nodes` | Read mesh state |
-
-See [docs/commands.md](docs/commands.md) for the full reference.
+See [docs/commands.md](docs/commands.md) for the full command reference.
 
 ---
 
@@ -475,11 +208,7 @@ See [docs/commands.md](docs/commands.md) for the full reference.
 
 ➡ **[docs/architecture-overview.md](docs/architecture-overview.md)** — one-screen Mermaid diagram of every interface, subsystem, and data path, with planned features called out.
 
-For deeper drill-downs:
-
-- [docs/architecture.md](docs/architecture.md) — package list, component diagram, session state machine, proxy mode (4 Mermaid diagrams)
-- [docs/data-flow.md](docs/data-flow.md) — per-feature sequence diagrams
-- [docs/plans/README.md](docs/plans/README.md) — open and planned features tracker
+For deeper drill-downs: [docs/architecture.md](docs/architecture.md) (package list, component diagram, session state machine) · [docs/data-flow.md](docs/data-flow.md) (per-feature sequence diagrams) · [docs/plans/README.md](docs/plans/README.md) (open and planned features tracker).
 
 ---
 
@@ -487,88 +216,19 @@ For deeper drill-downs:
 
 Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.md) for a complete index with all flow diagrams.
 
-### Getting started
-
-| Document | Description |
+| Area | Start here |
 |---|---|
-| [docs/setup.md](docs/setup.md) | Installation, backend setup, voice input, RTK, profiles, proxy mode, encryption |
-| [docs/commands.md](docs/commands.md) | Complete command reference (messaging and CLI) |
-| [docs/pwa-setup.md](docs/pwa-setup.md) | PWA setup with Tailscale |
-
-### Compute + LLM (v7.0)
-
-| Document | Description |
-|---|---|
-| [docs/howto/compute-nodes.md](docs/howto/compute-nodes.md) | Register, configure, and monitor Compute Nodes |
-| [docs/howto/llm-registry.md](docs/howto/llm-registry.md) | Add LLM entries, set up failover, manage enabled models |
-| [docs/howto/ollama-marketplace.md](docs/howto/ollama-marketplace.md) | Browse the Ollama catalog, pull models, check hardware fit |
-| [docs/howto/chat-and-llm-quickstart.md](docs/howto/chat-and-llm-quickstart.md) | Fastest path from daemon to chatting with an LLM |
-
-### Sessions + hooks
-
-| Document | Description |
-|---|---|
-| [docs/howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) | Session anatomy — xterm, channel, stats, status tabs |
-| [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) | Claude Code hooks auto-install + Status board |
-
-### Backends
-
-| Document | Description |
-|---|---|
-| [docs/llm-backends.md](docs/llm-backends.md) | All LLM backends — claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell |
-| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends — Signal, Telegram, Discord, Slack, Matrix, Twilio, ntfy, email, webhooks, DNS |
-
-### Interfaces
-
-| Document | Description |
-|---|---|
-| [docs/mcp.md](docs/mcp.md) | MCP server — 60+ tools for Cursor, Claude Desktop, VS Code |
-| [docs/howto/mcp-tools.md](docs/howto/mcp-tools.md) | MCP tool catalog + usage walkthrough |
-| [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md) | Docs-as-MCP-Interface: search + execute howtos via MCP |
-| [docs/api/autonomous.md](docs/api/autonomous.md) | Autonomous PRD decomposition with verification |
-| [docs/api/plugins.md](docs/api/plugins.md) | Subprocess plugin framework + manifest format |
-| [docs/api/orchestrator.md](docs/api/orchestrator.md) | PRD-DAG orchestrator + guardrails |
-| [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md) | API ↔ MCP coverage analysis |
-| [docs/skills.md](docs/skills.md) | Skill Registries + manifest format |
-| [dmz006/datawatch-community](https://github.com/dmz006/datawatch-community) | Community Skills + Plugins registry — browse and contribute |
-| [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) | OpenAPI 3.0 REST API specification |
-
-### Comms + Federation (v8.2–v8.4)
-
-| Document | Description |
-|---|---|
-| [docs/howto/channel-routing.md](docs/howto/channel-routing.md) | Route inbound channel messages to specific federation peers |
-| [docs/howto/file-service.md](docs/howto/file-service.md) | Federated file upload/delete/list under service root |
-| [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) | Shared WAL-backed discussion memory scopes |
-
-### Comm channels
-
-| Document | Description |
-|---|---|
-| [docs/howto/comm-channels.md](docs/howto/comm-channels.md) | Per-channel setup (Signal, Telegram, Discord, Slack, Matrix, …) |
-
-### Memory & intelligence
-
-| Document | Description |
-|---|---|
-| [docs/memory.md](docs/memory.md) | Episodic memory architecture + flow diagrams |
-| [docs/memory-usage-guide.md](docs/memory-usage-guide.md) | Memory in development workflows + PostgreSQL setup |
-
-### Operations & security
-
-| Document | Description |
-|---|---|
-| [docs/operations.md](docs/operations.md) | Service management, upgrades, CLI, monitoring, troubleshooting |
-| [docs/config-reference.yaml](docs/config-reference.yaml) | Annotated config file reference |
-| [docs/encryption.md](docs/encryption.md) | Encryption at rest — XChaCha20-Poly1305 |
-| [docs/multi-session.md](docs/multi-session.md) | Multi-machine configuration |
-| [docs/uninstall.md](docs/uninstall.md) | Manual uninstall for all install methods |
-
-### Source attribution
-
-| Document | Description |
-|---|---|
-| [docs/plan-attribution.md](docs/plan-attribution.md) | What's borrowed from nightwire, mempalace, PAI; what was built in response |
+| Getting started | [docs/setup.md](docs/setup.md) · [docs/commands.md](docs/commands.md) · [docs/pwa-setup.md](docs/pwa-setup.md) |
+| Compute + LLM | [docs/howto/compute-nodes.md](docs/howto/compute-nodes.md) · [docs/howto/llm-registry.md](docs/howto/llm-registry.md) · [docs/howto/ollama-marketplace.md](docs/howto/ollama-marketplace.md) |
+| Sessions + hooks | [docs/howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) |
+| Backends | [docs/llm-backends.md](docs/llm-backends.md) · [docs/messaging-backends.md](docs/messaging-backends.md) |
+| Interfaces | [docs/mcp.md](docs/mcp.md) · [docs/howto/mcp-tools.md](docs/howto/mcp-tools.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md) · [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) |
+| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) |
+| Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
+| Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
+| Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |
+| Community | [`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community) |
+| Source attribution | [docs/plan-attribution.md](docs/plan-attribution.md) |
 
 ---
 
