@@ -328,22 +328,6 @@ CVE-2026-96512
 # release CI (containers/stats-cluster). Reviewed 2026-09-29.
 CVE-2026-84782
 
-# libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
-# verified as the mirror's current candidate — not yet backported at all).
-# Out-of-bounds WRITE (memory-corruption primitive, not just a read) via a
-# crafted regular expression PATTERN (not crafted input text — the
-# attacker needs to control the pattern itself, compiled/run through
-# PCRE2). Blocked v8.38.0's release CI (containers/agent-base).
-# CAVEAT (2026-09-30): same shared-foundation concern as the libexpat1
-# entry above — whether any agent-* runtime ever compiles a regex pattern
-# derived from untrusted/LLM-influenced input (e.g. a prompt-injected
-# search pattern) was NOT independently traced before suppressing, only
-# asserted by pattern-matching this file's existing entries. This is the
-# higher-concern of the two new entries given OOB-write is memory
-# corruption, not just a DoS — prioritize tracing this one first on
-# re-review.
-CVE-2026-103111
-
 # python3.11 / libpython3.11-* — CVE-2026-19553 (HIGH, no fix in bookworm,
 # "Fixed Version" column blank in the trivy scan output). Affects
 # libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal.
