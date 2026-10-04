@@ -7,9 +7,10 @@ and review and I guide all decisions") — every item needed an operator
 go-ahead before any action. The operator has since authorized specific
 items individually as the review progressed: all 74 confirmed false
 positives were dismissed on CodeQL with documented reasons (§3, no code
-changed for these); the `push.go` SSRF (§3e, v8.39.3) and the council/
-skills path-traversal pair (§3b, v8.39.4) are fixed. Everything else in
-this doc remains exactly what it was — a recommendation awaiting its own
+changed for these); the `push.go` SSRF (§3e, v8.39.3), the council/
+skills path-traversal pair (§3b, v8.39.4), and the webhook arbitrary
+local-file-read (§3b #4, v8.39.5) are fixed. Everything else in this
+doc remains exactly what it was — a recommendation awaiting its own
 explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
@@ -78,14 +79,17 @@ none connect to arbitrary external/attacker-influenced hosts.
 referencing the existing gosec rationale in the dismissal comment. No code
 change needed — this is a scanner-sync problem (§1), not a vulnerability.
 
-### 3b. `go/path-injection` (54, the largest bucket) — mixed, 3 CONFIRMED REAL found
+### 3b. `go/path-injection` (54, the largest bucket) — mixed, 4 CONFIRMED REAL found
 
 Sampled all 15 files in this bucket (not every one of the 54 individual
 alert IDs was traced independently — several files have 4-7 duplicate
 alerts for the same underlying pattern). Found three real, consistent false-
-positive explanations covering most of the bucket, **and three genuinely
-exploitable findings sharing one root cause the false-positive patterns
-don't cover.**
+positive explanations covering most of the bucket, **and four genuinely
+exploitable findings** — three sharing one root cause the false-positive
+patterns don't cover, plus one standalone (the webhook finding, below —
+this one was somehow never actually written up here despite being
+confirmed real and discussed with the operator in chat; recorded now
+rather than left as a gap in this doc).
 
 **False-positive patterns found (covers the majority):**
 
@@ -162,6 +166,18 @@ nothing:
    check. (`UpdatePersona`/`RemovePersona` take `name` from the URL path and
    *are* protected by ServeMux's cleaning — only the POST/create path is
    exposed.)
+4. **`internal/messaging/backends/webhook/backend.go`'s `decodeImageURL`**
+   (alert #554) — standalone, different shape from the three above: `POST
+   /task`'s optional `image_url` field, when not a `data:` URI, is passed
+   **directly** to `os.ReadFile(imageURL)` with no `filepath.Join` and no
+   scoping check of any kind — a bare arbitrary-path read, not even the
+   "append an extension" pattern the other three share. Worse starting
+   point than the others on two counts: this listener's bearer token is
+   itself *optional* (`webhook.token` unset means no auth at all, and it's
+   commonly left unset), and the file's content doesn't just get
+   deleted/overwritten — it gets read and forwarded into the task/session
+   pipeline as an attachment, a real local-file-disclosure primitive
+   reachable pre-auth in the common configuration.
 
 **Pattern:** all three are "add new record, name field arrives via POST
 body" shapes — a `name`/`id` field is never checked for `..`/path
@@ -183,6 +199,27 @@ packages) clean; new tests confirm both the rejection (no filesystem
 trace left behind) and that every one of the 12 real default persona
 names, plus a normal `datawatch-community`-shaped skill name, still
 work unchanged after the fix.
+
+**Fixed (webhook, #4) — v8.39.5.** Different shape needed a different
+fix than `pathsafe.ValidateRecordName` (that package validates a single
+*name* field destined to become one path segment; this one takes an
+arbitrary caller-supplied *path* that was never meant to be a single
+segment). Added `WebhookConfig.ImageDir` (empty by default — the
+local-file-path feature is now **disabled** unless the operator opts in
+by setting it) and a `filepath.Clean` + separator-suffixed `HasPrefix`
+scoping check in `decodeImageURL`, the same correct idiom already
+established elsewhere in this codebase (§3b's first false-positive
+pattern, above) and verified again here to handle the sibling-directory
+bypass (`image_dir=/x/allowed` vs. a path under `/x/allowed-evil`)
+correctly. `data:` URIs are unaffected regardless of the new setting.
+Verified: full `go test ./...` (2923 tests, 82 packages) clean; 14 new
+tests split between unit-level `decodeImageURL` scoping cases
+(in-dir, relative-path-under-dir, traversal, sibling-bypass) and the real
+HTTP handler end-to-end via `httptest` (auth behavior unchanged; the
+actual traversal attack, run through the real handler against a real
+file that exists outside the configured directory, confirmed to produce
+no attachment rather than erroring the whole request — pre-existing
+"swallow the decode error" behavior, confirmed unchanged by this fix).
 
 **Not independently re-verified at this depth:** `internal/evals/evals.go`'s
 write-side (`SaveRun`, uses a server-generated `uuid.NewString()`, so

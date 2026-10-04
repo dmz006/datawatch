@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.39.4"
+var Version = "8.39.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2851,7 +2851,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Generic webhook
 	if cfg.Webhook.Enabled {
-		wbB := webhook.New(cfg.Webhook.Addr, cfg.Webhook.Token)
+		wbB := webhook.New(cfg.Webhook.Addr, cfg.Webhook.Token, cfg.Webhook.ImageDir)
 		r := newRouter(cfg.Hostname, "webhook", wbB)
 		routers = append(routers, r)
 		fmt.Printf("[%s] Generic webhook listening on %s\n", cfg.Hostname, cfg.Webhook.Addr)

@@ -130,6 +130,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "enabled", cfg.Webhook.Enabled, "Enable generic webhook")
 	fieldi(&b, "addr", cfg.Webhook.Addr, "Listen address")
 	fieldi(&b, "token", cfg.Webhook.Token, "Bearer token (optional)")
+	fieldi(&b, "image_dir", cfg.Webhook.ImageDir, "Directory the image_url-as-local-file-path feature is scoped to; empty disables that feature (data: URIs still work either way)")
 	b.WriteString("\n")
 
 	section(&b, "DNS Channel", "Covert command channel via DNS TXT queries with HMAC-SHA256 authentication.")

@@ -1102,6 +1102,14 @@ type WebhookConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Addr    string `yaml:"addr"`
 	Token   string `yaml:"token"`
+	// ImageDir (BL394 security fix) scopes the webhook's "image_url as a
+	// local file path" attachment feature to one operator-designated
+	// directory. Empty (the default) disables that feature entirely --
+	// before this fix, any local path was readable with no restriction
+	// at all, from a POST that may not even require a token (Token is
+	// optional). A "data:<mime>;base64,..." image_url always works
+	// regardless of this setting; it never touches the filesystem.
+	ImageDir string `yaml:"image_dir,omitempty"`
 }
 
 // ---- Service configs ----

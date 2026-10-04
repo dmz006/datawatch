@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.4"
+var Version = "8.39.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4969,9 +4969,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"secret":  mask(s.cfg.GitHubWebhook.Secret),
 		},
 		"webhook": map[string]interface{}{
-			"enabled": s.cfg.Webhook.Enabled,
-			"addr":    s.cfg.Webhook.Addr,
-			"token":   mask(s.cfg.Webhook.Token),
+			"enabled":   s.cfg.Webhook.Enabled,
+			"addr":      s.cfg.Webhook.Addr,
+			"token":     mask(s.cfg.Webhook.Token),
+			"image_dir": s.cfg.Webhook.ImageDir,
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
@@ -5538,6 +5539,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Webhook.Token = s
 			}
+		case "webhook.image_dir":
+			// BL394 -- empty string must be settable (disables the
+			// local-file-path feature), so unlike most string fields
+			// here, don't skip an empty value.
+			cfg.Webhook.ImageDir = toString(v)
 		case "telegram.token":
 			if s := toString(v); s != "" {
 				cfg.Telegram.Token = s

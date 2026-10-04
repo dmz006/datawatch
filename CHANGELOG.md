@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.5 — fix(security): arbitrary local file read via webhook image_url
+
+### Fixed
+- **The generic webhook's `image_url` field accepted any local file path with zero validation** (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3b, alert #554) — `os.ReadFile(imageURL)` directly, no scoping, reachable via a `POST /task` whose bearer token is itself optional (`webhook.token` unset means no auth at all). Any caller able to reach the listener could read any file the daemon process can read and have its content attached into the task pipeline. Fixed by scoping the local-file-path feature to one new operator-designated directory: `webhook.image_dir` (empty by default, which **disables** the feature rather than leaving it unrestricted — anyone relying on local-path attachments before upgrading needs to set this once). `data:<mime>;base64,...` image URLs are unaffected either way; they never touch the filesystem. Full `go test ./...` (2923 tests, 82 packages) clean; new tests cover the scoping (in-dir, relative-path, traversal, and sibling-directory-name-bypass cases) and the full HTTP handler end-to-end (auth behavior unchanged, the exact traversal attack silently produces no attachment rather than erroring the whole request — pre-existing behavior, confirmed unchanged).
+
 ## v8.39.4 — fix(security): path traversal in persona/skill-registry name fields
 
 ### Fixed

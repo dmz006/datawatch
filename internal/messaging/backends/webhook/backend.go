@@ -1,6 +1,19 @@
 // Package webhook implements a generic HTTP webhook messaging.Backend.
 // POST JSON to the endpoint: {"task": "write tests", "project_dir": "/opt/myapp"}
 // Optionally include "image_url" as a base64 data URI to attach an image.
+//
+// BL394 security fix (docs/plans/2026-10-03-bl394-security-findings-review.md
+// §3b, alert #554): "image_url" also accepted an arbitrary local file path
+// with zero validation -- os.ReadFile(imageURL) directly, no scoping -- and
+// this endpoint's bearer token is OPTIONAL (Token == "" means no auth at
+// all). Any caller who could reach this listener (loopback by default, but
+// operator-configurable) could read any file the daemon process can read
+// and have its content attached into the task pipeline. Fixed by scoping
+// the local-file-path feature to one operator-designated directory
+// (webhook.image_dir, config.WebhookConfig) -- empty (the default)
+// disables the feature entirely rather than silently allowing it
+// unrestricted. The "data:<mime>;base64,..." form is unaffected either
+// way; it never touches the filesystem.
 package webhook
 
 import (
@@ -10,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,15 +32,17 @@ import (
 
 // Backend listens for generic webhook POST requests.
 type Backend struct {
-	addr  string
-	token string
-	srv   *http.Server
-	msgs  chan messaging.Message
+	addr     string
+	token    string
+	imageDir string
+	srv      *http.Server
+	msgs     chan messaging.Message
 }
 
-// New creates a new generic webhook backend.
-func New(addr, token string) *Backend {
-	b := &Backend{addr: addr, token: token, msgs: make(chan messaging.Message, 64)}
+// New creates a new generic webhook backend. imageDir scopes the
+// image_url-as-local-file-path feature (BL394); pass "" to disable it.
+func New(addr, token, imageDir string) *Backend {
+	b := &Backend{addr: addr, token: token, imageDir: imageDir, msgs: make(chan messaging.Message, 64)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/task", b.handleTask)
 	// G112 fix (v6.22.2): ReadHeaderTimeout prevents Slowloris attacks
@@ -93,7 +109,7 @@ func (b *Backend) handleTask(w http.ResponseWriter, r *http.Request) {
 
 	var attachments []messaging.Attachment
 	if req.ImageURL != "" {
-		if att, err := decodeImageURL(req.ImageURL); err == nil {
+		if att, err := b.decodeImageURL(req.ImageURL); err == nil {
 			attachments = append(attachments, att)
 		}
 	}
@@ -109,9 +125,10 @@ func (b *Backend) handleTask(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true}` + "\n")) //nolint:errcheck
 }
 
-// decodeImageURL handles "data:<mime>;base64,<b64>" URIs and local file paths.
+// decodeImageURL handles "data:<mime>;base64,<b64>" URIs and local file
+// paths (the latter scoped to b.imageDir -- BL394, see package comment).
 // It writes the image to a temp file and returns an Attachment.
-func decodeImageURL(imageURL string) (messaging.Attachment, error) {
+func (b *Backend) decodeImageURL(imageURL string) (messaging.Attachment, error) {
 	var data []byte
 	var contentType, ext string
 
@@ -141,12 +158,25 @@ func decodeImageURL(imageURL string) (messaging.Attachment, error) {
 			contentType = "image/jpeg"
 		}
 	} else {
-		// Local file path
+		// Local file path -- scoped to b.imageDir (BL394).
+		if b.imageDir == "" {
+			return messaging.Attachment{}, fmt.Errorf("webhook: local file path attachments are disabled (set webhook.image_dir to enable)")
+		}
+		resolved := imageURL
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(b.imageDir, resolved)
+		}
+		cleanDir := filepath.Clean(b.imageDir)
+		cleanPath := filepath.Clean(resolved)
+		if cleanPath != cleanDir && !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanDir+string(filepath.Separator)) {
+			return messaging.Attachment{}, fmt.Errorf("webhook: image path outside webhook.image_dir")
+		}
 		var err error
-		data, err = os.ReadFile(imageURL)
+		data, err = os.ReadFile(cleanPath)
 		if err != nil {
 			return messaging.Attachment{}, fmt.Errorf("webhook: read image: %w", err)
 		}
+		imageURL = cleanPath
 		switch {
 		case strings.HasSuffix(imageURL, ".png"):
 			contentType, ext = "image/png", ".png"
@@ -177,5 +207,5 @@ func decodeImageURL(imageURL string) (messaging.Attachment, error) {
 }
 
 func (b *Backend) Link(deviceName string, onQR func(string)) error { return nil }
-func (b *Backend) SelfID() string                                   { return "webhook:" + b.addr }
-func (b *Backend) Close() error                                     { return b.srv.Shutdown(context.Background()) }
+func (b *Backend) SelfID() string                                  { return "webhook:" + b.addr }
+func (b *Backend) Close() error                                    { return b.srv.Shutdown(context.Background()) }

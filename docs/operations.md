@@ -1081,6 +1081,28 @@ Every listener's bind address is fully configurable:
 | `webhook.addr` | Generic webhook bind | `host:port` format |
 | `twilio.webhook_addr` | Twilio webhook bind | `host:port` format |
 
+### Generic Webhook Image Attachments
+
+`POST /task` on the generic webhook listener (`webhook.addr`, default
+`127.0.0.1:9002`) accepts an optional `image_url` field. A
+`data:<mime>;base64,...` value always works. A plain local file path is
+**disabled by default** — set `webhook.image_dir` to the one directory
+you want this feature allowed to read from:
+
+```yaml
+webhook:
+  image_dir: "/home/you/datawatch-webhook-images"
+```
+
+Only paths resolving inside that directory are accepted; anything else
+(including `../` traversal attempts) is rejected. Before this existed,
+`image_url` accepted **any** path the daemon process could read, with no
+restriction at all — and this listener's bearer token is itself optional
+(`webhook.token` unset means no auth), so any caller able to reach the
+listener could read any file. If you were relying on local-path image
+attachments before upgrading, set `webhook.image_dir` to get the feature
+back, scoped.
+
 ### Outbound Mobile Push Endpoint Validation
 
 `POST /api/push/register` lets a mobile client register an endpoint the

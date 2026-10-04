@@ -310,6 +310,8 @@ webhook:
   addr: "127.0.0.1:9002"
   # Bearer token (optional)
   token: ""
+  # Directory the image_url-as-local-file-path feature is scoped to; empty disables that feature (data: URIs still work either way)
+  image_dir: ""
 
 # ── DNS Channel ──
 # Covert command channel via DNS TXT queries with HMAC-SHA256 authentication.

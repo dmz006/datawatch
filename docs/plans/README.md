@@ -1054,8 +1054,19 @@ package fixes both. The third instance from the same finding
 (`api_smoke_progress.go`'s `run_id`) is deliberately not folded in —
 it also needs a separate capability-model decision first.
 
+**v8.39.5** fixed the 4th path-traversal-shaped finding, a standalone
+one with no shared root cause with the other three: the generic
+webhook's `image_url` field passed an arbitrary local path straight to
+`os.ReadFile` with zero scoping, reachable via a `POST /task` whose
+bearer token is itself optional — not just overwrite/delete like the
+other three, an actual file-content-disclosure primitive. Fixed with a
+new `webhook.image_dir` config field (empty disables the feature by
+default) and the same `filepath.Clean`-based scoping idiom already used
+elsewhere in this codebase. 14 new tests, including the real traversal
+attack run end-to-end through the actual HTTP handler.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 3 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. 4 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
 
 ---
 
