@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.16 — fix(ci): clear the lint failure v8.39.15's own new test introduced
+
+### Fixed
+- `internal/messaging/backends/github/backend_test.go`'s new SEC-004 tests passed a literal `nil` as the `context.Context` argument to `b.srv.Shutdown(...)` in all 4 occurrences — `staticcheck`'s SA1012 correctly flags this (the real `Shutdown` tolerates it, but a `nil` context is still a latent footgun if the method's contract ever starts actually using it). Confirmed live from the actual failing CI run, not a local guess. Replaced with `context.Background()`.
+- Also fixed `internal/memory/closets_drawers_test.go`'s `t.Fatal` SA5011 false positive (same `return`-after-`Fatal` idiom used for `bl303_telemetry_test.go` in v8.39.14), found while locally re-linting the full repo after the above. A clean-cache full-repo lint run (`internal/session/bl11_anomaly_test.go`, `internal/session/bl357_test.go`, `internal/websearch/store_test.go` had transiently shown the same SA5011 shape in one run, but did not reproduce on a second clean-cache run — confirmed as `golangci-lint`'s own caching flakiness, not a real issue, and left untouched).
+
+`go build ./...` + `go test ./...` (2976 tests, 82 packages) + a clean-cache `golangci-lint run ./...` (0 issues) all clean.
+
 ## v8.39.15 — fix(security): finish the security backlog — BL394 tail + BL365/Hostile-LLM remediation
 
 ### Fixed

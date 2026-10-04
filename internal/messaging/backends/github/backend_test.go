@@ -8,6 +8,7 @@
 package github
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -78,7 +79,7 @@ func TestVerifySignature_EmptySecretBypasses(t *testing.T) {
 
 func TestHandleWebhook_ValidSignatureDeliversMessage(t *testing.T) {
 	b := New("127.0.0.1:0", "my-secret")
-	defer b.srv.Shutdown(nil) //nolint:errcheck
+	defer b.srv.Shutdown(context.Background()) //nolint:errcheck
 
 	payload := `{"comment":{"body":"hello from a real webhook"},"sender":{"login":"octocat"},"issue":{"number":42}}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(payload))
@@ -102,7 +103,7 @@ func TestHandleWebhook_ValidSignatureDeliversMessage(t *testing.T) {
 
 func TestHandleWebhook_InvalidSignatureRejectedNoMessage(t *testing.T) {
 	b := New("127.0.0.1:0", "my-secret")
-	defer b.srv.Shutdown(nil) //nolint:errcheck
+	defer b.srv.Shutdown(context.Background()) //nolint:errcheck
 
 	payload := `{"comment":{"body":"forged by an attacker"},"sender":{"login":"not-octocat"},"issue":{"number":1}}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(payload))
@@ -124,7 +125,7 @@ func TestHandleWebhook_InvalidSignatureRejectedNoMessage(t *testing.T) {
 
 func TestHandleWebhook_MissingSignatureRejected(t *testing.T) {
 	b := New("127.0.0.1:0", "my-secret")
-	defer b.srv.Shutdown(nil) //nolint:errcheck
+	defer b.srv.Shutdown(context.Background()) //nolint:errcheck
 
 	payload := `{"comment":{"body":"no signature at all"},"sender":{"login":"x"},"issue":{"number":1}}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(payload))
@@ -142,7 +143,7 @@ func TestHandleWebhook_EmptySecretAllowsUnsigned(t *testing.T) {
 	// The deliberate bypass case (see TestVerifySignature_EmptySecretBypasses)
 	// exercised through the real handler.
 	b := New("127.0.0.1:0", "")
-	defer b.srv.Shutdown(nil) //nolint:errcheck
+	defer b.srv.Shutdown(context.Background()) //nolint:errcheck
 
 	payload := `{"comment":{"body":"unsigned but secret is unset"},"sender":{"login":"x"},"issue":{"number":7}}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(payload))

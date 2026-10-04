@@ -42,6 +42,7 @@ func TestSaveClosetWithDrawer_HappyPath(t *testing.T) {
 	}
 	if d == nil {
 		t.Fatal("Drawer returned nil for a closet with a chain")
+		return
 	}
 	if !strings.Contains(d.Content, "FULL VERBATIM") {
 		t.Errorf("drawer content not the verbatim: %q", d.Content[:30])
