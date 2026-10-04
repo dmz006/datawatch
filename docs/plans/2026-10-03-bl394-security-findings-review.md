@@ -8,10 +8,11 @@ go-ahead before any action. The operator has since authorized specific
 items individually as the review progressed: all 74 confirmed false
 positives were dismissed on CodeQL with documented reasons (§3, no code
 changed for these); the `push.go` SSRF (§3e, v8.39.3), the council/
-skills path-traversal pair (§3b, v8.39.4), and the webhook arbitrary
-local-file-read (§3b #4, v8.39.5) are fixed. Everything else in this
-doc remains exactly what it was — a recommendation awaiting its own
-explicit go-ahead, not yet acted on.
+skills path-traversal pair (§3b, v8.39.4), the webhook arbitrary
+local-file-read (§3b #4, v8.39.5), and the `cliPrompt` secret echo
+(§3d, v8.39.6) are fixed. Everything else in this doc remains exactly
+what it was — a recommendation awaiting its own explicit go-ahead, not
+yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -254,17 +255,27 @@ already safe), and `internal/memory/layers_recursive.go`'s `L0ForAgent`
   external input. Low risk even in the worst case (operator attacking their
   own config).
 
-### 3d. `go/clear-text-logging` (4) — 2 CONFIRMED REAL, 2 FALSE POSITIVE
+### 3d. `go/clear-text-logging` (4 alerts) — 1 CONFIRMED REAL, 3 FALSE POSITIVE
+
+**Correction to this doc's own earlier count:** this section originally
+said "2 CONFIRMED REAL, 2 FALSE POSITIVE" — wrong. Alert #619 is the one
+real alert, and its own `message.markdown` reports *two source flows*
+converging on the same sink (both described below) — that's one alert
+with two taint paths, not two separate alerts. Alerts #618, #620, #621
+are the three false positives. Caught and fixed while writing up this
+alert's resolution below; flagging the correction explicitly rather than
+quietly editing a wrong number without saying so.
 
 Importantly these are *not* the same despite sharing a rule — read each
 alert's actual source line (§1's lesson), not just the sink:
 
-- **CONFIRMED REAL:** `cmd/datawatch/main.go`'s `cliPrompt(reader, label,
-  defaultVal)` helper — the interactive `datawatch setup` wizard shows an
-  *existing* value as the visible default when re-running setup:
-  `fmt.Printf("%s [%s]: ", label, defaultVal)`. Traced the two source lines
-  CodeQL's dataflow actually points to (`message.markdown`, not
-  `location`): `cliPrompt(reader, "SMTP password", cfg.Email.Password)` and
+- **CONFIRMED REAL (alert #619):** `cmd/datawatch/main.go`'s
+  `cliPrompt(reader, label, defaultVal)` helper — the interactive
+  `datawatch setup` wizard shows an *existing* value as the visible
+  default when re-running setup: `fmt.Printf("%s [%s]: ", label,
+  defaultVal)`. Traced the two source lines CodeQL's dataflow actually
+  points to (`message.markdown`, not `location`):
+  `cliPrompt(reader, "SMTP password", cfg.Email.Password)` and
   `cliPrompt(reader, "API key...", cfg.OpenWebUI.APIKey)` — both pass the
   *actual secret value* as `defaultVal`, so re-running setup prints e.g.
   `SMTP password [the-real-password]: ` to the terminal in plain text. This
@@ -273,11 +284,39 @@ alert's actual source line (§1's lesson), not just the sink:
   files if setup is ever run inside a captured session. **Likely more call
   sites share this bug** — `cliPrompt` is generic and reused; worth grepping
   all its call sites for other secret fields (haven't enumerated them all).
-- **FALSE POSITIVE:** `internal/agents/spawn.go` (both alerts, same
-  location) — flagged because `as.ClaudeAuthKeySecret` flows to a log call,
-  but that field is the secret's *reference name* (e.g. `"my-anthropic-
-  key"`), not its value — the actual value (`sec.Value`) never appears in
-  the logged line. CodeQL's naming-based heuristic over-fired here.
+- **FALSE POSITIVE (alert #618):** `internal/config/template.go`'s
+  `GenerateAnnotatedConfig` (lines 122/162 there, a *different* function
+  from `cliPrompt` despite CodeQL's `location` pointing at `main.go:8493`
+  — that's the sink inside `newConfigGenerateCmd`, not the actual source).
+  Its only caller always passes `config.DefaultConfig()` — a fresh
+  zero-value config, never the operator's real loaded secrets — so
+  `cfg.Email.Password`/`cfg.OpenWebUI.APIKey` are always empty strings on
+  this path.
+- **FALSE POSITIVE (alerts #620, #621):** `internal/agents/spawn.go`
+  (both alerts, same location) — flagged because `as.ClaudeAuthKeySecret`
+  flows to a log call, but that field is the secret's *reference name*
+  (e.g. `"my-anthropic-key"`), not its value — the actual value
+  (`sec.Value`) never appears in the logged line. CodeQL's naming-based
+  heuristic over-fired here.
+
+**Fixed (alert #619) — v8.39.6.** The "likely more call sites" guess
+above turned out right: grepping `cliPrompt`'s ~60 call sites found 13
+secret fields doing the exact same thing, not just the 2 CodeQL happened
+to flag (every bot token, bearer token, API key, and shared secret in
+the wizard — Telegram, Discord, Slack, Matrix, Twilio, Ntfy, email/SMTP,
+generic webhook, GitHub webhook, the PWA server, MCP, DNS channel,
+OpenWebUI). New `cliPromptSecret(reader, label, existing)` shows a
+neutral "unchanged, press Enter to keep" hint instead of the value for
+all 13; the return-value semantics (Enter keeps `existing`, typing
+replaces it) are identical to `cliPrompt`, only the printed prompt
+differs. The ~45 other, genuinely non-secret fields (hostnames,
+addresses, ports, binary paths) correctly keep using the original,
+unchanged `cliPrompt`. Verified: full `go test ./...` (2929 tests, 82
+packages) clean. New tests confirm the secret is never printed, the
+round-trip (Enter → unchanged value) still works, `cliPrompt` itself is
+provably unchanged for non-secret fields, and a source-scanning
+regression guard that fails if any of the 13 call sites ever reverts to
+plain `cliPrompt`.
 
 ### 3e. `go/request-forgery` (4) — 1 CONFIRMED REAL, 3 FALSE POSITIVE
 

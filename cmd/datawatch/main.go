@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.39.5"
+var Version = "8.39.6"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -11726,6 +11726,32 @@ func cliPrompt(reader *bufio.Reader, label, defaultVal string) string {
 	return line
 }
 
+// cliPromptSecret is like cliPrompt but never echoes an existing secret
+// value back to the terminal as the visible default (BL394 security
+// review, docs/plans/2026-10-03-bl394-security-findings-review.md §3d).
+// The plain cliPrompt's "%s [%s]: " prompt printed the actual stored
+// password/token/secret in plaintext every time `datawatch setup`
+// re-ran on an already-configured field -- which matters more than
+// usual for this product specifically, since its own tmux screen-
+// capture/session-logging features would persist that into log files
+// if setup is ever run inside a captured session. When existing is
+// non-empty, shows a neutral hint instead of the value; pressing Enter
+// with no input still returns existing unchanged, exactly like
+// cliPrompt -- only the printed prompt differs, never the return value.
+func cliPromptSecret(reader *bufio.Reader, label, existing string) string {
+	if existing != "" {
+		fmt.Printf("%s [unchanged, press Enter to keep]: ", label)
+	} else {
+		fmt.Printf("%s: ", label)
+	}
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return existing
+	}
+	return line
+}
+
 // ---- setup signal ----------------------------------------------------------
 
 func newSetupSignalCmd() *cobra.Command {
@@ -11762,7 +11788,7 @@ func runSetupTelegram(_ *cobra.Command, _ []string) error {
 	fmt.Println("3. Copy the API token BotFather gives you")
 	fmt.Println()
 
-	token := cliPrompt(reader, "Bot token", cfg.Telegram.Token)
+	token := cliPromptSecret(reader, "Bot token", cfg.Telegram.Token)
 	if token == "" {
 		return fmt.Errorf("token required")
 	}
@@ -11875,7 +11901,7 @@ func runSetupDiscord(_ *cobra.Command, _ []string) error {
 	fmt.Println("5. Invite the bot to your server")
 	fmt.Println()
 
-	token := cliPrompt(reader, "Bot token", cfg.Discord.Token)
+	token := cliPromptSecret(reader, "Bot token", cfg.Discord.Token)
 	if token == "" {
 		return fmt.Errorf("token required")
 	}
@@ -11959,7 +11985,7 @@ func runSetupSlack(_ *cobra.Command, _ []string) error {
 	fmt.Println("3. Install to workspace → copy the Bot User OAuth Token (xoxb-...)")
 	fmt.Println()
 
-	token := cliPrompt(reader, "Bot token (xoxb-...)", cfg.Slack.Token)
+	token := cliPromptSecret(reader, "Bot token (xoxb-...)", cfg.Slack.Token)
 	if token == "" {
 		return fmt.Errorf("token required")
 	}
@@ -12037,7 +12063,7 @@ func runSetupMatrix(_ *cobra.Command, _ []string) error {
 
 	cfg.Matrix.Homeserver = cliPrompt(reader, "Homeserver URL (e.g. https://matrix.org)", cfg.Matrix.Homeserver)
 	cfg.Matrix.UserID = cliPrompt(reader, "Bot user ID (e.g. @bot:matrix.org)", cfg.Matrix.UserID)
-	cfg.Matrix.AccessToken = cliPrompt(reader, "Access token", cfg.Matrix.AccessToken)
+	cfg.Matrix.AccessToken = cliPromptSecret(reader, "Access token", cfg.Matrix.AccessToken)
 	cfg.Matrix.RoomID = cliPrompt(reader, "Room ID (e.g. !abcdef:matrix.org)", cfg.Matrix.RoomID)
 	cfg.Matrix.Enabled = true
 
@@ -12256,7 +12282,7 @@ func runSetupTwilio(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	cfg.Twilio.AccountSID = cliPrompt(reader, "Account SID (starts with AC)", cfg.Twilio.AccountSID)
-	cfg.Twilio.AuthToken = cliPrompt(reader, "Auth Token", cfg.Twilio.AuthToken)
+	cfg.Twilio.AuthToken = cliPromptSecret(reader, "Auth Token", cfg.Twilio.AuthToken)
 	cfg.Twilio.FromNumber = cliPrompt(reader, "Twilio phone number (e.g. +12125551234)", cfg.Twilio.FromNumber)
 	cfg.Twilio.ToNumber = cliPrompt(reader, "Your phone number (destination)", cfg.Twilio.ToNumber)
 	cfg.Twilio.WebhookAddr = cliPrompt(reader, "Webhook listen address", func() string {
@@ -12308,7 +12334,7 @@ func runSetupNtfy(_ *cobra.Command, _ []string) error {
 	}())
 	cfg.Ntfy.ServerURL = serverURL
 	cfg.Ntfy.Topic = cliPrompt(reader, "Topic name", cfg.Ntfy.Topic)
-	cfg.Ntfy.Token = cliPrompt(reader, "Access token (press Enter to skip)", cfg.Ntfy.Token)
+	cfg.Ntfy.Token = cliPromptSecret(reader, "Access token (press Enter to skip)", cfg.Ntfy.Token)
 	cfg.Ntfy.Enabled = true
 
 	if err := setupSave(cfg); err != nil {
@@ -12357,7 +12383,7 @@ func runSetupEmail(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 	if err != nil {
 		// Fall back to visible prompt if terminal doesn't support it
-		cfg.Email.Password = cliPrompt(reader, "SMTP password", cfg.Email.Password)
+		cfg.Email.Password = cliPromptSecret(reader, "SMTP password", cfg.Email.Password)
 	} else {
 		cfg.Email.Password = string(pw)
 	}
@@ -12402,7 +12428,7 @@ func runSetupWebhook(_ *cobra.Command, _ []string) error {
 		}
 		return ":9002"
 	}())
-	cfg.Webhook.Token = cliPrompt(reader, "Bearer token for authentication (press Enter to skip)", cfg.Webhook.Token)
+	cfg.Webhook.Token = cliPromptSecret(reader, "Bearer token for authentication (press Enter to skip)", cfg.Webhook.Token)
 	cfg.Webhook.Enabled = true
 
 	if err := setupSave(cfg); err != nil {
@@ -12445,7 +12471,7 @@ func runSetupGitHub(_ *cobra.Command, _ []string) error {
 		}
 		return ":9001"
 	}())
-	cfg.GitHubWebhook.Secret = cliPrompt(reader, "Webhook secret", cfg.GitHubWebhook.Secret)
+	cfg.GitHubWebhook.Secret = cliPromptSecret(reader, "Webhook secret", cfg.GitHubWebhook.Secret)
 	cfg.GitHubWebhook.Enabled = true
 
 	if err := setupSave(cfg); err != nil {
@@ -12505,7 +12531,7 @@ func runSetupWeb(_ *cobra.Command, _ []string) error {
 		return "8080"
 	}())
 	_, _ = fmt.Sscanf(portStr, "%d", &cfg.Server.Port)
-	cfg.Server.Token = cliPrompt(reader, "Bearer token for authentication (press Enter to skip)", cfg.Server.Token)
+	cfg.Server.Token = cliPromptSecret(reader, "Bearer token for authentication (press Enter to skip)", cfg.Server.Token)
 
 	tlsChoice := cliPrompt(reader, "Enable TLS with auto-generated cert? (y/n)", "y")
 	cfg.Server.TLSEnabled = strings.ToLower(tlsChoice) != "n" && strings.ToLower(tlsChoice) != "no"
@@ -12935,7 +12961,7 @@ func runSetupLLMOpenWebUI(_ *cobra.Command, _ []string) error {
 
 	cfg.OpenWebUI.URL = cliPrompt(reader, "OpenWebUI URL (e.g. http://localhost:3000)", cfg.OpenWebUI.URL)
 	cfg.OpenWebUI.Model = cliPrompt(reader, "Model name (e.g. llama3:latest)", cfg.OpenWebUI.Model)
-	cfg.OpenWebUI.APIKey = cliPrompt(reader, "API key (press Enter to skip)", cfg.OpenWebUI.APIKey)
+	cfg.OpenWebUI.APIKey = cliPromptSecret(reader, "API key (press Enter to skip)", cfg.OpenWebUI.APIKey)
 	enableChoice := cliPrompt(reader, "Enable OpenWebUI backend? (y/n)", func() string {
 		if cfg.OpenWebUI.Enabled {
 			return "y"
@@ -13135,7 +13161,7 @@ func runSetupMCP(_ *cobra.Command, _ []string) error {
 		cfg.MCP.TLSEnabled = strings.ToLower(tlsChoice) != "n" && strings.ToLower(tlsChoice) != "no"
 		cfg.MCP.TLSAutoGenerate = cfg.MCP.TLSEnabled
 
-		cfg.MCP.Token = cliPrompt(reader, "Bearer token for authentication (press Enter to skip)", cfg.MCP.Token)
+		cfg.MCP.Token = cliPromptSecret(reader, "Bearer token for authentication (press Enter to skip)", cfg.MCP.Token)
 	}
 
 	if err := setupSave(cfg); err != nil {
@@ -13222,7 +13248,7 @@ func runSetupDNS(_ *cobra.Command, _ []string) error {
 		}())
 	}
 
-	cfg.DNSChannel.Secret = cliPrompt(reader, "Shared HMAC secret", cfg.DNSChannel.Secret)
+	cfg.DNSChannel.Secret = cliPromptSecret(reader, "Shared HMAC secret", cfg.DNSChannel.Secret)
 
 	rateLimitStr := cliPrompt(reader, "Rate limit (queries/IP/min, 0=unlimited)", fmt.Sprintf("%d", func() int {
 		if cfg.DNSChannel.RateLimit != 0 {

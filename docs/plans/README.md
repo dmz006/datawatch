@@ -1065,8 +1065,17 @@ default) and the same `filepath.Clean`-based scoping idiom already used
 elsewhere in this codebase. 14 new tests, including the real traversal
 attack run end-to-end through the actual HTTP handler.
 
+**v8.39.6** fixed the `cliPrompt` secret-echo finding (§3d) — and
+corrected a counting error this doc's own §3d made earlier ("2 confirmed
+real" should have been "1 alert, 2 source flows in one message"). The
+2 CodeQL-flagged call sites (SMTP password, OpenWebUI API key) turned
+out to be 13 once every `cliPrompt` call site was actually grepped —
+every bot token, bearer token, API key, and shared secret in the setup
+wizard had the same bug. New `cliPromptSecret` fixes all 13; the ~45
+genuinely non-secret fields keep the original `cliPrompt` unchanged.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 74 false positives dismissed. 4 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
+**Status:** 74 false positives dismissed. 5 of the remaining ~20 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6). The rest await their own individual go-ahead — this review does not auto-authorize fixing anything else in it.
 
 ---
 

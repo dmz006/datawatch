@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.6 — fix(security): `datawatch setup` echoed existing secrets in plaintext
+
+### Fixed
+- **Re-running `datawatch setup` on an already-configured secret field printed its real value to the terminal** as the visible default (BL394 security review, `docs/plans/2026-10-03-bl394-security-findings-review.md` §3d) — `cliPrompt`'s `"%s [%s]: "` prompt showed e.g. `SMTP password [the-real-password]: `. Matters more than usual for this product specifically, since its own tmux screen-capture/session-logging would persist that into log files if setup is ever run inside a captured session. Found at 2 call sites by CodeQL; grepping `cliPrompt`'s other ~60 call sites turned up 13 more secret fields doing the exact same thing (every bot token, bearer token, API key, and shared secret in the wizard: Telegram, Discord, Slack, Matrix, Twilio, Ntfy, email/SMTP, generic webhook, GitHub webhook, the PWA server, MCP, DNS channel, OpenWebUI). New `cliPromptSecret` shows a neutral "unchanged, press Enter to keep" hint instead for exactly those 13 call sites; the ~45 other, genuinely-non-secret fields (hostnames, addresses, ports, binary paths) keep using the original `cliPrompt` and its unchanged default-echoing behavior — correct and expected for those. New tests cover the fix, confirm `cliPrompt` itself is unchanged, and include a source-scanning regression guard so a future secret field (or a revert of one of the 13) can't silently reintroduce the echo without a test failing.
+
 ## v8.39.5 — fix(security): arbitrary local file read via webhook image_url
 
 ### Fixed
