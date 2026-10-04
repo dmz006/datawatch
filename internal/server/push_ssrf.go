@@ -127,7 +127,7 @@ func validatePushEndpoint(rawURL string, cfg config.PushConfig) error {
 	if err != nil {
 		return fmt.Errorf("invalid endpoint URL: %w", err)
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && cfg.AllowInsecureEndpoints) {
+	if u.Scheme != "https" && (u.Scheme != "http" || !cfg.AllowInsecureEndpoints) {
 		if cfg.AllowInsecureEndpoints {
 			return fmt.Errorf("endpoint must be http:// or https://, got %q", u.Scheme)
 		}

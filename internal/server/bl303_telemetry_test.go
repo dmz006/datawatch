@@ -199,6 +199,7 @@ func TestTelemetryScalarFields(t *testing.T) {
 	tel := board.Telemetry
 	if tel == nil {
 		t.Fatal("telemetry nil")
+		return
 	}
 	if tel.CurrentTask != "implement feature" {
 		t.Errorf("CurrentTask: got %q", tel.CurrentTask)

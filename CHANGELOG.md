@@ -5,7 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.39.13 — feat: embed a federation peer's PWA inline (iframe), BL394 §6 iframe-embed follow-up
+## v8.39.14 — fix(ci): clear the golangci-lint failures blocking CI on main
+
+### Fixed
+- **`internal/server/proxy_token.go`'s `extractBearerOrQueryToken` was dead code** — written for `fedAuthMiddleware`'s new scoped-token branch (v8.39.13) but never actually called, since that branch ended up reusing the `tok` variable `fedAuthMiddleware` already computes. `unused` linter caught it; removed. This was the issue actually blocking `CI`'s `golangci-lint` job (and, transitively, the `build` job that depends on it) on the v8.39.13 push.
+- **`internal/server/push_ssrf.go`'s `validatePushEndpoint`** had a `staticcheck` QF1001 finding (De Morgan's law) sitting unaddressed since v8.39.3 — pre-existing, unrelated to v8.39.13, but still actively failing the same lint job on every run since (this workflow has no `only-new-issues` filtering, so it re-checks the whole codebase every time, not just the diff). Rewritten to the equivalent `u.Scheme != "https" && (u.Scheme != "http" || !cfg.AllowInsecureEndpoints)` — pure logical rewrite, no behavior change.
+- **`internal/server/bl303_telemetry_test.go`** had a `staticcheck` SA5011 false positive (`t.Fatal` genuinely halts the goroutine via `runtime.Goexit`, but the analyzer doesn't always recognize that) — added the standard `return` immediately after `t.Fatal(...)` to pacify it; harmless, since `t.Fatal` already makes it unreachable at runtime.
+
+Found while the operator asked about CI health directly — confirmed live via `gh run view` on the actual failing `CI` run, not assumed. `go build ./...` and `go test ./...` (2965 tests, 82 packages) both clean.
 
 ### Added
 - **Viewing a federation peer's PWA now embeds inline** (a modal with an iframe, matching this PWA's existing file-viewer modal conventions) instead of only opening in a new browser tab. The "PWA" link in Settings → Servers now opens the embedded viewer on a plain click, while middle-click/ctrl-click/right-click "open in new tab" still work via the link's own `href`. An "↗ New tab" link and an expand toggle are available inside the viewer too.

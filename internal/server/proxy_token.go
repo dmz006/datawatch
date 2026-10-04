@@ -85,19 +85,6 @@ func (s *proxyTokenStore) valid(token, peerName string) bool {
 	return entry.peerName == peerName
 }
 
-// extractBearerOrQueryToken mirrors fedAuthMiddleware's own precedence
-// (query param "token" first, then "Authorization: Bearer") so a scoped
-// proxy token works identically regardless of which path it arrives by --
-// the proxied page's own fetch() calls send it as a header (tokenHeader()
-// in app.js), while its WS connection sends it as a query param (browsers
-// cannot set custom headers on a WebSocket handshake at all).
-func extractBearerOrQueryToken(r *http.Request) string {
-	if tok := r.URL.Query().Get("token"); tok != "" {
-		return tok
-	}
-	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-}
-
 // checkProxyAuth gates handleProxy/handleProxyWS. If the request was
 // authenticated via a scoped proxy token (fedAuthMiddleware tagged the
 // context), it's authorized only if that token's bound peer matches
