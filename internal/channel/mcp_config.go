@@ -107,8 +107,19 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 	if err != nil {
 		return fmt.Errorf("marshal .mcp.json: %w", err)
 	}
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	// HLLM-001 (docs/plans/historical-plans/2026-08-28-security-assessment-hostile-llm.md):
+	// this file's "env" carries DATAWATCH_TOKEN (the daemon's admin
+	// bearer token) in plaintext -- 0600 so only the daemon's own uid
+	// can read it, not every other local user/process on a shared host.
+	// os.WriteFile's mode argument only applies to a NEWLY created file,
+	// not one that already exists with the old 0644 from before this
+	// fix, so an explicit Chmod self-heals any pre-existing file too --
+	// this function already runs on every session spawn.
+	if err := os.WriteFile(path, out, 0600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("chmod %s: %w", path, err)
 	}
 	return nil
 }
@@ -145,7 +156,11 @@ func InjectExtrasIntoMCPConfig(projectDir string, extras map[string]MCPServerSpe
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
-	return os.WriteFile(path, out, 0644)
+	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 // WriteInstanceMCPConfig rewrites `<dataDir>/.mcp.json` so it tracks the
@@ -217,8 +232,12 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 	if err != nil {
 		return false, fmt.Errorf("marshal %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
+	if err := os.WriteFile(path, out, 0600); err != nil {
 		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return false, fmt.Errorf("chmod %s: %w", path, err)
 	}
 	return true, nil
 }
@@ -248,7 +267,14 @@ func RemoveProjectMCPEntry(projectDir, name string) error {
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
-	return os.WriteFile(path, out, 0644)
+	// HLLM-001 -- see WriteProjectMCPConfig's comment above. This path
+	// removes one entry but the file may still carry other servers'
+	// tokens, and consistent permissions regardless of which of this
+	// file's 4 writers last touched it matters more than this one case.
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 // IsStaleProjectMCPConfig reads <path> as a `.mcp.json` and reports

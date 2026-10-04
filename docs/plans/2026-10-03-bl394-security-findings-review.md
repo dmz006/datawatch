@@ -56,8 +56,18 @@ treatment as the top-level navigation; and a pre-existing, unrelated bug
 — `handleRemotePWA` forwarding the browser's own `Accept-Encoding`
 header upstream — silently corrupted every gzip-compressed script/
 stylesheet it proxied, for any real browser, since before this review
-began. Everything else in this doc remains exactly what it was — a
-recommendation awaiting its own explicit go-ahead, not yet acted on.
+began. A fifth follow-up (v8.39.15) finished BL394's own tail (dismissed
+3 CodeQL alerts that didn't auto-resolve; investigated §3g's SQL-`LIMIT`
+caveat, confirmed still present, deliberately not patched) and then
+widened to two other open security-assessment threads that turned out
+to contain real, still-live findings: SEC-004 (GitHub webhook had zero
+signature verification despite a configured secret) and SEC-021 (the
+docs-viewer's and file-viewer's stored XSS via unsanitized
+`marked.parse()`) from BL365, and HLLM-001's file-permission exposure
+(admin token in a world-readable `.mcp.json`) from the Hostile-LLM
+assessment — see §7 for the full writeup. Everything else in this doc
+remains exactly what it was — a recommendation awaiting its own
+explicit go-ahead, not yet acted on.
 
 ## 1. Why this looked noisier than it is
 
@@ -1289,3 +1299,185 @@ per-asset token appending, including the empty-token no-op case; the
 `Accept-Encoding`-stripping fix, confirmed to fail without it; the
 unauthenticated `/locales/` route). Full `go test ./...` (2965 tests, 82
 packages) clean.
+
+## 7. BL394 tail + the wider security backlog (v8.39.15)
+
+The operator asked to "finish the security backlog" before tagging a
+release. Checking what that actually meant turned up two more
+still-open security-assessment threads beyond BL394 itself —
+`2026-08-28-security-assessment-core.md` (BL365, 13+ findings
+SEC-001…024) and `2026-08-28-security-assessment-hostile-llm.md`
+(Hostile-LLM, 9 findings HLLM-001…009, 2 CRIT) — both assessment-only
+reviews from before this session, fully documented with live repro but
+never triaged into fixes. Two of BL365's findings and one of
+Hostile-LLM's turned out to be real, still-live, and small enough to
+fix now; the rest were explicitly scoped out as either accepted-risk
+(same default-posture class as several BL394 findings) or genuinely
+architectural (HLLM-002's per-session credential scoping). See
+`docs/plans/README.md`'s BL365 and Hostile-LLM entries for the
+canonical remediation-status summary; this section is the detailed
+writeup.
+
+### 7a. BL394's own tail — CodeQL dismissals + §3g
+
+**CodeQL — 3 alerts dismissed, not auto-resolved.** #553
+(`layers_recursive.go`) and #528 (`app.js`) were both already fixed in
+code (v8.39.10) but still showed open after a fresh CodeQL scan against
+the latest commit — confirmed live, not assumed, by re-checking the
+API after the scan completed. Same interprocedural-tracking gap as
+every other post-fix dismissal in this doc: #553's guard
+(`pathsafe.ValidateRecordName`) runs 2 lines above the flagged
+`os.ReadFile` sink; #528's flagged line is the `html +=` accumulator
+line, not the actual `ch.name` → `escJsAttr()` fix site. #545
+(`proxy.go`'s `w.Write(rewritten)`) was always expected to need a
+manual dismissal, since its fix (§6/§6a) is architectural — a different
+serving origin — not sink-level sanitization. All three dismissed with
+a reason + evidence comment (280-char GitHub limit meant trimming each
+one down from an initial draft that referenced the exact test names and
+doc sections; kept the commit/version + the one-line mechanism instead).
+
+**§3g's SQL-`LIMIT` caveat — investigated, deliberately not fixed.**
+`internal/memory/store.go` and `pg_store.go`'s semantic-search query
+(`SELECT ... FROM memories WHERE embedding IS NOT NULL [AND wing/room]`)
+has no `LIMIT` at all — confirmed still true by reading the current
+code. Every call loads every matching row's full embedding vector,
+decodes it, scores it, and only truncates to `topK` after sorting the
+entire candidate set. Not a security vulnerability (no injection risk,
+fully parameterized) — a genuine unbounded-resource-growth pattern as
+the memories table grows over a long daemon lifetime. Deliberately not
+patched: the obvious quick fix (`LIMIT N` before scoring) would rank
+only among the first N rows by insertion order, not truly the most
+similar N — a silent *correctness* regression in search quality, not
+just a performance fix, and that tradeoff deserves real evaluation (or
+a proper ANN/vector-index approach) rather than a rushed patch in a
+"finish the backlog before release" pass. Recorded here as confirmed
+and open, same as the original review's own framing for this item.
+
+### 7b. SEC-004 — GitHub webhook had zero signature verification
+
+`internal/messaging/backends/github/backend.go`'s `handleWebhook` never
+referenced `b.secret` at all — despite `GitHubWebhook.Secret` being
+collected, stored, and migrated to the secrets vault, the HMAC signature
+GitHub sends (`X-Hub-Signature-256`) was never checked. Confirmed still
+live by reading the current code before touching anything. Any party
+able to reach the listener (default bind is loopback-only, but a real
+GitHub webhook needs a publicly reachable URL, so most deployments proxy
+or rebind this) could forge `issue_comment`/`workflow_dispatch`
+payloads and inject arbitrary text into the operator's command stream.
+
+**Fixed.** New `verifySignature(secret, body, sigHeader)` computes the
+expected `hmac.New(sha256.New, secret)` digest over the raw request body
+and compares it to the `X-Hub-Signature-256` header via `hmac.Equal`
+(constant-time, so the comparison itself can't leak timing information
+about a forged signature). Wired in as the very first check in
+`handleWebhook`, before the body is even parsed as JSON. An empty
+configured secret still bypasses verification — matching this
+codebase's existing "optional secret" convention elsewhere — but now
+logs a loud startup warning instead of silently accepting unsigned
+payloads with no indication anything is unverified. 10 new tests
+(`backend_test.go`): the signature check in isolation (valid, wrong
+secret, tampered body, missing header, 3 malformed-header shapes, the
+intentional empty-secret bypass) and the full handler end-to-end (valid
+signature delivers a message, invalid/missing signature 401s with no
+message delivered, empty-secret case still works). Verified by
+temporarily removing the `verifySignature` call and confirming the two
+handler-level rejection tests fail without it, before trusting them.
+
+### 7c. SEC-021 — docs-viewer + file-viewer stored XSS (XSS half fixed)
+
+`diagrams.js`'s `renderDoc` runs a doc's own markdown prose through
+`marked.parse()` and assigns the result straight to `innerHTML`, with
+no sanitization — standard markdown behavior is to pass embedded raw
+HTML through unchanged, so a `.md` file containing `<img onerror=...>`
+or a `<script>` tag executes with the operator's own PWA session the
+moment the doc is viewed. Confirmed still live by reading the current
+code. While fixing it, found the **exact same pattern** in `app.js`'s
+`_renderMarkdownFileInto` (the file-viewer modal, `_showFileViewer`) —
+not previously identified as part of SEC-021, but structurally
+identical and equally exploitable; fixed both.
+
+The original finding described this as a two-part chain: (1) the
+file-service root falls back to the operator's own project directory
+(`session.root_path`) when `file_service_root` isn't explicitly set
+narrower, so an authenticated caller's `POST /api/files/upload` can
+plant a malicious `.md` file *inside the repo itself*; (2) the docs
+viewer then executes it unsanitized. **Only (2), the actual XSS
+mechanism, is fixed here.** (1) — the write-scope question — is a
+default-behavior/compatibility question (narrowing it could break
+existing operators relying on the current fallback for legitimate
+uploads) that deserves its own look, not a reflex patch bundled into a
+release-prep pass; it's deliberately left open. Fixing (2) alone closes
+the live exploit path regardless: even if (1) still lets a crafted file
+land in the repo, viewing it through either renderer no longer executes
+anything.
+
+**Fixed (both call sites).** Both now sanitize `marked.parse()`'s output
+through `DOMPurify.sanitize()` before assigning to `innerHTML`, with a
+fail-safe fallback (the same escaped-`<pre>` rendering already used when
+`marked` itself isn't loaded) if `DOMPurify` somehow failed to load —
+the fallback matters because it means a sanitizer load failure degrades
+to *safe-but-plain* rendering, never silently to *unsanitized* rendering.
+`diagrams.html` gets `DOMPurify` via a new pinned, SRI-verified
+`<script>` tag (version 3.1.7, hash computed directly from the
+downloaded file, not guessed); `app.js`'s `_ensureMarkdownLibs` (which
+lazy-loads `marked`/`mermaid` on first use) gets a third lazy-load
+entry for the same version, matching its existing no-SRI convention for
+dynamically-injected scripts (a separate, pre-existing gap, not part of
+this fix).
+
+4 new tests (`diagrams-xss.test.js`, `app-escaping.test.js`, 2 each):
+fake `marked`/`DOMPurify` stubs confirm `DOMPurify.sanitize()` is called
+with `marked.parse()`'s *raw* output and that its *sanitized* return
+value — not the raw one — is what reaches `innerHTML`; a second test per
+file confirms the safe fallback when `DOMPurify` is undefined. Real
+DOMPurify's own sanitization correctness isn't what these test — that's
+an extensively-tested third-party library's job, not this codebase's;
+what's actually at risk of a coding mistake is whether this code calls
+it and uses its result, which is exactly what's verified. Both pairs
+confirmed to fail without the fix (reverted, re-ran, restored) before
+being trusted.
+
+### 7d. HLLM-001 — admin token in a world-readable `.mcp.json` (file-permission half fixed)
+
+`internal/channel/mcp_config.go` writes `.mcp.json` (the file a spawned
+session's MCP client reads to discover the datawatch bridge) with the
+daemon's own admin `server.token` embedded in its `env` block, at all 4
+of this file's writer functions, all using `os.WriteFile(path, out,
+0644)` — world-readable within the project directory. Confirmed still
+live by reading the current code. The Hostile-LLM assessment's own
+framing: this is the exposure *vector* (any other local uid/process can
+read the admin token straight off disk) for the deeper root cause
+(HLLM-002: every session already holds this exact token as a matter of
+design, full admin, unscoped) — fixing the file permission narrows who
+*else* can reach the token without touching the architectural question
+of whether the session itself should have it at all.
+
+**File-permission half fixed, root cause explicitly not.** All 4
+writers now use `0600`, plus an explicit `os.Chmod(path, 0600)` after
+every write — needed because `os.WriteFile`'s mode argument only
+applies when a file is newly *created*; an operator upgrading from a
+pre-fix daemon would otherwise keep their existing `0644` file forever,
+since nothing would ever correct it. Since this function already
+rewrites the file on every session spawn, the explicit `Chmod` makes
+the fix self-healing on the very next spawn, not just for brand-new
+installs. 1 new test
+(`TestWriteProjectMCPConfig_PermissionsAreOwnerOnly`) specifically
+covers the self-heal case: pre-creates a `0644` file (simulating an
+existing pre-fix deployment), calls the writer, and asserts the result
+is `0600` — confirmed to fail without the `Chmod` call before trusting
+it. **HLLM-002 and its 6 downstream HIGH findings (unscoped
+secrets/memory/sessions, `allow_self_config` REST bypass, absent exfil
+control, peer-federation + Tailscale-ACL reachability, self-propagation
+surface — all cascading from "the session IS the admin token") remain
+fully open**, deliberately — per-session scoped credentials is a real
+design project, not something to rush ahead of a release.
+
+### 7e. Verification
+
+Full `go build ./...` + `go test ./...` (2976 tests, 82 packages) and
+`node --test internal/server/web/*.test.js` (17 tests) both clean after
+every fix in this section, not just at the end. Every fix in 7b–7d was
+validated against the actual bug it claims to fix by temporarily
+reverting it and confirming the relevant test(s) fail first, then
+restoring — the same discipline this whole review has used throughout,
+applied here to findings that predate BL394 itself.

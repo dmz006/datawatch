@@ -53,3 +53,60 @@ test('a normal legitimate doc path still renders (regression check)', async () =
   assert.ok(rendered.includes('docs/howto/README.md') || rendered.includes('Loading'),
     `expected a normal legitimate doc path to render a loading/error state: ${JSON.stringify(rendered).slice(0, 300)}`);
 });
+
+// SEC-021 (docs/plans/historical-plans/2026-08-28-security-assessment-
+// core.md) -- renderDoc's own prose rendering runs marked.parse() (which
+// passes raw HTML embedded in the .md source through unchanged -- that's
+// standard markdown behavior, marked does no sanitization itself)
+// straight into innerHTML with no sanitization at all. A doc containing
+// e.g. <img onerror=...> executed in the PWA with the operator's own
+// session. Fixed by running marked's output through DOMPurify.sanitize()
+// first. These tests use fake marked/DOMPurify stubs rather than the
+// real libraries (no npm dependency exists for this PWA, see
+// testutil_browser_stub.js's own header comment) -- the thing actually
+// at risk of a coding mistake is THIS file's own integration logic
+// (does it call sanitize, does it use sanitize's result rather than
+// marked's raw output), not DOMPurify's own sanitization correctness,
+// which is an extensively-tested third-party library's job to get right,
+// not this test's.
+async function loadWithFakeMarkdownLibs(markedOutput, domPurifyOutput) {
+  const mainEl = makeStubElement();
+  const sandbox = buildSandbox({ byId: { main: mainEl } });
+  sandbox.marked = { parse: () => markedOutput };
+  if (domPurifyOutput !== undefined) {
+    sandbox.DOMPurify = { sanitize: (html) => { sandbox.__sanitizeCalledWith = html; return domPurifyOutput; } };
+  }
+  vm.createContext(sandbox);
+  loadScript(DIAGRAMS_JS, sandbox);
+  // The file's own top-level openFromHash() call (with no hash set)
+  // kicks off an unrelated async fetch/404 chain that also writes to
+  // #main -- let it finish before the test does its own direct
+  // renderDoc() call, or the two can race and clobber each other.
+  await flushAsync();
+  return { sandbox, mainEl };
+}
+
+test('renderDoc runs marked output through DOMPurify.sanitize before using it', async () => {
+  const { sandbox, mainEl } = await loadWithFakeMarkdownLibs(
+    '<img src=x onerror=alert(1)>RAW_MARKED_OUTPUT',
+    '<p>SANITIZED_OUTPUT</p>'
+  );
+  await vm.runInContext("renderDoc('docs/test.md', '# hello')", sandbox);
+
+  assert.equal(sandbox.__sanitizeCalledWith, '<img src=x onerror=alert(1)>RAW_MARKED_OUTPUT',
+    'DOMPurify.sanitize must be called with marked.parse()\'s raw output');
+  assert.ok(mainEl.innerHTML.includes('SANITIZED_OUTPUT'),
+    `expected the SANITIZED result in innerHTML, got: ${mainEl.innerHTML.slice(0, 300)}`);
+  assert.ok(!mainEl.innerHTML.includes('onerror=alert(1)'),
+    `the raw, unsanitized marked output must never reach innerHTML, got: ${mainEl.innerHTML.slice(0, 300)}`);
+});
+
+test('renderDoc falls back to escaped text, not raw marked output, when DOMPurify is unavailable', async () => {
+  const { sandbox, mainEl } = await loadWithFakeMarkdownLibs(
+    '<img src=x onerror=alert(1)>', undefined // DOMPurify left undefined
+  );
+  await vm.runInContext("renderDoc('docs/test.md', '# hello')", sandbox);
+
+  assert.ok(!mainEl.innerHTML.includes('<img src=x onerror='),
+    `must not render marked's raw output just because the sanitizer failed to load, got: ${mainEl.innerHTML.slice(0, 300)}`);
+});

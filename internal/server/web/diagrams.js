@@ -323,10 +323,23 @@
       // marked 12 removed `mangle` and `headerIds` as direct options
       // (they're now extensions). Calling parse with unknown options
       // logs warnings; the docs render fine without them.
+      //
+      // SEC-021 (docs/plans/historical-plans/2026-08-28-security-
+      // assessment-core.md) -- marked.parse() passes through raw HTML
+      // embedded in the .md source unchanged (standard markdown
+      // behavior; marked performs no sanitization of its own). A doc
+      // containing e.g. <img onerror=...> or <script> executed in the
+      // PWA with the operator's own session. DOMPurify.sanitize() runs
+      // on the parsed output before it's ever assigned to innerHTML. If
+      // DOMPurify failed to load (offline, CSP, CDN blocked) this falls
+      // back to the SAME escaped <pre> rendering used when marked.js
+      // itself isn't loaded -- it must never render marked's raw,
+      // unsanitized output just because the sanitizer happened to be
+      // unavailable.
       let proseHtml;
       try {
-        proseHtml = (typeof marked !== 'undefined')
-          ? marked.parse(proseMd)
+        proseHtml = (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined')
+          ? DOMPurify.sanitize(marked.parse(proseMd))
           : ('<pre>' + proseMd.replace(/</g, '&lt;') + '</pre>');
       } catch (err) {
         proseHtml = '<pre style="color:#f66;">marked.parse failed: ' + (err.message || err) +

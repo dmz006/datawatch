@@ -15631,6 +15631,8 @@ window._ensureMarkdownLibs = function() {
   window._markdownLibsPromise = Promise.all([
     typeof marked !== 'undefined' ? Promise.resolve() : load('https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js'),
     typeof mermaid !== 'undefined' ? Promise.resolve() : load('https://cdn.jsdelivr.net/npm/mermaid@10.9.6/dist/mermaid.min.js'),
+    // SEC-021 -- see _renderMarkdownFileInto's own comment below.
+    typeof DOMPurify !== 'undefined' ? Promise.resolve() : load('https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js'),
   ]).then(() => {
     if (typeof mermaid !== 'undefined' && !window._mermaidInitialized) {
       mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', maxTextSize: 200000 });
@@ -15653,7 +15655,19 @@ function _renderMarkdownFileInto(el, text) {
   while ((m = mermaidRe.exec(text)) !== null) blocks.push({ index: i++, src: m[1].trim() });
   let j = 0;
   const proseWithSlots = text.replace(mermaidRe, () => `<div class="file-viewer-mermaid-slot" data-idx="${j++}"></div>`);
-  el.innerHTML = marked.parse(proseWithSlots);
+  // SEC-021 (docs/plans/historical-plans/2026-08-28-security-assessment-
+  // core.md) -- marked.parse() passes raw HTML embedded in the source
+  // file straight through unchanged (standard markdown behavior; marked
+  // does no sanitization itself). A file opened here containing e.g.
+  // <img onerror=...> would otherwise execute with the operator's own
+  // session. Same fix as diagrams.js's renderDoc, which this function's
+  // own doc comment already says it mirrors. _ensureMarkdownLibs (above)
+  // now also loads DOMPurify, so it's always defined by the time this
+  // runs via the normal _showFileViewer path -- the typeof-undefined
+  // branch is defense in depth for a caller that skipped that step.
+  el.innerHTML = typeof DOMPurify !== 'undefined'
+    ? DOMPurify.sanitize(marked.parse(proseWithSlots))
+    : ('<pre>' + proseWithSlots.replace(/</g, '&lt;') + '</pre>');
   blocks.forEach(b => {
     const slot = el.querySelector(`.file-viewer-mermaid-slot[data-idx="${b.index}"]`);
     if (!slot) return;

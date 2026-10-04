@@ -981,7 +981,7 @@ local-model (Ollama) read-only code review of the high-risk files. Findings regi
 plan (`SEC-###`) for later GH-issue conversion on operator request.
 
 **Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
-**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; 13 findings registered, SEC-001…013) · Phase 2 next (authn/authz sandbox tests).
+**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps) · Phase 2 next (authn/authz sandbox tests). **Remediation (v8.39.15):** SEC-004 (GitHub webhook had zero HMAC verification despite a configured secret) fixed. SEC-021 (docs-viewer stored XSS via unsanitized `marked.parse()`) — XSS consequence fixed (DOMPurify); the file-service root-fallback half that lets an authenticated caller write into the operator's own project dir is a separate, deliberately deferred default-behavior question, not fixed. SEC-001/002/003/006/007/008 (empty-token-means-open-by-default and its downstream effects) remain open — the plan's own threat model already treats this as an accepted operator choice for loopback/Tailscale-only deployments, not a bug to patch. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
 
 #### Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
 
@@ -1013,6 +1013,15 @@ step** (per the plan's §7 DoD item 6). Root-cause fixes: per-session scoped cre
 capability set (fixes HLLM-002 → cascades HLLM-004/005/007/008), LLM actor in audit log
 (HLLM-003), datawatch-side content boundary (HLLM-006), isolate local session execution
 (HLLM-009, F-2).
+
+**Remediation (v8.39.15):** HLLM-001's file-permission exposure vector fixed — `.mcp.json`
+(all 4 writers) now `0600` with a self-healing `Chmod` for any pre-existing `0644` file, so
+another local uid/process can no longer read the token out of it. **The deeper root cause —
+the token being the full, unscoped admin credential at all, shared with HLLM-002's "session
+is a full-admin principal" finding — is NOT fixed**, deliberately: per-session scoped
+credentials is a real design project (cascades HLLM-004/005/007/008 per the root-cause note
+above), not something to rush ahead of a release. HLLM-002 and its 6 downstream HIGH findings
+remain fully open. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
 
 #### BL394 — Dependabot + Code Scanning findings review (filed 2026-10-03)
 
@@ -1232,8 +1241,23 @@ verification included a full-page screenshot of the actual proxied
 dashboard rendering real session/alert/config data inside the embedded
 viewer. Full writeup, bug by bug, in the plan doc's new §6a.
 
+**v8.39.15** closed out the remaining BL394 loose ends (dismissed the 3
+CodeQL alerts that didn't auto-resolve after their fixes landed, since
+CodeQL's interprocedural tracking doesn't connect a guard one call-frame
+up from its sink — same pattern as the other post-fix dismissals in this
+review; investigated §3g's SQL-`LIMIT` caveat and confirmed it's still
+present but deliberately not fixed, since a naive `LIMIT` would silently
+degrade search ranking quality rather than just bounding resource use —
+a real design question, not a quick patch) **and then widened scope to
+the two other open security-assessment threads** (BL365, Hostile-LLM —
+see their own entries above) that turned out to contain real, still-live
+findings of their own: SEC-004 (GitHub webhook, zero HMAC verification),
+SEC-021 (docs-viewer stored XSS via unsanitized `marked.parse()`), and
+HLLM-001's file-permission exposure (admin token in a world-readable
+`.mcp.json`). Full writeup: plan doc's new §7.
+
 **Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
-**Status:** 84 false positives/accepted-risk dismissed on CodeQL (74 original + 10 in v8.39.10). 11 confirmed-real findings fixed (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12 + its iframe-embed follow-up, v8.39.13). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). One small, pre-existing, cosmetic gap remains by design (not fixed): `/api/health`'s unauthenticated-by-design staleness check 401s once proxied — see plan doc §6a. This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
+**Status:** 84 false positives/accepted-risk dismissed on CodeQL, plus 3 more in v8.39.15 (87 total). 14 confirmed-real findings fixed across BL394/BL365/Hostile-LLM (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12 + its iframe-embed follow-up, v8.39.13; GitHub webhook HMAC + docs-viewer XSS sanitization + .mcp.json permissions, v8.39.15). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). Deliberately deferred, documented, not silently dropped: `/api/health`'s cosmetic 401-when-proxied gap (§6a); the file-service root-fallback half of SEC-021 (§7); SEC-001/002/003/006/007/008's default-posture questions and HLLM-002's per-session-credential-scoping redesign (both real, both explicitly out of "quick fix" scope — see BL365/Hostile-LLM entries above); the §3g SQL-`LIMIT` memory-growth question. This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
 

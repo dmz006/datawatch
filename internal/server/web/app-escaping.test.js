@@ -143,3 +143,46 @@ test('escJsAttr + htmlAttrDecode round-trips a value containing a literal "&" un
   assert.equal(r.captured, payload,
     `value did not round-trip correctly -- decoded: ${r.decodedAttrValue}`);
 });
+
+// SEC-021 (docs/plans/historical-plans/2026-08-28-security-assessment-
+// core.md) -- the PWA's file viewer (_showFileViewer -> _renderMarkdownFileInto)
+// has the exact same unsanitized marked.parse()-straight-into-innerHTML
+// pattern diagrams.js's renderDoc had (see diagrams-xss.test.js's own
+// SEC-021 tests for the full writeup). A file opened through the viewer
+// containing e.g. <img onerror=...> would execute with the operator's
+// own session. Fixed the same way: DOMPurify.sanitize() runs on marked's
+// output before it's assigned to innerHTML. Fake marked/DOMPurify stubs
+// here for the same reason as diagrams-xss.test.js's: this tests THIS
+// file's integration logic, not DOMPurify's own sanitization, which
+// isn't this codebase's to verify.
+test('_renderMarkdownFileInto runs marked output through DOMPurify.sanitize before using it', () => {
+  const sandbox = loadAppJS();
+  vm.runInContext(`
+    marked = { parse: () => '<img src=x onerror=alert(1)>RAW_MARKED_OUTPUT' };
+    DOMPurify = { sanitize: (html) => { globalThis.__sanitizeCalledWith = html; return '<p>SANITIZED_OUTPUT</p>'; } };
+    globalThis.__el = { innerHTML: '', querySelector: () => null };
+  `, sandbox);
+  vm.runInContext("_renderMarkdownFileInto(__el, '# hello')", sandbox);
+
+  const calledWith = vm.runInContext('globalThis.__sanitizeCalledWith', sandbox);
+  const innerHTML = vm.runInContext('__el.innerHTML', sandbox);
+  assert.equal(calledWith, '<img src=x onerror=alert(1)>RAW_MARKED_OUTPUT',
+    "DOMPurify.sanitize must be called with marked.parse()'s raw output");
+  assert.ok(innerHTML.includes('SANITIZED_OUTPUT'),
+    `expected the SANITIZED result in innerHTML, got: ${innerHTML}`);
+  assert.ok(!innerHTML.includes('onerror=alert(1)'),
+    `the raw, unsanitized marked output must never reach innerHTML, got: ${innerHTML}`);
+});
+
+test('_renderMarkdownFileInto falls back to escaped text when DOMPurify is unavailable', () => {
+  const sandbox = loadAppJS();
+  vm.runInContext(`
+    marked = { parse: () => '<img src=x onerror=alert(1)>' };
+    globalThis.__el = { innerHTML: '', querySelector: () => null };
+  `, sandbox);
+  vm.runInContext("_renderMarkdownFileInto(__el, '# hello')", sandbox);
+
+  const innerHTML = vm.runInContext('__el.innerHTML', sandbox);
+  assert.ok(!innerHTML.includes('<img src=x onerror='),
+    `must not render marked's raw output just because the sanitizer failed to load, got: ${innerHTML}`);
+});

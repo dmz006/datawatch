@@ -99,6 +99,44 @@ func TestWriteProjectMCPConfig_Idempotent(t *testing.T) {
 	}
 }
 
+// HLLM-001 (docs/plans/historical-plans/2026-08-28-security-assessment-hostile-llm.md)
+// — .mcp.json carries the daemon's admin bearer token in plaintext
+// (DATAWATCH_TOKEN in "env"); confirmed in that assessment as world-
+// readable (0644). Covers both a fresh write and the self-healing case:
+// a file that already existed with the old 0644 mode (from before this
+// fix) must also end up 0600 after the next rewrite, not just newly
+// created files -- os.WriteFile's mode argument only applies at
+// creation time, so this needs an explicit os.Chmod to actually fix.
+func TestWriteProjectMCPConfig_PermissionsAreOwnerOnly(t *testing.T) {
+	fakeNode(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+
+	// Simulate a pre-existing file from before this fix.
+	if err := os.WriteFile(path, []byte(`{"mcpServers":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("test setup: expected 0644 before the fix runs, got %o", info.Mode().Perm())
+	}
+
+	if err := WriteProjectMCPConfig(dir, "/path/to/channel.js", map[string]string{"DATAWATCH_TOKEN": "secret"}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err = os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("permissions = %o, want 0600 (self-heal from the pre-existing 0644 file)", got)
+	}
+}
+
 // BL344 / GH#118 — extra_mcp_servers injected alongside datawatch entry.
 func TestWriteProjectMCPConfig_InjectsExtras(t *testing.T) {
 	fakeNode(t)
