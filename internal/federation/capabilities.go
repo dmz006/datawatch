@@ -121,6 +121,12 @@ const (
 	CapResultsList  = "results:list"
 	CapResultsRead  = "results:read"
 	CapResultsWrite = "results:write"
+
+	// memory system — Design A3 (v8.39.25): the memory_* MCP tools (recall,
+	// remember, scopes, discussion log, etc.) had no capability surface of
+	// any kind before this; needed to scope the session-default group.
+	CapMemoryRead  = "memory:read"
+	CapMemoryWrite = "memory:write"
 )
 
 // allCaps is every individual capability for the full-control group.
@@ -145,6 +151,7 @@ var allCaps = []string{
 	CapDashboardRead, CapDashboardWrite,
 	CapQueueRead, CapQueueWrite,
 	CapResultsList, CapResultsRead, CapResultsWrite,
+	CapMemoryRead, CapMemoryWrite,
 }
 
 // CapabilityGroup is a named set of capabilities.
@@ -295,6 +302,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapDashboardRead,
 			CapQueueRead,
 			CapResultsList, CapResultsRead,
+			CapMemoryRead,
 		},
 	},
 	"smoke-reporter": {
@@ -305,6 +313,42 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			"a peer instance whose only job is reporting its own smoke runs",
 		Builtin: true,
 		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite},
+	},
+	// session-default (Design A3, v8.39.25) — the default grant for a
+	// per-session scoped credential (internal/auth.SessionTokenStore),
+	// which replaces the real admin token a spawned session's
+	// bridge/MCP connection used to hold (HLLM-001/002's root cause).
+	// Covers coordination + observability a session legitimately needs
+	// (its own + sibling sessions/agents, the work queue, result store,
+	// memory, comm/discussion, docs, autonomous-read, pipelines,
+	// council) — excludes anything that can change datawatch's own
+	// security posture or reach other operator-trust-boundary systems
+	// (secrets, config writes, federation/tailscale, LLM/compute
+	// registry, plugin/skill-registry install, profile/project/
+	// template/schedule/device management, identity, daemon control).
+	// Operators can grant a session MORE via `session.capabilities` in
+	// config (any custom group works, same mechanism as federation
+	// peers) if an integration genuinely needs a wider default.
+	"session-default": {
+		Name:        "session-default",
+		Description: "Default per-session scoped-credential grant (Design A3) — coordination + observability, not admin",
+		Builtin:     true,
+		Caps: []string{
+			CapSessionsList, CapSessionsRead, CapSessionsWrite, CapSessionsKill, CapSessionsInput,
+			CapAgentsList, CapAgentsRead, CapAgentsSpawn, CapAgentsTerminate,
+			CapObserversList, CapObserversRead,
+			CapHealthRead,
+			CapAnalyticsRead,
+			CapDocsRead,
+			CapAlertsList, CapAlertsRead,
+			CapAutonomousList, CapAutonomousRead,
+			CapCouncilList, CapCouncilRead, CapCouncilRun,
+			CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
+			CapCommRead, CapCommWrite,
+			CapQueueRead, CapQueueWrite,
+			CapResultsList, CapResultsRead, CapResultsWrite,
+			CapMemoryRead, CapMemoryWrite,
+		},
 	},
 	"full-control": {
 		Name:        "full-control",
@@ -372,7 +416,7 @@ func ListBuiltinGroups() []*CapabilityGroup {
 		"monitor", "session-viewer", "session-operator",
 		"inference-admin", "config-reader", "config-admin",
 		"analytics-viewer", "autonomous-operator", "council-operator",
-		"federation-peer", "comm-bridge", "comms-channel-agent", "read-only", "full-control",
+		"federation-peer", "comm-bridge", "comms-channel-agent", "session-default", "read-only", "full-control",
 	}
 	out := make([]*CapabilityGroup, 0, len(order))
 	for _, name := range order {

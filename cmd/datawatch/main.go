@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.39.24"
+var Version = "8.39.25"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1175,6 +1175,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetCostRates(rates)
 	}
 
+	// Design A3 — per-session scoped credential store. Persisted so an
+	// already-minted token for an already-running (live orphan) session
+	// stays valid across a daemon restart (see internal/auth/session_token.go).
+	sessionTokenStore, err := authpkg.NewSessionTokenStore(filepath.Join(expandHome(cfg.DataDir), "session_tokens.json"))
+	if err != nil {
+		return fmt.Errorf("open session token store: %w", err)
+	}
+	// Sweep any token left over from a session that no longer exists on
+	// disk (reconciliation above already ran, so this reflects the real
+	// post-restart session set).
+	{
+		live := mgr.ListSessions()
+		liveIDs := make([]string, 0, len(live))
+		for _, sess := range live {
+			liveIDs = append(liveIDs, sess.FullID)
+		}
+		if swept, err := sessionTokenStore.SweepOrphans(liveIDs); err != nil {
+			debugf("Design A3 startup session-token sweep: %v", err)
+		} else if swept > 0 {
+			fmt.Printf("[auth] swept %d orphaned session token(s) on startup\n", swept)
+		}
+	}
+
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
@@ -1186,6 +1209,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
+			// Design A3 — mint this session's own scoped credential and
+			// build a PER-SESSION channelEnv carrying it, instead of the
+			// shared channelEnv above (which still carries the real admin
+			// token, used only for the instance-level .mcp.json write
+			// below — that one isn't tied to a specific session). This is
+			// the actual fix for HLLM-001/002's root cause: the session's
+			// bridge no longer holds the admin token at all.
+			sessionChannelEnv := map[string]string{
+				"DATAWATCH_API_URL": channelEnv["DATAWATCH_API_URL"],
+			}
+			if sessionTokenStore != nil {
+				grantCaps := cfg.Session.Capabilities
+				if len(grantCaps) == 0 {
+					grantCaps = []string{"session-default"}
+				}
+				resolved := federation.Resolve(grantCaps, nil)
+				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
+					fmt.Printf("[warn] mint session token for %s: %v (falling back to no token — see DATAWATCH_TOKEN)\n", sess.FullID, err)
+				} else {
+					sessionChannelEnv["DATAWATCH_TOKEN"] = tok
+				}
+			} else if cfg.Server.Token != "" {
+				// No session token store wired (shouldn't happen outside
+				// tests) — fall back to the old admin-token behavior
+				// rather than leaving the bridge unable to authenticate.
+				sessionChannelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
+			}
+
 			// BL218 — log the active bridge kind before any wiring so operators
 			// can confirm go vs js without grepping boot logs.
 			{
@@ -1284,7 +1335,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 
 			if sess.BackendFamily != "claude-code" {
-				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv, extraMCPSpecs); err != nil {
+				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, sessionChannelEnv, extraMCPSpecs); err != nil {
 					debugf("BL109 .mcp.json: %v", err)
 				} else {
 					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
@@ -1339,7 +1390,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if sess.BackendFamily != "claude-code" {
 				return
 			}
-			if err := channel.RegisterSessionMCP(sess.FullID, channelJSPath, channelEnv); err != nil {
+			if err := channel.RegisterSessionMCP(sess.FullID, channelJSPath, sessionChannelEnv); err != nil {
 				fmt.Printf("[warn] register session MCP %s: %v\n", sess.FullID, err)
 			} else {
 				// v5.27.10 — surface the bridge kind + path so an operator
@@ -1365,6 +1416,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Design A3 — revoke this session's scoped credential
+			// immediately; its bridge process can no longer authenticate
+			// to the daemon at all once this returns.
+			if sessionTokenStore != nil {
+				if err := sessionTokenStore.Revoke(sess.FullID); err != nil {
+					debugf("Design A3 revoke session token for %s: %v", sess.FullID, err)
+				}
+			}
 			// alpha.34a #202 — clean up the per-session .dw-env file
 			// (chmod 600, contains daemon URL + bearer token + session
 			// id). Leaves settings.json + post-event.sh intact so the
@@ -2925,6 +2984,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetQueueStore(queueStore)                 // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
 		httpServer.SetResultStore(resultStore)               // BL360
+		httpServer.SetSessionTokenStore(sessionTokenStore)   // Design A3
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)

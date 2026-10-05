@@ -24,6 +24,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -693,6 +694,12 @@ func (s *HTTPServer) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 // SetResultStore wires a result store into the server for /api/result-store (BL360).
 func (s *HTTPServer) SetResultStore(store *session.ResultStore) {
 	s.api.SetResultStore(store)
+}
+
+// SetSessionTokenStore wires the Design A3 per-session scoped-credential
+// store so fedAuthMiddleware can recognize a session's token.
+func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
+	s.api.SetSessionTokenStore(store)
 }
 
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers

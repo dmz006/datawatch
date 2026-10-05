@@ -1545,6 +1545,15 @@ type SessionConfig struct {
 	// match the stdio transport spec. Entries not present in this list that were
 	// manually added to .mcp.json by the operator are preserved.
 	ExtraMCPServers []ExtraMCPServer `yaml:"extra_mcp_servers,omitempty"`
+
+	// Capabilities (Design A3, v8.39.25) — the capability group(s)/caps
+	// minted into every spawned session's per-session scoped credential,
+	// which replaces the admin token the session's bridge used to hold
+	// (HLLM-001/002). Empty (the default) resolves to the builtin
+	// "session-default" group. Accepts the same values as a federation
+	// peer's Capabilities field (builtin group names, individual
+	// "surface:action" strings). See docs/howto/federation-cbac.md.
+	Capabilities []string `yaml:"capabilities,omitempty"`
 }
 
 // ExtraMCPServer is one entry in session.extra_mcp_servers (BL344 / GH#118).

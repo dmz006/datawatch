@@ -23,6 +23,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -177,7 +178,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.24"
+var Version = "8.39.25"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -317,6 +318,13 @@ type Server struct {
 	// nonces mints/consumes SEC-006 short-lived single-use nonces for
 	// browser requests that can't attach an Authorization header.
 	nonces *nonceStore
+
+	// sessionTokens (Design A3) resolves a per-session scoped
+	// credential to its capability list. nil-safe: a nil store simply
+	// means no session has one yet (treated the same as "unknown
+	// token" by fedAuthMiddleware, falling through to admin/peer
+	// checks). Wired from main.go via SetSessionTokenStore.
+	sessionTokens *auth.SessionTokenStore
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -864,6 +872,15 @@ func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
 func (s *Server) SetMCPBridge(b mcpBridgeAPI) { s.mcpBridge = b }
 
+// SetSessionTokenStore wires the Design A3 per-session scoped-credential
+// store so fedAuthMiddleware can recognize a session's token as a
+// distinct, capability-limited principal.
+func (s *Server) SetSessionTokenStore(store *auth.SessionTokenStore) { s.sessionTokens = store }
+
+// SessionTokenStore returns the Design A3 session-token store, or nil
+// if none is wired (e.g. test fixtures built as a bare &Server{}).
+func (s *Server) SessionTokenStore() *auth.SessionTokenStore { return s.sessionTokens }
+
 // SetMCPAuthRequired records whether mcp.token is configured (SEC-002),
 // for /api/health's mcp_auth_required field.
 func (s *Server) SetMCPAuthRequired(configured bool) { s.mcpTokenConfigured = configured }
@@ -874,7 +891,12 @@ func (s *Server) SetMCPSamplingDispatcher(d MCPSamplingAPI) { s.mcpSamplingDisp 
 // SetMCPElicitationDispatcher wires the elicitation dispatcher for POST /api/mcp/elicit (BL302 S3).
 func (s *Server) SetMCPElicitationDispatcher(d MCPElicitationAPI) { s.mcpElicitationDisp = d }
 
-// handleMCPTools returns all daemon MCP tools as JSON for the channel bridge.
+// handleMCPTools returns daemon MCP tools as JSON for the channel bridge,
+// filtered to the ones the caller's capability set actually covers
+// (Design A3) — admin sees the full catalog; a federation peer or
+// session token only sees tools federation.RequiredCapForMCPTool grants
+// it, so a scoped caller's bridge never even attempts a tool it would
+// be refused by handleMCPCall below.
 func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsList) {
 		return
@@ -888,19 +910,51 @@ func (s *Server) handleMCPTools(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	caps, admin := s.callerCaps(r.Context())
+	if admin {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data) //nolint:errcheck
+		return
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(data, &tools); err != nil {
+		http.Error(w, "parse tool list: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filtered := make([]json.RawMessage, 0, len(tools))
+	for _, raw := range tools {
+		var t struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &t); err != nil {
+			continue
+		}
+		required, ok := federation.RequiredCapForMCPTool(t.Name)
+		if !ok {
+			continue // unknown tool — fail closed, never advertise it
+		}
+		if federation.Check(caps, required) {
+			filtered = append(filtered, raw)
+		}
+	}
+	out, err := json.Marshal(filtered)
+	if err != nil {
+		http.Error(w, "marshal filtered tool list: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data) //nolint:errcheck
+	w.Write(out) //nolint:errcheck
 }
 
-// handleMCPCall dispatches a named MCP tool call and returns the result as JSON.
+// handleMCPCall dispatches a named MCP tool call and returns the result as
+// JSON. Design A3 — each tool requires its own capability
+// (federation.MCPToolCap), not the single blanket comm:write check every
+// tool used to share (BL316-followup's "per-tool capability mapping is
+// tracked" note — this is that follow-up). An unknown tool name is
+// treated as admin-only (fail closed).
 func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	// BL316 — federated peers must have comm:write to invoke MCP tools.
-	// Per-tool capability mapping is tracked in BL316-followup.
-	if !s.fedCap(w, r, federation.CapCommWrite) {
 		return
 	}
 	if s.mcpBridge == nil {
@@ -918,6 +972,14 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Tool == "" {
 		http.Error(w, "tool is required", http.StatusBadRequest)
+		return
+	}
+	required, ok := federation.RequiredCapForMCPTool(req.Tool)
+	if !ok {
+		http.Error(w, "unknown tool: "+req.Tool, http.StatusNotFound)
+		return
+	}
+	if !s.fedCap(w, r, required) {
 		return
 	}
 	if req.Args == nil && req.Params != nil {

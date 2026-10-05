@@ -36,6 +36,12 @@ const (
 	// proxy-token fallback (minting a nonce for an already-scoped,
 	// already-short-lived token doesn't add anything).
 	callerTokenKey
+	// sessionCapsKey (Design A3) holds a spawned session's resolved,
+	// already-expanded capability list when the request authenticated
+	// via a per-session scoped credential (internal/auth.SessionTokenStore)
+	// rather than the admin token or a federation peer token. nil for
+	// every other principal.
+	sessionCapsKey
 )
 
 // peerFromContext returns the federated peer from the request context,
@@ -61,6 +67,14 @@ func callerTokenFromContext(ctx context.Context) string {
 	return t
 }
 
+// sessionCapsFromContext returns the resolved capability list a
+// Design A3 session token carries, or nil if the request didn't
+// authenticate via one.
+func sessionCapsFromContext(ctx context.Context) []string {
+	c, _ := ctx.Value(sessionCapsKey).([]string)
+	return c
+}
+
 // fedCap checks whether the request's caller has the required capability.
 // Admin requests (nil peer) always pass. Federated peer requests are checked
 // against the peer's resolved capability set.
@@ -68,6 +82,16 @@ func callerTokenFromContext(ctx context.Context) string {
 // Returns true if the caller is authorized; false if not (and a 403 has been
 // written to w).
 func (s *Server) fedCap(w http.ResponseWriter, r *http.Request, required string) bool {
+	// Design A3 — a per-session scoped credential's caps are resolved
+	// once at mint time (see sessionDefaultCaps), so no further
+	// Resolve() is needed here; Check() alone is enough.
+	if sessionCaps := sessionCapsFromContext(r.Context()); sessionCaps != nil {
+		if !federation.Check(sessionCaps, required) {
+			http.Error(w, "session token lacks capability: "+required, http.StatusForbidden)
+			return false
+		}
+		return true
+	}
 	peer := peerFromContext(r.Context())
 	if peer == nil {
 		return true // admin — unrestricted
@@ -82,6 +106,26 @@ func (s *Server) fedCap(w http.ResponseWriter, r *http.Request, required string)
 		return false
 	}
 	return true
+}
+
+// callerCaps returns the caller's resolved capability set for Design A3's
+// MCP per-tool gating: nil + true means admin (unrestricted — every tool
+// passes); otherwise the returned list is the caller's actual resolved
+// capabilities (session token caps as-is, or a federation peer's group
+// resolved against custom groups).
+func (s *Server) callerCaps(ctx context.Context) (caps []string, admin bool) {
+	if sessionCaps := sessionCapsFromContext(ctx); sessionCaps != nil {
+		return sessionCaps, false
+	}
+	peer := peerFromContext(ctx)
+	if peer == nil {
+		return nil, true
+	}
+	var custom map[string]*federation.CapabilityGroup
+	if s.fedGroupStore != nil {
+		custom = s.fedGroupStore.AsMap()
+	}
+	return federation.Resolve(peer.Capabilities, custom), false
 }
 
 // mustMarshal marshals v to JSON, returning nil on error.
@@ -139,6 +183,19 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 				if real, ok := s.nonces.Consume(nonce); ok {
 					tok = real
 				}
+			}
+		}
+		// Design A3 — a per-session scoped credential, minted at
+		// session spawn to replace the admin token the session's
+		// bridge used to hold (HLLM-001/002's root cause). Checked
+		// before the admin/peer branches since it's a distinct,
+		// narrower principal, not a fallback.
+		if tok != "" && s.sessionTokens != nil {
+			if caps, ok := s.sessionTokens.CapsForToken(tok); ok {
+				ctx := context.WithValue(r.Context(), sessionCapsKey, caps)
+				ctx = context.WithValue(ctx, callerTokenKey, tok)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
 			}
 		}
 		// Admin token. (assessment T3 — constant-time compare; a timing

@@ -410,6 +410,25 @@ full per-handler capability assignment.
 | A peer with the exact matching capability grant clears the check (not 401/403) | **Yes** | No | `TestA2_GrantedPeerPassesCapCheck` (4 representative sub-cases) | PASS all |
 | New `queue:read`/`queue:write`, `results:list`/`results:read`/`results:write` capabilities are part of `full-control` | **Yes** | No | `TestFullControl_HasAll` (extended) in `internal/federation/capabilities_test.go` | PASS |
 
+---
+
+## Design A3 — per-session scoped credential — v8.39.25
+
+Replaces the admin token a spawned session's bridge held with a scoped,
+revocable per-session credential (HLLM-001/002). See the CHANGELOG
+v8.39.25 entry for the full mechanism and the `session-default`
+capability group's exact grant list.
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| `SessionTokenStore`: mint/resolve/revoke, supersede-on-remint, unknown-token rejection, orphan sweep | **Yes** | No | `internal/auth/session_token_test.go` (7 cases) | PASS all |
+| A minted token survives a fresh `NewSessionTokenStore` load (simulates daemon restart) at the right file perms (0600); a revoked one stays revoked after reload | **Yes** | No | `TestSessionTokenStore_SurvivesReload`, `TestSessionTokenStore_RevokePersistsAcrossReload` | PASS both |
+| Every `AddTool`-registered MCP tool (374) has a classified capability in `federation.MCPToolCap` | **Yes** | No (static analysis) | `TestMCPToolCap_EveryRegisteredToolHasAnEntry` in `internal/federation/mcp_tool_caps_test.go` | PASS — same audit-regression pattern as Design A2's structural test |
+| `POST /api/mcp/call`: admin can call any tool; a session token can call a session-safe tool but gets 403 on an admin-only one; an unknown tool is 404 for every caller | **Yes** | **Yes** | `TestMCPCall_*` (4 cases) in `internal/server/mcp_bridge_cap_test.go` | PASS all. Confirmed to fail without the fix: reverted `handleMCPCall` to the old blanket `comm:write` check, re-ran `TestMCPCall_SessionToken_AdminOnlyToolRejected` (failed — session-default already includes comm:write, so the old check let it through), restored, re-ran (passed) |
+| `GET /api/mcp/tools`: admin sees the full unfiltered catalog; a session token's catalog is filtered to only what it can call | **Yes** | No | `TestMCPTools_*` (2 cases) | PASS both |
+| End-to-end against a real daemon: spawn a real session, confirm the token actually injected into its real `claude mcp add` registration matches the minted scoped token (not admin); scoped token succeeds on a session-safe tool and is rejected (403) on an admin-only one while admin still succeeds; killing the session revokes the token (subsequent call → 401) | No (requires a live daemon + real session spawn) | **Yes** | Manual, 2026-10-05 against an isolated test daemon (opencode + local Ollama, no API cost) | PASS every step — see CHANGELOG v8.39.25 for the exact sequence. Cleaned up the test entries this accidentally wrote into the operator's real `~/.claude.json` (no `CLAUDE_CONFIG_DIR` override on the ad hoc test daemon) immediately after |
+| Scope limitation (documented, not a gap introduced by this change): the standalone MCP SSE transport (direct IDE/Cursor connections) still uses its prior admin-vs-federation-peer gate, not the new per-tool map | N/A (explicitly out of scope) | N/A | — | Tracked as a BL316-followup extension, not silently assumed covered |
+
 No new `release-smoke.sh` section was added for this item — the static
 call-graph test gives a stronger, sandbox-posture-independent guarantee
 than a handful of live HTTP probes would (it inspects every route, not a

@@ -83,6 +83,7 @@ datawatch federation peer test peer-alpha
 | `council-operator` | council:list/read/run |
 | `federation-peer` | health:read, federation:self |
 | `comm-bridge` | sessions:list/read/input, comm:read/write, alerts:list/read |
+| `session-default` | Design A3's per-session scoped-credential default — sessions/agents, queue, results, memory, comm, docs, autonomous-read, pipelines, council; NOT secrets/config-write/federation/tailscale/LLM-registry/plugin-install |
 | `read-only` | all :read/:list caps across every surface |
 | `full-control` | all 56 capabilities |
 
@@ -98,7 +99,7 @@ needs (see "Grant specific capabilities" above).
 
 ### Individual surface:action capabilities
 
-56 individual capabilities across 20 surfaces:
+56 individual capabilities across 21 surfaces:
 
 ```
 sessions:list   sessions:read   sessions:write  sessions:kill  sessions:input
@@ -119,11 +120,43 @@ alerts:list     alerts:read
 dashboard:read  dashboard:write
 queue:read      queue:write
 results:list    results:read    results:write
+memory:read     memory:write
 ```
 
 `queue:*` and `results:*` were added in v8.39.24 (Design A2 audit) — the
 durable work queue (`/api/queue*`) and structured agent result store
 (`/api/result-store*`) had no capability check of any kind before then.
+
+`memory:*` was added in v8.39.25 (Design A3) to scope the memory_* MCP
+tools for the new `session-default` group.
+
+### Design A3 — per-session scoped credential
+
+A spawned session's bridge used to hold the real admin token (HLLM-001/002's
+root cause — a hostile/misaligned session was a full-admin principal). As of
+v8.39.25, every spawned session gets its own scoped credential instead,
+minted at spawn and revoked immediately when the session ends:
+
+- Default grant: the `session-default` builtin group (see the table above).
+  Override via `session.capabilities` in config (accepts the same values as
+  a federation peer's `--capabilities`: builtin group names or individual
+  `surface:action` strings).
+- Enforced at the REST chokepoint the native Go channel bridge actually
+  uses — `GET /api/mcp/tools` (filters the catalog to what the caller can
+  call) and `POST /api/mcp/call` (403s a disallowed tool; an unknown tool
+  name is 404 for every caller, including admin). Every one of the 374 MCP
+  tools has an assigned capability (`internal/federation/mcp_tool_caps.go`);
+  a new tool with no entry is admin-only until classified, never silently
+  open.
+- The token is persisted (0600, under `data_dir`) so an already-running
+  session's bridge keeps working across a daemon restart, and revoked
+  immediately on session kill — a killed session's token can never be
+  reused.
+- The standalone MCP SSE transport (direct IDE/Cursor connections, not the
+  session-bridge path) still uses its own, separate, admin-vs-federation-peer
+  gate (`mcpFedCap`) — Design A3 does not change that path; it is tracked as
+  its own follow-up (BL316-followup) for extending the same per-tool map
+  there.
 
 ---
 
