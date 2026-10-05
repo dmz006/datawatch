@@ -1427,7 +1427,7 @@ lifetime, a new `waiting_capacity` task status with a fair cross-PRD queue, rese
 headroom, and visibility on every surface. Phase 1 (wait-and-retry instead of failing on the
 session cap) ships alone. Targeted v9.0.0. BL388 skipped: the BL387 plan reserves it.
 
-**Plan doc:** [`2026-09-24-bl389-capacity-admission.md`](2026-09-24-bl389-capacity-admission.md)
+**Plan doc:** [`2026-09-24-bl389-capacity-admission.md`](historical-plans/2026-09-24-bl389-capacity-admission.md)
 **Status:** Implemented (all three phases) in the v9.0.0 tree; awaiting release.
 
 ---

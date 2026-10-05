@@ -146,6 +146,6 @@ Findings are reviewed one at a time with the operator; discussion only, no code 
 
 ## See also
 
-- [`2026-08-28-security-assessment-core.md`](historical-plans/2026-08-28-security-assessment-core.md) — the 24-finding register (SEC-001…024), full evidence.
-- [`2026-08-28-security-assessment-hostile-llm.md`](historical-plans/2026-08-28-security-assessment-hostile-llm.md) — the 9-finding LLM-as-attacker register (HLLM-001…009).
-- [`2026-09-02-security-remediation.md`](historical-plans/2026-09-02-security-remediation.md) — the master fix-design index (A/B/C/D) this doc refreshes.
+- [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md) — the 24-finding register (SEC-001…024), full evidence.
+- [`2026-08-28-security-assessment-hostile-llm.md`](2026-08-28-security-assessment-hostile-llm.md) — the 9-finding LLM-as-attacker register (HLLM-001…009).
+- [`2026-09-02-security-remediation.md`](2026-09-02-security-remediation.md) — the master fix-design index (A/B/C/D) this doc refreshes.
