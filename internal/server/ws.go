@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -145,9 +146,29 @@ type Hub struct {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin:     func(r *http.Request) bool { return true }, // Tailscale handles security
+	CheckOrigin:     wsCheckOrigin, // SEC-007
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+// wsCheckOrigin enforces same-origin for browser WS clients while staying
+// permissive for non-browser ones (SEC-007). Origin is a browser-enforced
+// header — a non-browser client (the CLI, a mobile app, a raw websocat
+// script) is not guaranteed to send one at all, so treating "no Origin" as
+// "reject" would break those, not just attackers; the admin/peer bearer
+// token is the real gate for them regardless. What this closes is the
+// actual CSRF-adjacent case: a browser tab on an attacker's page opening a
+// WS connection to this daemon with a mismatched, present Origin.
+func wsCheckOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return u.Host == r.Host
 }
 
 func NewHub() *Hub {

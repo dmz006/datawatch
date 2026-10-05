@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.21 — fix(security): SEC-007 — WS upgrade enforces same-origin for browser clients
+
+### Fixed
+- **SEC-007**: the WebSocket `Upgrader.CheckOrigin` unconditionally returned `true`, so under an empty `server.token` a browser tab on any site could open `/ws` and stream the live session/config feed. Now enforces same-origin for requests that carry an `Origin` header (a browser tab on a mismatched site is rejected); a request with **no** `Origin` header at all (confirmed: no internal Go WS client sends one, and non-browser clients like the CLI or a mobile app aren't guaranteed to) is still allowed, since the bearer token remains the real gate for those. New `wsCheckOrigin`, 4 new tests (`TestWSCheckOrigin_*`, confirmed to fail without the fix via a compile error against the now-dedicated function).
+
 ## v8.39.20 — fix(security): SEC-002 — MCP SSE falls back to server.token; constant-time compares (assessment T3)
 
 ### Fixed
