@@ -851,7 +851,7 @@ vision:
 
 **REST:** `GET /api/config` + `PUT /api/config` expose `vision.*` keys. `POST /api/vision/describe` (multipart). All routes are bearer-authenticated.
 
-#### Web Search (BL391 — multi-provider registry)
+#### Web Search (multi-provider registry)
 
 Search backend registry that injects a `web_search` MCP tool into opencode and goose agent sessions. Queries are tried against one or more named providers in priority order (lowest first), with an internal result cache to cut paid-API usage and per-provider usage tracking. Providers today: self-hosted [SearXNG](https://searxng.github.io/searxng/) and the [Brave Search API](https://brave.com/search/api/). A provider that "succeeds" with zero results is treated as a miss and the next provider is tried — this defends against the silent-degradation failure mode documented below (GH#165).
 
@@ -878,7 +878,7 @@ web_search:
       num_results: 10
 ```
 
-Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` directly under `web_search:`, pre-BL391) are still read: if `providers` is empty and any legacy field is set, a single `default` provider is synthesized from them at load time. New configs should use `providers[]`.
+Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` directly under `web_search:`, from before the multi-provider registry existed) are still read: if `providers` is empty and any legacy field is set, a single `default` provider is synthesized from them at load time. New configs should use `providers[]`.
 
 **How it integrates:**
 
@@ -903,7 +903,7 @@ Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` direct
 
 **Engine note (SearXNG providers):** Only the `bing` engine is reliable in a default SearXNG install. Google, DuckDuckGo, and others trigger CAPTCHA or rate-limiting immediately. Set `engine: bing` (the default).
 
-**Known limitation (confirmed 2026-10-02):** even with `bing` correctly enabled on the SearXNG instance, its scraped results are *inconsistently* degraded for compound/multi-word technical queries — some return precisely, many collapse to generic top-level pages for only the first or most prominent term (e.g. "postgresql vacuum bloat monitoring dashboard" → generic PostgreSQL homepage/Wikipedia/download results, nothing about vacuum or bloat). This is intermittent, not deterministic — short or less brand-ambiguous queries often work fine. It reproduces consistently across unrelated fresh queries and persists across a 45s+ cooldown, so it isn't simple burst rate-limiting from one testing session. Most likely cause: Bing's own anti-scraping measures serving lower-fidelity results to detected automated traffic rather than blocking outright — not fixable via SearXNG or datawatch configuration. Filed as GH#165. This is very likely what the LLM-research PRD's 2026-09-17 "SearXNG degraded/broken" note was observing. See `docs/plans/harness-research/candidates.md` for the original incident writeup. **BL391's direct response to this limitation**: a Brave Search API provider (paid, no scraping/CAPTCHA risk) can be configured at a lower priority number than SearXNG so it's tried first, with SearXNG kept as a free fallback — or vice versa, SearXNG first with Brave as a paid-only-when-needed fallback. If an agent's search results look suspiciously generic for a specific/technical query on a SearXNG-only setup, that's this limitation, not a tool malfunction — try rephrasing as a shorter or more distinctive query, add a Brave provider, or fall back to a direct fetch of a known documentation URL.
+**Known limitation (confirmed 2026-10-02):** even with `bing` correctly enabled on the SearXNG instance, its scraped results are *inconsistently* degraded for compound/multi-word technical queries — some return precisely, many collapse to generic top-level pages for only the first or most prominent term (e.g. "postgresql vacuum bloat monitoring dashboard" → generic PostgreSQL homepage/Wikipedia/download results, nothing about vacuum or bloat). This is intermittent, not deterministic — short or less brand-ambiguous queries often work fine. It reproduces consistently across unrelated fresh queries and persists across a 45s+ cooldown, so it isn't simple burst rate-limiting from one testing session. Most likely cause: Bing's own anti-scraping measures serving lower-fidelity results to detected automated traffic rather than blocking outright — not fixable via SearXNG or datawatch configuration. Filed as GH#165. This is very likely what the LLM-research PRD's 2026-09-17 "SearXNG degraded/broken" note was observing. See `docs/plans/harness-research/candidates.md` for the original incident writeup. **The multi-provider registry's direct response to this limitation**: a Brave Search API provider (paid, no scraping/CAPTCHA risk) can be configured at a lower priority number than SearXNG so it's tried first, with SearXNG kept as a free fallback — or vice versa, SearXNG first with Brave as a paid-only-when-needed fallback. If an agent's search results look suspiciously generic for a specific/technical query on a SearXNG-only setup, that's this limitation, not a tool malfunction — try rephrasing as a shorter or more distinctive query, add a Brave provider, or fall back to a direct fetch of a known documentation URL.
 
 ### Settings — Compute
 
