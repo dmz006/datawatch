@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # TS-782 — capacity admission surface: GET /api/capacity shape, config round-trip for
 # autonomous.capacity_* and session.reserved_interactive, PRD priority, node/LLM limits persist.
-# tags: surface:api feature:automata feature:capacity feature:config
+# tags: surface:api feature:automata feature:capacity feature:config conflict:llm
+#
+# conflict:llm (reused, not about LLM contention per se): this test
+# temporarily sets the GLOBAL autonomous.capacity_enabled=false and
+# capacity_gpu_util_pct=91, which affects admission for every
+# concurrently-running autonomous PRD, not just this test's own. Found
+# alongside the TS-026 per_story_approval race (2026-10-05) during the
+# same investigation — same class of bug (global shared daemon config
+# mutated without exclusivity against other autonomous-PRD-lifecycle
+# tests). conflict:llm keeps this out of the same wall-clock window as
+# those tests.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-782"
 story_preflight "surface:api feature:automata feature:capacity feature:config" || return 0

@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 # TS-026 — Automaton per-story approval gate
-# tags: surface:api feature:automata
+# tags: surface:api feature:automata conflict:llm
 # legacy fn: t3_ts026_per_story_approval
+#
+# conflict:llm (reused, not really about LLM contention here): this test
+# flips the GLOBAL, daemon-wide autonomous.per_story_approval config to
+# true, then restores it. Found live (2026-10-05): with no exclusivity
+# tag, this could run concurrently with another autonomous-PRD test
+# (e.g. TS-695) in the serial lane, and if the toggle window overlapped
+# that test's PRD-approval call, the OTHER test's stories got wrongly
+# gated into awaiting_approval and hung forever (nothing ever calls
+# approve_story for them). conflict:llm puts this in the same mutual-
+# exclusion group as the other autonomous-PRD-lifecycle tests so they
+# never overlap with this toggle.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-026"
 story_preflight "surface:api feature:automata" || return 0

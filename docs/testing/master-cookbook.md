@@ -139,7 +139,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T3 | TS-023 | PUT /api/autonomous/prds/{id} title update | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-024 | POST /api/autonomous/prds/{id}/decompose | surface:api feature:automata conflict:llm | ✅ ready | — | — |
 | T3 | TS-025 | POST /api/autonomous/prds/{id}/set_llm round-trip (backend + decomposition_profile) | surface:api feature:automata | ✅ ready | — | — |
-| T3 | TS-026 | Project profile create + attach to Automaton | surface:api feature:automata | ✅ ready | — | — |
+| T3 | TS-026 | Project profile create + attach to Automaton | surface:api feature:automata conflict:llm | ✅ ready | — | — |
 | T3 | TS-027 | Cluster profile create + attach to Automaton | surface:api feature:automata | ✅ ready | — | — |
 | T3 | TS-028 | PUT /api/autonomous/config per_story_approval round-trip | surface:api feature:automata feature:config | ✅ ready | — | — |
 | T3 | TS-029 | DELETE Automaton + profiles cleanup | surface:api feature:automata | ✅ ready | — | — |
@@ -781,7 +781,7 @@ The following items are excluded from automated runs. Gaps are documented, not h
 | T47 | TS-779 | Full Automaton lifecycle: decompose→approve→run→verify→complete; asserts no task ever has two live sessions across a retry (2026-09-22 session-leak regression guard) | surface:api feature:automata feature:journey conflict:llm | ✅ ready | — | See docs/flow/task-session-reconcile-flow.md |
 | T47 | TS-780 | Automaton directory scope: set_dirs round-trip (write_dirs/read_dirs) and relative-dir rejection | surface:api feature:automata | ✅ ready | — | Scope boundary for workers and planner |
 | T47 | TS-781 | detection.alert_settle / alert_repeat config round-trip (REST) | surface:api feature:config | ✅ ready | — | Needs-input alert gating |
-| T47 | TS-782 | Capacity surface: GET /api/capacity shape, capacity config round-trip, node max_concurrent_sessions -> pool limit, PRD priority | surface:api feature:automata feature:capacity feature:config | ✅ ready | — | See docs/howto/automata-capacity.md |
+| T47 | TS-782 | Capacity surface: GET /api/capacity shape, capacity config round-trip, node max_concurrent_sessions -> pool limit, PRD priority | surface:api feature:automata feature:capacity feature:config conflict:llm | ✅ ready | — | See docs/howto/automata-capacity.md |
 | T47 | TS-783 | Two Automata on a capacity-1 node: peak 1 lease, no capacity failures, both terminal | surface:api feature:automata feature:capacity conflict:llm | ✅ ready | Ollama at TEST_OLLAMA_HOST with qwen3:8b | See docs/flow/automata-capacity-flow.md |
 
 ---
