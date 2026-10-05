@@ -1023,6 +1023,58 @@ credentials is a real design project (cascades HLLM-004/005/007/008 per the root
 above), not something to rush ahead of a release. HLLM-002 and its 6 downstream HIGH findings
 remain fully open. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
 
+#### BL395 — F-2 LLM-session worker isolation + resumed security-remediation walkthrough (filed 2026-10-04)
+
+Resumed the paused 2026-09-22 security-remediation-activation walkthrough
+(`docs/plans/historical-plans/2026-09-22-security-remediation-activation.md`,
+paused at SEC-015) and validated every remaining item (SEC-015–024,
+HLLM-001–009) against current code (v8.39.16) before deciding anything —
+all 17 confirmed still real and unfixed, with Tier 1's two partial fixes
+(HLLM-001's file-permission half, SEC-021's XSS-render half) confirmed
+still holding. Decisions made this pass: SEC-015 fails closed on an
+unpinned HTTPS parent (opt-out env var); SEC-016 gets a dedicated
+`POST /api/auth/rotate-token` endpoint with a 60s grace window, not a
+fix-in-place on `PUT /api/config`; SEC-023's new crypto envelope uses
+Argon2id t=4/m=512MiB/p=4; SEC-024's Helm chart requires a non-empty
+`apiToken` (render-error otherwise) even though SEC-001 left the bare
+daemon's empty-token posture alone — a k8s pod is cluster-reachable by
+default in a way a loopback-bound daemon isn't; HLLM-006's egress
+allowlist defaults to loopback-only with named one-flag categories
+(Tailscale mesh / federation peers / compute nodes) rather than raw
+host/port entries; HLLM-008 gets a show-diff-then-confirm step on
+plugin/skill installs *in addition to* making the verbs admin-only.
+SEC-017/018/019/020/021(remainder)/022 batched as approved-to-implement
+per their already-specified, no-real-tradeoff fix directions.
+
+**F-2** (HLLM-009 / Design B2.b, previously filed-not-designed) is now
+fully designed: plan doc
+[`2026-10-04-f2-session-worker-isolation.md`](../2026-10-04-f2-session-worker-isolation.md).
+Harden the existing `runc` worker path immediately (cap-drop, non-root
+enforcement, read-only-root with an explicit writable-path allowlist,
+a Docker-side resource-limit bug fixed along the way); add a pluggable
+per-`ClusterProfile` `sandbox_runtime` (`runc`/`runsc`/`kata`), gVisor
+and Kata landing together rather than phased, gated behind a runtime-
+availability capability probe; move PQC bootstrap keys out of the
+container/pod spec entirely into the bootstrap HTTP response body
+(closing the `docker inspect`/`kubectl get pod -o yaml` exposure
+structurally, not just practically); generate a default-deny
+NetworkPolicy per worker as a second, stronger enforcement point for
+HLLM-006's egress control. SEC-024's Helm `securityContext` work lands
+in the same PR as F-2's k8s-driver hardening. Also found and corrected
+along the way: `docs/howto/container-workers.md` mischaracterized a
+container worker as "a smaller-surface companion to the full daemon" —
+it is the same full daemon binary with the same ~390-tool MCP catalog,
+just reached over the Tailscale mesh instead of loopback; confinement
+has to happen at the container/pod boundary, it cannot be assumed away.
+
+**Status:** Design complete (this plan doc), code not started. Remaining
+HLLM items (001–002, 004–005, 007) close automatically once Design
+A2/A3 (per-session scoped token + capability opt-out) land — no separate
+decision needed for those; HLLM-003 sequences after A3 exists for the
+same reason. Implementation order unchanged from the master index:
+A → C → B → D, with this F-2 doc's hardening phase (F2.1) and SEC-024
+able to land early since neither depends on A.
+
 #### BL394 — Dependabot + Code Scanning findings review (filed 2026-10-03)
 
 Operator-raised: Dependabot/CodeQL findings "many look like false
