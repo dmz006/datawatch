@@ -451,6 +451,16 @@ voice/TTS strings, store listings, user-facing docs, release notes, error messag
 - Internal names may keep `prd` (code identifiers, API paths like `/api/autonomous/prds`,
   JSON keys such as `prd_id`, DB columns, log lines, code comments, ADRs) — only
   user-visible copy is covered.
+- Translations (operator, 2026-10-04 — translate, using Android's forms, in every client):
+  | locale | singular | plural |
+  |---|---|---|
+  | en | Automaton | Automata |
+  | de | Automat | Automaten |
+  | es | autómata | autómatas |
+  | fr | automate | automates |
+  | ja | オートマトン | オートマタ |
+  Never leave the English "Automaton/Automata" inside a translated string, and never
+  use "Automation" (a different word).
 - Before shipping UI copy, grep user-visible strings (string resources, `Text("…")`,
   locale files) for `\bPRDs?\b` and fix any hit.
 
