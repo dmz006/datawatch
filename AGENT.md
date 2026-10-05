@@ -439,6 +439,21 @@ This follows the Mobile-Parity Rule's clause: *capability parity is required; im
 parity is not — each platform uses idiomatic delivery.* Adding Android/iPhone as additional
 *config-input* channels is explicitly out of scope for this rule and would contradict that clause.
 
+## Terminology Rule — "Automata", never "PRD" (operator, 2026-10-04)
+
+The feature formerly called PRD is **Automaton** (singular) / **Automata** (plural) in
+everything a user can see: app UI (PWA, Android, Android Auto, iOS), notifications,
+voice/TTS strings, store listings, user-facing docs, release notes, error messages, and
+**all locales** (translate "Automaton/Automata" consistently; never leave "PRD").
+
+- ✅ "Automaton", "Automata", "New Automaton", "Automaton detail", "child automaton".
+- ❌ "PRD", "PRDs", "PRD detail", "Decomposing PRD…", "per-PRD".
+- Internal names may keep `prd` (code identifiers, API paths like `/api/autonomous/prds`,
+  JSON keys such as `prd_id`, DB columns, log lines, code comments, ADRs) — only
+  user-visible copy is covered.
+- Before shipping UI copy, grep user-visible strings (string resources, `Text("…")`,
+  locale files) for `\bPRDs?\b` and fix any hit.
+
 ## Localization Rule (BL214, v5.28.0)
 
 **Every user-facing string MUST be added to localization, and every localization
