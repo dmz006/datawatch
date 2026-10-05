@@ -277,7 +277,13 @@ func TestFedPeer_Conflict(t *testing.T) {
 
 // ─── capability enforcement ──────────────────────────────────────────────────
 
-func TestFedCap_PeerTokenAccepted(t *testing.T) {
+// TestFedCap_PeerTokenAccepted_SEC009 is a regression test for SEC-009
+// (v9.0.0, breaking): a bare federation-peer token used to get sessions:list
+// by default; that default is now narrowed to health:read + federation:self
+// only. A peer that genuinely needs sessions:list must be granted it via a
+// custom group explicitly (see TestFedCap_PeerToken_CustomGroup_SessionsList
+// below for the still-working explicit-grant path).
+func TestFedCap_PeerTokenAccepted_SEC009(t *testing.T) {
 	s, store, _ := newFedTestServer(t)
 
 	if err := store.Add(&multiserver.Entry{
@@ -291,15 +297,76 @@ func TestFedCap_PeerTokenAccepted(t *testing.T) {
 		t.Fatalf("add peer: %v", err)
 	}
 
-	// sessions:list is in federation-peer — should get 200.
+	// sessions:list is no longer in the default federation-peer group —
+	// should now get 403, not 200.
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	req.Header.Set("Authorization", "Bearer peer-b-token")
+	handler := s.fedAuthMiddleware(http.HandlerFunc(s.handleSessions))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("bare federation-peer should NOT get sessions:list by default anymore (SEC-009), want 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
 
+	// GET /api/federation/peers/self IS still granted (federation:self is
+	// in the new default) and returns this peer's own, redacted entry.
+	selfReq := httptest.NewRequest(http.MethodGet, "/api/federation/peers/self", nil)
+	selfReq.Header.Set("Authorization", "Bearer peer-b-token")
+	selfRR := httptest.NewRecorder()
+	s.fedAuthMiddleware(http.HandlerFunc(s.handleFederationPeers)).ServeHTTP(selfRR, selfReq)
+	if selfRR.Code != http.StatusOK {
+		t.Fatalf("GET /api/federation/peers/self should be granted via federation:self, got %d body=%s", selfRR.Code, selfRR.Body.String())
+	}
+	var self multiserver.Entry
+	if err := json.NewDecoder(selfRR.Body).Decode(&self); err != nil {
+		t.Fatalf("decode self: %v", err)
+	}
+	if self.Name != "peer-b" {
+		t.Errorf("self entry should be peer-b's own entry, got %q", self.Name)
+	}
+	if self.Token != "" {
+		t.Error("self entry must not echo the real token (SEC-014)")
+	}
+
+	// GET /api/federation/peers/self with the ADMIN token has no peer
+	// identity to return — 400, not a nil-pointer crash.
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/federation/peers/self", nil)
+	adminReq.Header.Set("Authorization", "Bearer admin-token")
+	adminRR := httptest.NewRecorder()
+	s.fedAuthMiddleware(http.HandlerFunc(s.handleFederationPeers)).ServeHTTP(adminRR, adminReq)
+	if adminRR.Code != http.StatusBadRequest {
+		t.Errorf("admin token calling /self should get 400 (no peer identity), got %d", adminRR.Code)
+	}
+}
+
+// TestFedCap_PeerToken_CustomGroup_SessionsList confirms the explicit-grant
+// path still works after SEC-009 — a peer assigned a custom group with
+// sessions:list still gets it, same as before.
+func TestFedCap_PeerToken_CustomGroup_SessionsList(t *testing.T) {
+	s, store, groups := newFedTestServer(t)
+	if err := groups.Add(&federation.CapabilityGroup{
+		Name: "sessions-reader",
+		Caps: []string{federation.CapSessionsList},
+	}); err != nil {
+		t.Fatalf("add group: %v", err)
+	}
+	if err := store.Add(&multiserver.Entry{
+		Name:         "peer-c",
+		URL:          "http://peer-c:8080",
+		Token:        "peer-c-token",
+		Enabled:      true,
+		Federated:    true,
+		Capabilities: []string{"sessions-reader"},
+	}); err != nil {
+		t.Fatalf("add peer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	req.Header.Set("Authorization", "Bearer peer-c-token")
 	handler := s.fedAuthMiddleware(http.HandlerFunc(s.handleSessions))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
-		t.Errorf("peer with sessions:list cap should get 200, got %d body=%s", rr.Code, rr.Body.String())
+		t.Errorf("peer with an explicit custom group granting sessions:list should get 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 

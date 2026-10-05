@@ -23,7 +23,10 @@ bearer token. Every action it takes is gated against the capabilities you grant.
 
 ```bash
 # Register a remote instance as a federation peer.
-# Default capabilities: ["federation-peer"] — safe read + session input.
+# Default capabilities: ["federation-peer"] — health check + read its own
+# entry only (v9.0.0, SEC-009). Grant more explicitly below if this peer
+# needs it — the default no longer includes session/agent/observer reads
+# or the ability to list other peers.
 datawatch federation peer add peer-alpha \
   --url http://198.51.100.2:8080 \
   --token tok-peer-alpha \
@@ -78,17 +81,24 @@ datawatch federation peer test peer-alpha
 | `analytics-viewer` | analytics:read, dashboard:read, audit:read |
 | `autonomous-operator` | autonomous:list/read/write/run |
 | `council-operator` | council:list/read/run |
-| `federation-peer` | health:read, sessions:list/read/input, agents:list/read, observers:list/read, alerts:list/read, dashboard:read, federation:list/read |
+| `federation-peer` | health:read, federation:self |
 | `comm-bridge` | sessions:list/read/input, comm:read/write, alerts:list/read |
 | `read-only` | all :read/:list caps across every surface |
-| `full-control` | all 50 capabilities |
+| `full-control` | all 51 capabilities |
 
-The `federation-peer` group is the safe default for new peers. It intentionally
-excludes `sessions:write`, `secrets:*`, and `federation:write`.
+**`federation-peer` is intentionally minimal as of v9.0.0 (SEC-009, breaking
+change)** — a newly registered peer can check daemon health and read its own
+registered entry (`GET /api/federation/peers/self`, gated on `federation:self`,
+distinct from `federation:list`/`federation:read` which can enumerate every
+*other* peer too), nothing else. Earlier versions granted sessions/agents/
+observers/alerts/dashboard reads and `federation:list/read` by default — if
+you're upgrading and a peer integration breaks, it was almost certainly
+relying on one of those; grant the specific capability or group it actually
+needs (see "Grant specific capabilities" above).
 
 ### Individual surface:action capabilities
 
-50 individual capabilities across 18 surfaces:
+51 individual capabilities across 18 surfaces:
 
 ```
 sessions:list   sessions:read   sessions:write  sessions:kill  sessions:input
@@ -102,7 +112,7 @@ secrets:list    secrets:read    secrets:write
 pipelines:list  pipelines:read  pipelines:start  pipelines:cancel
 autonomous:list autonomous:read autonomous:write autonomous:run
 council:list    council:read    council:run
-federation:list federation:read federation:write
+federation:list federation:read federation:write federation:self
 docs:read       audit:read
 comm:read       comm:write
 alerts:list     alerts:read
@@ -241,6 +251,7 @@ overwrites fields actually present in the request.
 | WebSocket MsgCommand | sessions:input |
 | WebSocket MsgNewSession | sessions:write |
 | POST /api/federation/peers | federation:write (admin only) |
+| GET /api/federation/peers/self | federation:self (in the default group) |
 
 ---
 

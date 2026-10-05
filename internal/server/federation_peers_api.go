@@ -35,6 +35,17 @@ import (
 // Peers
 
 func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
+	// /api/federation/peers/self (SEC-009) — gated on federation:self (in
+	// the default federation-peer group), not federation:list/read, and
+	// checked before those broader capability checks below so a
+	// minimally-scoped peer can reach it at all.
+	tail := strings.TrimPrefix(r.URL.Path, "/api/federation/peers")
+	tail = strings.TrimPrefix(tail, "/")
+	if tail == "self" && r.Method == http.MethodGet {
+		s.fedPeerSelf(w, r)
+		return
+	}
+
 	// Capability check before nil guards so peers get 403 not 503.
 	if r.Method == http.MethodGet {
 		if !s.fedCap(w, r, federation.CapFederationList) {
@@ -51,8 +62,6 @@ func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// /api/federation/peers/{name}[/test]
-	tail := strings.TrimPrefix(r.URL.Path, "/api/federation/peers")
-	tail = strings.TrimPrefix(tail, "/")
 	if tail != "" {
 		parts := strings.SplitN(tail, "/", 2)
 		name := parts[0]
@@ -86,6 +95,21 @@ func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// fedPeerSelf handles GET /api/federation/peers/self (SEC-009) — a peer
+// reading only its own registered entry. An admin-token caller has no
+// "self" peer identity (admin isn't a registered Entry) and gets a 400.
+func (s *Server) fedPeerSelf(w http.ResponseWriter, r *http.Request) {
+	peer := peerFromContext(r.Context())
+	if peer == nil {
+		http.Error(w, "no peer identity for this token — /self is for federation peer tokens, not the admin token", http.StatusBadRequest)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapFederationSelf) {
+		return
+	}
+	writeJSONOK(w, peer.Redacted())
 }
 
 func (s *Server) fedPeerList(w http.ResponseWriter) {

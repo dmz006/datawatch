@@ -86,6 +86,11 @@ const (
 	CapFederationList  = "federation:list"
 	CapFederationRead  = "federation:read"
 	CapFederationWrite = "federation:write"
+	// CapFederationSelf (SEC-009) — a peer reading only its own registered
+	// entry (GET /api/federation/peers/self), distinct from CapFederationList/
+	// Read which can enumerate every other peer's entry too. Part of the
+	// federation-peer default group; List/Read are not, as of v9.0.0.
+	CapFederationSelf = "federation:self"
 
 	// docs
 	CapDocsRead = "docs:read"
@@ -120,7 +125,7 @@ var allCaps = []string{
 	CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
 	CapAutonomousList, CapAutonomousRead, CapAutonomousWrite, CapAutonomousRun,
 	CapCouncilList, CapCouncilRead, CapCouncilRun,
-	CapFederationList, CapFederationRead, CapFederationWrite,
+	CapFederationList, CapFederationRead, CapFederationWrite, CapFederationSelf,
 	CapDocsRead,
 	CapAuditRead,
 	CapCommRead, CapCommWrite,
@@ -213,18 +218,21 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Builtin:     true,
 		Caps:        []string{CapCouncilList, CapCouncilRead, CapCouncilRun},
 	},
+	// SEC-009 (v9.0.0, breaking) — narrowed from a broad read-everything
+	// default (sessions, agents, observers, alerts, dashboard, and every
+	// OTHER peer's entry via federation:list/read) to just health:read +
+	// federation:self (its own entry only, via GET
+	// /api/federation/peers/self). A registered peer that genuinely needs
+	// session visibility, agent/observer reads, or to enumerate other
+	// peers must be granted those explicitly via a custom group — this is
+	// no longer handed out by default to every newly registered peer.
 	"federation-peer": {
 		Name:        "federation-peer",
-		Description: "Safe default for newly registered federation peers",
+		Description: "Minimal default for newly registered federation peers — health + its own entry only; grant more via a custom group",
 		Builtin:     true,
 		Caps: []string{
 			CapHealthRead,
-			CapSessionsList, CapSessionsRead, CapSessionsInput,
-			CapAgentsList, CapAgentsRead,
-			CapObserversList, CapObserversRead,
-			CapAlertsList, CapAlertsRead,
-			CapDashboardRead,
-			CapFederationList, CapFederationRead,
+			CapFederationSelf,
 		},
 	},
 	"comm-bridge": {

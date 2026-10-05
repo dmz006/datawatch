@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.22 — fix(security)!: SEC-009 — narrow the default federation-peer capability grant (BREAKING, v9.0.0)
+
+### Breaking
+- **SEC-009**: a newly registered federation peer's default `federation-peer` capability group granted broad read access out of the box — `sessions:list/read/input`, `agents:list/read`, `observers:list/read`, `alerts:list/read`, `dashboard:read`, and `federation:list/read` (which could enumerate every *other* registered peer, including, until SEC-014, their plaintext tokens). Narrowed to just `health:read` + a new `federation:self` (its own entry only, via new `GET /api/federation/peers/self`). **If you're upgrading and a peer integration breaks, it was almost certainly relying on one of the removed defaults — grant the specific capability or a custom group explicitly** (`datawatch federation peer update <name> --capabilities <group-or-caps>`); see `docs/howto/federation-cbac.md`.
+- New capability `federation:self`, new endpoint `GET /api/federation/peers/self` (returns the calling peer's own, SEC-014-redacted entry; an admin-token caller gets 400, since admin has no peer identity). The existing `federation_peer_get` MCP tool reaches it automatically via `name="self"`.
+- Tests updated/added: `TestFederationPeer_DefaultCaps` (now asserts the narrowed set), `TestFedCap_PeerTokenAccepted_SEC009` (bare peer now 403 on sessions, 200 on `/self`), `TestFedCap_PeerToken_CustomGroup_SessionsList` (confirms the explicit-grant path still works).
+
 ## v8.39.21 — fix(security): SEC-007 — WS upgrade enforces same-origin for browser clients
 
 ### Fixed

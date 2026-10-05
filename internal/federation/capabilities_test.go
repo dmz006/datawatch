@@ -121,20 +121,39 @@ func TestFullControl_HasAll(t *testing.T) {
 	}
 }
 
+// TestFederationPeer_DefaultCaps covers the SEC-009 (v9.0.0, breaking)
+// narrowing: a newly registered peer's default group used to grant broad
+// read access (sessions, agents, observers, alerts, dashboard, and every
+// OTHER peer's entry via federation:list/read) — narrowed to just
+// health:read + federation:self (its own entry only). A peer that
+// genuinely needs more must be granted a custom group explicitly.
 func TestFederationPeer_DefaultCaps(t *testing.T) {
 	got := federation.Resolve([]string{"federation-peer"}, nil)
 	has := map[string]bool{}
 	for _, c := range got {
 		has[c] = true
 	}
-	// Safe peer should have input and list.
-	if !has[federation.CapSessionsList] {
-		t.Error("federation-peer should have sessions:list")
+	if !has[federation.CapHealthRead] {
+		t.Error("federation-peer should have health:read")
 	}
-	if !has[federation.CapSessionsInput] {
-		t.Error("federation-peer should have sessions:input")
+	if !has[federation.CapFederationSelf] {
+		t.Error("federation-peer should have federation:self")
 	}
-	// But NOT write or secrets.
+	// Nothing broader is granted by default anymore.
+	noLonger := []string{
+		federation.CapSessionsList, federation.CapSessionsInput, federation.CapSessionsRead,
+		federation.CapAgentsList, federation.CapAgentsRead,
+		federation.CapObserversList, federation.CapObserversRead,
+		federation.CapAlertsList, federation.CapAlertsRead,
+		federation.CapDashboardRead,
+		federation.CapFederationList, federation.CapFederationRead,
+	}
+	for _, c := range noLonger {
+		if has[c] {
+			t.Errorf("federation-peer should NOT have %s by default (SEC-009 narrowed this) — grant it via a custom group instead", c)
+		}
+	}
+	// Still never write or secrets.
 	if has[federation.CapSessionsWrite] {
 		t.Error("federation-peer should NOT have sessions:write")
 	}
