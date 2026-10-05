@@ -392,3 +392,28 @@ suite's own empty-admin-token sandbox posture can't meaningfully exercise.
 | SEC-007: WS upgrade rejects a mismatched `Origin`, allows no-`Origin` | **Yes** | **Yes** | `TestWSCheckOrigin_*` (4 cases) in `internal/server/ws_origin_test.go`; smoke §59 (raw socket handshake probe, confirms live 403) | PASS both |
 | SEC-009: narrowed `federation-peer` default grant + new `/peers/self` | **Yes** | **Yes** | `TestFederationPeer_DefaultCaps`, `TestFedCap_PeerTokenAccepted_SEC009`, `TestFedCap_PeerToken_CustomGroup_SessionsList`; smoke §60 | Smoke §60 **skips** against the default (empty-admin-token) sandbox — with no admin token, `fedAuthMiddleware`'s empty-token early-return makes every caller admin-equivalent regardless of which Bearer token was presented, so peer-vs-admin has nothing to distinguish. **Manually validated against a real authenticated sandbox** (`server.token` set): create → `token_present:true`/no raw token; `GET /peers/self` as the peer → 200, own entry; `GET /api/sessions` with the same bare peer token → 403 (narrowed grant confirmed live, not just in a unit test) |
 | SEC-006: `?token=` removed from REST/WS/MCP SSE; replaced by header, WS `Sec-WebSocket-Protocol`, or a single-use nonce on the 3 browser-GET-only routes | **Yes** | **Yes** | `nonce_test.go` (5), `nonce_auth_test.go` (6), `ws_sec006_test.go` (3, incl. a real client-side RFC 6455 subprotocol-echo check via `gorilla/websocket`'s own `Dialer`), `TestMCPFedAuth_QueryParamToken_Rejected`; `app-nonce.test.js` (6, PWA-side); smoke §61 | Smoke §61's `?token=`-rejection and nonce-round-trip checks **skip** against the default empty-admin-token sandbox (same reason as S60 — nothing to reject when every caller already passes through). The no-auth nonce-mint check runs in both postures but expects a *different* code each way — 400 ("no caller token") under the empty-token bypass, 401 (rejected by `fedAuthMiddleware` before the handler runs at all) once a real token is set — caught via live testing after the smoke script initially assumed 400 in both cases. **Manually validated against a real authenticated sandbox**: no-auth nonce mint → 401 (not 400); `?token=<admin>` with no header → 401; minted nonce → `/api/files/download?nonce=...` authenticates (400 missing-path, not 401); same nonce reused → 401 (single-use confirmed live); a valid nonce on `/api/sessions` (not in the allow-list) → 401 |
+
+---
+
+## Design A2 — close 13 capability-check gaps across 11 routes — v8.39.24
+
+An audit (not a listed SEC-finding — found during Design A2 implementation)
+of every `apiMux`-registered route's call graph for a reachable
+`s.fedCap(...)` check. Found 11 handlers (13 distinct method/route
+combinations) with none at all. See the CHANGELOG v8.39.24 entry for the
+full per-handler capability assignment.
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| Every `apiMux`-registered handler's call graph reaches a `fedCap(...)` check, except an explicit justified exception list | **Yes** | No (static analysis, not sandbox-posture-dependent) | `TestA2_EveryRegisteredRouteHandlerIsCapabilityGated` in `internal/server/route_caps_a2_test.go` | PASS. Confirmed to fail without a fix: temporarily reverted `handleQueue`'s check, re-ran (failed, named the exact handler), restored, re-ran (passed) |
+| A bare federation-peer (no grant) gets 403 on all 13 previously-ungated routes | **Yes** | No | `TestA2_PreviouslyUngatedRoutes_BarePeerGets403` (21 sub-cases) | PASS all. Caught a real ordering bug during this test's first run: `handleObserverConfig`'s capability check was placed *after* the `observerAPI == nil` short-circuit, so a disabled subsystem returned 503 before the 403 ever had a chance to fire — fixed to check capability first, confirmed via re-run |
+| A peer with the exact matching capability grant clears the check (not 401/403) | **Yes** | No | `TestA2_GrantedPeerPassesCapCheck` (4 representative sub-cases) | PASS all |
+| New `queue:read`/`queue:write`, `results:list`/`results:read`/`results:write` capabilities are part of `full-control` | **Yes** | No | `TestFullControl_HasAll` (extended) in `internal/federation/capabilities_test.go` | PASS |
+
+No new `release-smoke.sh` section was added for this item — the static
+call-graph test gives a stronger, sandbox-posture-independent guarantee
+than a handful of live HTTP probes would (it inspects every route, not a
+hand-picked sample), and the functional peer-403/peer-200 behavior is
+already exercised in-process by `TestA2_PreviouslyUngatedRoutes_BarePeerGets403`/
+`TestA2_GrantedPeerPassesCapCheck` against the real `fedAuthMiddleware` +
+`fedCap` code path, not a mock.

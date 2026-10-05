@@ -109,6 +109,18 @@ const (
 	// dashboard
 	CapDashboardRead  = "dashboard:read"
 	CapDashboardWrite = "dashboard:write"
+
+	// durable work queue (BL357) — Design A2 audit (v8.39.24): handleQueue
+	// had zero capability check of any kind until this was added.
+	CapQueueRead  = "queue:read"
+	CapQueueWrite = "queue:write"
+
+	// structured agent result store (BL360) — Design A2 audit (v8.39.24):
+	// handleResultStore had zero capability check of any kind until this
+	// was added.
+	CapResultsList  = "results:list"
+	CapResultsRead  = "results:read"
+	CapResultsWrite = "results:write"
 )
 
 // allCaps is every individual capability for the full-control group.
@@ -131,6 +143,8 @@ var allCaps = []string{
 	CapCommRead, CapCommWrite,
 	CapAlertsList, CapAlertsRead,
 	CapDashboardRead, CapDashboardWrite,
+	CapQueueRead, CapQueueWrite,
+	CapResultsList, CapResultsRead, CapResultsWrite,
 }
 
 // CapabilityGroup is a named set of capabilities.
@@ -279,6 +293,8 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapCommRead,
 			CapAlertsList, CapAlertsRead,
 			CapDashboardRead,
+			CapQueueRead,
+			CapResultsList, CapResultsRead,
 		},
 	},
 	"smoke-reporter": {

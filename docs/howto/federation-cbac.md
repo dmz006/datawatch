@@ -84,7 +84,7 @@ datawatch federation peer test peer-alpha
 | `federation-peer` | health:read, federation:self |
 | `comm-bridge` | sessions:list/read/input, comm:read/write, alerts:list/read |
 | `read-only` | all :read/:list caps across every surface |
-| `full-control` | all 51 capabilities |
+| `full-control` | all 56 capabilities |
 
 **`federation-peer` is intentionally minimal as of v9.0.0 (SEC-009, breaking
 change)** — a newly registered peer can check daemon health and read its own
@@ -98,7 +98,7 @@ needs (see "Grant specific capabilities" above).
 
 ### Individual surface:action capabilities
 
-51 individual capabilities across 18 surfaces:
+56 individual capabilities across 20 surfaces:
 
 ```
 sessions:list   sessions:read   sessions:write  sessions:kill  sessions:input
@@ -117,7 +117,13 @@ docs:read       audit:read
 comm:read       comm:write
 alerts:list     alerts:read
 dashboard:read  dashboard:write
+queue:read      queue:write
+results:list    results:read    results:write
 ```
+
+`queue:*` and `results:*` were added in v8.39.24 (Design A2 audit) — the
+durable work queue (`/api/queue*`) and structured agent result store
+(`/api/result-store*`) had no capability check of any kind before then.
 
 ---
 

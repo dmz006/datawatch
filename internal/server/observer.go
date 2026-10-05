@@ -148,6 +148,15 @@ func (s *Server) handleObserverEnvelope(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleObserverConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapObserversRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapObserversWrite) {
+			return
+		}
+	}
 	if s.observerAPI == nil {
 		http.Error(w, "observer disabled", http.StatusServiceUnavailable)
 		return

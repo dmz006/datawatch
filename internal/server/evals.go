@@ -150,6 +150,9 @@ func (s *Server) handleEvalsRuns(w http.ResponseWriter, r *http.Request) {
 // Returns { runs: [{id, name, status, score, created_at}] } matching the
 // field shape expected by the datawatch-app EvalsCard (#42).
 func (s *Server) handleEvalsCompat(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
 	if s.evalsRunner == nil {
 		writeJSONOK(w, map[string]any{"runs": []any{}})
 		return

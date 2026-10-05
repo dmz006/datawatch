@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.24 — fix(security): Design A2 — close 13 capability-check gaps across 11 routes
+
+### Fixed
+- **Design A2** (`docs/plans/historical-plans/2026-09-02-sec-design-a-authz-scoping.md` §A2 — "make capabilities opt-out, not opt-in"). An audit of every route registered on `apiMux` found the capability model is already broadly applied (~440 existing `s.fedCap(...)` call sites across 225 handlers) — but 11 handlers had **zero** capability check at all, meaning any authenticated caller (a federation peer today; a scoped session once Design A3 lands) could reach them with no gate beyond "authenticated":
+  - `handleOpenCodeProviders` (PUT) — the most severe: could write an arbitrary cloud-provider API key into the secrets store with no check at all. Now `secrets:list` (GET) / `secrets:write` (PUT).
+  - `handleQueue` (full CRUD on the durable role-based work queue) and `handleResultStore` (full CRUD on the structured agent result store) — neither had any capability defined for them before now; new `queue:read`/`queue:write` and `results:list`/`results:read`/`results:write` capabilities.
+  - `handleAutonomousGuardrails`, `handleAutonomousGuardrailProfiles` (create/update/delete guardrail policy with zero gate) — now `autonomous:read`/`autonomous:write`.
+  - `handleDiscussionSubs`, `handleMatrixStatus`, `handleMatrixTest` — now `comm:read`/`comm:write`.
+  - `handleEvalsCompat` — now `autonomous:read`.
+  - `handleExitHooks`, `handleLSPServers` — now `config:read`/`config:write`.
+  - `handleObserverConfig` — now `observers:read`/`observers:write` (caught and fixed a bug during review: the capability check was initially placed *after* the `observerAPI == nil` short-circuit, so a disabled observer subsystem's status leaked to an unauthorized caller before auth ever ran — fixed to check capability first, matching every other fix here).
+  - Confirmed NOT gaps (reviewed, left as-is): `handleAuthNonce` (SEC-006's own nonce-mint endpoint — correctly ungated, since minting a nonce for your own already-proven identity needs no extra permission), `handleDashboardCards` (delegates to sub-handlers that already call `fedCap`), `handleProxy` (BL394's own equivalent `checkProxyAuth` gate).
+  - New structural regression test `TestA2_EveryRegisteredRouteHandlerIsCapabilityGated`: parses every `apiMux`-registered handler's call graph and fails if any reachable path has no `fedCap(...)` call and isn't in an explicit, justified exception list — this is the "opt-out, not opt-in" guarantee the original design called for, achieved by auditing + closing the real gaps rather than rewriting the ~440 already-working call sites into a new declarative map (lower risk, same guarantee). Plus `TestA2_PreviouslyUngatedRoutes_BarePeerGets403` (functional: a bare federation-peer gets 403 on all 13 fixed call sites) and `TestA2_GrantedPeerPassesCapCheck` (a peer with the specific grant clears the check). All three confirmed to fail without the fix (reverted `handleQueue`'s check, re-ran, restored).
+  - `docs/howto/federation-cbac.md` updated (56 capabilities across 20 surfaces, up from 51/18).
+
 ## v8.39.23 — fix(security): SEC-006 — stop passing bearer tokens in the URL (`?token=`)
 
 ### Fixed

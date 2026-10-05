@@ -113,6 +113,11 @@ func TestFullControl_HasAll(t *testing.T) {
 		federation.CapSessionsList, federation.CapSessionsWrite, federation.CapSessionsKill,
 		federation.CapAgentsSpawn, federation.CapLLMsWrite, federation.CapComputeWrite,
 		federation.CapSecretsWrite, federation.CapFederationWrite,
+		// Design A2 audit (v8.39.24) additions — handleQueue and
+		// handleResultStore had no capability of any kind to grant until
+		// these were added.
+		federation.CapQueueRead, federation.CapQueueWrite,
+		federation.CapResultsList, federation.CapResultsRead, federation.CapResultsWrite,
 	}
 	for _, c := range must {
 		if !has[c] {

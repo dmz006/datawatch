@@ -1857,6 +1857,9 @@ func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Reque
 //
 //	GET /api/autonomous/guardrails — list the guardrail library
 func (s *Server) handleAutonomousGuardrails(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		return
@@ -1876,6 +1879,15 @@ func (s *Server) handleAutonomousGuardrails(w http.ResponseWriter, r *http.Reque
 //	PUT    /api/autonomous/guardrail_profiles/{id}   — update
 //	DELETE /api/autonomous/guardrail_profiles/{id}   — delete
 func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+	}
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		return

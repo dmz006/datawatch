@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.23"
+var Version = "8.39.24"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1225,6 +1225,9 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 // login` — they come from the binary's own model list, not hardcoded here.
 // Each entry: {id, label, provider, kind ("builtin"|"ollama"|"cloud")}.
 func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
 	type modelEntry struct {
 		ID            string `json:"id"`
 		Label         string `json:"label"`
@@ -1323,6 +1326,15 @@ func (s *Server) handleOpenCodeModels(w http.ResponseWriter, r *http.Request) {
 //
 // The secret name convention is "opencode_provider_<provider>".
 func (s *Server) handleOpenCodeProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapSecretsList) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapSecretsWrite) {
+			return
+		}
+	}
 	const knownProviders = "anthropic openai google"
 	isKnown := func(p string) bool {
 		for _, kp := range strings.Fields(knownProviders) {
@@ -1393,6 +1405,9 @@ func (s *Server) handleOpenCodeProviders(w http.ResponseWriter, r *http.Request)
 // handleLSPServers returns the operator-configured LSP server presets.
 // Response: {servers: {<lang>: {command: [...], extensions: [...]}}}
 func (s *Server) handleLSPServers(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapConfigRead) {
+		return
+	}
 	servers := map[string]any{}
 	if s.cfg != nil {
 		for name, srv := range s.cfg.LSP.Servers {
@@ -8412,6 +8427,9 @@ func (s *Server) handleToolingCleanup(w http.ResponseWriter, r *http.Request) {
 // Returns the current Matrix backend state: enabled, connected MXID,
 // homeserver, room, and whether the backend is active.
 func (s *Server) handleMatrixStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommRead) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -8443,6 +8461,15 @@ func (s *Server) handleMatrixStatus(w http.ResponseWriter, r *http.Request) {
 // handleExitHooks handles GET/POST /api/exit-hooks and PUT/DELETE /api/exit-hooks/{id}.
 // BL356 — session crash/exit hooks (restart, notify, cooldown).
 func (s *Server) handleExitHooks(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapConfigRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapConfigWrite) {
+			return
+		}
+	}
 	if s.exitHookStore == nil {
 		http.Error(w, `{"error":"exit hook store not available"}`, http.StatusServiceUnavailable)
 		return
@@ -8526,6 +8553,9 @@ func (s *Server) handleExitHooks(w http.ResponseWriter, r *http.Request) {
 // handleMatrixTest handles POST /api/matrix/test.
 // Sends a test message to the configured room and reports success/failure.
 func (s *Server) handleMatrixTest(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapCommWrite) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -8564,6 +8594,15 @@ func (s *Server) handleMatrixTest(w http.ResponseWriter, r *http.Request) {
 //	POST   /api/queue/fail      — fail item
 //	DELETE /api/queue/{id}      — delete item
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapQueueRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapQueueWrite) {
+			return
+		}
+	}
 	if s.queueStore == nil {
 		http.Error(w, `{"error":"queue store not available"}`, http.StatusServiceUnavailable)
 		return
@@ -8683,6 +8722,20 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 //	POST   /api/result-store           — put/upsert entry {name, payload, ttl_seconds}
 //	DELETE /api/result-store/{name}    — delete entry
 func (s *Server) handleResultStore(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/result-store":
+		if !s.fedCap(w, r, federation.CapResultsList) {
+			return
+		}
+	case r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapResultsRead) {
+			return
+		}
+	default:
+		if !s.fedCap(w, r, federation.CapResultsWrite) {
+			return
+		}
+	}
 	if s.resultStore == nil {
 		http.Error(w, `{"error":"result store not available"}`, http.StatusServiceUnavailable)
 		return
@@ -8755,6 +8808,15 @@ func (s *Server) handleResultStore(w http.ResponseWriter, r *http.Request) {
 //	POST   /api/discussion-subs           — subscribe {discussion_id, session_name}
 //	DELETE /api/discussion-subs/{disc}/{sess} — unsubscribe
 func (s *Server) handleDiscussionSubs(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapCommRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapCommWrite) {
+			return
+		}
+	}
 	if s.discussionSubStore == nil {
 		http.Error(w, `{"error":"discussion subscription store not available"}`, http.StatusServiceUnavailable)
 		return
