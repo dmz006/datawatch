@@ -436,3 +436,19 @@ hand-picked sample), and the functional peer-403/peer-200 behavior is
 already exercised in-process by `TestA2_PreviouslyUngatedRoutes_BarePeerGets403`/
 `TestA2_GrantedPeerPassesCapCheck` against the real `fedAuthMiddleware` +
 `fedCap` code path, not a mock.
+
+---
+
+## `per_story_approval` stuck-true bug (E2E hang root cause) — v8.39.26
+
+Found live 2026-10-05 re-running E2E after today's SEC-006/A2/A3 work — not
+a SEC-finding or a Design-A item, just a real functional bug surfaced by
+actually running the suite twice and refusing to accept the first
+(wrong) theory. See the CHANGELOG v8.39.26 entry for the full mechanism.
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| `config.AutonomousConfig` marshals `false` bools explicitly (no `omitempty` silently dropping the key) | **Yes** | No | `TestAutonomousConfig_FalseBoolsMarshalExplicitly` in `internal/config/config_test.go` | PASS. Confirmed to fail without the fix: restored `omitempty` on `per_story_approval`'s JSON tag, re-ran (failed with the exact field named), restored the fix, re-ran (passed) |
+| `internal/autonomous.API.SetConfig`'s merge-unmarshal lets an explicit `false` actually overwrite a previous `true`, for all 5 affected fields | **Yes** | No | `TestAPI_SetConfig_ExplicitFalseOverwritesTrue` (table-driven, 5 sub-cases) in `internal/autonomous/autonomous_test.go` | PASS all. Same revert-rerun-restore confirmation as above |
+| End-to-end against a real daemon: replay TS-026's exact `PUT true` → `PUT false` sequence, confirm `GET /api/autonomous/config` (the manager's *enforced* copy, not just the REST layer's own `GET /api/config`) reflects `false` afterward | No (requires a live daemon) | **Yes** | Manual, 2026-10-05 | First attempt (fixing only `internal/autonomous.Config`'s tags) did NOT fix the live symptom — found the real second struct (`config.AutonomousConfig`, the one actually marshaled on this path) by re-checking live rather than trusting the first fix. Second attempt confirmed fixed: manager copy correctly shows `false` after restore |
+| Two prior full E2E runs today (`e2e-run-v83924.log`, and the one before it) both hung at the identical point (TS-695's PRD, stories stuck in `awaiting_approval`) for this exact reason, not test-concurrency as an earlier same-day fix assumed | N/A (historical evidence, not a repeatable automated check) | **Yes** | Live PRD inspection both times (`GET /api/autonomous/prds/{id}`, decision log showing `approve`→`run` within ~1s of `decompose`, no `approve_story` call ever present) | The earlier `conflict:llm` tag fix on TS-026/TS-782 is harmless and stays (reasonable toggle hygiene regardless), but was not and could not have been the actual fix |

@@ -82,8 +82,14 @@ type Config struct {
 	// needs_review→approved gate for spawned children — needed for any
 	// useful recursion, since otherwise every level hangs on operator
 	// review. Defaults: depth=5, auto_approve=true.
-	MaxRecursionDepth     int  `json:"max_recursion_depth,omitempty"`
-	AutoApproveChildren   bool `json:"auto_approve_children,omitempty"`
+	MaxRecursionDepth int `json:"max_recursion_depth,omitempty"`
+	// AutoApproveChildren has no omitempty: SetConfig (internal/autonomous/api.go)
+	// merges an incoming patch onto the CURRENT config via json.Unmarshal, which
+	// only touches keys actually present in the JSON. omitempty on a bool means
+	// an explicit "set this to false" is marshaled as an absent key and silently
+	// never overwrites a previously-true value — found live 2026-10-05 via this
+	// exact bug on PerStoryApproval below (SEC/A3 E2E investigation).
+	AutoApproveChildren bool `json:"auto_approve_children"`
 
 	// BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty list =
 	// disabled at that level (PRD-level guardrails are handled by the
@@ -100,7 +106,15 @@ type Config struct {
 	// and the runner skips those until the operator approves each.
 	// Default false preserves the v5.26.x behavior (PRD approval
 	// implicitly approves every story).
-	PerStoryApproval bool `json:"per_story_approval,omitempty"`
+	//
+	// No omitempty — see AutoApproveChildren's comment above. A PUT
+	// /api/config '{"autonomous.per_story_approval":false}' restore
+	// call was silently dropped by SetConfig's merge-unmarshal while
+	// this field had omitempty, leaving every subsequent PRD approval
+	// wrongly gating its stories into awaiting_approval forever (no
+	// code path ever calls approve_story for them) — found live
+	// 2026-10-05 chasing a hung E2E run.
+	PerStoryApproval bool `json:"per_story_approval"`
 
 	// BL221 (v6.2.0) Phase 3 — scan framework config.
 	Scan scan.Config `json:"scan,omitempty"`
@@ -117,8 +131,9 @@ type Config struct {
 	// (PRD spec, task spec edits) is scanned for known injection phrases
 	// at the API boundary. Findings are always logged; with BlockOnInjection
 	// true the request is rejected with 400.
-	InjectionGuard      bool `json:"injection_guard,omitempty"`
-	BlockOnInjection    bool `json:"block_on_injection,omitempty"`
+	// No omitempty on either bool — see PerStoryApproval's comment above.
+	InjectionGuard   bool `json:"injection_guard"`
+	BlockOnInjection bool `json:"block_on_injection"`
 
 	// BL370 — task concurrency. MaxConcurrentTasks controls how many task
 	// sessions the executor may have in-flight simultaneously. Default 1
@@ -134,7 +149,8 @@ type Config struct {
 	// the run barrel ahead into stories 2-4 unattended. Set true to
 	// restore the old "continue regardless" behavior. Per-PRD
 	// PRD.ContinueOnStoryFailure overrides this when non-nil.
-	ContinueOnStoryFailure bool `json:"continue_on_story_failure,omitempty"`
+	// No omitempty — see PerStoryApproval's comment above.
+	ContinueOnStoryFailure bool `json:"continue_on_story_failure"`
 
 	// Capacity admission. nil = enabled (default on).
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`

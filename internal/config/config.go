@@ -1673,8 +1673,16 @@ type AutonomousConfig struct {
 	// caps the parent→child chain length; 0 disables recursion.
 	// AutoApproveChildren skips operator review on spawned children
 	// (otherwise every level hangs on /approve).
-	MaxRecursionDepth   int  `yaml:"max_recursion_depth,omitempty" json:"max_recursion_depth,omitempty"`
-	AutoApproveChildren bool `yaml:"auto_approve_children,omitempty" json:"auto_approve_children,omitempty"`
+	MaxRecursionDepth int `yaml:"max_recursion_depth,omitempty" json:"max_recursion_depth,omitempty"`
+	// JSON has no omitempty (YAML keeps it, for a concise on-disk file):
+	// this struct is marshaled to JSON and merge-unmarshaled onto the live
+	// internal/autonomous.Manager config on every autonomous.* config
+	// write (internal/server/api.go's handlePutConfig); omitempty on a
+	// bool means an explicit "set this back to false" is marshaled as an
+	// absent key and silently never overwrites a previously-true value in
+	// that merge — found live 2026-10-05 via this exact bug on
+	// PerStoryApproval below, hanging every subsequent PRD approval.
+	AutoApproveChildren bool `yaml:"auto_approve_children,omitempty" json:"auto_approve_children"`
 
 	// BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty
 	// list = disabled at that level. Names match the BL117 orchestrator:
@@ -1688,7 +1696,8 @@ type AutonomousConfig struct {
 	// stories to "awaiting_approval"; the runner skips those until
 	// the operator calls POST /api/autonomous/prds/{id}/approve_story
 	// per story.
-	PerStoryApproval bool `yaml:"per_story_approval,omitempty" json:"per_story_approval,omitempty"`
+	// No JSON omitempty — see AutoApproveChildren's comment above.
+	PerStoryApproval bool `yaml:"per_story_approval,omitempty" json:"per_story_approval"`
 
 	// ContinueOnStoryFailure: default false (halt). The moment a story
 	// rolls up to "failed", the PRD stops (status -> blocked) instead of
@@ -1696,7 +1705,8 @@ type AutonomousConfig struct {
 	// operator can re-edit/rerun the failed story first. Set true to
 	// restore the old continue-regardless behavior. Per-PRD
 	// continue_on_story_failure field overrides this default.
-	ContinueOnStoryFailure bool `yaml:"continue_on_story_failure,omitempty" json:"continue_on_story_failure,omitempty"`
+	// No JSON omitempty — see AutoApproveChildren's comment above.
+	ContinueOnStoryFailure bool `yaml:"continue_on_story_failure,omitempty" json:"continue_on_story_failure"`
 
 	// BL367 — default quality gate config applied to every PRD whose
 	// quality_gates field is nil. Disabled (Enabled: false) by default
@@ -1707,8 +1717,9 @@ type AutonomousConfig struct {
 	// supplied PRD/task specs are scanned for known injection phrases at
 	// the API boundary. Findings are always logged; BlockOnInjection
 	// causes the request to be rejected with 400 instead of warn-only.
-	InjectionGuard   bool `yaml:"injection_guard,omitempty" json:"injection_guard,omitempty"`
-	BlockOnInjection bool `yaml:"block_on_injection,omitempty" json:"block_on_injection,omitempty"`
+	// No JSON omitempty on either — see AutoApproveChildren's comment above.
+	InjectionGuard   bool `yaml:"injection_guard,omitempty" json:"injection_guard"`
+	BlockOnInjection bool `yaml:"block_on_injection,omitempty" json:"block_on_injection"`
 }
 
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -243,9 +244,9 @@ func TestSave_RoundTrip_AgentsConfig(t *testing.T) {
 	cfg.Agents.CallbackURL = "https://parent:8443"
 	cfg.Agents.BootstrapTokenTTLSeconds = 600
 	cfg.Agents.WorkerBootstrapDeadlineSeconds = 120
-	cfg.Agents.PQCBootstrap = true // BL95
+	cfg.Agents.PQCBootstrap = true            // BL95
 	cfg.Agents.IdleReaperIntervalSeconds = 30 // BL108
-	cfg.Agents.SecretsProvider = "file"        // BL111
+	cfg.Agents.SecretsProvider = "file"       // BL111
 	cfg.Agents.SecretsBaseDir = "/var/lib/datawatch/secrets"
 
 	if err := Save(cfg, path); err != nil {
@@ -352,67 +353,101 @@ func boolPtr(v bool) *bool { return &v }
 
 func TestMemoryConfig_IsAutoHooks(t *testing.T) {
 	m := MemoryConfig{AutoHooks: boolPtr(true)}
-	if !m.IsAutoHooks() { t.Error("expected true") }
+	if !m.IsAutoHooks() {
+		t.Error("expected true")
+	}
 	m.AutoHooks = boolPtr(false)
-	if m.IsAutoHooks() { t.Error("expected false") }
+	if m.IsAutoHooks() {
+		t.Error("expected false")
+	}
 	m.AutoHooks = nil
-	if !m.IsAutoHooks() { t.Error("expected true for nil (default)") }
+	if !m.IsAutoHooks() {
+		t.Error("expected true for nil (default)")
+	}
 }
 
 func TestMemoryConfig_EffectiveHookInterval(t *testing.T) {
 	m := MemoryConfig{}
-	if m.EffectiveHookInterval() != 15 { t.Errorf("expected default 15, got %d", m.EffectiveHookInterval()) }
+	if m.EffectiveHookInterval() != 15 {
+		t.Errorf("expected default 15, got %d", m.EffectiveHookInterval())
+	}
 	m.HookSaveInterval = 30
-	if m.EffectiveHookInterval() != 30 { t.Errorf("expected 30, got %d", m.EffectiveHookInterval()) }
+	if m.EffectiveHookInterval() != 30 {
+		t.Errorf("expected 30, got %d", m.EffectiveHookInterval())
+	}
 }
 
 func TestMemoryConfig_IsSessionAwareness(t *testing.T) {
 	m := MemoryConfig{SessionAwareness: boolPtr(true)}
-	if !m.IsSessionAwareness() { t.Error("expected true") }
+	if !m.IsSessionAwareness() {
+		t.Error("expected true")
+	}
 	m.SessionAwareness = nil
 	// nil defaults to true per the method
-	if !m.IsSessionAwareness() { t.Log("nil defaults to false (or true depending on impl)") }
+	if !m.IsSessionAwareness() {
+		t.Log("nil defaults to false (or true depending on impl)")
+	}
 }
 
 func TestMemoryConfig_IsSessionBroadcast(t *testing.T) {
 	m := MemoryConfig{SessionBroadcast: boolPtr(true)}
-	if !m.IsSessionBroadcast() { t.Error("expected true") }
+	if !m.IsSessionBroadcast() {
+		t.Error("expected true")
+	}
 }
 
 func TestMemoryConfig_EffectiveStorageMode(t *testing.T) {
 	m := MemoryConfig{}
-	if m.EffectiveStorageMode() != "summary" { t.Errorf("expected 'summary', got %q", m.EffectiveStorageMode()) }
+	if m.EffectiveStorageMode() != "summary" {
+		t.Errorf("expected 'summary', got %q", m.EffectiveStorageMode())
+	}
 	m.StorageMode = "verbatim"
-	if m.EffectiveStorageMode() != "verbatim" { t.Errorf("expected 'verbatim', got %q", m.EffectiveStorageMode()) }
+	if m.EffectiveStorageMode() != "verbatim" {
+		t.Errorf("expected 'verbatim', got %q", m.EffectiveStorageMode())
+	}
 }
 
 func TestMemoryConfig_IsAutoSave(t *testing.T) {
 	m := MemoryConfig{AutoSave: boolPtr(true)}
-	if !m.IsAutoSave() { t.Error("expected true") }
+	if !m.IsAutoSave() {
+		t.Error("expected true")
+	}
 }
 
 func TestMemoryConfig_IsLearningsEnabled(t *testing.T) {
 	m := MemoryConfig{LearningsEnabled: boolPtr(true)}
-	if !m.IsLearningsEnabled() { t.Error("expected true") }
+	if !m.IsLearningsEnabled() {
+		t.Error("expected true")
+	}
 }
 
 func TestMemoryConfig_EffectiveBackend(t *testing.T) {
 	m := MemoryConfig{}
-	if m.EffectiveBackend() != "sqlite" { t.Errorf("expected 'sqlite', got %q", m.EffectiveBackend()) }
+	if m.EffectiveBackend() != "sqlite" {
+		t.Errorf("expected 'sqlite', got %q", m.EffectiveBackend())
+	}
 	m.Backend = "postgres"
-	if m.EffectiveBackend() != "postgres" { t.Errorf("expected 'postgres', got %q", m.EffectiveBackend()) }
+	if m.EffectiveBackend() != "postgres" {
+		t.Errorf("expected 'postgres', got %q", m.EffectiveBackend())
+	}
 }
 
 func TestMemoryConfig_EffectiveEmbedder(t *testing.T) {
 	m := MemoryConfig{}
-	if m.EffectiveEmbedder() != "ollama" { t.Errorf("expected 'ollama', got %q", m.EffectiveEmbedder()) }
+	if m.EffectiveEmbedder() != "ollama" {
+		t.Errorf("expected 'ollama', got %q", m.EffectiveEmbedder())
+	}
 }
 
 func TestMemoryConfig_EffectiveTopK(t *testing.T) {
 	m := MemoryConfig{}
-	if m.EffectiveTopK() != 5 { t.Errorf("expected default 5, got %d", m.EffectiveTopK()) }
+	if m.EffectiveTopK() != 5 {
+		t.Errorf("expected default 5, got %d", m.EffectiveTopK())
+	}
 	m.TopK = 10
-	if m.EffectiveTopK() != 10 { t.Errorf("expected 10, got %d", m.EffectiveTopK()) }
+	if m.EffectiveTopK() != 10 {
+		t.Errorf("expected 10, got %d", m.EffectiveTopK())
+	}
 }
 
 // ── Console size and input mode ──
@@ -523,10 +558,10 @@ func TestSessionConfig_ResolveProjectDir(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "absolute path passes through unchanged regardless of workspace_root",
+			name:      "absolute path passes through unchanged regardless of workspace_root",
 			workspace: "/workspace",
-			in:   "/etc/foo",
-			want: "/etc/foo",
+			in:        "/etc/foo",
+			want:      "/etc/foo",
 		},
 		{
 			name:      "relative + workspace_root joins under workspace_root",
@@ -560,5 +595,46 @@ func TestSessionConfig_ResolveProjectDir(t *testing.T) {
 				t.Errorf("got %q want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestAutonomousConfig_FalseBoolsMarshalExplicitly guards the real root
+// cause of a hung E2E run found live 2026-10-05: AutonomousConfig is
+// marshaled to JSON and merge-unmarshaled onto the live
+// internal/autonomous.Manager's own config on every autonomous.* write
+// (internal/server/api.go handlePutConfig -> autonomousMgr.SetConfig).
+// That merge-unmarshal only touches JSON keys actually present in the
+// payload, so omitempty on a bool field means an explicit "set this back
+// to false" (e.g. PUT /api/config {"autonomous.per_story_approval":false}
+// restoring after a test toggled it true) is marshaled as an ABSENT key
+// and silently never overwrites the manager's still-true value — every
+// subsequent PRD approval kept wrongly gating its stories into
+// awaiting_approval forever, since nothing calls approve_story for them.
+// If omitempty is ever reintroduced on one of these fields, this test
+// catches it without needing to reproduce the full hang.
+func TestAutonomousConfig_FalseBoolsMarshalExplicitly(t *testing.T) {
+	cfg := AutonomousConfig{
+		PerStoryApproval:       false,
+		AutoApproveChildren:    false,
+		ContinueOnStoryFailure: false,
+		InjectionGuard:         false,
+		BlockOnInjection:       false,
+	}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var asMap map[string]json.RawMessage
+	if err := json.Unmarshal(b, &asMap); err != nil {
+		t.Fatalf("unmarshal to map: %v", err)
+	}
+	for _, field := range []string{
+		"per_story_approval", "auto_approve_children",
+		"continue_on_story_failure", "injection_guard", "block_on_injection",
+	} {
+		if _, present := asMap[field]; !present {
+			t.Errorf("%s is false and missing from the marshaled JSON — omitempty would silently drop an explicit "+
+				"false sent through the SetConfig merge-unmarshal path, re-opening the per_story_approval hang", field)
+		}
 	}
 }

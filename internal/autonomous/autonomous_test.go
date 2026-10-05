@@ -445,3 +445,64 @@ func TestAPI_SetConfigMergesPartialUpdate(t *testing.T) {
 		t.Fatalf("VerificationBackend = %q, want %q to survive the partial update", got.VerificationBackend, "ollama")
 	}
 }
+
+// TestAPI_SetConfig_ExplicitFalseOverwritesTrue is the flip side of
+// TestAPI_SetConfigMergesPartialUpdate's merge-onto-current design: a bool
+// field tagged `omitempty` is DROPPED from the marshaled JSON when its value
+// is false, so SetConfig's merge-unmarshal (which only touches keys present
+// in the payload) never sees the "set this back to false" instruction and
+// silently leaves the field at its previous true value forever.
+//
+// Found live 2026-10-05 chasing a hung E2E run: PUT /api/config
+// '{"autonomous.per_story_approval":true}' then '{"...":false}' (exactly
+// what TS-026 does, and exactly what the REST handler's
+// json.Marshal(s.cfg.Autonomous) + SetConfig(raw) sync path produces) left
+// every subsequent PRD's stories wrongly gated into awaiting_approval with
+// no code path ever calling approve_story — the bug was in the Config
+// struct's json tags (omitempty on PerStoryApproval et al.), not in the
+// test's own toggle logic or in test scheduling/concurrency. Fixed by
+// removing omitempty from every plain bool field in Config (pointer fields
+// like CapacityEnabled are unaffected — omitempty on a pointer checks
+// nilness, not the pointed-to value).
+func TestAPI_SetConfig_ExplicitFalseOverwritesTrue(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir, DefaultConfig(), nil)
+	a := NewAPI(m)
+
+	for _, field := range []string{
+		"per_story_approval", "auto_approve_children",
+		"injection_guard", "block_on_injection", "continue_on_story_failure",
+	} {
+		t.Run(field, func(t *testing.T) {
+			if err := a.SetConfig(json.RawMessage(`{"` + field + `":true}`)); err != nil {
+				t.Fatalf("SetConfig(true): %v", err)
+			}
+			// Mirror the real sync path: marshal the WHOLE config (as
+			// internal/server/api.go's handlePutConfig does) rather than
+			// a hand-written body, so a reintroduced omitempty tag would
+			// actually be exercised by this test, not just the field's
+			// own direct JSON name.
+			whole, err := json.Marshal(m.Config())
+			if err != nil {
+				t.Fatalf("marshal whole config: %v", err)
+			}
+			var asMap map[string]any
+			_ = json.Unmarshal(whole, &asMap)
+			if _, present := asMap[field]; !present {
+				t.Fatalf("%s is true but missing from the marshaled config entirely — omitempty would silently drop an explicit false too", field)
+			}
+
+			if err := a.SetConfig(json.RawMessage(`{"` + field + `":false}`)); err != nil {
+				t.Fatalf("SetConfig(false): %v", err)
+			}
+			whole, err = json.Marshal(m.Config())
+			if err != nil {
+				t.Fatalf("marshal whole config after false: %v", err)
+			}
+			_ = json.Unmarshal(whole, &asMap)
+			if v, _ := asMap[field].(bool); v {
+				t.Fatalf("%s is still true after an explicit SetConfig(false) — the omitempty+merge-unmarshal bug is back", field)
+			}
+		})
+	}
+}
