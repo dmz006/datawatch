@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.39.19"
+var Version = "8.39.20"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6103,6 +6103,7 @@ Return STRICT JSON:
 		CmdLib:        cmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
+		FallbackToken: cfg.Server.Token, // SEC-002
 		RestartFn: func() {
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -6160,6 +6161,7 @@ Return STRICT JSON:
 	// Wire MCP bridge (channel proxy REST surface) to the HTTP server.
 	if httpServer != nil {
 		httpServer.SetMCPBridge(mcpSrv)
+		httpServer.SetMCPAuthRequired(cfg.MCP.Token != "") // SEC-002
 	}
 
 	// BL302 S1 — register MCP resources (static + templates) when resources enabled.
@@ -11291,6 +11293,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		CmdLib:        mcpCmdLib,
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
+		FallbackToken: cfg.Server.Token, // SEC-002
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

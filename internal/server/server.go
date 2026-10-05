@@ -1054,6 +1054,9 @@ func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc =
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
 func (s *HTTPServer) SetMCPBridge(b mcpBridgeAPI) { s.api.SetMCPBridge(b) }
 
+// SetMCPAuthRequired records whether mcp.token is configured (SEC-002).
+func (s *HTTPServer) SetMCPAuthRequired(configured bool) { s.api.SetMCPAuthRequired(configured) }
+
 // SetMCPSamplingDispatcher wires the sampling dispatcher (BL302 S3).
 func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
 	s.api.SetMCPSamplingDispatcher(d)

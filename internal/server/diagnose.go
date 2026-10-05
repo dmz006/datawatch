@@ -111,6 +111,21 @@ func (s *Server) runDiagnose() DiagnoseResult {
 		Name: "goroutines", OK: ok, Detail: detail,
 	})
 
+	// 7. SEC-002 — per-listener auth posture. Informational, not a
+	// failure either way (SEC-001: an empty token is a legitimate
+	// operator choice) — this just makes which listeners are actually
+	// gated visible at a glance, rather than needing to read config.
+	restAuth := s.token != ""
+	mcpAuth := s.mcpTokenConfigured || restAuth
+	out.Checks = append(out.Checks, DiagnoseCheck{
+		Name: "rest_auth", OK: true,
+		Detail: fmt.Sprintf("auth_required=%v", restAuth),
+	})
+	out.Checks = append(out.Checks, DiagnoseCheck{
+		Name: "mcp_sse_auth", OK: true,
+		Detail: fmt.Sprintf("auth_required=%v", mcpAuth),
+	})
+
 	out.OK = allOK(out.Checks)
 	return out
 }

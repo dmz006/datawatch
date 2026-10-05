@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.20 — fix(security): SEC-002 — MCP SSE falls back to server.token; constant-time compares (assessment T3)
+
+### Fixed
+- **SEC-002**: MCP SSE is gated by its own `mcp.token`, separate from REST's `server.token` — an operator who protected REST but left `mcp.token` unset got a fully open 361-tool MCP catalog without realizing it. `mcpFedAuthMiddleware` now falls back to `server.token` when `mcp.token` is empty (new `mcp.New(...) Options.FallbackToken`, wired from both `cmd/datawatch/main.go` call sites); only fully open when *both* are empty, matching SEC-001's accepted-choice posture. A startup log line states plainly which case applies. `/api/health` gains `mcp_auth_required`; `GET /api/diagnose` gains `rest_auth`/`mcp_sse_auth` informational checks so the actual per-listener auth posture is visible without reading config.
+- **Assessment T3** (folded in, same lines changed): the admin-token comparison in both `fedAuthMiddleware` (REST) and `mcpFedAuthMiddleware` (MCP SSE) now uses `crypto/subtle.ConstantTimeCompare` instead of `==`, closing a timing side-channel on the admin bearer token.
+- New test: `TestMCPFedAuth_SEC002_FallsBackToServerToken` (confirmed to fail without the fix via a compile error against the removed `fallbackToken` field).
+
 ## v8.39.19 — fix(security): SEC-014 — stop echoing peer/server bearer tokens in API responses
 
 ### Fixed

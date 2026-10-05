@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.19"
+var Version = "8.39.20"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -307,6 +307,12 @@ type Server struct {
 	// mcpBridge is the daemon MCP server; wired at startup via SetMCPBridge.
 	// Provides /api/mcp/tools and /api/mcp/call for the channel bridge proxy.
 	mcpBridge mcpBridgeAPI
+
+	// mcpTokenConfigured is cfg.MCP.Token != "" (SEC-002) — wired from
+	// main.go via SetMCPAuthRequired. Used only to compute
+	// /api/health's mcp_auth_required; the MCP SSE listener itself falls
+	// back to server.token when mcp.token is empty (see internal/mcp).
+	mcpTokenConfigured bool
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -847,6 +853,10 @@ func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
 
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
 func (s *Server) SetMCPBridge(b mcpBridgeAPI) { s.mcpBridge = b }
+
+// SetMCPAuthRequired records whether mcp.token is configured (SEC-002),
+// for /api/health's mcp_auth_required field.
+func (s *Server) SetMCPAuthRequired(configured bool) { s.mcpTokenConfigured = configured }
 
 // SetMCPSamplingDispatcher wires the sampling dispatcher for POST /api/mcp/sample (BL302 S3).
 func (s *Server) SetMCPSamplingDispatcher(d MCPSamplingAPI) { s.mcpSamplingDisp = d }
@@ -2083,6 +2093,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"encrypted":        encrypted,
 		"has_env_password": hasEnvPassword,
 		"auth_required":    s.token != "",
+		// SEC-002 — MCP SSE's actual auth posture: gated if mcp.token is
+		// set, or (since mcp.New falls back) if server.token is set.
+		"mcp_auth_required": s.mcpTokenConfigured || s.token != "",
 	})
 }
 

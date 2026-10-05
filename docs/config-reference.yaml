@@ -204,7 +204,9 @@ mcp:
   sse_host: 127.0.0.1
   # SSE listen port
   sse_port: 8081
-  # Bearer token for SSE connections (empty = no auth)
+  # Bearer token for SSE connections. Empty falls back to server.token
+  # (SEC-002) — MCP SSE is open only when BOTH this and server.token
+  # are empty.
   token: ""
   # Enable TLS for SSE server
   tls_enabled: false

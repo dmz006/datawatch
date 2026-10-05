@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -57,20 +58,22 @@ import (
 
 // Server wraps the MCP server with session manager access.
 type Server struct {
-	hostname   string
-	manager    *session.Manager
-	cfg        *config.MCPConfig
-	dataDir    string
-	srv        *server.MCPServer
-	alertStore *alerts.Store
+	hostname string
+	manager  *session.Manager
+	cfg      *config.MCPConfig
+	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
+	fallbackToken string
+	dataDir       string
+	srv           *server.MCPServer
+	alertStore    *alerts.Store
 	schedStore    *session.ScheduleStore
-	exitHookStore *session.ExitHookStore    // BL356
-	queueStore    *session.QueueStore       // BL357
+	exitHookStore *session.ExitHookStore      // BL356
+	queueStore    *session.QueueStore         // BL357
 	subStore      *session.DiscussionSubStore // BL358
-	resultStore   *session.ResultStore       // BL360
+	resultStore   *session.ResultStore        // BL360
 	cmdLib        *session.CmdLibrary
-	restartFn  func()
-	version    string
+	restartFn     func()
+	version       string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
 	// chanStats tracks MCP request/response counts
@@ -80,7 +83,7 @@ type Server struct {
 	// kgAPI provides knowledge graph operations (nil when memory disabled)
 	kgAPI KGMCP
 	// BL302 S3 — sampling and elicitation dispatchers.
-	samplingDisp   *SamplingDispatcher
+	samplingDisp    *SamplingDispatcher
 	elicitationDisp *ElicitationDispatcher
 	// BL302 S4 — prompt server (10 MCP prompts).
 	promptServer *MCPPromptServer
@@ -195,13 +198,18 @@ type Options struct {
 	AlertStore    *alerts.Store
 	SchedStore    *session.ScheduleStore
 	ExitHookStore *session.ExitHookStore      // BL356
-	QueueStore    *session.QueueStore          // BL357
-	SubStore      *session.DiscussionSubStore  // BL358
-	ResultStore   *session.ResultStore         // BL360
+	QueueStore    *session.QueueStore         // BL357
+	SubStore      *session.DiscussionSubStore // BL358
+	ResultStore   *session.ResultStore        // BL360
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
 	Version       string
 	LatestVersion func() (string, error)
+	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
+	// empty, MCP SSE auth falls back to the admin server.token instead of
+	// opening unconditionally, so a daemon that protects REST doesn't
+	// leave MCP SSE's full tool catalog open by omission.
+	FallbackToken string
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -215,12 +223,24 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		schedStore:    opts.SchedStore,
 		exitHookStore: opts.ExitHookStore,
 		queueStore:    opts.QueueStore,
-		subStore:      opts.SubStore,       // BL358
-		resultStore:   opts.ResultStore,    // BL360
+		subStore:      opts.SubStore,    // BL358
+		resultStore:   opts.ResultStore, // BL360
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
 		version:       opts.Version,
 		latestVersion: opts.LatestVersion,
+		fallbackToken: opts.FallbackToken,
+	}
+	// SEC-002 — warn plainly about the resulting auth posture at startup,
+	// since which token (if any) actually gates MCP SSE is easy to get
+	// wrong silently otherwise.
+	switch {
+	case cfg.Token != "":
+		// mcp.token set — gated on its own credential, nothing to warn about.
+	case s.fallbackToken != "":
+		log.Printf("[mcp] mcp.token is empty — MCP SSE now requires the admin server.token (SEC-002 fallback), not fully open")
+	default:
+		log.Printf("[warn] [mcp] mcp.token and server.token are both empty — MCP SSE's full tool catalog is open to any caller that can reach it")
 	}
 
 	mcpSrv := server.NewMCPServer(
@@ -404,35 +424,35 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSessionBindAgent(), tracked(s.handleSessionBindAgent))
 
 	// Sprint Sx (v3.7.2) — parity backfill for v3.5–v3.7 endpoints.
-	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                              // BL34
-	mcpSrv.AddTool(s.toolProjectSummary(), tracked(s.handleProjectSummary))        // BL35
-	mcpSrv.AddTool(s.toolTemplateList(), tracked(s.handleTemplateList))            // BL5
-	mcpSrv.AddTool(s.toolTemplateUpsert(), tracked(s.handleTemplateUpsert))        // BL5
-	mcpSrv.AddTool(s.toolTemplateDelete(), tracked(s.handleTemplateDelete))        // BL5
-	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))              // BL27
-	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))          // BL27
-	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete))// BL27
-	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))      // BL29
-	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))        // BL30
-	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))              // BL30
-	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))          // BL30
-	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))          // BL40
-	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))              // BL6
-	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                  // BL6
-	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                  // BL6
-	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                // BL9
-	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                    // BL37
-	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                        // BL17
-	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                  // BL12
+	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                               // BL34
+	mcpSrv.AddTool(s.toolProjectSummary(), tracked(s.handleProjectSummary))         // BL35
+	mcpSrv.AddTool(s.toolTemplateList(), tracked(s.handleTemplateList))             // BL5
+	mcpSrv.AddTool(s.toolTemplateUpsert(), tracked(s.handleTemplateUpsert))         // BL5
+	mcpSrv.AddTool(s.toolTemplateDelete(), tracked(s.handleTemplateDelete))         // BL5
+	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))               // BL27
+	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))           // BL27
+	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete)) // BL27
+	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))       // BL29
+	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))         // BL30
+	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))               // BL30
+	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))           // BL30
+	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))           // BL40
+	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))               // BL6
+	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                   // BL6
+	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                   // BL6
+	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                 // BL9
+	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                     // BL37
+	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                         // BL17
+	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                   // BL12
 	// Sprint S4 (v3.8.0).
-	mcpSrv.AddTool(s.toolAssist(), tracked(s.handleAssist))                        // BL42
-	mcpSrv.AddTool(s.toolDeviceAliasList(), tracked(s.handleDeviceAliasList))      // BL31
-	mcpSrv.AddTool(s.toolDeviceAliasUpsert(), tracked(s.handleDeviceAliasUpsert))  // BL31
-	mcpSrv.AddTool(s.toolDeviceAliasDelete(), tracked(s.handleDeviceAliasDelete))  // BL31
-	mcpSrv.AddTool(s.toolSplashInfo(), tracked(s.handleSplashInfo))                // BL69
+	mcpSrv.AddTool(s.toolAssist(), tracked(s.handleAssist))                       // BL42
+	mcpSrv.AddTool(s.toolDeviceAliasList(), tracked(s.handleDeviceAliasList))     // BL31
+	mcpSrv.AddTool(s.toolDeviceAliasUpsert(), tracked(s.handleDeviceAliasUpsert)) // BL31
+	mcpSrv.AddTool(s.toolDeviceAliasDelete(), tracked(s.handleDeviceAliasDelete)) // BL31
+	mcpSrv.AddTool(s.toolSplashInfo(), tracked(s.handleSplashInfo))               // BL69
 	// Sprint S5 (v3.9.0).
-	mcpSrv.AddTool(s.toolRoutingRulesList(), tracked(s.handleRoutingRulesList))    // BL20
-	mcpSrv.AddTool(s.toolRoutingRulesTest(), tracked(s.handleRoutingRulesTest))    // BL20
+	mcpSrv.AddTool(s.toolRoutingRulesList(), tracked(s.handleRoutingRulesList)) // BL20
+	mcpSrv.AddTool(s.toolRoutingRulesTest(), tracked(s.handleRoutingRulesTest)) // BL20
 	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 	mcpSrv.AddTool(s.toolAutonomousStatus(), tracked(s.handleAutonomousStatus))
 	mcpSrv.AddTool(s.toolAutonomousConfigGet(), tracked(s.handleAutonomousConfigGet))
@@ -481,7 +501,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))
-	mcpSrv.AddTool(s.toolAutonomousPRDSetMemorySeed(), tracked(s.handleAutonomousPRDSetMemorySeed))     // BL386 P1
+	mcpSrv.AddTool(s.toolAutonomousPRDSetMemorySeed(), tracked(s.handleAutonomousPRDSetMemorySeed))       // BL386 P1
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemoryHarvest(), tracked(s.handleAutonomousPRDSetMemoryHarvest)) // BL386 P2
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	mcpSrv.AddTool(s.toolGuardrailLibraryList(), tracked(s.handleGuardrailLibraryList))
@@ -491,7 +511,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolGuardrailProfileUpdate(), tracked(s.handleGuardrailProfileUpdate))
 	mcpSrv.AddTool(s.toolGuardrailProfileDelete(), tracked(s.handleGuardrailProfileDelete))
 	mcpSrv.AddTool(s.toolPerAutomatonGuardrailsSet(), tracked(s.handlePerAutomatonGuardrailsSet))
-	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun))       // BL303 S3 T15
+	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun))         // BL303 S3 T15
 	mcpSrv.AddTool(s.toolSessionGuardrailApprove(), tracked(s.handleSessionGuardrailApprove)) // GH#153
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
@@ -648,10 +668,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))
 	mcpSrv.AddTool(s.toolMemoryScopeSeed(), tracked(s.handleMemoryScopeSeedMCP))
 	mcpSrv.AddTool(s.toolMemoryScopePromote(), tracked(s.handleMemoryScopePromoteMCP))
-	mcpSrv.AddTool(s.toolMemoryArchiveImport(), tracked(s.handleMemoryArchiveImport)) // BL386 P3
-	mcpSrv.AddTool(s.toolMemoryHandoff(), tracked(s.handleMemoryHandoff))                   // BL386 P4
-	mcpSrv.AddTool(s.toolMemoryPRDReport(), tracked(s.handleMemoryPRDReport))               // BL386 P4
-	mcpSrv.AddTool(s.toolMemoryScopeInventory(), tracked(s.handleMemoryScopeInventory))     // BL386 P5
+	mcpSrv.AddTool(s.toolMemoryArchiveImport(), tracked(s.handleMemoryArchiveImport))   // BL386 P3
+	mcpSrv.AddTool(s.toolMemoryHandoff(), tracked(s.handleMemoryHandoff))               // BL386 P4
+	mcpSrv.AddTool(s.toolMemoryPRDReport(), tracked(s.handleMemoryPRDReport))           // BL386 P4
+	mcpSrv.AddTool(s.toolMemoryScopeInventory(), tracked(s.handleMemoryScopeInventory)) // BL386 P5
 	// BL332 T42c — discussion scope MCP tools.
 	mcpSrv.AddTool(s.toolDiscussionWrite(), tracked(s.handleDiscussionWrite))
 	mcpSrv.AddTool(s.toolDiscussionRecall(), tracked(s.handleDiscussionRecall))
@@ -917,7 +937,9 @@ func (s *Server) SetMemoryAPI(api MemoryMCP) {
 				}
 				s.chanStats.RecordRecv(reqSize)
 				s.chanStats.RecordSent(respSize)
-				if err != nil { s.chanStats.RecordError() }
+				if err != nil {
+					s.chanStats.RecordError()
+				}
 			}
 			return result, err
 		}
@@ -951,12 +973,16 @@ func (s *Server) SetKGAPI(api KGMCP) {
 				respSize := 0
 				if result != nil {
 					for _, c := range result.Content {
-						if tc, ok := c.(mcpsdk.TextContent); ok { respSize += len(tc.Text) }
+						if tc, ok := c.(mcpsdk.TextContent); ok {
+							respSize += len(tc.Text)
+						}
 					}
 				}
 				s.chanStats.RecordRecv(reqSize)
 				s.chanStats.RecordSent(respSize)
-				if err != nil { s.chanStats.RecordError() }
+				if err != nil {
+					s.chanStats.RecordError()
+				}
 			}
 			return result, err
 		}
@@ -997,9 +1023,9 @@ func (s *Server) toolWebSearchStats() mcpsdk.Tool {
 
 func (s *Server) handleWebSearchStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	data, _ := json.MarshalIndent(map[string]interface{}{
-		"enabled":  s.webSearchEnabled,
-		"url":      s.webSearchURL,
-		"engine":   s.webSearchEngine,
+		"enabled": s.webSearchEnabled,
+		"url":     s.webSearchURL,
+		"engine":  s.webSearchEngine,
 	}, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
 }
@@ -1667,18 +1693,18 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 	// BL361 — json format returns structured array.
 	if req.GetString("format", "text") == "json" {
 		type sessionJSON struct {
-			ID           string     `json:"id"`
-			FullID       string     `json:"full_id"`
-			Name         string     `json:"name,omitempty"`
-			State        string     `json:"state"`
-			Task         string     `json:"task,omitempty"`
-			Backend      string     `json:"backend,omitempty"`
-			ClaudeAlive  *bool      `json:"claude_alive,omitempty"`
-			ParentID     string     `json:"parent_id,omitempty"`
-			CreatedAt    time.Time  `json:"created_at"`
-			UpdatedAt    time.Time  `json:"updated_at"`
-			ShortSummary string     `json:"short_summary,omitempty"`
-			LastResponse string     `json:"last_response,omitempty"`
+			ID           string    `json:"id"`
+			FullID       string    `json:"full_id"`
+			Name         string    `json:"name,omitempty"`
+			State        string    `json:"state"`
+			Task         string    `json:"task,omitempty"`
+			Backend      string    `json:"backend,omitempty"`
+			ClaudeAlive  *bool     `json:"claude_alive,omitempty"`
+			ParentID     string    `json:"parent_id,omitempty"`
+			CreatedAt    time.Time `json:"created_at"`
+			UpdatedAt    time.Time `json:"updated_at"`
+			ShortSummary string    `json:"short_summary,omitempty"`
+			LastResponse string    `json:"last_response,omitempty"`
 		}
 		out := make([]sessionJSON, 0, len(sessions))
 		for _, sess := range sessions {
@@ -1938,7 +1964,7 @@ func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolReque
 		header += fmt.Sprintf("Waiting for input: %s\nUse send_input(session_id=%q, text=...) to respond.\n---\n",
 			sess.LastPrompt, sess.ID)
 	}
-	return mcpsdk.NewToolResultText(header+out), nil
+	return mcpsdk.NewToolResultText(header + out), nil
 }
 
 func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

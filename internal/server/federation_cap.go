@@ -9,6 +9,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -91,8 +92,10 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			auth := r.Header.Get("Authorization")
 			tok = strings.TrimPrefix(auth, "Bearer ")
 		}
-		// Admin token.
-		if tok == s.token {
+		// Admin token. (assessment T3 — constant-time compare; a timing
+		// side-channel on the admin bearer token is the same class of
+		// leak the token itself is meant to prevent.)
+		if tok != "" && len(tok) == len(s.token) && subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) == 1 {
 			next.ServeHTTP(w, r)
 			return
 		}

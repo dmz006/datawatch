@@ -179,6 +179,53 @@ func TestMCPFedAuth_NoAuthConfigured_Open(t *testing.T) {
 	}
 }
 
+// TestMCPFedAuth_SEC002_FallsBackToServerToken is a regression test for
+// SEC-002: mcp.token being empty must not leave MCP SSE's full tool
+// catalog open when the operator has protected REST with server.token —
+// it must fall back to that token instead.
+func TestMCPFedAuth_SEC002_FallsBackToServerToken(t *testing.T) {
+	s := &Server{
+		cfg:           &config.MCPConfig{Token: ""}, // mcp.token empty
+		fallbackToken: "server-admin-token",         // server.token set
+	}
+	inner := func() (http.Handler, *bool) {
+		called := false
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}), &called
+	}
+
+	// No token at all — must be rejected, not open.
+	h, called := inner()
+	req := httptest.NewRequest("GET", "/", nil)
+	rr := httptest.NewRecorder()
+	s.mcpFedAuthMiddleware(h).ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized || *called {
+		t.Fatalf("no token: want 401 and no pass-through, got code=%d called=%v", rr.Code, *called)
+	}
+
+	// Wrong token — rejected.
+	h, called = inner()
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	rr = httptest.NewRecorder()
+	s.mcpFedAuthMiddleware(h).ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized || *called {
+		t.Fatalf("wrong token: want 401 and no pass-through, got code=%d called=%v", rr.Code, *called)
+	}
+
+	// server.token (the fallback) — accepted.
+	h, called = inner()
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer server-admin-token")
+	rr = httptest.NewRecorder()
+	s.mcpFedAuthMiddleware(h).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !*called {
+		t.Fatalf("fallback token: want 200 and pass-through, got code=%d called=%v", rr.Code, *called)
+	}
+}
+
 // ── mcpFedCap tests ───────────────────────────────────────────────────────────
 
 func TestMCPFedCap_Admin_AlwaysPasses(t *testing.T) {

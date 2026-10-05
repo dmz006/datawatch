@@ -15,6 +15,7 @@ package mcp
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -35,13 +36,32 @@ type mcpFedContextKey int
 
 const mcpFedPeerKey mcpFedContextKey = 0
 
+// constantTimeEqual reports whether a and b are equal, in constant time
+// when they're the same length (an explicit length check first is not
+// itself a meaningful timing leak — only byte-content comparison is).
+func constantTimeEqual(a, b string) bool {
+	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// effectiveToken is the admin credential that gates MCP SSE: mcp.token
+// when set, otherwise server.token (SEC-002 — mcp.token being empty must
+// not mean "MCP SSE is open" when the operator has protected REST with a
+// server.token; see Options.FallbackToken).
+func (s *Server) effectiveToken() string {
+	if s.cfg.Token != "" {
+		return s.cfg.Token
+	}
+	return s.fallbackToken
+}
+
 // mcpFedAuthMiddleware wraps an http.Handler with combined admin+federation auth.
 //
-//   - Admin token → pass through unchanged.
+//   - Admin token (mcp.token, or server.token when mcp.token is empty) → pass through.
 //   - Known federation peer token → tag context with the peer Entry; downstream
 //     handlers call mcpFedCap to enforce per-capability checks.
 //   - Unknown token → 401.
-//   - No token and no admin required (s.cfg.Token == "") → pass through.
+//   - No admin token resolvable at all (both mcp.token and server.token empty)
+//     → pass through; this is the operator's explicit, documented choice (SEC-001).
 func (s *Server) mcpFedAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok := r.URL.Query().Get("token")
@@ -49,10 +69,11 @@ func (s *Server) mcpFedAuthMiddleware(next http.Handler) http.Handler {
 			auth := r.Header.Get("Authorization")
 			tok = strings.TrimPrefix(auth, "Bearer ")
 		}
+		admin := s.effectiveToken()
 
-		// No admin token configured — open access (federation peers still tagged
-		// in context downstream, but not required for basic connectivity).
-		if s.cfg.Token == "" {
+		// No admin token resolvable — open access (federation peers still
+		// tagged in context downstream, but not required for basic connectivity).
+		if admin == "" {
 			if s.fedPeerStore != nil && tok != "" {
 				if peer, ok := s.fedPeerStore.GetByToken(tok); ok && peer.Federated {
 					ctx := context.WithValue(r.Context(), mcpFedPeerKey, peer)
@@ -65,7 +86,7 @@ func (s *Server) mcpFedAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Admin token.
-		if s.cfg.Token != "" && tok == s.cfg.Token {
+		if tok != "" && constantTimeEqual(tok, admin) {
 			next.ServeHTTP(w, r)
 			return
 		}
