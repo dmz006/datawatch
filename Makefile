@@ -244,7 +244,6 @@ cross: sync-docs docs-index
 	GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-amd64  ./cmd/datawatch/
 	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-arm64  ./cmd/datawatch/
 	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-windows-amd64.exe ./cmd/datawatch/
-	$(MAKE) cross-agent
 	$(MAKE) cross-channel
 	# Opt-in UPX pack — runs only if upx is on PATH. Linux + Windows
 	# only (UPX has known issues with macOS Mach-O binaries on recent
@@ -259,12 +258,6 @@ cross: sync-docs docs-index
 	else \
 		echo ">>> upx not on PATH — skipping pack step (install upx for ~50% smaller release binaries)"; \
 	fi
-
-# BL86 — datawatch-agent stats binary (linux only — relies on
-# /proc + nvidia-smi + free + df).
-cross-agent:
-	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/datawatch-agent-linux-amd64 ./cmd/datawatch-agent/
-	GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/datawatch-agent-linux-arm64 ./cmd/datawatch-agent/
 
 # BL173 task 1 — generate the eBPF objects via bpf2go. Requires clang +
 # kernel headers (linux-headers-$(uname -r) on Debian/Ubuntu). Without

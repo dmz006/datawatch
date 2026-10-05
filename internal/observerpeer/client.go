@@ -1,7 +1,7 @@
 // Package observerpeer — peer-side registration + push loop for the
 // /api/observer/peers/* surface (BL172). Originally lived under
-// cmd/datawatch-stats; hoisted here in S13 so cmd/datawatch-agent
-// can reuse it for the agent-as-peer flow.
+// cmd/datawatch-stats; hoisted here in S13 so other binaries could
+// reuse it for the agent-as-peer flow.
 //
 // Wire contract (Phase A — bearer token; HMAC sig is a future task):
 //

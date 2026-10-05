@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.18 — fix(security): SEC-008 — remove the legacy unauthenticated datawatch-agent stats binary
+
+### Fixed
+- **SEC-008**: deleted `cmd/datawatch-agent` (BL86's standalone GPU/system stats sidecar), unused since v3.7.0 — it bound `0.0.0.0:9877` with no authentication on `/stats` (host CPU/mem/disk/GPU disclosure) and `/healthz`. Confirmed dead: not built by goreleaser, nothing in current server code polls its `/stats` contract (GPU stats are gathered locally via `nvidia-smi` in `internal/stats/collector.go`), no test coverage. Removed its `Makefile` `cross-agent` target and the `cross` target's call to it; this is unrelated to the `datawatch-agent-*` container images (F10 worker images), which are untouched.
+
 ## v8.39.17 — fix(autonomous,daemon): orphaned in-flight task on story halt; daemon restart under systemd
 
 ### Fixed
