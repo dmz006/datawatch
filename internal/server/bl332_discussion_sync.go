@@ -169,15 +169,16 @@ func discussionThrottleBucket(tok string) *throttleBucket {
 	return v.(*throttleBucket)
 }
 
-// discussionBearerToken extracts the raw Bearer token from the request.
-// Falls back to the ?token= query param. Returns an empty string for admin
-// requests too (admin token is also tracked — throttle is write-volume, not
-// access-control).
+// discussionBearerToken extracts the raw Bearer token from the request's
+// Authorization header, used only as a rate-limit bucket key (not an auth
+// decision — the real auth already happened in fedAuthMiddleware before
+// this runs). SEC-006 — no ?token= fallback: a caller whose real request
+// already had to use the header (fedAuthMiddleware accepts nothing else
+// for this route) gains nothing by also sending it via query string, so
+// there's no reason for this bucketing helper to read it there either —
+// removing it closes the one remaining path where a real token could
+// still end up logged in a URL for this surface.
 func discussionBearerToken(r *http.Request) string {
-	tok := r.URL.Query().Get("token")
-	if tok != "" {
-		return tok
-	}
 	auth := r.Header.Get("Authorization")
 	return strings.TrimPrefix(auth, "Bearer ")
 }

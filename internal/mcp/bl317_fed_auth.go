@@ -64,11 +64,10 @@ func (s *Server) effectiveToken() string {
 //     → pass through; this is the operator's explicit, documented choice (SEC-001).
 func (s *Server) mcpFedAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok := r.URL.Query().Get("token")
-		if tok == "" {
-			auth := r.Header.Get("Authorization")
-			tok = strings.TrimPrefix(auth, "Bearer ")
-		}
+		// SEC-006 — ?token= removed; MCP clients (IDEs, agent runtimes)
+		// can always set a header, unlike a browser <a href>/EventSource,
+		// so there's no nonce fallback needed here, just the header.
+		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		admin := s.effectiveToken()
 
 		// No admin token resolvable — open access (federation peers still

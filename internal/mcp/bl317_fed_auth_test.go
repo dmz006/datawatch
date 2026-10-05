@@ -143,7 +143,10 @@ func TestMCPFedAuth_NonFederatedPeer_Rejected(t *testing.T) {
 	}
 }
 
-func TestMCPFedAuth_QueryParamToken(t *testing.T) {
+// TestMCPFedAuth_QueryParamToken_Rejected is a regression test for SEC-006:
+// ?token= must no longer be accepted (it leaked into access logs, proxy
+// logs, and browser history) — only the Authorization header works now.
+func TestMCPFedAuth_QueryParamToken_Rejected(t *testing.T) {
 	s := newTestMCPServer("secret", nil)
 	called := false
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -155,8 +158,21 @@ func TestMCPFedAuth_QueryParamToken(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
+	if called {
+		t.Fatal("query-param admin token must be rejected (SEC-006) — only the Authorization header is accepted")
+	}
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("want 401, got %d", rr.Code)
+	}
+
+	// The header still works, confirming this isn't just broken auth.
+	called = false
+	req2 := httptest.NewRequest("GET", "/", nil)
+	req2.Header.Set("Authorization", "Bearer secret")
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
 	if !called {
-		t.Fatal("query-param admin token not accepted")
+		t.Fatal("the Authorization header must still work")
 	}
 }
 

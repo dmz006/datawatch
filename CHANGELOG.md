@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.23 — fix(security): SEC-006 — stop passing bearer tokens in the URL (`?token=`)
+
+### Fixed
+- **SEC-006**: every place the PWA or the API itself accepted/sent the admin or federation-peer bearer token as a `?token=` URL query parameter has been removed — query strings land in access logs, reverse-proxy logs, and browser history, none of which should ever see a credential. Five call sites fixed:
+  - **Main WS connection** (`internal/server/web/app.js`'s `buildWsUrl()`/`connect()`): the browser now sends the token via the WS handshake's `Sec-WebSocket-Protocol` header (`new WebSocket(url, [token])`) instead of the URL. `handleWS` (`internal/server/api.go`) echoes the accepted subprotocol back in the 101 response, required by RFC 6455 once a client offers one or the connection fails client-side even though the server "accepted" it.
+  - **Signal-link EventSource, file download/view, and remote-PWA-viewer** (all browser-GET-triggered, so none can set a custom header or a WS subprotocol): now use a new short-lived (60s), single-use nonce instead. `POST /api/auth/nonce` (new `internal/server/nonce.go`, authenticated normally via the header) mints one; it's accepted as `?nonce=` only on an explicit narrow allow-list of routes (`nonceAwarePath` in `federation_cap.go`: `/api/files/download`, `/api/link/stream`, `/remote/*`) — a leaked/replayed nonce's blast radius is one route, one use, 60 seconds, versus the old `?token=`'s full admin access indefinitely anywhere.
+  - **MCP SSE** (`internal/mcp/bl317_fed_auth.go`): the `?token=` fallback is removed outright — every MCP client (IDEs, agent runtimes) can set a header, unlike a browser `<a href>`/`EventSource`, so there's no nonce case needed here.
+  - **Discussion-sync rate-limit bucketing** (`internal/server/bl332_discussion_sync.go`): `discussionBearerToken()` now reads only the `Authorization` header — it wasn't an auth decision (real auth already happens upstream in `fedAuthMiddleware`), but it was still a code path reading a token out of the URL.
+  - `?token=` on any REST/WS route is now rejected outright (`TestFedAuthMiddleware_QueryParamToken_Rejected`, `TestWS_QueryParamToken_Rejected`, `TestMCPFedAuth_QueryParamToken_Rejected`).
+  - New tests: `nonce_test.go` (5), `nonce_auth_test.go` (6), `ws_sec006_test.go` (3, including a real client-side RFC 6455 subprotocol-echo check via `gorilla/websocket`'s own `Dialer`), `app-nonce.test.js` (6, covering `_mintAuthNonce`, `buildWsUrl`, `_downloadFile`, and a regression test for a single-use-nonce-reuse bug caught in review: the file viewer must mint two separate nonces for its inline-view fetch and its Download button, not share one).
+
 ## v8.39.22 — fix(security)!: SEC-009 — narrow the default federation-peer capability grant (BREAKING, v9.0.0)
 
 ### Breaking

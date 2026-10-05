@@ -177,7 +177,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.39.22"
+var Version = "8.39.23"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -313,6 +313,10 @@ type Server struct {
 	// /api/health's mcp_auth_required; the MCP SSE listener itself falls
 	// back to server.token when mcp.token is empty (see internal/mcp).
 	mcpTokenConfigured bool
+
+	// nonces mints/consumes SEC-006 short-lived single-use nonces for
+	// browser requests that can't attach an Authorization header.
+	nonces *nonceStore
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -701,12 +705,18 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		cfgPath:           cfgPath,
 		linkStreams:       make(map[string]chan string),
 		channelHist:       make(map[string][]channelHistEntry),
+		nonces:            newNonceStore(),
 	}
 	if cfg != nil {
 		setPushConfig(cfg.Push) // BL394 -- initial push-SSRF-guard config
 	}
 	// Pre-warm backend version cache in background so first /api/backends is instant.
 	go s.warmVersionCache()
+	// SEC-006 — reap expired nonces so a flood of minted-but-unused ones
+	// (download links opened then never clicked, abandoned EventSource
+	// connects) doesn't grow the map unboundedly. Never stopped — lives
+	// for the server's process lifetime, same as the server itself.
+	s.nonces.startSweeper(nonceTTL, make(chan struct{}))
 	return s
 }
 
@@ -1825,7 +1835,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return federation.Check(wsGranted, required)
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// SEC-006 — if the client offered a subprotocol (new WebSocket(url,
+	// [token]), carrying its auth token per fedAuthMiddleware above), RFC
+	// 6455 requires echoing it back in the 101 response or the browser
+	// fails the connection client-side even though the server accepted
+	// it.
+	var upgradeHeader http.Header
+	if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
+		first := strings.TrimSpace(strings.SplitN(proto, ",", 2)[0])
+		upgradeHeader = http.Header{"Sec-WebSocket-Protocol": []string{first}}
+	}
+	conn, err := upgrader.Upgrade(w, r, upgradeHeader)
 	if err != nil {
 		return
 	}

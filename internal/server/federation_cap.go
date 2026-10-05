@@ -29,6 +29,13 @@ const (
 	// narrow /api/proxy/-only fallback branch below; checked by
 	// checkProxyAuth (proxy.go) instead of the normal fedCap path.
 	scopedProxyPeerKey
+	// callerTokenKey (SEC-006) holds the real bearer token this request
+	// authenticated with — the admin token or a federation peer's own
+	// token — so handleAuthNonce can mint a nonce standing in for
+	// whichever one the caller actually used. Not set for the scoped-
+	// proxy-token fallback (minting a nonce for an already-scoped,
+	// already-short-lived token doesn't add anything).
+	callerTokenKey
 )
 
 // peerFromContext returns the federated peer from the request context,
@@ -44,6 +51,14 @@ func peerFromContext(ctx context.Context) *multiserver.Entry {
 func scopedProxyPeerFromContext(ctx context.Context) string {
 	p, _ := ctx.Value(scopedProxyPeerKey).(string)
 	return p
+}
+
+// callerTokenFromContext returns the real bearer token this request
+// authenticated with (SEC-006), or "" if none (no token resolvable, or
+// authenticated via the scoped-proxy-token fallback instead).
+func callerTokenFromContext(ctx context.Context) string {
+	t, _ := ctx.Value(callerTokenKey).(string)
+	return t
 }
 
 // fedCap checks whether the request's caller has the required capability.
@@ -76,6 +91,17 @@ func mustMarshal(v any) []byte {
 	return b
 }
 
+// nonceAwarePath reports whether path is one of the handful of routes a
+// browser can only ever reach via a plain GET URL — an <a href>/top-level
+// navigation or an EventSource connect — neither of which can attach a
+// custom Authorization header. SEC-006: these are the only routes where a
+// ?nonce= is ever honored; everywhere else, only the header works.
+func nonceAwarePath(path string) bool {
+	return path == "/api/files/download" ||
+		path == "/api/link/stream" ||
+		strings.HasPrefix(path, "/remote/")
+}
+
 // fedAuthMiddleware is a combined auth+federation middleware that replaces
 // the plain authMiddleware for the main mux. It:
 //  1. Accepts the admin token (pass through).
@@ -87,16 +113,40 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		tok := r.URL.Query().Get("token")
+		// SEC-006 — the query-string ?token= fallback is gone (it leaked
+		// into access logs, proxy logs, and browser history).
+		auth := r.Header.Get("Authorization")
+		tok := strings.TrimPrefix(auth, "Bearer ")
+		// The main WS connection: browser JS can't set a custom
+		// Authorization header on a WebSocket handshake, but it CAN pass
+		// subprotocols (new WebSocket(url, [token])), which travel as a
+		// real request header, never in the URL. handleWS echoes it
+		// back in the 101 response (required by RFC 6455 once the
+		// client offers one, or the browser fails the connection) only
+		// after this succeeds.
 		if tok == "" {
-			auth := r.Header.Get("Authorization")
-			tok = strings.TrimPrefix(auth, "Bearer ")
+			tok = strings.TrimSpace(strings.SplitN(r.Header.Get("Sec-WebSocket-Protocol"), ",", 2)[0])
+		}
+		// The remaining query-string case: a single-use, short-lived
+		// nonce on the specific nonce-aware routes above, resolved to
+		// the real token it stands in for and then run through the
+		// exact same admin/peer checks below as if that token had come
+		// in via the header — a leaked nonce is usable once, briefly,
+		// and only on these routes, a far smaller blast radius than
+		// ?token= was.
+		if tok == "" && s.nonces != nil {
+			if nonce := r.URL.Query().Get("nonce"); nonce != "" && nonceAwarePath(r.URL.Path) {
+				if real, ok := s.nonces.Consume(nonce); ok {
+					tok = real
+				}
+			}
 		}
 		// Admin token. (assessment T3 — constant-time compare; a timing
 		// side-channel on the admin bearer token is the same class of
 		// leak the token itself is meant to prevent.)
 		if tok != "" && len(tok) == len(s.token) && subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) == 1 {
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), callerTokenKey, tok)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		// Federation peer token.
@@ -104,6 +154,7 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			peer, ok := s.serverStore.GetByToken(tok)
 			if ok && peer.Federated {
 				ctx := context.WithValue(r.Context(), fedPeerKey, peer)
+				ctx = context.WithValue(ctx, callerTokenKey, tok)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

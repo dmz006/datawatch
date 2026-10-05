@@ -3111,6 +3111,72 @@ else
   fi
 fi
 
+H "61. SEC-006 — bearer token no longer accepted via ?token= in the URL (v8.39.23)"
+# A no-Authorization-header POST to /api/auth/nonce is caught at two
+# different layers depending on whether an admin token is configured:
+#   - empty server.token (this sandbox's default) -- fedAuthMiddleware's
+#     empty-token bypass lets the request through with no identity, so
+#     handleAuthNonce itself sees no caller-token context value and 400s.
+#   - a real server.token set -- fedAuthMiddleware rejects the request
+#     for lacking ANY valid credential before handleAuthNonce ever runs,
+#     so the caller gets 401, not 400. (Confirmed live against a real
+#     authenticated sandbox -- the 400 path never fires there.)
+NONCE_NOAUTH_CODE=$(curl "${curl_args[@]}" -s -o /tmp/smoke-nonce-resp.$$ -w '%{http_code}' -X POST "$BASE/api/auth/nonce" 2>/dev/null || echo "000")
+NONCE_NOAUTH_BODY=$(cat /tmp/smoke-nonce-resp.$$ 2>/dev/null); rm -f /tmp/smoke-nonce-resp.$$
+if [[ -z "$TOK" ]]; then
+  if [[ "$NONCE_NOAUTH_CODE" == "400" ]]; then
+    ok "S61 — POST /api/auth/nonce with no Authorization header returns 400 (no caller token to mint for)"
+  else
+    ko "S61 — POST /api/auth/nonce with no auth returned $NONCE_NOAUTH_CODE, expected 400: ${NONCE_NOAUTH_BODY:0:200}"
+  fi
+  skip "S61 — sandbox admin token is empty; ?token=-rejection and the nonce round-trip need a real token to be meaningful"
+else
+  if [[ "$NONCE_NOAUTH_CODE" == "401" ]]; then
+    ok "S61 — POST /api/auth/nonce with no Authorization header returns 401 (fedAuthMiddleware rejects before the handler runs)"
+  else
+    ko "S61 — POST /api/auth/nonce with no auth returned $NONCE_NOAUTH_CODE, expected 401: ${NONCE_NOAUTH_BODY:0:200}"
+  fi
+
+  OLD_STYLE_CODE=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$BASE/api/sessions?token=$TOK" 2>/dev/null || echo "000")
+  if [[ "$OLD_STYLE_CODE" == "401" ]]; then
+    ok "S61 — ?token=<admin-token> in the URL is rejected (401) with no Authorization header"
+  else
+    ko "S61 — ?token=<admin-token> in the URL returned $OLD_STYLE_CODE, expected 401 (SEC-006 removed this fallback)"
+  fi
+
+  NONCE_MINT=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/auth/nonce" -H "Authorization: Bearer $TOK" 2>/dev/null || echo "")
+  NONCE_VAL=$(echo "$NONCE_MINT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("nonce",""))' 2>/dev/null || echo "")
+  if [[ -n "$NONCE_VAL" ]]; then
+    ok "S61 — POST /api/auth/nonce (authenticated) mints a nonce"
+    DL_CODE1=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$BASE/api/files/download?nonce=$NONCE_VAL" 2>/dev/null || echo "000")
+    if [[ "$DL_CODE1" == "400" ]]; then
+      ok "S61 — ?nonce= on /api/files/download authenticates (400 'path required', not 401)"
+    else
+      ko "S61 — /api/files/download?nonce=... returned $DL_CODE1, expected 400 (authenticated, missing path)"
+    fi
+    DL_CODE2=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$BASE/api/files/download?nonce=$NONCE_VAL" 2>/dev/null || echo "000")
+    if [[ "$DL_CODE2" == "401" ]]; then
+      ok "S61 — reusing the same nonce a second time is rejected (401 — single-use)"
+    else
+      ko "S61 — reusing the nonce returned $DL_CODE2, expected 401 (nonce must be single-use)"
+    fi
+    NONCE_OTHER_ROUTE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/auth/nonce" -H "Authorization: Bearer $TOK" 2>/dev/null || echo "")
+    NONCE_VAL2=$(echo "$NONCE_OTHER_ROUTE" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("nonce",""))' 2>/dev/null || echo "")
+    if [[ -n "$NONCE_VAL2" ]]; then
+      OTHER_ROUTE_CODE=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$BASE/api/sessions?nonce=$NONCE_VAL2" 2>/dev/null || echo "000")
+      if [[ "$OTHER_ROUTE_CODE" == "401" ]]; then
+        ok "S61 — a valid nonce is rejected on a route NOT in the nonce-aware allow-list (/api/sessions)"
+      else
+        ko "S61 — nonce on /api/sessions returned $OTHER_ROUTE_CODE, expected 401 (nonce is only honored on nonceAwarePath routes)"
+      fi
+    else
+      skip "S61 — could not mint a second nonce for the off-allow-list check"
+    fi
+  else
+    ko "S61 — POST /api/auth/nonce (authenticated) did not return a nonce: ${NONCE_MINT:0:200}"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

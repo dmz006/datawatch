@@ -231,15 +231,39 @@ function backendIcon(name) {
   return '⚡';
 }
 
+// _mintAuthNonce (SEC-006) gets a short-lived, single-use nonce for the
+// handful of browser requests that can't attach an Authorization header
+// (a plain <a href>/top-level navigation, an EventSource connect) — the
+// mint call itself is a normal authenticated fetch(), which CAN set the
+// header. Returns '' (not an error) when there's no token to mint for
+// (server.token empty — SEC-001's accepted posture) or the mint fails, so
+// callers can fall back to an unauthenticated request the same way an
+// empty-token daemon already allows.
+async function _mintAuthNonce() {
+  const _tok = localStorage.getItem('cs_token') || '';
+  if (!_tok) return '';
+  try {
+    const r = await fetch('/api/auth/nonce', { method: 'POST', headers: { Authorization: 'Bearer ' + _tok } });
+    if (!r.ok) return '';
+    const d = await r.json();
+    return d.nonce || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 function buildWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('cs_token') || '';
-  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  // SEC-006 — the token no longer rides in the URL (it leaked into
+  // access logs, proxy logs, and browser history); new WebSocket()'s
+  // second argument sends it as a real Sec-WebSocket-Protocol request
+  // header instead, which fedAuthMiddleware checks the same as the
+  // Authorization header everywhere else can't be set from browser JS.
   // Route through proxy when a specific remote server is selected
   // ('all' mode stays on local WS — aggregated data is fetched via HTTP)
   const srv = state.activeServer;
   const wsPath = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + '/ws' : '/ws';
-  return `${proto}//${location.host}${wsPath}${q}`;
+  return `${proto}//${location.host}${wsPath}`;
 }
 
 // ── WebSocket ───────────────────────────────────────────────────────────────
@@ -249,9 +273,14 @@ function connect() {
   }
 
   const url = buildWsUrl();
+  const token = localStorage.getItem('cs_token') || '';
   let ws;
   try {
-    ws = new WebSocket(url);
+    // SEC-006 — the subprotocol list is how browser JS sends a value a
+    // WS handshake can carry a header for; omit it entirely when there's
+    // no token (an empty-string subprotocol is itself invalid per RFC
+    // 6455) so an unauthenticated daemon (server.token empty) still works.
+    ws = token ? new WebSocket(url, [token]) : new WebSocket(url);
   } catch (e) {
     scheduleReconnect();
     return;
@@ -14478,7 +14507,7 @@ function loadServers() {
     (health || []).forEach(h => { healthMap[h.name] = h; });
     // Default active server is 'local' when state.activeServer is null
     const effectiveActive = state.activeServer || 'local';
-    const rows = servers.map(sv => {
+    Promise.all(servers.map(async sv => {
       const auth = sv.has_auth ? '🔒' : '🔓';
       const isActive = effectiveActive === sv.name;
       const activeLabel = isActive ? ' <span style="color:var(--accent);font-size:11px;">(active)</span>' : '';
@@ -14505,12 +14534,16 @@ function loadServers() {
       // intercepted to open the embedded viewer instead, which is nicer
       // for the common case (no tab-switch) without losing the escape
       // hatch for anyone who wants a real separate tab/window.
-      // A plain navigation (what the href itself does on ctrl/cmd-click
-      // or "open in new tab") can't carry a custom header -- fedAuthMiddleware
-      // already supports ?token= for exactly this case (same pattern as
-      // the file-download links elsewhere in this file).
-      const pwaTok = localStorage.getItem('cs_token') || '';
-      const pwaHref = `${pwaOrigin}/remote/${encodeURIComponent(sv.name)}/` + (pwaTok ? `?token=${encodeURIComponent(pwaTok)}` : '');
+      // SEC-006 — a plain navigation (what the href itself does on
+      // ctrl/cmd-click or "open in new tab") can't carry a custom
+      // header, so a short-lived single-use nonce rides along as a
+      // query param instead of the real admin token. Minted once per
+      // render here (not per click, since this is the static-href
+      // escape hatch for native browser tab-opening, which runs no JS
+      // before navigating) — a ctrl/cmd-click more than ~60s after this
+      // panel last rendered will need the panel refreshed first.
+      const pwaNonce = (sv.name !== 'local' && sv.enabled && pwaOrigin) ? await _mintAuthNonce() : '';
+      const pwaHref = `${pwaOrigin}/remote/${encodeURIComponent(sv.name)}/` + (pwaNonce ? `?nonce=${encodeURIComponent(pwaNonce)}` : '');
       const pwaLink = sv.name !== 'local' && sv.enabled && pwaOrigin
         ? ` <a href="${escHtml(pwaHref)}" target="_blank" onclick="if(!event.ctrlKey&&!event.metaKey&&event.button===0){event.preventDefault();_showRemotePWAViewer('${escHtml(sv.name)}');}" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="View remote PWA (separate, isolated origin)">PWA</a>`
         : '';
@@ -14518,8 +14551,9 @@ function loadServers() {
         <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
         <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? (t('status_connected') || 'Connected') : (t('btn_select') || 'Select')}</button>
       </div>`;
-    }).join('');
-    el.innerHTML = rows;
+    })).then(rows => {
+      el.innerHTML = rows.join('');
+    });
   }).catch(() => { if (el) el.textContent = t('servers_unavailable') || 'Servers unavailable'; });
 }
 
@@ -14775,8 +14809,11 @@ function startLinking() {
     });
 }
 
-function streamLinkEvents(streamId) {
-  const evtSource = new EventSource('/api/link/stream?id=' + encodeURIComponent(streamId) + (state.token ? '&token=' + encodeURIComponent(state.token) : ''));
+async function streamLinkEvents(streamId) {
+  // SEC-006 — an EventSource connect can't carry an Authorization header,
+  // so a short-lived single-use nonce rides along as a query param.
+  const _nonce = await _mintAuthNonce();
+  const evtSource = new EventSource('/api/link/stream?id=' + encodeURIComponent(streamId) + (_nonce ? '&nonce=' + encodeURIComponent(_nonce) : ''));
 
   evtSource.addEventListener('qr', function(e) {
     const qrRow = document.getElementById('linkQrRow');
@@ -15593,23 +15630,39 @@ function escJsAttr(s) {
 // Other text/code files open in a plain-text viewer modal.
 // Binary/unknown files show a download-only chip.
 // A small ⬇ download icon is always available alongside the view action.
+// _downloadFile (SEC-006) mints a fresh single-use nonce and triggers the
+// download via a throwaway <a>, replacing a plain pre-built <a href> —
+// _fileChip renders many of these synchronously in one HTML-string pass,
+// so minting ahead of time (and sharing one nonce across however many
+// chips a render produces) isn't an option; each click mints its own.
+async function _downloadFile(path) {
+  const name = path.split('/').pop() || path;
+  const nonce = await _mintAuthNonce();
+  const url = '/api/files/download?path=' + encodeURIComponent(path) + (nonce ? '&nonce=' + encodeURIComponent(nonce) : '');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function _fileChip(path) {
   if (!path) return '';
   if (path.charAt(0) !== '/' && window._fileChipBaseDir) path = window._fileChipBaseDir.replace(/\/$/, '') + '/' + path;
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const viewableExts = new Set(['md','txt','json','yaml','yml','go','js','ts','jsx','tsx','py','rb','sh','css','html','xml','csv','log','toml','ini','conf','cfg','sql','rs','c','cpp','h','java','kt','swift']);
-  // A plain <a href> download link can't carry an Authorization header, so
-  // the token rides along as a query param — the server's fedAuthMiddleware
-  // already accepts either form.
-  const _tok = localStorage.getItem('cs_token') || '';
-  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_tok ? '&token=' + encodeURIComponent(_tok) : '');
+  // SEC-006 — a plain <a href> download link can't carry an Authorization
+  // header, so the click mints a fresh single-use nonce instead (see
+  // _downloadFile) rather than the href carrying a long-lived token.
+  const dlFn = `event.stopPropagation();_downloadFile(${JSON.stringify(path)})`;
   if (viewableExts.has(ext)) {
     const icon = ext === 'md' ? '📄' : '📃';
     const viewFn = `event.stopPropagation();_showFileViewer(${JSON.stringify(path)})`;
-    return `<span class="prd-file-chip" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(path)}"><button onclick="${escHtml(viewFn)}" class="prd-file-chip-view" title="View ${escHtml(name)}">${icon} ${escHtml(name)}</button><a href="${escHtml(dlUrl)}" download="${escHtml(name)}" onclick="event.stopPropagation()" class="prd-file-chip-dl" title="Download">⬇</a></span>`;
+    return `<span class="prd-file-chip" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(path)}"><button onclick="${escHtml(viewFn)}" class="prd-file-chip-view" title="View ${escHtml(name)}">${icon} ${escHtml(name)}</button><a href="#" onclick="${escHtml(dlFn)};return false;" class="prd-file-chip-dl" title="Download">⬇</a></span>`;
   }
-  return `<a href="${escHtml(dlUrl)}" class="prd-file-chip" download="${escHtml(name)}" onclick="event.stopPropagation()" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
+  return `<a href="#" class="prd-file-chip" onclick="${escHtml(dlFn)};return false;" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
 }
 
 // _ensureMarkdownLibs lazy-loads marked.js (GFM tables, proper markdown) and
@@ -15735,7 +15788,7 @@ window._closeFileViewer = function() {
 // GitHub" chip) that would otherwise silently fail inside a sandboxed
 // iframe. allow-top-navigation is deliberately NOT included: the
 // embedded page must never be able to navigate the OUTER (this) page.
-window._showRemotePWAViewer = function(name) {
+window._showRemotePWAViewer = async function(name) {
   const existing = document.getElementById('remotePWAViewerModal');
   if (existing) {
     if (existing._remotePWAViewerResizeHandler) {
@@ -15744,18 +15797,18 @@ window._showRemotePWAViewer = function(name) {
     existing.remove();
   }
   const origin = state.proxySandboxOrigin;
-  // A plain <iframe src>/<a href> navigation can't carry a custom
-  // Authorization header (same limitation as the file-download links
-  // elsewhere in this file) -- fedAuthMiddleware already supports a
-  // ?token= query param for exactly this reason, so the real admin
-  // token rides along there for this ONE top-level page load. This is
-  // separate from, and happens before, the short-lived scoped proxy
-  // token the server mints and injects once this page actually loads
-  // (see handleRemotePWA/rewritePWAContent) -- that one authenticates
-  // the proxied dashboard's OWN subsequent API calls, not this request.
-  const _tok = localStorage.getItem('cs_token') || '';
+  // SEC-006 — a plain <iframe src>/<a href> navigation can't carry a
+  // custom Authorization header (same limitation as the file-download
+  // links elsewhere in this file), so a short-lived single-use nonce
+  // rides along as a query param for this ONE top-level page load
+  // instead of the real admin token. This is separate from, and happens
+  // before, the short-lived scoped proxy token the server mints and
+  // injects once this page actually loads (see handleRemotePWA/
+  // rewritePWAContent) -- that one authenticates the proxied dashboard's
+  // OWN subsequent API calls, not this request.
+  const _nonce = await _mintAuthNonce();
   const pwaURL = origin
-    ? `${origin}/remote/${encodeURIComponent(name)}/` + (_tok ? `?token=${encodeURIComponent(_tok)}` : '')
+    ? `${origin}/remote/${encodeURIComponent(name)}/` + (_nonce ? `?nonce=${encodeURIComponent(_nonce)}` : '')
     : '';
 
   const modal = document.createElement('div');
@@ -15834,7 +15887,7 @@ window._closeRemotePWAViewer = function() {
 // + mermaid.js, lazy-loaded on first use; falls back to the lighter
 // renderChatMarkdown if the libraries fail to load (offline, CSP, etc.).
 // Other text files show as <pre>. A download button is always in the header.
-window._showFileViewer = function(path) {
+window._showFileViewer = async function(path) {
   const existing = document.getElementById('fileViewerModal');
   if (existing) {
     if (existing._fileViewerResizeHandler) {
@@ -15845,13 +15898,16 @@ window._showFileViewer = function(path) {
   const name = path.split('/').pop() || path;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const isMd = ext === 'md';
-  // Same as _fileChip: neither the download <a href> nor this plain fetch()
-  // call can attach an Authorization header, so the token rides along as a
-  // query param (accepted by fedAuthMiddleware) — without it every viewer
-  // fetch and download link 403s.
-  const _tok = localStorage.getItem('cs_token') || '';
-  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_tok ? '&token=' + encodeURIComponent(_tok) : '');
-  const viewUrl = dlUrl + '&inline=1';
+  // SEC-006 — neither the download <a href> nor this plain fetch() call
+  // can attach an Authorization header, so a short-lived single-use
+  // nonce rides along as a query param instead of the raw token. Two
+  // SEPARATE nonces: the inline view fetch below consumes its own
+  // immediately, and sharing one with the download button would leave
+  // the button's click 401ing once the view fetch had already used it.
+  const _viewNonce = await _mintAuthNonce();
+  const _dlNonce = await _mintAuthNonce();
+  const viewUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_viewNonce ? '&nonce=' + encodeURIComponent(_viewNonce) : '') + '&inline=1';
+  const dlUrl = '/api/files/download?path=' + encodeURIComponent(path) + (_dlNonce ? '&nonce=' + encodeURIComponent(_dlNonce) : '');
 
   const modal = document.createElement('div');
   modal.id = 'fileViewerModal';

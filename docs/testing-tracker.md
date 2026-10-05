@@ -376,12 +376,12 @@ discarded the session ID and operated on the whole project).
 
 ---
 
-## Security Remediation — Design A items (SEC-002, SEC-007, SEC-009, SEC-014) — v8.39.19–v8.39.22
+## Security Remediation — Design A items (SEC-002, SEC-006, SEC-007, SEC-009, SEC-014) — v8.39.19–v8.39.23
 
-Four related auth-hardening fixes from the Design A security walkthrough. Each
+Five related auth-hardening fixes from the Design A security walkthrough. Each
 got a unit test (confirmed to fail without its fix) and live validation: new
-`release-smoke.sh` sections 57–60, run clean against a real daemon, plus a
-manual authenticated-sandbox pass for the one check (S60) that the smoke
+`release-smoke.sh` sections 57–61, run clean against a real daemon, plus a
+manual authenticated-sandbox pass for the checks (S60, S61) that the smoke
 suite's own empty-admin-token sandbox posture can't meaningfully exercise.
 
 | Scenario | Automated | Manual | Test / Location | Notes |
@@ -391,3 +391,4 @@ suite's own empty-admin-token sandbox posture can't meaningfully exercise.
 | SEC-002: MCP SSE falls back to `server.token` when `mcp.token` empty | **Yes** | **Yes** | `TestMCPFedAuth_SEC002_FallsBackToServerToken`; smoke §58 (`/api/health` `mcp_auth_required`, `/api/diagnose` `rest_auth`/`mcp_sse_auth`) | PASS both |
 | SEC-007: WS upgrade rejects a mismatched `Origin`, allows no-`Origin` | **Yes** | **Yes** | `TestWSCheckOrigin_*` (4 cases) in `internal/server/ws_origin_test.go`; smoke §59 (raw socket handshake probe, confirms live 403) | PASS both |
 | SEC-009: narrowed `federation-peer` default grant + new `/peers/self` | **Yes** | **Yes** | `TestFederationPeer_DefaultCaps`, `TestFedCap_PeerTokenAccepted_SEC009`, `TestFedCap_PeerToken_CustomGroup_SessionsList`; smoke §60 | Smoke §60 **skips** against the default (empty-admin-token) sandbox — with no admin token, `fedAuthMiddleware`'s empty-token early-return makes every caller admin-equivalent regardless of which Bearer token was presented, so peer-vs-admin has nothing to distinguish. **Manually validated against a real authenticated sandbox** (`server.token` set): create → `token_present:true`/no raw token; `GET /peers/self` as the peer → 200, own entry; `GET /api/sessions` with the same bare peer token → 403 (narrowed grant confirmed live, not just in a unit test) |
+| SEC-006: `?token=` removed from REST/WS/MCP SSE; replaced by header, WS `Sec-WebSocket-Protocol`, or a single-use nonce on the 3 browser-GET-only routes | **Yes** | **Yes** | `nonce_test.go` (5), `nonce_auth_test.go` (6), `ws_sec006_test.go` (3, incl. a real client-side RFC 6455 subprotocol-echo check via `gorilla/websocket`'s own `Dialer`), `TestMCPFedAuth_QueryParamToken_Rejected`; `app-nonce.test.js` (6, PWA-side); smoke §61 | Smoke §61's `?token=`-rejection and nonce-round-trip checks **skip** against the default empty-admin-token sandbox (same reason as S60 — nothing to reject when every caller already passes through). The no-auth nonce-mint check runs in both postures but expects a *different* code each way — 400 ("no caller token") under the empty-token bypass, 401 (rejected by `fedAuthMiddleware` before the handler runs at all) once a real token is set — caught via live testing after the smoke script initially assumed 400 in both cases. **Manually validated against a real authenticated sandbox**: no-auth nonce mint → 401 (not 400); `?token=<admin>` with no header → 401; minted nonce → `/api/files/download?nonce=...` authenticates (400 missing-path, not 401); same nonce reused → 401 (single-use confirmed live); a valid nonce on `/api/sessions` (not in the allow-list) → 401 |
