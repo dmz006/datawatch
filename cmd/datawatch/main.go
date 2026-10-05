@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.39.16"
+var Version = "8.39.17"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5920,6 +5920,18 @@ Return STRICT JSON:
 		})
 
 		daemonRestartFn := func() {
+			// Under systemd, let its own Restart= policy bring the service
+			// back up — exiting non-zero so Restart=on-failure fires —
+			// rather than spawning selfRestart's detached shell chain,
+			// which orphans the new process outside systemd's tracking.
+			// Found live 2026-10-05: a clean os.Exit(0) left systemd
+			// believing the service was intentionally stopped (on-failure
+			// never fires on a successful exit), and the daemon stayed
+			// down until manually restarted.
+			if runningUnderSystemd() {
+				fmt.Printf("[daemon] Restart requested under systemd supervision — exiting for Restart= to bring it back (v%s).\n", Version)
+				os.Exit(1)
+			}
 			// syscall.Exec was previously used here but caused the TLS listener
 			// socket (O_CLOEXEC) to be closed during runtime_BeforeExec even when
 			// execve fails, leaving the daemon alive but headless. Instead we spawn

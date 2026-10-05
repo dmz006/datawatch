@@ -220,3 +220,73 @@ func TestResolveContinueOnStoryFailure_PRDOverridesGlobalDefault(t *testing.T) {
 		t.Fatal("explicit per-PRD override=false must win over a global default=true")
 	}
 }
+
+// TestExecutor_DrainedInFlightTaskGetsFinalized is a regression test for a
+// bug found live via TS-695 (v8.39.16, dual-node E2E story): under
+// concurrent execution (MaxConcurrentTasks > 1), when one story's failure
+// triggers the halt-on-story-failure path, a task from ANOTHER story that
+// was still in-flight at that moment got drained off the results channel
+// but its result was discarded instead of persisted — the task stayed
+// frozen at TaskInProgress forever, even though it had genuinely finished
+// (with an error, in this repro). Live, this orphaned the PRD at
+// PRDBlocked with a non-terminal task no amount of polling would ever
+// resolve. The fix (finalizeDrained in executor.go) must persist the
+// drained result's terminal status exactly like the normal results-loop
+// path already does.
+func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{
+		{Title: "S1-fails-fast", Tasks: []Task{{Title: "T1", Spec: "write docs/x.md"}}},
+		{Title: "S2-in-flight-when-halted", Tasks: []Task{{Title: "T2", Spec: "write docs/y.md"}}},
+	})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.MaxConcurrentTasks = 2
+	_ = m.Store().SavePRD(prd)
+
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "s-" + r.TaskID}, nil
+	}
+	verify := func(_ context.Context, _ *PRD, task *Task) (VerificationResult, error) {
+		if task.Title == "T1" {
+			// Fails immediately — this is the sibling whose failure
+			// triggers the halt while T2 is still running below.
+			return VerificationResult{}, fmt.Errorf("simulated failure")
+		}
+		// T2 — hold just long enough that T1's failure is processed and
+		// the halt decision (PRDBlocked) is made while T2 is still
+		// in-flight, so its result arrives through the drain path.
+		time.Sleep(150 * time.Millisecond)
+		return VerificationResult{}, fmt.Errorf("simulated failure on T2 too")
+	}
+
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	api.SetExecutors(spawn, verify)
+	if err := api.Run(prd.ID); err != nil {
+		t.Fatal(err)
+	}
+	// PRDBlocked lands as soon as T1 fails — well before the drain loop
+	// finishes waiting out T2's 150ms sleep — so poll for T2's own task
+	// status specifically, not just the PRD-level status, or the
+	// assertion races ahead of the fix's actual finalization work.
+	var got *PRD
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, _ = m.Store().GetPRD(prd.ID)
+		if got.Story[1].Tasks[0].Status == TaskFailed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got.Status != PRDBlocked {
+		t.Fatalf("want PRDBlocked, got %s", got.Status)
+	}
+	t2 := got.Story[1].Tasks[0]
+	if t2.Status != TaskFailed {
+		t.Fatalf("T2 (in-flight when the halt fired) status = %q, want TaskFailed — draining must persist the result, not discard it", t2.Status)
+	}
+	if t2.Error == "" {
+		t.Error("T2 should have its error persisted, not just a bare status flip")
+	}
+}

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.17 — fix(autonomous,daemon): orphaned in-flight task on story halt; daemon restart under systemd
+
+### Fixed
+- **Autonomous executor**: when a story's failure triggered the halt-on-story-failure default (v8.35.0) while a sibling story's task was still in-flight, the coordinator's drain loop read that task's result off the results channel but discarded it instead of persisting it — the task stayed frozen at a non-terminal status (`TaskVerifying`/`TaskInProgress`) forever, even though the goroutine had genuinely finished. Found live via TS-695 (dual-node E2E story): a scope-guard failure on one story left the other story's task permanently orphaned, with the PRD stuck at `PRDBlocked` and no amount of polling ever resolving it. Both drain sites in `internal/autonomous/executor.go` now finalize the drained result the same way the normal results-loop path already does. Regression test added (`TestExecutor_DrainedInFlightTaskGetsFinalized`), confirmed to fail without the fix.
+- **TS-695's own test spec** wrote its two output files to `/tmp/...`, outside the PRD's `project_dir` — correctly rejected by the scope guard, which is what triggered the story failure above in the first place. Fixed to write inside the project directory.
+- **Daemon restart under systemd supervision**: the PWA's restart button (and `/api/restart` generally) calls `daemonRestartFn`, which unconditionally spawned a detached self-respawn shell chain designed for bare/no-service-manager deployments. Under systemd this orphans the new process outside systemd's tracking, and the parent's clean `os.Exit(0)` meant `Restart=on-failure` never fired (that only triggers on a non-zero exit) — found live 2026-10-05 when a restart left the production daemon down for ~15 minutes with zero diagnostic trail, since the respawn chain's own stdout/stderr were discarded to `/dev/null`. `daemonRestartFn` now detects systemd supervision (`INVOCATION_ID`, set for every systemd-managed invocation) and exits non-zero instead, letting the existing `Restart=on-failure` + `RestartSec=5` bring it back correctly-tracked. The non-systemd fallback path now logs to a real file instead of `/dev/null`, so a future failure there is actually debuggable.
+
 ## v8.39.16 — fix(ci): clear the lint failure v8.39.15's own new test introduced
 
 ### Fixed

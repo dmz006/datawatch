@@ -11,22 +11,53 @@ import (
 	"syscall"
 )
 
+// runningUnderSystemd reports whether this process was launched by systemd —
+// INVOCATION_ID is set for every systemd-managed unit invocation regardless
+// of Type=. daemonRestartFn (main.go) uses this to let systemd's own
+// Restart= policy bring the service back up instead of spawning
+// selfRestart's detached shell chain, which orphans the new process outside
+// systemd's tracking. Found live 2026-10-05: a clean os.Exit(0) left
+// systemd believing the service was intentionally stopped
+// (Restart=on-failure only fires on a non-zero exit), and the daemon stayed
+// down with no automatic recovery and no diagnostic trail — the respawn
+// shell's own stdout/stderr were discarded to /dev/null (see restartLogPath
+// below, which replaced that).
+func runningUnderSystemd() bool {
+	return os.Getenv("INVOCATION_ID") != ""
+}
+
+// restartLogPath is where selfRestart's detached shell redirects its own
+// stdout/stderr, instead of /dev/null, so a failure in the respawn chain
+// (e.g. daemonize() refusing to start because of a stale PID file) leaves a
+// trace an operator can actually read afterward.
+func restartLogPath() string {
+	cfg, _ := loadConfig()
+	return filepath.Join(expandHome(cfg.DataDir), "restart-attempt.log")
+}
+
 // selfRestart spawns a detached shell that waits for pid to exit then calls
 // "datawatch start" so the new binary comes up without requiring a service
 // manager or manual intervention. Runs in a new session (Setsid) so it
 // survives the parent process exit. The TLS listener's O_CLOEXEC fd is
 // closed automatically on exec, avoiding the headless-daemon issue.
+//
+// Only used when NOT running under systemd (see runningUnderSystemd) — a
+// systemd-managed instance lets Restart= handle this instead.
 func selfRestart(exe string, pid int) {
 	script := fmt.Sprintf(
 		`while kill -0 %d 2>/dev/null; do sleep 0.2; done; %s start`,
 		pid, exe,
 	)
 	devnull, _ := os.Open(os.DevNull)
+	logFile, err := os.OpenFile(restartLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		logFile = devnull
+	}
 	cmd := exec.Command("sh", "-c", script) // #nosec G204 -- exe from os.Executable()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdin = devnull
-	cmd.Stdout = devnull
-	cmd.Stderr = devnull
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	_ = cmd.Start()
 }
 

@@ -382,6 +382,26 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// the first launch — otherwise it's merely "not ready" (never
 		// marked failed) until some other in-flight completion happens to
 		// trigger autoFailDeps again.
+		// finalizeDrained persists a task's terminal failure status for a
+		// result read off the results channel after the coordinator has
+		// already decided to halt (PRDBlocked) — without this, a task that
+		// was genuinely still in-flight when a sibling failure (or
+		// guardrail block) triggered the halt stays frozen at
+		// TaskInProgress forever, even though it actually finished. Found
+		// live via TS-695: Story B's scope-guard failure halted the PRD
+		// while Story A's task was still running; draining discarded A's
+		// result instead of persisting it, orphaning the task indefinitely.
+		finalizeDrained := func(dr taskResult) {
+			if dr.err == nil {
+				return
+			}
+			if t := lookupTask(prd, dr.tid); t != nil && !isTaskTerminal(t.Status) {
+				t.Status = TaskFailed
+				t.Error = dr.err.Error()
+				_ = m.store.SaveTask(t)
+			}
+		}
+
 		autoFailDeps()
 		launch()
 
@@ -424,6 +444,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							// Drain remaining goroutines.
 							for len(inFlight) > 0 {
 								dr := <-results
+								finalizeDrained(dr)
 								delete(inFlight, dr.tid)
 							}
 							return nil
@@ -439,6 +460,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							// finish, but launch() below is skipped so nothing new starts.
 							for len(inFlight) > 0 {
 								dr := <-results
+								finalizeDrained(dr)
 								delete(inFlight, dr.tid)
 							}
 							return nil

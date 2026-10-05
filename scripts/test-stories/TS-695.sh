@@ -102,7 +102,7 @@ _story_ts_695() {
 
   # ---- create PRD with two clearly independent tasks ----
   prd_id=$(api POST /api/autonomous/prds \
-    "{\"spec\":\"Add two new independent modules to this project, each in a different architectural layer with no shared state.\n\nModule A — data layer: create the file /tmp/e2e-data-${sid}.txt containing the single line 'data-layer-ok'. This module owns data persistence and has no dependency on Module B.\n\nModule B — api layer: create the file /tmp/e2e-api-${sid}.txt containing the single line 'api-layer-ok'. This module owns the HTTP API surface and has no dependency on Module A.\n\nThese two modules serve different roles and must each be a separate story.\",\"project_dir\":\"$prd_dir\"}" \
+    "{\"spec\":\"Add two new independent modules to this project, each in a different architectural layer with no shared state.\n\nModule A — data layer: create the file $prd_dir/e2e-data-${sid}.txt (inside this project's own directory, not /tmp) containing the single line 'data-layer-ok'. This module owns data persistence and has no dependency on Module B.\n\nModule B — api layer: create the file $prd_dir/e2e-api-${sid}.txt (inside this project's own directory, not /tmp) containing the single line 'api-layer-ok'. This module owns the HTTP API surface and has no dependency on Module A.\n\nThese two modules serve different roles and must each be a separate story.\",\"project_dir\":\"$prd_dir\"}" \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$prd_id" ]]; then
     _cleanup; skip "could not create PRD"; return

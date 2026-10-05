@@ -13,6 +13,10 @@ import (
 // operator to restart manually or via a Windows Service manager.
 func selfRestart(_ string, _ int) {}
 
+// runningUnderSystemd is always false on Windows (no systemd); kept so
+// daemonRestartFn's check compiles identically on both platforms.
+func runningUnderSystemd() bool { return false }
+
 // daemonize on Windows runs the child process without Setsid (not supported).
 // Use 'datawatch start --foreground' or a Windows Service wrapper for true background operation.
 func daemonize() error {
