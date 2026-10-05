@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.19 — fix(security): SEC-014 — stop echoing peer/server bearer tokens in API responses
+
+### Fixed
+- **SEC-014**: `GET/POST/PUT /api/federation/peers[/{name}]` and `GET /api/servers[/{name}]` (and the MCP tools that proxy to them: `federation_peer_list/get`, `server_list/get`) returned the plaintext bearer token of every registered peer or remote server — any peer able to list/read peers could steal every other peer's (and the admin's) credential. Responses now carry `token_present`/`token_prefix` instead, via a new `multiserver.Entry.Redacted()`; the real token is never serialized outbound again. Create/update responses are redacted too; the update handler's existing merge-onto-existing-entry behavior means a redacted round-trip (read, edit an unrelated field, write back) leaves the real token untouched, since the omitted `token` key simply isn't present to overwrite anything.
+  - `multiserver.Store.GetByToken` now uses a constant-time, length-checked compare instead of `==`.
+  - `docs/api/openapi.yaml`'s `RemoteServer` schema and `docs/howto/federation-cbac.md` updated (new token-rotation section — a token can no longer be read back, only rotated by `PUT`ting a new value).
+  - New tests: `TestFedPeer_SEC014_TokenNeverEchoed`, `TestMultiserverStore_GetByToken_ConstantTime`.
+
 ## v8.39.18 — fix(security): SEC-008 — remove the legacy unauthenticated datawatch-agent stats binary
 
 ### Fixed

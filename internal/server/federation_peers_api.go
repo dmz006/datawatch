@@ -90,7 +90,7 @@ func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fedPeerList(w http.ResponseWriter) {
 	peers := s.serverStore.ListFederated()
-	writeJSONOK(w, peers)
+	writeJSONOK(w, multiserver.RedactedList(peers))
 }
 
 func (s *Server) fedPeerGet(w http.ResponseWriter, name string) {
@@ -103,7 +103,7 @@ func (s *Server) fedPeerGet(w http.ResponseWriter, name string) {
 		http.Error(w, "not a federation peer", http.StatusNotFound)
 		return
 	}
-	writeJSONOK(w, e)
+	writeJSONOK(w, e.Redacted())
 }
 
 func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +132,7 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 	e, _ := s.serverStore.Get(body.Name)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(e)
+	_ = json.NewEncoder(w).Encode(e.Redacted())
 }
 
 func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name string) {
@@ -166,7 +166,7 @@ func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 	e, _ := s.serverStore.Get(name)
-	writeJSONOK(w, e)
+	writeJSONOK(w, e.Redacted())
 }
 
 func (s *Server) fedPeerDelete(w http.ResponseWriter, name string) {

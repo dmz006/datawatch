@@ -125,6 +125,115 @@ func TestFedPeer_AddListGetDelete(t *testing.T) {
 	}
 }
 
+// TestFedPeer_SEC014_TokenNeverEchoed is a regression test for SEC-014: any
+// registered peer able to list/read peers could previously read every
+// peer's (and the admin's) plaintext bearer token back from
+// GET/POST/PUT /api/federation/peers[/{name}]. The response must carry
+// token_present/token_prefix instead, never the raw value, on every path
+// that serializes an Entry.
+func TestFedPeer_SEC014_TokenNeverEchoed(t *testing.T) {
+	s, _, _ := newFedTestServer(t)
+	adminReq := func(method, path string, body []byte) *http.Request {
+		var r *http.Request
+		if body != nil {
+			r = httptest.NewRequest(method, path, bytes.NewReader(body))
+		} else {
+			r = httptest.NewRequest(method, path, nil)
+		}
+		r.Header.Set("Authorization", "Bearer admin-token")
+		return r
+	}
+	const realToken = "super-secret-peer-token-do-not-leak"
+
+	assertRedacted := func(t *testing.T, body []byte, label string) {
+		t.Helper()
+		if bytes.Contains(body, []byte(realToken)) {
+			t.Fatalf("%s: response leaked the real token: %s", label, body)
+		}
+		var e multiserver.Entry
+		if err := json.Unmarshal(body, &e); err != nil {
+			t.Fatalf("%s: decode: %v", label, err)
+		}
+		if e.Token != "" {
+			t.Errorf("%s: Entry.Token should be empty, got %q", label, e.Token)
+		}
+		if !e.TokenPresent {
+			t.Errorf("%s: TokenPresent should be true (a token was set)", label)
+		}
+		if e.TokenPrefix == "" || e.TokenPrefix == realToken {
+			t.Errorf("%s: TokenPrefix should be a short prefix, got %q", label, e.TokenPrefix)
+		}
+	}
+
+	// Create — response must not echo the token.
+	body, _ := json.Marshal(map[string]any{
+		"name": "peer-sec014", "url": "http://peer-sec014:8080", "token": realToken, "enabled": true,
+	})
+	rr := httptest.NewRecorder()
+	s.handleFederationPeers(rr, adminReq(http.MethodPost, "/api/federation/peers", body))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("add: expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	assertRedacted(t, rr.Body.Bytes(), "create response")
+
+	// List — must not echo the token.
+	rr = httptest.NewRecorder()
+	s.handleFederationPeers(rr, adminReq(http.MethodGet, "/api/federation/peers", nil))
+	if bytes.Contains(rr.Body.Bytes(), []byte(realToken)) {
+		t.Fatalf("list response leaked the real token: %s", rr.Body.String())
+	}
+
+	// Get by name — must not echo the token.
+	rr = httptest.NewRecorder()
+	req := adminReq(http.MethodGet, "/api/federation/peers/peer-sec014", nil)
+	req.URL.Path = "/api/federation/peers/peer-sec014"
+	s.handleFederationPeers(rr, req)
+	assertRedacted(t, rr.Body.Bytes(), "get response")
+
+	// Update (no token in the body — round-tripping a redacted read, as an
+	// operator naturally would) — must not echo the token, and the real
+	// token must survive the merge unchanged (verified via GetByToken).
+	rr = httptest.NewRecorder()
+	updateBody, _ := json.Marshal(map[string]any{"label": "renamed"})
+	req = adminReq(http.MethodPut, "/api/federation/peers/peer-sec014", updateBody)
+	req.URL.Path = "/api/federation/peers/peer-sec014"
+	s.handleFederationPeers(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	assertRedacted(t, rr.Body.Bytes(), "update response")
+	if _, ok := s.serverStore.GetByToken(realToken); !ok {
+		t.Error("real token should still resolve via GetByToken after a redacted round-trip update")
+	}
+}
+
+// TestMultiserverStore_GetByToken_ConstantTime is a smaller regression test
+// confirming GetByToken rejects a token of different length and a
+// same-length-but-wrong token (the two cases a naive == vs. a
+// length-then-ConstantTimeCompare implementation must both still get right).
+func TestMultiserverStore_GetByToken_ConstantTime(t *testing.T) {
+	dir := t.TempDir()
+	store, err := multiserver.NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("store init: %v", err)
+	}
+	if err := store.Add(&multiserver.Entry{Name: "p1", URL: "http://p1", Token: "abc123", Enabled: true}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, ok := store.GetByToken("abc123"); !ok {
+		t.Error("expected the real token to resolve")
+	}
+	if _, ok := store.GetByToken("abc12"); ok {
+		t.Error("a shorter, truncated token must not resolve")
+	}
+	if _, ok := store.GetByToken("xyz999"); ok {
+		t.Error("a same-length, wrong token must not resolve")
+	}
+	if _, ok := store.GetByToken(""); ok {
+		t.Error("an empty token must never resolve")
+	}
+}
+
 func TestFedPeer_DefaultCapabilities(t *testing.T) {
 	s, _, _ := newFedTestServer(t)
 

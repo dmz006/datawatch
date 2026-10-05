@@ -204,6 +204,31 @@ send peer-alpha/sess-abc: hello world
 
 ---
 
+## Rotating a peer's token
+
+`GET`/list responses never return a peer's real bearer token — only
+`token_present` (a token is set) and `token_prefix` (its first 4 characters,
+enough to recognize which token you're looking at, not enough to reconstruct
+it). This means you can no longer read a token back out once it's set; keep
+the value somewhere you control (a password manager, the secrets vault) when
+you first register a peer.
+
+To rotate a peer's token, `PUT` the new value explicitly — you cannot copy a
+`GET` response and re-submit it to "refresh" the token, since that response
+never contained one:
+
+```bash
+curl -X PUT -H "Authorization: Bearer <admin-token>" \
+  http://localhost:8080/api/federation/peers/peer-alpha \
+  -d '{"token": "new-token-value"}'
+```
+
+Any other field update (label, capabilities) that omits `token` from the
+request body leaves the existing token untouched — the update handler only
+overwrites fields actually present in the request.
+
+---
+
 ## Enforcement points (BL316 S1)
 
 | Entry point | Capability required |

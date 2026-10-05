@@ -7,6 +7,7 @@ package multiserver
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,42 @@ type Entry struct {
 	ChannelIdentity []string `json:"channel_identity,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// SEC-014 — populated only by Redacted(), never persisted or set from
+	// an inbound request body. TokenPrefix is the first 4 hex chars, enough
+	// for an operator to recognize which token is in use without being
+	// able to reconstruct it.
+	TokenPresent bool   `json:"token_present,omitempty"`
+	TokenPrefix  string `json:"token_prefix,omitempty"`
+}
+
+// Redacted returns a copy of e with Token cleared and TokenPresent/
+// TokenPrefix populated instead (SEC-014 — a peer able to list/read peers
+// must never see another peer's, or the admin's, plaintext bearer token).
+// Every outbound HTTP/MCP serialization of an Entry must go through this;
+// internal store operations (persistence, GetByToken) use the real Token.
+func (e *Entry) Redacted() *Entry {
+	if e == nil {
+		return nil
+	}
+	cp := *e
+	if cp.Token != "" {
+		cp.TokenPresent = true
+		cp.TokenPrefix = cp.Token
+		if len(cp.TokenPrefix) > 4 {
+			cp.TokenPrefix = cp.TokenPrefix[:4]
+		}
+	}
+	cp.Token = ""
+	return &cp
+}
+
+// RedactedList applies Redacted to every entry in a slice.
+func RedactedList(entries []*Entry) []*Entry {
+	out := make([]*Entry, len(entries))
+	for i, e := range entries {
+		out[i] = e.Redacted()
+	}
+	return out
 }
 
 // Store manages the runtime-mutable server registry.
@@ -272,10 +309,14 @@ func (s *Store) GetByToken(tok string) (*Entry, bool) {
 	if tok == "" {
 		return nil, false
 	}
+	tokBytes := []byte(tok)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, e := range s.entries {
-		if e.Token == tok {
+		// SEC-014 — constant-time compare; a timing side-channel on a
+		// peer/admin bearer token is the same class of leak the token
+		// itself is meant to prevent.
+		if len(e.Token) == len(tok) && subtle.ConstantTimeCompare([]byte(e.Token), tokBytes) == 1 {
 			cp := *e
 			return &cp, true
 		}

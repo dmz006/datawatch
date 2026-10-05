@@ -61,7 +61,7 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
-		writeJSONOK(w, map[string]any{"servers": s.serverStore.List()})
+		writeJSONOK(w, map[string]any{"servers": multiserver.RedactedList(s.serverStore.List())})
 
 	case rest == "" && r.Method == http.MethodPost:
 		var e multiserver.Entry
@@ -106,7 +106,7 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "server not found", http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, e)
+		writeJSONOK(w, e.Redacted())
 
 	case rest != "" && r.Method == http.MethodPut:
 		var updated multiserver.Entry
