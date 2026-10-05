@@ -373,3 +373,21 @@ discarded the session ID and operated on the whole project).
 | `handleDeleteSession` default (keep) leaves memories untouched | **Yes** | No | `TestHandleDeleteSession_MemoryStrategyKeep_Default` | PASS |
 | `session.capacity_wait_seconds` / config-patch keys apply correctly | **Yes** | No | `TestApplyConfigPatch_CapacityKeys` in `internal/server/capacity_surfaces_test.go` | PASS |
 | Live daemon restart with these changes | No | Yes | Manual restart of the production daemon, boot-resume log inspected | Confirmed clean boot-resume (correctly re-launched the one genuinely-running PRD, left cancelled ones untouched) — but this was validated for the *prior* release's changes at the time of restart, not yet re-validated against this specific v8.36.0 batch live. Live click-through of the new session-delete memory picker, the PWA capacity card's node-visibility/PRD-scoping, and the verifier actually using a PRD's own backend end-to-end have not yet been performed. |
+
+---
+
+## Security Remediation — Design A items (SEC-002, SEC-007, SEC-009, SEC-014) — v8.39.19–v8.39.22
+
+Four related auth-hardening fixes from the Design A security walkthrough. Each
+got a unit test (confirmed to fail without its fix) and live validation: new
+`release-smoke.sh` sections 57–60, run clean against a real daemon, plus a
+manual authenticated-sandbox pass for the one check (S60) that the smoke
+suite's own empty-admin-token sandbox posture can't meaningfully exercise.
+
+| Scenario | Automated | Manual | Test / Location | Notes |
+|----------|-----------|--------|------|-------|
+| SEC-014: peer/server token never echoed on create/get/list | **Yes** | **Yes** | `TestFedPeer_SEC014_TokenNeverEchoed` in `internal/server/federation_peers_api_test.go`; smoke §57 | PASS both — smoke run against a live daemon (`scripts/release-smoke.sh`, 175 pass/0 fail/31 skip) confirmed no raw token in any response body |
+| SEC-014: `GetByToken` constant-time, rejects wrong-length/wrong-value/empty | **Yes** | No | `TestMultiserverStore_GetByToken_ConstantTime` | PASS |
+| SEC-002: MCP SSE falls back to `server.token` when `mcp.token` empty | **Yes** | **Yes** | `TestMCPFedAuth_SEC002_FallsBackToServerToken`; smoke §58 (`/api/health` `mcp_auth_required`, `/api/diagnose` `rest_auth`/`mcp_sse_auth`) | PASS both |
+| SEC-007: WS upgrade rejects a mismatched `Origin`, allows no-`Origin` | **Yes** | **Yes** | `TestWSCheckOrigin_*` (4 cases) in `internal/server/ws_origin_test.go`; smoke §59 (raw socket handshake probe, confirms live 403) | PASS both |
+| SEC-009: narrowed `federation-peer` default grant + new `/peers/self` | **Yes** | **Yes** | `TestFederationPeer_DefaultCaps`, `TestFedCap_PeerTokenAccepted_SEC009`, `TestFedCap_PeerToken_CustomGroup_SessionsList`; smoke §60 | Smoke §60 **skips** against the default (empty-admin-token) sandbox — with no admin token, `fedAuthMiddleware`'s empty-token early-return makes every caller admin-equivalent regardless of which Bearer token was presented, so peer-vs-admin has nothing to distinguish. **Manually validated against a real authenticated sandbox** (`server.token` set): create → `token_present:true`/no raw token; `GET /peers/self` as the peer → 200, own entry; `GET /api/sessions` with the same bare peer token → 403 (narrowed grant confirmed live, not just in a unit test) |

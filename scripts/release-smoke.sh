@@ -167,6 +167,7 @@ cleanup_all() {
         sess)            curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 && echo "  killed session $id" || echo "  (already gone) sess $id" ;;
         prd)             curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
         peer)            curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
+        fedpeer)         curl "${curl_args[@]}" -X DELETE "$BASE/api/federation/peers/$id" >/dev/null 2>&1 && echo "  removed federation peer $id" || echo "  (already gone) federation peer $id" ;;
         graph)           curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
         project-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/projects/$id" >/dev/null 2>&1 && echo "  removed project profile $id" || echo "  (already gone) project profile $id" ;;
         cluster-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/clusters/$id" >/dev/null 2>&1 && echo "  removed cluster profile $id" || echo "  (already gone) cluster profile $id" ;;
@@ -2993,6 +2994,121 @@ if [[ -n "${SMOKE_PRD_ID:-}" ]]; then
   esac
 else
   skip "S56 — reset_task: no smoke PRD available (skipped earlier sections)"
+fi
+
+H "57. SEC-014 — federation peer token redaction (v8.39.19)"
+FP_NAME="smoke-fedpeer-$$"
+FP_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/federation/peers" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"$FP_NAME\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-secret-token-do-not-leak\",\"enabled\":true}" 2>/dev/null || echo "")
+if [[ -n "$FP_CREATE" ]]; then
+  add_cleanup fedpeer "$FP_NAME"
+  if echo "$FP_CREATE" | grep -q "smoke-secret-token-do-not-leak"; then
+    ko "S57 — POST /api/federation/peers echoed the real token in its response"
+  elif echo "$FP_CREATE" | grep -q '"token_present":true'; then
+    ok "S57 — create response carries token_present, not the raw token"
+  else
+    ko "S57 — create response missing token_present: ${FP_CREATE:0:200}"
+  fi
+  FP_GET=$(curl "${curl_args[@]}" "$BASE/api/federation/peers/$FP_NAME" 2>/dev/null || echo "")
+  if echo "$FP_GET" | grep -q "smoke-secret-token-do-not-leak"; then
+    ko "S57 — GET /api/federation/peers/{name} echoed the real token"
+  else
+    ok "S57 — GET /api/federation/peers/{name} does not echo the real token"
+  fi
+  FP_LIST=$(curl "${curl_args[@]}" "$BASE/api/federation/peers" 2>/dev/null || echo "")
+  if echo "$FP_LIST" | grep -q "smoke-secret-token-do-not-leak"; then
+    ko "S57 — GET /api/federation/peers (list) echoed the real token"
+  else
+    ok "S57 — GET /api/federation/peers (list) does not echo the real token"
+  fi
+else
+  skip "S57 — could not create a smoke federation peer"
+fi
+
+H "58. SEC-002 — MCP SSE auth fallback visible in health/diagnose (v8.39.20)"
+HEALTH=$(curl "${curl_args[@]}" "$BASE/api/health" 2>/dev/null || echo "")
+if echo "$HEALTH" | grep -q "mcp_auth_required"; then
+  ok "S58 — GET /api/health includes mcp_auth_required"
+else
+  ko "S58 — GET /api/health missing mcp_auth_required: ${HEALTH:0:200}"
+fi
+DIAG=$(curl "${curl_args[@]}" "$BASE/api/diagnose" 2>/dev/null || echo "")
+if echo "$DIAG" | grep -q '"rest_auth"' && echo "$DIAG" | grep -q '"mcp_sse_auth"'; then
+  ok "S58 — GET /api/diagnose includes rest_auth and mcp_sse_auth checks"
+else
+  ko "S58 — GET /api/diagnose missing rest_auth/mcp_sse_auth: ${DIAG:0:300}"
+fi
+
+H "59. SEC-007 — WS upgrade rejects a mismatched Origin (v8.39.21)"
+if command -v python3 >/dev/null 2>&1; then
+  WS_SCHEME="ws"; [[ "$BASE" == https://* ]] && WS_SCHEME="wss"
+  WS_HOST="${BASE#*://}"
+  WS_ORIGIN_CODE=$(python3 - "$WS_SCHEME" "$WS_HOST" "$TOK" <<'PYEOF' 2>/dev/null || echo "ERR"
+import socket, ssl, sys
+scheme, host, tok = sys.argv[1], sys.argv[2], sys.argv[3]
+hostname, _, port = host.partition(':')
+port = int(port or (443 if scheme == "wss" else 80))
+sock = socket.create_connection((hostname, port), timeout=5)
+if scheme == "wss":
+    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=hostname) if False else ssl._create_unverified_context().wrap_socket(sock, server_hostname=hostname)
+req = (
+    f"GET /ws HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+    f"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+    f"Origin: https://evil.example\r\nAuthorization: Bearer {tok}\r\n\r\n"
+)
+sock.sendall(req.encode())
+resp = sock.recv(200).decode(errors="replace")
+print(resp.split()[1] if len(resp.split()) > 1 else "ERR")
+PYEOF
+)
+  if [[ "$WS_ORIGIN_CODE" == "403" ]]; then
+    ok "S59 — WS upgrade with a mismatched Origin rejected (403 — gorilla/websocket's CheckOrigin-failure default)"
+  elif [[ "$WS_ORIGIN_CODE" == "ERR" ]]; then
+    skip "S59 — could not probe WS upgrade (python3/socket issue)"
+  else
+    ko "S59 — WS upgrade with a mismatched Origin returned $WS_ORIGIN_CODE, expected 403"
+  fi
+else
+  skip "S59 — python3 not available for the WS handshake probe"
+fi
+
+H "60. SEC-009 — federation-peer default grant + /peers/self (v8.39.22)"
+if [[ -z "$TOK" ]]; then
+  # The sandbox's admin server.token is empty by design (SEC-001's own
+  # tested posture) — fedAuthMiddleware's empty-token early-return means
+  # EVERY caller passes through as admin-equivalent regardless of which
+  # Bearer token (if any) was presented, so "peer vs admin" has nothing
+  # to distinguish here. These two checks only mean something once an
+  # admin token is actually set.
+  skip "S60 — sandbox admin token is empty; peer-vs-admin distinction doesn't apply"
+else
+  FP2_NAME="smoke-fedpeer-self-$$"
+  FP2_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/federation/peers" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$FP2_NAME\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-self-token-$$\",\"enabled\":true}" 2>/dev/null || echo "")
+  if [[ -n "$FP2_CREATE" ]]; then
+    add_cleanup fedpeer "$FP2_NAME"
+    SELF_CODE=$(curl "${curl_args[@]}" -s -o /tmp/smoke-self-resp.$$ -w '%{http_code}' \
+      -H "Authorization: Bearer smoke-self-token-$$" \
+      "$BASE/api/federation/peers/self" 2>/dev/null || echo "000")
+    SELF_BODY=$(cat /tmp/smoke-self-resp.$$ 2>/dev/null); rm -f /tmp/smoke-self-resp.$$
+    if [[ "$SELF_CODE" == "200" ]] && echo "$SELF_BODY" | grep -q "\"$FP2_NAME\""; then
+      ok "S60 — GET /api/federation/peers/self (as the peer) returns its own entry"
+    else
+      ko "S60 — GET /api/federation/peers/self returned $SELF_CODE: ${SELF_BODY:0:200}"
+    fi
+    SESS_CODE=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer smoke-self-token-$$" \
+      "$BASE/api/sessions" 2>/dev/null || echo "000")
+    if [[ "$SESS_CODE" == "403" ]]; then
+      ok "S60 — bare federation-peer default grant does NOT include sessions:list (403, as narrowed)"
+    else
+      ko "S60 — bare federation-peer got $SESS_CODE on /api/sessions, expected 403 (default grant narrowed in SEC-009)"
+    fi
+  else
+    skip "S60 — could not create a smoke federation peer for /self check"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
