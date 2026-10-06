@@ -1737,6 +1737,23 @@ body {
 .prd-capacity-card .cap-title { font-weight: 600; color: var(--text2); margin-bottom: 6px; }
 .prd-capacity-wait { color: var(--text2); margin-top: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* GH#172 D60 — skeleton shimmer loading list (Android already has
+   this). Shown instead of the empty-state message while the first
+   WS sessions push hasn't arrived yet, so a slow connection doesn't
+   look identical to "no sessions exist". */
+@keyframes skeleton-shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+.skeleton-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg3,rgba(255,255,255,0.06)) 37%, var(--border) 63%);
+  background-size: 400px 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+.skeleton-line.short { width: 40%; }
+.skeleton-line.medium { width: 70%; }
+.skeleton-line.long { width: 90%; margin-bottom: 0; }
 .prd-task-id {
   font-size: 10px;
   color: var(--text2);

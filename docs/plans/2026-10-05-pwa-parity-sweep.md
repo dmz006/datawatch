@@ -17,10 +17,11 @@
   v8.47.0 (minor); Phase 2 batch 4 (D63) ✅ shipped v8.48.0 (minor);
   Phase 2 batch 5 (D73) ✅ shipped v8.49.0 (minor); Phase 2 batch 6
   (D61) ✅ shipped v8.50.0 (minor); Phase 2 batch 7 (D69) ✅ shipped
-  v8.51.0 (minor). D83 and GH#177 checked live and already shipped
-  (v8.35.0 and v8.36.0 respectively) — no new work needed. D65/D67
-  awaiting a GH#172 reply before implementing. Remaining Phase 2 items
-  (D59/60/62) and Phases 3–4 planned, not
+  v8.51.0 (minor); Phase 2 batch 8 (D60) ✅ shipped v8.52.0 (minor).
+  D83 and GH#177 checked live and already shipped (v8.35.0 and
+  v8.36.0 respectively) — no new work needed. D65/D67 awaiting a
+  GH#172 reply before implementing. Remaining Phase 2 items (D59/62)
+  and Phases 3–4 planned, not
   started.
 
 ## Context
@@ -184,9 +185,11 @@ Each item is a button/field/badge wired to an API that already exists:
   per-GPU util/temp/power/VRAM bars, resolved against that session's
   *actual* remote compute node (`compute_node_ref`) — not a single
   aggregate total as this plan originally assumed. No new work needed.
-- **GH#172 D59/D60/D62** — Android splash extras (status line,
-  "Replay splash"); skeleton shimmer loading list; swipe-to-mute + muted
-  icon.
+- **GH#172 D59/D62** — Android splash extras (status line, "Replay
+  splash"); swipe-to-mute + muted icon.
+- **GH#172 D60 ✅ shipped v8.52.0** — skeleton shimmer loading list,
+  shown on the sessions view while the WS connection is still
+  establishing instead of a misleading "No active sessions".
 - **GH#172 D69 ✅ shipped v8.51.0** — terminal search/copy. Hand-rolled
   on xterm.js's own core buffer/selection API rather than the official
   search addon, avoiding a new bundled dependency file.

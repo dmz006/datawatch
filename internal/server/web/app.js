@@ -2165,6 +2165,18 @@ function renderSessionsView() {
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
+    // GH#172 D60 — while the first WS "sessions" push hasn't landed
+    // yet, an empty state looks identical to "genuinely no sessions".
+    // Show shimmer placeholders instead until we actually know.
+    if (!state.connected) {
+      const skeletonCard = `<div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line medium"></div><div class="skeleton-line long"></div></div>`;
+      view.innerHTML = `
+        <div class="view-content" style="position:relative;">
+          <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+          <div class="session-list">${skeletonCard.repeat(3)}</div>
+        </div>`;
+      return;
+    }
     view.innerHTML = `
       <div class="view-content" style="position:relative;">
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>

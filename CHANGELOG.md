@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.52.0 — feat(pwa): BL396 Phase 2 batch 8 — skeleton shimmer loading list
+
+### Added
+- **GH#172**: the sessions list shows shimmer skeleton placeholders instead of the "No active sessions" empty state while the WebSocket connection is still establishing (Android already had this) — a slow connection no longer looks identical to "you have no sessions".
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.51.0 — feat(pwa): BL396 Phase 2 batch 7 — terminal search + copy
 
 ### Added
