@@ -19081,11 +19081,20 @@ window._loadPRDActiveSessionCard = function(prd) {
         if (prd.status === 'planning') {
           slot.style.display = 'block';
           const spin = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite;margin-right:6px;">⟳</span>';
-          // Planning: also show compute node stats for the decomposition backend.
-          const decompBackend = prd.decomposition_profile || prd.backend;
-          const statsP = decompBackend
-            ? getBackendNodes(decompBackend).then(nodes => nodes.length ? fetchNodeDetail(nodes[0]) : fetchLocalStats())
-            : fetchLocalStats();
+          // Planning: also show compute node stats for the backend that
+          // actually runs decompose. GH#184 (dmz006/datawatch) — this used
+          // to fall back to prd.backend (the EXECUTION backend, often
+          // claude-code with no compute nodes, so it silently showed local
+          // stats instead); the daemon decomposes with decomposition_profile,
+          // else the global autonomous.planning_backend (manager.go
+          // Decompose), never prd.backend. Matches the Android/iOS apps'
+          // shared PrdComputeResolver.
+          const statsP = apiFetch('/api/autonomous/config').catch(() => null).then(ac => {
+            const decompBackend = prd.decomposition_profile || (ac && ac.planning_backend) || '';
+            return decompBackend
+              ? getBackendNodes(decompBackend).then(nodes => nodes.length ? fetchNodeDetail(nodes[0]) : fetchLocalStats())
+              : fetchLocalStats();
+          });
           statsP.then(detail => {
             const resBars = renderResourceBars(detail);
             slot.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin-top:4px;">

@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.60.1 — fix(pwa): planning-stage compute card resolved the wrong backend
+
+### Fixed
+- The Automaton active-session card's planning-stage compute stats fell back to `prd.backend` (the execution backend, often `claude-code`, which has no compute nodes) when `decomposition_profile` was empty, instead of the backend the daemon actually decomposes with (`decomposition_profile`, else the global planning backend). It silently showed local daemon stats instead of the real planning compute node. Reported via the Android/iOS apps' own parity check, which already resolves this correctly via a shared resolver; the PWA now matches.
+
 ## v8.60.0 — feat(pwa): PWA parity sweep Phase 3 batch 6 — Config Viewer + raw editor (GH#172 D79)
 
 ### Added
