@@ -12,7 +12,9 @@
   `datawatch://alert/<id>` deep link (all missing real backend/
   platform infrastructure, found live). D82 and D66's agent badge were
   checked live and are already shipped elsewhere — no new work needed.
-  Phases 2–4 planned, not started.
+  Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor). Remaining Phase 2
+  items (GH#181, D83, D77, GH#177, D59/60/62/69/73, D61, D63, D65/67)
+  and Phases 3–4 planned, not started.
 
 ## Context
 
@@ -154,9 +156,9 @@ Each item is a button/field/badge wired to an API that already exists:
   markdown renderer verbatim.
 - **GH#172 D83** — inline file viewer for story/task file chips, reusing
   `_showFileViewer`/`_fileChip` (already built this session).
-- **GH#172 D76** — "repair depends_on" button (the
-  `autonomous_prd_repair_depends_on` capability already exists server-side
-  per today's MCP capability audit).
+- **GH#172 D76 ✅ shipped v8.45.0** — "repair depends_on" button.
+  Confirmed server-side on the REST surface too (not just MCP):
+  `case "repair_depends_on":` in `internal/server/autonomous.go:892`.
 - **GH#172 D77** — memory recall / scopes / lifecycle UI (BL385-387's
   `memory_scope_*` APIs already exist; this is UI-only).
 - **GH#177** — per-story resource bars (CPU%/RSS) + a remote compute-node

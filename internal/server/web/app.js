@@ -11036,6 +11036,12 @@ function renderPRDActions(prd) {
   if (status !== 'running') {
     btns.push(a('Edit', `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
   }
+  // GH#172 D76 — "repair depends_on" button (Android already has this).
+  // One-time repair for stories whose depends_on predates the v8.36.5
+  // title->ID fix; harmless to re-run on an already-correct PRD.
+  if (status !== 'running' && (prd.stories || []).length > 0) {
+    btns.push(a(t('prd_action_repair_deps') || 'Repair deps', `prdAction(${idJ},'repair_depends_on','POST',{actor:'operator'})`, ''));
+  }
   btns.push(a('Delete', `confirmPRDDelete(${idJ})`, '#7c2d12'));
   return btns.join('');
 }

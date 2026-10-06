@@ -726,6 +726,7 @@
   "prd_action_cancel_running": "Cancel running",
   "prd_action_instantiate": "Instantiate",
   "prd_action_reject": "Reject",
+  "prd_action_repair_deps": "Repair deps",
   "prd_action_request_revision": "Request revision",
   "prd_approve_note_prompt": "Approval note (optional)",
   "prd_btn_approve_title": "Approve this plan and proceed to Run",

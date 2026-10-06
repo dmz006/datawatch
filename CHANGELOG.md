@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.45.0 — feat(pwa): BL396 Phase 2 batch 1 — repair depends_on button
+
+### Added
+- **GH#172**: the Automaton detail view now has a "Repair deps" button (shown whenever the automaton has stories and isn't currently running), calling the existing `repair_depends_on` REST action to re-resolve any story/task `depends_on` entries that predate the title→ID fix. Previously only reachable via MCP/CLI.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, first batch.
+
 ## v8.44.0 — feat(pwa): BL396 Phase 1 batch 5 — GH#182 (help icons, restart confirm, disconnect banner, filter animation, Templates FAB, 3 Automata config fields)
 
 ### Added
