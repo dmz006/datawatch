@@ -148,7 +148,9 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
      "(failover N)". Shows "(any node OK)" when the LLM has no pinned
      list.
    - **Model** (populated from that LLM's enabled model list).
-   - Task (free-text; one-paragraph task spec).
+   - Task (free-text; one-paragraph task spec). A "— Insert saved
+     command —" picker below the field lets you append an entry from
+     your saved-command library instead of retyping it.
    - Project Profile (optional — picks workspace + git policy + skills).
    - Effort (only shown for backends that support it).
    - **Start**.
@@ -160,7 +162,9 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - Hover each for a tooltip explaining the v7 field.
    Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
-     by default; tap the input bar to send commands.
+     by default; tap the input bar to send commands. While the session
+     is `waiting_input`, Yes/No/Stop quick-reply chips appear above the
+     input bar — tap one to send that reply without typing.
    - **Channel** — structured event bubble feed (MCP / ACP /
      chat_message). Native swipe-back through the 1000-entry buffer.
    - **Status** — two sub-tabs:

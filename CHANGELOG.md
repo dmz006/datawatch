@@ -23,40 +23,40 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4
 ## v8.43.0 — feat(pwa): BL396 Phase 1 batch 4 — saved-command picker on New Session
 
 ### Added
-- **GH#172 (D81)**: the New Session task field now has a saved-command library picker below it (Android already had this), reading the existing `/api/commands` surface. Selecting an entry appends it to the task field instead of requiring the operator to remember/retype a saved command by hand.
+- **GH#172**: the New Session task field now has a saved-command library picker below it (Android already had this), reading the existing `/api/commands` surface. Selecting an entry appends it to the task field instead of requiring the operator to remember/retype a saved command by hand.
 
 Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
 
 ## v8.42.0 — feat(pwa): BL396 Phase 1 batch 3 — chat quick-reply chips
 
 ### Added
-- **GH#172 (D68)**: when a session is `waiting_input`, the chat composer now shows Yes/No/Stop quick-reply chips above the input field (Android already had this). Tapping a chip fills the composer and sends through the exact same path as a typed reply, so it still correctly routes through tmux or channel mode and respects the session's actual state.
+- **GH#172**: when a session is `waiting_input`, the chat composer now shows Yes/No/Stop quick-reply chips above the input field (Android already had this). Tapping a chip fills the composer and sends through the exact same path as a typed reply, so it still correctly routes through tmux or channel mode and respects the session's actual state.
 
 Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
 
 ## v8.41.0 — feat(pwa): BL396 Phase 1 batch 2 — Council session badge + filter chip
 
 ### Added
-- **GH#172 (D64)**: Council debate persona sessions (`backend_family: "council-virtual"`) now get a dedicated 🎭 Council badge on their session card, instead of the raw `council-virtual` string previously shown in the generic LLM/backend badge. The existing LLM/backend filter chip also now labels this group "🎭 Council" instead of the raw backend-family string.
+- **GH#172**: Council debate persona sessions (`backend_family: "council-virtual"`) now get a dedicated 🎭 Council badge on their session card, instead of the raw `council-virtual` string previously shown in the generic LLM/backend badge. The existing LLM/backend filter chip also now labels this group "🎭 Council" instead of the raw backend-family string.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4. D66's agent-worker badge was found already shipped (no new work needed); its "Chrome" badge half, along with D52 and D75, are re-scoped into Phase 3 pending small backend additions.
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4. A separate Android-parity agent-worker badge was found already shipped (no new work needed); a "Chrome integration" badge, a pause/resume control, and a permission-mode editor are re-scoped into Phase 3 pending small backend additions (see the plan doc for specifics).
 
 ## v8.40.0 — feat(pwa): BL396 Phase 1 batch 1 — alert firings, parent-PRD link, inline reject/revise, approve-with-note
 
 ### Added
-- **GH#172 (D70)**: Alert Rules settings section now shows a "Recent Firings" list (last 20) below the rule list, reading the existing alert-rules firings REST endpoint (previously served but never rendered anywhere in the PWA).
-- **GH#172 (D71)**: Automaton list card shows a "↗ parent" link when the automaton has a `parent_prd_id`, jumping straight to the parent's detail view (Android already had this; `parent_prd_id` was already in the PRD JSON from BL191's Q4 recursion work).
-- **GH#172 (D72)**: Automaton list card gets inline ✗ Reject / ↺ Request Revision buttons when the automaton is in an approval-pending state (`needs_review`/`revisions_asked`/`waiting_input`), reusing the existing `prdActionPrompt` helper and `reject`/`request_revision` endpoints already used in the detail view — previously these actions required opening the detail view first.
-- **GH#172 (D74)**: Approve now prompts for an optional note (reusing the same native-prompt pattern as Reject/Revise) across all three approve call sites — the list-card lifecycle strip, the detail-view lifecycle strip, and the detail-header approve button — instead of approving silently.
+- **GH#172**: Alert Rules settings section now shows a "Recent Firings" list (last 20) below the rule list, reading the existing alert-rules firings REST endpoint (previously served but never rendered anywhere in the PWA).
+- **GH#172**: Automaton list card shows a "↗ parent" link when the automaton has a `parent_prd_id`, jumping straight to the parent's detail view (Android already had this; `parent_prd_id` was already in the PRD JSON from an earlier recursive-child-automaton feature).
+- **GH#172**: Automaton list card gets inline ✗ Reject / ↺ Request Revision buttons when the automaton is in an approval-pending state (`needs_review`/`revisions_asked`/`waiting_input`), reusing the existing `prdActionPrompt` helper and `reject`/`request_revision` endpoints already used in the detail view — previously these actions required opening the detail view first.
+- **GH#172**: Approve now prompts for an optional note (reusing the same native-prompt pattern as Reject/Revise) across all three approve call sites — the list-card lifecycle strip, the detail-view lifecycle strip, and the detail-header approve button — instead of approving silently.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, first batch; remaining Phase 1 items (D52→moved to Phase 3, D64, D66, D68, D75, D81, D82, GH#182) are still queued.
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, first batch; remaining Phase 1 items are still queued (see the plan doc for the full list).
 
 ## v8.39.27 — fix(pwa): BL396 Phase 0 — Council runs bug, splash badge removal, brand casing
 
 ### Fixed
 - **GH#178**: `GET /api/council/runs` returns a bare array (same as `/api/council/personas`, "bare array for mobile client compat"), but `loadCouncilPanel` read `rdata.runs` — always `undefined` against a bare array, so the Council "Recent Runs" list was always empty regardless of how many runs existed. Fixed to accept either shape (`Array.isArray(rdata) ? rdata : (rdata && rdata.runs) || []`), matching the already-correct handling of `/api/council/personas` two lines above. New `internal/server/web/app-council.test.js` (2 tests, confirmed to fail without the fix).
 - **GH#176**: removed the "Updated to v*X*" badge that appeared on the splash screen after a daemon version change — never requested, and already removed from the Android/iOS apps (datawatch-app v1.25.1). The rest of the splash gating (first visit / version change / >24h since last shown) is unchanged; only the badge element goes. Dropped the now-unused `status_updated_to` locale key from all 5 bundles.
-- **GH#172 (D9/D1)**: lowercased the "datawatch" brand name everywhere it was still capitalized — `<title>`, the `apple-mobile-web-app-title` meta tag, `manifest.json`'s `name`/`short_name`, and the header title (both the static HTML fallback and the `nav_home` locale key across all 5 bundles, which is what actually renders once the PWA loads). The splash screen was already lowercase.
+- **GH#172**: lowercased the "datawatch" brand name everywhere it was still capitalized — `<title>`, the `apple-mobile-web-app-title` meta tag, `manifest.json`'s `name`/`short_name`, and the header title (both the static HTML fallback and the `nav_home` locale key across all 5 bundles, which is what actually renders once the PWA loads). The splash screen was already lowercase.
 - Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 0 of 4; see that plan for the rest of the sequenced parity backlog.
 
 ## v8.39.26 — fix(autonomous): per_story_approval (and 4 sibling bools) could never be explicitly cleared back to false
