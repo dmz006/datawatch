@@ -5,7 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.59.0 — feat(pwa): BL396 Phase 3 batch 5 — subsystem reload + MCP channel/tools cards in About (GH#172 D80)
+## v8.59.1 — fix(docs): drop bare internal backlog IDs from user-facing docs
+
+### Fixed
+- `CHANGELOG.md` and `README.md` had a bare internal backlog ID ("BL396") in 45 places — against the project's own documentation rule that user-facing docs must describe work in plain English (or by GitHub issue number, which is publicly resolvable), never by an internal-only tracker ID. Reworded all of them to "PWA parity sweep" / "the PWA parity sweep (`docs/plans/...`)"; the existing `GH#172` issue references were left as-is since those already point to a real, publicly-readable issue.
+- `README.md`'s "Recent highlights" section was 20 minor versions stale (last updated at v8.39.14, actual current v8.59.0) — refreshed with the current version and a condensed highlights list for the versions shipped since, per the project's release-discipline rule that every release commit keeps this section current.
+- Added a `docs/testing-tracker.md` entry for 3 earlier PWA-parity-sweep REST additions (PRD `permission_mode`, pause/resume, and the session Chrome-enabled field) that shipped without one.
+
+## v8.59.0 — feat(pwa): PWA parity sweep Phase 3 batch 5 — subsystem reload + MCP channel/tools cards in About (GH#172 D80)
 
 ### Added
 - **Subsystem reload** (Settings → About) — a dropdown (all/config/filters/memory) + Reload button calling `POST /api/reload?subsystem=…`, which previously only existed as a SIGHUP / MCP `reload` tool / CLI action with no PWA surface. Distinct from the existing full-process "Restart" button: this re-reads config and re-applies what can change without a restart, and reports which fields were applied vs. still require a restart.
@@ -13,9 +20,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **MCP Tools summary card** (Settings → About) — a tool count + scrollable name list, complementing the existing raw JSON/HTML export links (which are for scripting, not a quick glance).
 - D80's description also named "MCP tools" more broadly — checked live and found the existing JSON/HTML export links already cover the scripting use case; the new summary card covers the "glance at what's exposed" use case that was missing.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
 
-## v8.58.0 — feat(pwa): BL396 Phase 3 batch 4 — Observer Backend Health, Envelopes, quick add-memory (GH#172 D78)
+## v8.58.0 — feat(pwa): PWA parity sweep Phase 3 batch 4 — Observer Backend Health, Envelopes, quick add-memory (GH#172 D78)
 
 ### Added
 - **Backend Health card** (Observer → System Statistics) — lists each configured LLM backend with a live available/unavailable status dot, version, and compute nodes, reusing the existing `/api/backends` response that was previously only consumed for session-create picker filtering, never shown to the operator directly.
@@ -23,76 +30,76 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4
 - **Quick add-memory** (Observer → Memory Browser) — a single input + Add button that calls `/api/memory/save` directly from the PWA, previously only reachable via MCP/CLI.
 - D78's other 4 sub-items (server info, session ring + max_sessions, Ollama server stats, eBPF-degraded banner) were checked live and found already fully shipped in earlier work — no new work needed for those.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
 
-## v8.57.0 — feat(autonomous): BL396 Phase 3 batch 3 — pause/resume a running Automaton (GH#172 D52)
+## v8.57.0 — feat(autonomous): PWA parity sweep Phase 3 batch 3 — pause/resume a running Automaton (GH#172 D52)
 
 ### Added
 - **`pause`/`resume`** — new REST actions (`POST /api/autonomous/prds/{id}/pause`, `.../resume`) and `Manager.Pause`/`Manager.Resume`. Pausing a running Automaton stops it from dispatching new tasks (already-launched tasks finish naturally) without treating it as blocked or failed — a new `PRDPaused` status, distinct from both. Resuming flips it back to running and relaunches the executor, picking up any tasks still pending.
 - **PWA**: Pause/Resume buttons on the Automata card action row, gated on status (`running` → Pause, `paused` → Resume) — the buttons and their REST calls already existed speculatively from an earlier pass; only the backend was missing.
 - Fixed 3 pre-existing PWA gaps found while live-verifying this: a `paused` Automaton was invisible in the default (active-only) list view, sorted last instead of needs-attention priority, and had no filter badge or card accent color — all now match `blocked`'s visibility/priority treatment.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
 
-## v8.56.0 — feat(session): BL396 Phase 3 batch 2 — persist Chrome-enabled flag (GH#172 D66)
+## v8.56.0 — feat(session): PWA parity sweep Phase 3 batch 2 — persist Chrome-enabled flag (GH#172 D66)
 
 ### Added
 - **`Session.ChromeEnabled`** — new persisted/serialized field, set at session creation when `--chrome` is actually honored by the backend (same gate as the existing `SetChrome` call). Previously this decision lived only inside the claude-code backend's own private field, with no getter and no way for the PWA (or anything else) to know after the fact whether a session has Chrome DevTools Protocol browser automation enabled.
 - **PWA**: a green "Chrome" badge on session cards when `chrome_enabled` is true, next to the existing agent-worker badge.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
 
-## v8.55.0 — feat(autonomous): BL396 Phase 3 batch 1 — PRD permission_mode editor (GH#172 D75)
+## v8.55.0 — feat(autonomous): PWA parity sweep Phase 3 batch 1 — PRD permission_mode editor (GH#172 D75)
 
 ### Added
 - **`set_permission_mode`** — new REST action (`POST /api/autonomous/prds/{id}/set_permission_mode`) and `Manager.SetPermissionMode`, matching the same pattern as `set_memory_harvest`/`set_llm`. Validates against claude-code's 6 permission modes (the same set `start_session`'s MCP tool already validates); empty clears the PRD back to inheriting the session/config default. This is the real backend gap D75 was blocked on — found live while implementing it during Phase 1, now closed.
 - **PWA**: a "Permission" button next to "LLM" on the Automaton detail view opens a small picker for the new action.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4, first batch.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4, first batch.
 
-## v8.54.0 — feat(pwa): BL396 Phase 2 batch 10 — splash status line + replay
+## v8.54.0 — feat(pwa): PWA parity sweep Phase 2 batch 10 — splash status line + replay
 
 ### Added
 - **GH#172**: the launch splash now shows a status line ("Connecting…" → "Connected", Android already has this) and Settings → About gets a "↻ Replay splash" button that clears the 24h/version gating and reloads so the real full-screen launch splash shows again, exactly as it does on a fresh visit — not a separate hand-rolled replay path.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, **now complete** except D65/D67 (awaiting a GH#172 reply).
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, **now complete** except D65/D67 (awaiting a GH#172 reply).
 
-## v8.53.0 — feat(pwa): BL396 Phase 2 batch 9 — mute session notifications
+## v8.53.0 — feat(pwa): PWA parity sweep Phase 2 batch 9 — mute session notifications
 
 ### Added
 - **GH#172**: a 🔔/🔕 mute toggle on session cards (Android's swipe-to-mute, iOS's muted icon — the PWA gets a tap toggle instead of a swipe, since it has no native gesture layer). Muting a session suppresses its browser Notification popup and toast when it transitions to `waiting_input`, while still highlighting the input bar if you're actively viewing it. Client-side only (localStorage), no backend change.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.52.0 — feat(pwa): BL396 Phase 2 batch 8 — skeleton shimmer loading list
+## v8.52.0 — feat(pwa): PWA parity sweep Phase 2 batch 8 — skeleton shimmer loading list
 
 ### Added
 - **GH#172**: the sessions list shows shimmer skeleton placeholders instead of the "No active sessions" empty state while the WebSocket connection is still establishing (Android already had this) — a slow connection no longer looks identical to "you have no sessions".
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.51.0 — feat(pwa): BL396 Phase 2 batch 7 — terminal search + copy
+## v8.51.0 — feat(pwa): PWA parity sweep Phase 2 batch 7 — terminal search + copy
 
 ### Added
 - **GH#172**: the session terminal toolbar now has 🔍 search and 📋 copy buttons (Android has this dormant; the PWA gets a real, active version). Search is hand-rolled on xterm.js's own core buffer/selection API (`getSelection`/`select`/`scrollToLine`) rather than the official search addon, avoiding a new bundled dependency file — matches on any visible scrollback line, Enter/Shift+Enter or ▲/▼ to step through matches with a `N/total` counter. Copy copies the current selection, or the full session output when nothing is selected.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.50.0 — feat(pwa): BL396 Phase 2 batch 6 — watch sessions/automata + watched filter
+## v8.50.0 — feat(pwa): PWA parity sweep Phase 2 batch 6 — watch sessions/automata + watched filter
 
 ### Added
 - **GH#172**: a 👁 watch toggle on both session cards and Automaton cards (Android already had this), plus a "watched only" filter toggle in each list's toolbar. Pure client-side state (localStorage), same persistence pattern as the already-shipped "pin" feature — this is a personal marker, not shared/authoritative daemon state, so no backend work was needed.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.49.0 — feat(pwa): BL396 Phase 2 batch 5 — wizard "memory promote to" field
+## v8.49.0 — feat(pwa): PWA parity sweep Phase 2 batch 5 — wizard "memory promote to" field
 
 ### Added
 - **GH#172**: the Launch Automaton wizard's Advanced section now has a "Memory promote to" dropdown (Android already had this) — on completion, harvests the automaton's memories into the chosen broader scope (story-shared/prd-shared/project-shared). Reads the existing `set_memory_harvest` REST action (BL386 Phase 2); fires right after PRD creation, same pattern already used for the wizard's LLM backend/effort fields.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.48.0 — feat(pwa): BL396 Phase 2 batch 4 — voice reply in quick commands
+## v8.48.0 — feat(pwa): PWA parity sweep Phase 2 batch 4 — voice reply in quick commands
 
 ### Added
 - **GH#172**: the sessions-list "quick commands" popup's custom-reply field now has a 🎤 mic button (Android already had this), reusing the same generic voice-input helper (`micButtonHTML`/`startGenericVoiceInput`) already used on every PRD spec/description field — transcribes via the existing `/api/voice/transcribe` endpoint and fills the field, no new backend surface.
@@ -100,9 +107,9 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4
 ### Investigated, no new work needed
 - **GH#177** (per-story resource bars + remote compute-node card): already fully shipped since v8.36.0 — `_loadPRDActiveSessionCard` renders one card per active session with its story/task context and full CPU/RAM + per-GPU util/temp/power/VRAM bars, resolved against that session's actual compute node. The plan's "single aggregate total" framing was outdated.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.47.0 — feat(pwa): BL396 Phase 2 batch 3 — memory scope browser + promote
+## v8.47.0 — feat(pwa): PWA parity sweep Phase 2 batch 3 — memory scope browser + promote
 
 ### Added
 - **GH#172**: new "Memory Scopes" settings card — an inventory table (per-role/session entry counts) plus a recall browser that walks the scope hierarchy (session-local → story/PRD-shared → project-shared → persona) and merges the hits, reading the existing `memory_scope_*` REST surface (BL385-387). Each result has a "↑ Promote" button to move it up a scope level.
@@ -111,23 +118,23 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4
 - Recall's cross-layer walk returns the same physical memory once per layer it overlaps with (e.g. a prd-shared entry also matches the broader project-shared layer) — same id, same content, different scope label. The new UI dedups on (id, project_dir, created_at) before rendering so an entry doesn't appear to the operator as two separate memories.
 - The promote button now uses each entry's own reported `scope` as the "from" reference instead of the scope-selector dropdown's value — since recall doesn't filter by that dropdown (it always walks every layer), trusting the dropdown would send the wrong "from" scope whenever a hit's actual scope differed from what was selected.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.46.0 — feat(pwa): BL396 Phase 2 batch 2 — council run viewer renders markdown
+## v8.46.0 — feat(pwa): PWA parity sweep Phase 2 batch 2 — council run viewer renders markdown
 
 ### Added
 - **GH#181**: viewing a completed council run no longer dumps the raw JSON response in a browser `alert()` — it now opens a proper modal with each round's persona replies, the final consensus, and any dissent rendered as collapsible markdown (same `marked.js` + `DOMPurify.sanitize()` path the Automata spec view and file-chip viewer already use, reused verbatim rather than a new renderer). Falls back to safely-escaped plain text if the markdown libraries can't load (offline/CSP).
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
 
-## v8.45.0 — feat(pwa): BL396 Phase 2 batch 1 — repair depends_on button
+## v8.45.0 — feat(pwa): PWA parity sweep Phase 2 batch 1 — repair depends_on button
 
 ### Added
 - **GH#172**: the Automaton detail view now has a "Repair deps" button (shown whenever the automaton has stories and isn't currently running), calling the existing `repair_depends_on` REST action to re-resolve any story/task `depends_on` entries that predate the title→ID fix. Previously only reachable via MCP/CLI.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, first batch.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, first batch.
 
-## v8.44.0 — feat(pwa): BL396 Phase 1 batch 5 — GH#182 (help icons, restart confirm, disconnect banner, filter animation, Templates FAB, 3 Automata config fields)
+## v8.44.0 — feat(pwa): PWA parity sweep Phase 1 batch 5 — GH#182 (help icons, restart confirm, disconnect banner, filter animation, Templates FAB, 3 Automata config fields)
 
 ### Added
 - **GH#182**: '?' help icons on the Dashboard and Alerts headers, linking to their existing howto docs.
@@ -140,30 +147,30 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4
 ### Scoped out (see plan doc)
 - GH#182's `datawatch://alert/<id>` deep-link item re-scoped to Phase 3: no manifest `protocol_handlers`, launch-queue consumption, or any URL-parsing-on-load mechanism exists anywhere in the PWA today — this is a new platform surface, not a wire-up.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, now complete except the re-scoped deep-link item.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, now complete except the re-scoped deep-link item.
 
-## v8.43.0 — feat(pwa): BL396 Phase 1 batch 4 — saved-command picker on New Session
+## v8.43.0 — feat(pwa): PWA parity sweep Phase 1 batch 4 — saved-command picker on New Session
 
 ### Added
 - **GH#172**: the New Session task field now has a saved-command library picker below it (Android already had this), reading the existing `/api/commands` surface. Selecting an entry appends it to the task field instead of requiring the operator to remember/retype a saved command by hand.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
 
-## v8.42.0 — feat(pwa): BL396 Phase 1 batch 3 — chat quick-reply chips
+## v8.42.0 — feat(pwa): PWA parity sweep Phase 1 batch 3 — chat quick-reply chips
 
 ### Added
 - **GH#172**: when a session is `waiting_input`, the chat composer now shows Yes/No/Stop quick-reply chips above the input field (Android already had this). Tapping a chip fills the composer and sends through the exact same path as a typed reply, so it still correctly routes through tmux or channel mode and respects the session's actual state.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
 
-## v8.41.0 — feat(pwa): BL396 Phase 1 batch 2 — Council session badge + filter chip
+## v8.41.0 — feat(pwa): PWA parity sweep Phase 1 batch 2 — Council session badge + filter chip
 
 ### Added
 - **GH#172**: Council debate persona sessions (`backend_family: "council-virtual"`) now get a dedicated 🎭 Council badge on their session card, instead of the raw `council-virtual` string previously shown in the generic LLM/backend badge. The existing LLM/backend filter chip also now labels this group "🎭 Council" instead of the raw backend-family string.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4. A separate Android-parity agent-worker badge was found already shipped (no new work needed); a "Chrome integration" badge, a pause/resume control, and a permission-mode editor are re-scoped into Phase 3 pending small backend additions (see the plan doc for specifics).
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4. A separate Android-parity agent-worker badge was found already shipped (no new work needed); a "Chrome integration" badge, a pause/resume control, and a permission-mode editor are re-scoped into Phase 3 pending small backend additions (see the plan doc for specifics).
 
-## v8.40.0 — feat(pwa): BL396 Phase 1 batch 1 — alert firings, parent-PRD link, inline reject/revise, approve-with-note
+## v8.40.0 — feat(pwa): PWA parity sweep Phase 1 batch 1 — alert firings, parent-PRD link, inline reject/revise, approve-with-note
 
 ### Added
 - **GH#172**: Alert Rules settings section now shows a "Recent Firings" list (last 20) below the rule list, reading the existing alert-rules firings REST endpoint (previously served but never rendered anywhere in the PWA).
@@ -171,15 +178,15 @@ Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4
 - **GH#172**: Automaton list card gets inline ✗ Reject / ↺ Request Revision buttons when the automaton is in an approval-pending state (`needs_review`/`revisions_asked`/`waiting_input`), reusing the existing `prdActionPrompt` helper and `reject`/`request_revision` endpoints already used in the detail view — previously these actions required opening the detail view first.
 - **GH#172**: Approve now prompts for an optional note (reusing the same native-prompt pattern as Reject/Revise) across all three approve call sites — the list-card lifecycle strip, the detail-view lifecycle strip, and the detail-header approve button — instead of approving silently.
 
-Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, first batch; remaining Phase 1 items are still queued (see the plan doc for the full list).
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, first batch; remaining Phase 1 items are still queued (see the plan doc for the full list).
 
-## v8.39.27 — fix(pwa): BL396 Phase 0 — Council runs bug, splash badge removal, brand casing
+## v8.39.27 — fix(pwa): PWA parity sweep Phase 0 — Council runs bug, splash badge removal, brand casing
 
 ### Fixed
 - **GH#178**: `GET /api/council/runs` returns a bare array (same as `/api/council/personas`, "bare array for mobile client compat"), but `loadCouncilPanel` read `rdata.runs` — always `undefined` against a bare array, so the Council "Recent Runs" list was always empty regardless of how many runs existed. Fixed to accept either shape (`Array.isArray(rdata) ? rdata : (rdata && rdata.runs) || []`), matching the already-correct handling of `/api/council/personas` two lines above. New `internal/server/web/app-council.test.js` (2 tests, confirmed to fail without the fix).
 - **GH#176**: removed the "Updated to v*X*" badge that appeared on the splash screen after a daemon version change — never requested, and already removed from the Android/iOS apps (datawatch-app v1.25.1). The rest of the splash gating (first visit / version change / >24h since last shown) is unchanged; only the badge element goes. Dropped the now-unused `status_updated_to` locale key from all 5 bundles.
 - **GH#172**: lowercased the "datawatch" brand name everywhere it was still capitalized — `<title>`, the `apple-mobile-web-app-title` meta tag, `manifest.json`'s `name`/`short_name`, and the header title (both the static HTML fallback and the `nav_home` locale key across all 5 bundles, which is what actually renders once the PWA loads). The splash screen was already lowercase.
-- Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 0 of 4; see that plan for the rest of the sequenced parity backlog.
+- Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 0 of 4; see that plan for the rest of the sequenced parity backlog.
 
 ## v8.39.26 — fix(autonomous): per_story_approval (and 4 sibling bools) could never be explicitly cleared back to false
 
