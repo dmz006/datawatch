@@ -1,0 +1,235 @@
+# Plan: PWA parity adoption sweep (GH#107, #172, #176, #177, #178, #181, #182) + APNs push (BL335/#107/#158)
+
+- **Date**: 2026-10-05
+- **Version at planning**: v8.39.26
+- **Status**: Planned — not started
+
+## Context
+
+The three-way parity audit (PWA ↔ Android ↔ iOS, recorded 2026-10-04 in
+`dmz006/datawatch-app`) and a follow-up operator decision pass on
+2026-10-05 produced a backlog of concrete, already-decided PWA changes —
+not open design questions, just a queue of "the apps had a better idea,
+adopt it into the PWA" items, plus one still-missing server capability
+(APNs push) that is the single thing fully blocking iOS push end-to-end
+(`datawatch-app#185` is explicitly blocked on `#158`). This plan sequences
+that queue so it ships in safe, reviewable batches instead of one
+giant change, per AGENT.md's Planning Rules (3+ files / non-trivial
+work → a dated plan doc with phases).
+
+**Everything in Phases 0–3 is a one-directional parity fix: Android/iOS
+already have the feature; the PWA is catching up.** No new datawatch-app
+work is implied by those phases. BL335 (Phase 4) is the one item that is
+genuinely unbuilt on *any* platform's server dependency — it unblocks the
+iOS side, not the other way around.
+
+Confirmed via direct investigation (not re-stating the issues' own text):
+- `docs/parity-status.md` (last touched v8.33.32 / 2026-09-17, now stale —
+  this plan's items aren't reflected yet) already has the iOS column; it
+  needs a refresh pass once Phase 0–4 land, not a structural change.
+- `internal/devices/store.go` already has `KindAPNS` in its enum and
+  `Valid()` accepts it — `POST /api/devices/register` with `kind=apns`
+  already works today. What's missing is *dispatch*: no APNs HTTP/2 call
+  exists anywhere, and `ListByKind` (store.go:190) is never called outside
+  tests. **There is no FCM function to mirror** — there is no
+  Firebase/FCM code in this repo at all (checked: `grep -rln
+  "fcm.googleapis\|firebase\|SendFCM"` → empty). All push today is a
+  generic UnifiedPush/ntfy webhook POST via `publishToEndpoint`/
+  `publishToTopic` (`internal/server/push.go:154-172`) — mirror *that*
+  shape (register → store token → dispatch-on-alert), not an FCM pattern.
+- No DAG/graph-rendering library or canvas node/edge renderer exists in
+  `app.js` (orchestrator graphs today are a flat card list,
+  `loadOrchestratorPanel`, app.js:24816-24860) — the Automaton DAG card
+  (GH#182) is new UI surface, not a wire-up of something existing.
+- No raw-config-viewer UI exists in `app.js` — GH#172 D79 is new surface.
+- The Observer panel (`renderObserverView`, app.js:23567+) establishes a
+  reusable card pattern (`secContent`-wrapped sections, async `apiFetch`
+  into a named `*Block` div) but none of D78's named cards (server info,
+  session ring, Ollama, envelopes, backend health, eBPF-degraded banner,
+  add-memory) exist under those names today.
+- `GET /api/council/runs` and `/api/council/personas` both return **bare
+  arrays** (`internal/server/council.go` — "bare array for mobile client
+  compat"). `loadCouncilPanel` (app.js:26359-26363) already handles
+  `personas` correctly (`data || []`) but still does `(rdata &&
+  rdata.runs) || []` for runs, which is always `[]` against a bare array —
+  this is GH#178, one line, confirmed as the only call site hitting that
+  bug (a near-identical pattern exists for `/api/evals/runs` at
+  app.js:26287-26288, outside #178's scope but worth a follow-up note).
+- The markdown renderer GH#181 asks for already exists and is already used
+  for the Automata spec view — reuse it verbatim for council replies, no
+  new renderer needed.
+- The inline file-viewer GH#172 D83 asks for (for story/task file chips)
+  already exists as `_showFileViewer`/`_fileChip` (built this session for
+  SEC-006's nonce-scoped download flow) — reuse it, don't rebuild it.
+
+## Phases
+
+### Phase 0 — zero-design fixes (ship first, same day)
+No UI decisions, no new surfaces, each a single localized change:
+- **GH#178** — `loadCouncilPanel` (app.js:26359-26363): change
+  `(rdata && rdata.runs) || []` to `Array.isArray(rdata) ? rdata : (rdata
+  && rdata.runs) || []`, matching the already-correct `personas` handling
+  two lines above.
+- **GH#176** — remove the "Updated to vX" splash badge (`app.js` ~316-324,
+  the `isNewVersion` → badge div), drop the `status_updated_to` locale key
+  from all 5 bundles (`internal/server/web/locales/*.json`). Keep the rest
+  of the splash gating (first visit / version change / >24h) untouched.
+- **GH#172 D9/D1** — lowercase "datawatch" brand casing: header title,
+  `manifest.json` `name`/`short_name`, page `<title>`. Splash already
+  lowercase.
+
+### Phase 1 — small, well-specified UI adoptions (existing APIs, no new surface)
+Each item is a button/field/badge wired to an API that already exists:
+- **GH#172 D52** — wire the already-defined `automataPause`/
+  `automataResume` functions into the Automata card/detail action bar.
+- **GH#172 D64** — Council 🎭 badge + filter chip (session list/filters).
+- **GH#172 D66** — Agent ⬡ / "Chrome" badges in session header.
+- **GH#172 D68** — chat quick-reply chips (Yes/No/Stop).
+- **GH#172 D70** — Alert-rule "Recent Firings" list (data already served
+  by the alert-rules REST surface).
+- **GH#172 D71** — parent-PRD ↗ link on an Automaton card.
+- **GH#172 D72** — inline Reject/Revise buttons on the Automaton list card
+  (existing `reject`/`request_revision` endpoints).
+- **GH#172 D74** — approve-with-note (textarea + existing `approve` call).
+- **GH#172 D75** — edit `permission_mode` on an Automaton (PWA-only per
+  the issue's own decision — apps don't need this one).
+- **GH#172 D81** — saved-command library picker in the New Session task
+  field (existing saved-commands REST surface).
+- **GH#172 D82** — "Resume previous session" field on New Session.
+- **GH#182** — '?' help icons on Alerts/Dashboard headers (same pattern as
+  other views' manual-section links); restart confirm dialog; sessions
+  list error banner on unreachable server; filter chip-row expand/collapse
+  animation; floating ＋ button on Templates tab; the 4 extra Automata
+  settings fields (`decomposition_backend`, `decomposition_effort`,
+  `verification_effort`, `stale_task_seconds` — already real config keys,
+  just missing from the Automata config card); `datawatch://alert/<id>`
+  deep-link route handling on PWA load.
+
+### Phase 2 — medium items, bounded but touching more than one file
+- **GH#181** — render council persona replies/consensus/dissent as
+  markdown, untruncated/collapsible, reusing the Automata-spec-view
+  markdown renderer verbatim.
+- **GH#172 D83** — inline file viewer for story/task file chips, reusing
+  `_showFileViewer`/`_fileChip` (already built this session).
+- **GH#172 D76** — "repair depends_on" button (the
+  `autonomous_prd_repair_depends_on` capability already exists server-side
+  per today's MCP capability audit).
+- **GH#172 D77** — memory recall / scopes / lifecycle UI (BL385-387's
+  `memory_scope_*` APIs already exist; this is UI-only).
+- **GH#177** — per-story resource bars (CPU%/RSS) + a remote compute-node
+  card (per-GPU util/temp/power/VRAM) on Automata detail, replacing the
+  current single aggregate CPU/RAM total. Data already available via the
+  compute-node detail/health endpoints.
+- **GH#172 D59/D60/D62/D69/D73** — Android splash extras (status line,
+  "Replay splash"); skeleton shimmer loading list; swipe-to-mute + muted
+  icon; terminal search/copy; wizard "memory promote to" field.
+- **GH#172 D61** — watch sessions/automata + watched-badge filter.
+- **GH#172 D63** — Whisper 🎤 voice reply in quick commands (transcription
+  endpoint already exists via `internal/transcribe`; this is UI wiring).
+- **GH#172 D65, D67** — three-finger swipe-up gesture and "other Android
+  session-detail extras" are under-specified for a PWA (no native gesture
+  layer, and D67 doesn't name what the extras are) — resolve with a
+  one-line comment on GH#172 asking for the specific behaviors before
+  implementing, don't guess.
+
+### Phase 3 — new UI surfaces (need their own small design pass, no existing pattern to copy exactly)
+- **GH#182** — Automaton DAG card. No graph library exists in this repo;
+  recommend a hand-rolled layout (stories as columns, tasks as rows, SVG
+  lines for dependency edges) over pulling in a dependency like dagre/
+  cytoscape, consistent with the PWA's current zero-heavy-dependency
+  footprint. Small graphs (a handful of stories/tasks) don't need a real
+  layout engine.
+- **GH#172 D78** — Android-only Observer cards (server info, session
+  ring + `max_sessions`, Ollama, envelopes, backend health, eBPF-degraded
+  banner, add-memory), following the existing `renderObserverView` card
+  pattern (`secContent` + async `apiFetch` into a named block).
+- **GH#172 D79** — Config Viewer + raw config editor. Needs explicit
+  secret-redaction care (reuse the `token_present`/redaction pattern from
+  this session's SEC-014 work, never render secret values raw).
+- **GH#172 D80** — subsystem reload + MCP channel/tools cards in About.
+
+### Phase 4 — APNs push (BL335 / GH#107 / GH#158) — independent backend track, can run in parallel with Phases 0–3
+This is the one item blocking an entire platform's push notifications
+(`datawatch-app#185`). Per BL335's existing spec in
+`docs/plans/README.md` and `docs/parity-status.md`'s "APNs Server Work"
+section:
+1. `internal/config/config.go` — extend `PushConfig` with `apns.key_id`,
+   `apns.team_id`, `apns.bundle_id`, `apns.key_path`.
+2. `internal/server/push.go` — new APNs dispatch function alongside
+   `publishToEndpoint`/`publishToTopic`: JWT (ES256, signed with the `.p8`
+   key) auth per Apple's APNs provider API, HTTP/2 POST to
+   `api.push.apple.com`, payload `{"aps":{"alert":{...},
+   "content-available":1,"badge":N},"sessionId":...,"type":...}`.
+3. Wire the dispatch into the existing alert-fire path, filtered on
+   `device.Kind == devices.KindAPNS` (enum already exists;
+   `ListByKind` already exists but is called nowhere outside tests — wire
+   it in here).
+4. 7-surface parity (BL335's own requirement): REST (device registration
+   already accepts `kind=apns`) + MCP + CLI + comm + PWA (device
+   management settings surfaces an APNs-registered badge) + YAML config
+   for the 4 new `push.apns.*` fields.
+5. Docs: `docs/config-reference.yaml` new fields; flip
+   `docs/parity-status.md`'s "APNs send — ❌ Pending" row to ✅ once
+   shipped.
+
+## Parity surface
+
+This plan is *about* parity, so the surface framing is inverted from a
+normal feature plan:
+- **Phases 0–3**: direction is Android/iOS → PWA. Android and iOS already
+  have every one of these behaviors; implementing them closes the PWA gap.
+  No new datawatch-app work is implied. REST/MCP/CLI/comm/YAML are
+  unaffected — these are PWA-only UI changes (none of D59-D83, #182, #176,
+  #178, #181, #177 change an API contract).
+- **Phase 4 (BL335/APNs)**: REST, MCP, CLI, comm, YAML, PWA all get the
+  new `push.apns.*` surface per item 4 above. Android is unaffected (it
+  already has FCM). iOS is the platform this unblocks, but the native iOS
+  client code itself lives in `dmz006/datawatch-app` and is out of scope
+  here — only the server-side dispatch this plan builds.
+
+## Out of scope (cross-repo / explicitly deferred)
+- Any `dmz006/datawatch-app` (Android/iOS) code — this plan is
+  datawatch-server/PWA-only; the apps already have the behaviors being
+  adopted.
+- GH#4 and GH#107's "parity tracking doc" ask beyond a refresh pass — #4
+  is a standing process umbrella (no code), and #107's doc-structure ask
+  is already satisfied (iOS column exists); only its APNs ask (Phase 4)
+  is still open.
+- GH#172 D65/D67 — deferred pending clarification (see Phase 2 note).
+
+## Files (representative, not exhaustive — most items touch only these two)
+- `internal/server/web/app.js` — nearly every Phase 0-3 item.
+- `internal/server/web/locales/*.json` — any item adding/removing a
+  user-facing string (Phase 0's badge removal, new labels in Phases 1-3),
+  per AGENT.md's Localization Rule (5 bundles + `v5280_locales_test.go`
+  `mustHave` update for high-visibility keys).
+- `internal/config/config.go`, `internal/server/push.go`,
+  `internal/devices/store.go` — Phase 4 only.
+- `docs/parity-status.md`, `docs/plans/README.md` (new BL-number for this
+  sweep; BL335 already exists and is reused for Phase 4) — updated as
+  phases ship, not written upfront.
+
+## Verification
+- Each phase: `node --test internal/server/web/*.test.js` (existing
+  escaping/XSS/prototype-pollution guards must keep passing — any new
+  `innerHTML` assembly in Phases 1-3 should go through the existing
+  `escHtml`/`DOMPurify` patterns, not raw interpolation).
+- Phase 0's #178 fix: add a regression test asserting
+  `_renderCouncilPanel`'s runs argument is non-empty when `/api/council/
+  runs` returns a bare array (confirmed-fails-without-fix pattern used
+  throughout this session).
+- Phase 4: new unit tests for the APNs JWT signing + payload shape
+  (mirroring how `internal/server/push_test.go` tests the existing
+  webhook dispatch), plus a `docs/testing-tracker.md` entry (new endpoint
+  surface) and a manual smoke against a real `.p8` key in sandbox before
+  calling it shipped — do not mark iOS push "done" on unit tests alone,
+  per this session's own standard of live-verifying security/capability
+  surfaces.
+- Mobile-Parity Rule audit (AGENT.md): since Phases 0-3 are themselves
+  *closing* parity gaps (not opening new ones), no new datawatch-app issue
+  is filed for them — comment on/close the originating issue (#172's
+  checkboxes, #182, #176, #178, #181, #177) as each ships instead.
+- Before tagging any release that includes Phase 4: confirm `docs/parity-
+  status.md`'s APNs row and GH#107/#158 are updated together — don't let
+  the doc drift stale again (it was 6 minor versions behind at the start
+  of this plan).
