@@ -1556,7 +1556,7 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 2 batch 1 ✅ Shipped v8.45.0** (minor): GH#172 D76 (Automaton detail "Repair deps" button, calling the existing `repair_depends_on` REST action — confirmed server-side on REST too, not just MCP).
 >
-> **Phase 2 batch 2 ✅ Shipped v8.46.0** (minor): GH#181 (council run viewer renders persona replies/consensus/dissent as collapsible markdown, reusing the Automata-spec-view renderer verbatim — replacing a raw `alert(JSON.stringify(...))` dump found live).
+> **Phase 2 batch 2 ⚠️ Shipped v8.46.0, partial** (minor): GH#181 (council run viewer renders persona replies/consensus/dissent as collapsible markdown, reusing the Automata-spec-view renderer verbatim — replacing a raw `alert(JSON.stringify(...))` dump found live). Covers the completed-run modal only; the live in-progress run log still truncates to plain text (correction 2026-10-06, issue left open).
 >
 > **Phase 2 batch 3 ✅ Shipped v8.47.0** (minor): GH#172 D77 (memory scope inventory + cross-layer recall browser + promote, reusing the existing `memory_scope_*` REST surface — with a dedup fix for recall's one-row-per-overlapping-layer behavior, found live). D83 checked live and found already shipped since v8.35.0 (story/task file chips already use `_fileChip()`/`_showFileViewer()`) — no new work needed.
 >

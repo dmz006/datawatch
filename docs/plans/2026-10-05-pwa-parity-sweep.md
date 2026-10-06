@@ -220,11 +220,17 @@ Each item is a button/field/badge wired to an API that already exists:
   surface, not a wire-up.
 
 ### Phase 2 — medium items, bounded but touching more than one file
-- **GH#181 ✅ shipped v8.46.0** — render council persona replies/
-  consensus/dissent as markdown, untruncated/collapsible, reusing the
-  Automata-spec-view markdown renderer verbatim. Found live: the prior
-  "view run" affordance was a raw `alert(JSON.stringify(run))` — not
-  truncated text as the issue assumed, no rendering at all.
+- **GH#181 ⚠️ partially shipped v8.46.0** — render council persona
+  replies/consensus/dissent as markdown, untruncated/collapsible,
+  reusing the Automata-spec-view markdown renderer verbatim. Found
+  live: the prior "view run" affordance was a raw `alert(JSON.stringify(run))` — not
+  truncated text as the issue assumed, no rendering at all. **Correction
+  2026-10-06**: this covers the *completed*-run modal only. The *live*
+  in-progress run log (`councilOpenLiveWatch`) still appends plain
+  `textContent` truncated to 600/400 chars, exactly as GH#181 originally
+  described — that surface was never actually touched. Still open on
+  GH#181; needs either a live-markdown pass or an operator call that
+  the completed-run modal is sufficient.
 - **GH#172 D83 (checked live 2026-10-06, already shipped)** — inline
   file viewer for story/task file chips. Already fully wired since
   v8.35.0 (`git log -L` on app.js:10460-10467 confirms): story files,
