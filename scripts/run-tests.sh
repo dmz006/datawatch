@@ -301,10 +301,35 @@ prepare_k8s_image() {
   fi
 }
 
+# wait_or_kill sends SIGTERM to pid, polls for up to timeout_s seconds for it
+# to exit, then SIGKILLs it if it's still alive, and finally reaps it with a
+# plain `wait` (returns immediately either way once the process is dead).
+#
+# Found live 2026-10-05: stop_test_daemon used a bare `kill "$PID"; wait
+# "$PID"` with no timeout. When the daemon didn't exit promptly from
+# SIGTERM (observed after a real autonomous-PRD failure path put it under
+# load), `wait` blocked indefinitely — the whole suite hung for 90+ minutes
+# with zero CPU use and no self-recovery, requiring a manual SIGKILL from
+# outside the script to unblock it.
+wait_or_kill() {
+  local pid="$1" timeout_s="${2:-15}"
+  kill "$pid" 2>/dev/null || true
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ $waited -ge $timeout_s ]]; then
+      echo "  [cleanup] pid $pid did not exit within ${timeout_s}s of SIGTERM — sending SIGKILL" >&2
+      kill -9 "$pid" 2>/dev/null || true
+      break
+    fi
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+  wait "$pid" 2>/dev/null || true
+}
+
 stop_test_daemon() {
   if [[ -n "$DAEMON_PID" ]]; then
-    kill "$DAEMON_PID" 2>/dev/null || true
-    wait "$DAEMON_PID" 2>/dev/null || true
+    wait_or_kill "$DAEMON_PID" 15
     DAEMON_PID=""
   fi
   if [[ -n "$NTFY_PID" ]]; then
