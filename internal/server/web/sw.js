@@ -107,7 +107,7 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push', event => {
   const data = event.data ? event.data.json() : {};
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Datawatch', {
+    self.registration.showNotification(data.title || 'datawatch', {
       body: data.body || 'A session needs your attention.',
       icon: '/icon-192.svg',
       badge: '/icon-192.svg',

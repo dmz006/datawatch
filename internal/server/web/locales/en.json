@@ -1383,7 +1383,7 @@
   "theme_mode_label": "Theme",
   "theme_section_title": "Appearance",
   "theme_system": "System",
-  "tile_voice_label": "Datawatch voice",
+  "tile_voice_label": "datawatch voice",
   "timeline_empty": "No timeline events recorded yet.",
   "timeline_error": "Failed to load timeline.",
   "timeline_loading": "Loading timeline…",

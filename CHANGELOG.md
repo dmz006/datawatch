@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.6 — fix(pwa): remaining "Datawatch" capitalization instances
+
+### Fixed
+- The datawatch-app session's parity re-audit (2026-10-06) found 9 "datawatch" brand-casing instances the earlier Phase 0 pass (GH#172 D9/D1) missed: the input-needed browser notification title, two inline Settings labels, `api-docs.html`'s page `<title>`, the push-notification service worker's fallback title, and the `tile_voice_label` locale key across all 5 bundles. German's `widget_monitor_label`/`widget_sessions_label`/`widget_monitor_description` were also capitalized — confirmed not a required German noun-capitalization convention, since the rest of the German bundle already uses lowercase "datawatch" consistently elsewhere (`datawatch-stats`, `datawatch setup matrix`, etc.).
+
 ## v8.61.5 — fix(pwa): MCP Tools card matches the app's richer per-tool shape
 
 ### Fixed

@@ -1633,7 +1633,7 @@ function handleNeedsInput(sessionId, prompt) {
   // Show browser notification
   if (!isMuted && state.notifPermission === 'granted') {
     const sessLabel = sess ? sess.id : sessionId;
-    new Notification('Datawatch — Input Needed', {
+    new Notification('datawatch — Input Needed', {
       body: `Session [${sessLabel}] is waiting for your input.\n${prompt.slice(0, 80)}`,
       icon: '/icon-192.svg',
       tag: 'needs-input-' + sessionId,
@@ -7353,7 +7353,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('tooling', 'Backend Artifact Lifecycle')}
           <div id="settings-sec-tooling" style="${secContent('tooling')}">
             <div style="padding:8px 12px;font-size:13px;color:var(--text2);">
-              Datawatch can manage LLM backend file artifacts (aider cache, goose sessions, etc.)
+              datawatch can manage LLM backend file artifacts (aider cache, goose sessions, etc.)
               in your project directories.
             </div>
             <div id="toolingStatusPanel"><div style="color:var(--text2);font-size:13px;padding:8px 12px;">Loading…</div></div>
@@ -9554,7 +9554,7 @@ window.openComputeAddPanel = function(existingNode) {
       </div>
       <div id="computeRoutingProxySection" style="display:${initRouting === 'datawatch-proxy' ? '' : 'none'};">
         <div class="wizard-field" style="border-left:3px solid var(--accent,#6366f1);padding-left:10px;margin-left:4px;">
-          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_proxy_section')||'Datawatch proxy settings')}</div>
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_proxy_section')||'datawatch proxy settings')}</div>
           <div style="display:flex;flex-direction:column;gap:6px;">
             <div>
               <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_peer')||'Peer (registered server)')}</label>
@@ -12903,7 +12903,7 @@ const COMMS_CONFIG_FIELDS = [
 ];
 
 const GENERAL_CONFIG_FIELDS = [
-  { id: 'dw', section: 'Datawatch', docs: 'howto/setup-and-install.md', fields: [
+  { id: 'dw', section: 'datawatch', docs: 'howto/setup-and-install.md', fields: [
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
     { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
     { key: 'session.backend_family', label: 'Default LLM backend', type: 'llm_select' },
@@ -25832,7 +25832,7 @@ window.pushUnregister = function(id) {
 };
 
 window.pushSendTest = function() {
-  apiFetch('/api/push/notify', { method: 'POST', body: JSON.stringify({ title: 'Datawatch test', message: 'Push notification test from Settings' }) })
+  apiFetch('/api/push/notify', { method: 'POST', body: JSON.stringify({ title: 'datawatch test', message: 'Push notification test from Settings' }) })
     .then(() => showToast('Test notification sent', 'success', 2000))
     .catch(e => showToast(String(e.message||e), 'error'));
 };

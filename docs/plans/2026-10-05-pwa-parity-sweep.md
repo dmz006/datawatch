@@ -114,7 +114,15 @@ No UI decisions, no new surfaces, each a single localized change:
   of the splash gating (first visit / version change / >24h) untouched.
 - **GH#172 D9/D1** — lowercase "datawatch" brand casing: header title,
   `manifest.json` `name`/`short_name`, page `<title>`. Splash already
-  lowercase.
+  lowercase. **Follow-up v8.61.6** (datawatch-app parity re-audit,
+  2026-10-06): found 9 remaining capitalized instances this pass
+  missed — the input-needed browser notification title, 2 inline
+  Settings labels, `api-docs.html`'s `<title>`, the push-notification
+  service worker's fallback title, and `tile_voice_label` in all 5
+  locale bundles (German's `widget_monitor_label`/`widget_sessions_label`/
+  `widget_monitor_description` were also capitalized — not a German
+  noun-capitalization requirement, since the rest of the German bundle
+  already uses lowercase "datawatch" consistently elsewhere).
 
 ### Phase 1 — small, well-specified UI adoptions (existing APIs, no new surface)
 Each item is a button/field/badge wired to an API that already exists:
