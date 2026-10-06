@@ -109,6 +109,16 @@ type Session struct {
 	// sessions running directly on this host.
 	AgentID string `json:"agent_id,omitempty"`
 
+	// ChromeEnabled (GH#172 D66) — true when this session was started
+	// with --chrome (claude-code's browser automation via Chrome
+	// DevTools Protocol). Set once at creation from StartOptions.Chrome
+	// and never changes afterward, same lifecycle as the backend's own
+	// private chrome *bool (internal/llm/claudecode/backend.go) — this
+	// field just makes that same decision visible/persisted on the
+	// Session record instead of living only inside the backend object,
+	// which has no getter and isn't part of the serialized session.
+	ChromeEnabled bool `json:"chrome_enabled,omitempty"`
+
 	// ParentID (BL347) — FullID of the session that spawned this one via the
 	// MCP start_session tool or REST API. Empty for root sessions. Used to build
 	// the session lineage tree in the web UI and messaging list views.

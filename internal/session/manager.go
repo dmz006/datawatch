@@ -1910,6 +1910,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if opt.Chrome != nil {
 			if cm, ok := backendObj.(interface{ SetChrome(bool) }); ok {
 				cm.SetChrome(*opt.Chrome)
+				// GH#172 D66 — persist the same decision onto the Session
+				// record so it's visible/serialized after creation, not
+				// just held inside the backend object's own private
+				// field. Gated on the same `ok` check as SetChrome
+				// itself, so the badge only ever reflects a backend that
+				// actually honors the flag, not merely "requested".
+				sess.ChromeEnabled = *opt.Chrome
 			}
 		}
 	}

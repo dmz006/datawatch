@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.56.0 — feat(session): BL396 Phase 3 batch 2 — persist Chrome-enabled flag (GH#172 D66)
+
+### Added
+- **`Session.ChromeEnabled`** — new persisted/serialized field, set at session creation when `--chrome` is actually honored by the backend (same gate as the existing `SetChrome` call). Previously this decision lived only inside the claude-code backend's own private field, with no getter and no way for the PWA (or anything else) to know after the fact whether a session has Chrome DevTools Protocol browser automation enabled.
+- **PWA**: a green "Chrome" badge on session cards when `chrome_enabled` is true, next to the existing agent-worker badge.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+
 ## v8.55.0 — feat(autonomous): BL396 Phase 3 batch 1 — PRD permission_mode editor (GH#172 D75)
 
 ### Added

@@ -1041,6 +1041,8 @@
   "session_action_unwatch": "Stop watching",
   "session_action_mute": "Mute notifications for this session",
   "session_action_unmute": "Unmute notifications",
+  "session_chrome_badge": "Chrome",
+  "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
   "session_watch_filter_tip": "Show watched only",
   "sessions_disconnected_banner": "Not connected to the server — this list may be stale.",
   "session_council_badge": "Council",

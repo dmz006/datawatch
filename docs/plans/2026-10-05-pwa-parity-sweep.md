@@ -13,7 +13,9 @@
     D77, D63, D73, D61, D69, D60, D62, D59). D83 and GH#177 already
     shipped elsewhere. D65/D67 still await a GH#172 reply.
   - **Phase 3 in progress**: batch 1 (D75) ✅ shipped v8.55.0 (minor)
-    — added the missing `set_permission_mode` backend + PWA picker.
+    — added the missing `set_permission_mode` backend + PWA picker;
+    batch 2 (D66's Chrome badge) ✅ shipped v8.56.0 (minor) — added
+    `Session.ChromeEnabled` + PWA badge.
   - **Phase 4** planned, not started.
 
 ## Context
@@ -243,10 +245,10 @@ Each item is a button/field/badge wired to an API that already exists:
   above) — added `Manager.SetPermissionMode` + `set_permission_mode`
   REST case (mirroring `set_llm`/`set_memory_harvest`), then the PWA
   "Permission" picker on the Automaton detail view.
-- **GH#172 D66's Chrome badge** (re-scoped from Phase 1, see note above)
-  — needs a persisted, serialized `chrome`/`chrome_enabled` field on the
-  session (today it's a create-time-only option with no getter and no
-  JSON field). Small enough to land alongside D52/D75's backend work.
+- **GH#172 D66's Chrome badge ✅ shipped v8.56.0** (re-scoped from
+  Phase 1, see note above) — added `Session.ChromeEnabled` (set at
+  creation, gated on the same backend-supports-SetChrome check), then
+  the PWA badge.
 - **GH#182's `datawatch://alert/<id>` deep link** (re-scoped from Phase
   1, found live 2026-10-05) — checked for existing infrastructure to
   wire this onto and found none: `manifest.json` has no

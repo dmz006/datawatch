@@ -1576,7 +1576,9 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 2 batch 10 ✅ Shipped v8.54.0** (minor): GH#172 D59 (splash status line + "Replay splash" button, reusing the real launch splash via the existing gating/reload mechanism). **Phase 2 is now complete** except D65/D67 (awaiting a GH#172 reply).
 >
-> **Phase 3 batch 1 ✅ Shipped v8.55.0** (minor): GH#172 D75 (PRD permission_mode editor) — added the missing `Manager.SetPermissionMode` + `set_permission_mode` REST action (mirroring `set_llm`/`set_memory_harvest`), then the PWA picker. This was the real backend gap found live in Phase 1 that moved D75 to Phase 3 in the first place. Phase 4 remains open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 3 batch 1 ✅ Shipped v8.55.0** (minor): GH#172 D75 (PRD permission_mode editor) — added the missing `Manager.SetPermissionMode` + `set_permission_mode` REST action (mirroring `set_llm`/`set_memory_harvest`), then the PWA picker. This was the real backend gap found live in Phase 1 that moved D75 to Phase 3 in the first place.
+>
+> **Phase 3 batch 2 ✅ Shipped v8.56.0** (minor): GH#172 D66's Chrome badge — added `Session.ChromeEnabled` (persisted/serialized, gated on the same backend-supports-SetChrome check the existing create-time option already uses) + the PWA badge. Phase 4 remains open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)
