@@ -15,7 +15,13 @@
   - **Phase 3 in progress**: batch 1 (D75) ✅ shipped v8.55.0 (minor)
     — added the missing `set_permission_mode` backend + PWA picker;
     batch 2 (D66's Chrome badge) ✅ shipped v8.56.0 (minor) — added
-    `Session.ChromeEnabled` + PWA badge.
+    `Session.ChromeEnabled` + PWA badge; batch 3 (D52) ✅ shipped
+    v8.57.0 (minor) — added the missing `pause`/`resume` REST +
+    Manager/executor backend (new `PRDPaused` status, cooperative
+    drain in the dispatch loop); the PWA buttons/strings already
+    existed speculatively. Live-verification also caught and fixed 3
+    pre-existing PWA gaps where `paused` was missing from the active-
+    statuses filter set, the sort-rank map, and the filter badge row.
   - **Phase 4** planned, not started.
 
 ## Context
@@ -234,13 +240,24 @@ Each item is a button/field/badge wired to an API that already exists:
   secret-redaction care (reuse the `token_present`/redaction pattern from
   this session's SEC-014 work, never render secret values raw).
 - **GH#172 D80** — subsystem reload + MCP channel/tools cards in About.
-- **GH#172 D52** (re-scoped from Phase 1, see note above) — pause/resume
-  needs new server work first: a `paused` PRD status, `POST
-  /api/autonomous/prds/{id}/pause|resume` endpoints, `Manager.Pause`/
-  `Resume` methods persisting the status, and executor-loop awareness to
-  skip a paused PRD's stories/tasks without treating it as blocked/failed.
-  Only once that exists does the PWA button become real UI wiring rather
-  than a dead-end 404.
+- **GH#172 D52 ✅ shipped v8.57.0** (re-scoped from Phase 1, see note
+  above) — added the `PRDPaused` status, `POST
+  /api/autonomous/prds/{id}/pause|resume` REST actions, `Manager.Pause`/
+  `Resume` (persisting the status + a decision record), and a
+  cooperative-drain check in the executor's dispatch loop (same drain
+  pattern used for `PRDBlocked`: let in-flight tasks finish, skip
+  `autoFailDeps`/`launch`, don't touch the status the pause already
+  set). `API.Resume` reuses `API.Run`'s existing goroutine-launch/
+  idempotency machinery rather than duplicating it. The already-existing
+  `automataPause`/`automataResume` JS functions now hit real endpoints
+  instead of 404ing; added visible Pause/Resume buttons to the Automata
+  card action row, gated on status. Live-verification (a real daemon +
+  Playwright) caught 3 pre-existing PWA bugs unrelated to this feature's
+  own code: `paused` was missing from `_AUTOMATA_ACTIVE_STATUSES` (so a
+  paused Automaton vanished from the default list entirely), from
+  `_AUTOMATA_STATE_RANK` (sorted last instead of needs-attention
+  priority), and from the status-filter badge row — all fixed, plus a
+  `paused` card border color and filter-badge color.
 - **GH#172 D75 ✅ shipped v8.55.0** (re-scoped from Phase 1, see note
   above) — added `Manager.SetPermissionMode` + `set_permission_mode`
   REST case (mirroring `set_llm`/`set_memory_harvest`), then the PWA

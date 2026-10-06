@@ -17067,6 +17067,7 @@ const _AUTOMATA_STATE_RANK = {
   needs_review:     0,
   revisions_asked:  0,
   blocked:          1,
+  paused:           1,
   running:          2,
   decomposing:      2,
   approved:         3,
@@ -17112,7 +17113,7 @@ window.toggleAutomataWatchFilter = function() {
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','blocked','completed']);
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 function _automataFilteredList() {
@@ -17411,6 +17412,14 @@ function renderAutomataCard(prd) {
   const cancelBtn = isCancelable
     ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}" onclick="event.stopPropagation();automataCancel(${escId})">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
     : '';
+  // GH#172 D52 — pause a running automaton without treating it as
+  // blocked/failed; resume it from where it left off.
+  const pauseBtn = status === 'running'
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_pause_tip')||'Pause this automaton')}" onclick="event.stopPropagation();automataPause(${escId})">⏸ ${escHtml(t('automata_action_pause')||'Pause')}</button>`
+    : '';
+  const resumeBtn = status === 'paused'
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
+    : '';
   const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
   // GH#172 D61 — watch sessions/automata + watched-badge filter.
   const isWatched = _automataState.watched.has(id);
@@ -17439,7 +17448,7 @@ function renderAutomataCard(prd) {
         ${position}
         <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
-          ${cancelBtn}${rejectBtn}${reviseBtn}
+          ${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}
           <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${watchBtn}${pinBtn}</span>
         </div>
       </div>
@@ -19773,7 +19782,7 @@ function renderAutonomousView() {
   if (!view) return;
   const st = _automataState;
   // Active statuses + completed (shown by default); then terminal statuses behind history toggle
-  const statusBadgesActive = ['draft','planning','needs_review','approved','running','blocked','completed'].map(s => {
+  const statusBadgesActive = ['draft','planning','needs_review','approved','running','paused','blocked','completed'].map(s => {
     const active = st.statusFilter.has(s) ? 'active' : '';
     const label = escHtml(t('automata_status_' + s) || s);
     return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;

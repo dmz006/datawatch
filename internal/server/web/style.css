@@ -410,6 +410,7 @@ body {
 .prd-card-status-revisions_asked { border-left-color: var(--warning); }
 .prd-card-status-approved      { border-left-color: var(--accent); }
 .prd-card-status-running       { border-left-color: var(--success); }
+.prd-card-status-paused        { border-left-color: var(--warning); }
 .prd-card-status-completed     { border-left-color: var(--text2); }
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
@@ -513,6 +514,7 @@ body {
 .automata-filter-badge.status-needs_review.active  { background: #f59e0b; }
 .automata-filter-badge.status-approved.active      { background: #10b981; }
 .automata-filter-badge.status-running.active       { background: #10b981; }
+.automata-filter-badge.status-paused.active        { background: #f59e0b; }
 .automata-filter-badge.status-blocked.active       { background: #ef4444; }
 .automata-filter-badge.type-badge.active           { background: var(--accent2); }
 

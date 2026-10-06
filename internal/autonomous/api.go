@@ -348,6 +348,32 @@ func (a *API) Run(id string) error {
 	return nil
 }
 
+// Pause (GH#172 D52) — see Manager.Pause's doc comment for the actual
+// drain mechanics. This wrapper just adds the WS update emit.
+func (a *API) Pause(id, actor string) (any, error) {
+	updated, err := a.M.Pause(id, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return updated, err
+}
+
+// Resume (GH#172 D52) flips the PRD back to running via Manager.Resume,
+// then relaunches the executor exactly as a.Run already does — reusing
+// its runCancels idempotency/goroutine-launch logic unchanged, since
+// Resume leaves the PRD in PRDRunning, which Run's own gate accepts.
+func (a *API) Resume(id, actor string) (any, error) {
+	updated, err := a.M.Resume(id, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	if err := a.Run(id); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 // cancelRun is the internal trampoline Cancel + DeletePRD share to
 // stop the executor goroutine. Best-effort — silent if no run is
 // active.

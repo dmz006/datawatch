@@ -433,6 +433,20 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				completedIDs[r.tid] = true
 				latest, _ := m.store.GetPRD(prdID)
 				if latest != nil {
+					// GH#172 D52 — operator paused this PRD while tasks were
+					// in flight. Let already-launched goroutines finish
+					// naturally (same drain used for PRDBlocked below), but
+					// skip autoFailDeps()/launch() so nothing new starts,
+					// and don't touch latest.Status — Pause() already set
+					// it and this loop must not race back to PRDRunning.
+					if latest.Status == PRDPaused {
+						for len(inFlight) > 0 {
+							dr := <-results
+							finalizeDrained(dr)
+							delete(inFlight, dr.tid)
+						}
+						return nil
+					}
 					if lt := lookupTask(latest, r.tid); lt != nil {
 						// executeOne may have stored TaskFailed with nil error return.
 						if lt.Status == TaskFailed {

@@ -31,6 +31,7 @@ const (
 	PRDArchived        PRDStatus = "archived"
 	PRDBlocked         PRDStatus = "blocked"          // BL191 Q6 — a guardrail returned `block`; awaits operator action
 	PRDFailed          PRDStatus = "failed"           // one or more tasks failed after all retries; PRD did not complete
+	PRDPaused          PRDStatus = "paused"           // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.

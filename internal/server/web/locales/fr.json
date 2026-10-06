@@ -144,6 +144,7 @@
   "automata_status_planning": "planification",
   "automata_status_rejected": "rejeté",
   "automata_status_running": "en cours",
+  "automata_status_paused": "paused",
   "automata_tab_automata": "Automates",
   "automata_tab_templates": "Modèles",
   "automata_tmpl_btn_create": "Créer",

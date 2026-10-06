@@ -150,6 +150,10 @@ func (f *fakeOrchAutonomous) SetPermissionMode(string, string, string) (any, err
 	return nil, nil
 }
 
+// GH#172 D52 — pause/resume stubs.
+func (f *fakeOrchAutonomous) Pause(string, string) (any, error)  { return nil, nil }
+func (f *fakeOrchAutonomous) Resume(string, string) (any, error) { return nil, nil }
+
 // BL328 — async decompose streaming stub.
 func (f *fakeOrchAutonomous) DecomposeStreaming(string, func(int, int, any)) (any, error) {
 	return nil, nil

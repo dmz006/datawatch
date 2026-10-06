@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.57.0 — feat(autonomous): BL396 Phase 3 batch 3 — pause/resume a running Automaton (GH#172 D52)
+
+### Added
+- **`pause`/`resume`** — new REST actions (`POST /api/autonomous/prds/{id}/pause`, `.../resume`) and `Manager.Pause`/`Manager.Resume`. Pausing a running Automaton stops it from dispatching new tasks (already-launched tasks finish naturally) without treating it as blocked or failed — a new `PRDPaused` status, distinct from both. Resuming flips it back to running and relaunches the executor, picking up any tasks still pending.
+- **PWA**: Pause/Resume buttons on the Automata card action row, gated on status (`running` → Pause, `paused` → Resume) — the buttons and their REST calls already existed speculatively from an earlier pass; only the backend was missing.
+- Fixed 3 pre-existing PWA gaps found while live-verifying this: a `paused` Automaton was invisible in the default (active-only) list view, sorted last instead of needs-attention priority, and had no filter badge or card accent color — all now match `blocked`'s visibility/priority treatment.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+
 ## v8.56.0 — feat(session): BL396 Phase 3 batch 2 — persist Chrome-enabled flag (GH#172 D66)
 
 ### Added

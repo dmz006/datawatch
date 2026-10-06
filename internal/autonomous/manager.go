@@ -2105,6 +2105,51 @@ func (m *Manager) SetPermissionMode(prdID, mode, actor string) (*PRD, error) {
 	return updated, nil
 }
 
+// Pause (GH#172 D52) marks a running PRD paused. The already-live
+// executor goroutine (if any) notices this on its next result-loop
+// iteration (see executor.go's Run) and drains in-flight work without
+// starting anything new — this method only flips the stored status;
+// it does not itself touch any goroutine.
+func (m *Manager) Pause(prdID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDRunning {
+		return nil, fmt.Errorf("prd %q status %q is not running; only a running PRD can be paused", prdID, prd.Status)
+	}
+	prd.Status = PRDPaused
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "pause", Actor: actor})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// Resume (GH#172 D52) flips a paused PRD back to running. It does not
+// itself relaunch the executor goroutine — the caller (API.Resume)
+// does that the same way API.Run always does, since only the API
+// layer holds the spawn/verify callbacks Manager.Run needs.
+func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDPaused {
+		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
+	}
+	prd.Status = PRDRunning
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "resume", Actor: actor})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetMemoryHarvest (BL386 Phase 2) updates the PRD's harvest-on-completion config.
 func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)

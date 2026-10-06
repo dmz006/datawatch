@@ -144,6 +144,7 @@
   "automata_status_planning": "計画中",
   "automata_status_rejected": "却下",
   "automata_status_running": "実行中",
+  "automata_status_paused": "paused",
   "automata_tab_automata": "オートマタ",
   "automata_tab_templates": "テンプレート",
   "automata_tmpl_btn_create": "作成",
