@@ -7116,6 +7116,8 @@ function renderSettingsView() {
           ${settingsSectionHeader('alert_rules', 'Alert Rules', 'howto/alert-rules.md')}
           <div id="settings-sec-alert_rules" style="${secContent('alert_rules')}">
             <div id="alertRulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 4px;padding:0 16px;">${escHtml(t('alert_rules_recent_firings')||'Recent Firings')}</div>
+            <div id="alertRuleFiringsList" style="padding:0 16px;"><div style="color:var(--text2);font-size:13px;">${escHtml(t('common_loading')||'Loading…')}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Rule</summary>
               <div class="create-form">
@@ -7738,6 +7740,7 @@ function renderSettingsView() {
   }).catch(() => {});
   loadSavedCommands();
   loadAlertRules();
+  loadAlertRuleFirings(); // GH#172 D70
   loadExitHooks(); // BL356
   loadWorkQueue(); // BL357
   // BL247-followup v6.7.3 — Monitor-card loaders (loadStatsPanel, listMemories,
@@ -10954,7 +10957,7 @@ function renderPRDActions(prd) {
     btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
-    btns.push(a('Approve', `prdAction(${idJ},'approve','POST',{actor:'operator'})`, '#10b981'));
+    btns.push(a('Approve', `prdActionPrompt(${idJ},'approve','note','Approval note (optional)')`, '#10b981'));
     btns.push(a('Reject', `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`, '#ef4444'));
     btns.push(a('Revise', `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`, '#f59e0b'));
   }
@@ -11301,7 +11304,7 @@ function renderLifecycleStrip(prd) {
     const cls = stepClass(2);
     if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ ${t('prd_step_approve')||'Approve'}</button>`;
     if (cls === 'current') {
-      const approveAct = `prdAction(${idJ},'approve','POST',{actor:'operator'})`;
+      const approveAct = `prdActionPrompt(${idJ},'approve','note',${JSON.stringify(t('prd_approve_note_prompt')||'Approval note (optional)')})`;
       const rejectAct  = `prdActionPrompt(${idJ},'reject','reason',${JSON.stringify(t('prd_reject_prompt')||'Rejection reason')})`;
       const reviseAct  = `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`;
       return `<button class="lifecycle-step-btn current clickable" onclick="${approveAct}" title="${t('prd_step_approve')||'Approve'}">${t('prd_step_approve')||'Approve'}</button>` +
@@ -16988,10 +16991,24 @@ function renderAutomataCard(prd) {
   const approveBtn = isApprovalState
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;" title="${escHtml(t('automata_action_approve_tip')||'Approve next story / unblock')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`
     : '';
+  // GH#172 D72 — inline Reject/Revise on the list card (Android already has
+  // this); reuses the same prdActionPrompt helper the detail view's Reject/
+  // Request Revision buttons already use.
+  const rejectBtn = isApprovalState
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;color:var(--error);border-color:var(--error);" title="${escHtml(t('prd_action_reject')||'Reject')}" onclick="event.stopPropagation();prdActionPrompt(${escId},'reject','reason',${escHtml(JSON.stringify(t('prd_reject_prompt')||'Rejection reason'))})">✗ ${escHtml(t('prd_action_reject')||'Reject')}</button>`
+    : '';
+  const reviseBtn = isApprovalState
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}" onclick="event.stopPropagation();prdActionPrompt(${escId},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`
+    : '';
   const cancelBtn = isCancelable
     ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}" onclick="event.stopPropagation();automataCancel(${escId})">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
     : '';
   const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
+  // GH#172 D71 — parent-PRD ↗ link on an Automaton card (Android already
+  // has this). parent_prd_id is already in the JSON (BL191 Q4 recursion).
+  const parentLink = prd.parent_prd_id
+    ? `<a href="#" style="color:var(--accent2,#60a5fa);text-decoration:none;" title="${escHtml(t('automata_parent_link_tip')||'Open parent automaton')}" onclick="event.stopPropagation();event.preventDefault();renderPRDDetailView(${escHtml(JSON.stringify(prd.parent_prd_id))})">↗ ${escHtml(t('automata_parent_link')||'parent')}</a>`
+    : '';
   const storyCount = (prd.stories || []).length;
   return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="renderPRDDetailView(${escId})">
     <div style="display:flex;align-items:flex-start;gap:10px;">
@@ -17003,6 +17020,7 @@ function renderAutomataCard(prd) {
           <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);margin-top:4px;font-family:var(--mono,monospace);">
+          ${parentLink}
           <code>${escHtml(id)}</code>
           ${lastActivity ? `<span>${escHtml(lastActivity)}</span>` : ''}
         </div>
@@ -17010,7 +17028,7 @@ function renderAutomataCard(prd) {
         ${position}
         <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
-          ${cancelBtn}
+          ${cancelBtn}${rejectBtn}${reviseBtn}
           <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${pinBtn}</span>
         </div>
       </div>
@@ -18930,7 +18948,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   let approveBtn = '';
   if (status === 'needs_review' || status === 'revisions_asked') {
     approveBtn =
-      `<button class="btn-primary prd-action-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'approve','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_approve_title')||'Approve this plan and proceed to Run')}">✓ ${escHtml(t('prd_step_approve')||'Approve')}</button>` +
+      `<button class="btn-primary prd-action-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'approve','note',${escHtml(JSON.stringify(t('prd_approve_note_prompt')||'Approval note (optional)'))})" title="${escHtml(t('prd_btn_approve_title')||'Approve this plan and proceed to Run')}">✓ ${escHtml(t('prd_step_approve')||'Approve')}</button>` +
       `<button class="btn-secondary prd-action-btn" style="color:var(--error);border-color:var(--error);" onclick="prdActionPrompt(${escHtml(idJ)},'reject','reason',${escHtml(JSON.stringify(t('prd_reject_prompt')||'Rejection reason'))})" title="${escHtml(t('prd_action_reject')||'Reject')}">✗ ${escHtml(t('prd_action_reject')||'Reject')}</button>` +
       `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`;
   }
@@ -21448,6 +21466,30 @@ function loadAlertRules() {
       }).join('') + '</div>';
     })
     .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load alert rules.</div>'; });
+}
+
+// GH#172 D70 — Alert-rule "Recent Firings" list (Android already has this).
+function loadAlertRuleFirings() {
+  const el = document.getElementById('alertRuleFiringsList');
+  if (!el) return;
+  fetch('/api/alert-rules/firings', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : { firings: [] })
+    .then(data => {
+      const firings = (data && Array.isArray(data.firings)) ? data.firings : [];
+      if (firings.length === 0) {
+        el.innerHTML = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('alert_rules_no_firings')||'No firings yet.')}</div>`;
+        return;
+      }
+      el.innerHTML = firings.slice(0, 20).map(f => {
+        const when = f.fired_at ? new Date(f.fired_at).toLocaleString('en-GB', { hour12: false }) : '';
+        return `<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <strong>${escHtml(f.rule_name||'')}</strong>
+          <span style="color:var(--text2);">${escHtml(f.source||'')} = ${escHtml(String(f.value!=null?f.value:''))}</span>
+          <span style="color:var(--text2);margin-left:auto;">${escHtml(when)}</span>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(t('alert_rules_firings_failed')||'Failed to load recent firings.')}</div>`; });
 }
 
 function toggleAlertRule(name, enable) {

@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.40.0 — feat(pwa): BL396 Phase 1 batch 1 — alert firings, parent-PRD link, inline reject/revise, approve-with-note
+
+### Added
+- **GH#172 (D70)**: Alert Rules settings section now shows a "Recent Firings" list (last 20) below the rule list, reading the existing alert-rules firings REST endpoint (previously served but never rendered anywhere in the PWA).
+- **GH#172 (D71)**: Automaton list card shows a "↗ parent" link when the automaton has a `parent_prd_id`, jumping straight to the parent's detail view (Android already had this; `parent_prd_id` was already in the PRD JSON from BL191's Q4 recursion work).
+- **GH#172 (D72)**: Automaton list card gets inline ✗ Reject / ↺ Request Revision buttons when the automaton is in an approval-pending state (`needs_review`/`revisions_asked`/`waiting_input`), reusing the existing `prdActionPrompt` helper and `reject`/`request_revision` endpoints already used in the detail view — previously these actions required opening the detail view first.
+- **GH#172 (D74)**: Approve now prompts for an optional note (reusing the same native-prompt pattern as Reject/Revise) across all three approve call sites — the list-card lifecycle strip, the detail-view lifecycle strip, and the detail-header approve button — instead of approving silently.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, first batch; remaining Phase 1 items (D52→moved to Phase 3, D64, D66, D68, D75, D81, D82, GH#182) are still queued.
+
 ## v8.39.27 — fix(pwa): BL396 Phase 0 — Council runs bug, splash badge removal, brand casing
 
 ### Fixed

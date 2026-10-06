@@ -2,7 +2,10 @@
 
 - **Date**: 2026-10-05
 - **Version at planning**: v8.39.26
-- **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phases 1–4 planned, not started.
+- **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phase 1
+  batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); remaining
+  Phase 1 items (D64, D66, D68, D81, D82, GH#182) and Phases 2–4 planned,
+  not started. D52 and D75 re-scoped into Phase 3 (missing backend).
 
 ## Context
 
@@ -83,14 +86,24 @@ Each item is a button/field/badge wired to an API that already exists:
 - **GH#172 D64** — Council 🎭 badge + filter chip (session list/filters).
 - **GH#172 D66** — Agent ⬡ / "Chrome" badges in session header.
 - **GH#172 D68** — chat quick-reply chips (Yes/No/Stop).
-- **GH#172 D70** — Alert-rule "Recent Firings" list (data already served
-  by the alert-rules REST surface).
-- **GH#172 D71** — parent-PRD ↗ link on an Automaton card.
-- **GH#172 D72** — inline Reject/Revise buttons on the Automaton list card
-  (existing `reject`/`request_revision` endpoints).
-- **GH#172 D74** — approve-with-note (textarea + existing `approve` call).
-- **GH#172 D75** — edit `permission_mode` on an Automaton (PWA-only per
-  the issue's own decision — apps don't need this one).
+- **GH#172 D70 ✅ shipped v8.40.0** — Alert-rule "Recent Firings" list
+  (data already served by the alert-rules REST surface).
+- **GH#172 D71 ✅ shipped v8.40.0** — parent-PRD ↗ link on an Automaton
+  card.
+- **GH#172 D72 ✅ shipped v8.40.0** — inline Reject/Revise buttons on the
+  Automaton list card (existing `reject`/`request_revision` endpoints).
+- **GH#172 D74 ✅ shipped v8.40.0** — approve-with-note (native prompt +
+  existing `approve` call, across all three approve call sites).
+- **GH#172 D75 (re-scoped, found live 2026-10-05)** — edit
+  `permission_mode` on an Automaton (PWA-only per the issue's own
+  decision — apps don't need this one). The PRD model already has a
+  `PermissionMode` field, but `grep -n 'case "set_'` in
+  `internal/server/autonomous.go` shows every sibling setter (`set_llm`,
+  `set_priority`, `set_type`, etc.) except `set_permission_mode` — no
+  REST case, no manager setter exists for this field. Same class of gap
+  as D52: needs a small backend addition (a `set_permission_mode` REST
+  case + manager method) before this is PWA-only UI wiring. Moved to
+  Phase 3 alongside D52.
 - **GH#172 D81** — saved-command library picker in the New Session task
   field (existing saved-commands REST surface).
 - **GH#172 D82** — "Resume previous session" field on New Session.
@@ -162,6 +175,10 @@ Each item is a button/field/badge wired to an API that already exists:
   skip a paused PRD's stories/tasks without treating it as blocked/failed.
   Only once that exists does the PWA button become real UI wiring rather
   than a dead-end 404.
+- **GH#172 D75** (re-scoped from Phase 1, see note above) — needs a
+  `set_permission_mode` REST case + manager setter before the PWA edit
+  control is real UI wiring rather than a dead-end 404. Small enough to
+  land alongside D52's backend work in the same sub-batch.
 
 ### Phase 4 — APNs push (BL335 / GH#107 / GH#158) — independent backend track, can run in parallel with Phases 0–3
 This is the one item blocking an entire platform's push notifications
