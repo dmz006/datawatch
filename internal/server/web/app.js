@@ -2938,6 +2938,21 @@ function renderSessionDetail(sessionId) {
          scroll-back-to-top), bumped font size + bold so it reads
          prominently against the toolbar. -->
     <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="${t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)'}" aria-label="${t('term_scroll_title')||'Scroll back through history'}" style="font-size:18px;font-weight:700;line-height:1;padding:0 8px;">&#10514;</button>
+    <!-- GH#172 D69 — terminal search/copy (Android has this dormant; the
+         PWA gets a real, active version). Hand-rolled on xterm's own
+         core buffer/selection API (getSelection/select/scrollToLine,
+         all present since @xterm/xterm's earliest versions) instead of
+         pulling in the official search addon, which would need its own
+         bundled file served alongside xterm.min.js. -->
+    <button class="term-tool-btn" id="termSearchBtn" onclick="toggleTermSearch()" title="${t('term_search_title')||'Search terminal output'}">&#128269;</button>
+    <button class="term-tool-btn" onclick="copyTermSelection()" title="${t('term_copy_title')||'Copy selection (or all output if nothing selected)'}">&#128203;</button>
+  </div>
+  <div class="term-search-bar" id="termSearchBar" style="display:none;align-items:center;gap:4px;padding:4px 8px;background:var(--bg2);border-bottom:1px solid var(--border);">
+    <input type="text" id="termSearchInput" class="form-input" style="flex:1;font-size:12px;padding:3px 6px;" placeholder="${escHtml(t('term_search_ph')||'Find in output…')}" oninput="_termSearchRun()" onkeydown="if(event.key==='Enter'){event.shiftKey?termSearchPrev():termSearchNext();event.preventDefault();}">
+    <span id="termSearchCount" style="font-size:11px;color:var(--text2);white-space:nowrap;"></span>
+    <button class="term-tool-btn" onclick="termSearchPrev()" title="${t('term_search_prev')||'Previous match'}">&#9650;</button>
+    <button class="term-tool-btn" onclick="termSearchNext()" title="${t('term_search_next')||'Next match'}">&#9660;</button>
+    <button class="term-tool-btn" onclick="toggleTermSearch()" title="${t('btn_close')||'Close'}">&#10005;</button>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
   // v6.11.21 — Stats tab added per operator: "The mobile app sessions
@@ -4475,6 +4490,82 @@ window.toggleTermFontDropdown = function(ev) {
 window.closeTermFontDropdown = function() {
   const menu = document.getElementById('termFontMenu');
   if (menu) menu.style.display = 'none';
+};
+
+// GH#172 D69 — terminal search/copy, hand-rolled on xterm's core
+// buffer/selection API (no new addon/bundle file needed).
+window.toggleTermSearch = function() {
+  const bar = document.getElementById('termSearchBar');
+  if (!bar) return;
+  const opening = bar.style.display === 'none';
+  bar.style.display = opening ? 'flex' : 'none';
+  if (opening) {
+    document.getElementById('termSearchInput')?.focus();
+  } else {
+    state._termSearchMatches = null;
+    state._termSearchIdx = -1;
+    const countEl = document.getElementById('termSearchCount');
+    if (countEl) countEl.textContent = '';
+    if (state.terminal) { try { state.terminal.clearSelection(); } catch (_) {} }
+  }
+};
+
+function _termSearchRun() {
+  const q = (document.getElementById('termSearchInput')?.value || '').toLowerCase();
+  const countEl = document.getElementById('termSearchCount');
+  state._termSearchMatches = [];
+  state._termSearchIdx = -1;
+  if (!q || !state.terminal) { if (countEl) countEl.textContent = ''; return; }
+  const buf = state.terminal.buffer && state.terminal.buffer.active;
+  if (!buf) return;
+  for (let y = 0; y < buf.length; y++) {
+    const line = buf.getLine(y);
+    if (!line) continue;
+    const text = line.translateToString(true).toLowerCase();
+    const col = text.indexOf(q);
+    if (col !== -1) state._termSearchMatches.push({ row: y, col, len: q.length });
+  }
+  if (countEl) countEl.textContent = state._termSearchMatches.length
+    ? `0/${state._termSearchMatches.length}`
+    : (t('term_search_no_matches') || 'No matches');
+}
+
+function _termSearchGoto(idx) {
+  const matches = state._termSearchMatches;
+  if (!matches || matches.length === 0 || !state.terminal) return;
+  const i = ((idx % matches.length) + matches.length) % matches.length;
+  state._termSearchIdx = i;
+  const m = matches[i];
+  state.terminal.scrollToLine(Math.max(0, m.row - Math.floor(state.terminal.rows / 2)));
+  try { state.terminal.select(m.col, m.row, m.len); } catch (_) {}
+  const countEl = document.getElementById('termSearchCount');
+  if (countEl) countEl.textContent = `${i + 1}/${matches.length}`;
+}
+
+window.termSearchNext = function() {
+  if (!state._termSearchMatches) _termSearchRun();
+  _termSearchGoto((state._termSearchIdx < 0 ? 0 : state._termSearchIdx + 1));
+};
+window.termSearchPrev = function() {
+  if (!state._termSearchMatches) _termSearchRun();
+  _termSearchGoto((state._termSearchIdx < 0 ? -1 : state._termSearchIdx - 1));
+};
+
+window.copyTermSelection = function() {
+  const term = state.terminal;
+  let text = '';
+  if (term && typeof term.getSelection === 'function') text = term.getSelection();
+  if (!text) {
+    // Nothing selected — copy the whole visible scrollback for the
+    // active session from the same ANSI-stripped buffer the fallback
+    // (non-xterm) view already maintains.
+    const buf = state.outputBuffer[state.activeSession] || [];
+    text = buf.join('\n');
+  }
+  if (!text) { showToast(t('term_copy_nothing') || 'Nothing to copy', 'info', 1500); return; }
+  navigator.clipboard.writeText(text)
+    .then(() => showToast(t('term_copy_done') || 'Copied', 'success', 1200))
+    .catch(() => showToast(t('term_copy_failed') || 'Copy failed', 'error', 2000));
 };
 
 function killSession(sessionId) {

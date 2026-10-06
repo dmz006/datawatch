@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.51.0 — feat(pwa): BL396 Phase 2 batch 7 — terminal search + copy
+
+### Added
+- **GH#172**: the session terminal toolbar now has 🔍 search and 📋 copy buttons (Android has this dormant; the PWA gets a real, active version). Search is hand-rolled on xterm.js's own core buffer/selection API (`getSelection`/`select`/`scrollToLine`) rather than the official search addon, avoiding a new bundled dependency file — matches on any visible scrollback line, Enter/Shift+Enter or ▲/▼ to step through matches with a `N/total` counter. Copy copies the current selection, or the full session output when nothing is selected.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.50.0 — feat(pwa): BL396 Phase 2 batch 6 — watch sessions/automata + watched filter
 
 ### Added

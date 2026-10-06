@@ -1509,5 +1509,14 @@
   "automata_watch_filter_title": "Show watched only",
   "session_action_watch": "Watch for updates",
   "session_action_unwatch": "Stop watching",
-  "session_watch_filter_tip": "Show watched only"
+  "session_watch_filter_tip": "Show watched only",
+  "term_search_title": "Search terminal output",
+  "term_copy_title": "Copy selection (or all output if nothing selected)",
+  "term_search_ph": "Find in output…",
+  "term_search_prev": "Previous match",
+  "term_search_next": "Next match",
+  "term_search_no_matches": "No matches",
+  "term_copy_nothing": "Nothing to copy",
+  "term_copy_done": "Copied",
+  "term_copy_failed": "Copy failed"
 }
