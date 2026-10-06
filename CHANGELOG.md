@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.48.0 — feat(pwa): BL396 Phase 2 batch 4 — voice reply in quick commands
+
+### Added
+- **GH#172**: the sessions-list "quick commands" popup's custom-reply field now has a 🎤 mic button (Android already had this), reusing the same generic voice-input helper (`micButtonHTML`/`startGenericVoiceInput`) already used on every PRD spec/description field — transcribes via the existing `/api/voice/transcribe` endpoint and fills the field, no new backend surface.
+
+### Investigated, no new work needed
+- **GH#177** (per-story resource bars + remote compute-node card): already fully shipped since v8.36.0 — `_loadPRDActiveSessionCard` renders one card per active session with its story/task context and full CPU/RAM + per-GPU util/temp/power/VRAM bars, resolved against that session's actual compute node. The plan's "single aggregate total" framing was outdated.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.47.0 — feat(pwa): BL396 Phase 2 batch 3 — memory scope browser + promote
 
 ### Added

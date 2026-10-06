@@ -14,10 +14,11 @@
   checked live and are already shipped elsewhere — no new work needed.
   Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor); Phase 2 batch 2
   (GH#181) ✅ shipped v8.46.0 (minor); Phase 2 batch 3 (D77) ✅ shipped
-  v8.47.0 (minor). D83 checked live and already shipped since v8.35.0
-  — no new work needed. Remaining Phase 2 items (GH#177,
-  D59/60/62/69/73, D61, D63, D65/67) and Phases 3–4 planned, not
-  started.
+  v8.47.0 (minor); Phase 2 batch 4 (D63) ✅ shipped v8.48.0 (minor).
+  D83 and GH#177 checked live and already shipped (v8.35.0 and v8.36.0
+  respectively) — no new work needed. D65/D67 awaiting a GH#172 reply
+  before implementing. Remaining Phase 2 items (D59/60/62/69/73, D61)
+  and Phases 3–4 planned, not started.
 
 ## Context
 
@@ -172,20 +173,27 @@ Each item is a button/field/badge wired to an API that already exists:
   reusing the existing `memory_scope_*` REST surface. Found live: the
   recall endpoint returns the same physical row once per layer it
   overlaps with — the new UI dedups before rendering.
-- **GH#177** — per-story resource bars (CPU%/RSS) + a remote compute-node
-  card (per-GPU util/temp/power/VRAM) on Automata detail, replacing the
-  current single aggregate CPU/RAM total. Data already available via the
-  compute-node detail/health endpoints.
+- **GH#177 (checked live 2026-10-06, already shipped)** — per-story
+  resource bars (CPU%/RSS) + a remote compute-node card (per-GPU util/
+  temp/power/VRAM) on Automata detail. Already fully built since
+  v8.36.0 (`_loadPRDActiveSessionCard`, app.js:18503+): one card per
+  active session with its story/task context line, full CPU/RAM +
+  per-GPU util/temp/power/VRAM bars, resolved against that session's
+  *actual* remote compute node (`compute_node_ref`) — not a single
+  aggregate total as this plan originally assumed. No new work needed.
 - **GH#172 D59/D60/D62/D69/D73** — Android splash extras (status line,
   "Replay splash"); skeleton shimmer loading list; swipe-to-mute + muted
   icon; terminal search/copy; wizard "memory promote to" field.
 - **GH#172 D61** — watch sessions/automata + watched-badge filter.
-- **GH#172 D63** — Whisper 🎤 voice reply in quick commands (transcription
-  endpoint already exists via `internal/transcribe`; this is UI wiring).
-- **GH#172 D65, D67** — three-finger swipe-up gesture and "other Android
-  session-detail extras" are under-specified for a PWA (no native gesture
-  layer, and D67 doesn't name what the extras are) — resolve with a
-  one-line comment on GH#172 asking for the specific behaviors before
+- **GH#172 D63 ✅ shipped v8.48.0** — Whisper 🎤 voice reply in quick
+  commands. Added to the sessions-list card's custom-reply field,
+  reusing `micButtonHTML`/`startGenericVoiceInput` verbatim (already
+  used on 7+ other text fields).
+- **GH#172 D65, D67 (comment posted 2026-10-06, awaiting reply)** —
+  three-finger swipe-up gesture and "other Android session-detail
+  extras" are under-specified for a PWA (no native gesture layer, and
+  D67 doesn't name what the extras are) — posted a clarifying comment
+  on GH#172 asking for the specific target behaviors before
   implementing, don't guess.
 - **GH#172 D52 (re-scoped out of Phase 1, found live 2026-10-05)** —
   originally assumed to be pure UI wiring ("`automataPause`/

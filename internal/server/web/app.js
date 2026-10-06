@@ -2693,7 +2693,12 @@ function showCardCmds(fullId) {
       optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
       html += `<select class="quick-cmd-select" onchange="cardHandleQuickCmd(this,'${eid}')"><option value="">Commands…</option>${optHtml}</select>`;
       html += `<div id="cardCustom-${escHtml(shortId)}" class="custom-cmd-wrap" style="display:none;" onclick="event.stopPropagation()">` +
-        `<input type="text" class="custom-cmd-input" placeholder="Type…" onkeydown="if(event.key==='Enter'){cardSendCustom('${eid}','${escHtml(shortId)}');event.preventDefault();}">` +
+        `<input type="text" id="cardCustomInput-${escHtml(shortId)}" class="custom-cmd-input" placeholder="Type…" onkeydown="if(event.key==='Enter'){cardSendCustom('${eid}','${escHtml(shortId)}');event.preventDefault();}">` +
+        // GH#172 D63 — Whisper 🎤 voice reply in quick commands (Android
+        // already has this); micButtonHTML is the same generic helper
+        // used for every PRD spec/description field, targeting this
+        // input by id.
+        `${micButtonHTML('cardCustomInput-' + escHtml(shortId))}` +
         `<button class="quick-btn" onclick="event.stopPropagation();cardSendCustom('${eid}','${escHtml(shortId)}')" title="Send">&#10148;</button>` +
         `<button class="quick-btn" onclick="event.stopPropagation();document.getElementById('cardCustom-${escHtml(shortId)}').style.display='none'" title="Cancel">&#10005;</button></div>`;
       el.innerHTML = html;
