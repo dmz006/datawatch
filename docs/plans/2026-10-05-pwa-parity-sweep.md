@@ -18,11 +18,11 @@
   Phase 2 batch 5 (D73) ✅ shipped v8.49.0 (minor); Phase 2 batch 6
   (D61) ✅ shipped v8.50.0 (minor); Phase 2 batch 7 (D69) ✅ shipped
   v8.51.0 (minor); Phase 2 batch 8 (D60) ✅ shipped v8.52.0 (minor);
-  Phase 2 batch 9 (D62) ✅ shipped v8.53.0 (minor). D83 and GH#177
-  checked live and already shipped (v8.35.0 and v8.36.0 respectively)
-  — no new work needed. D65/D67 awaiting a GH#172 reply before
-  implementing. Remaining Phase 2 item (D59) and Phases 3–4 planned,
-  not
+  Phase 2 batch 9 (D62) ✅ shipped v8.53.0 (minor); Phase 2 batch 10
+  (D59) ✅ shipped v8.54.0 (minor). **Phase 2 is now complete** except
+  D65/D67 (awaiting a GH#172 reply). D83 and GH#177 checked live and
+  already shipped (v8.35.0 and v8.36.0 respectively) — no new work
+  needed. Phases 3–4 planned, not
   started.
 
 ## Context
@@ -186,8 +186,9 @@ Each item is a button/field/badge wired to an API that already exists:
   per-GPU util/temp/power/VRAM bars, resolved against that session's
   *actual* remote compute node (`compute_node_ref`) — not a single
   aggregate total as this plan originally assumed. No new work needed.
-- **GH#172 D59** — Android splash extras (status line, "Replay
-  splash").
+- **GH#172 D59 ✅ shipped v8.54.0** — Android splash extras (status
+  line, "Replay splash"). Replay clears the gating + reloads, reusing
+  the real launch splash rather than a separate hand-rolled path.
 - **GH#172 D62 ✅ shipped v8.53.0** — swipe-to-mute + muted icon.
   Tap-to-mute instead of swipe (no native gesture layer); gates
   `handleNeedsInput`'s browser Notification + toast, client-side only.

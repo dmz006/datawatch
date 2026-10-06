@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.54.0 — feat(pwa): BL396 Phase 2 batch 10 — splash status line + replay
+
+### Added
+- **GH#172**: the launch splash now shows a status line ("Connecting…" → "Connected", Android already has this) and Settings → About gets a "↻ Replay splash" button that clears the 24h/version gating and reloads so the real full-screen launch splash shows again, exactly as it does on a fresh visit — not a separate hand-rolled replay path.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4, **now complete** except D65/D67 (awaiting a GH#172 reply).
+
 ## v8.53.0 — feat(pwa): BL396 Phase 2 batch 9 — mute session notifications
 
 ### Added

@@ -1572,7 +1572,9 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 2 batch 8 ✅ Shipped v8.52.0** (minor): GH#172 D60 (skeleton shimmer loading list on the sessions view while the WS connection establishes, instead of a misleading empty state).
 >
-> **Phase 2 batch 9 ✅ Shipped v8.53.0** (minor): GH#172 D62 (mute toggle on session cards — tap instead of swipe, gates the Notification/toast on `waiting_input`, client-side only). Remaining Phase 2 item (D59) and Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 2 batch 9 ✅ Shipped v8.53.0** (minor): GH#172 D62 (mute toggle on session cards — tap instead of swipe, gates the Notification/toast on `waiting_input`, client-side only).
+>
+> **Phase 2 batch 10 ✅ Shipped v8.54.0** (minor): GH#172 D59 (splash status line + "Replay splash" button, reusing the real launch splash via the existing gating/reload mechanism). **Phase 2 is now complete** except D65/D67 (awaiting a GH#172 reply). Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)

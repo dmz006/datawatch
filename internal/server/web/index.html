@@ -67,6 +67,10 @@
       <div class="splash-title">datawatch</div>
       <div class="splash-subtitle">AI Orchestration</div>
       <div class="splash-version">%%DW_VERSION%%</div>
+      <!-- GH#172 D59 — status line (Android already has this). Default
+           text for a fresh page load; app.js updates it to "Connected"
+           once the WebSocket opens, same moment the fade-out starts. -->
+      <div class="splash-status" id="splashStatus">Connecting…</div>
     </div>
   </div>
 

@@ -345,6 +345,9 @@ function connect() {
     // Dismiss splash screen — only show once per 24h unless version changed
     const splash = document.getElementById('splash');
     if (splash) {
+      // GH#172 D59 — status line update, same moment the fade-out decision fires.
+      const statusEl = document.getElementById('splashStatus');
+      if (statusEl) statusEl.textContent = t('splash_status_connected') || 'Connected';
       const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
       const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
       const serverVer = state._daemonVersion || '';
@@ -7766,6 +7769,11 @@ function renderSettingsView() {
             <canvas id="aboutSplashCanvas" style="width:100%;max-width:320px;height:180px;border-radius:8px;display:block;margin:0 auto 8px;"></canvas>
             <div style="font-size:18px;font-weight:700;color:var(--accent2);letter-spacing:1px;">datawatch</div>
             <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Orchestration</div>
+            <!-- GH#172 D59 — "Replay splash" (Android already has this).
+                 Clears the 24h/version gating and reloads so the real
+                 full-screen launch splash (not just this inline canvas
+                 decoration) shows exactly as it does on a fresh visit. -->
+            <button class="btn-secondary" style="font-size:11px;margin-top:8px;" onclick="replaySplash()">${escHtml(t('settings_replay_splash')||'↻ Replay splash')}</button>
           </div>
           <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
                top of the datawatch identity card (Settings → About), not
@@ -15206,6 +15214,19 @@ function saveToken() {
   disconnect();
   setTimeout(connect, 500);
 }
+
+// GH#172 D59 — "Replay splash" (Android already has this). Clears the
+// 24h/version gating so the normal first-visit splash logic (already
+// in the WS-connect handler above) shows it again on reload — reusing
+// the real launch splash exactly, rather than hand-rolling a second
+// show/hide path alongside it.
+window.replaySplash = function() {
+  try {
+    localStorage.removeItem('cs_splash_time');
+    localStorage.removeItem('cs_splash_version');
+  } catch (_) {}
+  location.reload();
+};
 
 // Saves the token entered on the splash auth prompt (shown when auth_required
 // but no token is stored). Removes the prompt and starts the WS connection.

@@ -1520,5 +1520,7 @@
   "term_copy_done": "Copied",
   "term_copy_failed": "Copy failed",
   "session_action_mute": "Mute notifications for this session",
-  "session_action_unmute": "Unmute notifications"
+  "session_action_unmute": "Unmute notifications",
+  "settings_replay_splash": "↻ Replay splash",
+  "splash_status_connected": "Connected"
 }

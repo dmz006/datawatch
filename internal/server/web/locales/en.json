@@ -1089,6 +1089,8 @@
   "sessions_view_response": "View last response",
   "sessions_voice_reply": "Voice reply",
   "settings_about_title": "About",
+  "settings_replay_splash": "↻ Replay splash",
+  "splash_status_connected": "Connected",
   "settings_branding": "Branding / Splash",
   "settings_browser_token": "Browser token",
   "settings_check_failed": "Check failed",

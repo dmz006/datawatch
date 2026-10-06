@@ -124,6 +124,13 @@ body {
   margin-top: 8px;
   letter-spacing: 0.5px;
 }
+/* GH#172 D59 — splash status line (Android already has this). */
+.splash-status {
+  font-size: 10px;
+  color: var(--text2);
+  opacity: 0.7;
+  margin-top: 4px;
+}
 
 /* ── App layout ── */
 /* --app-h is set by JS from visualViewport.height so the layout shrinks
