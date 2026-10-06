@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.39.27 — fix(pwa): BL396 Phase 0 — Council runs bug, splash badge removal, brand casing
+
+### Fixed
+- **GH#178**: `GET /api/council/runs` returns a bare array (same as `/api/council/personas`, "bare array for mobile client compat"), but `loadCouncilPanel` read `rdata.runs` — always `undefined` against a bare array, so the Council "Recent Runs" list was always empty regardless of how many runs existed. Fixed to accept either shape (`Array.isArray(rdata) ? rdata : (rdata && rdata.runs) || []`), matching the already-correct handling of `/api/council/personas` two lines above. New `internal/server/web/app-council.test.js` (2 tests, confirmed to fail without the fix).
+- **GH#176**: removed the "Updated to v*X*" badge that appeared on the splash screen after a daemon version change — never requested, and already removed from the Android/iOS apps (datawatch-app v1.25.1). The rest of the splash gating (first visit / version change / >24h since last shown) is unchanged; only the badge element goes. Dropped the now-unused `status_updated_to` locale key from all 5 bundles.
+- **GH#172 (D9/D1)**: lowercased the "datawatch" brand name everywhere it was still capitalized — `<title>`, the `apple-mobile-web-app-title` meta tag, `manifest.json`'s `name`/`short_name`, and the header title (both the static HTML fallback and the `nav_home` locale key across all 5 bundles, which is what actually renders once the PWA loads). The splash screen was already lowercase.
+- Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 0 of 4; see that plan for the rest of the sequenced parity backlog.
+
 ## v8.39.26 — fix(autonomous): per_story_approval (and 4 sibling bools) could never be explicitly cleared back to false
 
 ### Fixed

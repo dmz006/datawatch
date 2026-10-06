@@ -1,6 +1,6 @@
 {
-  "name": "Datawatch",
-  "short_name": "Datawatch",
+  "name": "datawatch",
+  "short_name": "datawatch",
   "version": "8.0.0",
   "description": "AI session overlord — manage LLM coding sessions remotely",
   "start_url": "/",

@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-05
 - **Version at planning**: v8.39.26
-- **Status**: Planned — not started
+- **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phases 1–4 planned, not started.
 
 ## Context
 
@@ -64,7 +64,7 @@ Confirmed via direct investigation (not re-stating the issues' own text):
 
 ## Phases
 
-### Phase 0 — zero-design fixes (ship first, same day)
+### Phase 0 ✅ Shipped v8.39.27 — zero-design fixes
 No UI decisions, no new surfaces, each a single localized change:
 - **GH#178** — `loadCouncilPanel` (app.js:26359-26363): change
   `(rdata && rdata.runs) || []` to `Array.isArray(rdata) ? rdata : (rdata

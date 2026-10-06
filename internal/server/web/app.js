@@ -343,14 +343,10 @@ function connect() {
       const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
       const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
 
-      if (isNewVersion) {
-        // Show "Updated" badge on splash
-        const badge = document.createElement('div');
-        badge.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:600;';
-        badge.textContent = t('status_updated_to', [serverVer]) || ('Updated to ' + serverVer);
-        splash.style.position = 'relative';
-        splash.appendChild(badge);
-      }
+      // GH#176 — the "Updated to vX" badge was never requested and has been
+      // removed from the Android/iOS apps (datawatch-app v1.25.1); the rest
+      // of the splash gating below (first visit / version change / >24h)
+      // is unchanged.
 
       // Show splash if: first visit, new version, or >24h since last display
       const shouldShow = !lastSplashTime || isNewVersion || hoursSince >= 24;
@@ -1894,7 +1890,7 @@ function navigate(view, sessionId, fromPopstate) {
     }
 
     if (view === 'sessions') {
-      headerTitle.textContent = t('nav_home')||'Datawatch';
+      headerTitle.textContent = t('nav_home')||'datawatch';
       renderSessionsView();
     } else if (view === 'new') {
       headerTitle.textContent = t('nav_new_session')||'New Session';
@@ -26359,7 +26355,10 @@ function loadCouncilPanel() {
   apiFetch('/api/council/personas').then(data => {
     const personas = data || [];
     apiFetch('/api/council/runs?limit=5').then(rdata => {
-      _renderCouncilPanel(panel, personas, (rdata && rdata.runs) || []);
+      // GH#178 — GET /api/council/runs returns a bare array (same as
+      // /api/council/personas above), not {runs:[...]}; rdata.runs was
+      // always undefined, so Recent Runs was always empty.
+      _renderCouncilPanel(panel, personas, Array.isArray(rdata) ? rdata : (rdata && rdata.runs) || []);
     }).catch(() => _renderCouncilPanel(panel, personas, []));
   }).catch(err => {
     panel.innerHTML = `<div style="color:var(--error);">${escHtml(String(err.message||err))}</div>`;
