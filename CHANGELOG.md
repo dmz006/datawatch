@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.8 — feat(pwa): horizontal swipe to toggle session mute
+
+### Added
+- datawatch-app parity (2026-10-06 gap list, row 5): v8.53.0's mute feature shipped tap-only, reasoning at the time that the PWA "has no native swipe-gesture layer" (true for OS-level swipe-to-reveal-actions, but not for a plain touch-distance gesture). Added a ≥64px horizontal swipe on the session card, alongside the existing tap button (not replacing it). A predominantly-vertical gesture (list scrolling) is correctly ignored; a swipe in either direction toggles current mute state, same as the tap button. Live-verified with real dispatched touch events against a real daemon: short swipe (30px) → no change; real swipe (100px) → toggles; vertical swipe → ignored; second horizontal swipe → toggles back.
+
 ## v8.61.7 — feat(pwa): confirm dialog before restarting a session
 
 ### Added

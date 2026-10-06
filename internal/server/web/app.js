@@ -2560,6 +2560,42 @@ function sessionDragEnd(ev) {
   dragSrcId = null;
 }
 
+// datawatch-app parity (operator decision D62a, 2026-10-06 gap list, row
+// 5): v8.53 shipped tap-to-mute only, with a comment at the time reasoning
+// the PWA "has no native swipe-gesture layer" — true for OS-level swipe-
+// to-reveal-actions, but a plain touchstart/move/end horizontal-distance
+// gesture needs nothing native. Adds a ≥64px horizontal swipe alongside
+// the existing tap button (not replacing it — tap stays as the
+// accessible/mouse-friendly path). _swipeState is a single shared object
+// (not per-card) since only one touch sequence can be in flight at a time.
+const _swipeState = { startX: 0, startY: 0, active: false };
+const SWIPE_MUTE_THRESHOLD_PX = 64;
+
+function sessionCardTouchStart(ev, fullId) {
+  if (ev.touches.length !== 1) return;
+  _swipeState.startX = ev.touches[0].clientX;
+  _swipeState.startY = ev.touches[0].clientY;
+  _swipeState.active = true;
+  _swipeState.fullId = fullId;
+}
+
+function sessionCardTouchEnd(ev) {
+  if (!_swipeState.active) return;
+  _swipeState.active = false;
+  const touch = ev.changedTouches && ev.changedTouches[0];
+  if (!touch) return;
+  const dx = touch.clientX - _swipeState.startX;
+  const dy = touch.clientY - _swipeState.startY;
+  // Predominantly horizontal (not a vertical list scroll) and past the
+  // threshold in either direction — toggles either way, same as the tap
+  // button, so a swipe always flips current mute state rather than only
+  // muting (an operator swiping on an already-muted card to re-check it
+  // shouldn't accidentally be a no-op).
+  if (Math.abs(dx) >= SWIPE_MUTE_THRESHOLD_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    toggleSessionMute(_swipeState.fullId);
+  }
+}
+
 function sessionCard(sess, idx, total) {
   const stateClass = `state-${sess.state}`;
   const badgeClass = `state-badge-${sess.state}`;
@@ -2672,7 +2708,9 @@ function sessionCard(sess, idx, total) {
          ondragstart="sessionDragStart(event,'${escHtml(fullId)}')"
          ondragover="sessionDragOver(event)"
          ondrop="sessionDrop(event,'${escHtml(fullId)}')"
-         ondragend="sessionDragEnd(event)">
+         ondragend="sessionDragEnd(event)"
+         ontouchstart="sessionCardTouchStart(event,'${escHtml(fullId)}')"
+         ontouchend="sessionCardTouchEnd(event)">
       <div class="session-card-header" style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding-bottom:6px;">
         ${showCheckbox ? `<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSessionSelect('${escHtml(fullId)}')" style="margin-top:4px;flex-shrink:0;" />` : ''}
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;">
