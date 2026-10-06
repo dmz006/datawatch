@@ -61,10 +61,6 @@ CVE-2025-69720
 #   CVE-2026-48959 (HIGH): IO::Uncompress::Unzip CPU exhaustion via malformed
 #     zip file. datawatch does not decompress zip files via Perl at runtime;
 #     Perl is only present as a transitive dependency of git.
-CVE-2026-42496
-CVE-2026-42497
-CVE-2026-48962
-CVE-2026-8376
 CVE-2026-9538
 
 # git-lfs CVE-2025-26625 — HIGH, no fix available
@@ -162,15 +158,6 @@ CVE-2026-41992
 # write access to a directory containing symlinks. No untrusted filesystem
 # content is mounted into the container by default.
 CVE-2026-54369
-
-# perl / perl-base / perl-modules-5.36 / libperl5.36 — 3 new CVEs (CRITICAL + HIGH)
-# Perl is a transitive dependency of git/gnupg. Not executed at runtime.
-#   CVE-2026-13221 (CRITICAL): Silently incorrect results in Perl 5.x arithmetic
-#   CVE-2026-57433 (CRITICAL): Storable signed integer overflow before 3.41
-#   CVE-2026-57432 (HIGH): Integer overflow in Perl through 5.43.10
-CVE-2026-13221
-CVE-2026-57433
-CVE-2026-57432
 
 # openssh-client — 3 CVEs (CRITICAL + HIGH, fix_deferred by Debian)
 # openssh-client is installed for git SSH transport. All SSH remotes are
@@ -327,22 +314,6 @@ CVE-2026-96512
 # connection, so the flawed code path is never reached. Blocked v8.35.0's
 # release CI (containers/stats-cluster). Reviewed 2026-09-29.
 CVE-2026-84782
-
-# libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
-# verified as the mirror's current candidate — not yet backported at all).
-# Out-of-bounds WRITE (memory-corruption primitive, not just a read) via a
-# crafted regular expression PATTERN (not crafted input text — the
-# attacker needs to control the pattern itself, compiled/run through
-# PCRE2). Blocked v8.38.0's release CI (containers/agent-base).
-# CAVEAT (2026-09-30): same shared-foundation concern as the libexpat1
-# entry above — whether any agent-* runtime ever compiles a regex pattern
-# derived from untrusted/LLM-influenced input (e.g. a prompt-injected
-# search pattern) was NOT independently traced before suppressing, only
-# asserted by pattern-matching this file's existing entries. This is the
-# higher-concern of the two new entries given OOB-write is memory
-# corruption, not just a DoS — prioritize tracing this one first on
-# re-review.
-CVE-2026-103111
 
 # python3.11 / libpython3.11-* — CVE-2026-19553 (HIGH, no fix in bookworm,
 # "Fixed Version" column blank in the trivy scan output). Affects
