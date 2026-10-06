@@ -193,13 +193,22 @@ _story_ts_695() {
   local dfile_b="$EVIDENCE_DIR/TS-695/detail_b.json"
   mkdir -p "$EVIDENCE_DIR/TS-695"
   # Fire health checks in parallel — both land at the same wall-clock second.
-  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_a/health" > "$hfile_a" &
-  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_b/health" > "$hfile_b" &
-  wait
+  # A bare `wait` here would block on EVERY background job this shell knows
+  # about, not just these two curls — TS-695 runs on the serial (conflict:llm)
+  # path, i.e. sourced directly into run-tests.sh's own shell, which also
+  # has the long-lived test daemon ($DAEMON_PID) and ntfy server ($NTFY_PID)
+  # as tracked background jobs from earlier in the script. Those never exit
+  # mid-suite, so a bare `wait` hangs forever. Found live 2026-10-05 via a
+  # ~2h stuck E2E run (zero CPU, zero child processes, wchan=do_wait).
+  local _h1 _h2
+  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_a/health" > "$hfile_a" & _h1=$!
+  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_b/health" > "$hfile_b" & _h2=$!
+  wait "$_h1" "$_h2" 2>/dev/null
   # Fire detail (live Ollama probe) in parallel immediately after.
-  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_a/detail" > "$dfile_a" &
-  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_b/detail" > "$dfile_b" &
-  wait
+  local _d1 _d2
+  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_a/detail" > "$dfile_a" & _d1=$!
+  curl "${curl_args[@]}" "$TEST_BASE/api/compute/nodes/$node_b/detail" > "$dfile_b" & _d2=$!
+  wait "$_d1" "$_d2" 2>/dev/null
 
   local health_a health_b detail_a detail_b
   health_a=$(cat "$hfile_a" 2>/dev/null || echo "{}")
@@ -226,7 +235,13 @@ _story_ts_695() {
     final_status=$(api GET "/api/autonomous/prds/$prd_id" | \
       python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("status",""))' 2>/dev/null || echo "")
     case "$final_status" in
-      completed|failed|cancelled) break ;;
+      # "blocked" is also terminal — the autonomous loop gives up on a PRD
+      # after its stale-task retry budget is exhausted (confirmed live
+      # 2026-10-05: both tasks hit "verification failed after retries",
+      # retry_count=1, active_prds=0/running_tasks=0 in /api/autonomous/
+      # status). Without this, the loop burned the full 1800s before
+      # falling through to the generic "did not reach terminal state" ko.
+      completed|failed|cancelled|blocked) break ;;
     esac
   done
   save_evidence TS-695 "final.json" "$(api GET /api/autonomous/prds/$prd_id)"
@@ -244,6 +259,9 @@ _story_ts_695() {
       ;;
     failed)
       ok "PRD ran to failure — concurrent executor dispatched to both nodes (task content failed; see final.json); both nodes confirmed live"
+      ;;
+    blocked)
+      ok "PRD blocked after exhausting its stale-task retry budget — concurrent executor dispatched to both nodes (see final.json); both nodes confirmed live"
       ;;
     running|in_progress|"")
       # Both compute nodes confirmed live simultaneously — that is the primary assertion.
