@@ -178,7 +178,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.61.0"
+var Version = "8.61.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -605,6 +605,10 @@ type AutonomousAPI interface {
 	// Phase 4 (v5.26.64) — file association.
 	SetStoryFiles(prdID, storyID string, files []string, actor string) (any, error)
 	SetTaskFiles(prdID, taskID string, files []string, actor string) (any, error)
+	// Operator-reported 2026-10-06 — manual backfill for the
+	// post-session-diff FilesTouched hook (existed since Phase 4 but was
+	// never wired to a caller until this fix).
+	RecordTaskFilesTouched(prdID, taskID string, files []string) (any, error)
 
 	// BL191 Q2 — template instantiation.
 	InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error)

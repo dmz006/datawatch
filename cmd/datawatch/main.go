@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.61.0"
+var Version = "8.61.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4460,12 +4460,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						VerifiedAt: time.Now(),
 					}, nil
 				}
+				// Same evidence as diffOut, names only — feeds FilesTouched below.
+				var committedNames []string
+				if nameOut, nerr := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+					"diff", "--name-only", task.PreTaskSHA+"..HEAD").Output(); nerr == nil {
+					for _, f := range strings.Split(strings.TrimSpace(string(nameOut)), "\n") {
+						if f != "" {
+							committedNames = append(committedNames, f)
+						}
+					}
+				}
 				// Uncommitted changes to already-tracked files, modified during THIS
 				// task's own run (see gitWorkingTreeDiffSince) — the common case with the
 				// operator default session.auto_git_commit=false.
 				var workingDiffOut []byte
+				var workingNames []string
 				if task.StartedAt != nil {
-					workingDiffOut, _ = gitWorkingTreeDiffSince(ctx, prd.ProjectDir, *task.StartedAt)
+					workingDiffOut, workingNames, _ = gitWorkingTreeDiffSince(ctx, prd.ProjectDir, *task.StartedAt)
 				}
 				// v8.25.12 — detect newly created untracked files (e.g. new docs, test
 				// fixtures) that don't appear in git diff because they haven't been committed.
@@ -4490,6 +4501,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// newUntrackedFiles (not new). Check task.Files against preUntracked; for
 				// any overlap, read current content so the verifier can judge the output.
 				var overwrittenFilesSections []string
+				var overwrittenFiles []string
 				const maxFileBytes = 8192
 				for _, tf := range task.FilesPlanned {
 					if _, preExisted := preUntracked[tf]; preExisted {
@@ -4504,6 +4516,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 							overwrittenFilesSections = append(overwrittenFilesSections,
 								fmt.Sprintf("File: %s%s\n%s", tf, truncNote, content))
+							overwrittenFiles = append(overwrittenFiles, tf)
+						}
+					}
+				}
+				// Operator-reported: PWA file-chip links for a story/task point at
+				// FilesPlanned (the decomposer's PRE-WORK guess at what filenames
+				// would be produced), which can diverge from what the worker
+				// actually wrote (e.g. planned "docs/02-foo.md", worker wrote
+				// "docs/02-bar.md" instead) — the chip then links to a file that
+				// never existed. FilesTouched is the real-evidence sibling field
+				// (added Phase 4 v5.26.64 together with this RecordTaskFilesTouched
+				// method, but never actually wired to a caller until now); this is
+				// the "post-session diff callback" its own doc comment already
+				// described, using evidence this verifier was already computing
+				// for its own grounding. Best-effort — never fails verification.
+				if autonomousMgrRef != nil {
+					touched := dedupeFiles(committedNames, workingNames, newUntrackedFiles, overwrittenFiles)
+					if len(touched) > 0 {
+						if rerr := autonomousMgrRef.RecordTaskFilesTouched(task.PRDID, task.ID, touched); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskFilesTouched(%s/%s): %v", task.PRDID, task.ID, rerr)
 						}
 					}
 				}
@@ -4592,6 +4624,22 @@ Pre-existing files written by task (not tracked by git):
 					metricsPkg.VerifierDiffInjectionsTotal.Inc()
 					diffSection = fmt.Sprintf("\n\nFiles created or modified since task started (mtime-based, non-git dir):\n<new_files>\n%s\n</new_files>",
 						strings.Join(newFiles, "\n"))
+				}
+				// Same FilesTouched recording as the git branch above — see its
+				// comment. TouchedFiles/touchedInExtraWriteDirs return absolute
+				// paths; relativize to match FilesPlanned's repo-relative form.
+				if autonomousMgrRef != nil && len(newFiles) > 0 {
+					var rel []string
+					for _, f := range newFiles {
+						if r, rerr := filepath.Rel(prd.ProjectDir, f); rerr == nil {
+							rel = append(rel, r)
+						}
+					}
+					if touched := dedupeFiles(rel); len(touched) > 0 {
+						if rerr := autonomousMgrRef.RecordTaskFilesTouched(task.PRDID, task.ID, touched); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskFilesTouched(%s/%s): %v", task.PRDID, task.ID, rerr)
+						}
+					}
 				}
 			}
 			// BL369 — security preamble + data-boundary tag + Layer 3 federation trust notice.

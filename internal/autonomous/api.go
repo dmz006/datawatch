@@ -562,6 +562,25 @@ func (a *API) SetTaskFiles(prdID, taskID string, files []string, actor string) (
 	}
 	return out, err
 }
+
+// RecordTaskFilesTouched (operator-reported 2026-10-06) exposes the
+// pre-existing Manager.RecordTaskFilesTouched for manual correction. It was
+// built (Phase 4, v5.26.64) as a "post-session diff callback" hook but
+// never actually wired to a caller — this REST action is for backfilling
+// Task.FilesTouched on tasks that completed before that wiring existed
+// (the verifier now calls Manager.RecordTaskFilesTouched directly for
+// every new task). Deliberately no lock-after-approve gate, matching
+// Manager.RecordTaskFilesTouched's own doc comment ("fires after the
+// worker session ends") — an operator backfilling a completed PRD's
+// stale/missing evidence shouldn't have to reset it to draft first.
+func (a *API) RecordTaskFilesTouched(prdID, taskID string, files []string) (any, error) {
+	if err := a.M.RecordTaskFilesTouched(prdID, taskID, files); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	updated, _ := a.M.Store().GetPRD(prdID)
+	return updated, nil
+}
 func (a *API) InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error) {
 	newPRD, err := a.M.InstantiateTemplate(templateID, vars, actor)
 	if err == nil && newPRD != nil {

@@ -251,7 +251,7 @@ func TestVerifierDiff_UncommittedEditToTrackedFile_CommitRangeDiffIsEmpty(t *tes
 		t.Fatalf("setup invariant broken: commit-range diff should be empty pre-fix, got %q", committedDiff)
 	}
 
-	workingDiff, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
+	workingDiff, _, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
 	if err != nil {
 		t.Fatalf("gitWorkingTreeDiffSince: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestVerifierDiff_LeftoverUncommittedEditFromBeforeTaskStart_IsExcluded(t *t
 	time.Sleep(20 * time.Millisecond)
 	taskStart := time.Now()
 
-	workingDiff, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
+	workingDiff, _, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestVerifierDiff_MixOfLeftoverAndRealChange_OnlyRecentCounted(t *testing.T)
 	time.Sleep(20 * time.Millisecond)
 	os.WriteFile(filepath.Join(dir, "target.md"), []byte("stub\nreal work\n"), 0o644) //nolint:errcheck
 
-	workingDiff, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
+	workingDiff, _, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestVerifierDiff_CommittedChangeAloneCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workingDiff, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
+	workingDiff, _, err := gitWorkingTreeDiffSince(context.Background(), dir, taskStart)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,5 +506,66 @@ func TestResolveVerifierBackendModel_NoPRDBackendFallsBackToOllama(t *testing.T)
 	backend, kind, model := resolveVerifierBackendModel("", "", "", "", resolve, compatible)
 	if backend != "ollama" || kind != "ollama" || model != "qwen3:1.7b" {
 		t.Fatalf("got backend=%q kind=%q model=%q, want the ollama default", backend, kind, model)
+	}
+}
+
+// Operator-reported (2026-10-06): a PWA story/task file chip pointed at
+// "docs/02-datawatch-tls-surface.md", which never existed — the decomposer
+// predicted that filename at plan time, but the worker that did the actual
+// research wrote "docs/02-tls-network-surface-inventory.md" instead.
+// FilesPlanned is inherently a pre-work guess (the decompose prompt itself
+// says so: "Empty array is valid when paths are unknown ahead of time").
+// FilesTouched is the real-evidence sibling the PWA already renders
+// separately ("Output files:") but that was never populated — dedupeFiles
+// is the merge step feeding it from the verifier's own git-diff evidence.
+func TestDedupeFiles_MergesAndSortsAcrossEvidenceSources(t *testing.T) {
+	got := dedupeFiles(
+		[]string{"docs/06-comparison-recommendations.md", "docs/01-le-options-landscape.md"}, // committed diff
+		[]string{"docs/04-plan-b-dns01-delegation.md"},                                       // working-tree diff
+		[]string{"docs/02-tls-network-surface-inventory.md"},                                 // new untracked file — the real name, not the planned one
+	)
+	want := []string{
+		"docs/01-le-options-landscape.md",
+		"docs/02-tls-network-surface-inventory.md",
+		"docs/04-plan-b-dns01-delegation.md",
+		"docs/06-comparison-recommendations.md",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDedupeFiles_DuplicatesAcrossListsCollapseToOne(t *testing.T) {
+	got := dedupeFiles(
+		[]string{"a.md", "b.md"},
+		[]string{"b.md"}, // same file flagged by two evidence sources
+		[]string{"a.md", "c.md"},
+	)
+	want := []string{"a.md", "b.md", "c.md"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v (duplicates must collapse)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDedupeFiles_EmptyAndNilInputsIgnored(t *testing.T) {
+	got := dedupeFiles(nil, []string{}, []string{"", "x.md", ""})
+	if len(got) != 1 || got[0] != "x.md" {
+		t.Fatalf("got %v, want [x.md] (nil/empty lists and blank entries must not produce spurious output)", got)
+	}
+}
+
+func TestDedupeFiles_AllEmptyReturnsNil(t *testing.T) {
+	if got := dedupeFiles(nil, []string{}); len(got) != 0 {
+		t.Fatalf("got %v, want empty — RecordTaskFilesTouched's caller gates on len(touched) > 0 to avoid a pointless write", got)
 	}
 }

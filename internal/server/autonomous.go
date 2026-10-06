@@ -845,6 +845,36 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	case "record_task_files_touched":
+		// Operator-reported 2026-10-06 — manual backfill for tasks that
+		// completed before the verifier's post-session FilesTouched hook
+		// was wired. Body: {task_id, files: [...]}. No lock-after-approve
+		// gate — see API.RecordTaskFilesTouched's doc comment.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID string   `json:"task_id"`
+			Files  []string `json:"files"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.RecordTaskFilesTouched(id, req.TaskID, req.Files)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
 	case "reset_task":
 		// v8.23.0 — operator resets a failed/blocked task to pending so
 		// the autonomous loop retries it without cancelling the whole PRD.

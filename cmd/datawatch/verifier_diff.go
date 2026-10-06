@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -243,10 +244,13 @@ func resolveVerifierBackendModel(
 // source edits, not their target markdown files (which were untouched).
 // Scoping by mtime-since-task-start closes that: a change made before the
 // task's own StartedAt cannot be evidence of this task's work.
-func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.Time) ([]byte, error) {
+// Returns both the diff bytes and the names list (the latter also used by
+// the FilesTouched-recording caller so it doesn't have to re-derive the
+// same mtime-scoped file set with a second pass).
+func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.Time) ([]byte, []string, error) {
 	nameOut, err := exec.CommandContext(ctx, "git", "-C", projectDir, "diff", "--name-only", "HEAD").Output()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var recent []string
 	for _, f := range strings.Split(strings.TrimSpace(string(nameOut)), "\n") {
@@ -262,10 +266,11 @@ func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.
 		}
 	}
 	if len(recent) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	args := append([]string{"-C", projectDir, "diff", "HEAD", "--"}, recent...)
-	return exec.CommandContext(ctx, "git", args...).Output()
+	diff, err := exec.CommandContext(ctx, "git", args...).Output()
+	return diff, recent, err
 }
 
 // taskProducedNoOutput reports whether none of the verifier's evidence
@@ -275,4 +280,29 @@ func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.
 func taskProducedNoOutput(committedDiff, workingDiff []byte, newUntrackedFiles, overwrittenFilesSections []string) bool {
 	return len(committedDiff) == 0 && len(workingDiff) == 0 &&
 		len(newUntrackedFiles) == 0 && len(overwrittenFilesSections) == 0
+}
+
+// dedupeFiles merges several file-path lists (the verifier's distinct
+// evidence sources — committed diff, working-tree diff, new untracked
+// files, overwritten pre-existing files) into one sorted, deduplicated
+// list for RecordTaskFilesTouched. Order of the inputs doesn't matter to
+// the caller; a stable sorted order just makes the persisted value
+// diff-friendly across repeated verifications of the same task.
+func dedupeFiles(lists ...[]string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, l := range lists {
+		for _, f := range l {
+			if f == "" {
+				continue
+			}
+			if _, ok := seen[f]; ok {
+				continue
+			}
+			seen[f] = struct{}{}
+			out = append(out, f)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

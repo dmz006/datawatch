@@ -46,16 +46,16 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Recent highlights
 
-**Current: [v8.59.0](CHANGELOG.md)** (2026-10-06). Mid-way through a PWA parity adoption sweep closing the gap against the Android/iOS apps (plan: [docs/plans/2026-10-05-pwa-parity-sweep.md](docs/plans/2026-10-05-pwa-parity-sweep.md)). Phases 0–2 are complete; Phase 3's latest batch adds pause/resume for a running Automaton, Observer cards for backend health/process envelopes/quick memory capture, and an About-screen subsystem-reload control plus MCP channel/tools status cards.
+**Current: [v8.61.1](CHANGELOG.md)** (2026-10-06). The PWA parity adoption sweep closing the gap against the Android/iOS apps is now complete through Phase 3 (plan: [docs/plans/2026-10-05-pwa-parity-sweep.md](docs/plans/2026-10-05-pwa-parity-sweep.md)) — pause/resume for a running Automaton, Observer/About cards (backend health, process envelopes, quick memory capture, subsystem reload, MCP status), a Config Viewer with a safe raw editor, and a hand-rolled dependency-graph view of an Automaton's stories/tasks. Also closed a data-accuracy gap: the autonomous verifier now records which files a task actually touched (reusing git-diff evidence it already computes for its own grounding), instead of only ever showing the decomposer's pre-work filename guess.
 
 - **[v8.44.0](CHANGELOG.md)** — PWA parity sweep Phase 1 complete: alert-rule firings, parent-PRD links, inline Automaton reject/revise/approve-with-note, Council badges, chat quick-reply chips, saved-command picker, and 6 GH#182 polish items (help icons, restart confirm, disconnect banner, Templates FAB, Automata config fields).
 - **[v8.39.25](CHANGELOG.md)** — Security Design A3: every spawned session gets its own scoped credential (not the admin token), closing the last of the SEC-002–SEC-014 security hardening sweep (11 real findings fixed: SSRF, path traversal, prototype pollution, reflected XSS, bearer-token leakage, an origin-isolation gap in the federation-peer PWA proxy). Full writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
 - **[v8.39.0](CHANGELOG.md)** — Multi-provider web search registry (SearXNG + Brave, tried in priority order, closing a Bing-via-SearXNG result-degradation bug), with usage tracking, an internal result cache, and full 7-surface parity.
 
-### v8.45.0–v8.59.0 highlights (PWA parity sweep, Phases 2–3)
+### v8.45.0–v8.61.1 highlights (PWA parity sweep, Phases 2–3, now complete)
 
 - Repair-deps button, council-run markdown rendering, memory-scope browser + promote, voice-reply quick commands, "memory promote to" wizard field, watch sessions/automata, terminal search + copy, skeleton loading shimmer, mute-session notifications, splash status line + replay.
-- PRD `permission_mode` editor, a persisted session Chrome-enabled badge, pause/resume for a running Automaton (new paused status + cooperative executor drain), Observer Backend Health / Envelopes / quick add-memory cards, and an About-screen subsystem reload + MCP channel/tools status cards.
+- PRD `permission_mode` editor, a persisted session Chrome-enabled badge, pause/resume for a running Automaton (new paused status + cooperative executor drain), Observer Backend Health / Envelopes / quick add-memory cards, an About-screen subsystem reload + MCP channel/tools status cards, a Config Viewer + safe raw editor, and a hand-rolled SVG dependency-graph card for an Automaton's stories/tasks.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete patch-by-patch history.
 

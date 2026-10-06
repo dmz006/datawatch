@@ -73,6 +73,9 @@ func (f *fakeOrchAutonomous) SetStoryFiles(string, string, []string, string) (an
 func (f *fakeOrchAutonomous) SetTaskFiles(string, string, []string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) RecordTaskFilesTouched(string, string, []string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, string) (any, error) {
 	return nil, nil
 }

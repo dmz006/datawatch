@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.1 — fix(autonomous): wire the verifier's git-diff evidence into Task.FilesTouched
+
+### Fixed
+- Story/task file chips in the PWA could point at a filename that never existed. The decomposer predicts `FilesPlanned` before any work runs (e.g. "docs/02-foo.md"), but the worker task can legitimately produce a differently-named file (e.g. "docs/02-bar.md") — nothing reconciled the two, so the PWA's "Files:" chip linked to a dead path. The real-evidence sibling field, `Task.FilesTouched`, already existed (Phase 4, v5.26.64) together with a `Manager.RecordTaskFilesTouched` method and its own PWA "Output files:" section — but the method was never actually called from anywhere, so it stayed permanently empty.
+- Wired it into the verifier, reusing the git-diff evidence it already computes for its own grounding (committed diff, uncommitted working-tree diff, newly-created untracked files, and — for non-git project dirs — mtime-detected touched files). Best-effort, never fails verification.
+- Added `POST /api/autonomous/prds/{id}/record_task_files_touched` to manually backfill tasks that completed before this fix existed.
+
 ## v8.61.0 — feat(pwa): PWA parity sweep Phase 3 batch 7 — Automaton dependency graph (GH#182)
 
 ### Added
