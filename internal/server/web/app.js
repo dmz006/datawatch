@@ -7706,6 +7706,29 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- GH#172 D79 — Config Viewer + raw config editor (Android parity).
+             Reads the already-redacted GET /api/config (secrets come back
+             masked as "***" server-side — see handleGetConfig's mask()) and
+             shows it read-only by default; Edit swaps to a textarea, and
+             Save flattens the edited JSON back into the dotted-key shape
+             PUT /api/config expects, skipping any field still holding the
+             "***" placeholder so an untouched secret is never overwritten
+             with the literal mask string. -->
+        <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
+          ${settingsSectionHeader('config_viewer', t('config_viewer_title')||'Config Viewer')}
+          <div id="settings-sec-config_viewer" style="${secContent('config_viewer')}">
+            <div style="display:flex;gap:6px;padding:4px 12px;">
+              <button class="btn-secondary" style="font-size:11px;" onclick="loadConfigViewer()">${t('config_viewer_refresh')||'Refresh'}</button>
+              <button class="btn-secondary" style="font-size:11px;" id="configViewerEditBtn" onclick="toggleConfigViewerEdit()">${t('config_viewer_edit')||'Edit'}</button>
+              <button class="btn-primary" style="font-size:11px;display:none;" id="configViewerSaveBtn" onclick="saveConfigViewerEdit()">${t('config_viewer_save')||'Save'}</button>
+            </div>
+            <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">${t('config_viewer_hint')||'Secrets are already redacted server-side ("***") — editing a redacted field leaves the real value untouched; only change the fields you mean to.'}</div>
+            <pre id="configViewerBody" style="margin:0 12px 8px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">${t('loading')||'Loading…'}</pre>
+            <textarea id="configViewerTextarea" style="display:none;margin:0 12px 8px;width:calc(100% - 24px);min-height:300px;font-family:monospace;font-size:11px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;"></textarea>
+            <div id="configViewerResult" style="font-size:11px;padding:0 12px 8px;"></div>
+          </div>
+        </div>
+
         <!-- BL312 S2 — Remote Servers management card (merged into Comms tab) -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('remote_servers', t('server_settings_title')||'Remote Servers')}
@@ -8016,6 +8039,8 @@ function renderSettingsView() {
   // GH#172 D80 — MCP channel/tools cards in About (Android parity).
   loadChannelBridge('aboutMcpChannelStatus');
   loadAboutMcpToolsSummary();
+  // GH#172 D79 — Config Viewer + raw config editor (Android parity).
+  loadConfigViewer();
   loadLLMTabConfig();
   loadGeneralConfig();
   loadDaemonLog(0);
@@ -10285,6 +10310,103 @@ function loadAboutMcpToolsSummary() {
       `<div style="max-height:120px;overflow-y:auto;font-family:monospace;font-size:10px;opacity:0.8;">${names.map(escHtml).join(', ')}</div>`;
   }).catch(() => { el.textContent = t('about_mcp_tools_unavailable') || 'unavailable'; });
 }
+
+// GH#172 D79 — Config Viewer + raw config editor.
+function loadConfigViewer() {
+  const body = document.getElementById('configViewerBody');
+  if (!body) return;
+  body.textContent = t('loading') || 'Loading…';
+  apiFetch('/api/config').then(cfg => {
+    window._configViewerData = cfg;
+    const pretty = JSON.stringify(cfg, null, 2);
+    body.textContent = pretty;
+    const ta = document.getElementById('configViewerTextarea');
+    if (ta) ta.value = pretty;
+  }).catch(e => { body.textContent = (t('config_viewer_unavailable')||'Config unavailable') + ': ' + (e.message || e); });
+}
+window.loadConfigViewer = loadConfigViewer;
+
+function toggleConfigViewerEdit() {
+  const body = document.getElementById('configViewerBody');
+  const ta = document.getElementById('configViewerTextarea');
+  const editBtn = document.getElementById('configViewerEditBtn');
+  const saveBtn = document.getElementById('configViewerSaveBtn');
+  const result = document.getElementById('configViewerResult');
+  if (!body || !ta || !editBtn || !saveBtn) return;
+  const editing = ta.style.display !== 'none';
+  if (editing) {
+    // Cancel — revert to the last-loaded JSON, discard unsaved edits.
+    ta.style.display = 'none';
+    body.style.display = '';
+    saveBtn.style.display = 'none';
+    editBtn.textContent = t('config_viewer_edit') || 'Edit';
+    if (result) result.textContent = '';
+  } else {
+    ta.value = body.textContent;
+    body.style.display = 'none';
+    ta.style.display = '';
+    saveBtn.style.display = '';
+    editBtn.textContent = t('config_viewer_cancel') || 'Cancel';
+  }
+}
+window.toggleConfigViewerEdit = toggleConfigViewerEdit;
+
+// Flattens a nested config object into the dotted-key shape PUT /api/config
+// expects (e.g. {ntfy:{token:"x"}} -> {"ntfy.token":"x"}). Arrays are left
+// as a single leaf value (some fields, e.g. detection.prompt_patterns, take
+// the whole array at one dotted key, not one key per element). Any leaf
+// still holding the server's "***" redaction placeholder is dropped
+// entirely so saving the viewer back never overwrites a real secret with
+// the literal mask string — the PUT handler leaves an omitted key's
+// existing value untouched, same round-trip safety as the federation/
+// servers "Redacted()" pattern this mirrors.
+function _flattenConfigForPatch(obj, prefix) {
+  const out = {};
+  for (const k of Object.keys(obj || {})) {
+    const v = obj[k];
+    const key = prefix ? prefix + '.' + k : k;
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      Object.assign(out, _flattenConfigForPatch(v, key));
+    } else if (v === '***') {
+      continue;
+    } else {
+      out[key] = v;
+    }
+  }
+  return out;
+}
+
+function saveConfigViewerEdit() {
+  const ta = document.getElementById('configViewerTextarea');
+  const result = document.getElementById('configViewerResult');
+  if (!ta || !result) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(ta.value);
+  } catch (e) {
+    result.innerHTML = `<span style="color:var(--error);">✗ ${escHtml(t('config_viewer_invalid_json')||'Invalid JSON')}: ${escHtml(e.message)}</span>`;
+    return;
+  }
+  const patch = _flattenConfigForPatch(parsed, '');
+  result.textContent = t('config_viewer_saving') || 'Saving…';
+  apiFetch('/api/config', { method: 'PUT', body: JSON.stringify(patch) }).then(() => {
+    // Collapse back to view mode directly (not via toggleConfigViewerEdit,
+    // whose cancel-path clears #configViewerResult — would wipe this
+    // success message before the operator ever saw it).
+    const body = document.getElementById('configViewerBody');
+    const editBtn = document.getElementById('configViewerEditBtn');
+    const saveBtn = document.getElementById('configViewerSaveBtn');
+    if (ta) ta.style.display = 'none';
+    if (body) body.style.display = '';
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (editBtn) editBtn.textContent = t('config_viewer_edit') || 'Edit';
+    result.innerHTML = `<span style="color:var(--success);">✓ ${escHtml(t('config_viewer_saved')||'Saved')}</span>`;
+    loadConfigViewer();
+  }).catch(e => {
+    result.innerHTML = `<span style="color:var(--error);">✗ ${escHtml(e.message || String(e))}</span>`;
+  });
+}
+window.saveConfigViewerEdit = saveConfigViewerEdit;
 
 // GH#172 D80 — subsystem hot-reload trigger (POST /api/reload?subsystem=…),
 // previously reachable only via SIGHUP / MCP `reload` tool / CLI.

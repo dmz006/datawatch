@@ -29,7 +29,11 @@
     in the Observer tab. Batch 5 (D80) ✅ shipped v8.59.0 (minor) —
     added subsystem reload (`POST /api/reload?subsystem=…`, previously
     PWA-unreachable), an MCP Channel card in About (mirroring
-    Observer's), and an MCP Tools summary card.
+    Observer's), and an MCP Tools summary card. Batch 6 (D79) ✅
+    shipped v8.60.0 (minor) — Config Viewer + raw editor in About,
+    reusing `/api/config`'s existing server-side redaction; the editor
+    flattens+redaction-filters before saving so an untouched secret is
+    never overwritten with the `"***"` placeholder (live-verified).
   - **Phase 4** planned, not started.
 
 ## Context
@@ -256,9 +260,22 @@ Each item is a button/field/badge wired to an API that already exists:
   had a full REST surface with no PWA consumer anywhere), and a
   **quick add-memory** input in the Memory Browser section
   (`/api/memory/save`, previously only reachable via MCP/CLI).
-- **GH#172 D79** — Config Viewer + raw config editor. Needs explicit
-  secret-redaction care (reuse the `token_present`/redaction pattern from
-  this session's SEC-014 work, never render secret values raw).
+- **GH#172 D79 ✅ shipped v8.60.0** — Config Viewer + raw config editor.
+  Found `GET /api/config` already redacts every secret server-side
+  (the existing `mask()` helper in `handleGetConfig` — same SEC-014
+  spirit, already comprehensive) so the viewer itself needed no new
+  redaction logic. The real risk was the editor: `PUT /api/config`
+  expects flat dotted keys (`"ntfy.token"`), not the nested shape GET
+  returns, and naively round-tripping GET's JSON back through PUT
+  would either no-op silently (shape mismatch) or, after a proper
+  flatten, overwrite every untouched secret with the literal `"***"`
+  placeholder. Fixed by flattening client-side and dropping any leaf
+  still equal to `"***"` before sending the patch — PUT leaves an
+  omitted key's existing value untouched, same round-trip safety as
+  the federation peer/server token `Redacted()` pattern. Live-verified
+  against a real daemon: seeded a real secret, edited an unrelated
+  field via the PWA, confirmed the real secret was unchanged on disk
+  afterward. 6 new unit tests pin the flatten/redaction-safety logic.
 - **GH#172 D80 ✅ shipped v8.59.0** — subsystem reload + MCP
   channel/tools cards in About. Found only 3 registered hot-reload
   subsystems (`config`, `filters`, `memory`, via `RegisterReloader` in

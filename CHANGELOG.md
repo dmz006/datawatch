@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.60.0 — feat(pwa): PWA parity sweep Phase 3 batch 6 — Config Viewer + raw editor (GH#172 D79)
+
+### Added
+- **Config Viewer** (Settings → About) — a read-only, pretty-printed view of the full `GET /api/config` response (already redacted server-side: secrets come back as `"***"`, never the real value).
+- **Raw config editor** — an Edit/Save toggle that turns the viewer into an editable JSON textarea. Save flattens the edited JSON into the dotted-key shape `PUT /api/config` expects and drops any field still holding the `"***"` placeholder, so editing one field never risks overwriting an untouched secret with the literal mask string — the same round-trip safety already used for federation peer/server tokens. Live-verified against a real daemon: edited an unrelated field, confirmed the real secret survived on disk untouched.
+- 6 new unit tests for the flatten/redaction-safety logic (`internal/server/web/app-config-viewer.test.js`).
+
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+
 ## v8.59.1 — fix(docs): drop bare internal backlog IDs from user-facing docs
 
 ### Fixed
