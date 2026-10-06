@@ -7691,6 +7691,18 @@ function renderSettingsView() {
                 </div>
               </div>
             </div>
+            <!-- GH#172 D80 — MCP channel bridge status (Android parity: already
+                 shown on Observer; About gets its own copy of the same card). -->
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+              <div class="settings-label" style="font-weight:600;">${t('about_mcp_channel')||'MCP Channel'}</div>
+              <div id="aboutMcpChannelStatus" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${t('loading')||'Loading…'}</div>
+            </div>
+            <!-- GH#172 D80 — MCP Tools summary: a quick name list, complementing
+                 the raw JSON/HTML export links above (for scripting, not reading). -->
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+              <div class="settings-label" style="font-weight:600;">${t('about_mcp_tools_summary')||'MCP Tools'}</div>
+              <div id="aboutMcpToolsSummary" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${t('loading')||'Loading…'}</div>
+            </div>
           </div>
         </div>
 
@@ -7820,6 +7832,23 @@ function renderSettingsView() {
           <div class="settings-row">
             <div class="settings-label">${t('settings_daemon')||'Daemon'}</div>
             <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="confirmRestartDaemon()">${t('settings_restart')||'Restart'}</button></div>
+          </div>
+          <!-- GH#172 D80 — subsystem hot-reload (POST /api/reload?subsystem=…,
+               previously reachable only via SIGHUP/MCP/CLI, never the PWA).
+               Distinct from the full-process Restart above: this re-reads
+               config and re-applies what can change without a restart. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">${t('settings_subsystem_reload')||'Subsystem reload'}</div>
+            <div style="display:flex;gap:6px;width:100%;">
+              <select id="aboutReloadSubsystem" class="form-select" style="font-size:11px;flex:1;">
+                <option value="">${t('settings_reload_all')||'All (hot-reloadable config)'}</option>
+                <option value="config">config</option>
+                <option value="filters">filters</option>
+                <option value="memory">memory</option>
+              </select>
+              <button class="btn-secondary" style="font-size:11px;" onclick="reloadSubsystem()">${t('settings_reload_btn')||'Reload'}</button>
+            </div>
+            <div id="aboutReloadResult" style="width:100%;font-size:11px;color:var(--text2);"></div>
           </div>
           <div class="settings-row">
             <div class="settings-label">${t('settings_sessions')||'Sessions'}</div>
@@ -7984,6 +8013,9 @@ function renderSettingsView() {
   loadPipelinesPanel();
   loadFilters();
   loadVersionInfo();
+  // GH#172 D80 — MCP channel/tools cards in About (Android parity).
+  loadChannelBridge('aboutMcpChannelStatus');
+  loadAboutMcpToolsSummary();
   loadLLMTabConfig();
   loadGeneralConfig();
   loadDaemonLog(0);
@@ -10235,6 +10267,46 @@ function loadAboutOrphanedTmux() {
     .catch(() => { el.textContent = 'unavailable'; });
 }
 window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
+
+// GH#172 D80 — MCP Tools summary card: just a count + name list, distinct
+// from the raw JSON/HTML export links above it (those are for scripting;
+// this is for a quick glance at what's exposed).
+function loadAboutMcpToolsSummary() {
+  const el = document.getElementById('aboutMcpToolsSummary');
+  if (!el) return;
+  apiFetch('/api/mcp/tools').then(tools => {
+    const list = Array.isArray(tools) ? tools : [];
+    if (!list.length) {
+      el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('about_mcp_tools_none')||'no tools exposed')}</span>`;
+      return;
+    }
+    const names = list.map(x => x && x.name).filter(Boolean).sort();
+    el.innerHTML = `<div style="margin-bottom:4px;">${names.length} ${escHtml(t('about_mcp_tools_count_suffix')||'tools exposed')}</div>` +
+      `<div style="max-height:120px;overflow-y:auto;font-family:monospace;font-size:10px;opacity:0.8;">${names.map(escHtml).join(', ')}</div>`;
+  }).catch(() => { el.textContent = t('about_mcp_tools_unavailable') || 'unavailable'; });
+}
+
+// GH#172 D80 — subsystem hot-reload trigger (POST /api/reload?subsystem=…),
+// previously reachable only via SIGHUP / MCP `reload` tool / CLI.
+function reloadSubsystem() {
+  const sel = document.getElementById('aboutReloadSubsystem');
+  const result = document.getElementById('aboutReloadResult');
+  if (!sel || !result) return;
+  const subsystem = sel.value;
+  result.textContent = t('settings_reloading') || 'Reloading…';
+  const url = '/api/reload' + (subsystem ? '?subsystem=' + encodeURIComponent(subsystem) : '');
+  apiFetch(url, { method: 'POST' }).then(res => {
+    const parts = [];
+    if (res && Array.isArray(res.applied) && res.applied.length) parts.push((t('settings_reload_applied')||'Applied') + ': ' + res.applied.join(', '));
+    if (res && Array.isArray(res.requires_restart) && res.requires_restart.length) parts.push((t('settings_reload_requires_restart')||'Requires restart') + ': ' + res.requires_restart.join(', '));
+    result.innerHTML = parts.length
+      ? `<span style="color:var(--success);">✓</span> ${parts.map(escHtml).join(' · ')}`
+      : `<span style="color:var(--success);">✓ ${escHtml(t('settings_reload_done')||'Reloaded')}</span>`;
+  }).catch(e => {
+    result.innerHTML = `<span style="color:var(--error);">✗ ${escHtml(e.message || String(e))}</span>`;
+  });
+}
+window.reloadSubsystem = reloadSubsystem;
 
 // BL191 / BL202 (v5.3.0) — Autonomous PRDs panel rendering. Backed by
 // /api/autonomous/prds; each row exposes the action buttons that the
@@ -20404,8 +20476,11 @@ function loadObserverEnvelopesCard() {
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
 // the operator can see at a glance which bridge sessions are using.
 // Surfaces stale .mcp.json files with a one-click cleanup hint.
-function loadChannelBridge() {
-  const el = document.getElementById('channelBridgeStatus');
+// GH#172 D80 — targetId lets Settings → About render its own copy of
+// this card (Android parity) without duplicating the fetch/render logic;
+// Observer's own call keeps passing nothing, so its default is unchanged.
+function loadChannelBridge(targetId) {
+  const el = document.getElementById(targetId || 'channelBridgeStatus');
   if (!el) return;
   apiFetch('/api/channel/info').then(info => {
     if (!info || typeof info !== 'object') {

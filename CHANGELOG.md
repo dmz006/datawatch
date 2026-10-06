@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.59.0 — feat(pwa): BL396 Phase 3 batch 5 — subsystem reload + MCP channel/tools cards in About (GH#172 D80)
+
+### Added
+- **Subsystem reload** (Settings → About) — a dropdown (all/config/filters/memory) + Reload button calling `POST /api/reload?subsystem=…`, which previously only existed as a SIGHUP / MCP `reload` tool / CLI action with no PWA surface. Distinct from the existing full-process "Restart" button: this re-reads config and re-applies what can change without a restart, and reports which fields were applied vs. still require a restart.
+- **MCP Channel card** (Settings → About) — the same live bridge-status card already shown on Observer (kind, ready state, stdio/SSE modes), now also surfaced in About for Android parity; refactored `loadChannelBridge()` to take an optional target element id so both call sites share one fetch/render path.
+- **MCP Tools summary card** (Settings → About) — a tool count + scrollable name list, complementing the existing raw JSON/HTML export links (which are for scripting, not a quick glance).
+- D80's description also named "MCP tools" more broadly — checked live and found the existing JSON/HTML export links already cover the scripting use case; the new summary card covers the "glance at what's exposed" use case that was missing.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+
 ## v8.58.0 — feat(pwa): BL396 Phase 3 batch 4 — Observer Backend Health, Envelopes, quick add-memory (GH#172 D78)
 
 ### Added

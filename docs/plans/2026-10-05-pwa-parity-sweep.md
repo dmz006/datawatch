@@ -26,7 +26,10 @@
     4 (server info, session ring, Ollama, eBPF-degraded banner) were
     already shipped; added the 3 genuinely missing ones: a Backend
     Health card, an Envelopes card, and a quick add-memory input, all
-    in the Observer tab.
+    in the Observer tab. Batch 5 (D80) ✅ shipped v8.59.0 (minor) —
+    added subsystem reload (`POST /api/reload?subsystem=…`, previously
+    PWA-unreachable), an MCP Channel card in About (mirroring
+    Observer's), and an MCP Tools summary card.
   - **Phase 4** planned, not started.
 
 ## Context
@@ -256,7 +259,18 @@ Each item is a button/field/badge wired to an API that already exists:
 - **GH#172 D79** — Config Viewer + raw config editor. Needs explicit
   secret-redaction care (reuse the `token_present`/redaction pattern from
   this session's SEC-014 work, never render secret values raw).
-- **GH#172 D80** — subsystem reload + MCP channel/tools cards in About.
+- **GH#172 D80 ✅ shipped v8.59.0** — subsystem reload + MCP
+  channel/tools cards in About. Found only 3 registered hot-reload
+  subsystems (`config`, `filters`, `memory`, via `RegisterReloader` in
+  `cmd/datawatch/main.go`) behind an existing `POST
+  /api/reload?subsystem=…` endpoint with zero PWA consumers — added a
+  dropdown + Reload button + applied/requires-restart result display.
+  The MCP channel bridge card already existed on Observer
+  (`loadChannelBridge`/`channelBridgeStatus`); generalized it to take
+  an optional target element id and added a second instance in About
+  for Android parity. Added an MCP Tools summary card (count + name
+  list via `/api/mcp/tools`) alongside the existing raw JSON/HTML
+  export links, which only served the scripting use case.
 - **GH#172 D52 ✅ shipped v8.57.0** (re-scoped from Phase 1, see note
   above) — added the `PRDPaused` status, `POST
   /api/autonomous/prds/{id}/pause|resume` REST actions, `Manager.Pause`/
