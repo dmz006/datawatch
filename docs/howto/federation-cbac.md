@@ -154,9 +154,8 @@ minted at spawn and revoked immediately when the session ends:
   reused.
 - The standalone MCP SSE transport (direct IDE/Cursor connections, not the
   session-bridge path) still uses its own, separate, admin-vs-federation-peer
-  gate (`mcpFedCap`) — Design A3 does not change that path; it is tracked as
-  its own follow-up (BL316-followup) for extending the same per-tool map
-  there.
+  gate (`mcpFedCap`) — Design A3 does not change that path; extending the
+  same per-tool map there is tracked as its own follow-up.
 
 ---
 
