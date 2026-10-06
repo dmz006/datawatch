@@ -589,6 +589,15 @@ func (a *API) SetMemoryHarvest(prdID string, enabled bool, promoteTo string, rol
 	return out, err
 }
 
+// SetPermissionMode (GH#172 D75).
+func (a *API) SetPermissionMode(prdID, mode, actor string) (any, error) {
+	out, err := a.M.SetPermissionMode(prdID, mode, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

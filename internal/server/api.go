@@ -178,7 +178,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.54.0"
+var Version = "8.55.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -620,6 +620,10 @@ type AutonomousAPI interface {
 
 	// BL386 Phase 2 — per-PRD harvest-on-completion config.
 	SetMemoryHarvest(prdID string, enabled bool, promoteTo string, roleFilter []string, max int, actor string) (any, error)
+
+	// GH#172 D75 — per-PRD permission_mode, inherited by tasks spawned
+	// under it as their claude-code --permission-mode default.
+	SetPermissionMode(prdID, mode, actor string) (any, error)
 
 	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD
 	// tasks. Empty list when none.

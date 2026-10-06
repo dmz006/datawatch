@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.55.0 — feat(autonomous): BL396 Phase 3 batch 1 — PRD permission_mode editor (GH#172 D75)
+
+### Added
+- **`set_permission_mode`** — new REST action (`POST /api/autonomous/prds/{id}/set_permission_mode`) and `Manager.SetPermissionMode`, matching the same pattern as `set_memory_harvest`/`set_llm`. Validates against claude-code's 6 permission modes (the same set `start_session`'s MCP tool already validates); empty clears the PRD back to inheriting the session/config default. This is the real backend gap D75 was blocked on — found live while implementing it during Phase 1, now closed.
+- **PWA**: a "Permission" button next to "LLM" on the Automaton detail view opens a small picker for the new action.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4, first batch.
+
 ## v8.54.0 — feat(pwa): BL396 Phase 2 batch 10 — splash status line + replay
 
 ### Added

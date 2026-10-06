@@ -1522,5 +1522,9 @@
   "session_action_mute": "Mute notifications for this session",
   "session_action_unmute": "Unmute notifications",
   "settings_replay_splash": "↻ Replay splash",
-  "splash_status_connected": "Connected"
+  "splash_status_connected": "Connected",
+  "prd_action_permission": "Permission",
+  "prd_permission_mode_title": "Automaton permission mode",
+  "prd_permission_mode_hint": "claude-code --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.",
+  "prd_permission_mode_updated": "Permission mode updated"
 }

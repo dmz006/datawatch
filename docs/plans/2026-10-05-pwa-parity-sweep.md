@@ -2,28 +2,19 @@
 
 - **Date**: 2026-10-05
 - **Version at planning**: v8.39.26
-- **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phase 1
-  batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); Phase 1
-  batch 2 (D64) ✅ shipped v8.41.0 (minor); Phase 1 batch 3 (D68) ✅
-  shipped v8.42.0 (minor); Phase 1 batch 4 (D81) ✅ shipped v8.43.0
-  (minor); Phase 1 batch 5 (GH#182, 6 of 7 items) ✅ shipped v8.44.0
-  (minor). **Phase 1 is now complete** except items re-scoped into
-  Phase 3: D52, D75, D66's Chrome-badge half, and GH#182's
-  `datawatch://alert/<id>` deep link (all missing real backend/
-  platform infrastructure, found live). D82 and D66's agent badge were
-  checked live and are already shipped elsewhere — no new work needed.
-  Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor); Phase 2 batch 2
-  (GH#181) ✅ shipped v8.46.0 (minor); Phase 2 batch 3 (D77) ✅ shipped
-  v8.47.0 (minor); Phase 2 batch 4 (D63) ✅ shipped v8.48.0 (minor);
-  Phase 2 batch 5 (D73) ✅ shipped v8.49.0 (minor); Phase 2 batch 6
-  (D61) ✅ shipped v8.50.0 (minor); Phase 2 batch 7 (D69) ✅ shipped
-  v8.51.0 (minor); Phase 2 batch 8 (D60) ✅ shipped v8.52.0 (minor);
-  Phase 2 batch 9 (D62) ✅ shipped v8.53.0 (minor); Phase 2 batch 10
-  (D59) ✅ shipped v8.54.0 (minor). **Phase 2 is now complete** except
-  D65/D67 (awaiting a GH#172 reply). D83 and GH#177 checked live and
-  already shipped (v8.35.0 and v8.36.0 respectively) — no new work
-  needed. Phases 3–4 planned, not
-  started.
+- **Status**: In progress.
+  - **Phase 0 ✅ complete** (v8.39.27, patch).
+  - **Phase 1 ✅ complete** (v8.40.0–v8.44.0, 5 batches: D70/71/72/74,
+    D64, D68, D81, GH#182×6). D52, D75, D66's Chrome-badge half, and
+    GH#182's deep link re-scoped into Phase 3 (missing backend/
+    platform infra, found live). D82 and D66's agent badge already
+    shipped elsewhere — no new work needed.
+  - **Phase 2 ✅ complete** (v8.45.0–v8.54.0, 10 batches: D76, GH#181,
+    D77, D63, D73, D61, D69, D60, D62, D59). D83 and GH#177 already
+    shipped elsewhere. D65/D67 still await a GH#172 reply.
+  - **Phase 3 in progress**: batch 1 (D75) ✅ shipped v8.55.0 (minor)
+    — added the missing `set_permission_mode` backend + PWA picker.
+  - **Phase 4** planned, not started.
 
 ## Context
 
@@ -248,10 +239,10 @@ Each item is a button/field/badge wired to an API that already exists:
   skip a paused PRD's stories/tasks without treating it as blocked/failed.
   Only once that exists does the PWA button become real UI wiring rather
   than a dead-end 404.
-- **GH#172 D75** (re-scoped from Phase 1, see note above) — needs a
-  `set_permission_mode` REST case + manager setter before the PWA edit
-  control is real UI wiring rather than a dead-end 404. Small enough to
-  land alongside D52's backend work in the same sub-batch.
+- **GH#172 D75 ✅ shipped v8.55.0** (re-scoped from Phase 1, see note
+  above) — added `Manager.SetPermissionMode` + `set_permission_mode`
+  REST case (mirroring `set_llm`/`set_memory_harvest`), then the PWA
+  "Permission" picker on the Automaton detail view.
 - **GH#172 D66's Chrome badge** (re-scoped from Phase 1, see note above)
   — needs a persisted, serialized `chrome`/`chrome_enabled` field on the
   session (today it's a create-time-only option with no getter and no

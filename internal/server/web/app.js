@@ -11183,6 +11183,8 @@ function renderPRDActions(prd) {
   if (status !== 'running' && status !== 'completed') {
     const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '' });
     btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
+    // GH#172 D75 — edit PRD permission_mode.
+    btns.push(a(t('prd_action_permission')||'Permission', `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
     btns.push(a('Approve', `prdActionPrompt(${idJ},'approve','note','Approval note (optional)')`, '#10b981'));
@@ -12208,6 +12210,35 @@ function openPRDSetLLMModal(prdID, current) {
 }
 window.openPRDSetLLMModal = openPRDSetLLMModal;
 window._prdCloseModal = _prdCloseModal;
+
+// GH#172 D75 — edit PRD permission_mode (PWA-only per the issue's own
+// decision). Reads the existing set_permission_mode REST action.
+function openPRDSetPermissionModeModal(prdID, current) {
+  const modes = ['', 'default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions', 'dontAsk'];
+  const opts = modes.map(m => `<option value="${escHtml(m)}" ${m === current ? 'selected' : ''}>${escHtml(m || '— inherit session/config default —')}</option>`).join('');
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${t('prd_permission_mode_title')||'Automaton permission mode'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:11px;color:var(--text2);">${t('prd_permission_mode_hint')||'claude-code --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.'}</div>
+      <select id="prdSetPermissionMode" class="form-select">${opts}</select>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
+      </div>
+    </form>
+  `, () => {
+    const mode = document.getElementById('prdSetPermissionMode').value;
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_permission_mode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permission_mode: mode, actor: 'operator' }),
+    }).then(() => { showToast(t('prd_permission_mode_updated')||'Permission mode updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDSetPermissionModeModal = openPRDSetPermissionModeModal;
 
 // BL246 v6.6.0 — unified PRD Settings modal: type, backend, effort, model,
 // skills, guided_mode in one place. Splits "edit spec" (handled by

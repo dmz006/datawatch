@@ -2073,6 +2073,38 @@ func (m *Manager) SetMemorySeed(prdID string, cfg MemorySeedConfig, actor string
 	return updated, nil
 }
 
+// validPermissionModes mirrors the claude-code permission-mode set the
+// start_session MCP tool already validates against (internal/mcp/server.go).
+var validPermissionModes = map[string]bool{
+	"default": true, "plan": true, "acceptEdits": true,
+	"auto": true, "bypassPermissions": true, "dontAsk": true,
+}
+
+// SetPermissionMode (GH#172 D75) updates the PRD's permission_mode, which
+// tasks spawned under it inherit as their claude-code --permission-mode
+// default (see Task.PermissionMode's own doc comment). Empty clears it
+// back to the session/config default.
+func (m *Manager) SetPermissionMode(prdID, mode, actor string) (*PRD, error) {
+	if mode != "" && !validPermissionModes[mode] {
+		return nil, fmt.Errorf("invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", mode)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.PermissionMode = mode
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_permission_mode", Actor: actor,
+		Note: fmt.Sprintf("permission_mode=%s", mode),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetMemoryHarvest (BL386 Phase 2) updates the PRD's harvest-on-completion config.
 func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
