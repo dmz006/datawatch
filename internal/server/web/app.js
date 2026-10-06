@@ -10359,21 +10359,57 @@ function loadAboutOrphanedTmux() {
 }
 window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
 
-// GH#172 D80 — MCP Tools summary card: just a count + name list, distinct
-// from the raw JSON/HTML export links above it (those are for scripting;
-// this is for a quick glance at what's exposed).
+// GH#172 D80 — MCP Tools summary card. Rebuilt per the datawatch-app
+// session's correction (operator decision D80a, 2026-10-04, is "add the
+// app's cards to the PWA" — for this card the app is the reference, not
+// the other way around): source is /api/mcp/docs (not /api/mcp/tools,
+// which only has bare name/annotations, no description), one row per
+// tool with its description underneath, grouped by category when the
+// response is a categorized object rather than a flat array. Distinct
+// from the raw JSON/HTML export links above it, which are for scripting.
+function _mcpToolsExtractList(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(x => ({ name: x && x.name, desc: (x && (x.description || x.summary)) || '' }))
+    .filter(x => x.name);
+}
+
 function loadAboutMcpToolsSummary() {
   const el = document.getElementById('aboutMcpToolsSummary');
   if (!el) return;
-  apiFetch('/api/mcp/tools').then(tools => {
-    const list = Array.isArray(tools) ? tools : [];
-    if (!list.length) {
+  apiFetch('/api/mcp/docs').then(root => {
+    let flat = [];
+    let categories = null;
+    if (Array.isArray(root)) {
+      flat = _mcpToolsExtractList(root);
+    } else if (root && typeof root === 'object') {
+      const nested = Object.entries(root)
+        .map(([cat, arr]) => [cat, _mcpToolsExtractList(arr)])
+        .filter(([, tools]) => tools.length > 0);
+      if (nested.length > 0) {
+        categories = nested;
+      } else {
+        flat = _mcpToolsExtractList(root.tools);
+      }
+    }
+    const total = categories ? categories.reduce((n, [, tools]) => n + tools.length, 0) : flat.length;
+    if (total === 0) {
       el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('about_mcp_tools_none')||'no tools exposed')}</span>`;
       return;
     }
-    const names = list.map(x => x && x.name).filter(Boolean).sort();
-    el.innerHTML = `<div style="margin-bottom:4px;">${names.length} ${escHtml(t('about_mcp_tools_count_suffix')||'tools exposed')}</div>` +
-      `<div style="max-height:120px;overflow-y:auto;font-family:monospace;font-size:10px;opacity:0.8;">${names.map(escHtml).join(', ')}</div>`;
+    const toolRow = tool => `<div style="padding:4px 0;border-top:1px solid var(--border);">
+        <div style="font-family:monospace;font-size:11px;">${escHtml(tool.name)}</div>
+        ${tool.desc ? `<div style="font-size:10px;opacity:0.7;margin-top:1px;">${escHtml(tool.desc)}</div>` : ''}
+      </div>`;
+    let body;
+    if (categories) {
+      body = categories.map(([cat, tools]) => `
+        <div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:0.3px;margin-top:8px;">${escHtml(cat)}</div>
+        ${tools.map(toolRow).join('')}`).join('');
+    } else {
+      body = flat.map(toolRow).join('');
+    }
+    el.innerHTML = `<div style="margin-bottom:4px;">${total} ${escHtml(t('about_mcp_tools_count_suffix')||'tools exposed')}</div>` +
+      `<div style="max-height:260px;overflow-y:auto;">${body}</div>`;
   }).catch(() => { el.textContent = t('about_mcp_tools_unavailable') || 'unavailable'; });
 }
 

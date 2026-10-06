@@ -301,9 +301,13 @@ Each item is a button/field/badge wired to an API that already exists:
   The MCP channel bridge card already existed on Observer
   (`loadChannelBridge`/`channelBridgeStatus`); generalized it to take
   an optional target element id and added a second instance in About
-  for Android parity. Added an MCP Tools summary card (count + name
-  list via `/api/mcp/tools`) alongside the existing raw JSON/HTML
-  export links, which only served the scripting use case.
+  for Android parity. Added an MCP Tools summary card alongside the
+  existing raw JSON/HTML export links, which only served the scripting
+  use case. **Corrected v8.61.5** per the datawatch-app session
+  (operator decision D80a: the app is the reference for this specific
+  card) — rebuilt to source `/api/mcp/docs` (name + description per
+  tool, grouped by category when present) instead of the originally-
+  used `/api/mcp/tools` (bare name + annotations, no description).
 - **GH#172 D52 ✅ shipped v8.57.0** (re-scoped from Phase 1, see note
   above) — added the `PRDPaused` status, `POST
   /api/autonomous/prds/{id}/pause|resume` REST actions, `Manager.Pause`/

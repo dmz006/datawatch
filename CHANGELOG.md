@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.5 — fix(pwa): MCP Tools card matches the app's richer per-tool shape
+
+### Fixed
+- The datawatch-app session (Android/iOS, operator decision D80a: "add the app's Subsystem reload + MCP channel/tools cards to the PWA" — the app is the reference for these cards) corrected the v8.59.0 MCP Tools card: it was sourcing `/api/mcp/tools` (bare name + annotations only) and showing just a count and comma-separated name list. Rebuilt to source `/api/mcp/docs` instead (name + description per tool), rendering one row per tool with its description underneath, grouped by category when the response is a categorized object rather than a flat array — matching the app's `McpToolsCard` exactly.
+
 ## v8.61.4 — fix(session): broadcast session activity even without a state transition
 
 ### Fixed
