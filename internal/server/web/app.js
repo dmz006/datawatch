@@ -17880,6 +17880,16 @@ function openLaunchAutomatonWizard() {
               <input type="checkbox" id="wizardStoryApproval">
               <span>${escHtml(t('automata_wizard_story_approval'))}</span>
             </label>
+            <div class="wizard-field">
+              <label class="wizard-label">${escHtml(t('automata_wizard_memory_promote_label')||'Memory promote to')}</label>
+              <select id="wizardMemoryPromoteTo" class="form-select">
+                <option value="" selected>${escHtml(t('automata_wizard_memory_promote_none')||'— off (keep in story-shared) —')}</option>
+                <option value="story-shared">story-shared</option>
+                <option value="prd-shared">prd-shared</option>
+                <option value="project-shared">project-shared</option>
+              </select>
+              <div class="wizard-skills-hint" style="margin-top:2px;"><span>💡 </span><span style="color:var(--text2);font-size:11px;">${escHtml(t('automata_wizard_memory_promote_hint')||'On completion, harvest this automaton\'s memories into the chosen broader scope.')}</span></div>
+            </div>
             <div class="wizard-skills-hint"><span>💡 </span><a href="#" onclick="event.preventDefault();_prdCloseModal();window.navigate&&window.navigate('settings');setTimeout(()=>{const s=document.querySelector('[data-settings-section=\\'project-profiles\\']');s&&s.scrollIntoView({behavior:'smooth'});},200);return false;" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);">${escHtml(t('automata_wizard_skills_hint_link')||'Configure skills in Settings → Agents → Project Profiles → Skills')} ↗</a></div>
           </div>
         </details>
@@ -18025,6 +18035,7 @@ function _wizardSubmit() {
   const decompositionProfile = document.getElementById('wizardDecompositionProfile')?.value || '';
 
   const guidedMode = document.getElementById('wizardGuidedMode')?.checked || false;
+  const memoryPromoteTo = document.getElementById('wizardMemoryPromoteTo')?.value || '';
   const body = {
     spec: intent,
     title: title || undefined,
@@ -18050,6 +18061,17 @@ function _wizardSubmit() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ backend, effort, model, decomposition_profile: decompositionProfile, actor: 'operator' }),
       }).then(() => prd);
+    }
+    return prd;
+  }).then(prd => {
+    // GH#172 D73 — wizard "memory promote to" field (Android already
+    // has this). Only fired when the operator picked a non-default
+    // target; set_memory_harvest already exists (BL386 Phase 2).
+    if (prd && prd.id && memoryPromoteTo) {
+      return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prd.id) + '/set_memory_harvest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, promote_to: memoryPromoteTo, actor: 'operator' }),
+      }).then(() => prd).catch(() => prd);
     }
     return prd;
   }).then(prd => {

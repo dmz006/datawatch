@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.49.0 — feat(pwa): BL396 Phase 2 batch 5 — wizard "memory promote to" field
+
+### Added
+- **GH#172**: the Launch Automaton wizard's Advanced section now has a "Memory promote to" dropdown (Android already had this) — on completion, harvests the automaton's memories into the chosen broader scope (story-shared/prd-shared/project-shared). Reads the existing `set_memory_harvest` REST action (BL386 Phase 2); fires right after PRD creation, same pattern already used for the wizard's LLM backend/effort fields.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.48.0 — feat(pwa): BL396 Phase 2 batch 4 — voice reply in quick commands
 
 ### Added

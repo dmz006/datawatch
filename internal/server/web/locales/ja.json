@@ -1500,5 +1500,8 @@
   "memory_scope_recall_failed": "Recall failed",
   "memory_scope_promote_btn_title": "Promote to a broader scope",
   "memory_scope_promote_prompt": "Promote to which scope? (story-shared, prd-shared, project-shared, persona-in-project, persona-global)",
-  "memory_scope_promoted": "Promoted"
+  "memory_scope_promoted": "Promoted",
+  "automata_wizard_memory_promote_label": "Memory promote to",
+  "automata_wizard_memory_promote_none": "— off (keep in story-shared) —",
+  "automata_wizard_memory_promote_hint": "On completion, harvest this automaton's memories into the chosen broader scope."
 }
