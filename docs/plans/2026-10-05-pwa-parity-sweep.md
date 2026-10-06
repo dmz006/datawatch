@@ -80,8 +80,6 @@ No UI decisions, no new surfaces, each a single localized change:
 
 ### Phase 1 — small, well-specified UI adoptions (existing APIs, no new surface)
 Each item is a button/field/badge wired to an API that already exists:
-- **GH#172 D52** — wire the already-defined `automataPause`/
-  `automataResume` functions into the Automata card/detail action bar.
 - **GH#172 D64** — Council 🎭 badge + filter chip (session list/filters).
 - **GH#172 D66** — Agent ⬡ / "Chrome" badges in session header.
 - **GH#172 D68** — chat quick-reply chips (Yes/No/Stop).
@@ -131,6 +129,16 @@ Each item is a button/field/badge wired to an API that already exists:
   layer, and D67 doesn't name what the extras are) — resolve with a
   one-line comment on GH#172 asking for the specific behaviors before
   implementing, don't guess.
+- **GH#172 D52 (re-scoped out of Phase 1, found live 2026-10-05)** —
+  originally assumed to be pure UI wiring ("`automataPause`/
+  `automataResume` exist in app.js but aren't reachable from the UI").
+  Direct investigation found the opposite: `grep -rn "pause\|resume"`
+  across `internal/autonomous/` and `internal/server/autonomous.go`
+  shows **no `/pause` or `/resume` REST route, no `Pause`/`Resume`
+  manager method, and no `paused` PRD status exist anywhere** — the two
+  JS functions call endpoints that 404. This needs real backend work
+  (a new PRD status, persistence, and executor awareness to skip a
+  paused PRD), not a Phase 1 button. Moved to Phase 3 scope.
 
 ### Phase 3 — new UI surfaces (need their own small design pass, no existing pattern to copy exactly)
 - **GH#182** — Automaton DAG card. No graph library exists in this repo;
@@ -147,6 +155,13 @@ Each item is a button/field/badge wired to an API that already exists:
   secret-redaction care (reuse the `token_present`/redaction pattern from
   this session's SEC-014 work, never render secret values raw).
 - **GH#172 D80** — subsystem reload + MCP channel/tools cards in About.
+- **GH#172 D52** (re-scoped from Phase 1, see note above) — pause/resume
+  needs new server work first: a `paused` PRD status, `POST
+  /api/autonomous/prds/{id}/pause|resume` endpoints, `Manager.Pause`/
+  `Resume` methods persisting the status, and executor-loop awareness to
+  skip a paused PRD's stories/tasks without treating it as blocked/failed.
+  Only once that exists does the PWA button become real UI wiring rather
+  than a dead-end 404.
 
 ### Phase 4 — APNs push (BL335 / GH#107 / GH#158) — independent backend track, can run in parallel with Phases 0–3
 This is the one item blocking an entire platform's push notifications
@@ -210,6 +225,16 @@ normal feature plan:
   phases ship, not written upfront.
 
 ## Verification
+- **Every phase, no exceptions (added after an operator check 2026-10-05
+  — Phase 0 initially shipped on JS-unit-tests alone, which is not
+  sufficient on its own for a UI change): start a real daemon + open the
+  actual PWA in a browser (Playwright/`chromium-cli` per the `run` skill)
+  and click through every new/changed affordance before calling the
+  phase done** — a passing jsdom-style unit test proves the function's
+  logic is correct in isolation, not that the button renders, is
+  reachable, and does the right thing in the real page. Screenshot or
+  describe what was actually clicked and observed in the commit/report,
+  not just "tests pass."
 - Each phase: `node --test internal/server/web/*.test.js` (existing
   escaping/XSS/prototype-pollution guards must keep passing — any new
   `innerHTML` assembly in Phases 1-3 should go through the existing
