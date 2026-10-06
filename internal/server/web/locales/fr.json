@@ -1524,6 +1524,7 @@
   "dashboard_help_tip": "Open the Dashboard howto — explains cards, editing, and adding new ones",
   "alerts_help_tip": "Open the Alerts howto — explains alert rules, quick replies, and notifications",
   "settings_restart_confirm": "Restart the daemon? All sessions will briefly disconnect.",
+  "session_restart_confirm": "Restart session \"%1$s\"? The current conversation ends and a new one starts with the same task.",
   "sessions_disconnected_banner": "Not connected to the server — this list may be stale.",
   "fab_new_template": "New template",
   "settings_planning_effort": "Planning effort",

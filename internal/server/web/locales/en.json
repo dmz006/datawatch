@@ -1151,6 +1151,7 @@
   "settings_reload_requires_restart": "Requires restart",
   "settings_reload_done": "Reloaded",
   "settings_restart_confirm": "Restart the daemon? All sessions will briefly disconnect.",
+  "session_restart_confirm": "Restart session \"%1$s\"? The current conversation ends and a new one starts with the same task.",
   "settings_save_reconnect": "Save & Reconnect",
   "settings_server_token": "Server bearer token",
   "settings_sessions": "Sessions",

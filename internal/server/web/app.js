@@ -4697,11 +4697,23 @@ function killSession(sessionId) {
   });
 }
 
+// datawatch-app parity (operator decision, row 4 of the 2026-10-06 gap
+// list): GH#182's confirm dialog only covers the daemon restart
+// (confirmRestartDaemon); session restart had none. Wrapped here, not at
+// each call site, so all 4 existing restartSession(...) buttons get the
+// confirm for free.
 function restartSession(sessionId) {
   const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   if (!sess) return;
+  showConfirmModal(
+    (t('session_restart_confirm')||'Restart session "%1$s"? The current conversation ends and a new one starts with the same task.').replace('%1$s', sess.name || sess.id),
+    () => _doRestartSession(sess.full_id),
+  );
+}
+
+function _doRestartSession(fullId) {
   // Restart in-place: reuse the same session ID and resume the LLM conversation
-  apiFetch('/api/sessions/restart', { method: 'POST', body: JSON.stringify({ id: sess.full_id }) })
+  apiFetch('/api/sessions/restart', { method: 'POST', body: JSON.stringify({ id: fullId }) })
     .then(updated => {
       updateSession(updated);
       navigate('session-detail', updated.full_id);

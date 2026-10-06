@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.7 — feat(pwa): confirm dialog before restarting a session
+
+### Added
+- datawatch-app parity (2026-10-06 gap list, row 4): GH#182's confirm dialog only covered the daemon restart; `restartSession` had none, despite it ending the current conversation. Added a confirm modal (session name + what happens), wrapped once in `restartSession` so all 4 existing call sites (session detail toolbar, list card, backlog row) get it for free — no per-call-site changes needed. Live-verified: zero API calls before confirming, restart only fires after clicking through.
+
 ## v8.61.6 — fix(pwa): remaining "Datawatch" capitalization instances
 
 ### Fixed
