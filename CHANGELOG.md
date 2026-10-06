@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.4 — fix(session): broadcast session activity even without a state transition
+
+### Fixed
+- Follow-up question after v8.61.2: does *any* activity on a session — regardless of which API sent it — make connected clients refresh? Traced every entry point (REST, MCP, comm channel router, discussion subscriptions) and confirmed they all funnel through `Manager.SendInput`, which already broadcasts to every connected client when a session transitions out of `waiting_input`/`rate_limited` back to `running` — this part was already source-agnostic.
+- Found a narrower real gap: sending a follow-up message to a session that was *already* `running` (mid-turn, no state transition) never broadcast anything — only a client with that exact session's pane open would see it, via the unrelated screen-capture poll; every other connected client's session list stayed stale until some later event happened to change state. `Manager.SendInput` now records the activity (`LastInput`, `UpdatedAt`) and fires a new, separate `onActivity` hook in this case, wired to the same broadcast the state-transition path already uses — deliberately not routed through the state-transition handler itself, which has transition-specific side effects (oscillation detection, "X → Y" alert/log strings) that would misfire on a same-state no-op call.
+- 3 new unit tests confirm `onActivity` fires exactly once for the no-transition case, `onStateChange` fires exactly once for a real transition (never both for the same call), and a nil activity handler doesn't break the send.
+
 ## v8.61.3 — docs: correct the WS watchdog's detection-latency comment
 
 ### Fixed

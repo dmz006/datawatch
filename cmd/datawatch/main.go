@@ -110,7 +110,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.61.3"
+var Version = "8.61.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6737,6 +6737,18 @@ Return STRICT JSON:
 					go runExitHookNotify(mgr, sess, hook)
 				}
 			}
+		}
+	})
+	// Operator-reported 2026-10-06 — see Manager.onActivity's doc comment.
+	// Deliberately calls NotifyStateChange directly (pure broadcast) rather
+	// than routing through the SetStateChangeHandler closure above, which
+	// has state-transition-specific side effects (oscillation detection,
+	// "X → Y" alert/log strings, claude-disclaimer auto-accept) that would
+	// misfire or log a nonsensical "running → running" event for input
+	// sent to an already-running session — there's no real transition here.
+	mgr.SetActivityHandler(func(sess *session.Session) {
+		if httpServer != nil {
+			httpServer.NotifyStateChange(sess, sess.State)
 		}
 	})
 	needsInputFire := func(sess *session.Session, prompt string) {

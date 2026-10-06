@@ -313,6 +313,21 @@ type Manager struct {
 	// Used by the router to send Signal notifications.
 	onStateChange func(sess *Session, oldState State)
 
+	// onActivity (operator-reported 2026-10-06) is called when input is
+	// sent to a session that was ALREADY StateRunning — i.e. no state
+	// transition happened, so onStateChange never fires. Without this, a
+	// follow-up message sent to a mid-turn session updated the live tmux
+	// pane (any client actively subscribed to it sees it via the screen-
+	// capture poll) but never touched the sessions LIST for every OTHER
+	// connected client, since only onStateChange's callback chain
+	// broadcasts that. Deliberately a separate hook from onStateChange,
+	// not a call to it with old==new: that handler's body does state-
+	// transition-specific work (oscillation detection, "X → Y" alert/log
+	// strings, claude-disclaimer auto-accept) that assumes a real
+	// transition and would misfire or log a nonsensical "running →
+	// running" event if reused here.
+	onActivity func(sess *Session)
+
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
@@ -796,6 +811,13 @@ func (m *Manager) IsEncrypted() bool {
 // SetStateChangeHandler sets the callback invoked on session state transitions.
 func (m *Manager) SetStateChangeHandler(fn func(*Session, State)) {
 	m.onStateChange = fn
+}
+
+// SetActivityHandler sets the callback invoked when input is sent to a
+// session with no accompanying state transition (see onActivity's doc
+// comment on why this is separate from SetStateChangeHandler).
+func (m *Manager) SetActivityHandler(fn func(*Session)) {
+	m.onActivity = fn
 }
 
 // SetNeedsInputHandler sets the callback invoked when a session waits for input.
@@ -3037,6 +3059,25 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
+		}
+	} else {
+		// Operator-reported 2026-10-06 — sess.State is already StateRunning
+		// here (the guard above only admits WaitingInput/Running/RateLimited,
+		// and the branch above already handled the other two): a follow-up
+		// message sent mid-turn. No state transition, so onStateChange never
+		// fires and the sessions LIST never learns this happened — only a
+		// client with this session's pane actively subscribed sees it, via
+		// the unrelated screen-capture poll. Record the activity and notify
+		// through the separate onActivity hook so every connected client's
+		// list view reflects it too, not just the one open pane.
+		sess.LastInput = truncateStr(input, 100)
+		sess.UpdatedAt = time.Now()
+		sess.LastChannelEventAt = sess.UpdatedAt
+		if err := m.store.Save(sess); err != nil {
+			return fmt.Errorf("save session: %w", err)
+		}
+		if m.onActivity != nil {
+			m.onActivity(sess)
 		}
 	}
 	return nil
