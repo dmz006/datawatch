@@ -48,11 +48,16 @@ if [[ "$decomp_code" != "202" && "$decomp_code" != "200" ]]; then
 fi
 
 # Poll daemon logs for "decompose-session spawned" with backend=opencode.
+# Found live via a full E2E run: this grepped a hardcoded, stale sandbox
+# path from a long-past run (/tmp/dw-test-sandbox-2423963) that will never
+# match the current run's actual daemon log — always silently returning
+# empty. $TEST_DATA/daemon.log (exported by run-tests.sh, see lib.sh) is
+# the real, per-run log path.
 spawned_msg=""
 for i in $(seq 1 20); do
   sleep 3
   spawned_msg=$(grep -a "decompose-session.*backend=opencode\|decompose.*spawned.*opencode" \
-    /tmp/dw-test-sandbox-2423963/daemon.log 2>/dev/null | tail -1 || true)
+    "$TEST_DATA/daemon.log" 2>/dev/null | tail -1 || true)
   prd_detail=$(api GET "/api/autonomous/prds/${prd_id}")
   status=$(echo "$prd_detail" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
   echo "  [TS-766] attempt $i: status=$status spawned=${spawned_msg:0:80}"
@@ -62,12 +67,6 @@ for i in $(seq 1 20); do
 done
 
 save_evidence "$CURRENT_STORY" "ts766_prd.json" "$prd_detail"
-
-# Check if session-based decompose path was taken (log message OR outputFile exists).
-outputFile="/tmp/.decompose-output.json"
-took_session_path=false
-[[ -n "$spawned_msg" ]] && took_session_path=true
-[[ -f "$outputFile" ]] && took_session_path=true
 
 # Also verify via PRD decisions: if opencode backend used, decision will record it.
 decision_backend=$(echo "$prd_detail" | python3 -c "

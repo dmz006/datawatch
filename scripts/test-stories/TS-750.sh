@@ -45,19 +45,38 @@ if ! echo "$servers" | grep -q "web_search"; then
   exit 0
 fi
 
-# Verify web_search entry has DATAWATCH_WEB_SEARCH_URL set
-ws_url=$(python3 -c "
+# Verify the web_search entry launches the current `mcp-search` subcommand
+# and carries DATAWATCH_SESSION_ID. BL391 (2026-10-02, commit 5d6f1907)
+# made `mcp-search` self-load the full multi-provider list (and resolve
+# secret: refs) from config.yaml directly — per-field env vars like
+# DATAWATCH_WEB_SEARCH_URL were deliberately removed from the injected
+# entry (cmd/datawatch/main.go's own comment: "no per-field env vars
+# needed now that there can be more than one provider"). This test
+# predates that change (written 2026-09-18) and was never updated,
+# so it was asserting removed behavior, not a real regression — found
+# live via a full E2E run failure.
+ws_args=$(python3 -c "
 import json
 d=json.load(open('$mcp_json'))
 ws=d.get('mcpServers',{}).get('web_search',{})
-print(ws.get('env',{}).get('DATAWATCH_WEB_SEARCH_URL',''))
+print(','.join(ws.get('args',[])))
+" 2>/dev/null)
+ws_sid=$(python3 -c "
+import json
+d=json.load(open('$mcp_json'))
+ws=d.get('mcpServers',{}).get('web_search',{})
+print(ws.get('env',{}).get('DATAWATCH_SESSION_ID',''))
 " 2>/dev/null)
 
-if [[ -z "$ws_url" ]]; then
-  ko "web_search entry missing DATAWATCH_WEB_SEARCH_URL env var"
+if ! echo "$ws_args" | grep -q "mcp-search"; then
+  ko "web_search entry does not launch the mcp-search subcommand: args=$ws_args"
+  exit 0
+fi
+if [[ "$ws_sid" != "$sid" ]]; then
+  ko "web_search entry's DATAWATCH_SESSION_ID ($ws_sid) does not match the session ($sid)"
   exit 0
 fi
 
-ok "opencode session $sid: .mcp.json has web_search entry (servers=$servers, url=$ws_url)"
+ok "opencode session $sid: .mcp.json has web_search entry (servers=$servers, args=$ws_args, session_id=$ws_sid)"
 save_evidence "$CURRENT_STORY" "mcp_json.json" "$(cat "$mcp_json")"
 rm -rf "$proj_dir"
