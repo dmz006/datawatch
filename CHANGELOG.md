@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.53.0 — feat(pwa): BL396 Phase 2 batch 9 — mute session notifications
+
+### Added
+- **GH#172**: a 🔔/🔕 mute toggle on session cards (Android's swipe-to-mute, iOS's muted icon — the PWA gets a tap toggle instead of a swipe, since it has no native gesture layer). Muting a session suppresses its browser Notification popup and toast when it transitions to `waiting_input`, while still highlighting the input bar if you're actively viewing it. Client-side only (localStorage), no backend change.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.52.0 — feat(pwa): BL396 Phase 2 batch 8 — skeleton shimmer loading list
 
 ### Added

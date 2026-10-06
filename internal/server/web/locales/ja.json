@@ -1518,5 +1518,7 @@
   "term_search_no_matches": "No matches",
   "term_copy_nothing": "Nothing to copy",
   "term_copy_done": "Copied",
-  "term_copy_failed": "Copy failed"
+  "term_copy_failed": "Copy failed",
+  "session_action_mute": "Mute notifications for this session",
+  "session_action_unmute": "Unmute notifications"
 }

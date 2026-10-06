@@ -204,6 +204,9 @@ const state = {
   // not shared/authoritative — no backend state needed).
   watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
   sessionWatchFilter: false,
+  // GH#172 D62 — swipe-to-mute + muted icon. Same client-only
+  // persistence pattern; gates handleNeedsInput's Notification/toast.
+  mutedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_muted') || '[]')),
   sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
@@ -1517,6 +1520,14 @@ function markChannelReadyIfDetected(sessionId, lines) {
 }
 
 function handleNeedsInput(sessionId, prompt) {
+  // GH#172 D62 — swipe-to-mute (Android) + muted icon (iOS). PWA has no
+  // native swipe-gesture layer (same limitation as D65), so this is a
+  // tap-to-mute icon on the session card instead — functionally
+  // equivalent, just not a swipe. A muted session still updates its
+  // input-bar highlight when actively viewed; it only skips the OS
+  // Notification popup and the toast below, since those are the parts
+  // that actually interrupt the operator when they're not looking.
+  const isMuted = !!(state.mutedSessions && state.mutedSessions.has(sessionId));
   // Update session state in memory
   const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
 
@@ -1551,7 +1562,7 @@ function handleNeedsInput(sessionId, prompt) {
   state.pendingNeedsInputPopup[sessionId] = { prompt, ts: Date.now() };
 
   // Show browser notification
-  if (state.notifPermission === 'granted') {
+  if (!isMuted && state.notifPermission === 'granted') {
     const sessLabel = sess ? sess.id : sessionId;
     new Notification('Datawatch — Input Needed', {
       body: `Session [${sessLabel}] is waiting for your input.\n${prompt.slice(0, 80)}`,
@@ -1572,8 +1583,10 @@ function handleNeedsInput(sessionId, prompt) {
   }
 
   // Show toast notification
-  const sessLabel = sess ? sess.id : sessionId;
-  showToast(`[${sessLabel}] needs input`, 'info', 5000);
+  if (!isMuted) {
+    const sessLabel = sess ? sess.id : sessionId;
+    showToast(`[${sessLabel}] needs input`, 'info', 5000);
+  }
 }
 
 // v6.12.4 — multi-tab presence channel. Operator-reported: yellow
@@ -2325,6 +2338,14 @@ window.toggleSessionWatchFilter = function() {
   renderSessionsView();
 };
 
+// GH#172 D62 — swipe-to-mute + muted icon.
+window.toggleSessionMute = function(fullId) {
+  if (state.mutedSessions.has(fullId)) state.mutedSessions.delete(fullId);
+  else state.mutedSessions.add(fullId);
+  try { localStorage.setItem('cs_sessions_muted', JSON.stringify([...state.mutedSessions])); } catch (_) {}
+  renderSessionsView();
+};
+
 // BL348 — render sessions as a parent/child tree
 function renderSessionsAsTree(sessions) {
   const byId = {};
@@ -2592,6 +2613,7 @@ function sessionCard(sess, idx, total) {
             ${actions ? '<span style="color:var(--text2);opacity:0.5;flex-shrink:0;">|</span>' : ''}
             <span class="state ${badgeClass}" data-state="${escHtml(sess.state || '')}" data-channel-evt="${sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : ''}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;flex-shrink:0;">${escHtml(sess.state || 'unknown')}<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s — may be going to WaitingInput'}"></span></span>
             <button class="btn-icon" onclick="event.stopPropagation();toggleSessionWatch('${escHtml(fullId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.watchedSessions.has(fullId)?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(state.watchedSessions.has(fullId) ? (t('session_action_unwatch')||'Stop watching') : (t('session_action_watch')||'Watch for updates'))}">👁</button>
+            <button class="btn-icon" onclick="event.stopPropagation();toggleSessionMute('${escHtml(fullId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.mutedSessions.has(fullId)?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(state.mutedSessions.has(fullId) ? (t('session_action_unmute')||'Unmute notifications') : (t('session_action_mute')||'Mute notifications for this session'))}">${state.mutedSessions.has(fullId)?'🔕':'🔔'}</button>
             <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder" style="cursor:grab;color:var(--text2);font-size:14px;">&#8942;&#8942;</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">

@@ -1035,6 +1035,8 @@
   "session_child_of": "child of",
   "session_action_watch": "Watch for updates",
   "session_action_unwatch": "Stop watching",
+  "session_action_mute": "Mute notifications for this session",
+  "session_action_unmute": "Unmute notifications",
   "session_watch_filter_tip": "Show watched only",
   "sessions_disconnected_banner": "Not connected to the server — this list may be stale.",
   "session_council_badge": "Council",
