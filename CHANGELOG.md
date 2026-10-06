@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.43.0 — feat(pwa): BL396 Phase 1 batch 4 — saved-command picker on New Session
+
+### Added
+- **GH#172 (D81)**: the New Session task field now has a saved-command library picker below it (Android already had this), reading the existing `/api/commands` surface. Selecting an entry appends it to the task field instead of requiring the operator to remember/retype a saved command by hand.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
+
 ## v8.42.0 — feat(pwa): BL396 Phase 1 batch 3 — chat quick-reply chips
 
 ### Added

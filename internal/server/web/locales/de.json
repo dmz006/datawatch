@@ -705,6 +705,7 @@
   "new_session_task_hint": "z. B. Zahlungsmodul auf neues Auth umstellen",
   "new_session_task_label": "Aufgabe",
   "new_session_task_ph": "z.B. Unit-Tests zu internal/session/manager.go hinzufügen (leer für interaktive Shell)",
+  "new_session_saved_cmd_ph": "— Insert saved command —",
   "new_session_title": "Neue Sitzung",
   "new_session_v7_compute_any": "(beliebiger Knoten — LLM hat keinen festgelegt)",
   "new_session_v7_compute_default": "— zuerst LLM auswählen —",

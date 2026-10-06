@@ -705,6 +705,7 @@
   "new_session_task_hint": "例：新しい認証を使うように決済モジュールをリファクタリングする",
   "new_session_task_label": "タスク",
   "new_session_task_ph": "例: internal/session/manager.goにユニットテストを追加（空白でインタラクティブシェル）",
+  "new_session_saved_cmd_ph": "— Insert saved command —",
   "new_session_title": "新しいセッション",
   "new_session_v7_compute_any": "(任意のノード — LLMが固定していません)",
   "new_session_v7_compute_default": "— 先にLLMを選択 —",

@@ -1546,7 +1546,9 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 1 batch 2 ✅ Shipped v8.41.0** (minor): GH#172 D64 (Council 🎭 badge + filter chip, replacing the raw `council-virtual` backend-family string). D66 checked live: its agent-worker badge already existed (no new work needed); its "Chrome" badge half re-scoped into Phase 3 alongside D52/D75 (no persisted/serialized chrome-enabled field exists server-side).
 >
-> **Phase 1 batch 3 ✅ Shipped v8.42.0** (minor): GH#172 D68 (chat Yes/No/Stop quick-reply chips, shown while a session is `waiting_input`, sending through the same tmux/channel-routed path as a typed reply). Remaining Phase 1 items (D81, D82, GH#182) and Phases 2–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 1 batch 3 ✅ Shipped v8.42.0** (minor): GH#172 D68 (chat Yes/No/Stop quick-reply chips, shown while a session is `waiting_input`, sending through the same tmux/channel-routed path as a typed reply).
+>
+> **Phase 1 batch 4 ✅ Shipped v8.43.0** (minor): GH#172 D81 (saved-command library picker on the New Session task field, reading the existing `/api/commands` surface). Remaining Phase 1 items (D82, GH#182) and Phases 2–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)

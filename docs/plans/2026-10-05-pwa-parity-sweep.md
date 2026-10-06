@@ -5,10 +5,11 @@
 - **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phase 1
   batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); Phase 1
   batch 2 (D64) ✅ shipped v8.41.0 (minor); Phase 1 batch 3 (D68) ✅
-  shipped v8.42.0 (minor); remaining Phase 1 items (D81, D82, GH#182)
-  and Phases 2–4 planned, not started. D52, D75, and D66's Chrome-badge
-  half re-scoped into Phase 3 (missing backend); D66's agent badge
-  confirmed already shipped elsewhere.
+  shipped v8.42.0 (minor); Phase 1 batch 4 (D81) ✅ shipped v8.43.0
+  (minor); remaining Phase 1 items (D82, GH#182) and Phases 2–4 planned,
+  not started. D52, D75, and D66's Chrome-badge half re-scoped into
+  Phase 3 (missing backend); D66's agent badge confirmed already
+  shipped elsewhere.
 
 ## Context
 
@@ -118,8 +119,8 @@ Each item is a button/field/badge wired to an API that already exists:
   as D52: needs a small backend addition (a `set_permission_mode` REST
   case + manager method) before this is PWA-only UI wiring. Moved to
   Phase 3 alongside D52.
-- **GH#172 D81** — saved-command library picker in the New Session task
-  field (existing saved-commands REST surface).
+- **GH#172 D81 ✅ shipped v8.43.0** — saved-command library picker in the
+  New Session task field (existing saved-commands REST surface).
 - **GH#172 D82** — "Resume previous session" field on New Session.
 - **GH#182** — '?' help icons on Alerts/Dashboard headers (same pattern as
   other views' manual-section links); restart confirm dialog; sessions

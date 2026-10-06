@@ -5626,6 +5626,35 @@ function _newSessionMountPanel() {
   }
 }
 
+// GH#172 D81 — saved-command picker for the New Session task field.
+function _loadSavedCmdPicker() {
+  const sel = document.getElementById('taskSavedCmdPicker');
+  if (!sel || sel.dataset.loaded) return;
+  sel.dataset.loaded = '1';
+  fetch('/api/commands', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : [])
+    .then(cmds => {
+      (cmds || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.command || '';
+        opt.textContent = c.name || c.command || '';
+        sel.appendChild(opt);
+      });
+    })
+    .catch(() => {});
+}
+
+function _insertSavedCmdIntoTask(selectEl) {
+  const cmd = selectEl.value;
+  if (!cmd) return;
+  const task = document.getElementById('taskInput');
+  if (task) {
+    task.value = task.value ? task.value + '\n' + cmd : cmd;
+    task.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  selectEl.selectedIndex = 0;
+}
+
 function renderNewSessionView() {
   const view = document.getElementById('view');
   view.innerHTML = `
@@ -5659,6 +5688,12 @@ function renderNewSessionView() {
               placeholder="${t('new_session_task_ph')||'e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)'}"
               rows="5"
             ></textarea>
+            <!-- GH#172 D81 — saved-command library picker (Android already
+                 has this). Populated lazily from the existing /api/commands
+                 surface; inserting appends to (or sets) the task field. -->
+            <select id="taskSavedCmdPicker" class="form-select" style="margin-top:6px;" onchange="_insertSavedCmdIntoTask(this)" onfocus="_loadSavedCmdPicker()">
+              <option value="">${t('new_session_saved_cmd_ph')||'— Insert saved command —'}</option>
+            </select>
           </div>
         </details>
         <!-- v5.26.63 — operator-asked: New Session needs the same

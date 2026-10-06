@@ -668,6 +668,7 @@
   "new_session_task_hint": "e.g. refactor payments module to use new auth",
   "new_session_task_label": "Task",
   "new_session_task_ph": "e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)",
+  "new_session_saved_cmd_ph": "— Insert saved command —",
   "new_session_title": "New Session",
   "new_session_v7_compute_any": "(any compute node — LLM did not pin one)",
   "new_session_v7_compute_default": "— pick an LLM first —",
