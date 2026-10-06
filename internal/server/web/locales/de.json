@@ -1495,5 +1495,10 @@
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
-  "prd_action_repair_deps": "Repair deps"
+  "prd_action_repair_deps": "Repair deps",
+  "memory_scope_inventory_failed": "Failed to load scope inventory",
+  "memory_scope_recall_failed": "Recall failed",
+  "memory_scope_promote_btn_title": "Promote to a broader scope",
+  "memory_scope_promote_prompt": "Promote to which scope? (story-shared, prd-shared, project-shared, persona-in-project, persona-global)",
+  "memory_scope_promoted": "Promoted"
 }

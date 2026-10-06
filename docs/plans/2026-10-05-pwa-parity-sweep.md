@@ -13,9 +13,11 @@
   platform infrastructure, found live). D82 and D66's agent badge were
   checked live and are already shipped elsewhere — no new work needed.
   Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor); Phase 2 batch 2
-  (GH#181) ✅ shipped v8.46.0 (minor). Remaining Phase 2 items (D83,
-  D77, GH#177, D59/60/62/69/73, D61, D63, D65/67) and Phases 3–4
-  planned, not started.
+  (GH#181) ✅ shipped v8.46.0 (minor); Phase 2 batch 3 (D77) ✅ shipped
+  v8.47.0 (minor). D83 checked live and already shipped since v8.35.0
+  — no new work needed. Remaining Phase 2 items (GH#177,
+  D59/60/62/69/73, D61, D63, D65/67) and Phases 3–4 planned, not
+  started.
 
 ## Context
 
@@ -157,13 +159,19 @@ Each item is a button/field/badge wired to an API that already exists:
   Automata-spec-view markdown renderer verbatim. Found live: the prior
   "view run" affordance was a raw `alert(JSON.stringify(run))` — not
   truncated text as the issue assumed, no rendering at all.
-- **GH#172 D83** — inline file viewer for story/task file chips, reusing
-  `_showFileViewer`/`_fileChip` (already built this session).
+- **GH#172 D83 (checked live 2026-10-06, already shipped)** — inline
+  file viewer for story/task file chips. Already fully wired since
+  v8.35.0 (`git log -L` on app.js:10460-10467 confirms): story files,
+  task files, and `files_touched` all already render via `_fileChip()`
+  → `_showFileViewer()`. No new work needed.
 - **GH#172 D76 ✅ shipped v8.45.0** — "repair depends_on" button.
   Confirmed server-side on the REST surface too (not just MCP):
   `case "repair_depends_on":` in `internal/server/autonomous.go:892`.
-- **GH#172 D77** — memory recall / scopes / lifecycle UI (BL385-387's
-  `memory_scope_*` APIs already exist; this is UI-only).
+- **GH#172 D77 ✅ shipped v8.47.0** — memory recall / scopes / lifecycle
+  UI. Added an inventory table + cross-layer recall browser + promote,
+  reusing the existing `memory_scope_*` REST surface. Found live: the
+  recall endpoint returns the same physical row once per layer it
+  overlaps with — the new UI dedups before rendering.
 - **GH#177** — per-story resource bars (CPU%/RSS) + a remote compute-node
   card (per-GPU util/temp/power/VRAM) on Automata detail, replacing the
   current single aggregate CPU/RAM total. Data already available via the

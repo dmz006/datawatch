@@ -14556,6 +14556,92 @@ function searchMemories() {
   }).catch(() => { if (el) el.textContent = t('memory_search_failed') || 'Search failed'; });
 }
 
+// GH#172 D77 — memory scope lifecycle UI (BL385-387's memory_scope_*
+// REST surface already exists; this is UI-only). Inventory shows a
+// per-(role,session) breakdown; the recall panel walks a specific
+// scope and lets the operator promote any hit up a level.
+function loadMemoryScopeInventory() {
+  const el = document.getElementById('memScopeInventory');
+  if (!el) return;
+  const project = document.getElementById('memScopeProject')?.value || '';
+  apiFetch('/api/memory/scopes/inventory' + (project ? '?project=' + encodeURIComponent(project) : ''))
+    .then(data => {
+      const scopes = (data && data.scopes) || [];
+      if (scopes.length === 0) { el.innerHTML = '<div style="color:var(--text2);font-size:11px;">No scope entries found.</div>'; return; }
+      el.innerHTML = `<table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <tr style="color:var(--text2);text-align:left;"><th style="padding:2px 6px;">role</th><th style="padding:2px 6px;">session</th><th style="padding:2px 6px;text-align:right;">count</th></tr>
+        ${scopes.map(s => `<tr><td style="padding:2px 6px;font-family:var(--mono,monospace);">${escHtml(s.role || '(project-shared)')}</td><td style="padding:2px 6px;color:var(--text2);">${escHtml(s.session_id || '')}</td><td style="padding:2px 6px;text-align:right;">${s.count}</td></tr>`).join('')}
+      </table>`;
+    })
+    .catch(() => { el.innerHTML = `<div style="color:var(--error);font-size:11px;">${escHtml(t('memory_scope_inventory_failed')||'Failed to load scope inventory')}</div>`; });
+}
+
+function memoryScopeRecall() {
+  const el = document.getElementById('memScopeRecallList');
+  if (!el) return;
+  const scope = document.getElementById('memScopeSelect')?.value || '';
+  const prdID = document.getElementById('memScopePRDID')?.value || '';
+  const storyID = document.getElementById('memScopeStoryID')?.value || '';
+  const persona = document.getElementById('memScopePersona')?.value || '';
+  const project = document.getElementById('memScopeProject')?.value || '';
+  el.innerHTML = '<div style="color:var(--text2);">Loading…</div>';
+  const qs = new URLSearchParams();
+  if (prdID) qs.set('prd_id', prdID);
+  if (storyID) qs.set('story_id', storyID);
+  if (persona) qs.set('persona', persona);
+  if (project) qs.set('project', project);
+  apiFetch('/api/memory/scopes/recall?' + qs.toString())
+    .then(data => {
+      const raw = (data && data.results) || [];
+      // Recall walks every matching layer top-down; a row visible from
+      // more than one layer (e.g. a prd-shared entry also matches a
+      // broader project-shared layer query) comes back once per layer
+      // it overlaps with — same id, same content, different scope
+      // label. Dedup on (id, project_dir, created_at) so the operator
+      // sees each physical entry once. Found live 2026-10-06 while
+      // verifying this against a real seeded entry.
+      const seen = new Set();
+      const results = raw.filter(m => {
+        const key = m.id + '|' + (m.project_dir||'') + '|' + (m.created_at||'');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (results.length === 0) { el.innerHTML = '<div style="color:var(--text2);">No memories in this scope.</div>'; return; }
+      el.innerHTML = results.map(m => {
+        const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
+        return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <span style="font-size:10px;color:var(--text2);">#${m.id} ${escHtml(m.scope||scope)} ${escHtml(m.role||'')}</span>
+            <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          </div>
+          <button class="btn-icon" style="font-size:10px;" title="${escHtml(t('memory_scope_promote_btn_title')||'Promote to a broader scope')}" onclick="memoryScopePromoteFromList(${m.id},${escHtml(JSON.stringify(m.scope||scope))},${escHtml(JSON.stringify({persona,project,session_id:m.session_id||'',prd_id:prdID,story_id:storyID}))})">↑</button>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => { el.innerHTML = `<div style="color:var(--error);">${escHtml(t('memory_scope_recall_failed')||'Recall failed')}</div>`; });
+}
+window.memoryScopeRecall = memoryScopeRecall;
+
+function memoryScopePromoteFromList(memoryID, fromScope, fromRef) {
+  // The scope dropdown doesn't filter recall (which always walks every
+  // layer top-down) — it pre-fills the promote target instead, so
+  // picking "project-shared" there before promoting saves retyping it.
+  const defaultTo = document.getElementById('memScopeSelect')?.value || 'project-shared';
+  const toScope = prompt(t('memory_scope_promote_prompt')||'Promote to which scope? (story-shared, prd-shared, project-shared, persona-in-project, persona-global)', defaultTo);
+  if (!toScope) return;
+  apiFetch('/api/memory/scopes/promote', {
+    method: 'POST',
+    body: JSON.stringify({
+      memory_id: memoryID,
+      from: Object.assign({ scope: fromScope }, fromRef),
+      to: { scope: toScope, persona: fromRef.persona, project: fromRef.project },
+    }),
+  }).then(() => { showToast(t('memory_scope_promoted')||'Promoted', 'success', 1500); memoryScopeRecall(); loadMemoryScopeInventory(); })
+    .catch(e => showToast(String(e.message||e), 'error', 3000));
+}
+window.memoryScopePromoteFromList = memoryScopePromoteFromList;
+
 function deleteMemory(id) {
   apiFetch('/api/memory/delete', { method: 'POST', body: JSON.stringify({ id }) })
     .then(() => { showToast('Deleted memory #' + id, 'success', 1500); listMemories(); loadMemoryStats(); })
@@ -23821,6 +23907,30 @@ function renderObserverView() {
       </div>
 
       <div class="settings-section">
+        ${settingsSectionHeader('memscopes', 'Memory Scopes', 'memory.md')}
+        <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
+          <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
+          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">Loading inventory…</em></div>
+          <div style="display:flex;gap:6px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
+            <select id="memScopeSelect" class="form-select" style="font-size:11px;width:auto;">
+              <option value="session-local">session-local</option>
+              <option value="story-shared">story-shared</option>
+              <option value="prd-shared">prd-shared</option>
+              <option value="project-shared" selected>project-shared</option>
+              <option value="persona-in-project">persona-in-project</option>
+              <option value="persona-global">persona-global</option>
+            </select>
+            <input type="text" id="memScopePRDID" class="form-input" style="width:100px;font-size:11px;" placeholder="prd_id" />
+            <input type="text" id="memScopeStoryID" class="form-input" style="width:100px;font-size:11px;" placeholder="story_id" />
+            <input type="text" id="memScopePersona" class="form-input" style="width:110px;font-size:11px;" placeholder="persona" />
+            <input type="text" id="memScopeProject" class="form-input" style="width:120px;font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
+            <button class="btn-secondary" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
+          </div>
+          <div id="memScopeRecallList" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
         <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
@@ -23922,6 +24032,7 @@ function renderObserverView() {
   loadSystemStatsGrid(); // BL379 — per-system grid (local + observer peers)
   loadStatsPanel();
   listMemories();
+  loadMemoryScopeInventory(); // GH#172 D77
   loadSchedulesList();
   loadCooldownStatus();
   loadAnalyticsPanel();

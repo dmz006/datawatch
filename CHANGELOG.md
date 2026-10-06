@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.47.0 — feat(pwa): BL396 Phase 2 batch 3 — memory scope browser + promote
+
+### Added
+- **GH#172**: new "Memory Scopes" settings card — an inventory table (per-role/session entry counts) plus a recall browser that walks the scope hierarchy (session-local → story/PRD-shared → project-shared → persona) and merges the hits, reading the existing `memory_scope_*` REST surface (BL385-387). Each result has a "↑ Promote" button to move it up a scope level.
+
+### Fixed (found while building the above, same batch)
+- Recall's cross-layer walk returns the same physical memory once per layer it overlaps with (e.g. a prd-shared entry also matches the broader project-shared layer) — same id, same content, different scope label. The new UI dedups on (id, project_dir, created_at) before rendering so an entry doesn't appear to the operator as two separate memories.
+- The promote button now uses each entry's own reported `scope` as the "from" reference instead of the scope-selector dropdown's value — since recall doesn't filter by that dropdown (it always walks every layer), trusting the dropdown would send the wrong "from" scope whenever a hit's actual scope differed from what was selected.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.46.0 — feat(pwa): BL396 Phase 2 batch 2 — council run viewer renders markdown
 
 ### Added
