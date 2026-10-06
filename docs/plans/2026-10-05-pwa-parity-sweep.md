@@ -12,9 +12,10 @@
   `datawatch://alert/<id>` deep link (all missing real backend/
   platform infrastructure, found live). D82 and D66's agent badge were
   checked live and are already shipped elsewhere — no new work needed.
-  Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor). Remaining Phase 2
-  items (GH#181, D83, D77, GH#177, D59/60/62/69/73, D61, D63, D65/67)
-  and Phases 3–4 planned, not started.
+  Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor); Phase 2 batch 2
+  (GH#181) ✅ shipped v8.46.0 (minor). Remaining Phase 2 items (D83,
+  D77, GH#177, D59/60/62/69/73, D61, D63, D65/67) and Phases 3–4
+  planned, not started.
 
 ## Context
 
@@ -151,9 +152,11 @@ Each item is a button/field/badge wired to an API that already exists:
   surface, not a wire-up.
 
 ### Phase 2 — medium items, bounded but touching more than one file
-- **GH#181** — render council persona replies/consensus/dissent as
-  markdown, untruncated/collapsible, reusing the Automata-spec-view
-  markdown renderer verbatim.
+- **GH#181 ✅ shipped v8.46.0** — render council persona replies/
+  consensus/dissent as markdown, untruncated/collapsible, reusing the
+  Automata-spec-view markdown renderer verbatim. Found live: the prior
+  "view run" affordance was a raw `alert(JSON.stringify(run))` — not
+  truncated text as the issue assumed, no rendering at all.
 - **GH#172 D83** — inline file viewer for story/task file chips, reusing
   `_showFileViewer`/`_fileChip` (already built this session).
 - **GH#172 D76 ✅ shipped v8.45.0** — "repair depends_on" button.

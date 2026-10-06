@@ -26782,10 +26782,68 @@ window.councilCancelRun = function(runID) {
     .then(() => showToast('Cancel requested', 'info', 2000))
     .catch(e => showError('Cancel failed', String(e.message||e)));
 };
+// GH#181 — render a council run's persona replies/consensus/dissent as
+// markdown, collapsible per round/persona, instead of a raw alert()
+// dump of the JSON response. Reuses _renderMarkdownFileInto verbatim
+// (same marked.js + DOMPurify.sanitize path the Automata spec view and
+// file-chip viewer already use — no new sanitization code).
 window.councilViewRun = function(id) {
-  apiFetch('/api/council/runs/' + encodeURIComponent(id))
-    .then(run => alert(JSON.stringify(run, null, 2)))
-    .catch(e => showToast(String(e.message||e), 'error'));
+  const existing = document.getElementById('councilRunViewerModal');
+  if (existing) existing.remove();
+  apiFetch('/api/council/runs/' + encodeURIComponent(id)).then(run => {
+    const modal = document.createElement('div');
+    modal.id = 'councilRunViewerModal';
+    modal.className = 'confirm-modal-overlay';
+    const rounds = run.rounds || [];
+    const roundsHtml = rounds.map(rd => {
+      const personaBlocks = Object.entries(rd.responses || {}).map(([persona, text]) => `
+        <details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);" open>
+          <summary style="cursor:pointer;padding:6px 10px;font-weight:600;">${escHtml(persona)}</summary>
+          <div class="council-run-md" data-persona="${escHtml(persona)}" data-round="${rd.index}" style="padding:10px;border-top:1px solid var(--border);"><em style="color:var(--text2);">Rendering…</em></div>
+        </details>`).join('');
+      return `<details style="margin-bottom:10px;" open>
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:4px 0;">Round ${rd.index + 1}</summary>
+        ${personaBlocks}
+      </details>`;
+    }).join('') || '<em style="color:var(--text2);">No rounds recorded.</em>';
+    modal.innerHTML = `<div class="response-modal" id="councilRunViewerPanel" style="max-width:min(860px,95vw);max-height:90vh;width:95vw;">
+      <div class="response-modal-header">
+        <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(run.proposal||'')}">${escHtml((run.proposal||'').slice(0,80))}${(run.proposal||'').length>80?'…':''}</span>
+        <button class="btn-icon" onclick="document.getElementById('councilRunViewerModal').remove()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
+      </div>
+      <div class="response-modal-body" style="font-size:13px;line-height:1.6;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${escHtml(run.mode||'')} · ${escHtml((run.personas||[]).join(', '))}${run.cancelled?' · <span style="color:var(--error);">cancelled</span>':''}</div>
+        ${roundsHtml}
+        ${run.consensus ? `<details open style="margin-top:14px;border-top:2px solid var(--success,#22c55e);padding-top:10px;">
+          <summary style="cursor:pointer;font-weight:700;color:var(--success,#22c55e);">Consensus</summary>
+          <div class="council-run-md" data-field="consensus" style="padding:8px 0;"><em style="color:var(--text2);">Rendering…</em></div>
+        </details>` : ''}
+        ${run.dissent ? `<details open style="margin-top:10px;border-top:1px solid var(--warning,#f59e0b);padding-top:10px;">
+          <summary style="cursor:pointer;font-weight:700;color:var(--warning,#f59e0b);">Dissent</summary>
+          <div class="council-run-md" data-field="dissent" style="padding:8px 0;"><em style="color:var(--text2);">Rendering…</em></div>
+        </details>` : ''}
+      </div>
+    </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+
+    const raw = { consensus: run.consensus, dissent: run.dissent };
+    rounds.forEach(rd => Object.entries(rd.responses || {}).forEach(([persona, text]) => {
+      raw[`persona:${rd.index}:${persona}`] = text;
+    }));
+    window._ensureMarkdownLibs().then(() => {
+      modal.querySelectorAll('.council-run-md').forEach(el => {
+        const key = el.dataset.field ? el.dataset.field : `persona:${el.dataset.round}:${el.dataset.persona}`;
+        _renderMarkdownFileInto(el, raw[key] || '');
+      });
+    }).catch(() => {
+      // Offline/CSP fallback — same degrade path _showFileViewer uses.
+      modal.querySelectorAll('.council-run-md').forEach(el => {
+        const key = el.dataset.field ? el.dataset.field : `persona:${el.dataset.round}:${el.dataset.persona}`;
+        el.innerHTML = `<pre style="white-space:pre-wrap;">${escHtml(raw[key] || '')}</pre>`;
+      });
+    });
+  }).catch(e => showToast(String(e.message||e), 'error'));
 };
 
 // v6.12.4 — operator: "add ability to add/remove persona". Modal now

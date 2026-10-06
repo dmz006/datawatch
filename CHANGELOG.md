@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.46.0 — feat(pwa): BL396 Phase 2 batch 2 — council run viewer renders markdown
+
+### Added
+- **GH#181**: viewing a completed council run no longer dumps the raw JSON response in a browser `alert()` — it now opens a proper modal with each round's persona replies, the final consensus, and any dissent rendered as collapsible markdown (same `marked.js` + `DOMPurify.sanitize()` path the Automata spec view and file-chip viewer already use, reused verbatim rather than a new renderer). Falls back to safely-escaped plain text if the markdown libraries can't load (offline/CSP).
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.45.0 — feat(pwa): BL396 Phase 2 batch 1 — repair depends_on button
 
 ### Added

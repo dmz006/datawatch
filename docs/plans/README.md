@@ -1554,7 +1554,9 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 1 is now complete.**
 >
-> **Phase 2 batch 1 ✅ Shipped v8.45.0** (minor): GH#172 D76 (Automaton detail "Repair deps" button, calling the existing `repair_depends_on` REST action — confirmed server-side on REST too, not just MCP). Remaining Phase 2 items and Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 2 batch 1 ✅ Shipped v8.45.0** (minor): GH#172 D76 (Automaton detail "Repair deps" button, calling the existing `repair_depends_on` REST action — confirmed server-side on REST too, not just MCP).
+>
+> **Phase 2 batch 2 ✅ Shipped v8.46.0** (minor): GH#181 (council run viewer renders persona replies/consensus/dissent as collapsible markdown, reusing the Automata-spec-view renderer verbatim — replacing a raw `alert(JSON.stringify(...))` dump found live). Remaining Phase 2 items and Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)
