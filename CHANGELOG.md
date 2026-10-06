@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.50.0 — feat(pwa): BL396 Phase 2 batch 6 — watch sessions/automata + watched filter
+
+### Added
+- **GH#172**: a 👁 watch toggle on both session cards and Automaton cards (Android already had this), plus a "watched only" filter toggle in each list's toolbar. Pure client-side state (localStorage), same persistence pattern as the already-shipped "pin" feature — this is a personal marker, not shared/authoritative daemon state, so no backend work was needed.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 2 of 4.
+
 ## v8.49.0 — feat(pwa): BL396 Phase 2 batch 5 — wizard "memory promote to" field
 
 ### Added

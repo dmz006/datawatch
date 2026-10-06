@@ -199,6 +199,11 @@ const state = {
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
   sessionFilter: '',      // dynamic filter for session list
+  // GH#172 D61 — watch sessions + watched-badge filter. Same client-
+  // only persistence pattern as sessionOrder above (personal marker,
+  // not shared/authoritative — no backend state needed).
+  watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
+  sessionWatchFilter: false,
   sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
@@ -2056,6 +2061,9 @@ function renderSessionsView() {
       (s.compute_node_ref || '').toLowerCase().includes(filterText)
     );
   }
+  if (state.sessionWatchFilter) {
+    pool = pool.filter(s => state.watchedSessions.has(s.full_id || s.id)); // GH#172 D61
+  }
   const visible = sortSessionsByOrder(pool);
   // Cache the done subset of the visible (filtered) set so selectAllInactive
   // and the select bar always operate on what the user can actually see.
@@ -2139,6 +2147,7 @@ function renderSessionsView() {
     </div>
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
+    <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
     <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
@@ -2290,6 +2299,19 @@ function toggleSessionTreeView() {
   renderSessionsView();
 }
 window.toggleSessionTreeView = toggleSessionTreeView;
+
+// GH#172 D61 — watch sessions + watched-badge filter.
+window.toggleSessionWatch = function(fullId) {
+  if (state.watchedSessions.has(fullId)) state.watchedSessions.delete(fullId);
+  else state.watchedSessions.add(fullId);
+  try { localStorage.setItem('cs_sessions_watched', JSON.stringify([...state.watchedSessions])); } catch (_) {}
+  renderSessionsView();
+};
+
+window.toggleSessionWatchFilter = function() {
+  state.sessionWatchFilter = !state.sessionWatchFilter;
+  renderSessionsView();
+};
 
 // BL348 — render sessions as a parent/child tree
 function renderSessionsAsTree(sessions) {
@@ -2557,6 +2579,7 @@ function sessionCard(sess, idx, total) {
             <span class="card-actions" onclick="event.stopPropagation()" style="display:inline-flex;gap:4px;align-items:center;flex-shrink:0;">${actions}</span>
             ${actions ? '<span style="color:var(--text2);opacity:0.5;flex-shrink:0;">|</span>' : ''}
             <span class="state ${badgeClass}" data-state="${escHtml(sess.state || '')}" data-channel-evt="${sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : ''}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;flex-shrink:0;">${escHtml(sess.state || 'unknown')}<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s — may be going to WaitingInput'}"></span></span>
+            <button class="btn-icon" onclick="event.stopPropagation();toggleSessionWatch('${escHtml(fullId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.watchedSessions.has(fullId)?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(state.watchedSessions.has(fullId) ? (t('session_action_unwatch')||'Stop watching') : (t('session_action_watch')||'Watch for updates'))}">👁</button>
             <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder" style="cursor:grab;color:var(--text2);font-size:14px;">&#8942;&#8942;</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
@@ -16820,6 +16843,11 @@ const _automataState = {
   tmplSearch: '',            // BL221 — template search query
   // alpha.31 #272 — operator-pin overrides sort. Persisted in localStorage.
   pinned: new Set(JSON.parse(localStorage.getItem('cs_automata_pinned') || '[]')),
+  // GH#172 D61 — watch sessions/automata + watched-badge filter. Same
+  // client-only persistence pattern as `pinned` above (no backend
+  // state needed — this is a personal marker, not shared/authoritative).
+  watched: new Set(JSON.parse(localStorage.getItem('cs_automata_watched') || '[]')),
+  watchFilter: false,
 };
 
 // BL303 S4 — /dashboard Mission Control state.
@@ -16885,6 +16913,24 @@ window.toggleAutomataPin = function(id) {
   _automataRenderCards();
 };
 
+function _automataWatchPersist() {
+  try {
+    localStorage.setItem('cs_automata_watched', JSON.stringify([..._automataState.watched]));
+  } catch (_) {}
+}
+
+window.toggleAutomataWatch = function(id) {
+  if (_automataState.watched.has(id)) _automataState.watched.delete(id);
+  else _automataState.watched.add(id);
+  _automataWatchPersist();
+  _automataRenderCards();
+};
+
+window.toggleAutomataWatchFilter = function() {
+  _automataState.watchFilter = !_automataState.watchFilter;
+  _automataRenderCards();
+};
+
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
@@ -16903,6 +16949,7 @@ function _automataFilteredList() {
   }
   if (st.statusFilter.size) list = list.filter(p => st.statusFilter.has(p.status || 'draft'));
   if (st.typeFilter.size) list = list.filter(p => st.typeFilter.has(p.type || ''));
+  if (st.watchFilter) list = list.filter(p => st.watched.has(p.id)); // GH#172 D61
   if (st.search) {
     const q = st.search.toLowerCase();
     list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
@@ -17187,6 +17234,9 @@ function renderAutomataCard(prd) {
     ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}" onclick="event.stopPropagation();automataCancel(${escId})">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
     : '';
   const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
+  // GH#172 D61 — watch sessions/automata + watched-badge filter.
+  const isWatched = _automataState.watched.has(id);
+  const watchBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isWatched?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(isWatched ? (t('automata_action_unwatch')||'Stop watching') : (t('automata_action_watch')||'Watch for updates'))}" onclick="event.stopPropagation();toggleAutomataWatch('${escHtml(id)}')">👁</button>`;
   // GH#172 D71 — parent-PRD ↗ link on an Automaton card (Android already
   // has this). parent_prd_id is already in the JSON (BL191 Q4 recursion).
   const parentLink = prd.parent_prd_id
@@ -17212,7 +17262,7 @@ function renderAutomataCard(prd) {
         <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
           ${cancelBtn}${rejectBtn}${reviseBtn}
-          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${pinBtn}</span>
+          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${watchBtn}${pinBtn}</span>
         </div>
       </div>
     </div>
@@ -19585,6 +19635,7 @@ function renderAutonomousView() {
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
         <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
         <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
+        <button id="automataWatchFilterBtn" class="automata-action-btn ${st.watchFilter?'active':''}" onclick="toggleAutomataWatchFilter()" title="${escHtml(t('automata_watch_filter_title')||'Show watched only')}" style="${st.tab==='templates'?'display:none;':''}">👁</button>
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
       </div>
       <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">

@@ -15,11 +15,12 @@
   Phase 2 batch 1 (D76) ✅ shipped v8.45.0 (minor); Phase 2 batch 2
   (GH#181) ✅ shipped v8.46.0 (minor); Phase 2 batch 3 (D77) ✅ shipped
   v8.47.0 (minor); Phase 2 batch 4 (D63) ✅ shipped v8.48.0 (minor);
-  Phase 2 batch 5 (D73) ✅ shipped v8.49.0 (minor). D83 and GH#177
-  checked live and already shipped (v8.35.0 and v8.36.0 respectively)
-  — no new work needed. D65/D67 awaiting a GH#172 reply before
-  implementing. Remaining Phase 2 items (D59/60/62/69, D61) and
-  Phases 3–4 planned, not started.
+  Phase 2 batch 5 (D73) ✅ shipped v8.49.0 (minor); Phase 2 batch 6
+  (D61) ✅ shipped v8.50.0 (minor). D83 and GH#177 checked live and
+  already shipped (v8.35.0 and v8.36.0 respectively) — no new work
+  needed. D65/D67 awaiting a GH#172 reply before implementing.
+  Remaining Phase 2 items (D59/60/62/69) and Phases 3–4 planned, not
+  started.
 
 ## Context
 
@@ -189,7 +190,9 @@ Each item is a button/field/badge wired to an API that already exists:
   Reads the existing `set_memory_harvest` REST action (BL386 Phase 2);
   fires right after PRD creation, same pattern as the wizard's
   backend/effort follow-up call.
-- **GH#172 D61** — watch sessions/automata + watched-badge filter.
+- **GH#172 D61 ✅ shipped v8.50.0** — watch sessions/automata +
+  watched-badge filter. Implemented client-side only, same pattern as
+  the already-shipped "pin" feature (localStorage, no backend state).
 - **GH#172 D63 ✅ shipped v8.48.0** — Whisper 🎤 voice reply in quick
   commands. Added to the sessions-list card's custom-reply field,
   reusing `micButtonHTML`/`startGenericVoiceInput` verbatim (already

@@ -1503,5 +1503,11 @@
   "memory_scope_promoted": "Promoted",
   "automata_wizard_memory_promote_label": "Memory promote to",
   "automata_wizard_memory_promote_none": "— off (keep in story-shared) —",
-  "automata_wizard_memory_promote_hint": "On completion, harvest this automaton's memories into the chosen broader scope."
+  "automata_wizard_memory_promote_hint": "On completion, harvest this automaton's memories into the chosen broader scope.",
+  "automata_action_watch": "Watch for updates",
+  "automata_action_unwatch": "Stop watching",
+  "automata_watch_filter_title": "Show watched only",
+  "session_action_watch": "Watch for updates",
+  "session_action_unwatch": "Stop watching",
+  "session_watch_filter_tip": "Show watched only"
 }

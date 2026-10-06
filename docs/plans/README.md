@@ -1564,7 +1564,9 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 2 batch 4 ✅ Shipped v8.48.0** (minor): GH#172 D63 (Whisper 🎤 mic button on the sessions-list card's custom-reply field, reusing the existing `micButtonHTML`/`startGenericVoiceInput` helper). D65/D67 need a GH#172 reply (comment posted 2026-10-06) before implementing — both under-specified for a PWA.
 >
-> **Phase 2 batch 5 ✅ Shipped v8.49.0** (minor): GH#172 D73 (Launch Automaton wizard "Memory promote to" dropdown, reading the existing `set_memory_harvest` REST action). Remaining Phase 2 items (D59/60/62/69, D61) and Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 2 batch 5 ✅ Shipped v8.49.0** (minor): GH#172 D73 (Launch Automaton wizard "Memory promote to" dropdown, reading the existing `set_memory_harvest` REST action).
+>
+> **Phase 2 batch 6 ✅ Shipped v8.50.0** (minor): GH#172 D61 (watch sessions/automata + watched-only filter toggle, client-side only — same localStorage pattern as the already-shipped "pin" feature, no backend state needed). Remaining Phase 2 items (D59/60/62/69) and Phases 3–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)
