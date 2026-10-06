@@ -6,10 +6,13 @@
   batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); Phase 1
   batch 2 (D64) ✅ shipped v8.41.0 (minor); Phase 1 batch 3 (D68) ✅
   shipped v8.42.0 (minor); Phase 1 batch 4 (D81) ✅ shipped v8.43.0
-  (minor); remaining Phase 1 items (D82, GH#182) and Phases 2–4 planned,
-  not started. D52, D75, and D66's Chrome-badge half re-scoped into
-  Phase 3 (missing backend); D66's agent badge confirmed already
-  shipped elsewhere.
+  (minor); Phase 1 batch 5 (GH#182, 6 of 7 items) ✅ shipped v8.44.0
+  (minor). **Phase 1 is now complete** except items re-scoped into
+  Phase 3: D52, D75, D66's Chrome-badge half, and GH#182's
+  `datawatch://alert/<id>` deep link (all missing real backend/
+  platform infrastructure, found live). D82 and D66's agent badge were
+  checked live and are already shipped elsewhere — no new work needed.
+  Phases 2–4 planned, not started.
 
 ## Context
 
@@ -121,15 +124,29 @@ Each item is a button/field/badge wired to an API that already exists:
   Phase 3 alongside D52.
 - **GH#172 D81 ✅ shipped v8.43.0** — saved-command library picker in the
   New Session task field (existing saved-commands REST surface).
-- **GH#172 D82** — "Resume previous session" field on New Session.
-- **GH#182** — '?' help icons on Alerts/Dashboard headers (same pattern as
-  other views' manual-section links); restart confirm dialog; sessions
-  list error banner on unreachable server; filter chip-row expand/collapse
-  animation; floating ＋ button on Templates tab; the 4 extra Automata
-  settings fields (`decomposition_backend`, `decomposition_effort`,
-  `verification_effort`, `stale_task_seconds` — already real config keys,
-  just missing from the Automata config card); `datawatch://alert/<id>`
-  deep-link route handling on PWA load.
+- **GH#172 D82 (checked live 2026-10-05, already shipped)** — "Resume
+  previous session" field on New Session. Already fully built: a
+  `resumeSelect` dropdown populated from an "optgroup label='Previous
+  sessions'" list, a custom session-ID fallback input, and a separate
+  "Restart a previous session" backlog section below the form
+  (app.js:5802-5833). No new work needed.
+- **GH#182 ✅ shipped v8.44.0 (6 of 7 items)** — '?' help icons on
+  Alerts/Dashboard headers; restart confirm dialog (operator-initiated
+  only — `triggerAutoRestart()`'s unattended path deliberately stays
+  unprompted, see app.js's `confirmRestartDaemon` comment); sessions
+  list error banner on unreachable server; filter chip-row expand/
+  collapse animation; floating ＋ button on Templates tab (now the
+  shared FAB, same as Automata's ⚡ launch button); 3 of the plan's
+  originally-named 4 Automata settings fields (`planning_effort`,
+  `verification_effort`, `stale_task_seconds`). **Correction found
+  live 2026-10-05**: `decomposition_backend`/`decomposition_effort`
+  (2 of the plan's original 4 names) are legacy YAML-only aliases —
+  `json:"-"` on both (`internal/config/config.go:1610,1620`), accepted
+  on read, never written. The current field is `planning_backend`,
+  which was **already** on the config card (line ~12470) before this
+  batch — nothing to add there. The 7th item, the
+  `datawatch://alert/<id>` deep link, is re-scoped below: it's new
+  surface, not a wire-up.
 
 ### Phase 2 — medium items, bounded but touching more than one file
 - **GH#181** — render council persona replies/consensus/dissent as
@@ -198,6 +215,18 @@ Each item is a button/field/badge wired to an API that already exists:
   — needs a persisted, serialized `chrome`/`chrome_enabled` field on the
   session (today it's a create-time-only option with no getter and no
   JSON field). Small enough to land alongside D52/D75's backend work.
+- **GH#182's `datawatch://alert/<id>` deep link** (re-scoped from Phase
+  1, found live 2026-10-05) — checked for existing infrastructure to
+  wire this onto and found none: `manifest.json` has no
+  `protocol_handlers` entry (the standard way a PWA registers as a
+  custom-scheme handler — and per spec would need a `web+` prefix, e.g.
+  `web+datawatch://`, since bare custom schemes are native-app-only),
+  `sw.js`'s `notificationclick` unconditionally opens `/` with no
+  `data`/URL passed through from the push payload, and `app.js` has no
+  `URLSearchParams`/`location.hash` parsing anywhere at page-load time
+  for routing. This needs a real design decision (what URL shape the
+  PWA actually receives the link as, end to end from push payload to
+  route) before it's buildable — not a Phase 1 "existing API" wire-up.
 
 ### Phase 4 — APNs push (BL335 / GH#107 / GH#158) — independent backend track, can run in parallel with Phases 0–3
 This is the one item blocking an entire platform's push notifications

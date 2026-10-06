@@ -1548,7 +1548,11 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 >
 > **Phase 1 batch 3 ✅ Shipped v8.42.0** (minor): GH#172 D68 (chat Yes/No/Stop quick-reply chips, shown while a session is `waiting_input`, sending through the same tmux/channel-routed path as a typed reply).
 >
-> **Phase 1 batch 4 ✅ Shipped v8.43.0** (minor): GH#172 D81 (saved-command library picker on the New Session task field, reading the existing `/api/commands` surface). Remaining Phase 1 items (D82, GH#182) and Phases 2–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
+> **Phase 1 batch 4 ✅ Shipped v8.43.0** (minor): GH#172 D81 (saved-command library picker on the New Session task field, reading the existing `/api/commands` surface). D82 checked live and found already fully built (resume-previous-session dropdown + backlog section already existed) — no new work needed.
+>
+> **Phase 1 batch 5 ✅ Shipped v8.44.0** (minor): GH#182, 6 of 7 items — help icons (Dashboard/Alerts), restart confirm dialog (operator-initiated only), sessions-list disconnect banner, filter chip-row animation, Templates tab floating + button, and 3 of the originally-named 4 Automata settings fields (`planning_effort`, `verification_effort`, `stale_task_seconds` — the other 2, `decomposition_backend`/`decomposition_effort`, turned out to be legacy YAML-only aliases with no JSON exposure; `planning_backend` was already on the card). The 7th item, the `datawatch://alert/<id>` deep link, is re-scoped to Phase 3 — no manifest `protocol_handlers`, launch-queue consumption, or any URL-parsing-on-load mechanism exists in the PWA today.
+>
+> **Phase 1 is now complete.** Phases 2–4 remain open; each further batch ships as its own minor bump per AGENT.md's Versioning rule.
 > **BL335** (reused, not renumbered) — APNs push for iOS; see Phase 4 of `docs/plans/2026-10-05-pwa-parity-sweep.md` for the concrete dispatch design now that it's been scoped against the actual code (no FCM function to mirror — mirror `publishToEndpoint`/`publishToTopic` in `internal/server/push.go` instead; `devices.KindAPNS` already exists and is already accepted by `POST /api/devices/register`, just never dispatched to).
 
 ## Open backlog (deferred / awaiting operator action)

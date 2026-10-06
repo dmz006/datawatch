@@ -2008,6 +2008,16 @@ function renderSessionsView() {
   const view = document.getElementById('view');
   if (state.activeView !== 'sessions') return;
 
+  // GH#182 — sessions list error banner when the server is unreachable
+  // (Android already shows this). The header's small status dot is easy
+  // to miss; this is a visible inline warning on the list itself, so the
+  // operator knows the list below may be stale.
+  const disconnectedBannerHtml = !state.connected
+    ? `<div class="sessions-disconnected-banner" style="background:rgba(239,68,68,0.12);border:1px solid var(--error,#ef4444);color:var(--error,#ef4444);border-radius:6px;padding:8px 12px;margin:0 12px 10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
+        <span>&#9888;</span><span>${escHtml(t('sessions_disconnected_banner')||'Not connected to the server — this list may be stale.')}</span>
+      </div>`
+    : '';
+
   const now = Date.now();
   const RECENT_MS = (state._recentMinutes || 5) * 60 * 1000;
   const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
@@ -2129,8 +2139,8 @@ function renderSessionsView() {
     </div>
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
-    ${state._llmFilterOpen && backendTypes.length > 1 ? `<div class="backend-filter-badges" style="display:flex;flex-wrap:wrap;gap:4px;">${backendBadges}</div>` : ''}
-    ${state._stateFilterOpen ? `<div class="state-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>` : ''}
+    ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
+    <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
@@ -2149,6 +2159,7 @@ function renderSessionsView() {
     view.innerHTML = `
       <div class="view-content" style="position:relative;">
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+        ${disconnectedBannerHtml}
         ${history.length > 0 ? toggleBtn : ''}
         <div class="empty-state">
           <span class="empty-state-icon">💬</span>
@@ -2166,6 +2177,7 @@ function renderSessionsView() {
     : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+    ${disconnectedBannerHtml}
     ${toggleBtn}<div class="session-list">${cards}</div></div>`;
 
   // Restore filter input focus and cursor position
@@ -7645,7 +7657,7 @@ function renderSettingsView() {
           </div>
           <div class="settings-row">
             <div class="settings-label">${t('settings_daemon')||'Daemon'}</div>
-            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">${t('settings_restart')||'Restart'}</button></div>
+            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="confirmRestartDaemon()">${t('settings_restart')||'Restart'}</button></div>
           </div>
           <div class="settings-row">
             <div class="settings-label">${t('settings_sessions')||'Sessions'}</div>
@@ -12458,13 +12470,23 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_backend', label: 'Planning backend', type: 'llm_backend', pairedModelKey: 'autonomous.planning_model' },
     { key: 'autonomous.planning_model', label: 'Planning model', type: 'llm_model', backendKey: 'autonomous.planning_backend' },
     { key: 'autonomous.planning_timeout_seconds', label: 'Planning timeout (sec, 0=effort default)', type: 'number', placeholder: '0' },
+    // GH#172/#182 — planning_effort, verification_effort, and
+    // stale_task_seconds were real config keys (internal/config/
+    // config.go) with no card field. decomposition_backend/
+    // decomposition_effort (the plan's original ask) are legacy YAML-
+    // only aliases for planning_backend/planning_effort — json:"-",
+    // never written — so they're deliberately NOT exposed here;
+    // planning_backend above is already the current field.
+    { key: 'autonomous.planning_effort', label: 'Planning effort', labelKey: 'settings_planning_effort', type: 'select', options: ['', 'quick', 'normal', 'high', 'max'] },
     { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
+    { key: 'autonomous.verification_effort', label: 'Verification effort', labelKey: 'settings_verification_effort', type: 'select', options: ['', 'quick', 'normal', 'high', 'max'] },
     // v8.36.9 — ordered LLM registry names the verifier load-balances
     // capacity across (e.g. ollama-datawatch, ollama-johnnyjohnny), tried
     // in order, whichever has free node capacity wins. Empty = single-
     // backend behavior via verification_backend above.
     { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-johnnyjohnny', csv: true },
+    { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
@@ -14035,7 +14057,7 @@ function loadConfigStatus() {
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
         <span id="backendRestartHint" style="display:none;color:var(--warning);">Restart required to apply changes.
-          <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+          <button class="btn-link" style="font-size:11px;" onclick="confirmRestartDaemon()">Restart now</button>
         </span>
       </div>`;
     })
@@ -14322,6 +14344,15 @@ function restartDaemon() {
   localFetch('/api/restart', { method: 'POST' })
     .then(() => showToast('Daemon restarting… reconnecting in a moment.', 'info', 6000))
     .catch(err => showError('Restart failed', err.message));
+}
+
+// GH#182 — restart confirm dialog for explicit, operator-initiated
+// restarts only (Android already asks before restarting). Deliberately
+// NOT wrapped into restartDaemon() itself: triggerAutoRestart() calls
+// that directly after an unattended config change, and a confirm modal
+// nobody is watching would hang that flow forever.
+function confirmRestartDaemon() {
+  showConfirmModal(t('settings_restart_confirm')||'Restart the daemon? All sessions will briefly disconnect.', restartDaemon);
 }
 
 // ── Proxy Resilience Settings ──────────────────────────────────────────────────
@@ -17473,7 +17504,27 @@ function switchAutomataTab(tab) {
   const newTmplBtn = document.getElementById('automataNewTmplBtn');
   const filterBtn = document.getElementById('automataFilterBtn');
   const historyBtn = document.getElementById('automataHistoryBtn');
-  if (newTmplBtn) newTmplBtn.style.display = tab === 'templates' ? '' : 'none';
+  // GH#182 — floating ＋ button on the Templates tab (Android already
+  // has this), reusing the same shared FAB the Sessions/Automata views
+  // repurpose per-view. Replaces the inline "+ Template" header button
+  // (hidden below) so there's one consistent create affordance per tab.
+  if (newTmplBtn) newTmplBtn.style.display = 'none';
+  const fab = document.getElementById('newSessionFab');
+  if (fab) {
+    if (tab === 'templates') {
+      fab.textContent = '+';
+      fab.title = t('fab_new_template')||'New template';
+      fab.setAttribute('aria-label', 'New template');
+      fab.onclick = openTemplateCreateModal;
+      fab.classList.remove('hidden');
+    } else {
+      fab.textContent = '⚡';
+      fab.title = t('fab_launch_auto')||'Launch Automation';
+      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.onclick = openLaunchAutomatonWizard;
+      fab.classList.remove('hidden');
+    }
+  }
   if (filterBtn) filterBtn.style.display = tab === 'automata' ? '' : 'none';
   if (historyBtn) historyBtn.style.display = tab === 'automata' ? '' : 'none';
   if (tab === 'templates') loadAutomataTemplatesPanel();
@@ -19468,7 +19519,11 @@ Object.defineProperty(window, '_alertsFilter', {
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
-  view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  view.innerHTML = `<div class="view-content">
+    <div style="display:flex;justify-content:flex-end;padding:6px 12px 0;">
+      <a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
+    </div>
+    <div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
   _injectServerPickerBar(view, renderAlertsView); // BL312 S3
 
   // BL312 S5 — use aggregated endpoint in all-servers mode
@@ -23249,6 +23304,7 @@ function renderDashboardView() {
         <span id="dashStatBurnRate" style="display:none;color:var(--text2);font-size:10px;font-family:monospace;border-left:1px solid var(--border);padding-left:8px;margin-left:2px;"></span>
         <span style="flex:1;"></span>
         <span style="color:var(--text2);opacity:0.4;font-size:9px;font-family:monospace;">live · ws</span>
+        <a href="/diagrams.html#docs/howto/dashboard.md" target="_blank" rel="noopener" title="${escHtml(t('dashboard_help_tip')||'Open the Dashboard howto — explains cards, editing, and adding new ones')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>
         <button id="dashAddCardBtn" onclick="window._dashShowAddPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:6px;">+ Card</button>
         <button id="dashEditBtn" onclick="window._dashStartEdit()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:4px;">✎ Edit</button>
       </div>

@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.44.0 — feat(pwa): BL396 Phase 1 batch 5 — GH#182 (help icons, restart confirm, disconnect banner, filter animation, Templates FAB, 3 Automata config fields)
+
+### Added
+- **GH#182**: '?' help icons on the Dashboard and Alerts headers, linking to their existing howto docs.
+- **GH#182**: restarting the daemon from Settings or the "Restart now" link now asks for confirmation first (the unattended auto-restart path after a config change is deliberately left unprompted — a confirm dialog nobody is watching would hang it forever).
+- **GH#182**: the Sessions list now shows an inline "not connected" banner when the WebSocket is down, instead of relying solely on the small header status dot.
+- **GH#182**: the LLM/backend and State filter chip rows now animate open/closed instead of toggling instantly.
+- **GH#182**: the Templates tab's "+" button is now the floating action button (matching Automata's launch-wizard FAB), replacing the inline header button.
+- **GH#172/#182**: added `planning_effort`, `verification_effort`, and `stale_task_seconds` to the Automata settings card — real config keys with no UI field. (`decomposition_backend`/`decomposition_effort`, the plan's original 2 of 4 fields, turned out to be legacy YAML-only aliases excluded from JSON — `planning_backend` is already the current, already-exposed field; nothing to add there.)
+
+### Scoped out (see plan doc)
+- GH#182's `datawatch://alert/<id>` deep-link item re-scoped to Phase 3: no manifest `protocol_handlers`, launch-queue consumption, or any URL-parsing-on-load mechanism exists anywhere in the PWA today — this is a new platform surface, not a wire-up.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4, now complete except the re-scoped deep-link item.
+
 ## v8.43.0 — feat(pwa): BL396 Phase 1 batch 4 — saved-command picker on New Session
 
 ### Added

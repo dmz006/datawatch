@@ -1486,5 +1486,13 @@
   "testing_label": "Testing…",
   "results_label": "results",
   "delete_failed": "Delete failed.",
-  "save_failed": "Save failed."
+  "save_failed": "Save failed.",
+  "dashboard_help_tip": "Open the Dashboard howto — explains cards, editing, and adding new ones",
+  "alerts_help_tip": "Open the Alerts howto — explains alert rules, quick replies, and notifications",
+  "settings_restart_confirm": "Restart the daemon? All sessions will briefly disconnect.",
+  "sessions_disconnected_banner": "Not connected to the server — this list may be stale.",
+  "fab_new_template": "New template",
+  "settings_planning_effort": "Planning effort",
+  "settings_verification_effort": "Verification effort",
+  "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)"
 }

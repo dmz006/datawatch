@@ -4740,6 +4740,21 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   gap: 4px;
   flex-wrap: wrap;
 }
+/* GH#182 — filter chip-row expand/collapse animation (Android already
+   animates this; the PWA toggled display:none instantly). Always
+   rendered; .open controls the slide/fade via max-height + opacity. */
+.filter-chips-collapse {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
+  transition: max-height 0.22s ease, opacity 0.18s ease, margin-top 0.18s ease;
+}
+.filter-chips-collapse.open {
+  max-height: 200px;
+  opacity: 1;
+  margin-top: 6px;
+}
 .backend-filter-badge {
   font-size: 9px;
   padding: 2px 6px;
