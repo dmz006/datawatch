@@ -3,9 +3,11 @@
 - **Date**: 2026-10-05
 - **Version at planning**: v8.39.26
 - **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phase 1
-  batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); remaining
-  Phase 1 items (D64, D66, D68, D81, D82, GH#182) and Phases 2–4 planned,
-  not started. D52 and D75 re-scoped into Phase 3 (missing backend).
+  batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); Phase 1
+  batch 2 (D64) ✅ shipped v8.41.0 (minor); remaining Phase 1 items
+  (D66's half-done agent badge confirmed shipped elsewhere, D68, D81,
+  D82, GH#182) and Phases 2–4 planned, not started. D52, D75, and D66's
+  Chrome-badge half re-scoped into Phase 3 (missing backend).
 
 ## Context
 
@@ -83,8 +85,19 @@ No UI decisions, no new surfaces, each a single localized change:
 
 ### Phase 1 — small, well-specified UI adoptions (existing APIs, no new surface)
 Each item is a button/field/badge wired to an API that already exists:
-- **GH#172 D64** — Council 🎭 badge + filter chip (session list/filters).
-- **GH#172 D66** — Agent ⬡ / "Chrome" badges in session header.
+- **GH#172 D64 ✅ shipped v8.41.0** — Council 🎭 badge + filter chip
+  (session list/filters).
+- **GH#172 D66 (narrowed, checked live 2026-10-05)** — of the two badges
+  this item asks for, the agent ⬡ "worker" badge already exists on the
+  session list card (`sess.agent_id`, app.js:2549) — nothing left to
+  build there. The "Chrome" badge has no backend to read from: `Chrome
+  *bool` (`internal/session/manager.go:1508`) is only a session-creation
+  option consumed once (`cm.SetChrome(*opt.Chrome)`, line 1912) — it's
+  never persisted on the `Session` struct or serialized to JSON, so
+  there's no `chrome`/`chrome_enabled` field for the PWA to read after
+  creation. Needs a small backend addition (persist + serialize a
+  chrome-enabled flag) before the badge is real UI wiring. Moved to
+  Phase 3 alongside D52/D75.
 - **GH#172 D68** — chat quick-reply chips (Yes/No/Stop).
 - **GH#172 D70 ✅ shipped v8.40.0** — Alert-rule "Recent Firings" list
   (data already served by the alert-rules REST surface).
@@ -179,6 +192,10 @@ Each item is a button/field/badge wired to an API that already exists:
   `set_permission_mode` REST case + manager setter before the PWA edit
   control is real UI wiring rather than a dead-end 404. Small enough to
   land alongside D52's backend work in the same sub-batch.
+- **GH#172 D66's Chrome badge** (re-scoped from Phase 1, see note above)
+  — needs a persisted, serialized `chrome`/`chrome_enabled` field on the
+  session (today it's a create-time-only option with no getter and no
+  JSON field). Small enough to land alongside D52/D75's backend work.
 
 ### Phase 4 — APNs push (BL335 / GH#107 / GH#158) — independent backend track, can run in parallel with Phases 0–3
 This is the one item blocking an entire platform's push notifications

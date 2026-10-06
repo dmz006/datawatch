@@ -1015,6 +1015,8 @@
   "servers_none_available": "No hay servidores disponibles.",
   "servers_unavailable": "Servidores no disponibles",
   "session_child_of": "hijo de",
+  "session_council_badge": "Council",
+  "session_council_badge_tip": "Council debate persona session",
   "session_chip_active": "Activas",
   "session_chip_all": "Todas",
   "session_chip_done": "Hechas",

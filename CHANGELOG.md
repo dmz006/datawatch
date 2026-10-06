@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.41.0 — feat(pwa): BL396 Phase 1 batch 2 — Council session badge + filter chip
+
+### Added
+- **GH#172 (D64)**: Council debate persona sessions (`backend_family: "council-virtual"`) now get a dedicated 🎭 Council badge on their session card, instead of the raw `council-virtual` string previously shown in the generic LLM/backend badge. The existing LLM/backend filter chip also now labels this group "🎭 Council" instead of the raw backend-family string.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4. D66's agent-worker badge was found already shipped (no new work needed); its "Chrome" badge half, along with D52 and D75, are re-scoped into Phase 3 pending small backend additions.
+
 ## v8.40.0 — feat(pwa): BL396 Phase 1 batch 1 — alert firings, parent-PRD link, inline reject/revise, approve-with-note
 
 ### Added

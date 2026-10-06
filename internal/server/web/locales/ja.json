@@ -1015,6 +1015,8 @@
   "servers_none_available": "利用可能なサーバーがありません。",
   "servers_unavailable": "サーバー利用不可",
   "session_child_of": "の子セッション",
+  "session_council_badge": "Council",
+  "session_council_badge_tip": "Council debate persona session",
   "session_chip_active": "アクティブ",
   "session_chip_all": "すべて",
   "session_chip_done": "完了",

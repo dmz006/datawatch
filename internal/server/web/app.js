@@ -2058,6 +2058,7 @@ function renderSessionsView() {
     'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
     'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
     'aider': 'aider', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+    'council-virtual': '🎭 Council', // GH#172 D64
   };
   const backendBadges = backendTypes.map(bt => {
     const isActive = filterText === bt.toLowerCase();
@@ -2433,7 +2434,11 @@ function sessionCard(sess, idx, total) {
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
   const backend = sess.backend_family || '';
-  const llmDisplay = sess.llm_ref || sess.backend_family || '';
+  // GH#172 D64 — Council sessions get a dedicated 🎭 badge instead of
+  // the raw "council-virtual" backend_family string in the generic
+  // LLM/backend badge.
+  const isCouncil = backend === 'council-virtual';
+  const llmDisplay = sess.llm_ref || (isCouncil ? '' : sess.backend_family) || '';
   const mode = getSessionMode(backend);
   const isActive = !DONE_STATES.has(sess.state);
   const isWaiting = sess.state === 'waiting_input';
@@ -2544,6 +2549,7 @@ function sessionCard(sess, idx, total) {
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
             <span class="id" style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);color:var(--text);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-weight:600;letter-spacing:0.3px;" title="Session ID">${escHtml(shortId)}</span>
+            ${isCouncil ? `<span class="council-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;color:#f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="${escHtml(t('session_council_badge_tip')||'Council debate persona session')}">🎭 ${escHtml(t('session_council_badge')||'Council')}</span>` : ''}
             ${llmDisplay ? `<span class="backend-badge" style="font-size:10px;border:1px solid var(--accent2,#60a5fa);padding:2px 7px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);font-weight:600;" title="LLM/backend: ${escHtml(llmDisplay)}">${escHtml(llmDisplay)}</span>` : ''}
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
