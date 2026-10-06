@@ -292,9 +292,12 @@ function buildWsUrl() {
 // and the OS eventually notices, which can take much longer than "a few
 // minutes" or may never happen at all while the tab sits idle. Pinging on an
 // interval gives a real round-trip signal independent of actual session
-// activity (which can legitimately be silent for a while even when healthy),
-// and WS_STALE_MS gives two full ping cycles of margin for jitter before
-// treating the connection as dead and forcing scheduleReconnect's path.
+// activity (which can legitimately be silent for a while even when healthy).
+// Detection latency after the connection actually dies is 50-70s (WS_STALE_MS
+// plus up to one more WS_PING_INTERVAL_MS of tick-alignment slop, since the
+// check only runs once per tick, not the instant the threshold is crossed)
+// before scheduleReconnect's path takes over — still well under "a few
+// minutes" of manual-reload pain, with real jitter margin either way.
 const WS_PING_INTERVAL_MS = 20000;
 const WS_STALE_MS = 50000;
 

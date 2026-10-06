@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.3 — docs: correct the WS watchdog's detection-latency comment
+
+### Fixed
+- Self-review of v8.61.2 found its own code comment overstated precision: it described `WS_STALE_MS` as "two full ping cycles of margin," but since the staleness check only runs once per `WS_PING_INTERVAL_MS` tick (not continuously), real detection latency after a connection actually dies is 50-70 seconds, not a clean 40s. No behavior change — the watchdog's actual logic was always correct and already live-verified; only the comment was imprecise.
+
 ## v8.61.2 — fix(pwa): WebSocket liveness watchdog for silently-dropped connections
 
 ### Fixed
