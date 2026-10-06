@@ -34,6 +34,12 @@
     reusing `/api/config`'s existing server-side redaction; the editor
     flattens+redaction-filters before saving so an untouched secret is
     never overwritten with the `"***"` placeholder (live-verified).
+    Batch 7 (GH#182 DAG card) ✅ shipped v8.61.0 (minor) — hand-rolled
+    SVG dependency graph (stories as columns, tasks as rows, curved
+    edges for `depends_on`), added to both the Automata list card's
+    inline expand and the Automaton detail page's Stories tab.
+    **Phase 3 now complete** except GH#182's deep link (blocked on a
+    URL-shape decision) and D65/D67 (awaiting a GH#172 reply).
   - **Phase 4** planned, not started.
 
 ## Context
@@ -238,12 +244,22 @@ Each item is a button/field/badge wired to an API that already exists:
   paused PRD), not a Phase 1 button. Moved to Phase 3 scope.
 
 ### Phase 3 — new UI surfaces (need their own small design pass, no existing pattern to copy exactly)
-- **GH#182** — Automaton DAG card. No graph library exists in this repo;
-  recommend a hand-rolled layout (stories as columns, tasks as rows, SVG
-  lines for dependency edges) over pulling in a dependency like dagre/
-  cytoscape, consistent with the PWA's current zero-heavy-dependency
-  footprint. Small graphs (a handful of stories/tasks) don't need a real
-  layout engine.
+- **GH#182 ✅ shipped v8.61.0** — Automaton DAG card. Built the
+  hand-rolled layout as planned — stories as columns, tasks as rows,
+  curved SVG paths for dependency edges — rather than pulling in a
+  dependency like dagre/cytoscape, consistent with the PWA's current
+  zero-heavy-dependency footprint. Edges cover both `Task.DependsOn`
+  (resolved directly by task id) and `Story.DependsOn` (anchored to
+  each story's first task, since a story itself isn't a drawable node).
+  Added in two places: the Automata list card's inline "Stories &
+  tasks" expand (`renderAutomataCard`/`renderDetailStoriesTree`) and
+  the Automaton detail page's Stories tab (`_renderDetailStories`) —
+  found live, mid-implementation, that these are two genuinely separate
+  render paths (the first version only reached the former; the detail
+  page people actually click into uses the latter). Live-verified
+  against a real daemon with a 3-story, 6-task PRD carrying both
+  task-level and story-level dependencies: correct column layout,
+  status-colored nodes, and curved edges for every dependency.
 - **GH#172 D78 ✅ shipped v8.58.0** — Android-only Observer cards (server
   info, session ring + `max_sessions`, Ollama, envelopes, backend
   health, eBPF-degraded banner, add-memory), following the existing

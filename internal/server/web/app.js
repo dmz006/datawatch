@@ -17667,7 +17667,91 @@ function renderAutomataCard(prd) {
     <details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div style="margin-top:6px;" onclick="event.stopPropagation()">${renderDetailStoriesTree(prd) || '<em style="color:var(--text2);">no stories yet</em>'}</div>
     </details>
+    <!-- GH#182 — Automaton dependency graph (DAG) card. No graph library
+         in this repo (zero-heavy-dependency footprint); hand-rolled SVG
+         is plenty for the handful of stories/tasks a real Automaton has. -->
+    ${storyCount > 0 ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
+      <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(prd)}</div>
+    </details>` : ''}
   </div>`;
+}
+
+// GH#182 — hand-rolled SVG DAG: stories as columns, tasks as rows within
+// each column, edges drawn for every task.depends_on (and story.depends_on,
+// anchored to each story's first task) that resolves to a known node.
+// Unknown/cross-PRD dependency ids are simply skipped — nothing to draw.
+function renderDependencyGraph(prd) {
+  const stories = prd.stories || prd.Story || [];
+  const colWidth = 180, rowHeight = 34, headerH = 24, padTop = 10, padLeft = 10;
+  const maxRows = Math.max(1, ...stories.map(s => (s.tasks || s.Tasks || []).length));
+  const width = padLeft * 2 + stories.length * colWidth;
+  const height = padTop + headerH + maxRows * rowHeight + padTop;
+
+  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)' };
+  const colorFor = sts => statusColor[sts] || 'var(--text2)';
+
+  // id -> {x, y, w, h, title, status} for every task, so edges (which
+  // reference task ids regardless of which story they're drawn in) can
+  // find their endpoints by a single lookup.
+  const nodePos = {};
+  const nodesHtml = [];
+  stories.forEach((st, si) => {
+    const tasks = st.tasks || st.Tasks || [];
+    const cx = padLeft + si * colWidth;
+    nodesHtml.push(`<text x="${cx + colWidth/2}" y="${padTop + headerH - 8}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">${escHtml((st.title || st.Title || 'Story ' + (si+1)).slice(0, 22))}</text>`);
+    tasks.forEach((tk, ti) => {
+      const y = padTop + headerH + ti * rowHeight;
+      const w = colWidth - 20, h = rowHeight - 10;
+      const x = cx + 10;
+      const id = tk.id || tk.ID;
+      if (id) nodePos[id] = { x, y, w, h };
+      const sts = tk.status || tk.Status || 'pending';
+      const color = colorFor(sts);
+      const title = escHtml((tk.title || tk.Title || '(task ' + (ti+1) + ')').slice(0, 24));
+      nodesHtml.push(`<g>
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="var(--bg2)" stroke="${color}" stroke-width="1.5"></rect>
+        <title>${title} — ${escHtml(sts)}</title>
+        <text x="${x + w/2}" y="${y + h/2 + 4}" text-anchor="middle" font-size="10" fill="var(--text)">${title}</text>
+      </g>`);
+    });
+  });
+
+  // Edges: task-level depends_on, plus story-level depends_on anchored
+  // to the first task of each endpoint story (stories with no tasks yet
+  // simply contribute no edge — nothing to anchor to).
+  const edgesHtml = [];
+  const addEdge = (fromId, toId) => {
+    const a = nodePos[fromId], b = nodePos[toId];
+    if (!a || !b) return;
+    const x1 = a.x + a.w, y1 = a.y + a.h/2;
+    const x2 = b.x, y2 = b.y + b.h/2;
+    const midX = (x1 + x2) / 2;
+    edgesHtml.push(`<path d="M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#dagArrow)"></path>`);
+  };
+  stories.forEach(st => {
+    (st.tasks || st.Tasks || []).forEach(tk => {
+      (tk.depends_on || tk.DependsOn || []).forEach(depId => addEdge(depId, tk.id || tk.ID));
+    });
+  });
+  stories.forEach(st => {
+    const firstTaskId = (st.tasks || st.Tasks || [])[0] && ((st.tasks || st.Tasks || [])[0].id || (st.tasks || st.Tasks || [])[0].ID);
+    if (!firstTaskId) return;
+    (st.depends_on || st.DependsOn || []).forEach(depStoryId => {
+      const depStory = stories.find(s => (s.id || s.ID) === depStoryId);
+      const depFirstTask = depStory && (depStory.tasks || depStory.Tasks || [])[0];
+      const depTaskId = depFirstTask && (depFirstTask.id || depFirstTask.ID);
+      if (depTaskId) addEdge(depTaskId, firstTaskId);
+    });
+  });
+
+  if (Object.keys(nodePos).length === 0) {
+    return `<em style="color:var(--text2);font-size:11px;">${t('prd_no_tasks')||'No tasks.'}</em>`;
+  }
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="display:block;min-width:${width}px;">
+    <defs><marker id="dagArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="var(--border)"></path></marker></defs>
+    ${edgesHtml.join('')}
+    ${nodesHtml.join('')}
+  </svg>`;
 }
 
 // alpha.31 #272 — pause / resume / cancel actions reuse existing PRD endpoints.
@@ -19775,7 +19859,12 @@ function _renderDetailStories(prd) {
     ? `<button class="prd-story-add-task-btn" style="margin-bottom:8px;" onclick="openPRDAddStoryModal(${escHtml(JSON.stringify(prd.id))})">+ ${escHtml(t('prd_add_story_btn')||'Add story')}</button>`
     : '';
   if (stories.length === 0) return addStoryBtn + `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_stories')||'No stories yet.')}</div>`;
-  return addStoryBtn + stories.map(st => renderStory(prd, st)).join('');
+  // GH#182 — Automaton dependency graph (DAG) card, same hand-rolled SVG
+  // renderDependencyGraph used in the Automata list card's inline expand.
+  const depGraph = `<details style="margin-bottom:10px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
+    <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(prd)}</div>
+  </details>`;
+  return addStoryBtn + depGraph + stories.map(st => renderStory(prd, st)).join('');
 }
 
 // BL246 v6.6.0 — Decisions tab with full timeline + expandable detail per row.

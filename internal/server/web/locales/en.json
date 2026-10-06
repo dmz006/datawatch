@@ -891,6 +891,7 @@
   "prd_step_run": "Run",
   "prd_step_run_planning": "Run planning",
   "prd_stories_tasks": "Stories & tasks",
+  "prd_dependency_graph": "Dependency graph",
   "prd_story_desc_label": "Description",
   "prd_story_title_label": "Title",
   "prd_tab_decisions": "Decisions",

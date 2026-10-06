@@ -942,6 +942,7 @@
   "prd_step_run": "Ausführen",
   "prd_step_run_planning": "Planung ausführen",
   "prd_stories_tasks": "Storys & Aufgaben",
+  "prd_dependency_graph": "Dependency graph",
   "prd_story_desc_label": "Beschreibung",
   "prd_story_llm_hint": "Story-spezifische LLM-Überschreibung — leer erbt vom Automaten dann die globale Konfiguration. Alle Aufgaben in dieser Story erben diesen Wert, sofern sie keine eigene Überschreibung haben.",
   "prd_story_title_label": "Titel",

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.0 — feat(pwa): PWA parity sweep Phase 3 batch 7 — Automaton dependency graph (GH#182)
+
+### Added
+- **Dependency graph card** — a hand-rolled SVG DAG view of an Automaton's stories and tasks (no graph library pulled in, consistent with the PWA's zero-heavy-dependency footprint). Stories render as columns, tasks as rows within each column colored by status, and curved edges connect every `depends_on` relationship that resolves to a known task (both task-level and story-level dependencies, the latter anchored to each story's first task). Added to both the Automata list card's inline "Stories & tasks" expand and the Automaton detail page's Stories tab.
+
+Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4, now complete except GH#182's deep-link (blocked on a URL-shape decision) and D65/D67 (awaiting a GH#172 reply).
+
 ## v8.60.1 — fix(pwa): planning-stage compute card resolved the wrong backend
 
 ### Fixed
