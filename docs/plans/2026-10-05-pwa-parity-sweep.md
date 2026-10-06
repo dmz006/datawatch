@@ -4,10 +4,11 @@
 - **Version at planning**: v8.39.26
 - **Status**: In progress — Phase 0 ✅ shipped v8.39.27 (patch); Phase 1
   batch 1 (D70, D71, D72, D74) ✅ shipped v8.40.0 (minor); Phase 1
-  batch 2 (D64) ✅ shipped v8.41.0 (minor); remaining Phase 1 items
-  (D66's half-done agent badge confirmed shipped elsewhere, D68, D81,
-  D82, GH#182) and Phases 2–4 planned, not started. D52, D75, and D66's
-  Chrome-badge half re-scoped into Phase 3 (missing backend).
+  batch 2 (D64) ✅ shipped v8.41.0 (minor); Phase 1 batch 3 (D68) ✅
+  shipped v8.42.0 (minor); remaining Phase 1 items (D81, D82, GH#182)
+  and Phases 2–4 planned, not started. D52, D75, and D66's Chrome-badge
+  half re-scoped into Phase 3 (missing backend); D66's agent badge
+  confirmed already shipped elsewhere.
 
 ## Context
 
@@ -98,7 +99,7 @@ Each item is a button/field/badge wired to an API that already exists:
   creation. Needs a small backend addition (persist + serialize a
   chrome-enabled flag) before the badge is real UI wiring. Moved to
   Phase 3 alongside D52/D75.
-- **GH#172 D68** — chat quick-reply chips (Yes/No/Stop).
+- **GH#172 D68 ✅ shipped v8.42.0** — chat quick-reply chips (Yes/No/Stop).
 - **GH#172 D70 ✅ shipped v8.40.0** — Alert-rule "Recent Firings" list
   (data already served by the alert-rules REST surface).
 - **GH#172 D71 ✅ shipped v8.40.0** — parent-PRD ↗ link on an Automaton

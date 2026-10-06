@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.42.0 — feat(pwa): BL396 Phase 1 batch 3 — chat quick-reply chips
+
+### Added
+- **GH#172 (D68)**: when a session is `waiting_input`, the chat composer now shows Yes/No/Stop quick-reply chips above the input field (Android already had this). Tapping a chip fills the composer and sends through the exact same path as a typed reply, so it still correctly routes through tmux or channel mode and respects the session's actual state.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 1 of 4.
+
 ## v8.41.0 — feat(pwa): BL396 Phase 1 batch 2 — Council session badge + filter chip
 
 ### Added

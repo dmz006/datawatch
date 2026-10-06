@@ -3008,6 +3008,9 @@ function renderSessionDetail(sessionId) {
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C',event)" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
         </span></div>` : ''}
+      ${isActive && isWaiting && connReady ? `<div class="chat-quick-reply-row" style="display:flex;gap:6px;padding:0 10px 6px;flex-wrap:wrap;">
+          ${['Yes','No','Stop'].map(label => `<button class="btn-secondary chat-quick-reply-chip" style="font-size:12px;padding:3px 12px;border-radius:14px;" onclick="chatQuickReply(${escHtml(JSON.stringify(label))})">${escHtml(t('chat_quick_reply_' + label.toLowerCase())||label)}</button>`).join('')}
+        </div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <!-- v6.13.9 (BL277) — yellow popup gone; the .input-bar.needs-input
@@ -4503,6 +4506,17 @@ window.stopArrowRepeat = function() {
   if (_arrowRepeatDelay) { clearTimeout(_arrowRepeatDelay); _arrowRepeatDelay = null; }
   if (_arrowRepeatTimer) { clearInterval(_arrowRepeatTimer); _arrowRepeatTimer = null; }
 };
+
+// GH#172 D68 — chat quick-reply chips (Yes/No/Stop), shown only while a
+// session is waiting_input. Fills the composer and sends through the
+// same path as a typed reply (tmux or channel routing already handled
+// inside sendSessionInput).
+function chatQuickReply(text) {
+  const inputEl = document.getElementById('sessionInput');
+  if (!inputEl) return;
+  inputEl.value = text;
+  sendSessionInput();
+}
 
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
