@@ -214,6 +214,17 @@ const state = {
   termFitAddon: null,      // xterm.js FitAddon instance
   currentStatus: {},          // fullId -> {text, longText, generatedAt, loading, longExpanded}
   summaryLongExpanded: {},    // fullId -> bool — envelope expand state for waiting_input long summary
+  // Operator-reported 2026-10-06 — "sent a command after being idle for a
+  // few minutes and had to exit the session and go back in for it to start
+  // moving again." Root cause: ws.readyState can stay OPEN after a NAT/
+  // proxy silently drops an idle TCP mapping (common on the ~minutes
+  // timescale reported) — no close/error event ever fires, since nothing
+  // on the wire tells the browser the socket died, so scheduleReconnect()
+  // (close/error-driven only) never runs. The daemon's own MsgPing->pong
+  // handler already existed (internal/server/api.go) but the client never
+  // sent one. wsLastActivityAt below is the watchdog's clock.
+  wsLastActivityAt: 0,
+  wsWatchdogTimer: null,
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -274,6 +285,55 @@ function buildWsUrl() {
   return `${proto}//${location.host}${wsPath}`;
 }
 
+// ── WebSocket liveness watchdog ──────────────────────────────────────────────
+// A silently-dropped idle connection (NAT/proxy timeout, laptop sleep/resume)
+// leaves ws.readyState === OPEN forever with no close/error event — the
+// browser has no way to know the TCP mapping is gone until it tries to write
+// and the OS eventually notices, which can take much longer than "a few
+// minutes" or may never happen at all while the tab sits idle. Pinging on an
+// interval gives a real round-trip signal independent of actual session
+// activity (which can legitimately be silent for a while even when healthy),
+// and WS_STALE_MS gives two full ping cycles of margin for jitter before
+// treating the connection as dead and forcing scheduleReconnect's path.
+const WS_PING_INTERVAL_MS = 20000;
+const WS_STALE_MS = 50000;
+
+function _wsSendPing() {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    try { state.ws.send(JSON.stringify({ type: 'ping' })); } catch { /* next tick will catch a truly dead socket */ }
+  }
+}
+
+// Pure decision function (no I/O) so it's unit-testable without a real
+// timer — the stub browser environment node:test uses for this file's
+// sibling tests no-ops setInterval entirely.
+function _wsIsStale(lastActivityAt, now) {
+  return (now - lastActivityAt) > WS_STALE_MS;
+}
+
+function startWsWatchdog() {
+  stopWsWatchdog();
+  state.wsLastActivityAt = Date.now();
+  state.wsWatchdogTimer = setInterval(() => {
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    if (_wsIsStale(state.wsLastActivityAt, Date.now())) {
+      _dbg('WS', `watchdog: no activity for >${WS_STALE_MS}ms despite OPEN readyState — forcing reconnect`);
+      // close() still fires the 'close' listener, which runs the normal
+      // scheduleReconnect path — no separate reconnect call needed here.
+      state.ws.close();
+      return;
+    }
+    _wsSendPing();
+  }, WS_PING_INTERVAL_MS);
+}
+
+function stopWsWatchdog() {
+  if (state.wsWatchdogTimer) {
+    clearInterval(state.wsWatchdogTimer);
+    state.wsWatchdogTimer = null;
+  }
+}
+
 // ── WebSocket ───────────────────────────────────────────────────────────────
 function connect() {
   if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
@@ -298,6 +358,7 @@ function connect() {
   ws.addEventListener('open', () => {
     state.connected = true;
     state.reconnectDelay = 1000;
+    startWsWatchdog();
     updateStatusDot();
     // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
     // when WS reconnects. Operator: "if connection is fixed it should
@@ -441,6 +502,7 @@ function connect() {
   });
 
   ws.addEventListener('message', e => {
+    state.wsLastActivityAt = Date.now();
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     handleMessage(msg);
@@ -448,6 +510,7 @@ function connect() {
 
   ws.addEventListener('close', (e) => {
     _dbg('WS', `closed code=${e.code}`);
+    stopWsWatchdog();
     state.connected = false;
     state.ws = null;
     updateStatusDot();

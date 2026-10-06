@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.2 — fix(pwa): WebSocket liveness watchdog for silently-dropped connections
+
+### Fixed
+- Operator-reported: sending a command to a session that had been idle for a few minutes did nothing until the PWA session view was closed and reopened. Root cause: `ws.readyState` can stay `OPEN` after a NAT/proxy silently drops an idle TCP mapping — no `close`/`error` event ever fires (nothing on the wire tells the browser), so the PWA's reconnect logic, which only ever ran from those two event handlers, never triggered. The command was actually received and processed server-side; the PWA's own display of it was just stuck on a zombie connection.
+- The daemon's `ping` → `pong` WebSocket handler already existed (`internal/server/api.go`) but the PWA client never sent a ping. The PWA now pings every 20s while connected and tracks the last time any frame was received; if that goes stale (no activity for 50s+, giving two full ping cycles of margin) despite the socket still reporting `OPEN`, it force-closes and reconnects through the existing retry path.
+
+Live-verified against a real daemon with Playwright: captured real WS frames confirming the ping/pong round trip, and confirmed a simulated dead-but-OPEN connection gets torn down and replaced within one watchdog tick.
+
 ## v8.61.1 — fix(autonomous): wire the verifier's git-diff evidence into Task.FilesTouched
 
 ### Fixed
