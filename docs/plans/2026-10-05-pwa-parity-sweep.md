@@ -40,6 +40,41 @@
     inline expand and the Automaton detail page's Stories tab.
     **Phase 3 now complete** except GH#182's deep link (blocked on a
     URL-shape decision) and D65/D67 (awaiting a GH#172 reply).
+  - **Phase 3 follow-up (datawatch-app's 2026-10-06 re-audit, 20-item
+    gap list, operator-approved including the 2 cosmetic items)**: row
+    1 (FilesTouched verifier wiring) ✅ v8.61.1; WS liveness watchdog ✅
+    v8.61.2–v8.61.3; activity-broadcast-without-transition fix ✅
+    v8.61.4; MCP Tools card corrected to match the app's shape ✅
+    v8.61.5; remaining brand-casing instances (9 found, 4 more than the
+    peer's list) ✅ v8.61.6; row 4 (restart confirm dialog) ✅ v8.61.7;
+    row 5 (swipe-to-mute) ✅ v8.61.8; rows 7-9 (Agent/Chrome badges +
+    Watch toggle in session detail header, D66a/D61a) ✅ v8.61.9.
+    Remaining from the approved 20-item list: #17 (alert badge
+    watched-only count, D61a), #18 (per-automaton memory stats on
+    Automaton detail, D77a), #19 (server info card, D78a), #20
+    (add-memory dialog tags field, D78a), cosmetic #1 (skeleton shimmer
+    timing — may already be resolved, app says it adopted the PWA's
+    1.4s shimmer; re-confirm with peer), cosmetic #2 (splash status
+    granularity). Blocked, no work without further input: #1, #2, #10,
+    #16 (no decision made yet) and #6, #11, #12, #15 (D65a/D67a —
+    **correction 2026-10-06**: this was never actually blocked on a
+    GH#172 reply; GH#172 is confused with an unrelated, already-closed
+    datawatch-app#172. The real tracking issues are `dmz006/datawatch`
+    #172 and #182 — see the Mobile-Parity Audit note below.)
+  - **Mobile-Parity Audit (2026-10-06, operator-triggered)**: this plan
+    and `docs/plans/README.md`'s BL396 entry had cited `GH#172`/`#182`
+    throughout assuming the `dmz006/datawatch-app` repo; they're
+    actually `dmz006/datawatch#172` ("parity: PWA changes from the
+    2026-10-04 three-way parity decisions", holds the real D59–D83
+    list) and `dmz006/datawatch#182` ("PWA: adopt app features
+    (operator decisions 2026-10-05)") — both open, both in *this* repo.
+    No commit in the v8.55.0–v8.61.8 run carried the AGENT.md B4
+    `mobile-parity:` token or a `rules:` token; going forward every
+    commit that ships a D#/GH#182 item gets both, and progress is
+    recorded on the two real issues directly (comment + tick box per
+    D#, close when each issue's list is done) instead of a
+    datawatch-app-side filing. `docs/parity-status.md` is also stale
+    (last touched v8.33.32) and needs a refresh pass.
   - **Phase 4** planned, not started.
 
 ## Context

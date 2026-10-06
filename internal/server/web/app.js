@@ -2400,6 +2400,12 @@ window.toggleSessionWatch = function(fullId) {
   else state.watchedSessions.add(fullId);
   try { localStorage.setItem('cs_sessions_watched', JSON.stringify([...state.watchedSessions])); } catch (_) {}
   renderSessionsView();
+  // datawatch-app parity (D61a) — the watch toggle now also lives in the
+  // session detail header (previously list-card only), so toggling from
+  // there needs to refresh that view's own icon color too.
+  if (state.activeView === 'session-detail' && state.activeSession === fullId) {
+    renderSessionDetail(fullId);
+  }
 };
 
 window.toggleSessionWatchFilter = function() {
@@ -3175,6 +3181,10 @@ function renderSessionDetail(sessionId) {
         <div class="meta">
           ${(llmRefText || backendText) ? (() => { const label = llmRefText || backendText; const isV7 = !!llmRefText; const style = isV7 ? 'border:1px solid var(--success,#22c55e);background:rgba(34,197,94,0.12);color:var(--success,#22c55e);' : 'border:1px solid var(--border);background:var(--bg2);color:var(--text2);'; const tip = isV7 ? (t('session_llm_ref_title')||'v7 LLM registry name') : `LLM/backend: ${label}`; return `<span class="backend-badge" style="font-size:11px;${style}padding:2px 8px;border-radius:8px;font-weight:600;" title="${escHtml(tip)}">${backendIcon(label)} ${escHtml(label)}</span>`; })() : ''}
           ${computeRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--accent,#a855f7);padding:2px 8px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent,#a855f7);font-weight:600;" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
+          <!-- datawatch-app parity (D66a, 2026-10-06 gap list rows 7-8):
+               Agent/Chrome badges previously only on the list card. -->
+          ${sess?.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
+          ${sess?.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
               badge here since the Channel/ACP tab below already conveys
               the mode. Keep tmux mode-badge so plain tmux sessions
@@ -3183,6 +3193,9 @@ function renderSessionDetail(sessionId) {
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           ${isActive ? `<span class="session-last-activity" data-last-activity="${escHtml(sess?.last_channel_event_at || sess?.updated_at || '')}" title="${t('session_last_activity_title')||'Time since the backend last produced any output — the only signal for headless/non-interactive sessions (e.g. opencode run) that show no visible screen activity between generations'}" style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:3px;"><span class="session-last-activity-dot" style="width:6px;height:6px;border-radius:50%;background:var(--success,#22c55e);display:inline-block;"></span><span class="session-last-activity-text">–</span></span>` : ''}
           <span id="actionBtns">${actionButtons}</span>
+          <!-- datawatch-app parity (D61a, 2026-10-06 gap list row 9):
+               Watch toggle previously only on the list card. -->
+          <button class="btn-icon" onclick="toggleSessionWatch('${escHtml(sessionId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.watchedSessions.has(sessionId)?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(state.watchedSessions.has(sessionId) ? (t('session_action_unwatch')||'Stop watching') : (t('session_action_watch')||'Watch for updates'))}">👁</button>
           <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
                are icon-only on narrow / phone screens — labels were
                wrapping awkwardly. Tooltips carry the meaning. Right-

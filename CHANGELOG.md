@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.61.9 — feat(pwa): Agent/Chrome badges + Watch toggle in session detail header
+
+### Added
+- datawatch-app parity (2026-10-06 gap list, rows 7-9; GH#172 D66a/D61a): the Agent ⬡ badge, Chrome badge, and Watch toggle already existed on the session list card but were missing from the session detail view's header — `renderSessionDetail`'s `.session-info-bar .meta` row now carries all three, copying the list card's markup exactly. Also fixed `toggleSessionWatch` to re-render the detail view when it's the active view (previously it only called `renderSessionsView()`, which no-ops off the list view, so the detail-view watch icon never updated after being toggled from the detail view itself). Live-verified against a real daemon: badges render for an agent-bound/Chrome-enabled session, watch button toggles state and the icon color updates in place.
+
 ## v8.61.8 — feat(pwa): horizontal swipe to toggle session mute
 
 ### Added
