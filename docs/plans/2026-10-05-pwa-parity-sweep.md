@@ -22,6 +22,11 @@
     existed speculatively. Live-verification also caught and fixed 3
     pre-existing PWA gaps where `paused` was missing from the active-
     statuses filter set, the sort-rank map, and the filter badge row.
+    Batch 4 (D78) ✅ shipped v8.58.0 (minor) — of D78's 7 sub-items,
+    4 (server info, session ring, Ollama, eBPF-degraded banner) were
+    already shipped; added the 3 genuinely missing ones: a Backend
+    Health card, an Envelopes card, and a quick add-memory input, all
+    in the Observer tab.
   - **Phase 4** planned, not started.
 
 ## Context
@@ -232,10 +237,22 @@ Each item is a button/field/badge wired to an API that already exists:
   cytoscape, consistent with the PWA's current zero-heavy-dependency
   footprint. Small graphs (a handful of stories/tasks) don't need a real
   layout engine.
-- **GH#172 D78** — Android-only Observer cards (server info, session
-  ring + `max_sessions`, Ollama, envelopes, backend health, eBPF-degraded
-  banner, add-memory), following the existing `renderObserverView` card
-  pattern (`secContent` + async `apiFetch` into a named block).
+- **GH#172 D78 ✅ shipped v8.58.0** — Android-only Observer cards (server
+  info, session ring + `max_sessions`, Ollama, envelopes, backend
+  health, eBPF-degraded banner, add-memory), following the existing
+  `renderObserverView` card pattern (`secContent` + async `apiFetch`
+  into a named block). Direct investigation found 4 of the 7 sub-items
+  already shipped: server info (Daemon + Infrastructure stat-cards),
+  session ring + `max_sessions` (the existing conic-gradient donut in
+  the Session Statistics section), Ollama (a full "Ollama Server"
+  stat-card with running-model/VRAM breakdown), and the eBPF-degraded
+  banner (already shown when `ebpf_enabled && !ebpf_active`). Built the
+  3 genuinely missing ones: a **Backend Health** card (`/api/backends`,
+  previously only consumed for session-create picker filtering, never
+  shown to the operator), an **Envelopes** card (`/api/observer/envelopes`
+  had a full REST surface with no PWA consumer anywhere), and a
+  **quick add-memory** input in the Memory Browser section
+  (`/api/memory/save`, previously only reachable via MCP/CLI).
 - **GH#172 D79** — Config Viewer + raw config editor. Needs explicit
   secret-redaction care (reuse the `token_present`/redaction pattern from
   this session's SEC-014 work, never render secret values raw).

@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.58.0 — feat(pwa): BL396 Phase 3 batch 4 — Observer Backend Health, Envelopes, quick add-memory (GH#172 D78)
+
+### Added
+- **Backend Health card** (Observer → System Statistics) — lists each configured LLM backend with a live available/unavailable status dot, version, and compute nodes, reusing the existing `/api/backends` response that was previously only consumed for session-create picker filtering, never shown to the operator directly.
+- **Envelopes card** (Observer → System Statistics) — surfaces the observer's own live process-tree rollup (session/backend/container, with CPU/RSS/net chips) via `/api/observer/envelopes`, which had a full REST surface but no PWA consumer anywhere.
+- **Quick add-memory** (Observer → Memory Browser) — a single input + Add button that calls `/api/memory/save` directly from the PWA, previously only reachable via MCP/CLI.
+- D78's other 4 sub-items (server info, session ring + max_sessions, Ollama server stats, eBPF-degraded banner) were checked live and found already fully shipped in earlier work — no new work needed for those.
+
+Part of **BL396** (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
+
 ## v8.57.0 — feat(autonomous): BL396 Phase 3 batch 3 — pause/resume a running Automaton (GH#172 D52)
 
 ### Added

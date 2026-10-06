@@ -14691,6 +14691,23 @@ function memorySchemaVersion() {
 }
 window.memorySchemaVersion = memorySchemaVersion;
 
+// GH#172 D78 — quick add-memory from the Observer tab (Android parity).
+// Reuses /api/memory/save (the same endpoint memory_remember calls),
+// previously only reachable via MCP/CLI, never from the PWA.
+function addMemoryQuick() {
+  const input = document.getElementById('memoryQuickAddInput');
+  if (!input) return;
+  const content = input.value.trim();
+  if (!content) return;
+  apiFetch('/api/memory/save', { method: 'POST', body: JSON.stringify({ content }) })
+    .then(() => {
+      input.value = '';
+      showToast(t('obs_add_memory_saved') || 'Memory saved', 'success', 2000);
+      listMemories();
+    })
+    .catch(e => showError((t('obs_add_memory_failed') || 'Failed to save memory') + ': ' + (e.message || e)));
+}
+
 function listMemories() {
   const el = document.getElementById('memoryBrowserList');
   if (!el) return;
@@ -20321,6 +20338,67 @@ function loadStatsPanel() {
   loadChannelDiagnostics();
   // Live peer resource overview (GPU/CPU per attached peer).
   loadPeerResourceOverview();
+  // GH#172 D78 — backend health + envelope rollup cards (Android parity).
+  loadBackendHealthCard();
+  loadObserverEnvelopesCard();
+}
+
+// GH#172 D78 — Backend Health card: lists each configured LLM backend's
+// availability/version, reusing the same /api/backends the session-create
+// picker already fetches (previously consumed only for filtering, never
+// shown to the operator as its own status card).
+function loadBackendHealthCard() {
+  const el = document.getElementById('backendHealthList');
+  if (!el) return;
+  apiFetch('/api/backends').then(data => {
+    const backends = (data && Array.isArray(data.llm)) ? data.llm : (Array.isArray(data) ? data : []);
+    if (!backends.length) {
+      el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_backend_none')||'no backends configured')}</span>`;
+      return;
+    }
+    el.innerHTML = backends.map(b => {
+      const name = typeof b === 'string' ? b : (b.name || '?');
+      const available = typeof b === 'string' ? true : !!b.available;
+      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;flex-shrink:0;"></span>`;
+      const version = (b && b.version) ? ` <span style="opacity:0.6;">${escHtml(b.version)}</span>` : '';
+      const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
+      return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
+    }).join('');
+  }).catch(() => { el.textContent = t('obs_backend_unavailable') || 'unavailable'; });
+}
+
+// GH#172 D78 — Envelopes card: the observer's own live process-tree
+// rollup (session/backend/container envelopes with cpu/mem/net), which
+// previously had a full REST surface (/api/observer/envelopes) but no
+// PWA consumer anywhere.
+function loadObserverEnvelopesCard() {
+  const el = document.getElementById('envelopesList');
+  if (!el) return;
+  apiFetch('/api/observer/envelopes').then(data => {
+    const envs = (data && Array.isArray(data.envelopes)) ? data.envelopes : [];
+    if (!envs.length) {
+      el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_envelopes_none')||'no envelopes tracked')}</span>`;
+      return;
+    }
+    const fmtBytes = b => {
+      if (!b) return '—';
+      if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
+      if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
+      if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
+      return b+' B';
+    };
+    const kindColor = { session: 'var(--accent)', backend: 'var(--accent2)', container: 'var(--warning)' };
+    el.innerHTML = envs.slice(0, 20).map(e => {
+      const color = kindColor[e.kind] || 'var(--text2)';
+      const kindBadge = `<span style="color:${color};font-weight:600;">${escHtml(e.kind||'?')}</span>`;
+      const chips = [];
+      if (e.cpu_pct) chips.push(`CPU ${e.cpu_pct.toFixed(0)}%`);
+      if (e.rss_bytes) chips.push(fmtBytes(e.rss_bytes));
+      if (e.net_rx_bps || e.net_tx_bps) chips.push(`↓${fmtBytes(e.net_rx_bps||0)}/s ↑${fmtBytes(e.net_tx_bps||0)}/s`);
+      const chipsHtml = chips.length ? ` <span style="opacity:0.7;">${chips.map(escHtml).join(' · ')}</span>` : '';
+      return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${kindBadge} ${escHtml(e.label||e.id||'')}</span>${chipsHtml}</div>`;
+    }).join('');
+  }).catch(() => { el.textContent = t('obs_envelopes_unavailable') || 'unavailable'; });
 }
 
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
@@ -24095,6 +24173,18 @@ function renderObserverView() {
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
             <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
+          <!-- GH#172 D78 — Backend Health card (Android parity): each
+               configured LLM backend's availability/version at a glance. -->
+          <div id="backendHealthBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_backend_health')||'Backend Health')}</div>
+            <div id="backendHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <!-- GH#172 D78 — Envelopes card (Android parity): the observer's
+               own live process-tree rollup (session/backend/container). -->
+          <div id="envelopesBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_envelopes')||'Envelopes')}</div>
+            <div id="envelopesList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
           <!-- Live peer resource summary — GPU/CPU/mem for each attached peer -->
           <div id="peerResourceBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
@@ -24148,6 +24238,13 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('membrowser', 'Memory Browser')}
         <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
+          <!-- GH#172 D78 — quick add-memory (Android parity): manual save
+               straight from the Observer tab, no separate memory_remember
+               call site needed. -->
+          <div style="display:flex;gap:6px;padding:4px 12px;">
+            <input type="text" id="memoryQuickAddInput" class="form-input" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <button class="btn-primary" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
+          </div>
           <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
             <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
             <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
