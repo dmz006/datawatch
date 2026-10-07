@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
 )
@@ -51,6 +52,25 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		// GH#180 — this endpoint only ever updated the autonomous
+		// manager's own in-memory Config; GET /api/config (and
+		// config.yaml) kept serving the stale s.cfg.Autonomous, so a
+		// client that gates the Automata tab on /api/config (every
+		// mobile client, and anything reading the config snapshot
+		// instead of /api/autonomous/config directly) never saw the
+		// change. PUT /api/config's own autonomous.* cases already sync
+		// forward into the manager (see applyConfigPatch's caller,
+		// below); this closes the reverse direction the same way:
+		// marshal the manager's now-current (post-merge) Config and
+		// unmarshal it onto s.cfg.Autonomous, then persist. Enabled has
+		// no `omitempty` specifically so this round-trips false
+		// correctly (see Config's own doc comment on AutoApproveChildren
+		// for why that matters for a bool field).
+		if b, err := json.Marshal(s.autonomousMgr.Config()); err == nil {
+			if err := json.Unmarshal(b, &s.cfg.Autonomous); err == nil {
+				_ = config.Save(s.cfg, s.cfgPath)
+			}
 		}
 		writeJSONOK(w, map[string]any{"status": "ok"})
 	default:

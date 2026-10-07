@@ -36,6 +36,8 @@ type councilOrchestrator interface {
 	LoadRun(id string) (*council.Run, error)
 	ListRuns(limit int) ([]*council.Run, error)
 	Cancel(runID string) bool // v7.0.0 S3
+	// SetLLMConfig (GH#180) — see council.Orchestrator's own doc comment.
+	SetLLMConfig(llmRef string, backends []string, maxParallel int)
 }
 
 // SSEHubAccessor is exposed so other surfaces (council events,

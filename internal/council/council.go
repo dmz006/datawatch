@@ -492,6 +492,21 @@ func (o *Orchestrator) UpdatePersona(name string, update Persona) error {
 	return nil
 }
 
+// SetLLMConfig (GH#180) updates LLMRef/Backends/MaxParallel in place —
+// lets POST /api/reload apply a changed
+// cfg.Council.{llm_ref,backends,max_parallel} without a daemon
+// restart. Previously these were set once at daemon startup (runStart
+// in cmd/datawatch/main.go) and never revisited: a PUT /api/config +
+// reload persisted the new value to config.yaml, but the live
+// orchestrator kept resolving whatever LLM was configured at startup.
+func (o *Orchestrator) SetLLMConfig(llmRef string, backends []string, maxParallel int) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.LLMRef = llmRef
+	o.Backends = backends
+	o.MaxParallel = maxParallel
+}
+
 // RemovePersona deletes a persona from disk + memory and records the
 // name in the .seeded marker so the additive-seed path doesn't
 // resurrect it on the next daemon restart. Removing a built-in

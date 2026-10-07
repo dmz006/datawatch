@@ -26,10 +26,10 @@ func (f *fakeCouncilOrchestratorForImage) Personas() []council.Persona { return 
 func (f *fakeCouncilOrchestratorForImage) GetPersona(string) (council.Persona, error) {
 	return council.Persona{}, nil
 }
-func (f *fakeCouncilOrchestratorForImage) AddPersona(council.Persona) error    { return nil }
+func (f *fakeCouncilOrchestratorForImage) AddPersona(council.Persona) error            { return nil }
 func (f *fakeCouncilOrchestratorForImage) UpdatePersona(string, council.Persona) error { return nil }
-func (f *fakeCouncilOrchestratorForImage) RemovePersona(string) error          { return nil }
-func (f *fakeCouncilOrchestratorForImage) RestoreDefaultPersona(string) error  { return nil }
+func (f *fakeCouncilOrchestratorForImage) RemovePersona(string) error                  { return nil }
+func (f *fakeCouncilOrchestratorForImage) RestoreDefaultPersona(string) error          { return nil }
 func (f *fakeCouncilOrchestratorForImage) Run(proposal string, names []string, mode council.Mode) (*council.Run, error) {
 	f.capturedProposal = proposal
 	return &council.Run{ID: "test-run-id"}, nil
@@ -38,7 +38,8 @@ func (f *fakeCouncilOrchestratorForImage) LoadRun(string) (*council.Run, error) 
 	return &council.Run{ID: "test-run-id"}, nil
 }
 func (f *fakeCouncilOrchestratorForImage) ListRuns(int) ([]*council.Run, error) { return nil, nil }
-func (f *fakeCouncilOrchestratorForImage) Cancel(string) bool                  { return false }
+func (f *fakeCouncilOrchestratorForImage) Cancel(string) bool                   { return false }
+func (f *fakeCouncilOrchestratorForImage) SetLLMConfig(string, []string, int)   {}
 
 // TC-1: image_path + visioner wired → description prepended to proposal.
 func TestBL368_CouncilRun_ImagePath_PrependedToProposal(t *testing.T) {

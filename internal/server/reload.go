@@ -21,6 +21,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -146,6 +147,27 @@ func (s *Server) reload() ReloadResult {
 		}
 		// v7.0.0: DefaultEffort and ClaudeAutoAcceptDisclaimer moved to LLM registry.
 		// Hot-reload of these fields is handled via PUT /api/config → applyLLMRegistryPatch.
+	}
+
+	// GH#180 — Council's LLMRef/Backends/MaxParallel were set once at
+	// daemon startup (runStart) and never revisited; PUT /api/config +
+	// reload persisted the new value to config.yaml but the live
+	// orchestrator kept resolving the startup value.
+	if s.councilOrch != nil {
+		if newCfg.Council.LLMRef != s.cfg.Council.LLMRef ||
+			newCfg.Council.MaxParallel != s.cfg.Council.MaxParallel ||
+			!slices.Equal(newCfg.Council.Backends, s.cfg.Council.Backends) {
+			llmRef := newCfg.Council.LLMRef
+			if llmRef == "" {
+				llmRef = "ollama" // matches MigrateLegacyConfig auto-entry, same default runStart uses
+			}
+			maxPar := newCfg.Council.MaxParallel
+			if maxPar == 0 {
+				maxPar = 2 // BL295 Q2 default, same as runStart
+			}
+			s.councilOrch.SetLLMConfig(llmRef, newCfg.Council.Backends, maxPar)
+			res.Applied = append(res.Applied, "council.llm_ref", "council.backends", "council.max_parallel")
+		}
 	}
 
 	// Swap config pointer contents — a shallow copy of the loaded

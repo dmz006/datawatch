@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.5 — fix(config): GH#180 — two config/manager sync gaps
+
+### Fixed
+- **`PUT /api/autonomous/config` never synced back to `GET /api/config`**: the autonomous manager's own in-memory `Config` was updated correctly, but `s.cfg.Autonomous` (and `config.yaml`) stayed stale — any client that gates on `/api/config` instead of `/api/autonomous/config` (every mobile client) never saw the change. `PUT /api/config`'s own `autonomous.*` cases already sync forward into the manager; this closes the reverse direction: `handleAutonomousConfig` now marshals the manager's post-merge `Config()` back onto `s.cfg.Autonomous` and persists it.
+- **`PUT /api/config {"council.llm_ref": ...}` + `POST /api/reload` didn't change the council orchestrator's LLM**: `councilOrch.LLMRef`/`Backends`/`MaxParallel` were plain struct fields set once at daemon startup (`runStart`, `cmd/datawatch/main.go`) and never revisited — reload correctly updated `s.cfg.Council.*` and config.yaml, but the live orchestrator kept resolving the startup value until an actual restart. New `council.Orchestrator.SetLLMConfig()` (mutex-guarded) + `reload()` now calls it when any of the three fields changed on disk.
+- Both bugs follow the identical shape as the live-found autonomous-config-sync bug from BL397/GH#179's own investigation this session: two independent copies of the same config, only one direction kept in sync.
+
 ## v8.63.4 — fix(push): GH#183 — APNs dispatch picks the wrong host for mixed-environment devices
 
 ### Fixed
