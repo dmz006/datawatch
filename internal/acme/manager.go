@@ -138,8 +138,22 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 		status:    make(map[string]*DomainStatus),
 		stopCh:    make(chan struct{}),
 	}
+	// Bug caught live 2026-10-06: status used to start blank on every
+	// process restart (Issued: false), with nothing re-derived from the
+	// cert actually on disk. Since Apply's own restart IS a process
+	// restart, that produced an infinite loop: boot -> "not issued" ->
+	// issue -> write PEM -> restart -> boot -> "not issued" (memory
+	// lost) -> issue again -> ... Caught after 4 real orders against
+	// staging before it was stopped. Fixed by checking the existing PEM
+	// at startup and seeding Issued/NotAfter from it when present.
+	existingIssued, existingNotAfter := loadExistingCertStatus(dataDir, cfg.Domains)
 	for _, d := range cfg.Domains {
-		m.status[d] = &DomainStatus{Domain: d, Endpoint: cfg.Endpoint}
+		m.status[d] = &DomainStatus{
+			Domain:   d,
+			Endpoint: cfg.Endpoint,
+			Issued:   existingIssued,
+			NotAfter: existingNotAfter,
+		}
 	}
 
 	legoCfg := lego.NewConfig(account)
@@ -172,6 +186,30 @@ func directoryURL(endpoint string) string {
 		return lego.LEDirectoryProduction
 	}
 	return lego.LEDirectoryStaging
+}
+
+// loadExistingCertStatus checks for a cert already written at
+// {dataDir}/tls/acme/<domains[0]>/fullchain.pem (applyCertificate's own
+// write location, keyed off the first configured domain since all
+// domains share one multi-SAN cert) and reports whether one exists and
+// its expiry. Returns (false, zero) on any read/parse error — a missing
+// or corrupt file is treated the same as "not issued yet", which is the
+// safe default (triggers a fresh issue rather than silently trusting a
+// cert this process can't verify).
+func loadExistingCertStatus(dataDir string, domains []string) (bool, time.Time) {
+	if len(domains) == 0 {
+		return false, time.Time{}
+	}
+	path := filepath.Join(dataDir, "tls", "acme", domains[0], "fullchain.pem")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, time.Time{}
+	}
+	leaf, err := parseLeafCert(data)
+	if err != nil {
+		return false, time.Time{}
+	}
+	return true, leaf.NotAfter
 }
 
 // ChallengeHandler returns the http.Handler the daemon registers on its

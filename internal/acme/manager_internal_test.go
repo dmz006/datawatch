@@ -88,3 +88,46 @@ func TestParseLeafCert_FindsCertificateBlockAmongChain(t *testing.T) {
 		t.Fatal("expected a cert that has not yet expired (test fixture bug)")
 	}
 }
+
+// TestLoadExistingCertStatus_FindsAndParsesAFreshCert is the regression
+// test for the live-test restart-loop bug (2026-10-06): NewManager used
+// to always start every domain's status at Issued:false, so Apply's own
+// restart (after a successful issue) looked, on the next boot, exactly
+// like "never issued" — triggering another immediate issue, another
+// restart, forever. loadExistingCertStatus must find a fresh, valid cert
+// already on disk and report it as issued, with the real expiry.
+func TestLoadExistingCertStatus_FindsAndParsesAFreshCert(t *testing.T) {
+	dataDir := t.TempDir()
+	domain := "spaceportsouth.dmzs.com"
+	certDir := filepath.Join(dataDir, "tls", "acme", domain)
+	if err := os.MkdirAll(certDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	leafPEM := selfSignedPEMForTest(t, key)
+	if err := os.WriteFile(filepath.Join(certDir, "fullchain.pem"), leafPEM, 0600); err != nil {
+		t.Fatalf("write fullchain.pem: %v", err)
+	}
+
+	issued, notAfter := loadExistingCertStatus(dataDir, []string{domain})
+	if !issued {
+		t.Fatal("expected an already-issued cert on disk to be found")
+	}
+	if time.Until(notAfter) <= 0 {
+		t.Fatal("expected a NotAfter in the future for a freshly-written test cert")
+	}
+}
+
+func TestLoadExistingCertStatus_NoFileMeansNotIssued(t *testing.T) {
+	issued, notAfter := loadExistingCertStatus(t.TempDir(), []string{"never-issued.example"})
+	if issued {
+		t.Fatal("expected issued=false when no cert file exists yet")
+	}
+	if !notAfter.IsZero() {
+		t.Fatalf("expected a zero NotAfter, got %v", notAfter)
+	}
+}
