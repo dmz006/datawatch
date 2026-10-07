@@ -20,6 +20,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/tooling"
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
@@ -129,6 +130,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	prd.Status = PRDRunning
 	m.mu.Unlock()
+	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
+	// (.decompose-output-*.json, CHECKPOINT.md) as defense-in-depth for
+	// any window before relocateCheckpoint/decomposeFnSession's own
+	// cleanup runs (e.g. a daemon crash). Once per PRD, not every resume.
+	// Not a real LLM backend, so uses EnsureIgnoredPatterns directly
+	// rather than registering a pseudo-entry in BackendArtifacts (which
+	// QueryAllStatus assumes is exclusively real backends).
+	if isFirstRun && prd.ProjectDir != "" {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
+		}
+	}
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
@@ -559,6 +572,26 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	return m.store.SavePRD(prd)
 }
 
+// relocateCheckpoint reads CHECKPOINT.md from the project_dir if the just-
+// finished attempt wrote one, relocates it to the PRD's scratch dir under
+// the daemon's own data directory, and returns its content for folding
+// into the next attempt's retry hint (empty string if absent or on a
+// retrievable error -- best-effort, never fails the caller). See
+// scratch.go's package doc for why this can't just live in the data
+// directory from the start.
+func (m *Manager) relocateCheckpoint(prd *PRD, t *Task) string {
+	scratchDir, err := ScratchDir(m.dataDir, prd.ID)
+	if err != nil {
+		log.Printf("[autonomous] relocateCheckpoint: scratch dir for prd=%s: %v", prd.ID, err)
+		scratchDir = "" // still try the read+delete below; just skip archiving
+	}
+	content, ok := RelocateProjectFile(prd.ProjectDir, "CHECKPOINT.md", scratchDir, t.ID+".md")
+	if !ok {
+		return ""
+	}
+	return content
+}
+
 // executeOne handles a single task: spawn → wait → verify → (retry).
 //
 // BL191 Q4 (v5.9.0) — when t.SpawnPRD is true, the task spec is treated
@@ -725,6 +758,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// retryable verification failure, not a fatal error — it consumes
 					// the same auto_fix_retries budget as a normal failed verification.
 					hint = err.Error()
+					if cp := m.relocateCheckpoint(prd, t); cp != "" {
+						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+					}
 					t.Error = hint
 					_ = m.store.SaveTask(t)
 					continue
@@ -756,6 +792,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// Fold regression summary into retry hint so the next attempt
 					// knows what broke.
 					hint = "quality gate regression: " + cmp.Summary
+					if cp := m.relocateCheckpoint(prd, t); cp != "" {
+						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+					}
 					_ = m.store.SaveTask(t)
 					continue // try auto-fix retry with regression context
 				}
@@ -763,6 +802,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			done := time.Now()
 			t.CompletedAt = &done
 			t.Status = TaskCompleted
+			// Sweep any leftover CHECKPOINT.md out of the shared
+			// project_dir now that the task is done — nothing will ever
+			// need to resume it again.
+			m.relocateCheckpoint(prd, t)
 			// BL191 Q6 (v5.10.0) — fire per-task guardrails before
 			// declaring the task done. A `block` verdict marks the task
 			// blocked + halts the PRD walk via the executor return.
@@ -807,9 +850,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
 		}
+		if cp := m.relocateCheckpoint(prd, t); cp != "" {
+			hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+		}
 	}
 	t.Status = TaskFailed
 	t.Error = "verification failed after retries"
+	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
+	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {
 		return err
 	}

@@ -266,6 +266,7 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       Config
 	store       *Store
+	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
@@ -726,6 +727,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	m := &Manager{
 		cfg:       cfg,
 		store:     st,
+		dataDir:   dataDir,
 		templates: newTemplateStore(dataDir),
 		decompose: decompose,
 		types:     types,

@@ -30,6 +30,73 @@ func TestEnsureIgnored_CreatesGitignore(t *testing.T) {
 	}
 }
 
+// 2026-10-07 — EnsureIgnoredPatterns is EnsureIgnored's underlying
+// mechanism, exposed for callers (internal/autonomous's PRD scratch
+// files) whose patterns aren't tied to a real LLM backend and so must
+// not go through BackendArtifacts/QueryAllStatus, which assume every
+// key is a real backend (TestQueryAllStatus_AllKnownBackends below
+// enforces exactly that).
+func TestEnsureIgnoredPatterns_CreatesGitignore(t *testing.T) {
+	dir := t.TempDir()
+	patterns := []string{".decompose-output-*.json", "CHECKPOINT.md"}
+	added, err := EnsureIgnoredPatterns(dir, patterns)
+	if err != nil {
+		t.Fatalf("EnsureIgnoredPatterns: %v", err)
+	}
+	if added != len(patterns) {
+		t.Errorf("added = %d, want %d", added, len(patterns))
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	content := string(data)
+	for _, pat := range patterns {
+		if !strings.Contains(content, pat) {
+			t.Errorf(".gitignore missing pattern %q", pat)
+		}
+	}
+}
+
+func TestEnsureIgnoredPatterns_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	patterns := []string{"CHECKPOINT.md"}
+	for i := 0; i < 3; i++ {
+		if _, err := EnsureIgnoredPatterns(dir, patterns); err != nil {
+			t.Fatalf("EnsureIgnoredPatterns iter %d: %v", i, err)
+		}
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if strings.Count(string(data), "CHECKPOINT.md") != 1 {
+		t.Errorf("pattern duplicated across repeated calls: %q", string(data))
+	}
+}
+
+func TestEnsureIgnoredPatterns_EmptyIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	added, err := EnsureIgnoredPatterns(dir, nil)
+	if err != nil || added != 0 {
+		t.Errorf("got (%d, %v), want (0, nil)", added, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Error(".gitignore should not be created for an empty pattern list")
+	}
+}
+
+// datawatch-prd-style scratch patterns must never leak into
+// BackendArtifacts (and therefore QueryAllStatus), which the PWA's
+// per-backend artifact-status card assumes is exclusively real LLM
+// backends.
+func TestBackendArtifacts_ExcludesDatawatchOwnScratchPatterns(t *testing.T) {
+	for backend, patterns := range BackendArtifacts {
+		for _, p := range patterns {
+			if p == "CHECKPOINT.md" || p == ".decompose-output-*.json" {
+				t.Errorf("backend %q unexpectedly carries a datawatch-own scratch pattern %q — use EnsureIgnoredPatterns directly instead", backend, p)
+			}
+		}
+	}
+}
+
 func TestEnsureIgnored_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 3; i++ {

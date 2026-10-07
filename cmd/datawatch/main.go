@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.66.0"
+var Version = "8.66.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3965,10 +3965,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// daemon restart mid-decompose still finds the in-progress file intact.
 			specHash := sha256.Sum256([]byte(req.Spec))
 			outputFile := filepath.Join(req.ProjectDir, ".decompose-output-"+hex.EncodeToString(specHash[:8])+".json")
+			// 2026-10-07 — the worker session can only WRITE inside
+			// req.ProjectDir (its tool access is sandboxed there), but
+			// datawatch's own code reads this file exactly once and
+			// nothing else ever needs it from project_dir again. Relocate
+			// to a durable, PRD-scoped home under the data directory
+			// instead of leaving it in the shared project repo (operator-
+			// reported 2026-10-07: polluted git status, never cleaned up,
+			// and nothing stopped two PRDs sharing a project_dir from
+			// treading on each other's scratch state). See
+			// internal/autonomous/scratch.go.
+			scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), req.PRDID)
+			if scratchErr != nil {
+				fmt.Printf("[decompose-session] scratch dir for prd=%s: %v\n", req.PRDID, scratchErr)
+			}
+			relocate := func() (string, bool) {
+				return autonomouspkg.RelocateProjectFile(req.ProjectDir, filepath.Base(outputFile), scratchDir, "decompose-output.json")
+			}
 			// Restart-recovery: reuse output written by a previous run of the same spec.
-			if existingContent, readErr := os.ReadFile(outputFile); readErr == nil && len(existingContent) > 0 {
+			if existingContent, ok := relocate(); ok {
 				fmt.Printf("[decompose-session] reusing prior output file %s (%d bytes)\n", outputFile, len(existingContent))
-				return string(existingContent), nil
+				return existingContent, nil
 			}
 			_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
@@ -4089,9 +4106,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// This handles sessions that write the file then transition
 					// to an unexpected terminal state (failed/killed) or stall
 					// in running/waiting_input without completing normally.
-					if content, ferr := os.ReadFile(outputFile); ferr == nil && len(bytes.TrimSpace(content)) > 0 {
+					if content, ok := relocate(); ok {
 						fmt.Printf("[decompose-session] %s state=%q, output file ready (%d bytes) — treating as complete\n", startOut.ID, s.State, len(content))
-						return string(content), nil
+						return content, nil
 					}
 					switch s.State {
 					case "complete":
@@ -4102,9 +4119,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// Give the output file one last chance: the LLM may have
 						// written it in the same instant the session was killed.
 						time.Sleep(3 * time.Second)
-						if content, ferr := os.ReadFile(outputFile); ferr == nil && len(bytes.TrimSpace(content)) > 0 {
+						if content, ok := relocate(); ok {
 							fmt.Printf("[decompose-session] %s state=%q, output file appeared after kill (%d bytes)\n", startOut.ID, s.State, len(content))
-							return string(content), nil
+							return content, nil
 						}
 						return "", fmt.Errorf("decompose session %s ended with state %q and no output file", startOut.ID, s.State)
 					}

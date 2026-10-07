@@ -35,6 +35,18 @@ func EnsureIgnored(projectDir, backend string) (int, error) {
 	if !ok || len(patterns) == 0 {
 		return 0, nil
 	}
+	return EnsureIgnoredPatterns(projectDir, patterns)
+}
+
+// EnsureIgnoredPatterns is EnsureIgnored's underlying mechanism, exposed
+// directly for callers whose patterns aren't tied to a real LLM backend
+// (e.g. internal/autonomous's own PRD scratch-file patterns — deliberately
+// NOT added to BackendArtifacts/QueryAllStatus, which are specifically
+// about third-party backend tool artifacts, not datawatch's own files).
+func EnsureIgnoredPatterns(projectDir string, patterns []string) (int, error) {
+	if len(patterns) == 0 {
+		return 0, nil
+	}
 	total := 0
 	for _, name := range []string{".gitignore", ".cfignore", ".dockerignore"} {
 		path := filepath.Join(projectDir, name)
@@ -45,7 +57,7 @@ func EnsureIgnored(projectDir, backend string) (int, error) {
 		}
 		added, err := appendMissing(path, patterns)
 		if err != nil {
-			return total, fmt.Errorf("EnsureIgnored %s: %w", name, err)
+			return total, fmt.Errorf("EnsureIgnoredPatterns %s: %w", name, err)
 		}
 		total += added
 	}

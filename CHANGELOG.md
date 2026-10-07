@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.66.1 — fix(autonomous): PRD scratch artifacts no longer land unmanaged in the shared project repo
+
+### Fixed
+- Operator-reported (2026-10-07): `.decompose-output-*.json` and `CHECKPOINT.md` were landing directly inside a PRD's `project_dir` — a shared, operator-owned repository that multiple PRDs can point at — polluting `git status`, never getting cleaned up, and giving two PRDs sharing a project_dir nothing to prevent treading on each other's scratch state. Root cause: datawatch's own code (not any LLM backend) writes both files as part of PRD decompose/execution, but had no lifecycle for them beyond "write it and leave it."
+- **`.decompose-output-*.json`**: datawatch's own code reads it exactly once, right after the spawned decompose session finishes — nothing else ever needs to read it from `project_dir` again, so it's now relocated to a durable, PRD-scoped home (`<data_dir>/autonomous/scratch/<prd_id>/`) immediately after that one read, with the `project_dir` copy deleted. The worker session still *writes* it inside `project_dir` first (its sandboxed tool access can't reach anywhere else) — only the durable copy moves.
+- **`CHECKPOINT.md`**: trickier — by design, a *retry* worker session (spawned fresh after a crash or failed verification) needs to read it to resume, and that session is *also* sandboxed to `project_dir`, so simply relocating it would break resumability. Fixed by having datawatch itself (unsandboxed) read it right after each attempt ends, relocate it to the scratch dir for the durable record, and fold its content directly into the next attempt's retry hint — so the next worker session gets the checkpoint as literal prompt text and never needs to read any file to resume. Wired into all 4 retry/terminal exit points in `executeOne` (stall retry, quality-gate-regression retry, normal verification-failure retry, and both success/exhausted-retries terminal paths for cleanup).
+- Added `tooling.EnsureIgnoredPatterns` (extracted from the existing per-backend `EnsureIgnored`/`BackendArtifacts` mechanism from BL219) as defense-in-depth: both patterns are auto-gitignored once per PRD run, covering the window before relocation runs (e.g. a daemon crash mid-task). Deliberately *not* added to `BackendArtifacts` itself — that map (and `QueryAllStatus`, the PWA's per-backend artifact-status card) is specifically about third-party backend tool artifacts, not datawatch's own files; a test now pins that boundary.
+- New `internal/autonomous/scratch.go` (`ScratchDir`, `RelocateProjectFile`) — best-effort throughout: a session-written scratch file is a nicety, never load-bearing for task completion, so any I/O error here degrades to "stays in project_dir, same as before this fix" rather than failing the task.
+
 ## v8.66.0 — feat(pwa): GH#191 — Community Plugins card (browse + install from a registry)
 
 ### Added
