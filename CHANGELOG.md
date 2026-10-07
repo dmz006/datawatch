@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.69.1 — fix(pwa): server-picker chip onclick broke for every named server
+
+### Fixed
+- Operator-reported (2026-10-07), a real federated peer named "Apple Testing Sandbox": clicking any server-picker chip (including "All") threw `Uncaught SyntaxError: Unexpected end of input` instead of switching servers. Root cause: `_serverPickerBar()`'s `onclick="selectServer(${JSON.stringify(c.name)})"` embedded `JSON.stringify`'s own double quotes directly inside the attribute's double-quote delimiters, truncating the attribute value at the first embedded `"` and leaving an incomplete `selectServer(` as the actual handler — breaks for *any* name, not just ones with unusual characters, since `JSON.stringify` always quotes strings. Found live while testing BL316/BL317 work in the same file. Fixed by `escHtml()`-wrapping the whole onclick expression, the same pattern `loadServersList()`'s `testServerEntry` button already used correctly.
+- 1 new regression test (`app-dashboard-aggregation.test.js`) using a real quote-colliding-prone name; 2 pre-existing tests in the same file updated (they'd been asserting on the old, bug-triggering raw-quote attribute shape for the "All" chip).
+
 ## v8.69.0 — feat(pwa): BL317 — Dashboard "all servers" aggregation; Observer picker drops the non-functional "All" chip
 
 ### Added

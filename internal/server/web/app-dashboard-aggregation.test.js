@@ -111,7 +111,7 @@ test('_serverPickerBar includes the "All" chip by default', () => {
   const sandbox = loadAppJS();
   setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
   const html = vm.runInContext('_serverPickerBar()', sandbox);
-  assert.ok(/selectServer\(['"]all['"]\)/.test(html), 'expected a selectServer("all") chip');
+  assert.ok(/selectServer\(&quot;all&quot;\)/.test(html), 'expected a selectServer("all") chip');
 });
 
 test('_serverPickerBar({hideAll:true}) omits the "All" chip (Observer)', () => {
@@ -120,7 +120,7 @@ test('_serverPickerBar({hideAll:true}) omits the "All" chip (Observer)', () => {
   sandbox.__opts = { hideAll: true };
   const html = vm.runInContext('_serverPickerBar(__opts)', sandbox);
   delete sandbox.__opts;
-  assert.ok(!html.includes('>' + 'All' + '<') && !/selectServer\(['"]all['"]\)/.test(html), 'expected no selectServer("all") chip when hideAll is set');
+  assert.ok(!html.includes('>' + 'All' + '<') && !/selectServer\(&quot;all&quot;\)/.test(html), 'expected no selectServer("all") chip when hideAll is set');
   assert.ok(html.includes('pi-node'), 'other chips should still render normally');
 });
 
@@ -130,4 +130,39 @@ test('_serverPickerBar still returns empty string with hideAll when there are no
   const html = vm.runInContext('_serverPickerBar(__opts)', sandbox);
   delete sandbox.__opts;
   assert.equal(html, '');
+});
+
+// Operator-reported (2026-10-07): a real federated peer named "Apple
+// Testing Sandbox" made every chip's onclick throw "Unexpected end of
+// input" on click -- JSON.stringify(c.name) wraps the name in raw `"`
+// characters that collided with the onclick attribute's own `"`
+// delimiter, truncating the attribute value at the first embedded quote
+// and leaving an incomplete `selectServer(` as the actual handler. This
+// broke every named chip unconditionally (not just names with unusual
+// characters -- ANY JSON.stringify-quoted value collides), including the
+// "All" chip itself. Fixed by escHtml()-wrapping the whole onclick
+// expression, same pattern loadServersList()'s testServerEntry button
+// already used correctly.
+test('a server name does not truncate its chip\'s onclick attribute (regression)', () => {
+  const sandbox = loadAppJS();
+  setState(sandbox, { servers: { servers: [{ name: 'Apple Testing Sandbox', enabled: true }] } });
+  const html = vm.runInContext('_serverPickerBar()', sandbox);
+
+  // The old bug produced a raw, unescaped `"` immediately after
+  // `selectServer(` -- which prematurely closes the onclick="..."
+  // attribute value one character in. Assert that specific collision is
+  // gone: no bare `"` appears between `onclick="` and the matching chip's
+  // closing `"`, only its escaped form.
+  assert.ok(!/onclick="selectServer\("/.test(html), 'onclick attribute value must not contain a raw, unescaped double quote');
+  assert.ok(/onclick="selectServer\(&quot;Apple Testing Sandbox&quot;\)"/.test(html), 'expected the escaped form of selectServer("Apple Testing Sandbox")');
+
+  // Simulate what the browser's HTML attribute parser actually does for
+  // EVERY chip: extract each onclick="..." value and decode entities,
+  // confirming each is a complete, valid JS call -- not truncated
+  // mid-string -- and that our server's specific chip is among them.
+  const matches = [...html.matchAll(/onclick="([^"]*)"/g)];
+  assert.ok(matches.length >= 2, 'expected at least the Local and Apple Testing Sandbox chips');
+  const decode = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  const decoded = matches.map(m => decode(m[1]));
+  assert.ok(decoded.includes('selectServer("Apple Testing Sandbox")'), `expected one chip to decode to the full call, got: ${decoded.join(' | ')}`);
 });

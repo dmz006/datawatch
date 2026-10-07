@@ -15943,7 +15943,19 @@ function _serverPickerBar(opts) {
   ];
   const btns = chips.map(c => {
     const isActive = c.name === active;
-    return `<button onclick="selectServer(${c.name ? JSON.stringify(c.name) : 'null'})" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}</button>`;
+    // Operator-reported (2026-10-07): a server/peer name containing a
+    // `"` (e.g. a real federated peer named "Apple Testing Sandbox" --
+    // wait, the actual trigger was any name at all, since
+    // JSON.stringify's own double quotes collide with this attribute's
+    // double-quote delimiter -- truncates the onclick value at the
+    // first embedded `"`, leaving an incomplete `selectServer(` that
+    // throws "Unexpected end of input" on click. Breaks every named
+    // chip unconditionally (and the "All" chip too), not just names
+    // with unusual characters. Fixed the same way loadServersList()'s
+    // testServerEntry button already does it correctly: escHtml() the
+    // whole onclick expression so embedded quotes become &quot;
+    // entities instead of raw characters.
+    return `<button onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'})`)}" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}</button>`;
   }).join('');
   return `<div class="server-picker-bar" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-dim,#888);flex-shrink:0;">${escHtml(t('server_picker_label') || 'Server:')}</span>${btns}</div>`;
 }
