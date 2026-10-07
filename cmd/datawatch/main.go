@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.12"
+var Version = "8.63.13"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2334,6 +2334,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// ollama chat-mode session despite the backend already decoding
 	// prompt_eval_count/eval_count off the final streaming chunk.
 	ollama.SetUsageFn(func(tmuxSession string, tokensIn, tokensOut int) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		_ = mgr.AddUsage(sessID, tokensIn, tokensOut, session.CostRate{})
+	})
+	// B98 — same gap for openwebui: live-verified against a real OpenWebUI
+	// instance that /api/chat/completions' final SSE chunk carries a
+	// usage object; now wired the same way as ollama above.
+	openwebui.SetUsageFn(func(tmuxSession string, tokensIn, tokensOut int) {
 		sessID := strings.TrimPrefix(tmuxSession, "cs-")
 		_ = mgr.AddUsage(sessID, tokensIn, tokensOut, session.CostRate{})
 	})

@@ -5307,6 +5307,11 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
 		})
 	}
+	if sess.BackendFamily == "aider" {
+		go trackAiderUsage(ctx, sess.FullID, sess.LogFile, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
+			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		})
+	}
 
 	// Seek to end for new content
 	if _, err := f.Seek(0, 2); err != nil {

@@ -211,6 +211,7 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 	// Stream SSE response, collecting chunks and writing to tmux via echo
 	var fullResponse strings.Builder
 	var lineBuffer strings.Builder
+	var usageIn, usageOut int
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -227,9 +228,16 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 					Content string `json:"content"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if chunk.Usage.InputTokens > 0 || chunk.Usage.OutputTokens > 0 {
+			usageIn, usageOut = chunk.Usage.InputTokens, chunk.Usage.OutputTokens
 		}
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			content := chunk.Choices[0].Delta.Content
@@ -260,6 +268,10 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 		escaped := strings.ReplaceAll(lineBuffer.String(), "'", "'\\''")
 		exec.Command("tmux", "send-keys", "-t", tmuxSession,
 			fmt.Sprintf("printf '%%s\\n' '%s'", escaped), "Enter").Run() //nolint:errcheck
+	}
+
+	if usageFn != nil && (usageIn > 0 || usageOut > 0) {
+		usageFn(tmuxSession, usageIn, usageOut)
 	}
 
 	// Add assistant response to history and emit final chat message
@@ -333,6 +345,22 @@ func RestoreConversation(tmuxSession string, messages []ChatMessage) {
 // SetChatEmitter registers the callback for broadcasting chat messages.
 func SetChatEmitter(fn func(sessionID, role, content string, streaming bool)) {
 	chatEmitter = fn
+}
+
+// B98 — usageFn reports real per-turn token usage so the session's
+// running TokensIn/TokensOut/EstCostUSD counters (internal/session/
+// cost.go) actually populate for openwebui-backed sessions, instead of
+// staying at zero forever. Live-verified (real OpenWebUI 0.11.4 instance
+// routed to a local Ollama model) that /api/chat/completions' final SSE
+// chunk -- the one carrying finish_reason -- includes a top-level
+// "usage" object with input_tokens/output_tokens; sendAndStream already
+// scans every chunk looking for choices[].delta.content, so this just
+// means not discarding that field when present.
+var usageFn func(tmuxSession string, tokensIn, tokensOut int)
+
+// SetUsageFn registers the callback for per-turn token usage.
+func SetUsageFn(fn func(tmuxSession string, tokensIn, tokensOut int)) {
+	usageFn = fn
 }
 
 // emitChat sends a structured chat message if the emitter is registered.
