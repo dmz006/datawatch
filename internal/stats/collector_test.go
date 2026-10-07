@@ -36,6 +36,22 @@ func TestCollector_SetSessionCountFunc(t *testing.T) {
 	}
 }
 
+// GH#192 D78a — Observer's Daemon/Infrastructure cards had neither
+// hostname nor the running daemon version anywhere.
+func TestCollector_SetServerIdentity(t *testing.T) {
+	c := NewCollector(t.TempDir())
+	c.SetServerIdentity("johnnyjohnny", "8.70.0")
+	var stats SystemStats
+	c.SetOnCollect(func(s SystemStats) { stats = s })
+	c.collect()
+	if stats.Hostname != "johnnyjohnny" {
+		t.Errorf("expected hostname %q, got %q", "johnnyjohnny", stats.Hostname)
+	}
+	if stats.DaemonVersion != "8.70.0" {
+		t.Errorf("expected daemon version %q, got %q", "8.70.0", stats.DaemonVersion)
+	}
+}
+
 func TestCollector_SetRTKFunc(t *testing.T) {
 	c := NewCollector(t.TempDir())
 	c.SetRTKFunc(func(s *SystemStats) {

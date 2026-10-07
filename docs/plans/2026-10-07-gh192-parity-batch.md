@@ -1,5 +1,7 @@
 # GH#192 — 8-item Android/iOS parity batch (PWA)
 
+**Status**: Phase 1 ✅ shipped v8.70.0 (#8, #1, #3, #5, #6). Phases 2-4 (#2, #7, #4) in progress.
+
 Operator-approved, filed by the datawatch-app peer session. Full issue body
 and explicit exclusions are in GH#192 itself; not duplicated here. This plan
 covers investigation findings, phasing, and the concrete implementation shape

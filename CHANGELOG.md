@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.70.0 — feat(pwa): GH#192 Phase 1 — agent id badge, watched-only alert badge, Observer server info, terminal-connect splash dwell, header refresh spinner
+
+### Added
+- **#8 (D66a)**: the agent badge on both Sessions-list cards and the session-detail header now shows `⬡ <agent_id>` directly instead of a generic "worker" with the id only in the (phone-unfriendly) tooltip.
+- **#1 (D61a)**: the header alert badge now shows only unread alerts from watched sessions while the Sessions view's watch filter (`state.sessionWatchFilter`) is on, instead of always showing the server-wide unread total. A parallel `state.alertWatchedUnread` counter is tracked alongside the existing total (seeded from the full alerts list at load, incremented on each WS push, reset together on mark-all-read) so toggling the filter updates the badge immediately. System alerts (no `session_id`) never count toward it. Known, accepted limitation: un/re-watching a session doesn't retroactively reclassify already-counted alerts.
+- **#3 (D78a)**: Observer's Daemon/Infrastructure stat cards had neither hostname nor the running daemon version anywhere. `internal/stats.SystemStats` gains `Hostname`/`DaemonVersion` fields, populated via a new `Collector.SetServerIdentity(hostname, version)` setter (mirrors the existing `SetServerInterfaces` pattern); wired in `main.go` right next to it. PWA shows hostname in the Daemon card, version in the Infrastructure card.
+- **#5 (D10a)**: the terminal-connect loading splash used to vanish the instant the first `pane_capture` frame arrived, with no minimum dwell — could flash for under 100ms on a fast reconnect — and showed one static string the whole time. Now: a minimum dwell before dismissal on success (2000ms for a freshly-started/-restarted session, 500ms for a reconnect to an already-running one — tracked via a new one-shot `state._justStartedSessionId` flag set at session-start/-restart time), a two-stage status text ("Connecting…" → "Waiting for terminal…" after 1200ms), and the existing retry-watchdog's total failure budget before showing the "Unable to connect"+Retry UI is now type-aware (15s new / 8s existing) instead of a fixed 3×5000ms — the "new" case's numbers are unchanged from before.
+- **#6**: a small spinner appears in the header actions row for a short, fixed window (600ms) on every real view switch (Sessions/Alerts/Automata/Dashboard/Observer), via new `_showHeaderRefreshSpinner()`/`_hideHeaderRefreshSpinner()` helpers and a new `#headerRefreshSpinner` element — tied to navigation rather than wired into each view's own async fetch chain individually, since those vary a lot (some render synchronously from already-held state) and a forgotten per-view hide() call would leave the spinner stuck forever.
+- New locale keys (`stats_daemon_version`, `stats_hostname`, `term_waiting_for_terminal`) added to all 5 locales (en/de/fr/es/ja), not just English.
+- 20 new unit tests (`app-gh192-phase1.test.js` ×9, `app-gh192-phase1b.test.js` ×10, `internal/stats/collector_test.go` ×1).
+
+This is Phase 1 of 4 for GH#192 (8-item Android/iOS parity batch); see `docs/plans/2026-10-07-gh192-parity-batch.md`. Phases 2-4 (#2 per-Automaton memory, #7 server-picker swipe gesture, #4 memory tags) follow as separate commits.
+
 ## v8.69.4 — docs: backfilled a plan doc for the federation-dispatch and Dashboard-aggregation fixes
 
 ### Added

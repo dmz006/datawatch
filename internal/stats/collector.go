@@ -78,6 +78,11 @@ type SystemStats struct {
 	TLSPort     int    `json:"tls_port,omitempty"`
 	MCPSSEHost  string `json:"mcp_sse_host,omitempty"`
 	MCPSSEPort  int    `json:"mcp_sse_port,omitempty"`
+	// GH#192 D78a — Observer's Daemon/Infrastructure cards had neither
+	// hostname nor the running daemon version anywhere. Populated via
+	// SetServerIdentity, the same pattern as SetServerInterfaces below.
+	Hostname      string `json:"hostname,omitempty"`
+	DaemonVersion string `json:"daemon_version,omitempty"`
 
 	// RTK (Rust Token Killer) integration stats
 	RTKInstalled    bool    `json:"rtk_installed,omitempty"`
@@ -233,6 +238,10 @@ type Collector struct {
 	tlsPort    int
 	mcpSSEHost string
 	mcpSSEPort int
+
+	// GH#192 D78a — server identity for the Daemon/Infrastructure cards.
+	hostname      string
+	daemonVersion string
 }
 
 // NewCollector creates a new metrics collector.
@@ -285,6 +294,13 @@ func (c *Collector) SetServerInterfaces(webPort int, tlsEnabled bool, tlsPort in
 	c.tlsPort = tlsPort
 	c.mcpSSEHost = mcpSSEHost
 	c.mcpSSEPort = mcpSSEPort
+}
+
+// SetServerIdentity sets the hostname + running daemon version surfaced on
+// the Daemon/Infrastructure cards (GH#192 D78a).
+func (c *Collector) SetServerIdentity(hostname, version string) {
+	c.hostname = hostname
+	c.daemonVersion = version
 }
 
 // SetDaemonNetFunc sets a callback that returns per-process (tx, rx) bytes for the daemon.
@@ -422,6 +438,8 @@ func (c *Collector) collect() {
 	s.TLSPort = c.tlsPort
 	s.MCPSSEHost = c.mcpSSEHost
 	s.MCPSSEPort = c.mcpSSEPort
+	s.Hostname = c.hostname
+	s.DaemonVersion = c.daemonVersion
 
 	if c.sessionStatsFn != nil {
 		s.SessionStats = c.sessionStatsFn()

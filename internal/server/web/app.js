@@ -193,6 +193,7 @@ const state = {
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
   alertSystemUnread: 0,   // BL226 — system-sourced unread count
+  alertWatchedUnread: 0,  // GH#192 D61a — unread count among watched sessions only
   showHistory: false,     // show completed/killed/failed sessions in main list
   selectMode: false,      // multi-select mode for batch session deletion
   selectedSessions: new Set(), // full IDs of selected sessions
@@ -751,9 +752,7 @@ function handleMessage(msg) {
               // refresh path heals any drift accumulated during a
               // daemon-restart / WS-disconnect window without
               // tearing down the toolbar (v5.26.35).
-              const splash = document.getElementById('termLoadingSplash');
-              if (splash) splash.remove();
-              if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+              _dismissTermLoadingSplashWithMinDwell();
               state.terminal.reset();
               state.terminal.write(capLines2.join('\r\n'));
               state._termHasContent = true;
@@ -996,6 +995,11 @@ function handleMessage(msg) {
 function handleAlert(a) {
   state.alertUnread++;
   if (a.source === 'system' || !a.session_id) state.alertSystemUnread++;
+  // GH#192 D61a — tracked alongside the flat total so updateAlertBadge can
+  // show a watched-only count the instant the operator toggles the filter,
+  // without re-fetching. A system alert has no session_id, so it can never
+  // belong to "a watched session" and never counts here.
+  else if (state.watchedSessions.has(a.session_id)) state.alertWatchedUnread++;
   updateAlertBadge();
   // GH#120: always push to the alert dock regardless of which view is active.
   // Old code suppressed alerts while viewing the source session in session-detail,
@@ -1843,6 +1847,28 @@ function tryUpdateSessionsInPlace() {
   return true;
 }
 
+// GH#192 D6 — header "refreshing" spinner. Shown for a fixed, short
+// window around a view switch rather than wired into each of the 5
+// render functions' own async fetch chains individually — those chains
+// vary a lot (some views render synchronously from already-held state,
+// e.g. Sessions; others fire a fresh fetch, e.g. Alerts/Dashboard), and
+// a forgotten hide() in any one of them would leave the spinner stuck
+// forever. A fixed pulse tied to navigation is simpler and can't get
+// stuck. A second navigation before the window elapses just restarts it.
+let _headerRefreshHideTimer = null;
+function _showHeaderRefreshSpinner() {
+  const el = document.getElementById('headerRefreshSpinner');
+  if (!el) return;
+  el.style.display = 'inline-block';
+  if (_headerRefreshHideTimer) clearTimeout(_headerRefreshHideTimer);
+  _headerRefreshHideTimer = setTimeout(_hideHeaderRefreshSpinner, 600);
+}
+function _hideHeaderRefreshSpinner() {
+  const el = document.getElementById('headerRefreshSpinner');
+  if (el) el.style.display = 'none';
+  if (_headerRefreshHideTimer) { clearTimeout(_headerRefreshHideTimer); _headerRefreshHideTimer = null; }
+}
+
 // ── Navigation ───────────────────────────────────────────────────────────────
 function navigate(view, sessionId, fromPopstate) {
   // Close the new-session modal on any navigation (Escape or nav tap).
@@ -1986,6 +2012,11 @@ function navigate(view, sessionId, fromPopstate) {
       statsPanel._statsInterval = null;
     }
 
+    // GH#192 D6 — pulse the header refresh spinner for every real
+    // view switch (not 'new'/'settings', which don't list-refresh data).
+    if (['sessions', 'alerts', 'autonomous', 'dashboard', 'observer'].includes(view)) {
+      _showHeaderRefreshSpinner();
+    }
     if (view === 'sessions') {
       headerTitle.textContent = t('nav_home')||'datawatch';
       renderSessionsView();
@@ -2421,6 +2452,7 @@ window.toggleSessionWatch = function(fullId) {
 window.toggleSessionWatchFilter = function() {
   state.sessionWatchFilter = !state.sessionWatchFilter;
   renderSessionsView();
+  updateAlertBadge(); // GH#192 D61a — badge reflects the new filter immediately
 };
 
 // GH#172 D62 — swipe-to-mute + muted icon.
@@ -2744,7 +2776,7 @@ function sessionCard(sess, idx, total) {
             ${isCouncil ? `<span class="council-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;color:#f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="${escHtml(t('session_council_badge_tip')||'Council debate persona session')}">🎭 ${escHtml(t('session_council_badge')||'Council')}</span>` : ''}
             ${llmDisplay ? `<span class="backend-badge" style="font-size:10px;border:1px solid var(--accent2,#60a5fa);padding:2px 7px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);font-weight:600;" title="LLM/backend: ${escHtml(llmDisplay)}">${escHtml(llmDisplay)}</span>` : ''}
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
-            ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
+            ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
@@ -3209,7 +3241,7 @@ function renderSessionDetail(sessionId) {
           ${computeRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--accent,#a855f7);padding:2px 8px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent,#a855f7);font-weight:600;" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
           <!-- datawatch-app parity (D66a, 2026-10-06 gap list rows 7-8):
                Agent/Chrome badges previously only on the list card. -->
-          ${sess?.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ worker</span>` : ''}
+          ${sess?.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
           ${sess?.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
               badge here since the Channel/ACP tab below already conveys
@@ -3291,6 +3323,14 @@ function renderSessionDetail(sessionId) {
   const sessOutputMode = sess?.output_mode || 'terminal';
   const tmuxArea = document.getElementById('outputAreaTmux');
   if (tmuxArea && isActive && !isSameSession && sessOutputMode === 'terminal') {
+    // GH#192 D10a — a freshly-started/-restarted session's tmux pane is
+    // cold-starting, so it gets a longer min/max splash dwell than a
+    // reconnect to an already-running session. One-shot flag, consumed
+    // here (cleared immediately so a later re-render of the SAME session,
+    // e.g. after a daemon restart, doesn't keep treating it as "new").
+    state._termIsNewSession = state._justStartedSessionId === sessionId;
+    state._justStartedSessionId = null;
+    state._termSplashMountedAt = Date.now();
     tmuxArea.innerHTML = `<div id="termLoadingSplash" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;color:var(--text2);gap:8px;">
       <canvas id="termLoadingCanvas" style="width:100%;height:100%;position:absolute;inset:0;"></canvas>
       <div style="position:relative;font-size:12px;font-weight:600;letter-spacing:2px;color:#00E5A0;" id="termLoadingText">${(t('term_connecting')||'Connecting to session…').toUpperCase()}</div>
@@ -3303,7 +3343,18 @@ function renderSessionDetail(sessionId) {
     // retry watchdog's own cleanup).
     const termLoadingCanvas = document.getElementById('termLoadingCanvas');
     if (termLoadingCanvas && window.DWSplashArt) window.DWSplashArt.startSessionLoading(termLoadingCanvas);
-    // Retry logic: if no pane_capture arrives within 5s, re-subscribe
+    // GH#192 D10a — two-stage status text: "Connecting…" immediately,
+    // then "Waiting for terminal…" if the first frame still hasn't
+    // arrived after a short delay. Independent of the dwell/watchdog
+    // timers below — purely a text swap.
+    setTimeout(() => {
+      if (state._termHasContent || state._termSessionId !== sessionId) return;
+      const textEl = document.getElementById('termLoadingText');
+      if (textEl) textEl.textContent = (t('term_waiting_for_terminal') || 'Waiting for terminal…').toUpperCase();
+    }, 1200);
+    // Retry/failure-budget watchdog — type-aware total (see
+    // startTermConnectWatchdog): 15s for a cold-starting new session,
+    // 8s for a reconnect to an already-running one.
     startTermConnectWatchdog(sessionId);
   }
 
@@ -3432,10 +3483,20 @@ function renderSessionDetail(sessionId) {
   if (state._pendingAttachments && state._pendingAttachments.length) _refreshAttachmentPreview();
 }
 
+// GH#192 D10a — total failure budget before showing the "Unable to
+// connect" error+Retry UI: 15s for a freshly-started/-restarted session
+// (tmux cold-starting), 8s for a reconnect to an already-running one.
+// The "new" case's numbers are unchanged from before this change
+// (3 retries x 5000ms = 15000ms) -- only the "existing" case is new
+// behavior, and only the min-dwell-on-success / two-stage text are new
+// for both; this intentionally still ends in the same error+Retry UI
+// rather than silently giving up and showing a blank terminal, so a
+// genuinely broken session doesn't regress to a silent hang.
 function startTermConnectWatchdog(sessionId) {
   if (state._termWatchdog) clearTimeout(state._termWatchdog);
-  const MAX_RETRIES = 3;
-  const TIMEOUT_MS = 5000;
+  const isNew = state._termIsNewSession;
+  const MAX_RETRIES = isNew ? 3 : 2;
+  const TIMEOUT_MS = isNew ? 5000 : 4000;
   state._termWatchdog = setTimeout(() => {
     // If content arrived, stop
     if (state._termHasContent) return;
@@ -3472,6 +3533,25 @@ function dismissTermSplash() {
   const splash = document.getElementById('termLoadingSplash');
   if (splash) splash.remove();
   state._termHasContent = true; // prevent watchdog from firing
+}
+
+// GH#192 D10a — minimum dwell before the splash can be dismissed on
+// SUCCESS (pane_capture content actually arrived), so a very fast
+// reconnect can't flash it for under 100ms. 2000ms for a freshly-
+// started/-restarted session, 500ms for a reconnect to an already-
+// running one. Does not apply to dismissTermSplash() (the explicit
+// "Use without terminal" button) or the watchdog's own error path --
+// both are deliberate operator/failure outcomes, not a normal connect.
+function _dismissTermLoadingSplashWithMinDwell() {
+  const minDwell = state._termIsNewSession ? 2000 : 500;
+  const elapsed = Date.now() - (state._termSplashMountedAt || 0);
+  const finish = () => {
+    const splash = document.getElementById('termLoadingSplash');
+    if (splash) splash.remove();
+    if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+  };
+  if (elapsed < minDwell) setTimeout(finish, minDwell - elapsed);
+  else finish();
 }
 
 function changeTermFontSize(delta) {
@@ -3868,9 +3948,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
     const capLines = pending.lines || [];
     if (capLines.length > 0) {
       try {
-        const splash = document.getElementById('termLoadingSplash');
-        if (splash) splash.remove();
-        if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+        _dismissTermLoadingSplashWithMinDwell();
         term.reset();
         term.write(capLines.join('\r\n'));
         state._termHasContent = true;
@@ -4829,6 +4907,9 @@ function _doRestartSession(fullId) {
   apiFetch('/api/sessions/restart', { method: 'POST', body: JSON.stringify({ id: fullId }) })
     .then(updated => {
       updateSession(updated);
+      // GH#192 D10a — a restart relaunches tmux, same cold-start profile
+      // as a freshly-started session.
+      state._justStartedSessionId = updated.full_id;
       navigate('session-detail', updated.full_id);
       showToast('Session restarted', 'success', 2000);
     })
@@ -6927,6 +7008,11 @@ function submitNewSession() {
       // Seed local state immediately so the detail view renders before the WS broadcast arrives.
       updateSession(sess);
       closeNewSessionModal();
+      // GH#192 D10a — a freshly-started session's tmux pane is cold-
+      // starting, so the terminal-connect splash gets a longer min/max
+      // dwell than a reconnect to an already-running session. Consumed
+      // once by the splash-mount code in renderSessionDetail.
+      state._justStartedSessionId = sess.full_id;
       navigate('session-detail', sess.full_id);
     })
     .catch(err => {
@@ -8296,7 +8382,7 @@ function renderSettingsView() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
                   Join Beta on Google Play
                 </a>
-                <div style="font-size:10px;color:var(--text2);margin-top:4px;">Android: closed testing — join the tester group above, then <a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">opt in on Play</a> and stay in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple's beta review.</div>
+                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing — join the tester group above, then {opt_in} and stay in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple\'s beta review.').replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')}</div>
               </div>
             </div>
           </div>
@@ -17842,11 +17928,17 @@ window.forcePWAUpdate = async function() {
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
 
+// GH#192 D61a — shows only watched-session alerts while the Sessions
+// view's watch filter (state.sessionWatchFilter) is on, instead of always
+// showing the server-wide total. state.sessionWatchFilter is the only
+// existing global "watched" concept in the app (Alerts has no filter of
+// its own) — watchedSessions itself is already shared/global state.
 function updateAlertBadge() {
   const badge = document.getElementById('alertBadge');
   if (!badge) return;
-  if (state.alertUnread > 0) {
-    badge.textContent = state.alertUnread > 99 ? '99+' : String(state.alertUnread);
+  const count = state.sessionWatchFilter ? (state.alertWatchedUnread || 0) : state.alertUnread;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
     badge.style.display = 'inline';
   } else {
     badge.style.display = 'none';
@@ -21032,6 +21124,7 @@ function renderAlertsView() {
 
     state.alertUnread = 0;
     state.alertSystemUnread = 0;
+    state.alertWatchedUnread = 0;
     updateAlertBadge();
     fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
 
@@ -22420,6 +22513,7 @@ function renderStatsData(el, data) {
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
     html += `<div class="stat-card"><div class="stat-label">${t('stats_daemon')||'Daemon'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+        ${data.hostname ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('stats_hostname')||'Hostname'}</span><span>${escHtml(data.hostname)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Memory</span><span>${fmt(data.daemon_rss_bytes)} RSS</span></div>
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Goroutines</span><span>${data.goroutines}</span></div>
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">File descriptors</span><span>${data.open_fds || 0}</span></div>
@@ -22432,6 +22526,7 @@ function renderStatsData(el, data) {
     const hasTLS = data.tls_enabled && tlsPort > 0;
     html += `<div class="stat-card"><div class="stat-label">${t('stats_infrastructure')||'Infrastructure'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+        ${data.daemon_version ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('stats_daemon_version')||'Version'}</span><span>${escHtml(data.daemon_version)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTP</span><span>http://${host}:${httpPort}${hasTLS ? ' <span style="color:var(--text2);">(→ HTTPS)</span>' : ''}</span></div>
         ${hasTLS ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTPS</span><span style="color:var(--success);">https://${host}:${tlsPort} <span style="color:var(--success);">🔒</span></span></div>` : ''}
         ${!hasTLS && data.tls_enabled ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">TLS</span><span style="color:var(--success);">https://${host}:${httpPort} 🔒</span></div>` : ''}
@@ -23469,7 +23564,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load initial unread alert count
   fetch('/api/alerts', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
-    .then(data => { if (data) { state.alertUnread = data.unread_count || 0; updateAlertBadge(); } })
+    .then(data => {
+      if (!data) return;
+      state.alertUnread = data.unread_count || 0;
+      // GH#192 D61a — the plain unread_count field has no per-session
+      // breakdown; derive the watched-only seed from the full alerts
+      // array the same endpoint already returns.
+      state.alertWatchedUnread = (data.alerts || []).filter(a =>
+        !a.read && a.session_id && state.watchedSessions.has(a.session_id)
+      ).length;
+      updateAlertBadge();
+    })
     .catch(() => {});
 
   // v5.26.8 — cache whisper-enabled so mic-button affordances on
@@ -28549,7 +28654,7 @@ window.councilOpenLiveWatch = function(runID, init) {
     const el = document.createElement('details');
     el.open = true;
     el.style.cssText = 'margin:2px 0;border:1px solid var(--border);border-radius:4px;background:var(--bg2);';
-    el.innerHTML = `<summary style="cursor:pointer;padding:3px 6px;font-family:monospace;font-size:10px;${color ? 'color:'+color+';' : ''}">${escHtml(label)}</summary><div id="${blockId}" style="padding:6px 8px;font-family:var(--font,sans-serif);font-size:11px;line-height:1.5;"><em style="color:var(--text2);">Rendering…</em></div>`;
+    el.innerHTML = `<summary style="cursor:pointer;padding:3px 6px;font-family:monospace;font-size:10px;${color ? 'color:'+color+';' : ''}">${escHtml(label)}</summary><div id="${blockId}" style="padding:6px 8px;font-family:var(--font,sans-serif);font-size:11px;line-height:1.5;"><em style="color:var(--text2);">${escHtml(t('council_rendering')||'Rendering…')}</em></div>`;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     window._ensureMarkdownLibs().then(() => {
@@ -28637,13 +28742,13 @@ window.councilViewRun = function(id) {
       const personaBlocks = Object.entries(rd.responses || {}).map(([persona, text]) => `
         <details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);" open>
           <summary style="cursor:pointer;padding:6px 10px;font-weight:600;">${escHtml(persona)}</summary>
-          <div class="council-run-md" data-persona="${escHtml(persona)}" data-round="${rd.index}" style="padding:10px;border-top:1px solid var(--border);"><em style="color:var(--text2);">Rendering…</em></div>
+          <div class="council-run-md" data-persona="${escHtml(persona)}" data-round="${rd.index}" style="padding:10px;border-top:1px solid var(--border);"><em style="color:var(--text2);">${escHtml(t('council_rendering')||'Rendering…')}</em></div>
         </details>`).join('');
       return `<details style="margin-bottom:10px;" open>
         <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:4px 0;">Round ${rd.index + 1}</summary>
         ${personaBlocks}
       </details>`;
-    }).join('') || '<em style="color:var(--text2);">No rounds recorded.</em>';
+    }).join('') || `<em style="color:var(--text2);">${escHtml(t('council_no_rounds')||'No rounds recorded.')}</em>`;
     modal.innerHTML = `<div class="response-modal" id="councilRunViewerPanel" style="max-width:min(860px,95vw);max-height:90vh;width:95vw;">
       <div class="response-modal-header">
         <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;" title="${escHtml(run.proposal||'')}">${escHtml((run.proposal||'').slice(0,80))}${(run.proposal||'').length>80?'…':''}</span>
@@ -28653,12 +28758,12 @@ window.councilViewRun = function(id) {
         <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">${escHtml(run.mode||'')} · ${escHtml((run.personas||[]).join(', '))}${run.cancelled?' · <span style="color:var(--error);">cancelled</span>':''}</div>
         ${roundsHtml}
         ${run.consensus ? `<details open style="margin-top:14px;border-top:2px solid var(--success,#22c55e);padding-top:10px;">
-          <summary style="cursor:pointer;font-weight:700;color:var(--success,#22c55e);">Consensus</summary>
-          <div class="council-run-md" data-field="consensus" style="padding:8px 0;"><em style="color:var(--text2);">Rendering…</em></div>
+          <summary style="cursor:pointer;font-weight:700;color:var(--success,#22c55e);">${escHtml(t('council_consensus')||'Consensus')}</summary>
+          <div class="council-run-md" data-field="consensus" style="padding:8px 0;"><em style="color:var(--text2);">${escHtml(t('council_rendering')||'Rendering…')}</em></div>
         </details>` : ''}
         ${run.dissent ? `<details open style="margin-top:10px;border-top:1px solid var(--warning,#f59e0b);padding-top:10px;">
-          <summary style="cursor:pointer;font-weight:700;color:var(--warning,#f59e0b);">Dissent</summary>
-          <div class="council-run-md" data-field="dissent" style="padding:8px 0;"><em style="color:var(--text2);">Rendering…</em></div>
+          <summary style="cursor:pointer;font-weight:700;color:var(--warning,#f59e0b);">${escHtml(t('council_dissent')||'Dissent')}</summary>
+          <div class="council-run-md" data-field="dissent" style="padding:8px 0;"><em style="color:var(--text2);">${escHtml(t('council_rendering')||'Rendering…')}</em></div>
         </details>` : ''}
       </div>
     </div>`;
