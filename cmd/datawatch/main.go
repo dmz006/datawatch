@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.13"
+var Version = "8.63.14"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2341,6 +2341,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// instance that /api/chat/completions' final SSE chunk carries a
 	// usage object; now wired the same way as ollama above.
 	openwebui.SetUsageFn(func(tmuxSession string, tokensIn, tokensOut int) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		_ = mgr.AddUsage(sessID, tokensIn, tokensOut, session.CostRate{})
+	})
+	// B98 — gemini's Launch is now Go-mediated (gemini/backend.go) so it
+	// can read --output-format json's structured result instead of a
+	// raw shell invocation with no usage signal at all.
+	gemini.SetUsageFn(func(tmuxSession string, tokensIn, tokensOut int) {
 		sessID := strings.TrimPrefix(tmuxSession, "cs-")
 		_ = mgr.AddUsage(sessID, tokensIn, tokensOut, session.CostRate{})
 	})
