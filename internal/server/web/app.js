@@ -24467,7 +24467,9 @@ function renderDashboardView() {
         <button id="dashAddCardBtn" onclick="window._dashShowAddPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:6px;">+ Card</button>
         <button id="dashEditBtn" onclick="window._dashStartEdit()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:4px;">✎ Edit</button>
       </div>
-      <div class="dboard-card-grid" id="dashCardGrid"></div>
+      <div class="dboard-card-grid" id="dashCardGrid">
+        <div style="grid-column:1/-1;text-align:center;padding:40px 16px;">${loadingEyeBlock(null, 'panel')}</div>
+      </div>
       <!-- Expand overlay (sits outside the grid, overlays the whole view) -->
       <div id="dashExpand" class="dboard-expand hidden">
         <div class="dboard-expand-header">

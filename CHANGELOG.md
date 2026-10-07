@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.10 — fix(pwa): GH#186 follow-up — Dashboard showed no loading state at all
+
+### Fixed
+- Found via a real browser spot-check by the datawatch-app peer (Playwright, response delays held open, canvas-diffed to confirm the animation actually runs): every GH#186 location except the Dashboard showed the eye correctly. The Dashboard's `#dashCardGrid` container rendered completely **empty** — no cards, no eye, nothing — while `GET /api/dashboard/layout` was pending, because `renderDashboardView()`'s initial template left the grid div blank and only individual card bodies (populated later by `_dashBuildGrid`) ever contained a `loadingEyeBlock()`. Fixed by giving the grid itself an immediate top-level loading-eye block (40px, spans the full 12-column grid via `grid-column:1/-1`), cleanly replaced once `_dashBuildGrid` runs — same fix shape as the already-correct Automata list/detail views, which set their loading block directly in the container before the fetch starts.
+- Also confirmed (code review, not live): the issue's "detail Graph tab" item isn't a separate loading state to fix — the PWA's dependency-graph section renders synchronously as part of the single PRD-detail fetch, which already shows the eye in `#automataDetailBody` before that fetch resolves (matches the Automata list's own correct pattern). No code change needed there.
+
 ## v8.63.9 — feat(pwa): GH#186 — animated-eye content-loading state (app parity)
 
 ### Added
