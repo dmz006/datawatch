@@ -212,6 +212,13 @@ func (m *Manager) Stop() {
 
 func (m *Manager) renewLoop() {
 	defer m.wg.Done()
+	// Check once immediately on startup — without this, a freshly
+	// enabled acme.enabled:true with no existing cert would sit idle for
+	// up to 6h before ever issuing anything, which is wrong for both the
+	// first-time-setup case and the "daemon restarted while a cert was
+	// already close to expiry" case.
+	m.checkAndRenewAll()
+
 	const tick = 6 * time.Hour
 	t := time.NewTicker(tick)
 	defer t.Stop()
