@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.66.2 — feat(pwa): BL315 — PWA install prompt reinstated, backlog/docs staleness corrected
+
+### Added
+- Operator asked to validate "the PWA already has fullscreen" against BL315's backlog entry. `git log -S` traced the real history: the full feature (native `requestFullscreen()` toggle + `beforeinstallprompt` install button) shipped in v7.2.3, then went through two further *deliberate* but never-backlog-recorded iterations — `requestFullscreen()` → `window.resizeTo()` (~2h later: true fullscreen was unwanted stacked on top of an already-chromeless installed PWA) → the current CSS `.pwa-expanded` class toggle (bundled into an unrelated later commit: `resizeTo()` silently fails in a regular, non-popup browser tab; the CSS approach works in both a tab and the installed PWA). The `resizeTo()` commit also deleted the install-prompt half entirely ("no longer needed") and it was never brought back.
+- Re-added the install prompt: `beforeinstallprompt`/`appinstalled` listeners + a **⬇ Install** header button. The handler bodies are factored into named functions (`_onBeforeInstallPrompt`/`_onAppInstalled`) specifically so the logic is directly unit-testable — `beforeinstallprompt` can't be realistically simulated in either the Node test sandbox (which stubs `addEventListener` as a no-op) or a scripted Chromium e2e run (opaque per-browser install-eligibility heuristics).
+- `docs/pwa-setup.md` corrected — it had described true native fullscreen for two implementation generations after the behavior silently changed underneath it. `docs/plans/README.md`'s BL315 entry (which had been sitting in "Active work" despite having actually shipped in v7.2.3) rewritten with the real, verified history and closed.
+- 5 new unit tests (`app-install-prompt.test.js`); `scripts/test-stories/pwa/TS-149.mjs` extended to check the install button's present-but-hidden starting state (the real end-to-end install flow is not, and cannot reliably be, exercised by an automated test — same honesty standard as elsewhere in this project's testing tracker for browser-heuristic-gated behavior).
+
 ## v8.66.1 — fix(autonomous): PRD scratch artifacts no longer land unmanaged in the shared project repo
 
 ### Fixed

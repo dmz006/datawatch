@@ -29016,6 +29016,46 @@ function toggleFullscreen() {
   if (state && state.termFitAddon) { try { state.termFitAddon.fit(); } catch(_) {} }
 }
 
+// ── BL315 — PWA install prompt (2026-10-07, reinstated) ─────────────────────
+// Chrome/Edge/Android fire 'beforeinstallprompt' when the site qualifies as
+// an installable PWA; intercepting it (preventDefault) and triggering it
+// from our own button, instead of leaving it to the browser's own small
+// address-bar icon, is purely a discoverability improvement — the browser
+// already offers installation either way. Safari/iOS never fires this
+// event (its own Share-sheet "Add to Home Screen" flow is separate and
+// needs no JS hook), so the button simply never appears there.
+let _pwaInstallPrompt = null;
+
+// Logic factored out of the addEventListener callbacks below so it's
+// directly unit-testable (app.js's test sandbox stubs addEventListener
+// as a no-op, same as a real headless DOM would for an event neither
+// Node nor jsdom can synthesize realistically).
+function _onBeforeInstallPrompt(e) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  _pwaInstallPrompt = e;
+  const btn = document.getElementById('headerInstallBtn');
+  if (btn) btn.style.display = '';
+}
+
+function _onAppInstalled() {
+  _pwaInstallPrompt = null;
+  const btn = document.getElementById('headerInstallBtn');
+  if (btn) btn.style.display = 'none';
+}
+
+window.addEventListener('beforeinstallprompt', _onBeforeInstallPrompt);
+window.addEventListener('appinstalled', _onAppInstalled);
+
+function installPWA() {
+  if (!_pwaInstallPrompt) return;
+  _pwaInstallPrompt.prompt();
+  _pwaInstallPrompt.userChoice.then(() => {
+    _pwaInstallPrompt = null;
+    const btn = document.getElementById('headerInstallBtn');
+    if (btn) btn.style.display = 'none';
+  });
+}
+
 // ── BL357 — Work Queue ───────────────────────────────────────────────────────
 function loadWorkQueue() {
   const el = document.getElementById('workQueueList');

@@ -63,35 +63,37 @@ http://hostname.your-tailnet.ts.net:8080
 
 ---
 
-## Fullscreen Mode (any browser)
+## Expand-to-Window Mode (any browser)
 
-The header bar has a **⛶** (fullscreen) button that hides the browser chrome and puts the PWA into true fullscreen. Click it again or press **Esc** to exit. Works in desktop and mobile browsers without installing anything.
+The header bar has a window-expand button (⛶ when collapsed, ▮ when expanded) that removes the app's normal 480px card-width cap so it fills the whole browser window. Click it again to restore the normal width. Works in both a regular browser tab and an installed standalone PWA, without installing anything.
+
+This is a CSS layout change, not the browser's native fullscreen mode (`requestFullscreen()`) — it doesn't hide the address bar or tabs. An earlier version used true native fullscreen, but that took over the entire browser chrome on top of an already-chromeless installed PWA, which was undesirable; a later version tried `window.resizeTo()` instead, but that's silently blocked in a regular (non-popup) browser tab. The current CSS-toggle approach is the one that actually works everywhere.
 
 ---
 
 ## Installing as a Standalone App
 
-When opened in a browser that supports PWA install (Chrome on Android/desktop, Edge on desktop), the header shows a **⬇ Install** button automatically. Clicking it triggers the browser's native install flow, after which the app opens fullscreen without any browser UI.
+When opened in a browser that supports PWA install (Chrome on Android/desktop, Edge on desktop), the header shows a **⬇ Install** button once the browser decides the site qualifies (fires its own `beforeinstallprompt` event — usually after a brief delay or a bit of engagement, not necessarily on the very first load). Clicking it triggers the browser's native install flow. This button is purely a discoverability convenience — the browser always offers its own generic install affordance (an icon in the address bar, or a menu item) regardless of whether this button has appeared yet.
 
 ### Android (Chrome)
 
 1. Open the PWA URL in **Chrome**.
-2. Either tap **⬇ Install** in the header — or tap the three-dot menu → **Add to Home Screen**.
+2. Either tap **⬇ Install** in the header once it appears — or tap the three-dot menu → **Add to Home Screen** (always available, no need to wait for the button).
 3. Confirm and tap **Add**.
 
 ### Desktop (Chrome / Edge)
 
 1. Open the PWA URL.
-2. Click **⬇ Install** in the header — or look for the install icon in the address bar.
+2. Click **⬇ Install** in the header once it appears — or look for the install icon in the address bar.
 3. Confirm.
 
 ### iOS (Safari)
 
-1. Open the PWA URL in **Safari** (Chrome does not support PWA install on iOS).
+1. Open the PWA URL in **Safari** (Chrome does not support PWA install on iOS, and `beforeinstallprompt`/the **⬇ Install** button never appear there).
 2. Tap the **Share** button → **Add to Home Screen**.
 3. Confirm and tap **Add**.
 
-The installed app opens in standalone mode with no browser chrome. The **⛶** fullscreen button remains available inside the installed PWA.
+The installed app opens in standalone mode with no browser chrome. The header's window-expand button remains available inside the installed PWA too.
 
 ---
 

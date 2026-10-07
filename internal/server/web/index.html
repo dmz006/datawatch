@@ -100,6 +100,14 @@
       <!-- BL315 — expand toggle: removes the 480px card constraint so the UI
            fills the full browser window width (works in tab and standalone PWA). -->
       <button id="headerFullscreenBtn" onclick="toggleFullscreen()" title="Expand window" aria-label="Expand window" style="background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.7;">&#9974;</button>
+      <!-- BL315 (2026-10-07, reinstated) — Install button. Hidden by default;
+           shown on 'beforeinstallprompt' (Chrome/Edge/Android), hidden again
+           after install/dismiss. Browsers already offer their own generic
+           install affordance regardless — this is purely a discoverability
+           improvement (a visible, branded in-app button instead of a small
+           address-bar icon). Not shown on browsers that never fire the event
+           (Safari/iOS has its own separate Share-sheet install flow). -->
+      <button id="headerInstallBtn" onclick="installPWA()" title="Install app" aria-label="Install app" style="display:none;background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.85;">&#11015;</button>
       <span class="status-dot" id="statusDot" title="Long-press to reconnect + check for app update"></span>
     </header>
 
