@@ -29000,11 +29000,20 @@ window.councilAddPersonaFromForm = function() {
 // Toggles .pwa-expanded on <html> to override the @media (min-width:600px)
 // card-width constraint (480px) and make the UI fill the full browser window.
 // Works in both standalone PWA and regular browser tabs.
+//
+// 2026-10-07 (operator-reported) — persisted to localStorage so a page
+// reload or a daemon restart (browser auto-reconnect) doesn't silently
+// drop back to the collapsed layout; state only ever changes via the
+// button itself, never as a side effect of reloading.
 
-let _pwaExpanded = false;
+let _pwaExpanded = (function () {
+  try { return localStorage.getItem('cs_pwa_expanded') === '1'; } catch (_) { return false; }
+})();
 
-function toggleFullscreen() {
-  _pwaExpanded = !_pwaExpanded;
+// Applies the current _pwaExpanded value to the DOM + button — shared by
+// both the initial-load restore and the click toggle so they can never
+// drift out of sync with each other.
+function _applyPwaExpanded() {
   document.documentElement.classList.toggle('pwa-expanded', _pwaExpanded);
   const btn = document.getElementById('headerFullscreenBtn');
   if (_pwaExpanded) {
@@ -29012,6 +29021,17 @@ function toggleFullscreen() {
   } else {
     if (btn) { btn.innerHTML = '&#9974;'; btn.title = 'Expand window'; btn.style.opacity = '0.7'; }
   }
+}
+// Restore on load -- #headerFullscreenBtn is static markup in index.html,
+// already present in the DOM by the time this (non-deferred, bottom-of-
+// body) script runs, same assumption every other top-level
+// getElementById call in this file already makes.
+_applyPwaExpanded();
+
+function toggleFullscreen() {
+  _pwaExpanded = !_pwaExpanded;
+  try { localStorage.setItem('cs_pwa_expanded', _pwaExpanded ? '1' : '0'); } catch (_) {}
+  _applyPwaExpanded();
   // Notify xterm.js about the layout change so it re-fits to the new width.
   if (state && state.termFitAddon) { try { state.termFitAddon.fit(); } catch(_) {} }
 }

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.66.3 — fix(pwa): BL315 — window-expand state now persists across reload/daemon restart
+
+### Fixed
+- Operator-reported: toggling the window-expand button, then reloading the page (or the browser auto-reconnecting after a daemon restart), silently dropped back to the collapsed layout — `_pwaExpanded` was only ever an in-memory variable. Now persisted to `localStorage['cs_pwa_expanded']`, restored immediately on load (before any click), and the DOM-application logic (`_applyPwaExpanded`) is shared between the load-restore path and the click-toggle path so they can't drift out of sync. State now only ever changes via the button itself.
+- 6 new unit tests (`app-pwa-expand-persist.test.js`). One of them caught a real, separate, pre-existing gap while testing a private-browsing-mode scenario: `state.token = localStorage.getItem('cs_token')` at the very top of `app.js` has no try/catch at all, so a fully-throwing `localStorage` crashes the app before this fix's own code ever runs — not introduced by or fixed in this pass, noted for its own follow-up.
+
 ## v8.66.2 — feat(pwa): BL315 — PWA install prompt reinstated, backlog/docs staleness corrected
 
 ### Added
