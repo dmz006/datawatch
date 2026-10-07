@@ -1,9 +1,11 @@
 // BL312 S5 — aggregated fan-out endpoints for Alerts and Automata.
+// BL317 — same pattern extended to Cost, for the Dashboard's "all servers" mode.
 //
-//	GET /api/alerts/aggregated         → [{...alert, server:"name"}, ...]
+//	GET /api/alerts/aggregated          → [{...alert, server:"name"}, ...]
 //	GET /api/autonomous/prds/aggregated → [{...prd,   server:"name"}, ...]
+//	GET /api/cost/aggregated            → [{...CostSummary, server:"name"}, ...]
 //
-// Both endpoints fan out in parallel to every enabled server (cfg.Servers +
+// All three endpoints fan out in parallel to every enabled server (cfg.Servers +
 // runtime store).  Per-server failures are logged and skipped; the caller
 // always gets local data even when remotes are unreachable.
 
@@ -20,6 +22,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // handleAggregatedAlerts implements GET /api/alerts/aggregated.
@@ -152,6 +155,64 @@ func (s *Server) handleAggregatedPRDs(w http.ResponseWriter, r *http.Request) {
 					m["server"] = sv.Name
 					results = append(results, m)
 				}
+				mu.Unlock()
+			}(srv)
+		}
+		wg.Wait()
+	}
+
+	if results == nil {
+		results = []map[string]any{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+// handleAggregatedCost implements GET /api/cost/aggregated. Each entry is
+// one server's full session.CostSummary (sessions/total_tokens_in/
+// total_tokens_out/total_usd/per_backend), tagged with "server" — the
+// Dashboard sums total_usd across entries client-side rather than this
+// endpoint pre-summing, so the per-server breakdown stays available for a
+// future per-server cost view without a second endpoint.
+func (s *Server) handleAggregatedCost(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapFederationList) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var results []map[string]any
+	if s.manager != nil {
+		summary := session.SummaryFor(s.manager.ListSessions())
+		b, _ := json.Marshal(summary)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		m["server"] = "local"
+		results = append(results, m)
+	}
+
+	remotes := s.runtimeServers()
+	if len(remotes) > 0 {
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, srv := range remotes {
+			wg.Add(1)
+			go func(sv config.RemoteServerConfig) {
+				defer wg.Done()
+				item, err := fetchRemoteJSON(sv.URL, sv.Token, "/api/cost")
+				if err != nil {
+					log.Printf("[bl312] aggregated cost %s: %v", sv.Name, err)
+					return
+				}
+				m, ok := item.(map[string]any)
+				if !ok {
+					return
+				}
+				m["server"] = sv.Name
+				mu.Lock()
+				results = append(results, m)
 				mu.Unlock()
 			}(srv)
 		}

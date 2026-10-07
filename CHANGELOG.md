@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.69.0 — feat(pwa): BL317 — Dashboard "all servers" aggregation; Observer picker drops the non-functional "All" chip
+
+### Added
+- Dashboard's server picker "All" chip previously did nothing — no backing aggregation, so it silently kept showing local-only data while implying otherwise. New `GET /api/cost/aggregated` (mirrors the existing Alerts/PRDs aggregated-endpoint pattern: fans out to every enabled server, tags each entry `server`) plus reusing the existing `/api/autonomous/prds/aggregated`. `_dashFetchPRDs()`/`_dashFetchCost()` extracted as shared helpers (previously duplicated between `renderDashboardView`'s initial load and `_dashLoop`'s periodic re-fetch) so "all servers" branching lives in exactly one place for each; cost entries are summed client-side into the same shape the single-server endpoint returns.
+- Operator decision (2026-10-07): Observer's "All" chip is **not** getting equivalent aggregation — it has ~9 independent cards (eBPF, plugins, backend health, certs, envelopes, peer resources, "observer peers") including its own pre-existing cross-node concept unrelated to multi-server federation, making full fan-out a much bigger redesign with real risk of conflating two different "peer" ideas. `_serverPickerBar`/`_injectServerPickerBar` gained an `opts.hideAll` flag; Observer's picker now omits the chip entirely rather than offering a non-functional option. Dashboard is unaffected (no opts passed, same as every other picker-equipped view).
+
+### Fixed
+- Found while wiring the above: `_dash._costToday`'s 3 consumers all read `c.total_cost_usd`, but `/api/cost`'s real field is `total_usd` (and `sessions` is a count, not an array) — the Dashboard's cost display (stat bar, burn-rate strip, header widget) has rendered `$0`/hidden in every mode since whenever this was written, not just in "all servers" mode. Fixed at all 3 sites.
+- 11 new unit tests (`app-dashboard-aggregation.test.js` ×8 covering `_dashFetchPRDs`/`_dashFetchCost`/`_serverPickerBar(opts)`; `bl317_aggregated_cost_test.go` ×3 covering fan-out, tagging, and per-server failure isolation for the new endpoint).
+
 ## v8.68.0 — feat(pwa): BL317 — per-row server attribution for PRDs and Alerts
 
 ### Added

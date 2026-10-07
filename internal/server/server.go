@@ -367,6 +367,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/tailscale/acl/generate", api.handleTailscaleACLGenerate)           // BL243 Phase 3
 	apiMux.HandleFunc("/api/tailscale/auth/key", api.handleTailscaleAuthKey)                   // BL243 Phase 2
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)                                      // BL6
+	apiMux.HandleFunc("/api/cost/aggregated", api.handleAggregatedCost)                        // BL317 — Dashboard "all servers" mode
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)                                  // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)                                  // BL6 — operator override
 	// Sprint S4 (v3.8.0) — messaging + UI polish.

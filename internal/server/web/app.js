@@ -15919,13 +15919,24 @@ function testServerEntry(name, btnEl) {
 // Returns HTML for a compact server picker bar.
 // Shows "All" + "Local" + one chip per enabled remote server.
 // Hidden when no remote servers are registered.
-function _serverPickerBar() {
+function _serverPickerBar(opts) {
   const servers = (state.servers && Array.isArray(state.servers.servers)
     ? state.servers.servers
     : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
   if (!servers.length) return '';
   const active = state.activeServer || null;
-  const chips = [
+  // BL317 — Observer has no backing aggregation for its ~9 independent
+  // cards (eBPF, plugins, backend health, certs, envelopes, peer
+  // resources, and its own pre-existing "observer peers" cross-node
+  // concept, unrelated to multi-server federation) and fanning all of
+  // that out would be a much bigger redesign than Dashboard's, so its
+  // picker stays single-server-at-a-time rather than offering a
+  // non-functional "All" that would silently keep showing local-only
+  // data (operator decision, 2026-10-07).
+  const chips = (opts && opts.hideAll) ? [
+    { name: null, label: t('server_local_label') || 'Local' },
+    ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
+  ] : [
     { name: 'all', label: t('server_all_label') || 'All' },
     { name: null, label: t('server_local_label') || 'Local' },
     ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
@@ -15939,7 +15950,7 @@ function _serverPickerBar() {
 
 // Injects the server picker bar into the top of containerEl.
 // Fetches server list if not yet loaded, then re-renders via rerenderFn.
-function _injectServerPickerBar(containerEl, rerenderFn) {
+function _injectServerPickerBar(containerEl, rerenderFn, opts) {
   if (!containerEl) return;
   if (state._serverPickerLoading) return;
   if (state.servers === undefined) {
@@ -15954,7 +15965,7 @@ function _injectServerPickerBar(containerEl, rerenderFn) {
       .catch(() => { state.servers = null; state._serverPickerLoading = false; });
     return;
   }
-  const html = _serverPickerBar();
+  const html = _serverPickerBar(opts);
   if (!html) return;
   const existing = containerEl.querySelector('.server-picker-bar');
   if (existing) { existing.outerHTML = html; return; }
@@ -24109,16 +24120,13 @@ function _dashLoop(ts) {
   // Re-fetch automata every ~5s
   if (_dash._frameCount % 150 === 0 && !_dash._prdsFetching) {
     _dash._prdsFetching = true;
-    apiFetch('/api/autonomous/prds').then(d => {
-      _dash._prds = ((d && d.prds) || []).filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
-      _dash._prdsLastFetch = Date.now();
-    }).catch(() => {}).finally(() => { _dash._prdsFetching = false; });
+    _dashFetchPRDs().then(() => { _dash._prdsLastFetch = Date.now(); }).catch(() => {}).finally(() => { _dash._prdsFetching = false; });
   }
 
   // Fetch cost every ~30s
   if (_dash._frameCount % 900 === 0 && !_dash._costFetching) {
     _dash._costFetching = true;
-    apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
+    _dashFetchCost().catch(() => {}).finally(() => { _dash._costFetching = false; });
   }
 
   // Fetch heatmap data every ~60s
@@ -24888,6 +24896,40 @@ function _runtimeBadge(sess) {
   return '';
 }
 
+// BL317 — shared by renderDashboardView's initial load and _dashLoop's
+// periodic re-fetch, so "all servers" mode and the single-server shape
+// stay in exactly one place each (the pre-existing duplication between
+// those two call sites is exactly how the total_cost_usd/total_usd
+// field-name bug fixed in the same pass went unnoticed in one of the
+// two copies for as long as it did).
+function _dashFetchPRDs() {
+  const isAllServers = state.activeServer === 'all';
+  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds').then(d => {
+    const list = Array.isArray(d) ? d : ((d && d.prds) || []);
+    _dash._prds = list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+  });
+}
+
+function _dashFetchCost() {
+  const isAllServers = state.activeServer === 'all';
+  return (isAllServers ? apiFetch('/api/cost/aggregated') : apiFetch('/api/cost')).then(d => {
+    if (!isAllServers) {
+      _dash._costToday = d;
+      return;
+    }
+    // Sum each server's CostSummary into the same shape /api/cost
+    // returns for a single server, so _dashUpdateStatBar/
+    // _dashRenderBurnRate don't need to know which mode produced it.
+    const list = Array.isArray(d) ? d : [];
+    _dash._costToday = list.reduce((acc, c) => ({
+      sessions: acc.sessions + (c.sessions || 0),
+      total_tokens_in: acc.total_tokens_in + (c.total_tokens_in || 0),
+      total_tokens_out: acc.total_tokens_out + (c.total_tokens_out || 0),
+      total_usd: acc.total_usd + (c.total_usd || 0),
+    }), { sessions: 0, total_tokens_in: 0, total_tokens_out: 0, total_usd: 0 });
+  });
+}
+
 function renderDashboardView() {
   if (state.activeView !== 'dashboard') return;
   const viewEl = document.getElementById('view');
@@ -24928,17 +24970,20 @@ function renderDashboardView() {
     </div>
   `;
 
-  const prdData = _automataState.allPrds;
+  // BL317 — "all servers" mode: the _automataState.allPrds cache is
+  // populated from the single-server /api/autonomous/prds fetch
+  // elsewhere, so it's bypassed here and _dashFetchPRDs() always hits
+  // the aggregated endpoint fresh instead. See _dashFetchPRDs/
+  // _dashFetchCost (shared with the periodic re-fetch in _dashLoop).
+  const prdData = state.activeServer === 'all' ? null : _automataState.allPrds;
   if (prdData && prdData.length > 0) {
     _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
   } else {
-    apiFetch('/api/autonomous/prds').then(d => {
-      _dash._prds = ((d && d.prds) || []).filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
-    }).catch(() => {});
+    _dashFetchPRDs().catch(() => {});
   }
   if (!_dash._costFetching) {
     _dash._costFetching = true;
-    apiFetch('/api/cost').then(d => { _dash._costToday = d; }).catch(() => {}).finally(() => { _dash._costFetching = false; });
+    _dashFetchCost().catch(() => {}).finally(() => { _dash._costFetching = false; });
   }
   _dashInitNodes();
   // Load layout from server; falls back to default and calls _dashBuildGrid
@@ -24974,8 +25019,12 @@ function _dashUpdateStatBar() {
   let costStr = '';
   if (_dash._costToday) {
     const c = _dash._costToday;
-    const tot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
-      : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+    // BL317 — fixed a pre-existing field-name bug found while adding "all
+    // servers" cost aggregation: /api/cost's real field is total_usd, not
+    // total_cost_usd, and `sessions` is a count, not an array, so the old
+    // fallback branch never actually ran either -- this display has
+    // always rendered $0/hidden regardless of server mode.
+    const tot = typeof c.total_usd === 'number' ? c.total_usd : 0;
     if (tot > 0) costStr = ` · <span style="color:var(--text2);">$${tot.toFixed(2)}</span>`;
   }
   const elS = document.getElementById('dashStatSessions');
@@ -24993,8 +25042,7 @@ function _dashUpdateStatBar() {
     let brTot = 0;
     if (_dash._costToday) {
       const c = _dash._costToday;
-      brTot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
-        : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+      brTot = typeof c.total_usd === 'number' ? c.total_usd : 0;
     }
     const runningCount = running.length;
     const automataCount = (_dash._prds || []).length;
@@ -25292,8 +25340,7 @@ function _dashRenderBurnRate() {
   let html = '';
   if (_dash._costToday) {
     const c = _dash._costToday;
-    const tot = typeof c.total_cost_usd === 'number' ? c.total_cost_usd
-      : (Array.isArray(c.sessions) ? c.sessions.reduce((n, s) => n + (s.est_cost_usd || 0), 0) : 0);
+    const tot = typeof c.total_usd === 'number' ? c.total_usd : 0;
     if (tot > 0) {
       html += `<div style="color:var(--success,#10b981);font-weight:700;">$${tot.toFixed(2)}</div><div style="font-size:8px;opacity:0.6;">today</div>`;
     }
@@ -25577,7 +25624,7 @@ function renderObserverView() {
   loadKgPanel();
   renderObserverPeersCard();
   loadCommBackendsStatus(); // BL241
-  _injectServerPickerBar(view, renderObserverView); // BL312 S6
+  _injectServerPickerBar(view, renderObserverView, { hideAll: true }); // BL312 S6 / BL317
 }
 window.renderObserverView = renderObserverView;
 
