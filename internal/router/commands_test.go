@@ -1,8 +1,8 @@
 package router
 
 import (
-	"time"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -484,14 +484,36 @@ func TestParse_Capacity(t *testing.T) {
 }
 
 func TestHandleCapacity_UsesCapacityFn(t *testing.T) {
+	// Router.send() dispatches every message on its own goroutine
+	// (router.go) with no synchronization back to the caller — a fixed
+	// sleep here is a real data race (confirmed with -race), not just a
+	// timing nicety, and was observed to intermittently drop the second
+	// send under CI load. Use a WaitGroup for a deterministic wait
+	// instead, mirroring HandleTestMessage's own mutex-guarded capture
+	// (router.go) rather than inventing a new unsynchronized pattern.
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	var sent []string
-	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) { sent = append(sent, s) }}}
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+
+	wg.Add(1)
 	r.handleCapacity()
+	wg.Wait()
+
 	r.SetCapacityFunc(func() string { return "host: 1/2" })
+	wg.Add(1)
 	r.handleCapacity()
-	// send is asynchronous-safe in tests via captureBackend; give it a tick.
-	time.Sleep(50 * time.Millisecond)
+	wg.Wait()
+
+	mu.Lock()
 	joined := strings.Join(sent, "|")
+	mu.Unlock()
 	if !strings.Contains(joined, "not available") || !strings.Contains(joined, "host: 1/2") {
 		t.Fatalf("sent=%q", joined)
 	}
