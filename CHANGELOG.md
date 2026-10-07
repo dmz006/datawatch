@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.8 — fix(pwa): GH#181 — council live run log renders replies as markdown
+
+### Fixed
+- Operator decision 2026-10-05 (all three platforms): council persona replies/consensus/dissent are markdown (bold, headings, lists). The PWA's live in-progress run log (`councilOpenLiveWatch`'s SSE handler) still showed them as plain text truncated to 600/400 chars — the completed-run viewer (`councilViewRun`) already rendered markdown untruncated and collapsible, but that fix never reached the live-streaming path. New `appendMarkdown()` helper reuses `_renderMarkdownFileInto` verbatim (same `marked.js` + `DOMPurify.sanitize` path, no new sanitization code) to render each `persona_response` reply and the final `run_completed` consensus/dissent as a collapsible markdown block, matching the completed-run viewer's own UI pattern and the Android/iOS apps (datawatch-app 1.27+).
+
 ## v8.63.7 — fix(config): GH#173 — `config generate` emitted detection patterns as the literal string "[]"
 
 ### Fixed

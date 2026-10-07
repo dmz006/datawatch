@@ -27857,6 +27857,31 @@ window.councilOpenLiveWatch = function(runID, init) {
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
   };
+  // GH#181 — operator decision 2026-10-05 (all three platforms): council
+  // replies are markdown (bold, headings, lists); the live log previously
+  // truncated them to plain text (600/400 chars). Render untruncated,
+  // reusing the same marked.js + DOMPurify.sanitize path councilViewRun's
+  // completed-run viewer already uses — no new sanitization code, and the
+  // same collapsible-per-block UI the apps use.
+  const appendMarkdown = (label, text, color) => {
+    if (!log) return;
+    const blockId = 'councilLiveMd-' + Math.random().toString(36).slice(2);
+    const el = document.createElement('details');
+    el.open = true;
+    el.style.cssText = 'margin:2px 0;border:1px solid var(--border);border-radius:4px;background:var(--bg2);';
+    el.innerHTML = `<summary style="cursor:pointer;padding:3px 6px;font-family:monospace;font-size:10px;${color ? 'color:'+color+';' : ''}">${escHtml(label)}</summary><div id="${blockId}" style="padding:6px 8px;font-family:var(--font,sans-serif);font-size:11px;line-height:1.5;"><em style="color:var(--text2);">Rendering…</em></div>`;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    window._ensureMarkdownLibs().then(() => {
+      const target = document.getElementById(blockId);
+      if (target) _renderMarkdownFileInto(target, text);
+      log.scrollTop = log.scrollHeight;
+    }).catch(() => {
+      // Offline/CSP fallback — same degrade path councilViewRun uses.
+      const target = document.getElementById(blockId);
+      if (target) target.innerHTML = `<pre style="white-space:pre-wrap;margin:0;">${escHtml(text)}</pre>`;
+    });
+  };
 
   // SSE subscribe.
   try {
@@ -27873,8 +27898,7 @@ window.councilOpenLiveWatch = function(runID, init) {
           case 'round_started': append(`── round ${payload.round} ──`, '#6366f1'); break;
           case 'persona_responding': append(`  ⏳ ${payload.persona} responding...`, '#f59e0b'); break;
           case 'persona_response': {
-            const text = String(payload.text||'').slice(0, 600);
-            append(`  ✓ ${payload.persona}: ${text}${payload.text && payload.text.length > 600 ? '…' : ''}`, '#22c55e');
+            appendMarkdown(`✓ ${payload.persona}`, String(payload.text||''), '#22c55e');
             break;
           }
           case 'persona_error': append(`  ✗ ${payload.persona} ERROR: ${payload.error}`, '#ef4444'); break;
@@ -27882,8 +27906,8 @@ window.councilOpenLiveWatch = function(runID, init) {
           case 'synthesis_started': append(`◆ synthesizing...`, '#a855f7'); break;
           case 'run_completed':
             append(`✅ run completed`, '#22c55e');
-            if (payload.consensus) append(`CONSENSUS: ${String(payload.consensus).slice(0,400)}`, '#22c55e');
-            if (payload.dissent) append(`DISSENT: ${String(payload.dissent).slice(0,400)}`, '#f59e0b');
+            if (payload.consensus) appendMarkdown('CONSENSUS', String(payload.consensus), '#22c55e');
+            if (payload.dissent) appendMarkdown('DISSENT', String(payload.dissent), '#f59e0b');
             const st = document.getElementById('councilLiveStatus-' + runID);
             if (st) { st.textContent = 'completed'; st.style.background = 'rgba(99,102,241,0.2)'; st.style.color = '#6366f1'; }
             es.close(); delete window._councilLiveES[runID];
