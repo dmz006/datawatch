@@ -46,25 +46,18 @@ CVE-2023-2953
 # prior container shell access.
 CVE-2025-69720
 
-# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (6 CVEs)
+# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (2 CVEs)
 # Perl is installed as a transitive dependency (git and gnupg pull it in).
 # The datawatch service does not execute Perl scripts or call Archive::Tar.
-#   CVE-2026-42496 (CRITICAL): Archive::Tar symlink traversal during extraction.
-#     Only exploitable if Archive::Tar is called to extract a malicious tar.
-#     datawatch does not extract tar archives at runtime.
-#   CVE-2026-42497 (HIGH): Archive::Tar hardlink traversal. Same surface.
-#   CVE-2026-48962 (HIGH): perl-IO-Compress arbitrary code execution via
-#     crafted compressed input. datawatch does not decompress via IO::Compress.
-#   CVE-2026-8376 (HIGH): heap buffer overflow in Perl interpreter. Requires
-#     running attacker-supplied Perl code; no Perl execution in container.
-#   CVE-2026-9538 (HIGH): Archive::Tar memory corruption. Same as CVE-2026-42496.
+# GH#163 (2026-10-07): CVE-2026-42496, CVE-2026-42497, CVE-2026-48962, and
+# CVE-2026-8376 removed from this block — a fix is now available upstream
+# for all four (confirmed via a fresh, unignored image rescan).
+#   CVE-2026-9538 (HIGH): Archive::Tar memory corruption via crafted tar
+#     archive. Only exploitable if Archive::Tar is called to extract a
+#     malicious tar; datawatch does not extract tar archives at runtime.
 #   CVE-2026-48959 (HIGH): IO::Uncompress::Unzip CPU exhaustion via malformed
 #     zip file. datawatch does not decompress zip files via Perl at runtime;
 #     Perl is only present as a transitive dependency of git.
-CVE-2026-42496
-CVE-2026-42497
-CVE-2026-48962
-CVE-2026-8376
 CVE-2026-9538
 
 # git-lfs CVE-2025-26625 — HIGH, no fix available
@@ -162,15 +155,6 @@ CVE-2026-41992
 # write access to a directory containing symlinks. No untrusted filesystem
 # content is mounted into the container by default.
 CVE-2026-54369
-
-# perl / perl-base / perl-modules-5.36 / libperl5.36 — 3 new CVEs (CRITICAL + HIGH)
-# Perl is a transitive dependency of git/gnupg. Not executed at runtime.
-#   CVE-2026-13221 (CRITICAL): Silently incorrect results in Perl 5.x arithmetic
-#   CVE-2026-57433 (CRITICAL): Storable signed integer overflow before 3.41
-#   CVE-2026-57432 (HIGH): Integer overflow in Perl through 5.43.10
-CVE-2026-13221
-CVE-2026-57433
-CVE-2026-57432
 
 # openssh-client — 3 CVEs (CRITICAL + HIGH, fix_deferred by Debian)
 # openssh-client is installed for git SSH transport. All SSH remotes are
@@ -327,22 +311,6 @@ CVE-2026-96512
 # connection, so the flawed code path is never reached. Blocked v8.35.0's
 # release CI (containers/stats-cluster). Reviewed 2026-09-29.
 CVE-2026-84782
-
-# libpcre2-8-0 — CVE-2026-103111 (affected, no fix in bookworm 10.42-1+deb12u1,
-# verified as the mirror's current candidate — not yet backported at all).
-# Out-of-bounds WRITE (memory-corruption primitive, not just a read) via a
-# crafted regular expression PATTERN (not crafted input text — the
-# attacker needs to control the pattern itself, compiled/run through
-# PCRE2). Blocked v8.38.0's release CI (containers/agent-base).
-# CAVEAT (2026-09-30): same shared-foundation concern as the libexpat1
-# entry above — whether any agent-* runtime ever compiles a regex pattern
-# derived from untrusted/LLM-influenced input (e.g. a prompt-injected
-# search pattern) was NOT independently traced before suppressing, only
-# asserted by pattern-matching this file's existing entries. This is the
-# higher-concern of the two new entries given OOB-write is memory
-# corruption, not just a DoS — prioritize tracing this one first on
-# re-review.
-CVE-2026-103111
 
 # python3.11 / libpython3.11-* — CVE-2026-19553 (HIGH, no fix in bookworm,
 # "Fixed Version" column blank in the trivy scan output). Affects

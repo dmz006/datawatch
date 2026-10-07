@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.2 — chore(security): GH#163 — remove 8 stale .trivyignore CVE suppressions
+
+### Security
+- Removed 8 CVE suppressions from `.trivyignore` whose fixes are now available upstream, confirmed by a fresh `--no-cache --pull` rescan of every shipped image without `.trivyignore` applied (the `image-refresh.yaml` automation's `recheck-ignored-cves` job, which had already opened PR #185 with this exact change — applied by hand here instead of merging it, since #185 was opened against `main` back at v8.39.2 and conflicts with current `main`): `CVE-2026-103111` (whole `libpcre2-8-0` block removed), `CVE-2026-13221`/`CVE-2026-57433`/`CVE-2026-57432` (whole 3-CVE perl block removed), `CVE-2026-42496`/`CVE-2026-42497`/`CVE-2026-48962`/`CVE-2026-8376` (trimmed from the remaining perl block — `CVE-2026-9538` is still unfixed and stays suppressed).
+- Closed the now-superseded auto-generated PRs #185, #175, #171 (`auto/cve-cleanup-*`) — all three were stale, conflicting duplicates of this same cumulative scan.
+
 ## v8.63.1 — fix(inference): GH#179 — redact literal api_key_ref on every LLM read path
 
 ### Security
