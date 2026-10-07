@@ -383,6 +383,20 @@ func SetActiveBackend(b llm.Backend) {
 	}
 }
 
+// SetAPIKey updates the active backend's API key in place. NewInteractive
+// is called during early backend registration (cmd/datawatch/main.go),
+// well before the secrets store exists and secrets.ResolveConfig runs --
+// a config value of "${secret:name}" would otherwise be baked into the
+// backend's apiKey field verbatim and sent as a literal, invalid bearer
+// token forever (live-verified: produced a real 401 from a real OpenWebUI
+// instance before this setter existed). The caller re-applies the
+// now-resolved cfg.OpenWebUI.APIKey after ResolveConfig succeeds.
+func SetAPIKey(key string) {
+	if activeBackend != nil {
+		activeBackend.apiKey = key
+	}
+}
+
 // SendMessageOWUI routes input through the Go HTTP conversation manager
 // instead of tmux send-keys. Returns true if handled, false to fall back to tmux.
 func SendMessageOWUI(tmuxSession, text string) bool {

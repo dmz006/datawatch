@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.15 — fix(llm): B99 — openwebui's api_key secret ref never resolved, baked in literally at startup
+
+### Fixed
+- B99: configuring `openwebui.api_key: "${secret:name}"` (the documented, encouraged pattern per the Secrets-Store Rule) never actually worked — `openwebui.NewInteractive(...)` is constructed in `cmd/datawatch/main.go` during early backend registration, hundreds of lines before `secretsStore` exists or `secrets.ResolveConfig` runs, so the backend's `apiKey` field permanently held the literal, unresolved `"${secret:name}"` string and every real request sent it as a bearer token. Found while wiring a real OpenWebUI instance's API key for B98's usage-tracking live-verification: the live chain threw a real `401 Unauthorized` from a real OpenWebUI instance (`http://datawatch:3000`) even though the exact same key worked fine via a direct `curl`.
+- Fixed with a new `openwebui.SetAPIKey(key)`, called in `main.go` right after `secrets.ResolveConfig` succeeds, re-applying the now-resolved value to the already-registered backend instance (same package-level-setter shape as `SetChatEmitter`/`SetUsageFn`, not a constructor-ordering rewrite, since `secretsStore`'s own construction depends on `httpServer`/`agentMgr` existing — moving it earlier isn't a small change). Live re-verified end to end afterward: a real `openwebui` session now gets a real response from the real instance and reports real `tokens_in`/`tokens_out` (16/28 on the test turn) — both this fix and B98's openwebui usage-tracking fix (v8.63.13) working together correctly in production for the first time.
+- Scope note: this specific bug only affects `openwebui.api_key` today (the only LLM-backend credential field using the generic `${secret:name}` pattern so far); other backends' config fields (`aider.binary`, `goose.binary`, etc.) aren't secrets and aren't affected. Worth a follow-up sweep if another backend ever grows a secret-backed credential field.
+
 ## v8.63.14 — fix(llm): B98 — gemini Go-mediated Launch + real OpenWebUI pointed at existing compute node
 
 ### Fixed

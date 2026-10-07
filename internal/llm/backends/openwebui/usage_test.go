@@ -76,6 +76,32 @@ func TestSendAndStream_NoUsageChunkNeverCallsUsageFn(t *testing.T) {
 	}
 }
 
+func TestSetAPIKey_UpdatesActiveBackend(t *testing.T) {
+	// SetAPIKey exists specifically because NewInteractive is called long
+	// before secrets.ResolveConfig runs (cmd/datawatch/main.go) -- a
+	// "${secret:name}" api_key would otherwise be baked in verbatim.
+	// Live-verified: produced a real 401 from a real OpenWebUI instance
+	// before this setter existed.
+	b := NewInteractive("http://localhost:3000", "${secret:openwebui_api_key}", "llama3")
+	defer func() { activeBackend = nil }()
+	SetActiveBackend(b)
+
+	ib := b.(*InteractiveBackend)
+	if ib.apiKey != "${secret:openwebui_api_key}" {
+		t.Fatalf("precondition: apiKey = %q", ib.apiKey)
+	}
+
+	SetAPIKey("sk-real-resolved-key")
+	if ib.apiKey != "sk-real-resolved-key" {
+		t.Errorf("apiKey after SetAPIKey = %q, want the resolved value", ib.apiKey)
+	}
+}
+
+func TestSetAPIKey_NoActiveBackendIsNoop(t *testing.T) {
+	activeBackend = nil
+	SetAPIKey("anything") // must not panic
+}
+
 func TestSetUsageFn(t *testing.T) {
 	usageFn = nil
 	defer func() { usageFn = nil }()

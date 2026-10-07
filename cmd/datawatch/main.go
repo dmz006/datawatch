@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.14"
+var Version = "8.63.15"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3615,6 +3615,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] config secret ref resolution: %v\n", err)
 			} else {
 				fmt.Printf("[secrets] config refs resolved\n")
+				// B98-adjacent — openwebui's backend is constructed far
+				// above (before secretsStore exists), so a ${secret:name}
+				// api_key is only resolved here, after the fact. Re-apply
+				// it to the already-registered backend instance.
+				openwebui.SetAPIKey(cfg.OpenWebUI.APIKey)
 			}
 		}
 
