@@ -53,6 +53,10 @@ const (
 	defaultAPIURL      = "http://localhost:8080"
 	bridgeName         = "datawatch"
 	bridgeVersion      = "0.1.0"
+	// channelReadyHeartbeatInterval — GH#174. Bounds how long "Waiting
+	// for MCP channel…" can stay stuck after a daemon restart forgets
+	// this bridge's port.
+	channelReadyHeartbeatInterval = 60 * time.Second
 )
 
 func main() {
@@ -221,6 +225,10 @@ the request will be forwarded to the user automatically.`),
 	} else {
 		fmt.Fprintf(os.Stderr, "[datawatch-channel] notified daemon: port=%d session_id=%q\n", bridge.actualPort, cfg.sessionID)
 	}
+	// GH#174 — keep re-announcing so a daemon restart (which forgets our
+	// port) self-heals instead of leaving "Waiting for MCP channel…"
+	// stuck until this process itself is restarted.
+	go bridge.readyHeartbeat(ctx, channelReadyHeartbeatInterval)
 
 	// MCP stdio transport — claude-code spawns us and talks over stdin/stdout.
 	go func() {
@@ -422,11 +430,21 @@ func (b *bridge) httpHandler() http.Handler {
 }
 
 // notifyReady — POST /api/channel/ready so the parent learns the actual
-// listening port (relevant when DATAWATCH_CHANNEL_PORT=0). Idempotent.
+// listening port (relevant when DATAWATCH_CHANNEL_PORT=0). Only ever
+// logs once (b.notified guards the startup log line in main()'s error
+// path); the actual POST is sendReady, which is safe to call repeatedly
+// -- see readyHeartbeat below.
 func (b *bridge) notifyReady() error {
 	if !b.notified.CompareAndSwap(false, true) {
 		return nil
 	}
+	return b.sendReady()
+}
+
+// sendReady does the actual POST /api/channel/ready. handleChannelReady
+// (daemon side) just overwrites Session.ChannelReady/ChannelPort each
+// time, so calling this repeatedly is idempotent and safe.
+func (b *bridge) sendReady() error {
 	body := map[string]any{
 		"session_id": b.cfg.sessionID,
 		"port":       b.actualPort,
@@ -434,6 +452,32 @@ func (b *bridge) notifyReady() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return b.postToParent(ctx, "/api/channel/ready", body)
+}
+
+// readyHeartbeat (GH#174) — the bridge previously announced its port
+// to the daemon exactly once, at startup. If the daemon later
+// restarted, it forgot every session's ChannelReady/ChannelPort (that
+// state lives in the daemon's own session store, not the bridge), and
+// since the bridge never spoke again, "Waiting for MCP channel…" never
+// cleared -- confirmed live: 2,435 sessions, 0 with bridge_alive, ports
+// the daemon had on file didn't match what long-running bridges were
+// actually listening on. Periodically re-sending the same idempotent
+// POST self-heals within one interval regardless of root cause (daemon
+// restart, a session record getting dropped, a network blip) instead
+// of requiring the daemon to somehow rediscover already-alive bridges.
+func (b *bridge) readyHeartbeat(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := b.sendReady(); err != nil {
+				fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN heartbeat re-announce failed: %v\n", err)
+			}
+		}
+	}
 }
 
 func (b *bridge) postToParent(ctx context.Context, path string, body any) error {

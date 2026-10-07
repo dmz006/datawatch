@@ -202,6 +202,68 @@ func TestNotifyReadyIdempotent(t *testing.T) {
 	}
 }
 
+// GH#174 — notifyReady's one-shot guard meant the bridge never spoke
+// again after its first announce, so a daemon restart (which forgets
+// every session's ChannelReady/ChannelPort) left "Waiting for MCP
+// channel…" stuck forever. sendReady/readyHeartbeat bypass the guard
+// and must keep re-announcing on every tick.
+func TestReadyHeartbeat_KeepsReannouncing(t *testing.T) {
+	fp := newFakeParent(t)
+	b := newTestBridge(t, fp, "id-1", "")
+	b.actualPort = 7000
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		b.readyHeartbeat(ctx, 10*time.Millisecond)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(fp.received) >= 3 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done // confirm ctx.Done() actually stops the loop
+
+	if len(fp.received) < 3 {
+		t.Fatalf("expected at least 3 re-announces within the deadline, got %d", len(fp.received))
+	}
+	for _, r := range fp.received {
+		if r.Path != "/api/channel/ready" {
+			t.Errorf("heartbeat posted to unexpected path %q", r.Path)
+		}
+		if r.Body["port"].(float64) != 7000 {
+			t.Errorf("heartbeat port = %v, want 7000", r.Body["port"])
+		}
+	}
+}
+
+// Confirms the fix doesn't regress the original one-shot guard: the
+// startup notifyReady() call must still only log/flag once, but the
+// heartbeat (a separate path, sendReady) must bypass it.
+func TestNotifyReady_DoesNotBlockSubsequentHeartbeatSends(t *testing.T) {
+	fp := newFakeParent(t)
+	b := newTestBridge(t, fp, "id-1", "")
+	b.actualPort = 7000
+
+	if err := b.notifyReady(); err != nil {
+		t.Fatalf("notifyReady: %v", err)
+	}
+	if err := b.sendReady(); err != nil {
+		t.Fatalf("sendReady: %v", err)
+	}
+	if err := b.sendReady(); err != nil {
+		t.Fatalf("sendReady #2: %v", err)
+	}
+	if got := len(fp.received); got != 3 {
+		t.Errorf("expected 3 posts (1 notifyReady + 2 sendReady), got %d", got)
+	}
+}
+
 func TestPostToParent_FailsOnUnreachable(t *testing.T) {
 	// Server immediately closed → connection refused. Ensures the
 	// helper surfaces transport errors rather than panicking.

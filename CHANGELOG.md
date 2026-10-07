@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.6 — fix(channel): GH#174 — MCP channel bridges never re-register after daemon restart
+
+### Fixed
+- `cmd/datawatch-channel` (the Go MCP bridge spawned per claude-code session) announced its listening port to the daemon exactly once, at startup (`notifyReady()`, guarded by a one-shot atomic). If the daemon later restarted, it forgot every session's `ChannelReady`/`ChannelPort` (that state lives in the daemon's session store, not the bridge) — and since the bridge never spoke again, "Waiting for MCP channel…" never cleared on any client (PWA/Android/iOS). Confirmed live (reporter's diagnostics): 2,435 sessions, 0 with `bridge_alive`; ports the daemon had on file didn't match what long-running bridges were actually listening on.
+- Fixed with a periodic self-healing re-announce: the bridge now re-sends the same idempotent `POST /api/channel/ready` every 60s for its whole lifetime (new `sendReady`/`readyHeartbeat`), not just once. `handleChannelReady` already just overwrites `ChannelReady`/`ChannelPort` each call, so this is safe regardless of root cause (daemon restart, a dropped session record, a network blip) — self-heals within one interval instead of requiring the daemon to somehow rediscover already-alive bridges.
+- Not fixed (out of scope / needs its own investigation): the issue's third "likely fix" — possible duplicate bridge spawns for one session. The bridge process lifecycle is owned by Claude Code's own MCP client (this repo only ships the bridge binary, not its spawn/respawn logic), so this needs tracing on that side, not here.
+- **Deployment note**: this fixes the bridge binary (`cmd/datawatch-channel`), a separate executable from the daemon — rebuilding/restarting the daemon alone does not update already-running bridge subprocesses inside existing claude-code sessions. Those pick up the fix the next time their session (re)spawns a bridge. Installed the rebuilt binary to both `~/.local/bin/datawatch-channel` and `~/.datawatch/datawatch-channel` for new sessions going forward.
+
 ## v8.63.5 — fix(config): GH#180 — two config/manager sync gaps
 
 ### Fixed
