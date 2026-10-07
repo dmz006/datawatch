@@ -53,6 +53,10 @@ jobs:
         with:
           version: v2.12.2
           args: --timeout=5m
+          # See ci.yaml's identical setting for why: the action's default
+          # cache key isn't branch/commit-scoped, so this job races the
+          # one in ci.yaml (and any concurrent PR) on the same slot.
+          skip-cache: true
       - name: build (compile check)
         run: make build
 

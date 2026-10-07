@@ -43,6 +43,15 @@ jobs:
         with:
           version: v2.12.2
           args: --timeout=5m
+          # The action's default cache key isn't branch/commit-scoped, so
+          # concurrent pushes/PRs race on the same restore+save slot.
+          # Observed repeatedly this session: a corrupted restore produces
+          # spurious SA5011 (staticcheck) false positives on files the
+          # triggering commit never touched (internal/agents/*_test.go),
+          # confirmed 0 issues locally every time with the same
+          # golangci-lint version. Disabling the cache trades a little
+          # run time for eliminating this flake class entirely.
+          skip-cache: true
 
       - name: build (compile check)
         run: make build
