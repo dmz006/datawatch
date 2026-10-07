@@ -1020,6 +1020,16 @@ function dismissConnBanner(sessionId) {
   showToast('MCP connection skipped — using tmux only', 'info', 3000);
 }
 
+// GH#172 D67 — dismiss the rate-limit inline notice for this session.
+// Per-session, not persisted across reload (same lifetime as connBanner's
+// dismiss) — a fresh rate_limited state later shows the banner again.
+function dismissRateLimitBanner(sessionId) {
+  if (!state._dismissedRateLimitBanner) state._dismissedRateLimitBanner = {};
+  state._dismissedRateLimitBanner[sessionId] = true;
+  const banner = document.getElementById('rateLimitBanner');
+  if (banner) banner.remove();
+}
+
 // v6.13.9 (BL277) — yellow "Input Required" popup banner removed
 // entirely per operator request. The xterm input-bar's `.needs-input`
 // yellow border (style.css `.input-bar.needs-input`) remains as the
@@ -3047,6 +3057,22 @@ function renderSessionDetail(sessionId) {
     }
   }
 
+  // GH#172 D67 — rate-limit inline notice (Android/iOS already have this;
+  // the PWA only showed the state badge). Dismissible per-session,
+  // amber/warning styling matching the apps' RateLimitNotice/InlineNotices.
+  let rateLimitBanner = '';
+  if (stateText === 'rate_limited' && !(state._dismissedRateLimitBanner && state._dismissedRateLimitBanner[sessionId])) {
+    const resetAt = sess && sess.rate_limit_reset_at ? new Date(sess.rate_limit_reset_at) : null;
+    const resetText = resetAt && !isNaN(resetAt.getTime())
+      ? (t('rate_limit_resets_at') || 'Resets at') + ' ' + resetAt.toLocaleTimeString('en-GB', { hour12: false })
+      : (t('rate_limit_no_reset_time') || 'Waiting for the limit to clear');
+    rateLimitBanner = `<div class="rate-limit-banner" id="rateLimitBanner" style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:rgba(245,158,11,.15);border:1px solid var(--warning,#f59e0b);border-radius:6px;margin:0 0 10px;font-size:12px;color:var(--warning,#f59e0b);">
+      <span>&#9888;</span>
+      <span style="flex:1;">${escHtml(t('rate_limit_banner_text') || 'Rate limited')} — ${escHtml(resetText)}</span>
+      <button class="btn-icon" style="opacity:0.7;" onclick="dismissRateLimitBanner('${escHtml(sessionId)}')" title="${escHtml(t('btn_dismiss') || 'Dismiss')}">✕</button>
+    </div>`;
+  }
+
   // btn-label spans allow CSS to hide text on narrow screens (mobile).
   const _restartBtn = `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635;<span class="btn-label"> ${escHtml(t('action_restart')||'Restart')}</span></button>`;
   const _stopBtn = `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632;<span class="btn-label"> ${escHtml(t('action_stop')||'Stop')}</span></button>`;
@@ -3199,16 +3225,28 @@ function renderSessionDetail(sessionId) {
           <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
                are icon-only on narrow / phone screens — labels were
                wrapping awkwardly. Tooltips carry the meaning. Right-
-               justified via margin-left:auto on the leading icon so
-               they sit at the right edge of the meta row. -->
-          <button class="detail-pill-btn detail-pill-icon" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}" aria-label="${t('btn_timeline')||'Timeline'}" style="margin-left:auto;">&#128336;</button>
-          <button class="detail-pill-btn detail-pill-icon" onclick="showResponseViewer('${escHtml(sessionId)}')" title="${t('btn_view_last_response')||'View last response'}" aria-label="${t('btn_response')||'Response'}">&#128196;</button>
+               justified via margin-left:auto so they sit at the right
+               edge of the meta row.
+               2026-10-07 fix: margin-left:auto was on the Timeline
+               button alone, which — in a wrapping flex row — pushes
+               only Timeline to its line's right edge; Response (a
+               separate flex item right after it) could then fail to
+               fit on that same line and wrap onto its own line by
+               itself (reported live on a phone: lone 📄 button on a
+               blank second row). Grouping both buttons inside one inner
+               flex span makes them move as a single unit, so they
+               either fit together on the first line or wrap together. -->
+          <span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+            <button class="detail-pill-btn detail-pill-icon" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}" aria-label="${t('btn_timeline')||'Timeline'}">&#128336;</button>
+            <button class="detail-pill-btn detail-pill-icon" onclick="showResponseViewer('${escHtml(sessionId)}')" title="${t('btn_view_last_response')||'View last response'}" aria-label="${t('btn_response')||'Response'}">&#128196;</button>
+          </span>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       ${connBanner}
+      ${rateLimitBanner}
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
@@ -3655,7 +3693,19 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   const termOpts = {
     cursorBlink: true,
     fontSize: savedFontSize,
-    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    // 2026-10-07 (operator-reported, live-confirmed via a real pane capture):
+    // "JetBrains Mono"/"Fira Code" are never actually loaded anywhere (no
+    // @font-face, no Google Fonts link in this repo) -- they silently fall
+    // through to the OS default monospace (Menlo on iOS/macOS), which lacks
+    // some Miscellaneous Technical glyphs Claude Code's own CLI status line
+    // uses (confirmed: U+23F5 BLACK MEDIUM RIGHT-POINTING TRIANGLE, "bypass
+    // permissions" row's leading icon pair) -- rendered as tofu boxes.
+    // ui-monospace/Menlo/Consolas added as explicit fallbacks in case any
+    // one of them individually carries better coverage on a given platform;
+    // this is a best-effort breadth increase, not a guaranteed fix for every
+    // obscure codepoint -- a real fix needs a bundled web font with full
+    // coverage, which is a bigger, deliberate follow-up, not a quick patch.
+    fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace",
     allowProposedApi: true,
   };
   // Set configured cols for wide terminals (e.g. claude 120 cols) — container scrolls horizontally
@@ -4403,6 +4453,18 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   const refetch = `event.stopPropagation();renderSessionStatusBoard('${escHtml(sessionId)}')`;
   const docsLink = (anchor, label) => `<a href="${escHtml(anchor)}" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);margin-left:6px;font-size:11px;" onclick="event.stopPropagation()">${escHtml(label)} ↗</a>`;
   const hooksDoc = '/diagrams.html#docs/howto/claude-hooks.md';
+  // GH#172 D67 — one-time "hooks installed" toast for claude-code
+  // sessions (Android: status_hooks_installed_toast; iOS: applyDetailExtras
+  // SessionToast). Fires exactly once per session on the first poll that
+  // observes hook_health flip to 'alive', tracked in a module-level Set
+  // so a later re-render or another stale→alive flicker doesn't re-toast.
+  if (board.hook_health === 'alive') {
+    if (!state._hooksInstalledToasted) state._hooksInstalledToasted = new Set();
+    if (!state._hooksInstalledToasted.has(sessionId)) {
+      state._hooksInstalledToasted.add(sessionId);
+      showToast(t('status_hooks_installed_toast') || 'Claude Code hooks installed', 'success', 3000);
+    }
+  }
   const hookHealthBadge = (() => {
     if (board.hook_health === 'alive') {
       return `<span style="color:var(--success,#10b981);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_alive_tip')||'Hooks installed and firing — last event recent. Click to re-poll.')}" onclick="${refetch}">●</span> hooks alive`;
@@ -22931,6 +22993,61 @@ if (window.visualViewport) {
   _setAppH(); // set immediately so variables exist before first render
   window.visualViewport.addEventListener('resize', _setAppH);
 }
+
+// ── GH#172 D65 — three-finger swipe-up gesture ──────────────────────────────
+// Android: gesture/ThreeFingerSwipe.kt (64dp, 500ms debounce) -> opens the
+// server/profile picker. iOS: ServerSwitchGesture.swift (3-touch swipe up ->
+// picker dialog). Confirmed via the datawatch-app repo's own parity audit
+// (docs/parity/sections/02-sessions-list.md row 91) before building, since
+// the issue thread alone didn't say what the gesture does.
+//
+// The PWA's server picker (_serverPickerBar) is already an always-visible
+// toolbar bar (decision D2a), not a hidden dialog to "open" -- so there is
+// no overlay to reveal. Scroll the active view to top (bringing the bar
+// into view if scrolled past) and briefly highlight it instead, rather than
+// building a new overlay that doesn't match the PWA's existing design.
+(function initThreeFingerSwipeGesture() {
+  let startY = null;
+  let lastTriggerAt = 0;
+  const THRESHOLD_PX = 64;
+  const DEBOUNCE_MS = 500;
+
+  function avgTouchY(touches) {
+    let sum = 0;
+    for (let i = 0; i < 3; i++) sum += touches[i].clientY;
+    return sum / 3;
+  }
+
+  function highlightServerPicker() {
+    const bar = document.querySelector('.server-picker-bar');
+    if (!bar) return; // no remote servers registered -- nothing to highlight
+    const view = document.getElementById('view');
+    if (view) view.scrollTo({ top: 0, behavior: 'smooth' });
+    bar.classList.add('server-picker-highlight');
+    setTimeout(() => bar.classList.remove('server-picker-highlight'), 1200);
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    startY = e.touches.length === 3 ? avgTouchY(e.touches) : null;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (startY === null || e.touches.length !== 3) return;
+    const deltaY = startY - avgTouchY(e.touches); // positive = moved up
+    if (deltaY >= THRESHOLD_PX) {
+      const now = Date.now();
+      if (now - lastTriggerAt >= DEBOUNCE_MS) {
+        lastTriggerAt = now;
+        highlightServerPicker();
+      }
+      startY = null; // require a fresh 3-touch start for the next trigger
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (e.touches.length < 3) startY = null;
+  }, { passive: true });
+})();
 
 // ── Back button ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

@@ -226,6 +226,7 @@
   "btn_close": "Schließen",
   "btn_create": "Erstellen",
   "btn_delete_session": "Sitzung löschen",
+  "btn_dismiss": "Verwerfen",
   "btn_response": "Antwort",
   "btn_restart_session": "Mit gleicher Aufgabe neu starten",
   "btn_save": "Speichern",
@@ -1566,5 +1567,9 @@
   "prd_permission_mode_hint": "claude-code --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.",
   "prd_permission_mode_updated": "Permission mode updated",
   "session_chrome_badge": "Chrome",
-  "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled"
+  "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "rate_limit_banner_text": "Ratenlimit erreicht",
+  "rate_limit_no_reset_time": "Warten, bis das Limit aufgehoben wird",
+  "rate_limit_resets_at": "Wird aufgehoben um",
+  "status_hooks_installed_toast": "Claude Code Hooks installiert"
 }

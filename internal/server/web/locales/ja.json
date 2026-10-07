@@ -226,6 +226,7 @@
   "btn_close": "閉じる",
   "btn_create": "作成",
   "btn_delete_session": "セッションを削除",
+  "btn_dismiss": "閉じる",
   "btn_response": "応答",
   "btn_restart_session": "同じタスクで再起動",
   "btn_save": "保存",
@@ -1566,5 +1567,9 @@
   "prd_permission_mode_hint": "claude-code --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.",
   "prd_permission_mode_updated": "Permission mode updated",
   "session_chrome_badge": "Chrome",
-  "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled"
+  "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "rate_limit_banner_text": "レート制限中",
+  "rate_limit_no_reset_time": "制限解除を待っています",
+  "rate_limit_resets_at": "解除予定",
+  "status_hooks_installed_toast": "Claude Code フックがインストールされました"
 }

@@ -231,6 +231,7 @@
   "btn_close": "Close",
   "btn_create": "Create",
   "btn_delete_session": "Delete session",
+  "btn_dismiss": "Dismiss",
   "btn_response": "Response",
   "btn_restart_session": "Restart with same task",
   "btn_save": "Save",
@@ -1566,5 +1567,9 @@
   "testing_label": "Testing…",
   "results_label": "results",
   "delete_failed": "Delete failed.",
-  "save_failed": "Save failed."
+  "save_failed": "Save failed.",
+  "rate_limit_banner_text": "Rate limited",
+  "rate_limit_no_reset_time": "Waiting for the limit to clear",
+  "rate_limit_resets_at": "Resets at",
+  "status_hooks_installed_toast": "Claude Code hooks installed"
 }

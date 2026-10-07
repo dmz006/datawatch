@@ -2428,6 +2428,18 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .composer-status-spinner { animation: none; opacity: 0.6; }
 }
 
+/* GH#172 D65 — three-finger swipe-up gesture lands on the server picker bar. */
+.server-picker-highlight {
+  animation: dw-picker-pulse 1.2s ease-out;
+}
+@keyframes dw-picker-pulse {
+  0% { box-shadow: 0 0 0 2px var(--accent2, #60a5fa); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .server-picker-highlight { animation: none; outline: 2px solid var(--accent2, #60a5fa); }
+}
+
 /* v5.27.7 (BL208 / datawatch#26) — 3-dot "generating" indicator that
    sits below the terminal output while the session is in `running`.
    Each dot fades in/out over 600 ms with 200 ms stagger between dots,
