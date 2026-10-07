@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.65.1 — fix(pwa): GH#189 — help-link anchor mismatch, 3 missing pages, 2 doc gaps
+
+### Fixed
+- Most per-card "?" help links opened the central manual's top instead of the card's own section. Root cause: `defsLink(title)` always guessed an anchor by slugifying the card TITLE and checking it against one hardcoded file (`datawatch-definitions.md`) — wrong whenever the manual's heading wording differs from the title (true for most cards), and always wrong for the cards whose correct target is a different file entirely. Ported `DocsLinks.kt`'s full `byKey`/`channelTypes`/`llmBackends` maps and `forKey` prefix-fallback logic (BL414, the same table the Android/iOS apps already use) into `app.js` verbatim — confirmed via grep that every `settingsSectionHeader` call site's `key` argument already matches a table key one-for-one, so this was a pure lookup-table swap, not a redesign. `defsLink` now resolves by `key` first, falling back to the old title-slug guess only for a key with no table entry — never a regression.
+- 3 "?" help links (New Session modal ×2, Launch Automaton wizard) were hardcoded directly to `howto/new-session.md`/`howto/automata-wizard.md`, neither of which the server ships — fixed to the same real targets the ported table uses (`howto/sessions-deep-dive.md#4b-happy-path-pwa`, `datawatch-definitions.md#launch-automation-form`).
+- Found a 4th, related dead link while auditing these: the docs viewer's own sidebar index (`diagrams.js`) still listed `howto/prd-dag-orchestrator.md`, a file renamed to `automata-orchestrator.md` in a past release and never updated here.
+- Decided the 3 "missing pages" the issue named as filenames don't need to exist as real files — the ported table (and the 3 hardcoded-link fixes above) never reference those filenames at all anymore, so there was nothing left pointing at them to fix.
+- Added the 2 requested doc sections: a new "App-only settings" subsection under Settings → About (Face ID/biometric lock, Theme, Language — the 3 mobile-only cards that previously had no specific content, just the generic About section), and a Type Registry bullet under Settings → Automate (previously undocumented despite shipping with BL221).
+- 7 new unit tests (`app-docslinks.test.js`) pin the lookup-table fix, including the exact case that proves it (a card whose title-derived slug never matched any real heading).
+
 ## v8.65.0 — feat(pwa): GH#182 — alert deep links via manifest protocol_handlers
 
 ### Added

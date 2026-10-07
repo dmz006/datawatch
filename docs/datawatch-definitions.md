@@ -1127,6 +1127,7 @@ Automaton-related cards.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
 - **Council Mode** — multi-persona debate. 12 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy, hacker, app-hacker). Each run is **async** by default: `POST /api/council/run` returns `{id, events_path}` immediately; subscribe to `GET /api/council/runs/{id}/events` for SSE streaming as each persona responds round-by-round. The PWA shows collapsible live-watch cards per run. Cancel with `POST /api/council/runs/{id}/cancel`. Milestone messages (run started / round complete / consensus reached) push to all configured comm channels; `council.comm_firehose: true` also sends per-persona response previews. Config: `council.llm_ref` (which LLM to use), `council.max_parallel` (concurrent personas per round, default 2). **Image critique:** `POST /api/council/run` accepts optional `image_path` — the file is described by the vision service and the description is prepended to the proposal before all personas receive it (requires `vision.enabled: true`). Use case: submit an architecture diagram or UI mockup for multi-persona review. **AI persona wizard** (v6.22.3): the + Add Persona flow can draft a `system_prompt` via LLM — answer 5 interview questions; each answer has a Refine button; result is saved to `~/.datawatch/council/personas/<name>.yaml`. Re-interview any existing persona via the 🤖 button on its row. See [`howto/council-mode.md`](howto/council-mode.md).
 - **Skill Registries** — git-backed PAI-format skill manifests. Connect a registry → browse → sync. Synced skills get copied into a session's `<projectDir>/.datawatch/skills/<name>/` at spawn time when listed in the session's Skills field.
+- **Type Registry** — register custom Automaton types beyond the built-in set, each with an `id`, a display `label`, an optional `description`, and a color badge. `GET /api/autonomous/types` lists every type (built-ins first, flagged with a "built-in" chip, then custom ones); `POST /api/autonomous/types` registers or updates one. Custom types appear everywhere a built-in type does — the launch wizard's type picker, the Automaton list's filter chips, and the detail view's type badge.
 
 **See also:**
 [howto/identity-and-telos](howto/identity-and-telos.md) ·
@@ -1261,6 +1262,14 @@ A legacy bare-binary fallback is retained for pre-goreleaser releases.
 #### Orphaned tmux sessions
 
 Lists `cs-*` tmux sessions on this host that have no corresponding entry in the daemon's session store. Usually leftover from a crash or hard restart. Click a row to kill the orphan tmux session.
+
+#### App-only settings (Android/iOS)
+
+Three Settings → About cards exist only in the mobile apps, with no server-side config behind them — purely client-side device preferences, nothing to configure here on the daemon:
+
+- **Security (Face ID / biometric app lock)** — requires the user to re-authenticate with the device's biometric sensor (Face ID, Touch ID, Android fingerprint/face unlock) before the app's content is shown, each time it's foregrounded. A device-local gate on top of whatever bearer-token auth the daemon itself requires — it does not change what the daemon accepts over the network.
+- **Theme** — the app's own light/dark/system appearance setting, independent of the PWA's `localStorage['cs_theme']` toggle (each client remembers its own preference; they are not synced).
+- **Language** — the app's own UI locale picker, independent of the PWA's locale bundle selection. Both pull from the same translated string set (see [Supported Languages](messaging-backends.md#supported-languages)), but each client's choice is local to that client.
 
 ---
 

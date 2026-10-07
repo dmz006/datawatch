@@ -5922,7 +5922,7 @@ function _newSessionMountPanel() {
     <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
       <strong>＋ ${escHtml(t('new_session_title')||'New Session')}</strong>
       <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
-        <a href="/diagrams.html#docs/howto/new-session.md" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+        <a href="/diagrams.html#docs/howto/sessions-deep-dive.md#4b-happy-path-pwa" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
         <button class="btn-icon" onclick="closeNewSessionModal()" title="Close">&#10005;</button>
       </span>
     </div>
@@ -6026,7 +6026,7 @@ function renderNewSessionView() {
               <h2 style="margin-bottom:4px;">${t('new_session_title')||'New Session'}</h2>
               <p style="margin:0;">${t('new_session_desc')||'Describe the coding task for the AI to work on.'}</p>
             </div>
-            <a href="/diagrams.html#docs/howto/new-session.md" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:14px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
+            <a href="/diagrams.html#docs/howto/sessions-deep-dive.md#4b-happy-path-pwa" target="_blank" rel="noopener" title="${escHtml(t('new_session_help_tip')||'Open the New-Session howto — explains every field, profile vs. directory, LLM backend choices')}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:14px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
           </div>
           <button class="btn-icon" onclick="closeNewSessionModal()" title="Close" aria-label="Close" style="font-size:22px;line-height:1;padding:4px 10px;">&times;</button>
         </div>
@@ -6963,22 +6963,234 @@ function settingsSectionHeader(key, title, docsPath) {
   // Every card's docs link now points at the central manual
   // (datawatch-definitions.md) anchored to a slug derived from the card
   // title. Falls back to the legacy docsPath arg only when the central
-  // doc has no matching anchor (rare; docsPath is now mostly ignored).
+  // GH#189 — doc has no matching anchor (rare now; docsPath kept purely
+  // as a diagnostic fallback label, no longer the actual target).
   const collapsed = !!settingsCollapsed[key];
-  const dl = defsLink(title);
+  const dl = defsLink(key, title);
   return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
     <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
   </div>`;
 }
 
-// defsLink — opens the central definitions manual at /diagrams.html
-// anchored to the slug of `title`. The viewer slugifier rule is
-// `[^alnum]+` → '-', lowercased, trimmed of leading/trailing dashes.
-function defsLink(title) {
+// GH#189 — ported verbatim from datawatch-app's DocsLinks.kt (BL414), the
+// single table behind every "?" help link in the Android and iOS apps.
+// The PWA's own card/section `key` values (passed into
+// settingsSectionHeader) already match this table's keys one-for-one
+// (confirmed by grep across every call site before porting) -- the only
+// thing that was wrong was defsLink() ignoring `key` entirely and
+// guessing an anchor from `title` against a single hardcoded file
+// instead. See DocsLinks.kt's own doc comment for the anchor-slug rule
+// and target-choice order; reproduced here, not re-derived.
+const DOCS_DEFINITIONS = 'datawatch-definitions.md';
+const DOCS_LINKS_BY_KEY = {
+  // Screen headers
+  view_sessions: DOCS_DEFINITIONS + '#sessions-list',
+  view_session_detail: DOCS_DEFINITIONS + '#inside-a-session-terminal-area',
+  view_new_session: 'howto/sessions-deep-dive.md#4b-happy-path-pwa',
+  view_automata: DOCS_DEFINITIONS + '#automata',
+  view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
+  view_automata_wizard: DOCS_DEFINITIONS + '#launch-automation-form',
+  view_observer: DOCS_DEFINITIONS + '#observer',
+  view_alerts: 'howto/alerts-and-notifications.md',
+  view_dashboard: 'howto/dashboard.md',
+  view_settings: DOCS_DEFINITIONS + '#settings',
+  view_settings_general: DOCS_DEFINITIONS + '#settings-general',
+  view_settings_plugins: DOCS_DEFINITIONS + '#settings-plugins',
+  view_settings_comms: DOCS_DEFINITIONS + '#settings-comms',
+  view_settings_compute: DOCS_DEFINITIONS + '#settings-compute',
+  view_settings_automata: DOCS_DEFINITIONS + '#settings-automate',
+  view_settings_about: DOCS_DEFINITIONS + '#settings-about',
+  // Settings -> General
+  security: DOCS_DEFINITIONS + '#settings-general',
+  raw_config: 'operations.md#4-configuration',
+  gc_dw: 'howto/setup-and-install.md',
+  gc_autoupdate: DOCS_DEFINITIONS + '#self-update-v8-9-21',
+  gc_sess: DOCS_DEFINITIONS + '#sessions',
+  gc_summarizer: DOCS_DEFINITIONS + '#session-ai-summarizer',
+  gc_whisper: 'howto/voice-input.md',
+  test_whisper: 'howto/voice-input.md',
+  gc_notifs: DOCS_DEFINITIONS + '#notifications',
+  docs_search: 'howto/docs-as-mcp.md',
+  templates: 'api/sessions-productivity.md#templates-api-templates-bl5',
+  device_aliases: DOCS_DEFINITIONS + '#settings-general',
+  tooling: DOCS_DEFINITIONS + '#settings-general',
+  file_service: DOCS_DEFINITIONS + '#file-service-v8-3-0',
+  discussion_scopes: DOCS_DEFINITIONS + '#discussion-scopes-v8-4-0',
+  // Settings -> Comms
+  comms: DOCS_DEFINITIONS + '#settings-comms',
+  comms_auth: DOCS_DEFINITIONS + '#authentication',
+  servers: DOCS_DEFINITIONS + '#remote-servers',
+  remote_servers: DOCS_DEFINITIONS + '#remote-servers',
+  cc_websrv: 'operations.md#7-network-security',
+  cc_mcpsrv: 'mcp.md#remote-setup-http-sse',
+  proxy: DOCS_DEFINITIONS + '#proxy-resilience',
+  routing_rules: DOCS_DEFINITIONS + '#routing-rules',
+  backends: DOCS_DEFINITIONS + '#communication-configuration',
+  channel_routing: DOCS_DEFINITIONS + '#channel-routing-v8-3-0',
+  fedpeers: 'howto/federation-cbac.md#pwa-federation-peers-panel',
+  push_notifications: DOCS_DEFINITIONS + '#push-notifications-v8-2-0',
+  cert_install: 'pwa-setup.md#installing-the-ca-certificate-self-signed-only',
+  // Settings -> Compute
+  llms: DOCS_DEFINITIONS + '#llm-registry',
+  llm_config: DOCS_DEFINITIONS + '#llm-configuration-legacy',
+  compute_nodes: DOCS_DEFINITIONS + '#compute-nodes',
+  costrates: DOCS_DEFINITIONS + '#cost-rates-usd-1k-tokens',
+  gc_clusterprofiles: DOCS_DEFINITIONS + '#cluster-profiles',
+  lc_memory: 'memory.md#configuration',
+  lc_goose: 'llm-backends.md#goose',
+  lc_opencode: 'llm-backends.md#opencode',
+  lc_websearch: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  lc_web_search: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  websearch_providers: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  lc_rtk: 'rtk-integration.md#configuration',
+  lc_vision: DOCS_DEFINITIONS + '#vision-system',
+  gc_agents: DOCS_DEFINITIONS + '#container-workers',
+  detection: DOCS_DEFINITIONS + '#detection-filters',
+  alert_rules: 'howto/alert-rules.md',
+  cmds: 'llm-backends.md#saved-commands',
+  filters: 'llm-backends.md#output-filters',
+  tailscale_config: DOCS_DEFINITIONS + '#tailscale-mesh-status-configuration',
+  tailscale_status: DOCS_DEFINITIONS + '#tailscale-mesh-status-configuration',
+  exit_hooks: DOCS_DEFINITIONS + '#session-exit-hooks',
+  work_queue: DOCS_DEFINITIONS + '#work-queue',
+  secrets_store: 'howto/secrets-manager.md',
+  secrets_status: 'howto/secrets-manager.md#vault-status',
+  observer_quicklink: 'howto/federated-observer.md',
+  // Settings -> Automata
+  identity: 'howto/identity-and-telos.md',
+  algorithm: 'howto/algorithm-mode.md',
+  evals: 'howto/evals.md',
+  council: 'howto/council-mode.md',
+  gc_projectprofiles: DOCS_DEFINITIONS + '#project-profiles',
+  pipelines: 'howto/pipeline-chaining.md',
+  obs_pipelines: 'howto/pipeline-chaining.md',
+  orchestrator_graphs: 'howto/automata-orchestrator.md',
+  automata_scan: 'howto/guardrail-library.md',
+  automata_autonomous: 'api/autonomous.md#configuration',
+  guardrail_library_list: 'howto/guardrail-library.md#built-in-guardrails',
+  automata_guardrail_profiles: 'howto/guardrail-library.md#managing-guardrail-profiles',
+  gc_autonomous: 'howto/autonomous-planning.md',
+  automata_skills: 'howto/skills-sync.md',
+  automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
+  gc_pipeline: 'howto/pipeline-chaining.md',
+  gc_orchestrator: 'howto/automata-orchestrator.md',
+  // Settings -> Plugins
+  gc_plugins: 'api/plugins.md',
+  plugins_list: DOCS_DEFINITIONS + '#plugin-manager',
+  community_plugins: 'api/plugins.md',
+  // Settings -> About
+  about: DOCS_DEFINITIONS + '#settings-about',
+  language: 'messaging-backends.md#supported-languages',
+  theme: DOCS_DEFINITIONS + '#settings-about',
+  api: DOCS_DEFINITIONS + '#api',
+  mcp_channel: DOCS_DEFINITIONS + '#mcp-channel-bridge-diagnostics-v8-10-16',
+  mcp_tools: DOCS_DEFINITIONS + '#mcp-tools',
+  daemon_update: DOCS_DEFINITIONS + '#self-update-v8-9-21',
+  hot_reload: 'howto/daemon-operations.md',
+  subsystem_reload: 'howto/daemon-operations.md',
+  daemon_restart: 'howto/daemon-operations.md',
+  kill_orphans: DOCS_DEFINITIONS + '#orphaned-tmux-sessions',
+  encryption_status: 'encryption.md',
+  encryption: 'encryption.md',
+  network_interfaces: 'operations.md#interface-configuration-summary',
+  // Observer
+  stats: 'operations.md#system-statistics',
+  sysgrid: 'operations.md#system-statistics',
+  stats_certificates: 'howto/letsencrypt-acme.md',
+  stats_envelopes: DOCS_DEFINITIONS + '#process-envelopes',
+  stats_rtk: 'rtk-integration.md#where-to-see-rtk-stats',
+  stats_memory: 'memory.md#monitoring',
+  stats_ollama: 'memory.md#ollama-server-monitoring-bl71',
+  stats_web_search: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  ebpf_status: DOCS_DEFINITIONS + '#ebpf-per-process-net',
+  ebpf_network: DOCS_DEFINITIONS + '#ebpf-per-process-net',
+  obs_plugins: DOCS_DEFINITIONS + '#installed-plugins',
+  peer_resources: DOCS_DEFINITIONS + '#federated-peers',
+  cluster_nodes: 'api/observer.md#deployment-shapes',
+  channel_diag: DOCS_DEFINITIONS + '#mcp-channel-bridge-diagnostics-v8-10-16',
+  comm_backends: DOCS_DEFINITIONS + '#communication-configuration',
+  membrowser: 'memory.md',
+  memscopes: 'memory.md',
+  memmaint: 'memory.md#advanced-features',
+  schedules: DOCS_DEFINITIONS + '#recurring-named-schedules',
+  cooldown: DOCS_DEFINITIONS + '#global-cooldown',
+  analytics: DOCS_DEFINITIONS + '#session-analytics',
+  audit: DOCS_DEFINITIONS + '#audit-log',
+  kg: DOCS_DEFINITIONS + '#knowledge-graph',
+  daemonlog: DOCS_DEFINITIONS + '#daemon-log',
+  observer_peers: DOCS_DEFINITIONS + '#federated-peers',
+  // Dashboard
+  dashboard_cards: 'howto/dashboard.md',
+  dash_orbital: DOCS_DEFINITIONS + '#session-constellation',
+  dash_ekg: DOCS_DEFINITIONS + '#ekg-waveform',
+};
+
+// Messaging channel type -> its section of messaging-backends.md.
+const DOCS_CHANNEL_TYPES = {
+  signal: 'messaging-backends.md#signal',
+  telegram: 'messaging-backends.md#telegram',
+  matrix: 'messaging-backends.md#matrix',
+  discord: 'messaging-backends.md#discord',
+  slack: 'messaging-backends.md#slack',
+  twilio: 'messaging-backends.md#twilio-sms',
+  ntfy: 'messaging-backends.md#ntfy',
+  email: 'messaging-backends.md#email-smtp',
+  github_webhook: 'messaging-backends.md#github-webhook',
+  webhook: 'messaging-backends.md#generic-webhook',
+  dns: 'messaging-backends.md#dns-channel-covert',
+  dns_channel: 'messaging-backends.md#dns-channel-covert',
+};
+
+// LLM backend (lowercase, '-' -> '_') -> its section of llm-backends.md.
+const DOCS_LLM_BACKENDS = {
+  claude_code: 'llm-backends.md#claude-code-default',
+  claudecode: 'llm-backends.md#claude-code-default',
+  aider: 'llm-backends.md#aider',
+  goose: 'llm-backends.md#goose',
+  gemini: 'llm-backends.md#gemini-cli',
+  opencode: 'llm-backends.md#opencode',
+  opencode_acp: 'llm-backends.md#opencode-acp-mode',
+  opencode_prompt: 'llm-backends.md#opencode',
+  ollama: 'llm-backends.md#ollama-local-models',
+  openwebui: 'llm-backends.md#openwebui',
+  shell: 'llm-backends.md#shell-custom-script',
+};
+
+function docsLinkForChannelType(type) {
+  return DOCS_CHANNEL_TYPES[String(type || '').toLowerCase()] || (DOCS_DEFINITIONS + '#communication-configuration');
+}
+
+function docsLinkForLlmBackend(name) {
+  return DOCS_LLM_BACKENDS[String(name || '').toLowerCase().replace(/-/g, '_')] || (DOCS_DEFINITIONS + '#llm-registry');
+}
+
+// Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
+// 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
+// dialogs, per-channel-type config, dashboard cards without their own
+// section).
+function docsLinkForKey(key) {
+  if (Object.prototype.hasOwnProperty.call(DOCS_LINKS_BY_KEY, key)) return DOCS_LINKS_BY_KEY[key];
+  if (key.startsWith('stats_')) return DOCS_LINKS_BY_KEY['stats'];
+  if (key.startsWith('lc_backend_')) return docsLinkForLlmBackend(key.slice('lc_backend_'.length));
+  if (key.startsWith('cc_global_')) return docsLinkForChannelType(key.slice('cc_global_'.length));
+  if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
+  return null;
+}
+
+// defsLink — opens the docs viewer at the exact page+anchor DOCS_LINKS_BY_KEY
+// specifies for `key`. Falls back to the pre-GH#189 behavior (guess an
+// anchor from `title` against datawatch-definitions.md) only when `key`
+// has no table entry — never a regression versus the old behavior, just
+// no longer the ONLY behavior.
+function defsLink(key, title) {
   if (localStorage.getItem('cs_show_docs_links') === '0') return '';
-  const slug = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  const target = '/diagrams.html#docs/datawatch-definitions.md' + (slug ? '#' + slug : '');
-  return ` <a href="${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="Open the manual section for this card">docs</a>`;
+  let target = key ? docsLinkForKey(key) : null;
+  if (!target) {
+    const slug = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    target = DOCS_DEFINITIONS + (slug ? '#' + slug : '');
+  }
+  const url = '/diagrams.html#docs/' + target;
+  return ` <a href="${url}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="Open the manual section for this card">docs</a>`;
 }
 
 // docsLink — returns an inline "docs" pill linking to the embedded
@@ -18754,7 +18966,7 @@ function openLaunchAutomatonWizard() {
       <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
-          <a href="/diagrams.html#docs/howto/automata-wizard.md" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+          <a href="/diagrams.html#docs/datawatch-definitions.md#launch-automation-form" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
           <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
         </span>
       </div>

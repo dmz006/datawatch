@@ -37,7 +37,7 @@
       'docs/howto/mcp-tools.md',
       'docs/howto/autonomous-planning.md',
       'docs/howto/autonomous-review-approve.md',
-      'docs/howto/prd-dag-orchestrator.md',
+      'docs/howto/automata-orchestrator.md',
       'docs/howto/container-workers.md',
       'docs/howto/pipeline-chaining.md',
       'docs/howto/cross-agent-memory.md',
