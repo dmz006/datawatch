@@ -24,13 +24,38 @@ notifications via the datawatch UnifiedPush gateway.
 Subcommands:
   list               List all registered push endpoints
   test [--id <id>]   Send a test push notification
-  unregister         Remove a push registration by endpoint or id`,
+  unregister         Remove a push registration by endpoint or id
+  apns-test          Send a test push via APNs (BL397 Phase 4 / BL335)`,
 	}
 	cmd.AddCommand(
 		newPushListCmd(),
 		newPushTestCmd(),
 		newPushUnregisterCmd(),
+		newPushAPNsTestCmd(),
 	)
+	return cmd
+}
+
+// newPushAPNsTestCmd — BL397 Phase 4 / BL335. Separate from
+// newPushTestCmd above: that one targets UnifiedPush registrations
+// (internal/server/push.go's pushRegistration), this one targets APNs
+// devices (internal/devices.Store, kind=apns) — different registries,
+// different dispatch mechanism (native APNs HTTP/2 + JWT vs. a generic
+// webhook POST).
+func newPushAPNsTestCmd() *cobra.Command {
+	var deviceID string
+	cmd := &cobra.Command{
+		Use:   "apns-test",
+		Short: "Send a test push to one or all registered APNs (iOS) devices",
+		RunE: func(*cobra.Command, []string) error {
+			body := map[string]any{}
+			if deviceID != "" {
+				body["device_id"] = deviceID
+			}
+			return daemonJSON(http.MethodPost, "/api/push/apns/test", body)
+		},
+	}
+	cmd.Flags().StringVar(&deviceID, "device-id", "", "Target one device (default: all registered APNs devices)")
 	return cmd
 }
 

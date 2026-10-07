@@ -978,6 +978,41 @@ type PushConfig struct {
 	// real self-hosted push distributors live, so blocking it by default
 	// would break the operator's own working setup.
 	BlockPrivateEndpoints bool `yaml:"block_private_endpoints"`
+
+	// APNs holds Apple Push Notification service dispatch settings
+	// (BL397 Phase 4 / BL335). Separate from the UnifiedPush/ntfy webhook
+	// mechanism above — APNs devices are registered via
+	// POST /api/devices/register (kind=apns) and tracked in
+	// internal/devices.Store, dispatched on alert fire.
+	APNs APNsConfig `yaml:"apns,omitempty"`
+}
+
+// APNsConfig holds Apple Push Notification service provider-token
+// credentials. See docs/howto/apns-push.md for setup.
+type APNsConfig struct {
+	// Enabled is the master switch.
+	Enabled bool `yaml:"enabled"`
+	// KeyID is the 10-character APNs Auth Key ID from the Apple Developer
+	// portal (Certificates, Identifiers & Profiles -> Keys).
+	KeyID string `yaml:"key_id"`
+	// TeamID is the 10-character Apple Developer Team ID.
+	TeamID string `yaml:"team_id"`
+	// BundleID is the iOS app's bundle identifier — sent as the
+	// apns-topic header on every push.
+	BundleID string `yaml:"bundle_id"`
+	// KeyPath is a filesystem path to the .p8 private key file Apple
+	// issues for the Auth Key. Mutually exclusive with KeySecret —
+	// KeySecret takes precedence if both are set.
+	KeyPath string `yaml:"key_path,omitempty"`
+	// KeySecret is a ${secret:name} reference to the .p8 key's PEM
+	// contents, for operators who'd rather not have the raw key sitting
+	// as a plaintext file (same posture as acme.dns01.token_secret).
+	KeySecret string `yaml:"key_secret,omitempty"`
+	// Sandbox sends to Apple's sandbox APNs environment
+	// (api.sandbox.push.apple.com) instead of production
+	// (api.push.apple.com) — matches the APNs environment a TestFlight
+	// build's device token was issued for.
+	Sandbox bool `yaml:"sandbox"`
 }
 
 // ---- Messaging backends ----

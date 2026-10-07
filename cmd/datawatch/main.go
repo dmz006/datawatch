@@ -11,6 +11,7 @@ import (
 	crypto_tls "crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -39,6 +40,7 @@ import (
 	alertrulespkg "github.com/dmz006/datawatch/internal/alertrules"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/algorithm"
+	apnspkg "github.com/dmz006/datawatch/internal/apns"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -712,7 +714,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	var cfg *config.Config
 	var encKey []byte
-	var acmeMgr *acme.Manager // BL397, set below when acme.enabled; nil otherwise
+	var acmeMgr *acme.Manager              // BL397, set below when acme.enabled; nil otherwise
+	var apnsDispatcher *apnspkg.Dispatcher // BL397 Phase 4 / BL335, set below when push.apns.enabled; nil otherwise
 	if workerBootstrap != nil {
 		// Worker mode: the parent owns truth; never read disk config.
 		// Future sprints will fold richer worker config into
@@ -6073,6 +6076,21 @@ Return STRICT JSON:
 			}
 		}
 
+		// BL397 Phase 4 / BL335 — APNs push dispatch. Same non-fatal-on-
+		// failure posture as ACME above: the device-registration REST
+		// surface keeps working either way, this just enables actually
+		// sending to registered iOS devices.
+		if cfg.Push.APNs.Enabled {
+			dispatcher, apnsErr := apnspkg.NewDispatcher(cfg.Push.APNs, secretsStore)
+			if apnsErr != nil {
+				fmt.Printf("[apns] startup failed, continuing without APNs push: %v\n", apnsErr)
+			} else {
+				apnsDispatcher = dispatcher
+				httpServer.SetAPNsDispatcher(dispatcher)
+				fmt.Printf("[apns] dispatcher ready (bundle=%s, sandbox=%v)\n", cfg.Push.APNs.BundleID, cfg.Push.APNs.Sandbox)
+			}
+		}
+
 		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
 		// as claude MCP channel replies, so the web UI renders them as amber lines.
 		hs := httpServer // capture
@@ -6180,6 +6198,47 @@ Return STRICT JSON:
 		// via bundleRemoteAlert, not individual alerts
 		if httpServer != nil {
 			httpServer.NotifyAlert(a)
+		}
+
+		// BL397 Phase 4 / BL335 — APNs push dispatch. The device-
+		// registration side (POST /api/devices/register, kind=apns)
+		// existed with zero callers anywhere in the codebase before this
+		// — confirmed by grep during the plan phase. This is that
+		// missing wire: every new alert fans out to every registered
+		// iOS device, same trigger point FCM/UnifiedPush already use via
+		// httpServer.NotifyAlert above.
+		if apnsDispatcher != nil && httpServer != nil {
+			if ds := httpServer.DeviceStore(); ds != nil {
+				for _, d := range ds.ListByKind(devicespkg.KindAPNS) {
+					go func(token string, deviceID string) {
+						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						unread := alertStore.UnreadCount()
+						err := apnsDispatcher.Send(ctx, token, apnspkg.Payload{
+							Aps: apnspkg.ApsPayload{
+								Alert:            &apnspkg.AlertPayload{Title: a.Title, Body: a.Body},
+								ContentAvailable: 1,
+								Badge:            &unread,
+							},
+							SessionID: a.SessionID,
+							Type:      string(a.Level),
+						})
+						if err != nil {
+							var apnsErr *apnspkg.ErrAPNs
+							if errors.As(err, &apnsErr) && apnsErr.Unregistered() {
+								// Device token is permanently dead (app
+								// uninstalled, token rotated) — Apple's
+								// explicit signal to stop sending and
+								// prune the registration.
+								_ = ds.Delete(deviceID)
+								fmt.Printf("[apns] device %s unregistered, removed\n", deviceID)
+								return
+							}
+							fmt.Printf("[apns] send to device %s failed: %v\n", deviceID, err)
+						}
+					}(d.Token, d.ID)
+				}
+			}
 		}
 	})
 

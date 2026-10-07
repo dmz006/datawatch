@@ -16,6 +16,13 @@ import (
 // endpoints (they return 503).
 func (s *Server) SetDeviceStore(store *devices.Store) { s.deviceStore = store }
 
+// DeviceStore returns the wired device store, or nil if none is set.
+// BL397 Phase 4 — lets the alert-listener closure in main.go reach the
+// store without needing its own hoisted variable (devStore in main.go
+// is scoped to the if-block that constructs it, well before the
+// alert-listener registration).
+func (s *Server) DeviceStore() *devices.Store { return s.deviceStore }
+
 // handleDevicesRegister implements POST /api/devices/register per
 // issue #1. Body format:
 //

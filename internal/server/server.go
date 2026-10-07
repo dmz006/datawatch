@@ -24,6 +24,7 @@ import (
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
@@ -460,6 +461,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/acme/status", api.handleACMEStatus)
 	apiMux.HandleFunc("/api/acme/renew", api.handleACMERenew)
 	apiMux.HandleFunc("/api/acme/verify", api.handleACMEVerify)
+	apiMux.HandleFunc("/api/push/apns/test", api.handlePushAPNsTest)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/mcp/tools", api.handleMCPTools)
 	apiMux.HandleFunc("/api/mcp/call", api.handleMCPCall)
@@ -911,6 +913,9 @@ func (s *HTTPServer) SetDeviceStore(store *devices.Store) {
 	s.api.SetDeviceStore(store)
 }
 
+// DeviceStore returns the wired device store, or nil. BL397 Phase 4.
+func (s *HTTPServer) DeviceStore() *devices.Store { return s.api.DeviceStore() }
+
 // SetAuditLog (BL9) wires the operator audit log for /api/audit.
 func (s *HTTPServer) SetAuditLog(l *audit.Log) {
 	s.api.SetAuditLog(l)
@@ -970,6 +975,11 @@ func (s *HTTPServer) SetRestartFunc(fn func()) {
 // SetACMEManager wires the ACME subsystem (BL397) into the server.
 func (s *HTTPServer) SetACMEManager(m *acme.Manager) {
 	s.api.SetACMEManager(m)
+}
+
+// SetAPNsDispatcher wires the APNs push dispatcher (BL397 Phase 4 / BL335).
+func (s *HTTPServer) SetAPNsDispatcher(d *apns.Dispatcher) {
+	s.api.SetAPNsDispatcher(d)
 }
 
 // SetUpdateFuncs wires update functions into the server for /api/update.

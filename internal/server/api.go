@@ -23,6 +23,7 @@ import (
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
@@ -301,6 +302,10 @@ type Server struct {
 	// true. nil when ACME is disabled — every acmeManager consumer must
 	// nil-check. See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 	acmeManager *acme.Manager
+
+	// apnsDispatcher (BL397 Phase 4 / BL335) is wired from main.go when
+	// push.apns.enabled is true. nil when disabled.
+	apnsDispatcher *apns.Dispatcher
 
 	// reloaders (v5.27.2) maps subsystem name → reload function.
 	// Callers register via Server.RegisterReloader at startup so
@@ -849,6 +854,9 @@ func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 // 404s otherwise — so this can be called any time before the first real
 // ACME validation request arrives, not strictly before ListenAndServe.
 func (s *Server) SetACMEManager(m *acme.Manager) { s.acmeManager = m }
+
+// SetAPNsDispatcher wires the APNs push dispatcher (BL397 Phase 4 / BL335).
+func (s *Server) SetAPNsDispatcher(d *apns.Dispatcher) { s.apnsDispatcher = d }
 
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
 // Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
@@ -5208,6 +5216,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"push": map[string]interface{}{
 			"allow_insecure_endpoints": s.cfg.Push.AllowInsecureEndpoints,
 			"block_private_endpoints":  s.cfg.Push.BlockPrivateEndpoints,
+			// BL397 Phase 4 / BL335.
+			"apns": map[string]interface{}{
+				"enabled":    s.cfg.Push.APNs.Enabled,
+				"key_id":     s.cfg.Push.APNs.KeyID,
+				"team_id":    s.cfg.Push.APNs.TeamID,
+				"bundle_id":  s.cfg.Push.APNs.BundleID,
+				"key_path":   s.cfg.Push.APNs.KeyPath,
+				"key_secret": mask(s.cfg.Push.APNs.KeySecret), // never echo the ${secret:...} ref or a resolved key
+				"sandbox":    s.cfg.Push.APNs.Sandbox,
+			},
 		},
 		"ollama": map[string]interface{}{
 			"enabled":      s.cfg.Ollama.Enabled,
@@ -5959,6 +5977,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Push.AllowInsecureEndpoints = toBool(v)
 		case "push.block_private_endpoints":
 			cfg.Push.BlockPrivateEndpoints = toBool(v)
+		// BL397 Phase 4 / BL335 — APNs dispatch config.
+		case "push.apns.enabled":
+			cfg.Push.APNs.Enabled = toBool(v)
+		case "push.apns.key_id":
+			cfg.Push.APNs.KeyID = toString(v)
+		case "push.apns.team_id":
+			cfg.Push.APNs.TeamID = toString(v)
+		case "push.apns.bundle_id":
+			cfg.Push.APNs.BundleID = toString(v)
+		case "push.apns.key_path":
+			cfg.Push.APNs.KeyPath = toString(v)
+		case "push.apns.key_secret":
+			if s := toString(v); s != "" {
+				cfg.Push.APNs.KeySecret = s
+			}
+		case "push.apns.sandbox":
+			cfg.Push.APNs.Sandbox = toBool(v)
 
 		// Memory config
 		case "memory.enabled":
