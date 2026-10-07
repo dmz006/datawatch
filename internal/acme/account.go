@@ -28,6 +28,15 @@ type accountRecord struct {
 	Email         string                 `json:"email,omitempty"`
 	PrivateKeyPEM string                 `json:"private_key_pem"`
 	Registration  *registration.Resource `json:"registration,omitempty"`
+	// RegisteredDirectoryURL is the ACME directory (staging or
+	// production) that Registration is valid against. Bug found live
+	// 2026-10-06: Let's Encrypt staging and production are SEPARATE
+	// registries — an account registered against staging is unknown to
+	// production (and vice versa), even though the same account *key*
+	// works fine against either. Switching acme.endpoint without
+	// tracking this caused "KeyID header contained an invalid account
+	// URL" (400 malformed) on the first order against the new directory.
+	RegisteredDirectoryURL string `json:"registered_directory_url,omitempty"`
 }
 
 // Account implements registration.User (lego's interface for account
@@ -39,9 +48,10 @@ type Account struct {
 	path   string
 	encKey []byte
 
-	email string
-	key   *ecdsa.PrivateKey
-	reg   *registration.Resource
+	email        string
+	key          *ecdsa.PrivateKey
+	reg          *registration.Resource
+	registeredAt string // directory URL reg is valid against, see accountRecord
 }
 
 // GetEmail implements registration.User.
@@ -54,20 +64,24 @@ func (a *Account) GetRegistration() *registration.Resource { return a.reg }
 func (a *Account) GetPrivateKey() crypto.PrivateKey { return a.key }
 
 // SetRegistration records the registration.Resource returned by a
-// successful ACME account registration and persists it.
-func (a *Account) SetRegistration(reg *registration.Resource) error {
+// successful ACME account registration against directoryURL and
+// persists it.
+func (a *Account) SetRegistration(reg *registration.Resource, directoryURL string) error {
 	a.mu.Lock()
 	a.reg = reg
+	a.registeredAt = directoryURL
 	a.mu.Unlock()
 	return a.save()
 }
 
-// IsRegistered reports whether this account has already completed ACME
-// registration (so Manager can skip re-registering on every start).
-func (a *Account) IsRegistered() bool {
+// IsRegisteredFor reports whether this account has already completed
+// ACME registration against this EXACT directory (staging and
+// production are separate registries — a registration valid against one
+// is invalid against the other, see accountRecord's doc comment).
+func (a *Account) IsRegisteredFor(directoryURL string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.reg != nil
+	return a.reg != nil && a.registeredAt == directoryURL
 }
 
 // LoadOrCreateAccount loads the encrypted account record at
@@ -96,6 +110,7 @@ func LoadOrCreateAccount(dataDir string, email string, encKey []byte) (*Account,
 		}
 		a.key = key
 		a.reg = rec.Registration
+		a.registeredAt = rec.RegisteredDirectoryURL
 		if rec.Email != "" {
 			a.email = rec.Email
 		}
@@ -120,7 +135,12 @@ func (a *Account) save() error {
 	if err != nil {
 		return err
 	}
-	rec := accountRecord{Email: a.email, PrivateKeyPEM: string(pemBytes), Registration: a.reg}
+	rec := accountRecord{
+		Email:                  a.email,
+		PrivateKeyPEM:          string(pemBytes),
+		Registration:           a.reg,
+		RegisteredDirectoryURL: a.registeredAt,
+	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err

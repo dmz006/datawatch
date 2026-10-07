@@ -156,8 +156,9 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 		}
 	}
 
+	dirURL := directoryURL(cfg.Endpoint)
 	legoCfg := lego.NewConfig(account)
-	legoCfg.CADirURL = directoryURL(cfg.Endpoint)
+	legoCfg.CADirURL = dirURL
 	client, err := lego.NewClient(legoCfg)
 	if err != nil {
 		return nil, fmt.Errorf("acme client: %w", err)
@@ -167,15 +168,22 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 	}
 	m.client = client
 
-	if !account.IsRegistered() {
+	if !account.IsRegisteredFor(dirURL) {
+		// Bug found live 2026-10-06: staging and production are separate
+		// ACME registries. A registration valid against one directory is
+		// rejected by the other ("KeyID header contained an invalid
+		// account URL"). Re-register (same account KEY, new registration)
+		// whenever the configured endpoint doesn't match what this
+		// account was last registered against — covers both the
+		// first-ever-run case and a later staging<->production flip.
 		reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 		if err != nil {
 			return nil, fmt.Errorf("acme account registration: %w", err)
 		}
-		if err := account.SetRegistration(reg); err != nil {
+		if err := account.SetRegistration(reg, dirURL); err != nil {
 			return nil, fmt.Errorf("persist acme registration: %w", err)
 		}
-		m.logEvent(alerts.LevelInfo, "ACME account registered", directoryURL(cfg.Endpoint))
+		m.logEvent(alerts.LevelInfo, "ACME account registered", dirURL)
 	}
 
 	return m, nil

@@ -18,7 +18,7 @@ func TestLoadOrCreateAccount_GeneratesAndPersists(t *testing.T) {
 	if a1.GetPrivateKey() == nil {
 		t.Fatal("expected a generated private key")
 	}
-	if a1.IsRegistered() {
+	if a1.IsRegisteredFor("https://acme-staging-v02.api.letsencrypt.org/directory") {
 		t.Fatal("new account should not be registered yet")
 	}
 
@@ -46,24 +46,51 @@ func TestLoadOrCreateAccount_GeneratesAndPersists(t *testing.T) {
 
 func TestAccount_SetRegistration_PersistsAcrossReload(t *testing.T) {
 	dir := t.TempDir()
+	const dirURL = "https://example.test/directory"
 
 	a1, err := LoadOrCreateAccount(dir, "", nil)
 	if err != nil {
 		t.Fatalf("LoadOrCreateAccount: %v", err)
 	}
-	if err := a1.SetRegistration(&registration.Resource{URI: "https://example.test/acme/acct/1"}); err != nil {
+	if err := a1.SetRegistration(&registration.Resource{URI: "https://example.test/acme/acct/1"}, dirURL); err != nil {
 		t.Fatalf("SetRegistration: %v", err)
 	}
-	if !a1.IsRegistered() {
-		t.Fatal("expected IsRegistered true after SetRegistration")
+	if !a1.IsRegisteredFor(dirURL) {
+		t.Fatal("expected IsRegisteredFor(dirURL) true after SetRegistration")
 	}
 
 	a2, err := LoadOrCreateAccount(dir, "", nil)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !a2.IsRegistered() {
-		t.Fatal("reloaded account should still be registered")
+	if !a2.IsRegisteredFor(dirURL) {
+		t.Fatal("reloaded account should still be registered for the same directory")
+	}
+}
+
+// TestAccount_IsRegisteredFor_DoesNotCrossDirectories is the regression
+// test for the live-test bug (2026-10-06): a registration valid against
+// one ACME directory (e.g. staging) must NOT be reported as valid for a
+// different directory (e.g. production) — Let's Encrypt rejects a
+// mismatched account URL with a 400 malformed/invalid-account-URL error.
+func TestAccount_IsRegisteredFor_DoesNotCrossDirectories(t *testing.T) {
+	dir := t.TempDir()
+	staging := "https://acme-staging-v02.api.letsencrypt.org/directory"
+	production := "https://acme-v02.api.letsencrypt.org/directory"
+
+	a, err := LoadOrCreateAccount(dir, "", nil)
+	if err != nil {
+		t.Fatalf("LoadOrCreateAccount: %v", err)
+	}
+	if err := a.SetRegistration(&registration.Resource{URI: "https://acme-staging-v02.api.letsencrypt.org/acme/acct/1"}, staging); err != nil {
+		t.Fatalf("SetRegistration: %v", err)
+	}
+
+	if !a.IsRegisteredFor(staging) {
+		t.Fatal("expected registered for staging, the directory it was actually registered against")
+	}
+	if a.IsRegisteredFor(production) {
+		t.Fatal("a staging registration must NOT be reported as valid for production — this is exactly the bug that broke the live endpoint flip")
 	}
 }
 
