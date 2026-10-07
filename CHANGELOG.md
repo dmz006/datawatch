@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.67.0 — fix(federation): BL316 S2 — RemoteDispatcher no longer blind to peers added after daemon startup
+
+### Fixed
+- Root cause (found via audit, confirmed before fixing): `RemoteDispatcher.servers` was a one-time snapshot of `cfg.Servers` taken when the daemon started — never refreshed from the live `multiserver.Store`. A federation peer or plain multi-server entry added at runtime (`federation peer add`, the PWA's Federated Peers panel, or `POST /api/servers`) was invisible, until the next daemon restart, to: (1) cross-host comm-channel `send` (`FindSession`/`ForwardCommand`), and (2) the CLI's `--server` flag. `internal/server/proxy.go`'s `findServer`/`runtimeServers` already merged YAML + the live store correctly — `RemoteDispatcher` was the one path that didn't.
+- `RemoteDispatcher.SetStore(store)` wires the live `multiserver.Store` in; a new `effectiveServers()` reads it on every dispatch call (`HasServers`, `refreshCache`, `ForwardCommand`, `ForwardHTTP`, `ListAllSessions`) instead of the frozen snapshot, falling back to the static snapshot only before the store exists (the startup window, and tests that construct a dispatcher directly). The dispatcher is now always constructed at startup — previously it was skipped entirely when `cfg.Servers` was empty, meaning a daemon with zero YAML-seeded servers but dynamically-added peers had no dispatcher to wire a store into at all.
+- CLI `--server <name>` (`daemonAPIURL`/`daemonHTTPClient`) had the same staleness gap from a different angle: it resolved the name from *this CLI invocation's own* freshly-YAML-loaded `cfg.Servers`, which can never see a peer that only exists in the running daemon's live store, and which meant holding the remote peer's plaintext token in this short-lived process for no reason. Now always targets the local daemon and routes through its existing `/api/proxy/<name>/<path>` passthrough (already correct — merges YAML + the live store, injects the remote's stored token server-side, so the CLI process never needs to hold it). Behavior change: an unknown/disabled `--server` name used to silently fall back to running the command against `localhost` with just a stderr warning; it now gets an explicit 404 from the proxy — deliberate, since silently running on the wrong daemon is worse than a loud failure.
+- 7 new unit tests (`internal/proxy/remote_test.go` ×3, `cmd/datawatch/daemon_api_url_test.go` ×4); full existing suite green, `-race -count=3` clean on `internal/proxy`.
+
 ## v8.66.3 — fix(pwa): BL315 — window-expand state now persists across reload/daemon restart
 
 ### Fixed

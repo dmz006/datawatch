@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.66.3"
+var Version = "8.67.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2429,12 +2429,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Per-channel message counters
 	chanTracker := statspkg.NewChannelTracker()
 
-	// Remote server dispatcher for proxy mode
-	var remoteDispatcher *proxyPkg.RemoteDispatcher
+	// Remote server dispatcher for proxy mode.
+	// BL316 S2 — always construct the dispatcher, even with zero
+	// YAML-seeded cfg.Servers: SetStore (wired below, once msStore
+	// exists) lets it dispatch to peers added at runtime via
+	// `federation peer add` / `server add`, which this static
+	// construction alone would never see.
+	remoteDispatcher := proxyPkg.NewRemoteDispatcher(cfg.Servers)
 	var proxyPool *proxyPkg.Pool
 	var offlineQueue *proxyPkg.OfflineQueue
 	if len(cfg.Servers) > 0 {
-		remoteDispatcher = proxyPkg.NewRemoteDispatcher(cfg.Servers)
 		if remoteDispatcher.HasServers() {
 			fmt.Printf("[proxy] %d remote server(s) configured\n", len(cfg.Servers))
 
@@ -3154,6 +3158,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				if msErr == nil {
 					httpServer.SetServerStore(msStore)
+					// BL316 S2 — wire the live store into the remote
+					// dispatcher so CLI --server and comm-channel
+					// cross-host dispatch see peers added after startup.
+					remoteDispatcher.SetStore(msStore)
 					// BL343 — background peer health monitor.
 					server.StartPeerHealthMonitor(context.Background(), msStore, alertStore)
 				} else {
@@ -9577,24 +9585,29 @@ func hasLetter(s string) bool {
 }
 
 // daemonAPIURL returns the HTTP API /api/command URL for the target daemon.
-// If --server is set, targets the named remote server from config.Servers.
+//
+// BL316 S2 — if --server is set, this routes through the LOCAL daemon's
+// /api/proxy/<name>/... passthrough instead of resolving the remote's
+// URL/token from this CLI invocation's own YAML-loaded cfg.Servers. Two
+// reasons: (1) cfg.Servers is a static snapshot — it can't see peers
+// added at runtime via `federation peer add` / the PWA, which only exist
+// in the running daemon's live server-store; (2) the proxy injects the
+// remote's stored token server-side, so this process never needs to hold
+// (or risk leaking) another server's credential at all.
 func daemonAPIURL(cfg *config.Config) string {
 	if serverURL != "" {
 		return strings.TrimRight(serverURL, "/") + "/api/command"
 	}
 	if serverName != "" && serverName != "local" {
-		for _, s := range cfg.Servers {
-			if s.Name == serverName && s.Enabled {
-				return strings.TrimRight(s.URL, "/") + "/api/command"
-			}
-		}
-		// Not found — fall through to localhost
-		fmt.Fprintf(os.Stderr, "warning: server %q not found in config, using localhost\n", serverName)
+		return fmt.Sprintf("http://localhost:%d/api/proxy/%s/api/command", cfg.Server.Port, serverName)
 	}
 	return fmt.Sprintf("http://localhost:%d/api/command", cfg.Server.Port)
 }
 
 // daemonHTTPClient returns an http.Client with the appropriate auth header for the target server.
+// BL316 S2 — the --server case now always authenticates to the LOCAL
+// daemon (it proxies on to the remote with the remote's own stored
+// token); see daemonAPIURL.
 func daemonHTTPClient(cfg *config.Config) (*http.Client, string) {
 	if serverURL != "" {
 		// -u/--url mode: use DATAWATCH_TOKEN env var if set, else local token.
@@ -9604,16 +9617,7 @@ func daemonHTTPClient(cfg *config.Config) (*http.Client, string) {
 		}
 		return &http.Client{Timeout: 15 * time.Second}, tok
 	}
-	token := cfg.Server.Token
-	if serverName != "" && serverName != "local" {
-		for _, s := range cfg.Servers {
-			if s.Name == serverName && s.Enabled {
-				token = s.Token
-				break
-			}
-		}
-	}
-	return &http.Client{Timeout: 15 * time.Second}, token
+	return &http.Client{Timeout: 15 * time.Second}, cfg.Server.Token
 }
 
 // tryDaemonRequest posts JSON to a daemon API endpoint with optional auth.

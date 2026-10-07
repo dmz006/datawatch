@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -177,5 +178,93 @@ func TestAuthToken(t *testing.T) {
 	d.fetchSessions(d.servers[0])
 	if gotAuth != "Bearer secret-token" {
 		t.Errorf("expected Bearer secret-token, got %q", gotAuth)
+	}
+}
+
+// BL316 S2 — before SetStore existed, a dispatcher's `servers` field was a
+// one-time snapshot taken at NewRemoteDispatcher's call site (daemon
+// startup, before the live multiserver store even exists). A peer added
+// afterwards -- via `federation peer add` or the PWA -- was invisible to
+// cross-host comm-channel dispatch and the CLI's --server flag forever,
+// until the daemon restarted. These tests prove effectiveServers() reads
+// the store live instead.
+
+func TestEffectiveServers_SetStoreSeesRuntimeAddedPeer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/test/message" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"responses": []string{"ok"}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]*session.Session{})
+	}))
+	defer ts.Close()
+
+	d := NewRemoteDispatcher(nil) // zero YAML-seeded servers, as if none were ever configured
+	store, err := multiserver.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.SetStore(store)
+
+	if d.HasServers() {
+		t.Fatal("empty store should report no servers")
+	}
+
+	// Add a peer to the store *after* SetStore -- no dispatcher restart.
+	if err := store.Add(&multiserver.Entry{Name: "runtime-peer", URL: ts.URL, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !d.HasServers() {
+		t.Error("dispatcher should see the runtime-added peer without reconstruction")
+	}
+	if _, err := d.ForwardCommand("runtime-peer", "hi"); err != nil {
+		t.Errorf("ForwardCommand to runtime-added peer failed: %v", err)
+	}
+	if srv := d.FindSession("anything"); srv != "" {
+		// no sessions on the fake remote, just confirming the lookup path
+		// reaches the live-store server list without panicking.
+		t.Errorf("expected no session match, got %q", srv)
+	}
+}
+
+func TestEffectiveServers_LiveUpdateOverridesStaleView(t *testing.T) {
+	d := NewRemoteDispatcher(nil)
+	store, err := multiserver.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(&multiserver.Entry{Name: "peer", URL: "http://127.0.0.1:1", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	d.SetStore(store)
+
+	if !d.HasServers() {
+		t.Fatal("expected peer to be live and enabled")
+	}
+
+	entry, ok := store.Get("peer")
+	if !ok {
+		t.Fatal("entry not found")
+	}
+	entry.Enabled = false
+	if err := store.Update("peer", entry); err != nil {
+		t.Fatal(err)
+	}
+
+	if d.HasServers() {
+		t.Error("disabling the peer live should take effect immediately, without recreating the dispatcher")
+	}
+}
+
+func TestEffectiveServers_FallsBackToStaticSnapshotBeforeSetStore(t *testing.T) {
+	// Before SetStore is ever called (the startup window, and unit tests
+	// that construct a dispatcher directly), behavior must be unchanged
+	// from pre-BL316-S2: the static snapshot passed to NewRemoteDispatcher.
+	d := NewRemoteDispatcher([]config.RemoteServerConfig{
+		{Name: "prod", URL: "http://localhost:9999", Enabled: true},
+	})
+	if !d.HasServers() {
+		t.Error("static snapshot should still be consulted when no store is wired")
 	}
 }
