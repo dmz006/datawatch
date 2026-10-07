@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.3 — fix(docs): diagrams.js anchor-scroll fails on iOS double-encoded hash
+
+### Fixed
+- Reported by datawatch-app (2026-10-07): docs-viewer "?" links on iOS open the right page but never scroll to the in-page section. Cause: iOS (Foundation URL / `SFSafariViewController`) percent-encodes the SECOND `#` in a link like `#docs/memory.md#configuration`, so `location.hash` arrives as `#docs/memory.md%23configuration`. `openFromHash()` already decodes before splitting (why the page opens correctly), but the scroll-to-anchor step in `rewriteRelativeMdLinks()` searched the raw, still-encoded hash for a second `#`, found none, and silently stayed at the top. Fixed by decoding first, matching `openFromHash`'s own decode-then-split order. New regression tests (`internal/server/web/diagrams-anchor-scroll.test.js`) confirmed-fail against the pre-fix code.
+
 ## v8.63.2 — chore(security): GH#163 — remove 8 stale .trivyignore CVE suppressions
 
 ### Security

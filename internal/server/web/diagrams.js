@@ -445,9 +445,17 @@
     });
 
     // ── Scroll to in-page anchor if the hash carries one ──────────
-    const hashIdx = (location.hash || '').indexOf('#', 1);
+    // iOS (Foundation URL / SFSafariViewController) percent-encodes the
+    // SECOND '#' in a link like #docs/memory.md#configuration, so
+    // location.hash arrives as "#docs/memory.md%23configuration" — the
+    // raw-string search below used to miss it entirely (openFromHash
+    // already decodes first, which is why the page opens but the scroll
+    // never fires). Decode before searching, matching openFromHash's
+    // own decode-then-split order.
+    const decodedHash = decodeURIComponent(location.hash || '');
+    const hashIdx = decodedHash.indexOf('#', 1);
     if (hashIdx > 0) {
-      const anchorId = decodeURIComponent(location.hash.slice(hashIdx + 1));
+      const anchorId = decodedHash.slice(hashIdx + 1);
       // Defer one frame so the heading-id pass above lands first.
       requestAnimationFrame(() => {
         const el = document.getElementById(anchorId);
