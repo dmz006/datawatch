@@ -2,8 +2,11 @@
 
 - **Date**: 2026-10-06
 - **Version at planning**: v8.61.9
-- **Status**: Planned — not started. Scoped via operator interview (this doc
-  records the decisions; see §Decisions log).
+- **Status**: **Phases 1, 2, 3 shipped and live-verified (v8.62.0–v8.62.x);
+  Phase 4 (APNs, folded in from the sibling BL335 backlog item) shipped
+  v8.62.x on unit tests only — see §Phase 2/3/4 shipped below.** B1
+  (delegated-zone DNS-01) remains deferred. Scoped via operator interview
+  (this doc records the decisions; see §Decisions log).
 - **Source PRD**: `74e9eb05` ("Let's Encrypt integration research for public
   datawatch deployments"), research-only, completed 2026-10-06. Output docs:
   `/home/dmz/workspace/datawatch-letsencrypt/docs/01-le-options-landscape.md`
@@ -319,6 +322,73 @@ exact version to install/restart to and confirmation the VM is free again
 for its Apple sandbox use — do not leave it occupied or in a half-tested
 state. This is the explicit close-out of the shared-resource constraint
 noted in decision #6, not optional cleanup.
+
+## Phase 2/3/4 shipped (2026-10-06, same-day follow-on)
+
+Operator instruction: "finish the phase 2/3 and phase 4 including apn
+push." Built, tested, and shipped in the same session as Phase 1, after
+a release-discipline gap-fix pass (see the CHANGELOG v8.62.x entries
+for the full gap list: B4 mobile-parity notice, B7 observability/
+Prometheus+Monitor-card, B12 smoke-extended, C2 gosec, full
+`scripts/release-smoke.sh` run).
+
+**Phase 3 (hot-swap) — zero-downtime cert apply.**
+`internal/tlsutil.Build` now sets `tls.Config.GetCertificate` instead of
+a static `Certificates` slice — every TLS listener built through it
+(server, MCP SSE, proxy sandbox) gets mtime-based hot-reload for free,
+not an ACME-specific mechanism. `acme.Manager.applyCertificate` skips
+the restart when `apply.hot_swap: true` AND the cert path isn't
+changing (the normal renewal case); the first-ever switch to ACME still
+restarts once regardless (a running listener can't hot-reload a path it
+was never watching). 4 new tests.
+
+**Phase 2 (DNS-01) — B2 scoped provider token only.** Wired
+`go-acme/lego`'s Cloudflare DNS-01 provider (`AuthToken` = a
+zone-scoped "Zone > DNS > Edit" token, resolved via the existing
+`${secret:name}` secrets-manager convention, never the account-global
+key). **B1 (delegated-zone DNS-01 via an extended `dns_channel` — open-
+RRset answer mode + challenge-record store + RFC 2136 dynamic update)
+is explicitly deferred** — it's roughly its own subsystem, not a Phase
+2 increment, confirmed with the operator before proceeding (see the
+mid-build Q&A in this session's transcript).
+
+Found and fixed a real secret-leak risk DURING DESIGN, before writing
+any provider code: this codebase's global `${secret:name}` resolver
+(`secretspkg.ResolveConfig`) mutates the config struct in-memory at
+daemon startup, and `applyCertificate` already calls `config.Save` on
+every issue/renewal (Phase 1) with zero redaction. Without a fix, the
+first DNS-01 renewal would have permanently written the plaintext
+provider token into `config.yaml`. Fixed: `NewManager` captures the
+original unresolved reference fresh from disk
+(`dns01TokenSecretRef`), resolves a working copy for lego's own use
+held only in memory, and `applyCertificate` restores the original
+reference immediately before every save. New security regression test:
+`TestApplyCertificate_NeverPersistsResolvedDNS01Secret`.
+
+**Phase 4 / BL335 (APNs push) — folded in from the sibling backlog
+item**, since it was the original PWA-parity-sweep plan's Phase 4 and
+the operator explicitly asked for it alongside Phase 2/3. New
+`internal/apns` package: JWT ES256 provider-token auth (raw r‖s JWS
+signature, not ASN.1 DER), HTTP/2 dispatch via Go's standard
+`net/http` client (no new HTTP/2 library needed), wired into the REAL
+alert-fire path (`alertStore.AddListener`) — closing a gap that existed
+since v8.8.6: device registration worked, but `ListByKind` had zero
+callers anywhere in the codebase (confirmed by grep before writing any
+code — the same was true for FCM; there is no Firebase dispatch code
+in this repo either, only the UnifiedPush/ntfy webhook path is wired).
+9 new tests, including a real cryptographic signature-verification test
+(not just JSON-shape checking).
+
+**Honest verification-depth difference from Phase 1**: ACME (Phase 1)
+was fully live-verified against a real Let's Encrypt directory and a
+real public host (`spaceportsouth.dmzs.com`) — 4 real bugs found and
+fixed in that process. DNS-01 (Phase 2) and APNs (Phase 4) ship on unit
+tests only; neither a real Cloudflare zone+token nor a real Apple
+Developer account+Auth Key+TestFlight device token is available in this
+environment. This is flagged explicitly in `docs/parity-status.md` and
+`docs/testing-tracker.md` rather than claimed as equally verified —
+the next real validation step for either is whenever those credentials
+become available.
 
 ## Resolved (operator interview, continued, 2026-10-06)
 

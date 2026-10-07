@@ -28,17 +28,22 @@ automatically before it expires.
 
 ## What it is
 
-- **HTTP-01 only** in this build — one A/AAAA record per hostname is the
-  only DNS requirement. (DNS-01, for wildcards or when port 80 can't be
-  opened, is a planned follow-up — see the design doc linked below.)
+- **Two validation methods.** HTTP-01 (default) — one A/AAAA record per
+  hostname, port 80 reachable, no DNS management. DNS-01 — a zone-scoped
+  provider API token (Cloudflare in this build), no port 80 needed, the
+  only method that supports wildcard domains. Pick HTTP-01 unless you
+  need a wildcard or genuinely can't open port 80.
 - **Staging first.** `acme.endpoint` defaults to `staging` — Let's
   Encrypt's test directory, generous rate limits, but the issued cert
   isn't trusted by real browsers. Verify the whole flow works there,
   then flip to `production` for a real cert.
-- **Restart-based apply** (this build). A successful issue or renewal
-  writes the PEM, updates `server.tls_cert`/`tls_key`, and restarts the
-  daemon so the TLS listener picks it up — one short window roughly every
-  90 days, not on every save.
+- **Apply mode.** By default, a successful issue or renewal writes the
+  PEM, updates `server.tls_cert`/`tls_key`, and restarts the daemon so
+  the TLS listener picks it up — one short window roughly every 90 days.
+  Set `acme.apply.hot_swap: true` for zero-downtime renewals instead —
+  the listener reloads the cert from disk on its next handshake, no
+  restart (the first-ever switch to ACME still restarts once regardless,
+  since the running listener isn't watching the new path yet).
 - **Renews itself.** A background check runs on startup and every 6
   hours; a cert within `renewal_days` (default 30) of expiring is
   automatically re-ordered.
@@ -107,6 +112,26 @@ automatically before it expires.
    ```bash
    curl https://your-hostname.example.com:8443/api/health
    ```
+
+## Using DNS-01 instead (wildcards, or no port 80)
+
+1. Mint a **zone-scoped** API token — Cloudflare "Zone > DNS > Edit" on
+   the ONE zone you're issuing for, never the account-global key.
+2. Store it via the secrets manager:
+   ```bash
+   datawatch secret set cf-zone-edit-token "<your-token>"
+   ```
+3. Config:
+   ```yaml
+   acme:
+     method: dns01
+     dns01:
+       provider: cloudflare
+       token_secret: "${secret:cf-zone-edit-token}"
+   ```
+4. Restart — no port 80 / firewall changes needed for this path. The
+   rest of the workflow (staging first, `acme verify`, flip to
+   production) is identical to HTTP-01.
 
 ## PWA
 

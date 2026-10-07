@@ -299,6 +299,16 @@ push status           — list topics with active SSE subscriber counts
   registration the daemon fans out to the app's registered HTTP
   endpoint instead, which is more resilient.
 
+## Native iOS push (APNs)
+
+For iOS specifically, the daemon can also push directly to Apple's APNs
+service — a separate mechanism from the ntfy/UnifiedPush SSE surface
+above (native device tokens, not a subscribable stream). See
+[operations.md "APNs Push Notifications"](../operations.md#apns-push-notifications-bl397-phase-4--bl335)
+for setup (`push.apns.*` config) and
+[`parity-status.md`](../parity-status.md) for current verification
+status. Test with `datawatch push apns-test`.
+
 ## Linked references
 
 - See also: [`comm-channels.md`](comm-channels.md) — ntfy as a

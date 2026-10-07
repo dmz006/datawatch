@@ -370,13 +370,25 @@ acme:
   # One or more hostnames, all on ONE cert. Requires an A/AAAA record
   # for each, pointing at this host.
   domains: []
-  # Validation method -- only http01 is supported today; dns01 is planned
+  # Validation method: http01 (no DNS management, no wildcard) | dns01
+  # (wildcard support, needs a provider token -- no port 80 needed)
   method: http01
   http01:
     # Optional: override which address the HTTP-01 challenge is served
     # on. Empty = the daemon's existing HTTP mux (server.port must be 80
     # for real Let's Encrypt validation -- see operations.md).
     listen: ""
+  dns01:
+    # Only "cloudflare" is wired in this build.
+    provider: cloudflare
+    # ${secret:name} reference to a ZONE-SCOPED "Zone > DNS > Edit" token
+    # -- never the account-global key. Resolved in memory only; this
+    # reference, never the resolved token, is what config.yaml keeps on
+    # disk, even after a renewal.
+    token_secret: ""
+    # Reference only (not used by the provider call itself) -- documents
+    # which zone the token above is scoped to.
+    zone_id: ""
   # Renew when the cert's remaining life drops to this many days (90-day
   # Let's Encrypt certs; 30 matches common certbot/Caddy practice)
   renewal_days: 30
@@ -401,6 +413,20 @@ push:
   allow_insecure_endpoints: false
   # Also reject RFC1918/Tailscale-CGNAT/IPv6-ULA endpoints -- most self-hosted push distributors live there, so this defaults off
   block_private_endpoints: false
+  # Apple Push Notification service dispatch (BL397 Phase 4 / BL335).
+  # See operations.md "APNs Push Notifications".
+  apns:
+    enabled: false
+    key_id: ""       # 10-char Auth Key ID from the Apple Developer portal
+    team_id: ""      # 10-char Apple Developer Team ID
+    bundle_id: ""    # the iOS app's bundle identifier
+    # ${secret:name} reference to the .p8 Auth Key's PEM contents.
+    # key_path (a file path) also works and is used if key_secret is empty.
+    key_secret: ""
+    key_path: ""
+    # true = api.sandbox.push.apple.com (TestFlight/dev builds);
+    # false (default) = api.push.apple.com (App Store builds)
+    sandbox: false
 
 # ── LLM Backends ──
 # AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.

@@ -5,6 +5,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.0 — feat(acme): BL397 Phase 2/3/4 — DNS-01, zero-downtime hot-swap, APNs push (BL335)
+
+### Added
+- **Phase 3 — zero-downtime cert apply.** `internal/tlsutil.Build` now sets `tls.Config.GetCertificate` (mtime-based reload) instead of a static `Certificates` slice — every TLS listener built through it (server, MCP SSE, proxy sandbox) hot-reloads a cert rotation at the same path with no daemon restart, not an ACME-specific mechanism. `acme.Manager.applyCertificate` skips the restart when `apply.hot_swap: true` and the cert path isn't changing (the normal renewal case); the first-ever switch to ACME still restarts once regardless (a running listener can't hot-reload a path it was never watching).
+- **Phase 2 — DNS-01 via Cloudflare (scoped provider token).** `acme.method: dns01` wires `go-acme/lego`'s Cloudflare provider — needed for wildcard domains or when inbound port 80 isn't available. Zone-scoped "Zone > DNS > Edit" token only, resolved via the existing `${secret:name}` secrets-manager convention, never the account-global key. New `acme.dns01.{provider,token_secret,zone_id}` config; PWA gains a validation-method selector (HTTP-01 | DNS-01) with provider/token-ref/zone-id fields when DNS-01 is picked.
+- **Phase 4 / BL335 — native APNs push dispatch.** New `internal/apns` package: JWT ES256 provider-token auth (raw r‖s JWS signature, cached ~50min), HTTP/2 dispatch via Go's standard `net/http` client (no new HTTP/2 library). Wired into the real alert-fire path (`alertStore.AddListener`) — every new alert now fans out to every registered `kind: apns` device; a `410 Unregistered` response auto-prunes the dead device. New `push.apns.{enabled,key_id,team_id,bundle_id,key_path,key_secret,sandbox}` config. `POST /api/push/apns/test` + `datawatch push apns-test` for manual verification.
+
+### Fixed (release-discipline gap-fix pass, found via self-audit after v8.62.0)
+- **B4 Mobile-Parity Rule**: sent the missing datawatch-app notice for the v8.62.0 PWA cert-source selector card (should have shipped with the original commit).
+- **B7 Observability**: ACME had zero stats/Prometheus/Monitor wiring. Added `datawatch_acme_cert_expiry_seconds` (gauge) and `datawatch_acme_renewals_total` (counter) to `internal/metrics/prometheus.go`; new Monitor-tab "Certificates" card (hidden when ACME is disabled).
+- **B12 smoke-extended**: new section 62 in `scripts/release-smoke.sh` (structural REST wiring check — the full issue/renew cycle needs a real host, live-verified separately).
+- **C2 gosec**: scoped scan found one real G304 finding in `loadExistingCertStatus`, reviewed (operator-config path, not external input) and suppressed with a line-level directive.
+- Full `scripts/release-smoke.sh` run (required for v8.62.0 as a minor release, done retroactively): 179 pass, 0 fail, 33 skip. Caught along the way: the smoke script was silently testing a stale v8.39.26 binary left at the repo root — rebuilt it.
+
+### Security
+- **DNS-01 secret-leak risk, found and fixed during design, before any provider code was written.** This codebase's global `${secret:name}` resolver mutates the config struct in-memory at daemon startup; `applyCertificate` already calls `config.Save` on every issue/renewal with zero redaction. Without a fix, the first DNS-01 renewal would have permanently written the plaintext Cloudflare token into `config.yaml`. Fixed: `NewManager` captures the original unresolved `${secret:...}` reference fresh from disk, resolves a working copy held only in memory, and `applyCertificate` restores the original reference immediately before every save. New regression test: `TestApplyCertificate_NeverPersistsResolvedDNS01Secret`.
+
+### Docs
+- `docs/parity-status.md`: full refresh (was 29 minor versions / ~3 weeks stale — most iOS rows still read "tracked: app#182" despite the app's own "three-way parity" release 2026-10-04); APNs row flipped to shipped; new "Known PWA gaps" section.
+- `docs/operations.md`, `docs/config-reference.yaml`: DNS-01 and APNs sections.
+- `docs/howto/letsencrypt-acme.md`: DNS-01 walkthrough; `docs/howto/push-notifications.md`: APNs cross-reference.
+- `docs/testing-tracker.md`: full entries for Phase 2/3/4, including the honest verification-depth note (DNS-01/APNs are unit-tested only; Phase 1/ACME was fully live-verified — not claiming equal coverage).
+
+### Scope note
+- ACME's B1 (delegated-zone DNS-01 via an extended `dns_channel` — open-RRset answer mode + challenge-record store + RFC 2136 dynamic update) remains **deferred**, confirmed with the operator mid-build — it's roughly its own subsystem, not a Phase 2 increment.
+- Neither DNS-01 (Cloudflare) nor APNs push was live-verified against the real external service — no Cloudflare zone/token or Apple Developer credentials are available in this environment. Both ship on solid unit tests (25 new tests across the 4 BL397 phases total, including a real cryptographic JWT signature-verification test for APNs) rather than overclaiming "verified." Contrast Phase 1 (ACME/HTTP-01), which was fully live-verified against a real Let's Encrypt directory and a real public host.
+
+Full writeup: `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`'s "Phase 2/3/4 shipped" section.
+
 ## v8.62.0 — feat(acme): BL397 — native ACME/Let's Encrypt subsystem
 
 ### Added

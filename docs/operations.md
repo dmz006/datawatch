@@ -1075,14 +1075,16 @@ acme:
                                   # safe to test against) | production
   domains:
     - datawatch.example.com      # one or more names on ONE cert
-  method: http01                 # only method supported today; dns01 is
-                                  # planned (see the BL397 plan doc)
+  method: http01                 # http01 (no DNS management) | dns01
+                                  # (wildcard support, needs a provider token)
   renewal_days: 30               # renew when <= N days of life remain
   retry:
     interval_minutes: 30
     max_consecutive_failures: 5
   apply:
     update_mcp_cert: true        # also point mcp.tls_cert/tls_key at it
+    hot_swap: false              # true = most renewals apply with zero
+                                  # downtime (see "Cert apply" below)
 ```
 
 **What `http01` requires**: one A/AAAA record for each domain pointing
@@ -1095,28 +1097,97 @@ satisfy HTTP-01 you need either:
   on the binary if running as an unprivileged user), or
 - an external port-forward from 80 to whatever `server.port` is.
 
+**What `dns01` requires** (no port 80 needed — use this for wildcards,
+or when port 80 genuinely can't be opened): a zone-scoped DNS provider
+API token. Only Cloudflare is wired in this build:
+
+```yaml
+acme:
+  method: dns01
+  dns01:
+    provider: cloudflare
+    token_secret: "${secret:cf-zone-edit-token}"  # Zone > DNS > Edit on
+                                                     # ONE zone — never the
+                                                     # account-global key
+    zone_id: "..."                                  # reference only
+```
+
+Store the token via the secrets manager (`datawatch secret set
+cf-zone-edit-token <token>` or the PWA Secrets card) — `token_secret` is
+a `${secret:name}` reference, same convention as every other credential
+in this codebase. The resolved token is held only in memory; `config.yaml`
+always keeps the unresolved reference, even across renewals.
+
 **Workflow**: start with `endpoint: staging` (Let's Encrypt's staging
 directory — generous rate limits, but the cert itself isn't browser
 trusted) to verify the whole flow works, then flip to
 `endpoint: production` for a real cert. Each endpoint is tracked as a
 **separate ACME account registration** — switching endpoints re-registers
 automatically (same underlying account key, new registration), so no
-manual account reset is needed.
+manual account reset is needed. Note that flipping `endpoint` alone
+doesn't force a new order — the existing cert isn't due for renewal yet —
+run `datawatch acme renew` explicitly after the flip.
 
-**Cert apply**: this build (phase 1) applies a new/renewed cert by
-writing the PEM, updating `server.tls_cert`/`tls_key` (and MCP's, if
-`apply.update_mcp_cert`), and restarting the daemon — one short window
-per issue/renewal (roughly every 90 days). A later phase removes this
-restart (see the plan doc).
+**Cert apply**: by default, applying a new/renewed cert writes the PEM,
+updates `server.tls_cert`/`tls_key` (and MCP's, if `apply.update_mcp_cert`),
+and restarts the daemon — one short window per issue/renewal (roughly
+every 90 days). Set `apply.hot_swap: true` to apply with **zero
+downtime** instead: the TLS listener reloads the cert from disk on its
+next handshake when the file's mtime changes, no restart. The one
+exception is the very first switch to ACME (or the first-ever issue),
+where the cert *path* itself is changing — a running listener can't
+hot-reload a path it was never watching, so that one restart still
+happens regardless of `hot_swap`.
 
 **Other surfaces**: `GET/POST /api/acme/{status,renew,verify}`; MCP tools
 `acme_status`/`acme_renew`/`acme_issuer_log`; CLI
 `datawatch acme status|renew|verify`; comm verb
 `!acme status|renew|verify`; PWA Settings → Web Server card's
-certificate-source selector (Self-signed | Custom | Let's Encrypt).
+certificate-source selector (Self-signed | Custom | Let's Encrypt), with
+a validation-method picker when Let's Encrypt is selected.
 
-Full design, the operator-interview decision log, and 4 real bugs found
-during live verification: `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+Full design, the operator-interview decision log, and the real bugs
+found during live verification: `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+
+### APNs Push Notifications (BL397 Phase 4 / BL335)
+
+The daemon can send push notifications directly to registered iOS
+devices via Apple's APNs provider API — closing the gap where device
+registration (`POST /api/devices/register`, `kind: apns`) worked but
+nothing ever actually sent a push.
+
+```yaml
+push:
+  apns:
+    enabled: true
+    key_id: "ABC1234567"        # from the Apple Developer portal
+    team_id: "TEAM123456"
+    bundle_id: "com.example.YourApp"
+    key_secret: "${secret:apns-auth-key}"  # the .p8 key's PEM contents
+    # key_path: "/path/to/AuthKey_ABC1234567.p8"  # alternative to key_secret
+    sandbox: false               # true for TestFlight / development builds
+```
+
+Either `key_secret` (a `${secret:name}` reference holding the raw `.p8`
+PEM — the Auth Key is a long-lived credential, treat it the same as any
+other secret) or `key_path` (a file on disk) works; `key_secret` takes
+precedence if both are set.
+
+**Dispatch**: every new alert automatically fans out to every registered
+`kind: apns` device — same trigger point the existing FCM/UnifiedPush
+path uses. A device that returns Apple's `410 Unregistered` (app
+uninstalled, token rotated) is automatically pruned from the registry.
+
+**Test send**: `POST /api/push/apns/test` (optional `{"device_id":
+"..."}` to target one device, omit for all) or
+`datawatch push apns-test [--device-id <id>]` — useful for verifying the
+key/config is correct without waiting for a real alert.
+
+**Sandbox vs. production**: `sandbox: true` sends to
+`api.sandbox.push.apple.com` instead of `api.push.apple.com` — match
+this to the APNs environment the device's token was actually issued for
+(TestFlight and Xcode debug builds are typically sandbox; App Store
+builds are production).
 
 ### Encryption at Rest
 

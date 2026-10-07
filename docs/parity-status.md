@@ -34,7 +34,7 @@ Legend:
 | Settings — LLM backends | ✅ | ✅ | ✅ |
 | Settings — Messaging backends | ✅ | ✅ | ✅ |
 | Push notifications (FCM) | ✅ | ✅ | N/A |
-| Push notifications (APNs) | N/A | N/A | 🔶 app registers + sends token (v1.x "iOS push registration"); **server-side APNs dispatch still pending — this is BL397 Phase 4 / BL335, in progress this session** |
+| Push notifications (APNs) | N/A | N/A | ✅ v8.62.x — server-side dispatch shipped (BL397 Phase 4 / BL335); **unit-tested only, not live-verified against real Apple servers** (no Apple Developer account/Auth Key/TestFlight device token available in this environment) |
 | Alert list + mark read | ✅ | ✅ | ✅ |
 | Autonomous PRD list + actions | ✅ | ✅ | ✅ |
 | Automaton spec expand (show full / collapse) | ✅ | ✅ | ✅ |
@@ -62,7 +62,7 @@ Legend:
 | Watch sessions/automata + watched-only filter | ✅ v8.50.0 | ✅ | ✅ (app CHANGELOG: "👁 N button... Android and iOS") |
 | Council markdown rendering | 🔶 v8.46.0 — completed-run modal only; the live in-progress run log is still plain text (GH#181, left open) | ✅ | ✅ |
 | Animated "eye" loading state (replacing plain "Loading…" / shimmer bars) | ❌ — tracked, `dmz006/datawatch#186`, not started | ✅ | ✅ |
-| Native ACME / Let's Encrypt cert management (BL397) | ✅ v8.62.0 | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
+| Native ACME / Let's Encrypt cert management — HTTP-01 + DNS-01 (Cloudflare) + zero-downtime hot-swap (BL397) | ✅ v8.62.x | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
 
 ## Known PWA gaps (tracked, not yet closed)
 
@@ -81,8 +81,7 @@ The table above tracks **shipped** client parity. This section tracks **in-fligh
 | Eval Sweep — suite × backend matrix | REST, MCP, CLI, comm, PWA | planned — `docs/plans/harness-impl/eval-sweep-api.md` (cross-surface contract §4) |
 | Eval nodes in the PRD-DAG orchestrator | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §2) |
 | Red-team validator pipeline (deepening the injection guard) | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §5) |
-| ACME DNS-01 (BL397 Phase 2) | REST, MCP, CLI, comm, PWA, YAML | in progress this session — `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md` |
-| ACME zero-downtime hot-swap apply (BL397 Phase 3) | internal only, no new surface | in progress this session |
+| ACME B1 (delegated-zone DNS-01 via an extended `dns_channel`) | internal + YAML | deferred — a much larger subsystem than Phase 2's scoped-token path (B2, shipped); see the BL397 plan doc's scope note |
 
 Features promoted to shipped move a row into the Feature Parity Table above with per-client ✅/🔶/❌ columns and `datawatch-app` tracking; until then they remain visible here.
 
@@ -106,19 +105,17 @@ Multiplatform core.
 | Requirement | Status | Notes |
 |------------|--------|-------|
 | `platform=apns` on `POST /api/device/register` | ✅ Done | `devices.KindAPNS` already in the enum, registration accepted |
-| APNs send on alert fire | 🔶 In progress this session (BL397 Phase 4 / BL335) | Server-side HTTP/2 dispatch — see below |
+| APNs send on alert fire | ✅ Shipped v8.62.x (BL397 Phase 4 / BL335) | `internal/apns` — see below |
 | All REST + WS endpoints platform-neutral | ✅ Done | No iOS-only paths |
 
-## APNs Server Work (BL397 Phase 4 / BL335 — in progress this session)
+## APNs Server Work (BL397 Phase 4 / BL335 — shipped v8.62.x)
 
-APNs support requires:
-1. Accept `platform=apns` with APNs device token on `POST /api/device/register` — ✅ already works (device kind enum pre-existing).
-2. Store APNs tokens alongside FCM tokens in the device registry — ✅ already works.
-3. On alert fire, send to all registered APNs tokens via APNs HTTP/2 API — building now.
-4. Config: `push.apns.key_id`, `push.apns.team_id`, `push.apns.bundle_id`,
-   `push.apns.key_path` (or `${secret:apns-key}`) — building now.
+1. Accept `platform=apns` with APNs device token on `POST /api/device/register` — ✅ already worked (device kind enum pre-existing).
+2. Store APNs tokens alongside FCM tokens in the device registry — ✅ already worked.
+3. On alert fire, send to all registered APNs tokens via APNs HTTP/2 API — ✅ `internal/apns.Dispatcher`, wired into the real `alertStore.AddListener` alert-fire path (`cmd/datawatch/main.go`). A device that returns `410 Unregistered` is automatically pruned.
+4. Config: `push.apns.{key_id,team_id,bundle_id}` + `key_path` or `key_secret` (`${secret:name}`) — ✅ shipped, see [operations.md](operations.md) "APNs Push Notifications".
 
-APNs payload schema (matching the existing FCM schema):
+APNs payload schema (matches the pre-existing FCM schema exactly):
 ```json
 {
   "aps": {
@@ -131,6 +128,20 @@ APNs payload schema (matching the existing FCM schema):
 }
 ```
 
-Once shipped: flip this section's status to ✅, update the "Push
-notifications (APNs)" row in the Feature Parity Table above, and close
-`dmz006/datawatch#158`/`#183` and `dmz006/datawatch-app#185`.
+**Verification status**: 9 unit tests in `internal/apns`, including a
+real cryptographic check (the signed JWT is independently verified via
+`ecdsa.Verify` against the key's own public half, not just checked for
+well-formed JSON). **Not live-verified** against Apple's real APNs
+servers — that needs a real Apple Developer account, a provisioned Auth
+Key, and a TestFlight-registered device token, none of which exist in
+this environment. Unlike BL397 Phase 1 (ACME), which was fully live-
+verified against a real Let's Encrypt directory and a real public host,
+this is the one BL397 sub-feature shipped on unit tests alone — flagged
+here rather than overclaiming. First real end-to-end push would be the
+natural next validation step whenever Apple credentials are available.
+
+Test send: `POST /api/push/apns/test` or `datawatch push apns-test`.
+
+Tracking: closes `dmz006/datawatch#158`/`#183` and
+`dmz006/datawatch-app#185`'s server-side half (the app's own token
+registration/handling is unaffected, already done on their side).

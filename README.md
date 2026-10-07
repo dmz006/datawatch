@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.62.0-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v8.63.0-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -46,10 +46,10 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Recent highlights
 
-**Current: [v8.62.0](CHANGELOG.md)** (2026-10-06). Native ACME/Let's Encrypt — the daemon can now obtain and auto-renew its own browser-trusted TLS certificate directly, no external tool and no DNS management beyond a single A record. Staging-first workflow, all 7 surfaces (PWA gains a certificate-source selector), live-verified end-to-end against a real public host and a real Let's Encrypt directory — 4 real bugs found and fixed in that run. See [docs/howto/letsencrypt-acme.md](docs/howto/letsencrypt-acme.md).
+**Current: [v8.63.0](CHANGELOG.md)** (2026-10-06). Native ACME/Let's Encrypt is now feature-complete: HTTP-01 (v8.62.0, live-verified against a real Let's Encrypt directory), DNS-01 via Cloudflare (for wildcards or when port 80 isn't available), and zero-downtime hot-swap renewal (no daemon restart). Also ships native APNs push dispatch (BL335) — the daemon sends directly to registered iOS devices on every alert, closing a gap open since v8.8.6. See [docs/howto/letsencrypt-acme.md](docs/howto/letsencrypt-acme.md).
 
+- **[v8.62.0](CHANGELOG.md)** — Native ACME/Let's Encrypt HTTP-01, live-verified end-to-end against a real public host and a real Let's Encrypt directory — 4 real bugs found and fixed in that run.
 - **[v8.61.1](CHANGELOG.md)** — PWA parity adoption sweep complete through Phase 3: pause/resume for a running Automaton, Observer/About cards, a Config Viewer with a safe raw editor, a dependency-graph view of an Automaton's stories/tasks, and the autonomous verifier now recording which files a task actually touched.
-- **[v8.44.0](CHANGELOG.md)** — PWA parity sweep Phase 1 complete: alert-rule firings, parent-PRD links, inline Automaton reject/revise/approve-with-note, Council badges, chat quick-reply chips, saved-command picker, and 6 GH#182 polish items (help icons, restart confirm, disconnect banner, Templates FAB, Automata config fields).
 - **[v8.39.25](CHANGELOG.md)** — Security Design A3: every spawned session gets its own scoped credential (not the admin token), closing the last of the SEC-002–SEC-014 security hardening sweep (11 real findings fixed: SSRF, path traversal, prototype pollution, reflected XSS, bearer-token leakage, an origin-isolation gap in the federation-peer PWA proxy). Full writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
 
 ### v8.45.0–v8.61.1 highlights (PWA parity sweep, Phases 2–3, now complete)
