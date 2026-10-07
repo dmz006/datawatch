@@ -1571,5 +1571,15 @@
   "rate_limit_banner_text": "Rate limited",
   "rate_limit_no_reset_time": "Waiting for the limit to clear",
   "rate_limit_resets_at": "Resets at",
-  "status_hooks_installed_toast": "Claude Code hooks installed"
+  "status_hooks_installed_toast": "Claude Code hooks installed",
+  "community_plugins_title": "Community Plugins",
+  "community_plugins_no_registries": "No registries configured yet.",
+  "community_plugins_empty": "No plugins found in this registry.",
+  "community_plugins_install": "Install",
+  "community_plugins_installing": "Installing…",
+  "community_plugins_installed": "Installed",
+  "community_plugins_install_success": "Installed",
+  "community_plugins_install_failed": "Install failed",
+  "community_plugins_not_connected": "This registry isn't connected yet.",
+  "community_plugins_connect": "Connect"
 }

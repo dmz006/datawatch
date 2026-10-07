@@ -1571,5 +1571,15 @@
   "rate_limit_banner_text": "Límite de uso alcanzado",
   "rate_limit_no_reset_time": "Esperando a que se levante el límite",
   "rate_limit_resets_at": "Se levanta a las",
-  "status_hooks_installed_toast": "Hooks de Claude Code instalados"
+  "status_hooks_installed_toast": "Hooks de Claude Code instalados",
+  "community_plugins_title": "Plugins de la comunidad",
+  "community_plugins_no_registries": "Aún no hay registros configurados.",
+  "community_plugins_empty": "No se encontraron plugins en este registro.",
+  "community_plugins_install": "Instalar",
+  "community_plugins_installing": "Instalando…",
+  "community_plugins_installed": "Instalado",
+  "community_plugins_install_success": "Instalado",
+  "community_plugins_install_failed": "Error al instalar",
+  "community_plugins_not_connected": "Este registro aún no está conectado.",
+  "community_plugins_connect": "Conectar"
 }

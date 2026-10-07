@@ -1571,5 +1571,15 @@
   "rate_limit_banner_text": "Limite de débit atteinte",
   "rate_limit_no_reset_time": "En attente de la levée de la limite",
   "rate_limit_resets_at": "Réinitialisation à",
-  "status_hooks_installed_toast": "Hooks Claude Code installés"
+  "status_hooks_installed_toast": "Hooks Claude Code installés",
+  "community_plugins_title": "Plugins communautaires",
+  "community_plugins_no_registries": "Aucun registre configuré pour l'instant.",
+  "community_plugins_empty": "Aucun plugin trouvé dans ce registre.",
+  "community_plugins_install": "Installer",
+  "community_plugins_installing": "Installation…",
+  "community_plugins_installed": "Installé",
+  "community_plugins_install_success": "Installé",
+  "community_plugins_install_failed": "Échec de l'installation",
+  "community_plugins_not_connected": "Ce registre n'est pas encore connecté.",
+  "community_plugins_connect": "Connecter"
 }

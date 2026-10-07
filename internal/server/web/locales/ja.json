@@ -1571,5 +1571,15 @@
   "rate_limit_banner_text": "レート制限中",
   "rate_limit_no_reset_time": "制限解除を待っています",
   "rate_limit_resets_at": "解除予定",
-  "status_hooks_installed_toast": "Claude Code フックがインストールされました"
+  "status_hooks_installed_toast": "Claude Code フックがインストールされました",
+  "community_plugins_title": "コミュニティプラグイン",
+  "community_plugins_no_registries": "レジストリがまだ設定されていません。",
+  "community_plugins_empty": "このレジストリにプラグインが見つかりません。",
+  "community_plugins_install": "インストール",
+  "community_plugins_installing": "インストール中…",
+  "community_plugins_installed": "インストール済み",
+  "community_plugins_install_success": "インストールしました",
+  "community_plugins_install_failed": "インストールに失敗しました",
+  "community_plugins_not_connected": "このレジストリはまだ接続されていません。",
+  "community_plugins_connect": "接続"
 }

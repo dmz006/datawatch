@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.66.0 — feat(pwa): GH#191 — Community Plugins card (browse + install from a registry)
+
+### Added
+- New Settings → Plugins → Community Plugins card, parity with the Android card. The server side (BL325) already existed — only the web UI was missing. Registry picker (not Android's hard-coded `"community"`) covering every registry from `GET /api/skills/registries`, defaulting to `"community"` when present; browses the selected one via `GET /api/plugins/browse?registry=`, installs via `POST /api/plugins/install`. Each row shows the manifest description, or the version when there's no description, per the issue's spec. Not-connected registries (the server's own 400 `registry "<name>" not connected` response) show a Connect action reusing the existing Skill Registries connect flow — registries are shared between the two features, so this is one implementation, not two. `skillsConnect()` now returns its fetch promise (previously fire-and-forget) so this card can chain a real reload after a real connect success instead of guessing a fixed delay. Install success refreshes the existing Plugin Manager card's installed-plugins list. Loading eye (GH#186) on both the registry-list and plugin-list fetches.
+
 ## v8.65.1 — fix(pwa): GH#189 — help-link anchor mismatch, 3 missing pages, 2 doc gaps
 
 ### Fixed

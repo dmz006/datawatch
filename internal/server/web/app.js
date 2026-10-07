@@ -8318,6 +8318,20 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- GH#191 — Community Plugins card: browse + install from a
+             connected registry (BL325 endpoints already existed server-
+             side; only the web UI was missing — Android already had this
+             card). Registries are shared with Skill Registries, so a
+             registry picker (not Android's hard-coded "community") covers
+             every connected registry; the apps follow whatever the web
+             UI does per the issue's own note. -->
+        <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
+          ${settingsSectionHeader('community_plugins', t('community_plugins_title')||'Community Plugins', 'api/plugins.md')}
+          <div id="settings-sec-community_plugins" style="${secContent('community_plugins')}">
+            <div id="communityPluginsPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          </div>
+        </div>
+
         <!-- v6.12.4 — Proxy Resilience now appears AFTER Communication
              Configuration per operator request. -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
@@ -8451,6 +8465,7 @@ function renderSettingsView() {
   loadClusterProfiles();
   loadAgentsConfig();
   loadPluginsPanel();
+  loadCommunityPluginsPanel(); // GH#191
   loadRoutingPanel();
   loadChannelRoutingPanel(); // BL331 parity
   loadAutomataTypeRegistryPanel(); // BL221 parity
@@ -26354,6 +26369,109 @@ function loadPluginsPanel() {
 }
 window.loadPluginsPanel = loadPluginsPanel;
 
+// GH#191 — Community Plugins card: browse + install from a connected
+// registry (parity with the Android card). Registries are shared with
+// Skill Registries (GET /api/skills/registries already lists every
+// registered one, connected or not); defaults to "community" when
+// present (matching Android's hard-coded default) else the first
+// registry, with a picker to switch when more than one exists.
+function loadCommunityPluginsPanel() {
+  const el = document.getElementById('communityPluginsPanelBody');
+  if (!el) return;
+  el.innerHTML = loadingEyeBlock();
+  apiFetch('/api/skills/registries').then(regs => {
+    const list = Array.isArray(regs) ? regs : [];
+    const panel = document.getElementById('communityPluginsPanelBody');
+    if (!panel) return;
+    if (!list.length) {
+      panel.innerHTML = `<div style="opacity:0.7;font-size:12px;">${escHtml(t('community_plugins_no_registries') || 'No registries configured yet.')}</div>`;
+      return;
+    }
+    const preferred = list.find(r => r.name === 'community') || list[0];
+    if (!state._communityPluginsRegistry || !list.some(r => r.name === state._communityPluginsRegistry)) {
+      state._communityPluginsRegistry = preferred.name;
+    }
+    const picker = list.length > 1
+      ? `<select class="form-input" style="font-size:12px;padding:3px 6px;margin-bottom:10px;max-width:220px;" onchange="communityPluginsSwitchRegistry(this.value)">${list.map(r => `<option value="${escHtml(r.name)}" ${r.name === state._communityPluginsRegistry ? 'selected' : ''}>${escHtml(r.name)}</option>`).join('')}</select>`
+      : '';
+    panel.innerHTML = picker + `<div id="communityPluginsList">${loadingEyeBlock()}</div>`;
+    _communityPluginsLoadList(state._communityPluginsRegistry);
+  }).catch(err => {
+    const panel = document.getElementById('communityPluginsPanelBody');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message || err))}</div>`;
+  });
+}
+window.loadCommunityPluginsPanel = loadCommunityPluginsPanel;
+
+window.communityPluginsSwitchRegistry = function(name) {
+  state._communityPluginsRegistry = name;
+  _communityPluginsLoadList(name);
+};
+
+function _communityPluginsLoadList(registry) {
+  const listEl = document.getElementById('communityPluginsList');
+  if (!listEl) return;
+  listEl.innerHTML = loadingEyeBlock();
+  apiFetch('/api/plugins/browse?registry=' + encodeURIComponent(registry)).then(data => {
+    const el = document.getElementById('communityPluginsList');
+    if (!el) return;
+    const plugins = (data && data.plugins) || [];
+    if (!plugins.length) {
+      el.innerHTML = `<div style="opacity:0.7;font-size:12px;">${escHtml(t('community_plugins_empty') || 'No plugins found in this registry.')}</div>`;
+      return;
+    }
+    el.innerHTML = plugins.map(p => {
+      const m = p.manifest || {};
+      // Row spec (GH#191): name, plus the manifest description, or the
+      // version when there's no description.
+      const sub = m.description || (m.version ? 'v' + m.version : '');
+      return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
+        <div style="flex:1;"><strong>${escHtml(p.name)}</strong>${sub ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${escHtml(sub)}</div>` : ''}</div>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="communityPluginInstall('${escHtml(registry)}','${escHtml(p.name)}',this)">${t('community_plugins_install') || 'Install'}</button>
+      </div>`;
+    }).join('');
+  }).catch(err => {
+    const el = document.getElementById('communityPluginsList');
+    if (!el) return;
+    const msg = String(err.message || err);
+    // The server's own 400 wording (internal/skills/manager.go
+    // RegistryCachePath): `registry "<name>" not connected (run...)`.
+    if (/not connected/i.test(msg)) {
+      el.innerHTML = `<div style="opacity:0.85;font-size:12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
+        <div>${escHtml(t('community_plugins_not_connected') || "This registry isn't connected yet.")}</div>
+        <button class="btn-primary" style="font-size:12px;padding:5px 14px;" onclick="communityPluginsConnectAndReload('${escHtml(registry)}')">${t('community_plugins_connect') || 'Connect'}</button>
+      </div>`;
+    } else {
+      el.innerHTML = `<div style="color:var(--error);padding:8px 0;font-size:12px;">${escHtml(msg)}</div>`;
+    }
+  });
+}
+
+// GH#191 — the not-connected empty state's Connect action: reuse the
+// existing Skill Registries connect flow (registries are shared between
+// the two features) rather than a second implementation, then reload
+// this card's list once the real connect call resolves.
+window.communityPluginsConnectAndReload = function(registry) {
+  const p = window.skillsConnect(registry);
+  if (p && typeof p.then === 'function') {
+    p.then(() => _communityPluginsLoadList(registry)).catch(() => {});
+  }
+};
+
+window.communityPluginInstall = function(registry, name, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = t('community_plugins_installing') || 'Installing…'; }
+  apiFetch('/api/plugins/install', { method: 'POST', body: JSON.stringify({ registry, name }) })
+    .then(() => {
+      if (btn) btn.textContent = t('community_plugins_installed') || 'Installed';
+      showToast((t('community_plugins_install_success') || 'Installed') + ' ' + name, 'success', 3000);
+      loadPluginsPanel(); // refresh the installed-plugins list (GH#191 spec)
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = t('community_plugins_install') || 'Install'; }
+      showToast((t('community_plugins_install_failed') || 'Install failed') + ': ' + String(err.message || err), 'error', 5000);
+    });
+};
+
 // BL238 — renderPluginsView redirects to Settings → Plugins sub-tab.
 function renderPluginsView() {
   _settingsTab = 'plugins';
@@ -26968,7 +27086,11 @@ window.skillsAddDefault = function() {
 window.skillsConnect = function(name) {
   // Show a persistent toast while git clone/fetch runs (can take 10-30s).
   showToast((t('skills_connecting')||'Connecting to registry…') + ' ' + name, 'info', 30000);
-  apiFetch('/api/skills/registries/' + encodeURIComponent(name) + '/connect', { method: 'POST' })
+  // GH#191 — returns the promise (previously fire-and-forget) so callers
+  // outside the Skill Registries panel (e.g. Community Plugins' own
+  // Connect action) can chain their own refresh after a real connect
+  // success/failure, instead of guessing a fixed delay.
+  return apiFetch('/api/skills/registries/' + encodeURIComponent(name) + '/connect', { method: 'POST' })
     .then(data => {
       const n = (data && data.available && data.available.length) || 0;
       showToast((t('skills_connected')||'Connected;') + ' ' + n + ' ' + (t('skills_available_count')||'skills available — use Browse to select and sync'), 'success', 5000);
