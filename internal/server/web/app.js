@@ -20912,6 +20912,38 @@ function loadStatsPanel() {
   // GH#172 D78 — backend health + envelope rollup cards (Android parity).
   loadBackendHealthCard();
   loadObserverEnvelopesCard();
+  // BL397 — ACME certificate health card.
+  loadAcmeHealthCard();
+}
+
+// BL397 — Certificates card: ACME cert expiry at a glance in the Monitor
+// tab, separate from the Settings cert-source selector's detailed status
+// (that one's for managing the source; this one's for noticing trouble
+// during a routine health check). Hidden entirely when ACME is disabled.
+function loadAcmeHealthCard() {
+  const block = document.getElementById('acmeHealthBlock');
+  const el = document.getElementById('acmeHealthList');
+  if (!block || !el) return;
+  apiFetch('/api/acme/status').then(data => {
+    if (!data || !data.enabled || !data.domains || !data.domains.length) {
+      block.style.display = 'none';
+      return;
+    }
+    block.style.display = '';
+    el.innerHTML = data.domains.map(d => {
+      const now = Date.now();
+      const exp = d.not_after ? new Date(d.not_after).getTime() : 0;
+      const daysLeft = exp ? Math.floor((exp - now) / 86400000) : null;
+      let dotColor = 'var(--error,#ef4444)';
+      if (d.issued && daysLeft !== null) {
+        dotColor = daysLeft > 14 ? 'var(--success,#10b981)' : 'var(--warning,#f59e0b)';
+      }
+      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>`;
+      const label = d.in_flight ? 'issuing…' : (d.issued ? `expires in ${daysLeft}d` : 'not issued');
+      const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
+      return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(d.domain)}</span> <span style="opacity:0.6;">— ${escHtml(label)}</span>${err}</div>`;
+    }).join('');
+  }).catch(() => { block.style.display = 'none'; });
 }
 
 // GH#172 D78 — Backend Health card: lists each configured LLM backend's
@@ -24752,6 +24784,13 @@ function renderObserverView() {
           <div id="backendHealthBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_backend_health')||'Backend Health')}</div>
             <div id="backendHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <!-- BL397 — Certificates card: ACME cert health at a glance,
+               hidden entirely when ACME isn't enabled (self-signed/manual
+               TLS has no expiry worth watching here). -->
+          <div id="acmeHealthBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_certificates')||'Certificates')}</div>
+            <div id="acmeHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
           </div>
           <!-- GH#172 D78 — Envelopes card (Android parity): the observer's
                own live process-tree rollup (session/backend/container). -->

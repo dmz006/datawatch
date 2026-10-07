@@ -749,6 +749,7 @@
   "obs_peer_no_peers": "aucun pair enregistré",
   "obs_peer_resources": "Ressources des pairs",
   "obs_backend_health": "Backend Health",
+"obs_certificates": "Certificats",
   "obs_backend_none": "no backends configured",
   "obs_backend_unavailable": "unavailable",
   "obs_envelopes": "Envelopes",

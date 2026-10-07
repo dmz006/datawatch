@@ -3178,6 +3178,42 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "62. BL397 — native ACME subsystem REST surface"
+# Structural/wiring check only -- the sandbox daemon has no real public
+# hostname or port 80, so a full issue/renew cycle isn't exercised here
+# (that was live-verified separately against a real host + real Let's
+# Encrypt directory; see docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md).
+# This section just confirms the REST surface is wired and degrades
+# gracefully when acme.enabled is false (the sandbox's default).
+ACME_STATUS=$(curl "${curl_args[@]}" -s "$BASE/api/acme/status" 2>/dev/null || echo "")
+if echo "$ACME_STATUS" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "enabled" in d' 2>/dev/null; then
+  ok "S62 — GET /api/acme/status returns a well-formed response"
+else
+  ko "S62 — GET /api/acme/status did not return an 'enabled' field: ${ACME_STATUS:0:200}"
+fi
+
+ACME_ENABLED=$(echo "$ACME_STATUS" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("enabled"))' 2>/dev/null || echo "")
+if [[ "$ACME_ENABLED" == "False" || "$ACME_ENABLED" == "false" ]]; then
+  VERIFY_CODE=$(curl "${curl_args[@]}" -s -o /tmp/smoke-acme-verify.$$ -w '%{http_code}' "$BASE/api/acme/verify" 2>/dev/null || echo "000")
+  rm -f /tmp/smoke-acme-verify.$$
+  if [[ "$VERIFY_CODE" == "503" ]]; then
+    ok "S62 — GET /api/acme/verify returns 503 when acme is disabled (graceful, not a 500/panic)"
+  else
+    ko "S62 — GET /api/acme/verify with acme disabled returned $VERIFY_CODE, expected 503"
+  fi
+  RENEW_CODE=$(curl "${curl_args[@]}" -s -o /tmp/smoke-acme-renew.$$ -w '%{http_code}' -X POST "$BASE/api/acme/renew" 2>/dev/null || echo "000")
+  rm -f /tmp/smoke-acme-renew.$$
+  if [[ "$RENEW_CODE" == "503" ]]; then
+    ok "S62 — POST /api/acme/renew returns 503 when acme is disabled (graceful, not a 500/panic)"
+  else
+    ko "S62 — POST /api/acme/renew with acme disabled returned $RENEW_CODE, expected 503"
+  fi
+  skip "S62 — full issue/renew cycle needs a real public hostname + port 80; live-verified separately, not simulated here"
+else
+  skip "S62 — acme.enabled is true on this sandbox; skipping the disabled-path checks (unexpected for a fresh sandbox config)"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

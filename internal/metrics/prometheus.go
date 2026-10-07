@@ -120,6 +120,16 @@ var (
 		Help: "Quality gate evaluations that detected a test regression",
 	})
 
+	// BL397 — native ACME subsystem metrics.
+	AcmeCertExpirySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_acme_cert_expiry_seconds",
+		Help: "Seconds until the current ACME-issued cert expires (0 if never issued)",
+	}, []string{"domain"})
+	AcmeRenewalsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_acme_renewals_total",
+		Help: "ACME issue/renewal attempts by outcome",
+	}, []string{"domain", "result"}) // result: success | failure
+
 	// Web Search (SearXNG) metrics.
 	WebSearchQueriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "datawatch_web_search_queries_total",
@@ -143,6 +153,7 @@ func Register() {
 		InjectionGuardHitsTotal,
 		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
 		WebSearchQueriesTotal, WebSearchErrorsTotal,
+		AcmeCertExpirySeconds, AcmeRenewalsTotal,
 	)
 }
 

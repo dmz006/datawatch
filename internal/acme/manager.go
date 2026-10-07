@@ -32,6 +32,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/metrics"
 )
 
 // Event is one entry in the Manager's issuer log — a bounded in-memory
@@ -171,6 +172,9 @@ func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, 
 			Issued:   existingIssued,
 			NotAfter: existingNotAfter,
 		}
+		if existingIssued {
+			metrics.AcmeCertExpirySeconds.WithLabelValues(d).Set(time.Until(existingNotAfter).Seconds())
+		}
 	}
 
 	dirURL := directoryURL(cfg.Endpoint)
@@ -240,7 +244,7 @@ func loadExistingCertStatus(dataDir string, domains []string) (bool, time.Time) 
 		return false, time.Time{}
 	}
 	path := filepath.Join(dataDir, "tls", "acme", domains[0], "fullchain.pem")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- dataDir/domains come from operator config (cfg.DataDir/cfg.Acme.Domains), not external request input
 	if err != nil {
 		return false, time.Time{}
 	}
@@ -334,6 +338,7 @@ func (m *Manager) recordFailure(domain string, err error) {
 			severity = alerts.LevelError
 		}
 		m.mu.Unlock()
+		metrics.AcmeRenewalsTotal.WithLabelValues(domain, "failure").Inc()
 		m.logEvent(severity, "ACME order failed: "+domain, err.Error())
 		return
 	}
@@ -438,6 +443,8 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 		st.LastRenewal = now
 		st.LastError = ""
 		st.ConsecutiveFailures = 0
+		metrics.AcmeCertExpirySeconds.WithLabelValues(d).Set(time.Until(leaf.NotAfter).Seconds())
+		metrics.AcmeRenewalsTotal.WithLabelValues(d, "success").Inc()
 	}
 	m.mu.Unlock()
 
