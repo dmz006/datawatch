@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.69.3"
+var Version = "8.69.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5698,6 +5698,7 @@ Return STRICT JSON:
 		})
 		statsCollector.SetBoundInterfaces(strings.Split(cfg.Server.Host, ","))
 		statsCollector.SetServerInterfaces(cfg.Server.Port, cfg.Server.TLSEnabled, cfg.Server.TLSPort, cfg.MCP.SSEHost, cfg.MCP.SSEPort)
+		statsCollector.SetServerIdentity(cfg.Hostname, Version) // GH#192 D78a
 		statsCollector.SetCommStatsFunc(func() []statspkg.CommChannelStat {
 			snapshots := chanTracker.Snapshot()
 

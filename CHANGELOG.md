@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.69.4 — docs: backfilled a plan doc for the federation-dispatch and Dashboard-aggregation fixes
+
+### Added
+- `docs/plans/2026-10-07-bl316-s2-bl317-federation-dispatch.md` — a compliance audit found the federation live-store fix (v8.67.0) and the Dashboard cost/PRD aggregation feature (v8.69.0) were architecturally non-trivial enough to warrant a dated plan doc, but shipped without one. Backfilled retroactively with the decisions made, what shipped, and the parity-surface rationale; `docs/plans/README.md`'s backlog entries now point at it.
+
 ## v8.69.3 — docs: Android beta moved from internal testing to Google Play closed testing
 
 ### Changed
