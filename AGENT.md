@@ -82,6 +82,17 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 - **Never reuse a version** — if v0.14.3 is already pushed/released, the next commit must be
   v0.14.4 or higher. Amending a pushed commit with `--force-with-lease` to fix a version is
   acceptable only if no release was created for the old version.
+- **Multi-commit features bump on every commit, not just the last one** (clarified 2026-10-07
+  after a compliance audit found two multi-commit features in the same window treating this
+  oppositely — one bumped every commit correctly, the other shipped ~10 commits with no version
+  change at all, rolled into a single bump at the end). There is no "batch, then roll up" mode for
+  behavior-changing commits, regardless of how tightly sequenced they are.
+- **The one recognized exception**: a commit with zero behavior change — test-only additions, pure
+  planning/plan-doc commits under `docs/plans/`, chore/CI-only changes, and Dependabot-authored
+  dependency-bump PRs — may skip the bump. This reflects actual long-standing practice (confirmed
+  via audit against history, not a new allowance), but does not cover docs/copy changes outside
+  `docs/plans/` (README, CHANGELOG, user-facing docs) — those are explicitly a patch bump per the
+  rule above, not exempt.
 - **Running daemon check** — after `go build` + install, verify the binary version matches:
   `datawatch version` should show the new version BEFORE restarting the daemon.
 - **Patch bump** (default for all pushes): increment the third number — `0.1.2` → `0.1.3`

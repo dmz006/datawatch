@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.70.1 — fix(i18n): localize the council consensus/dissent viewer; close the version-bump policy gap
+
+### Fixed
+- A compliance audit found two hardcoded UI strings introduced in earlier council-markdown work (`Consensus`, `Dissent`, `No rounds recorded.`, `Rendering…`) with no `t()` wrapping and no locale-bundle entries. Added `council_consensus`, `council_dissent`, `council_no_rounds`, `council_rendering` to all 5 locale bundles and wired them into the council run viewer and live-run log.
+- Localized the Android beta-info card's description text (previously a hardcoded English string added in the last beta-link update) — new `settings_mobile_app_beta_info`/`settings_mobile_app_opt_in` keys across all 5 bundles.
+- README: removed a leftover internal tracker reference from the APNs mention in the release-highlights paragraph.
+
+### Changed
+- AGENT.md's versioning rule clarified: multi-commit features must bump the version on every commit, not roll multiple commits into one bump at the end (the audit found two features in the same 48h window doing this oppositely). Documented the one real exception — zero-behavior-change commits (tests, plan docs, chore/CI, Dependabot bumps) — as the existing long-standing practice it actually is, rather than leaving it an unwritten inconsistency.
+
 ## v8.70.0 — feat(pwa): GH#192 Phase 1 — agent id badge, watched-only alert badge, Observer server info, terminal-connect splash dwell, header refresh spinner
 
 ### Added
