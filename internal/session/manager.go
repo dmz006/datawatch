@@ -5283,6 +5283,17 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		}
 }
 
+	// B98 — claude-code's own JSONL transcript (not this pane log) is
+	// where real per-turn token usage lives; poll it on the same
+	// lifecycle as this function's own monitoring (started together,
+	// stopped together via ctx) so TokensIn/TokensOut/EstCostUSD
+	// actually populate instead of staying at zero forever.
+	if sess.BackendFamily == "claude-code" {
+		go trackClaudeCodeUsage(ctx, sess.FullID, sess.ProjectDir, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
+			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		})
+	}
+
 	// Seek to end for new content
 	if _, err := f.Seek(0, 2); err != nil {
 		return

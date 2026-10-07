@@ -65,6 +65,22 @@ func SetChatEmitter(fn func(sessionID, role, content string, streaming bool)) {
 	chatEmitter = fn
 }
 
+// B98 — usageFn reports real per-turn token usage so the session's
+// running TokensIn/TokensOut/EstCostUSD counters (internal/session/
+// cost.go) actually populate for ollama-backed sessions, instead of
+// staying at zero forever (AddUsage was previously only ever called
+// from the manual POST /api/cost/usage endpoint). Ollama's /api/chat
+// streaming response puts prompt_eval_count/eval_count only on the
+// final ("done":true) chunk — this package already decodes that chunk
+// to detect completion, so wiring it just means not discarding those
+// two fields.
+var usageFn func(tmuxSession string, tokensIn, tokensOut int)
+
+// SetUsageFn registers the callback for per-turn token usage.
+func SetUsageFn(fn func(tmuxSession string, tokensIn, tokensOut int)) {
+	usageFn = fn
+}
+
 func emitChat(tmuxSession, role, content string, streaming bool) {
 	if chatEmitter != nil {
 		sessionID := strings.TrimPrefix(tmuxSession, "cs-")
@@ -197,7 +213,9 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
-			Done bool `json:"done"`
+			Done            bool `json:"done"`
+			PromptEvalCount int  `json:"prompt_eval_count"`
+			EvalCount       int  `json:"eval_count"`
 		}
 		if json.Unmarshal([]byte(line), &chunk) != nil {
 			continue
@@ -207,6 +225,9 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 			emitChat(tmuxSession, "assistant", chunk.Message.Content, true)
 		}
 		if chunk.Done {
+			if usageFn != nil && (chunk.PromptEvalCount > 0 || chunk.EvalCount > 0) {
+				usageFn(tmuxSession, chunk.PromptEvalCount, chunk.EvalCount)
+			}
 			break
 		}
 	}
