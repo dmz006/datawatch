@@ -11105,10 +11105,15 @@ function renderPRDRow(prd) {
   // the left-border colour via .prd-card-status-<status>.
   // .prd-row class kept as alias for the v5.26.6 scrollToPRD selector.
   const statusClass = `prd-card-status-${(prd.status || 'draft').replace(/[^a-z_]/g, '')}`;
+  // BL317 — per-row server attribution (aggregated "all servers" mode
+  // tags each PRD with its owning server; same badge/class as Sessions).
+  const serverBadge = (prd.server && prd.server !== 'local')
+    ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;margin-left:4px;" title="Server: ${escHtml(prd.server)}">${escHtml(prd.server)}</span>`
+    : '';
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
       </div>
@@ -20923,6 +20928,51 @@ function _pollForDeepLinkedAlert(alertId, attempt) {
     node = node.parentElement;
   }
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// BL317 — hoisted out of renderAlertsView's closure (was `renderAlert`,
+// a local arrow fn capturing `cmds`) so the markup logic, including the
+// per-row server-attribution badge, is directly unit-testable the same
+// way other browser-heuristic-adjacent render logic in this file is —
+// see app-alert-deeplink.test.js / app-pwa-expand-persist.test.js for
+// the same pattern. `cmds` is now an explicit parameter instead of a
+// closure capture; callers are unchanged in behavior.
+function renderAlertCard(a, sessState, isFirst, cmds) {
+  const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+  const isWaiting = sessState === 'waiting_input';
+
+  // Quick-reply dropdown only on the first (latest) alert for a waiting session
+  let replyBtns = '';
+  if (isFirst && isWaiting && cmds && cmds.length > 0 && a.session_id) {
+    const sessId = JSON.stringify(a.session_id);
+    const opts = cmds.map(c => {
+      const safeVal = escHtml(c.command);
+      return `<option value="${safeVal}">${escHtml(c.name)}</option>`;
+    }).join('');
+    replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">${t('alerts_quick_reply_ph')||'Quick reply…'}</option>${opts}</select></div>`;
+  }
+
+  // BL344 — navigate to session from alert card
+  const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(a.session_id)})`)}" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
+  // BL317 — per-row server attribution (aggregated "all servers" mode
+  // tags each alert with its owning server; same badge/class as Sessions).
+  // A system alert's session-group can mix alerts from several
+  // servers, so this is rendered per-card, not per session-group.
+  const serverBadge = (a.server && a.server !== 'local')
+    ? `<span class="server-badge" style="font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(a.server)}">${escHtml(a.server)}</span>`
+    : '';
+  return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <span style="display:inline-flex;align-items:center;gap:6px;">
+        <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
+        ${serverBadge}
+      </span>
+      <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
+    </div>
+    <div style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
+    ${sessNavBtn}${replyBtns}
+  </div>`;
   el.classList.add('alert-deep-link-highlight');
   setTimeout(() => el.classList.remove('alert-deep-link-highlight'), 2000);
 }
@@ -20989,33 +21039,7 @@ function renderAlertsView() {
       else inactiveTabs.push(entry);
     }
 
-    const renderAlert = (a, sessState, isFirst) => {
-      const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
-      const isWaiting = sessState === 'waiting_input';
-
-      // Quick-reply dropdown only on the first (latest) alert for a waiting session
-      let replyBtns = '';
-      if (isFirst && isWaiting && cmds && cmds.length > 0 && a.session_id) {
-        const sessId = JSON.stringify(a.session_id);
-        const opts = cmds.map(c => {
-          const safeVal = escHtml(c.command);
-          return `<option value="${safeVal}">${escHtml(c.name)}</option>`;
-        }).join('');
-        replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">${t('alerts_quick_reply_ph')||'Quick reply…'}</option>${opts}</select></div>`;
-      }
-
-      // BL344 — navigate to session from alert card
-      const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(a.session_id)})`)}" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
-      return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
-          <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
-        </div>
-        <div style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
-        ${sessNavBtn}${replyBtns}
-      </div>`;
-    };
+    const renderAlert = (a, sessState, isFirst) => renderAlertCard(a, sessState, isFirst, cmds);
 
     const renderSessionSection = (entry, collapsed) => {
       const { sessID, alerts, sess, sessState } = entry;

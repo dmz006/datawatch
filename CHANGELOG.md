@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.68.0 — feat(pwa): BL317 — per-row server attribution for PRDs and Alerts
+
+### Added
+- Audit (2026-10-07) found `/api/autonomous/prds/aggregated` and `/api/alerts/aggregated` already tag every item with its owning `server` field server-side, but the PWA only ever rendered the `.server-badge` chip for Sessions rows — PRDs and Alerts had working "all servers" aggregation with no visual attribution of which server each row came from. `renderPRDRow` and alert cards now render the same badge (hidden for `server === 'local'`/absent, same styling as Sessions).
+- `renderAlert` (previously a closure inside `renderAlertsView` capturing `cmds`) hoisted to a top-level `renderAlertCard(a, sessState, isFirst, cmds)` — `cmds` is now an explicit parameter — so the markup logic is directly unit-testable, same pattern as other render logic in this file. Behavior at all 3 existing call sites is unchanged.
+- 6 new unit tests (`app-server-badge.test.js`).
+
 ## v8.67.0 — fix(federation): BL316 S2 — RemoteDispatcher no longer blind to peers added after daemon startup
 
 ### Fixed
