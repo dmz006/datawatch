@@ -12,6 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/go-acme/lego/v4/certificate"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // selfSignedPEMForTest builds a minimal self-signed cert PEM block for
@@ -119,6 +123,80 @@ func TestLoadExistingCertStatus_FindsAndParsesAFreshCert(t *testing.T) {
 	}
 	if time.Until(notAfter) <= 0 {
 		t.Fatal("expected a NotAfter in the future for a freshly-written test cert")
+	}
+}
+
+// TestApplyCertificate_UpdatesAndSavesServerTLSPaths is the regression
+// test for the live-test bug (2026-10-06): the PEM was being written to
+// disk and Status() correctly reported the cert as issued, but the TLS
+// listener kept serving the old self-signed cert because applyCertificate
+// never actually pointed server.tls_cert/tls_key at the new file (or
+// mcp.tls_cert/tls_key, when configured to share the cert) and never
+// persisted the change — so even a restart had nothing new to pick up.
+func TestApplyCertificate_UpdatesAndSavesServerTLSPaths(t *testing.T) {
+	dataDir := t.TempDir()
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	fullCfg := config.DefaultConfig()
+	fullCfg.DataDir = dataDir
+	if err := config.Save(fullCfg, cfgPath); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	leafPEM := selfSignedPEMForTest(t, key)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	restarted := false
+	m := &Manager{
+		cfg: config.AcmeConfig{
+			Domains: []string{"spaceportsouth.dmzs.com"},
+			Apply:   config.AcmeApplyConfig{UpdateMCPCert: true},
+		},
+		dataDir:   dataDir,
+		fullCfg:   fullCfg,
+		cfgPath:   cfgPath,
+		status:    map[string]*DomainStatus{"spaceportsouth.dmzs.com": {Domain: "spaceportsouth.dmzs.com"}},
+		restartFn: func() { restarted = true },
+	}
+
+	if err := m.applyCertificate(&certificate.Resource{Certificate: leafPEM, PrivateKey: keyPEM}); err != nil {
+		t.Fatalf("applyCertificate: %v", err)
+	}
+
+	wantCert := filepath.Join(dataDir, "tls", "acme", "spaceportsouth.dmzs.com", "fullchain.pem")
+	wantKey := filepath.Join(dataDir, "tls", "acme", "spaceportsouth.dmzs.com", "privkey.pem")
+	if fullCfg.Server.TLSCert != wantCert {
+		t.Errorf("Server.TLSCert = %q, want %q", fullCfg.Server.TLSCert, wantCert)
+	}
+	if fullCfg.Server.TLSKey != wantKey {
+		t.Errorf("Server.TLSKey = %q, want %q", fullCfg.Server.TLSKey, wantKey)
+	}
+	if fullCfg.MCP.TLSCert != wantCert {
+		t.Errorf("MCP.TLSCert = %q, want %q (UpdateMCPCert was true)", fullCfg.MCP.TLSCert, wantCert)
+	}
+
+	// Must be persisted to disk, not just updated in memory — a restart
+	// re-reads from cfgPath.
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload saved config: %v", err)
+	}
+	if reloaded.Server.TLSCert != wantCert {
+		t.Errorf("saved config Server.TLSCert = %q, want %q — the fix must persist, not just mutate in memory", reloaded.Server.TLSCert, wantCert)
+	}
+
+	// restartFn is called asynchronously (500ms delay, see the
+	// HTTP-response-race fix) — give it a moment.
+	time.Sleep(600 * time.Millisecond)
+	if !restarted {
+		t.Error("expected restartFn to have been called after a successful apply")
 	}
 }
 

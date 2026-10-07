@@ -6063,7 +6063,7 @@ Return STRICT JSON:
 		// manual certs keep working unchanged either way).
 		if cfg.Acme.Enabled {
 			var acmeErr error
-			acmeMgr, acmeErr = acme.NewManager(cfg.Acme, expandHome(cfg.DataDir), encKey, daemonRestartFn)
+			acmeMgr, acmeErr = acme.NewManager(cfg, expandHome(cfg.DataDir), resolveConfigPath(), encKey, daemonRestartFn)
 			if acmeErr != nil {
 				fmt.Printf("[acme] startup failed, continuing without ACME: %v\n", acmeErr)
 				acmeMgr = nil

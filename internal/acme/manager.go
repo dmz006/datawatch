@@ -73,6 +73,16 @@ type Manager struct {
 	client   *lego.Client
 	provider *httpProvider
 
+	// fullCfg + cfgPath are needed only for Apply's "point server.tls_cert
+	// at the issued PEM and persist it" step (PRD plan doc §3.4 item 2) —
+	// everything else in this package only ever needs the acme: sub-block
+	// (m.cfg). Found missing entirely during the live test: the PEM was
+	// written and Status() correctly reported it as issued, but the TLS
+	// listener kept serving the old self-signed cert because nothing
+	// ever updated/saved server.tls_cert/tls_key to point at the new file.
+	fullCfg *config.Config
+	cfgPath string
+
 	// restartFn is the daemon's existing self-restart callback (see
 	// internal/server/api.go's handleRestart -> s.restartFn ->
 	// syscall.Exec). Apply calls this directly after writing a new PEM
@@ -112,11 +122,16 @@ func (m *Manager) IssuerLog() []Event {
 	return out
 }
 
-// NewManager constructs a Manager. encKey is the same DWDAT2 derivation
-// key every other encrypted store uses (nil for a non---secure daemon).
-// restartFn may be nil (e.g. in tests); Apply then only writes the PEM
-// and logs that a manual restart is needed.
-func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn func()) (*Manager, error) {
+// NewManager constructs a Manager. dataDir must already be expanded
+// (e.g. "~" resolved) by the caller — config.Config.DataDir itself is
+// not. fullCfg + cfgPath are needed only for Apply's
+// config-update-and-save step (see the Manager struct's doc comment) —
+// fullCfg.Acme is used for everything else. encKey is the same DWDAT2
+// derivation key every other encrypted store uses (nil for a
+// non---secure daemon). restartFn may be nil (e.g. in tests); Apply then
+// only writes the PEM and logs that a manual restart is needed.
+func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, restartFn func()) (*Manager, error) {
+	cfg := fullCfg.Acme
 	if len(cfg.Domains) == 0 {
 		return nil, errors.New("acme: at least one domain is required")
 	}
@@ -132,6 +147,8 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 	m := &Manager{
 		cfg:       cfg,
 		dataDir:   dataDir,
+		fullCfg:   fullCfg,
+		cfgPath:   cfgPath,
 		account:   account,
 		provider:  newHTTPProvider(),
 		restartFn: restartFn,
@@ -382,6 +399,26 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 	}
 	if err := atomicWriteFile(filepath.Join(dir, "privkey.pem"), res.PrivateKey, 0600); err != nil {
 		return err
+	}
+
+	// Point server.tls_cert/tls_key (and mcp.tls_cert/tls_key, if
+	// configured) at the freshly-written PEM and persist it — per the
+	// BL397 plan doc §3.4 item 2. Found MISSING entirely during the live
+	// test: the PEM was written and Status() correctly reported the cert
+	// as issued, but the TLS listener kept serving the old self-signed
+	// cert because nothing had ever updated or saved these paths. The
+	// subsequent restart (below) is what makes the listener actually
+	// pick this up at boot.
+	certPath := filepath.Join(dir, "fullchain.pem")
+	keyPath := filepath.Join(dir, "privkey.pem")
+	m.fullCfg.Server.TLSCert = certPath
+	m.fullCfg.Server.TLSKey = keyPath
+	if m.cfg.Apply.UpdateMCPCert {
+		m.fullCfg.MCP.TLSCert = certPath
+		m.fullCfg.MCP.TLSKey = keyPath
+	}
+	if err := config.Save(m.fullCfg, m.cfgPath); err != nil {
+		return fmt.Errorf("save config with new cert paths: %w", err)
 	}
 
 	leaf, err := parseLeafCert(res.Certificate)
