@@ -178,6 +178,7 @@ cleanup_all() {
         compute-node)    curl "${curl_args[@]}" -X DELETE "$BASE/api/compute/nodes/$id" >/dev/null 2>&1 && echo "  removed compute node $id" || echo "  (already gone) compute-node $id" ;;
         llm)             curl "${curl_args[@]}" -X DELETE "$BASE/api/llms/$id" >/dev/null 2>&1 && echo "  removed llm $id" || echo "  (already gone) llm $id" ;;
         smoke-file)      curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"path\":\"$id\"}" "$BASE/api/files" >/dev/null 2>&1 && echo "  deleted file $id" || echo "  (already gone) file $id" ;;
+        device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
     done
@@ -3247,6 +3248,45 @@ if [[ -n "$LLM_KEY_CREATE" ]]; then
   fi
 else
   skip "S63 — could not create a smoke LLM entry"
+fi
+
+H "64. GH#183 — APNs per-device apns_environment persists + round-trips (v8.63.4)"
+DEV_TOKEN="smoke-apns-$$"
+DEV_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/devices/register" \
+  -H "Content-Type: application/json" \
+  -d "{\"device_token\":\"$DEV_TOKEN\",\"kind\":\"apns\",\"platform\":\"ios\",\"apns_environment\":\"development\"}" 2>/dev/null || echo "")
+DEV_ID=$(echo "$DEV_CREATE" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("device_id",""))' 2>/dev/null || echo "")
+if [[ -n "$DEV_ID" ]]; then
+  add_cleanup device "$DEV_ID"
+  DEV_LIST=$(curl "${curl_args[@]}" "$BASE/api/devices" 2>/dev/null || echo "")
+  if echo "$DEV_LIST" | grep -q "\"device_id\":\"$DEV_ID\"" && echo "$DEV_LIST" | grep -q '"apns_environment":"development"'; then
+    ok "S64 — GET /api/devices shows the registered apns_environment"
+  else
+    ko "S64 — apns_environment missing/wrong in GET /api/devices: ${DEV_LIST:0:300}"
+  fi
+  # Re-register the same token under production (e.g. a TestFlight build
+  # graduated to App Store) -- must refresh, not stick to the old value.
+  curl "${curl_args[@]}" -s -X POST "$BASE/api/devices/register" \
+    -H "Content-Type: application/json" \
+    -d "{\"device_token\":\"$DEV_TOKEN\",\"kind\":\"apns\",\"platform\":\"ios\",\"apns_environment\":\"production\"}" >/dev/null 2>&1
+  DEV_LIST2=$(curl "${curl_args[@]}" "$BASE/api/devices" 2>/dev/null || echo "")
+  if echo "$DEV_LIST2" | grep -q '"apns_environment":"production"'; then
+    ok "S64 — re-registering the same token refreshes apns_environment"
+  else
+    ko "S64 — apns_environment did not refresh on re-register: ${DEV_LIST2:0:300}"
+  fi
+  # An invalid value must be rejected, not silently stored.
+  DEV_BAD_CODE=$(curl "${curl_args[@]}" -s -o /tmp/smoke-apns-bad.$$ -w '%{http_code}' -X POST "$BASE/api/devices/register" \
+    -H "Content-Type: application/json" \
+    -d "{\"device_token\":\"smoke-apns-bad-$$\",\"kind\":\"apns\",\"apns_environment\":\"staging\"}" 2>/dev/null || echo "000")
+  rm -f /tmp/smoke-apns-bad.$$
+  if [[ "$DEV_BAD_CODE" == "400" ]]; then
+    ok "S64 — POST /api/devices/register rejects an invalid apns_environment (400)"
+  else
+    ko "S64 — invalid apns_environment returned $DEV_BAD_CODE, expected 400"
+  fi
+else
+  skip "S64 — could not create a smoke APNs device registration"
 fi
 
 # ---------------------------------------------------------------------------
