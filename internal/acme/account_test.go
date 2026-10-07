@@ -94,6 +94,33 @@ func TestAccount_IsRegisteredFor_DoesNotCrossDirectories(t *testing.T) {
 	}
 }
 
+// TestAccount_ClearRegistration_NilsGetRegistration is the regression
+// test for the second layer of the same live-test bug: lego's client
+// inspects GetRegistration() to pick embedded-JWK (new account) vs KeyID
+// (existing account) signing. A stale non-nil Resource from a different
+// directory made it choose KeyID and get rejected ("No embedded JWK in
+// JWS header"). ClearRegistration must make GetRegistration() return nil
+// again, in memory, without requiring a save.
+func TestAccount_ClearRegistration_NilsGetRegistration(t *testing.T) {
+	dir := t.TempDir()
+	a, err := LoadOrCreateAccount(dir, "", nil)
+	if err != nil {
+		t.Fatalf("LoadOrCreateAccount: %v", err)
+	}
+	if err := a.SetRegistration(&registration.Resource{URI: "https://example.test/acme/acct/1"}, "https://staging.example/directory"); err != nil {
+		t.Fatalf("SetRegistration: %v", err)
+	}
+	if a.GetRegistration() == nil {
+		t.Fatal("test setup bug: expected a non-nil registration before ClearRegistration")
+	}
+
+	a.ClearRegistration()
+
+	if a.GetRegistration() != nil {
+		t.Fatal("expected GetRegistration() to be nil after ClearRegistration — a stale cross-directory registration would make lego sign with the wrong JWS mode")
+	}
+}
+
 func TestLoadOrCreateAccount_EncryptedAtRest(t *testing.T) {
 	dir := t.TempDir()
 	key := make([]byte, 32)

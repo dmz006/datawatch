@@ -74,6 +74,23 @@ func (a *Account) SetRegistration(reg *registration.Resource, directoryURL strin
 	return a.save()
 }
 
+// ClearRegistration drops the in-memory registration (does NOT persist —
+// the caller is expected to call SetRegistration right after with the
+// fresh result, which does persist). Needed before re-registering
+// against a different directory: lego's client inspects
+// GetRegistration() to decide whether to sign the new-account request
+// with an embedded JWK (correct for a truly new registration) or a
+// KeyID (correct only once already registered against THIS directory).
+// Leaving a stale cross-directory registration.Resource in place made
+// lego choose the KeyID path and get a real 400 "No embedded JWK in JWS
+// header" from Let's Encrypt — found live during the staging->production
+// endpoint flip.
+func (a *Account) ClearRegistration() {
+	a.mu.Lock()
+	a.reg = nil
+	a.mu.Unlock()
+}
+
 // IsRegisteredFor reports whether this account has already completed
 // ACME registration against this EXACT directory (staging and
 // production are separate registries — a registration valid against one

@@ -157,6 +157,20 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 	}
 
 	dirURL := directoryURL(cfg.Endpoint)
+	needsRegister := !account.IsRegisteredFor(dirURL)
+	if needsRegister {
+		// Must clear BEFORE constructing the lego client below: lego
+		// inspects GetRegistration() to decide whether to sign the
+		// new-account request with an embedded JWK (correct here) or a
+		// KeyID (only correct once already registered against THIS
+		// directory). A stale cross-directory registration left in place
+		// made lego pick the KeyID path and get a real 400 "No embedded
+		// JWK in JWS header" from Let's Encrypt — found live during the
+		// staging->production flip, one layer deeper than the
+		// IsRegisteredFor bug this same flip first exposed.
+		account.ClearRegistration()
+	}
+
 	legoCfg := lego.NewConfig(account)
 	legoCfg.CADirURL = dirURL
 	client, err := lego.NewClient(legoCfg)
@@ -168,7 +182,7 @@ func NewManager(cfg config.AcmeConfig, dataDir string, encKey []byte, restartFn 
 	}
 	m.client = client
 
-	if !account.IsRegisteredFor(dirURL) {
+	if needsRegister {
 		// Bug found live 2026-10-06: staging and production are separate
 		// ACME registries. A registration valid against one directory is
 		// rejected by the other ("KeyID header contained an invalid
