@@ -4030,7 +4030,7 @@ function toggleSessionTimeline(sessionId) {
   const panel = document.createElement('div');
   panel.id = 'timelinePanel';
   panel.style.cssText = 'background:var(--surface2,#1e1e2e);border-top:1px solid var(--border);padding:12px;font-size:12px;font-family:monospace;max-height:260px;overflow-y:auto;color:var(--text2);';
-  panel.innerHTML = `<div style="color:var(--text2);padding:8px 0;">${t('timeline_loading')||'Loading timeline…'}</div>`;
+  panel.innerHTML = `<div style="color:var(--text2);padding:8px 0;">${loadingEyeBlock(t('timeline_loading')||'Loading timeline…', 'panel')}</div>`;
   outputArea.insertAdjacentElement('afterend', panel);
   fetch('/api/sessions/timeline?id=' + encodeURIComponent(sessionId), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
@@ -4128,7 +4128,7 @@ function renderSessionStats(sessionId) {
   // is now 'status' (the merged tab), so the gate-check accepts both.
   const area = document.getElementById('statusSubpaneStats') || document.getElementById('outputAreaStats');
   if (!area || !sessionId) return;
-  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('loading')||'Loading…')}</div>`;
+  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${loadingEyeBlock()}</div>`;
   const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
   const _fetchStatsOnce = () => {
     const cnRef = sess && sess.compute_node_ref;
@@ -4364,7 +4364,7 @@ function renderSessionStatusBoard(sessionId) {
   // fallback so other call sites that aren't tab-aware still work.
   const area = document.getElementById('statusSubpaneStatus') || document.getElementById('outputAreaStatus');
   if (!area || !sessionId) return;
-  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('common_loading')||'Loading…')}</div>`;
+  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${loadingEyeBlock()}</div>`;
   // Pre-load Stats sub-pane in parallel so toggling is instant.
   if (typeof renderSessionStats === 'function') renderSessionStats(sessionId);
   apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/status').then(b => {
@@ -6126,7 +6126,7 @@ function renderNewSessionView() {
         <div class="session-backlog-section">
           <div class="session-backlog-title">${t('new_session_backlog_title')||'Restart a previous session'}</div>
           <div id="sessionBacklog" class="session-backlog-list">
-            <div style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
       </div>
@@ -6667,7 +6667,7 @@ function loadDirContents(path) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
   const content = document.getElementById('dirBrowserContent');
-  if (content) content.innerHTML = '<div style="color:var(--text2);padding:8px;">Loading…</div>';
+  if (content) content.innerHTML = loadingEyeBlock();
   fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers })
     .then(r => r.json())
     .then(data => {
@@ -7139,7 +7139,7 @@ function renderSettingsView() {
               <div class="settings-label">${t('settings_this_server')||'This server'}</div>
               <div class="settings-value">${escHtml(location.host)}</div>
             </div>
-            <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -7147,7 +7147,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('cc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-cc_${sec.id}" style="${secContent('cc_'+sec.id)}">
-            <div id="ccfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="ccfg_${sec.id}" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
         `).join('')}
@@ -7159,7 +7159,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('backends', 'Communication Configuration', 'messaging-backends.md')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
-            <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
             <div class="settings-row backend-row" style="margin-top:4px;justify-content:space-between;">
               <div class="settings-label backend-label" style="text-transform:capitalize;flex:1;">${t('settings_signal_device')||'Signal Device'}</div>
               <div style="display:flex;align-items:center;gap:8px;">
@@ -7189,7 +7189,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('lc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-lc_${sec.id}" style="${secContent('lc_'+sec.id)}">
-            <div id="llmCfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="llmCfg_${sec.id}" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
         `).join('')}
@@ -7256,7 +7256,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)', 'api/sessions.md')}
           <div id="settings-sec-costrates" style="${secContent('costrates')}">
-            <div id="costRatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="costRatesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -7269,7 +7269,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
           ${settingsSectionHeader('gc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-gc_${sec.id}" style="${secContent('gc_'+sec.id)}">
-            <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>`;
         }).join('')}
@@ -7286,7 +7286,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('identity', t('identity_section_title')||'Identity')}
           <div id="settings-sec-identity" style="${secContent('identity')}">
             <div id="identityPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('identity_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('identity_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7295,7 +7295,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('algorithm', t('algorithm_section_title')||'Algorithm Mode')}
           <div id="settings-sec-algorithm" style="${secContent('algorithm')}">
             <div id="algorithmPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('algorithm_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('algorithm_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7304,7 +7304,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('evals', t('evals_section_title')||'Evals')}
           <div id="settings-sec-evals" style="${secContent('evals')}">
             <div id="evalsPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('evals_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('evals_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7313,7 +7313,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('council', t('council_section_title')||'Council Mode')}
           <div id="settings-sec-council" style="${secContent('council')}">
             <div id="councilPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('council_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('council_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7325,7 +7325,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
             <div id="projectProfilesPanel" style="padding:4px 12px;">
-              <div style="color:var(--text2);font-size:13px;">Loading…</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
             </div>
           </div>
         </div>
@@ -7334,7 +7334,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('gc_clusterprofiles', 'Cluster Profiles')}
           <div id="settings-sec-gc_clusterprofiles" style="${secContent('gc_clusterprofiles')}">
             <div id="clusterProfilesPanel" style="padding:4px 12px;">
-              <div style="color:var(--text2);font-size:13px;">Loading…</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
             </div>
           </div>
         </div>
@@ -7346,7 +7346,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('compute_nodes', t('compute_section_title')||'Compute Nodes')}
           <div id="settings-sec-compute_nodes" style="${secContent('compute_nodes')}">
             <div id="computeNodesPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('compute_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('compute_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7356,7 +7356,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('llms', t('llm_section_title')||'LLMs')}
           <div id="settings-sec-llms" style="${secContent('llms')}">
             <div id="llmsPanel" style="padding:6px 12px;">
-              <div style="color:var(--text2);font-size:13px;">${escHtml(t('llm_loading')||'Loading…')}</div>
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('llm_loading'))}</div>
             </div>
           </div>
         </div>
@@ -7373,7 +7373,7 @@ function renderSettingsView() {
               Config for ephemeral container workers spawned via Project Profile + Cluster Profile.
               Some keys (image_prefix, image_tag, callback_url, *_bin) require a daemon restart to take effect — the daemon's <code>/api/reload</code> response flags this.
             </div>
-            <div id="agentsConfigPanel" style="padding:4px 12px;font-size:13px;color:var(--text2);">Loading…</div>
+            <div id="agentsConfigPanel" style="padding:4px 12px;font-size:13px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -7398,14 +7398,14 @@ function renderSettingsView() {
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('templates', 'Session Templates', 'api/sessions.md')}
           <div id="settings-sec-templates" style="${secContent('templates')}">
-            <div id="templatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="templatesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('device_aliases', 'Device Aliases', 'api/devices.md')}
           <div id="settings-sec-device_aliases" style="${secContent('device_aliases')}">
-            <div id="deviceAliasesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="deviceAliasesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -7419,7 +7419,7 @@ function renderSettingsView() {
               datawatch can manage LLM backend file artifacts (aider cache, goose sessions, etc.)
               in your project directories.
             </div>
-            <div id="toolingStatusPanel"><div style="color:var(--text2);font-size:13px;padding:8px 12px;">Loading…</div></div>
+            <div id="toolingStatusPanel"><div style="color:var(--text2);font-size:13px;padding:8px 12px;">${loadingEyeBlock()}</div></div>
             <div style="padding:8px 12px;display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn-secondary" onclick="loadToolingPanel()" style="font-size:12px;">↻ Refresh</button>
             </div>
@@ -7435,7 +7435,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
-            <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -7446,14 +7446,14 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('pipelines', 'Pipeline Manager', 'architecture.md')}
           <div id="settings-sec-pipelines" style="${secContent('pipelines')}">
-            <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
-            <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Command</summary>
               <div class="create-form">
@@ -7468,9 +7468,9 @@ function renderSettingsView() {
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('alert_rules', 'Alert Rules', 'howto/alert-rules.md')}
           <div id="settings-sec-alert_rules" style="${secContent('alert_rules')}">
-            <div id="alertRulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="alertRulesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
             <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 4px;padding:0 16px;">${escHtml(t('alert_rules_recent_firings')||'Recent Firings')}</div>
-            <div id="alertRuleFiringsList" style="padding:0 16px;"><div style="color:var(--text2);font-size:13px;">${escHtml(t('common_loading')||'Loading…')}</div></div>
+            <div id="alertRuleFiringsList" style="padding:0 16px;"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Rule</summary>
               <div class="create-form">
@@ -7508,7 +7508,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
-            <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="filtersList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Filter</summary>
               <div class="create-form">
@@ -7535,7 +7535,7 @@ function renderSettingsView() {
               Action <b>restart</b> relaunches the session with the same task.
               Action <b>notify</b> sends a message to another named session.
             </div>
-            <div id="exitHooksList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">Loading…</div></div>
+            <div id="exitHooksList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">${loadingEyeBlock()}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Exit Hook</summary>
               <div class="create-form">
@@ -7576,7 +7576,7 @@ function renderSettingsView() {
               </select>
               <button class="btn-secondary" onclick="loadWorkQueue()">Refresh</button>
             </div>
-            <div id="workQueueList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">Loading…</div></div>
+            <div id="workQueueList"><div style="color:var(--text2);font-size:13px;padding:0 16px;">${loadingEyeBlock()}</div></div>
             <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Push Work Item</summary>
               <div class="create-form">
@@ -7602,9 +7602,9 @@ function renderSettingsView() {
             </div>
             <div id="docsSearchResults" style="font-size:12px;padding:4px 0;color:var(--text2);"></div>
             <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('docs_pending_label')||'Pending sources awaiting trust')}</div>
-            <div id="docsPendingList" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div id="docsPendingList" style="font-size:12px;padding:4px 0;color:var(--text2);">${loadingEyeBlock()}</div>
             <div class="settings-row" style="margin-top:6px;font-weight:600;">${escHtml(t('docs_trust_label')||'Trusted sources')}</div>
-            <div id="docsTrustedList" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div id="docsTrustedList" style="font-size:12px;padding:4px 0;color:var(--text2);">${loadingEyeBlock()}</div>
             <div class="settings-row">
               <button class="btn-secondary" onclick="docsTrustExport()">${escHtml(t('docs_export_btn')||'Export YAML')}</button>
             </div>
@@ -7625,7 +7625,7 @@ function renderSettingsView() {
               Leave blank to use session.root_path or home directory.
             </div>
             <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('files_storage_meta') || 'Storage overview')}</div>
-            <div id="fileServiceMetaPanel" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div id="fileServiceMetaPanel" style="font-size:12px;padding:4px 0;color:var(--text2);">${loadingEyeBlock()}</div>
             <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('files_upload_btn') || 'Upload file')}</div>
             <div class="settings-row" style="flex-direction:column;gap:6px;align-items:flex-start;">
               <input id="fileServiceUploadInput" type="file" style="font-size:12px;" />
@@ -7643,7 +7643,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('discussion_scopes', t('discussion_scope_title') || 'Discussion Scopes')}
           <div id="settings-sec-discussion_scopes" style="${secContent('discussion_scopes')}">
-            <div id="discussionScopePanel" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div id="discussionScopePanel" style="font-size:12px;padding:4px 0;color:var(--text2);">${loadingEyeBlock()}</div>
             <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('discussion_new_btn') || 'New Discussion')}</div>
             <div class="settings-row" style="gap:6px;">
               <input id="discussionNewIdInput" class="form-input" type="text" placeholder="discussion-id (e.g. sprint-42)"
@@ -7666,7 +7666,7 @@ function renderSettingsView() {
                  the active backend isn't Vault (loadVaultStatusRow checks
                  /api/secrets/vault/status which returns backend_active:false). -->
             <div id="vaultStatusRow" style="display:none;"></div>
-            <div id="secretsListPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="secretsListPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
             <details style="margin-top:8px;">
               <summary style="cursor:pointer;font-size:13px;color:var(--accent2);">${t('secrets_add_new') || 'Add / Update Secret'}</summary>
               <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
@@ -7824,13 +7824,13 @@ function renderSettingsView() {
                  shown on Observer; About gets its own copy of the same card). -->
             <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
               <div class="settings-label" style="font-weight:600;">${t('about_mcp_channel')||'MCP Channel'}</div>
-              <div id="aboutMcpChannelStatus" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${t('loading')||'Loading…'}</div>
+              <div id="aboutMcpChannelStatus" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
             </div>
             <!-- GH#172 D80 — MCP Tools summary: a quick name list, complementing
                  the raw JSON/HTML export links above (for scripting, not reading). -->
             <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
               <div class="settings-label" style="font-weight:600;">${t('about_mcp_tools_summary')||'MCP Tools'}</div>
-              <div id="aboutMcpToolsSummary" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${t('loading')||'Loading…'}</div>
+              <div id="aboutMcpToolsSummary" style="width:100%;background:var(--bg2);border-radius:6px;padding:8px;font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
             </div>
           </div>
         </div>
@@ -7852,7 +7852,7 @@ function renderSettingsView() {
               <button class="btn-primary" style="font-size:11px;display:none;" id="configViewerSaveBtn" onclick="saveConfigViewerEdit()">${t('config_viewer_save')||'Save'}</button>
             </div>
             <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">${t('config_viewer_hint')||'Secrets are already redacted server-side ("***") — editing a redacted field leaves the real value untouched; only change the fields you mean to.'}</div>
-            <pre id="configViewerBody" style="margin:0 12px 8px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">${t('loading')||'Loading…'}</pre>
+            <pre id="configViewerBody" style="margin:0 12px 8px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">${loadingEyeBlock()}</pre>
             <textarea id="configViewerTextarea" style="display:none;margin:0 12px 8px;width:calc(100% - 24px);min-height:300px;font-family:monospace;font-size:11px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;"></textarea>
             <div id="configViewerResult" style="font-size:11px;padding:0 12px 8px;"></div>
           </div>
@@ -8040,7 +8040,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
           ${settingsSectionHeader('plugins_list', 'Plugin Manager', 'plugins.md')}
           <div id="settings-sec-plugins_list" style="${secContent('plugins_list')}">
-            <div id="pluginsPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="pluginsPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -8049,7 +8049,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('proxy', 'Proxy Resilience', 'flow/proxy-flow.md')}
           <div id="settings-sec-proxy" style="${secContent('proxy')}">
-            <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -8057,7 +8057,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('routing_rules', 'Routing Rules', 'architecture.md')}
           <div id="settings-sec-routing_rules" style="${secContent('routing_rules')}">
-            <div id="routingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="routingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -8065,7 +8065,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('channel_routing', t('channel_routing_title')||'Channel Routing', 'architecture.md')}
           <div id="settings-sec-channel_routing" style="${secContent('channel_routing')}">
-            <div id="channelRoutingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="channelRoutingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -8073,7 +8073,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('push_notifications', 'Push Notifications', 'howto/push-setup.md')}
           <div id="settings-sec-push_notifications" style="${secContent('push_notifications')}">
-            <div id="pushNotificationsPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="pushNotificationsPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -8081,7 +8081,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('orchestrator_graphs', 'Automata Orchestrator', 'architecture.md')}
           <div id="settings-sec-orchestrator_graphs" style="${secContent('orchestrator_graphs')}">
-            <div id="orchestratorPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="orchestratorPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -8089,14 +8089,14 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_scan', t('guardrail_library_title') || 'Guardrail Library')}
           <div id="settings-sec-automata_scan" style="${secContent('automata_scan')}">
-            <div id="automataSettingsScanPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="automataSettingsScanPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_autonomous', 'Autonomous Config')}
           <div id="settings-sec-automata_autonomous" style="${secContent('automata_autonomous')}">
-            <div id="automataSettingsAutonomousPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="automataSettingsAutonomousPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -8104,7 +8104,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_type_registry', t('automata_type_registry_title')||'Type Registry', 'architecture.md')}
           <div id="settings-sec-automata_type_registry" style="${secContent('automata_type_registry')}">
-            <div id="automataTypeRegistryPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+            <div id="automataTypeRegistryPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
           </div>
         </div>
 
@@ -8112,7 +8112,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_guardrail_profiles', t('guardrail_profile_title') || 'Guardrail Profiles')}
           <div id="settings-sec-automata_guardrail_profiles" style="${secContent('automata_guardrail_profiles')}">
-            <div id="automataGuardrailProfilesPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="automataGuardrailProfilesPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -8120,7 +8120,7 @@ function renderSettingsView() {
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_skills', t('skills_section_title') || 'Skill Registries')}
           <div id="settings-sec-automata_skills" style="${secContent('automata_skills')}">
-            <div id="automataSettingsSkillsPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+            <div id="automataSettingsSkillsPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -8628,7 +8628,7 @@ function buildComputeNodeForm(n) {
         <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
         <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
       </div>
-      <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+      <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
     </div>
     ` : ''}
   `;
@@ -8693,7 +8693,7 @@ window.openOllamaMarketplace = function(nodeName) {
       <button class="btn-icon" style="font-size:18px;background:transparent;border:none;cursor:pointer;" onclick="document.getElementById('ollamaMarketplaceModal').remove()">&times;</button>
     </div>
     <div id="ollamaCatalogList" style="padding:12px 16px;flex:1;overflow:auto;font-size:13px;">
-      <div style="text-align:center;color:var(--text2);padding:24px;">${escHtml(t('common_loading')||'Loading…')}</div>
+      <div style="text-align:center;color:var(--text2);padding:24px;">${loadingEyeBlock()}</div>
     </div>
     <div style="padding:8px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text2);">${escHtml(t('ollama_catalog_source_note')||'Embedded curated catalog. Refresh from ollama.com lands POST v7.0.')}</div>
   </div>`;
@@ -9685,7 +9685,7 @@ window.openComputeAddPanel = function(existingNode) {
           <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
           <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
         </div>
-        <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+        <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
       ` : ''}
       <div id="computeAddStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
@@ -10120,7 +10120,7 @@ window.llmLoadInUse = function(name, btn) {
     return;
   }
   envelope.style.display = 'block';
-  envelope.innerHTML = '<em style="font-size:11px;color:var(--text2);">Loading…</em>';
+  envelope.innerHTML = loadingEyeBlock();
 
   const page = parseInt(envelope.dataset.page||'1', 10);
   const size = parseInt(envelope.dataset.size||'5', 10);
@@ -10498,7 +10498,7 @@ function loadAboutMcpToolsSummary() {
 function loadConfigViewer() {
   const body = document.getElementById('configViewerBody');
   if (!body) return;
-  body.textContent = t('loading') || 'Loading…';
+  body.innerHTML = loadingEyeBlock();
   apiFetch('/api/config').then(cfg => {
     window._configViewerData = cfg;
     const pretty = JSON.stringify(cfg, null, 2);
@@ -10865,7 +10865,7 @@ function renderPRDRow(prd) {
 window.loadPRDChildren = function(prdID) {
   const target = document.getElementById('prd-children-' + prdID);
   if (!target) return;
-  target.innerHTML = '<em>loading…</em>';
+  target.innerHTML = loadingEyeBlock();
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
     const kids = (data && data.children) || [];
     if (kids.length === 0) {
@@ -12690,7 +12690,7 @@ function openPRDSettingsModal(prdID) {
             <div class="wizard-field">
               <label class="wizard-label">${escHtml(t('prd_settings_skills_label')||'Skills')}</label>
               <div id="prdSettingsSkillsPicker" class="skill-chip-picker" data-current="${escHtml(cur.skills)}">
-                <span style="color:var(--text2);font-size:11px;">${escHtml(t('common_loading')||'Loading…')}</span>
+                <span style="color:var(--text2);font-size:11px;">${loadingEyeBlock()}</span>
               </div>
               <input id="prdSettingsSkills" type="hidden" value="${escHtml(cur.skills)}" />
             </div>
@@ -13359,7 +13359,7 @@ function loadCommsConfig() {
                 Zone-scoped token only (Cloudflare "Zone &gt; DNS &gt; Edit" on one zone) — never the account-global key. Stored via the secrets manager, referenced here as <code>\${secret:name}</code>, never shown once saved.
               </div>
             </div>
-            <div id="acmeStatusCard" style="font-size:12px;color:var(--text2);padding:8px 0;">Loading cert status…</div>
+            <div id="acmeStatusCard" style="font-size:12px;color:var(--text2);padding:8px 0;">${loadingEyeBlock('Loading cert status…')}</div>
             <div style="display:flex;gap:8px;padding:4px 0;">
               <button class="btn-secondary" style="font-size:11px;" onclick="acmeRenewNow()">Renew now</button>
               <button class="btn-secondary" style="font-size:11px;" onclick="acmeVerifyNow()">Verify</button>
@@ -13571,7 +13571,7 @@ function loadLLMTabConfig() {
 function loadWebSearchProvidersList() {
   const el = document.getElementById('webSearchProvidersList');
   if (!el) return;
-  el.textContent = t('loading')||'Loading…';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/websearch/providers').then(d => {
     const list = (d && d.providers) ? d.providers : [];
     if (!list.length) {
@@ -14257,7 +14257,7 @@ function toggleSettingsDirBrowser(inputId, browserId, cfgKey) {
 function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
   const browser = document.getElementById(browserId);
   if (!browser) return;
-  browser.innerHTML = '<div style="color:var(--text2);padding:8px;font-size:12px;">Loading…</div>';
+  browser.innerHTML = loadingEyeBlock();
   fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers: tokenHeader() })
     .then(r => r.json())
     .then(data => {
@@ -14495,7 +14495,7 @@ function _mcpCategoryForURI(uri) {
 function loadMCPResources() {
   const listEl = document.getElementById('mcpResourcesList');
   const tmplEl = document.getElementById('mcpTemplatesList');
-  if (listEl) listEl.innerHTML = '<span style="color:var(--text2)">Loading…</span>';
+  if (listEl) listEl.innerHTML = loadingEyeBlock();
   if (tmplEl) tmplEl.innerHTML = '';
   fetch('/api/mcp/resources', {headers: tokenHeader()})
     .then(r => r.json())
@@ -14568,7 +14568,7 @@ function readMCPResource(uri) {
   if (!contentEl || !labelEl || !bodyEl) return;
   contentEl.style.display = 'block';
   labelEl.textContent = uri;
-  bodyEl.textContent = 'Loading…';
+  bodyEl.innerHTML = loadingEyeBlock();
   fetch('/api/mcp/resources/read?uri=' + encodeURIComponent(uri), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
@@ -14587,7 +14587,7 @@ var _mcpSamplingRefreshTimer = null;
 function loadMCPSamplingLog() {
   const listEl = document.getElementById('mcpSamplingList');
   if (!listEl) return;
-  listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">Loading…</span>';
+  listEl.innerHTML = loadingEyeBlock();
   // The sampling log is embedded in the datawatch://stats/mcp resource.
   fetch('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp'), {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
@@ -14636,7 +14636,7 @@ function loadMCPSamplingLog() {
 function loadMCPPrompts() {
   var listEl = document.getElementById('mcpPromptsList');
   if (!listEl) return;
-  listEl.innerHTML = '<span style="color:var(--text2);font-size:11px;">Loading…</span>';
+  listEl.innerHTML = loadingEyeBlock();
   fetch('/api/mcp/prompts', {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -15202,7 +15202,7 @@ window.memoryExtractFacts = memoryExtractFacts;
 
 function memorySchemaVersion() {
   const out = document.getElementById('memSchemaResult');
-  out.textContent = t('state_loading') || 'Loading…';
+  out.innerHTML = loadingEyeBlock();
   // Schema version surfaces via /api/memory/stats.schema_version when
   // the backend reports it. Fall back to a dedicated probe path the
   // operator can read directly.
@@ -15232,7 +15232,7 @@ function addMemoryQuick() {
 function listMemories() {
   const el = document.getElementById('memoryBrowserList');
   if (!el) return;
-  el.innerHTML = '<div style="color:var(--text2);">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   const role = document.getElementById('memoryRoleFilter')?.value || '';
   const sinceDays = document.getElementById('memorySinceFilter')?.value || '';
   let url = '/api/memory/list?n=50';
@@ -15315,7 +15315,7 @@ function memoryScopeRecall() {
   const storyID = document.getElementById('memScopeStoryID')?.value || '';
   const persona = document.getElementById('memScopePersona')?.value || '';
   const project = document.getElementById('memScopeProject')?.value || '';
-  el.innerHTML = '<div style="color:var(--text2);">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   const qs = new URLSearchParams();
   if (prdID) qs.set('prd_id', prdID);
   if (storyID) qs.set('story_id', storyID);
@@ -15506,7 +15506,7 @@ function _loadAllServersSessions() {
 function loadServersList() {
   const el = document.getElementById('serversList');
   if (!el) return;
-  el.textContent = 'Loading…';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/servers').then(d => {
     const list = (d && d.servers) ? d.servers : [];
     if (!list.length) {
@@ -16586,6 +16586,72 @@ function _fileChip(path) {
   return `<a href="#" class="prd-file-chip" onclick="${escHtml(dlFn)};return false;" title="${escHtml(path)}">⬇ ${escHtml(name)}</a>`;
 }
 
+// GH#186 — animated-eye content-loading state, parity with the apps'
+// DatawatchLoadingContent / CardSkeleton (operator 2026-10-06, "use the
+// animated datawatch eye for content loading states in the web UI,
+// matching the Android and iOS apps"). size: 'card' (32px, default) or
+// 'panel' (40px, full-panel/sheet loaders). Reduced motion is already
+// handled by the canvas animation itself (splash-art.js's loop() checks
+// matchMedia directly and draws one static frame without ever calling
+// requestAnimationFrame again); the label's separate CSS pulse has its
+// own override in style.css.
+//
+// Returns an HTML string; callers insert it via innerHTML same as any
+// other dynamic block, then call _wireLoadingEyes() (or let it run via
+// the next animation frame — see that function's own comment) so the
+// canvas actually starts drawing. No manual stop() bookkeeping needed:
+// loop() already self-stops once the canvas's `isConnected` goes false
+// (the real content replacing this block's innerHTML is enough).
+let _loadingEyeSeq = 0;
+function loadingEyeBlock(label, size) {
+  const px = size === 'panel' ? 40 : 32;
+  const id = 'loadingEye' + (++_loadingEyeSeq);
+  const lbl = escHtml(label || t('loading') || 'Loading…');
+  return `<div class="loading-eye-block" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px 0;" role="status" aria-label="${lbl}">
+    <canvas id="${id}" width="${px}" height="${px}" style="width:${px}px;height:${px}px;display:block;" data-loading-eye="1"></canvas>
+    <div class="loading-eye-label" style="margin-top:6px;">${lbl}</div>
+  </div>`;
+}
+
+// _wireLoadingEyes starts DWSplashArt on every not-yet-started
+// loadingEyeBlock() canvas under root (default: whole document).
+// Idempotent — removes the marker attribute so a later call (e.g. a
+// polling refresh that re-scans the DOM) never double-starts the same
+// canvas. Exposed for any call site that wants to scope the scan to a
+// container it just updated, but callers don't have to call this
+// themselves — the global observer below does it automatically for
+// every loadingEyeBlock() inserted anywhere, mirroring the existing
+// autoAttachMics MutationObserver pattern in this file (one observer,
+// not one per call site, since dozens of panels use this block).
+function _wireLoadingEyes(root) {
+  (root || document).querySelectorAll('canvas[data-loading-eye]').forEach(canvas => {
+    canvas.removeAttribute('data-loading-eye');
+    if (window.DWSplashArt && typeof window.DWSplashArt.startEyeOnly === 'function') {
+      window.DWSplashArt.startEyeOnly(canvas);
+    }
+  });
+}
+window._wireLoadingEyes = _wireLoadingEyes;
+
+// One-time global observer, same shape as autoAttachMics's (above):
+// fires _wireLoadingEyes() whenever a new loadingEyeBlock() canvas
+// lands in the DOM, so none of this block's ~40 call sites need their
+// own manual post-innerHTML wiring call.
+(function() {
+  if (window._loadingEyeObserverAttached) return;
+  window._loadingEyeObserverAttached = true;
+  const obs = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches('canvas[data-loading-eye]')) { _wireLoadingEyes(node.parentNode || document); continue; }
+        if (node.querySelector && node.querySelector('canvas[data-loading-eye]')) _wireLoadingEyes(node);
+      }
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+})();
+
 // _ensureMarkdownLibs lazy-loads marked.js (GFM tables, proper markdown) and
 // mermaid.js (real diagram rendering) the first time the file viewer needs
 // them, caching the load promise so repeat opens don't re-inject scripts.
@@ -16843,7 +16909,7 @@ window._showFileViewer = async function(path) {
       </div>
     </div>
     <div id="fileViewerContent" class="response-modal-body" style="white-space:${isMd ? 'normal' : 'pre'};font-family:${isMd ? 'inherit' : 'var(--mono,monospace)'};font-size:${isMd ? '13px' : '12px'};line-height:1.6;">
-      <em style="color:var(--text2);">Loading…</em>
+      <em style="color:var(--text2);">${loadingEyeBlock(null, 'panel')}</em>
     </div>
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) _closeFileViewer(); });
@@ -18113,7 +18179,7 @@ function loadAutomataPanel() {
     const det = card.querySelector(':scope > details');
     if (det && det.open) expandedCardIds.add(card.id);
   });
-  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   // BL312 S5 — use aggregated endpoint in all-servers mode
   const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds';
   Promise.all([
@@ -18167,7 +18233,7 @@ window.showModal = showModal;
 function loadAutomataTemplatesPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   apiFetch('/api/autonomous/templates')
     .then(data => {
       _automataState.allTemplates = (data && data.templates) || [];
@@ -19193,7 +19259,7 @@ function renderPRDDetailView(prdId, breadcrumbAppend) {
   if (!view) return;
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="prd-breadcrumb" id="automataDetailBreadcrumb"></div>
-    <div id="automataDetailBody" style="padding:0;"><div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div></div>
+    <div id="automataDetailBody" style="padding:0;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>
   </div>`;
 
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId))
@@ -20271,7 +20337,7 @@ function _renderDetailScanTab(prd) {
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <button class="btn-icon prd-header-btn" onclick="runPRDScan(${escHtml(idJ)})" title="${escHtml(t('prd_scan_run_title')||'Run all configured scanners against this automaton')}">▶ ${escHtml(t('scan_run')||'Run Scan')}</button>
     </div>
-    <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
+    <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
   `;
 }
 
@@ -20470,7 +20536,7 @@ function renderAutonomousView() {
         </label>
       </div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
-        <div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>
+        <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
     </div>
   `;
@@ -20516,7 +20582,7 @@ function renderAlertsView() {
     <div style="display:flex;justify-content:flex-end;padding:6px 12px 0;">
       <a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
     </div>
-    <div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+    <div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${loadingEyeBlock()}</div></div></div>`;
   _injectServerPickerBar(view, renderAlertsView); // BL312 S3
 
   // BL312 S5 — use aggregated endpoint in all-servers mode
@@ -21614,7 +21680,7 @@ window.showCrossHostView = function() {
       <button class="btn-icon" style="font-size:16px;" onclick="document.getElementById('crossHostModal').remove();">&times;</button>
     </div>
     <div id="crossHostBody" style="padding:12px;font-size:12px;">
-      <em style="color:var(--text2);">loading /api/observer/envelopes/all-peers …</em>
+      <em style="color:var(--text2);">${loadingEyeBlock()}</em>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -21734,7 +21800,7 @@ function renderObserverSnapshot(name, snap) {
         <span class="observer-env-stats">${procs} procs · ${fds} fds</span>
       </div>
       <div class="observer-env-detail" id="observerEnvDetail-${idx}" style="display:none;">
-        <div style="color:var(--text2);padding:8px 24px;">Loading process tree…</div>
+        <div style="color:var(--text2);padding:8px 24px;">${loadingEyeBlock('Loading process tree…')}</div>
       </div>
     </div>`;
   }).join('');
@@ -22049,7 +22115,7 @@ function renderStatsData(el, data) {
     // across repeated renderStatsData calls.
     html += `<div class="stat-card" style="grid-column:span 2;min-width:260px;">
       <div class="stat-label">${t('stats_web_search')||'Search Usage'}</div>
-      <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+(t('loading')||'Loading…')+'</span>')}</div>
+      <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+loadingEyeBlock()+'</span>')}</div>
     </div>`;
     if (!window._webSearchStatsInterval) {
       refreshWebSearchStatsCard();
@@ -23690,7 +23756,10 @@ const DASH_CARD_DEFS = [
   { id: 'gantt',      label: 'Timeline · 6h',  icon: '≡',  defaultCs: 12,
     body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;"></svg></div>' },
   { id: 'heatmap',    label: '30-Day Activity', icon: '🔥', defaultCs: 3,
-    body: () => '<canvas id="dashHeatmapCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
+    body: () => `<div style="position:relative;width:100%;height:100%;">
+      <canvas id="dashHeatmapCanvas" style="width:100%;height:100%;display:block;"></canvas>
+      <div id="dashHeatmapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg2);">${loadingEyeBlock()}</div>
+    </div>` },
   { id: 'guardrails', label: 'Guardrails',      icon: '🛡',  defaultCs: 3,
     body: () => '<div id="dashGuardrailsCard" style="height:100%;overflow-y:auto;padding:6px 8px;"></div>' },
   { id: 'ekg',        label: 'Multi-EKG',       icon: '♡',  defaultCs: 6,
@@ -23926,11 +23995,12 @@ function _drawHeatmap() {
   ctx.fillStyle = bg2;
   ctx.fillRect(0, 0, W, H);
   const buckets = _dash._heatmapData || [];
+  const loadingEl = document.getElementById('dashHeatmapLoading');
   if (buckets.length === 0) {
-    ctx.fillStyle = txt2; ctx.font = '10px sans-serif';
-    ctx.fillText('Loading…', 10, H / 2 + 4);
+    if (loadingEl) loadingEl.style.display = 'flex';
     return;
   }
+  if (loadingEl) loadingEl.style.display = 'none';
 
   // Issue #101 — narrow mode: card width < 300px → 7-day bar chart
   const cardEl = canvas.closest('[data-card-id="heatmap"]');
@@ -24250,7 +24320,7 @@ function _dashRenderSmoke() {
   if (_dash._smokeExpandedId) {
     const d = _dash._smokeExpandedData;
     if (!d) {
-      detailHtml = `<div style="padding:12px;color:var(--text2);font-size:11px;">Loading…</div>`;
+      detailHtml = `<div style="padding:12px;color:var(--text2);font-size:11px;">${loadingEyeBlock()}</div>`;
     } else {
       const pass = d.pass || 0, fail = d.fail || 0, skip = d.skip || 0;
       const secs = d.sections || [];
@@ -24814,37 +24884,37 @@ function renderObserverView() {
           <!-- BL379 — per-system stats grid: local + all observer peers, one card each -->
           <div id="perSystemGrid" style="padding:8px 8px 0;"></div>
           <!-- Local system detail (CPU/mem/disk/sessions/etc.) -->
-          <div id="statsPanel" style="border-top:1px solid var(--border);margin-top:4px;"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
+          <div id="statsPanel" style="border-top:1px solid var(--border);margin-top:4px;"><div style="color:var(--text2);font-size:13px;padding:8px;">${loadingEyeBlock()}</div></div>
           <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
-            <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <div id="ebpfNetworkBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${t('ebpf_network_traffic')||'Network Traffic'}</div>
-            <div id="ebpfNetworkList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="ebpfNetworkList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
-            <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <!-- GH#172 D78 — Backend Health card (Android parity): each
                configured LLM backend's availability/version at a glance. -->
           <div id="backendHealthBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_backend_health')||'Backend Health')}</div>
-            <div id="backendHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="backendHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <!-- BL397 — Certificates card: ACME cert health at a glance,
                hidden entirely when ACME isn't enabled (self-signed/manual
                TLS has no expiry worth watching here). -->
           <div id="acmeHealthBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_certificates')||'Certificates')}</div>
-            <div id="acmeHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="acmeHealthList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <!-- GH#172 D78 — Envelopes card (Android parity): the observer's
                own live process-tree rollup (session/backend/container). -->
           <div id="envelopesBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">${escHtml(t('obs_envelopes')||'Envelopes')}</div>
-            <div id="envelopesList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="envelopesList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <!-- Live peer resource summary — GPU/CPU/mem for each attached peer -->
           <div id="peerResourceBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
@@ -24852,14 +24922,14 @@ function renderObserverView() {
               <span>${escHtml(t('obs_peer_resources')||'Peer Resources')}</span>
               <span class="live-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
             </div>
-            <div id="peerResourceList" style="font-size:12px;padding:0 12px 6px;color:var(--text2);">Loading…</div>
+            <div id="peerResourceList" style="font-size:12px;padding:0 12px 6px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <div id="observerPeersBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
               <span>Federated peers</span>
               <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(datawatch-stats)</span>
             </div>
-            <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
           <div id="observerClusterBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
@@ -24874,7 +24944,7 @@ function renderObserverView() {
               <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;" onclick="event.stopPropagation()">help</a>
             </div>
             <div id="channelBridgeBody" style="display:none;">
-              <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+              <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
             </div>
           </div>
           <!-- BL362 — Channel bridge diagnostics: per-session ports + live probes -->
@@ -24885,13 +24955,13 @@ function renderObserverView() {
               <button onclick="event.stopPropagation();loadChannelDiagnostics()" style="font-size:10px;padding:1px 6px;background:var(--btn-bg,var(--surface2));border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2);">refresh</button>
             </div>
             <div id="channelDiagBody" style="display:none;">
-              <div id="channelDiagStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+              <div id="channelDiagStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
             </div>
           </div>
           <!-- BL241 — Communication backends live status -->
           <div id="commBackendsBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Communication backends</div>
-            <div id="commBackendsStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            <div id="commBackendsStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
         </div>
       </div>
@@ -24933,7 +25003,7 @@ function renderObserverView() {
         ${settingsSectionHeader('memscopes', 'Memory Scopes', 'memory.md')}
         <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
           <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
-          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">Loading inventory…</em></div>
+          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
           <div style="display:flex;gap:6px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
             <select id="memScopeSelect" class="form-select" style="font-size:11px;width:auto;">
               <option value="session-local">session-local</option>
@@ -24994,42 +25064,42 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('schedules', 'Scheduled Events')}
         <div id="settings-sec-schedules" style="${secContent('schedules')}">
-          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
         <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
-          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
-          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
         <div id="settings-sec-audit" style="${secContent('audit')}">
-          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
         <div id="settings-sec-kg" style="${secContent('kg')}">
-          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('daemonlog', 'Daemon Log')}
         <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
-          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">Loading…</div>
+          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
           <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
             <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
             <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
@@ -25043,7 +25113,7 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
         <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
-          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
         </div>
       </div>
 
@@ -25121,7 +25191,7 @@ window.matrixSendTest = function() {
 function loadFederationPeersPanel() {
   const el = document.getElementById('fedPeersList');
   if (!el) return;
-  el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">Loading…</div>`;
+  el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">${loadingEyeBlock()}</div>`;
   apiFetch('/api/federation/peers').then(peers => {
     if (!Array.isArray(peers) || peers.length === 0) {
       el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">No federation peers registered.</div>`;
@@ -25245,7 +25315,7 @@ window.deleteFedPeer = deleteFedPeer;
 function renderObserverPeersCard(targetId) {
   const el = document.getElementById(targetId || 'observerPeersPanel');
   if (!el) return;
-  el.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  el.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   Promise.all([
     apiFetch('/api/observer/stats').catch(() => null),
     apiFetch('/api/observer/peers').catch(() => ({ peers: [] })),
@@ -25719,7 +25789,7 @@ window.loadTailscaleConfig = loadTailscaleConfig;
 function loadTailscaleStatus() {
   const el = document.getElementById('tailscaleStatusPanel');
   if (!el) return;
-  el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  el.innerHTML = `<span style="color:var(--text2);">${loadingEyeBlock(t('tailscale_loading'))}</span>`;
   apiFetch('/api/tailscale/status')
     .then(d => {
       if (d.error) {
@@ -25756,7 +25826,7 @@ window.loadTailscaleStatus = loadTailscaleStatus;
 // BL243 Phase 2 — generate headscale pre-auth key
 function generateTailscaleAuthKey() {
   const el = document.getElementById('tailscaleStatusPanel');
-  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${loadingEyeBlock(t('tailscale_loading'))}</span>`;
   apiFetch('/api/tailscale/auth/key', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -25777,7 +25847,7 @@ window.generateTailscaleAuthKey = generateTailscaleAuthKey;
 // BL243 Phase 3 — generate ACL policy (no push)
 function tailscaleACLGenerate() {
   const el = document.getElementById('tailscaleStatusPanel');
-  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${loadingEyeBlock(t('tailscale_loading'))}</span>`;
   apiFetch('/api/tailscale/acl/generate', { method: 'POST' })
     .then(d => {
       if (!el) return;
@@ -25793,7 +25863,7 @@ window.tailscaleACLGenerate = tailscaleACLGenerate;
 // BL243 Phase 3 — auto-generate ACL from config and push to headscale
 function tailscaleACLGenerateAndPush() {
   const el = document.getElementById('tailscaleStatusPanel');
-  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${loadingEyeBlock(t('tailscale_loading'))}</span>`;
   apiFetch('/api/tailscale/acl/push', { method: 'POST' })
     .then(d => {
       if (!el) return;
@@ -25840,7 +25910,7 @@ window.deleteSecret = function(name) {
 function loadPluginsPanel() {
   const el = document.getElementById('pluginsPanelBody');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/plugins').then(data => {
     const panel = document.getElementById('pluginsPanelBody');
     if (!panel) return;
@@ -25903,7 +25973,7 @@ window.pluginReload = function() {
 function loadRoutingPanel() {
   const el = document.getElementById('routingPanelBody');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/routing-rules').then(data => {
     const panel = document.getElementById('routingPanelBody');
     if (!panel) return;
@@ -25946,7 +26016,7 @@ window.loadRoutingPanel = loadRoutingPanel;
 function loadChannelRoutingPanel() {
   const el = document.getElementById('channelRoutingPanelBody');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/channel/routing').then(data => {
     const panel = document.getElementById('channelRoutingPanelBody');
     if (!panel) return;
@@ -26045,7 +26115,7 @@ window.routingTest = function() {
 function loadPushPanel() {
   const el = document.getElementById('pushNotificationsPanel');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/push/register').then(data => {
     const panel = document.getElementById('pushNotificationsPanel');
     if (!panel) return;
@@ -26108,7 +26178,7 @@ function loadOrchestratorPanel() {
   const el = document.getElementById('orchestratorPanelBody');
   if (!el) return;
   // BL261 v6.7.7 — wrap all states in the standard card-content inset.
-  el.innerHTML = '<div style="padding:6px 12px;text-align:center;color:var(--text2);font-size:13px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/orchestrator/graphs').then(data => {
     const panel = document.getElementById('orchestratorPanelBody');
     if (!panel) return;
@@ -26235,7 +26305,7 @@ const _BUILTIN_TYPE_IDS = new Set(['software', 'research', 'operational', 'perso
 function loadAutomataTypeRegistryPanel() {
   const el = document.getElementById('automataTypeRegistryPanel');
   if (!el) return;
-  el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>`;
   apiFetch('/api/autonomous/types').then(data => {
     const panel = document.getElementById('automataTypeRegistryPanel');
     if (!panel) return;
@@ -26301,7 +26371,7 @@ window.automataTypeRegister = function() {
 // ── BL303 S2 — Guardrail Library + Profiles panel (Settings → Automata) ──
 
 function loadGuardrailLibraryPanel(el) {
-  el.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  el.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   apiFetch('/api/autonomous/guardrails').then(items => {
     if (!items || items.length === 0) {
       el.innerHTML = `<div style="padding:6px 12px;color:var(--text2);font-size:12px;">${escHtml(t('guardrail_library_empty')||'No guardrails registered')}</div>`;
@@ -26322,7 +26392,7 @@ function loadGuardrailLibraryPanel(el) {
 function loadGuardrailProfilesPanel() {
   const panel = document.getElementById('automataGuardrailProfilesPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${loadingEyeBlock()}</div>`;
 
   // Also refresh the library listing inside the scan section
   const libEl = document.getElementById('automataSettingsScanPanel');
@@ -26386,7 +26456,7 @@ function loadSkillsPanel() {
   const panel = document.getElementById('automataSettingsSkillsPanel');
   if (!panel) return;
   // BL261 v6.7.7 — wrap all states in the standard card-content inset.
-  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   apiFetch('/api/skills/registries').then(data => {
     _renderSkillsRegistries(panel, (data && data.registries) || []);
   }).catch(err => {
@@ -26453,7 +26523,7 @@ function _renderSkillsRegistries(panel, registries) {
   // Synced skills summary
   const syncedSection = `<div id="skillsSyncedSection" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
     <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('skills_synced_section')||'Synced skills')}</div>
-    <div id="skillsSyncedList" style="font-size:11px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
+    <div id="skillsSyncedList" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
   </div>`;
 
   // BL261 v6.7.7 — wrap populated state in standard card-content inset.
@@ -27085,7 +27155,7 @@ function loadAnalyticsPanel() {
     </select>
     <span id="analyticsSuccessRate" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
   </div>
-  <div id="analyticsBuckets" style="font-size:11px;color:var(--text2);">Loading…</div>`;
+  <div id="analyticsBuckets" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   const range = (document.getElementById(selId)||{}).value || '7';
   apiFetch(`/api/analytics?range=${range}d`).then(data => {
     const rate = document.getElementById('analyticsSuccessRate');
@@ -27147,10 +27217,10 @@ function loadAuditPanel() {
       </select>
       <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
     </div>
-    <div id="auditEntries" style="font-size:11px;color:var(--text2);">Loading…</div>`;
+    <div id="auditEntries" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
   const entriesEl = document.getElementById('auditEntries');
-  if (entriesEl) entriesEl.textContent = t('state_loading') || 'Loading…';
+  if (entriesEl) entriesEl.innerHTML = loadingEyeBlock();
   apiFetch(`/api/audit?${qp}`).then(data => {
     const entries = (data && data.entries) || [];
     const target = document.getElementById('auditEntries');
@@ -27185,7 +27255,7 @@ function loadPipelinesPanel() {
   // BL261 v6.7.7 — wrap all states (loading/populated/empty/error) in the
   // standard card-content inset (padding:6px 12px) so content does not sit
   // flush against the card edge. Same pattern as v6.7.6 templates/aliases fix.
-  el.innerHTML = '<div style="padding:6px 12px;color:var(--text2);font-size:12px;">Loading…</div>';
+  el.innerHTML = loadingEyeBlock();
   apiFetch('/api/pipelines').then(data => {
     const pipelines = Array.isArray(data) ? data : [];
     const stateColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', completed:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--text2)' };
@@ -27281,7 +27351,7 @@ window.kgAddTriple = function() {
 function loadIdentityPanel() {
   const panel = document.getElementById('identityPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('identity_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="color:var(--text2);">${loadingEyeBlock(t('identity_loading'))}</div>`;
   apiFetch('/api/identity').then(id => {
     _renderIdentityForm(panel, id || {});
   }).catch(err => {
@@ -27483,7 +27553,7 @@ const ALGO_PHASES = ['observe','orient','decide','act','measure','learn','improv
 function loadAlgorithmPanel() {
   const panel = document.getElementById('algorithmPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('algorithm_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="color:var(--text2);">${loadingEyeBlock(t('algorithm_loading'))}</div>`;
   apiFetch('/api/algorithm').then(data => {
     _renderAlgorithmPanel(panel, (data && data.sessions) || []);
   }).catch(err => {
@@ -27570,7 +27640,7 @@ window.algorithmReset = function(id) {
 function loadEvalsPanel() {
   const panel = document.getElementById('evalsPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('evals_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="color:var(--text2);">${loadingEyeBlock(t('evals_loading'))}</div>`;
   apiFetch('/api/evals/suites').then(data => {
     const suites = (data && data.suites) || [];
     apiFetch('/api/evals/runs?limit=10').then(rdata => {
@@ -27644,7 +27714,7 @@ window.evalsViewRun = function(id) {
 function loadCouncilPanel() {
   const panel = document.getElementById('councilPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('council_loading')||'Loading…')}</div>`;
+  panel.innerHTML = `<div style="color:var(--text2);">${loadingEyeBlock(t('council_loading'))}</div>`;
   apiFetch('/api/council/personas').then(data => {
     const personas = data || [];
     apiFetch('/api/council/runs?limit=5').then(rdata => {
@@ -27711,7 +27781,7 @@ function _renderCouncilPanel(panel, personas, runs) {
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_llm_ref_label')||'LLM registry entry for debates (e.g. ollama)')}</label>
       <input id="councilCfgLLMRef" type="text" class="form-input" style="font-size:12px;padding:4px 6px;" placeholder="ollama" />
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_backends_label')||'Backend pool — LLMs available for per-persona assignment below')}</label>
-      <div id="councilCfgBackends" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;"><em style="color:var(--text2);">loading…</em></div>
+      <div id="councilCfgBackends" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;">${loadingEyeBlock()}</div>
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('council_cfg_max_parallel_label')||'Per-round persona concurrency (0 = serial, default 2)')}</label>
       <input id="councilCfgMaxParallel" type="number" min="0" class="form-input" style="width:120px;font-size:12px;padding:4px 6px;" />
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;">

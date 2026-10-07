@@ -2386,6 +2386,22 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .state-badge-running { animation: none; opacity: 1; }
 }
 
+/* GH#186 — animated-eye content-loading state, parity with the apps'
+   DatawatchLoadingContent / CardSkeleton (operator 2026-10-06). The
+   canvas's own animation already self-disables under
+   prefers-reduced-motion (splash-art.js's loop() checks matchMedia
+   directly), but the label's CSS pulse needs its own override here. */
+@keyframes dw-eye-label-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+.loading-eye-label {
+  animation: dw-eye-label-pulse 850ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-eye-label { animation: none; opacity: 0.7; }
+}
+
 /* Composer status banner — voice transcribing / image uploading. Matches
    datawatch-app's SessionDetailScreen Surface(primaryContainer) purple
    banner treatment (operator: "replicate that here"). */

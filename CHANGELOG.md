@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.9 — feat(pwa): GH#186 — animated-eye content-loading state (app parity)
+
+### Added
+- Operator parity request 2026-10-06: the PWA now shows the animated datawatch eye (`DWSplashArt.startEyeOnly`) with a pulsing "Loading…" label wherever a card, panel, or sheet is empty because its data hasn't arrived yet, matching the Android/iOS apps' `DatawatchLoadingContent`/`CardSkeleton`. New shared primitive: `loadingEyeBlock(label, size)` (32px default for card bodies, 'panel' for 40px full-sheet loaders) + `_wireLoadingEyes()`, auto-started for every instance anywhere in the DOM by a single global `MutationObserver` (mirrors the existing `autoAttachMics` pattern — one observer, not one per call site). The canvas's own animation already self-disables under `prefers-reduced-motion` (draws one static frame, never starts the rAF loop); the label's separate CSS pulse (`dw-eye-label-pulse`, 850ms ease-in-out, opacity 0.35↔0.9) gets its own reduced-motion override in `style.css`.
+- Applied across 123 call sites: every Observer card, every Settings card that fetches on open, Dashboard's initial load and activity heatmap, Alerts' initial list, Automata's list/detail/file-viewer/templates, Session detail's timeline sheet and Status/Stats panels, both folder/directory browsers, and several more sharing the same card-shell pattern as the issue's named list.
+- Deliberately left as-is (no existing loading-placeholder to swap, or the swap would mean adding new UI structure rather than a mechanical replacement): the peer-snapshot dialog's inline `"{name} — loading…"` row, the Signal-linking QR-code wait (currently only a toast), and Daemon ops' interfaces panel (renders synchronously from already-loaded config, no fetch to show a loading state for).
+- Out of scope per the issue itself: the session-connecting/terminal splash (already eye + lightning via `startSessionLoading`), small button spinners and real progress bars, and the sessions-list first-load skeleton (operator decision D60a).
+- **Not visually verified** — no browser access in this environment; `node --check` and the full existing JS suite (40 tests) pass, but the actual look across all 123 spots has not been confirmed in a real browser. Flagged explicitly per the project's own verification-depth convention rather than overclaiming.
+
 ## v8.63.8 — fix(pwa): GH#181 — council live run log renders replies as markdown
 
 ### Fixed
