@@ -59,6 +59,7 @@ you already have a daemon you can talk to.
 | [Push setup — registration API](push-setup.md) | Register/unregister/notify endpoints; Android UnifiedPush integration; CLI `datawatch push` |
 | [Async PRD decompose](decompose-async.md) | Async decompose: 202 Accepted + SSE story stream + polling fallback + Last-Event-ID resume |
 | [Alert Rules](alert-rules.md) | Create and manage threshold-based alert rules; firings log; PWA + Android + CLI/REST/MCP |
+| [Native ACME / Let's Encrypt](letsencrypt-acme.md) | Daemon obtains + auto-renews its own browser-trusted TLS cert; HTTP-01, staging-first, no DNS management; PWA + CLI/REST/MCP/comm |
 | [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
 | [Channel Routing](channel-routing.md) | Route inbound channel messages (Telegram, Signal, …) to federation peers via pattern rules; owner_peer attribution on sessions + PRDs |
 | [File Service](file-service.md) | Upload, list, and delete files across federation peers; peers/ and discussions/ subdirs; config:read/write caps |

@@ -5,6 +5,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.62.0 — feat(acme): BL397 — native ACME/Let's Encrypt subsystem
+
+### Added
+- The daemon can now obtain and auto-renew its own browser-trusted TLS certificate directly — no external tool (Caddy, certbot), no DNS management beyond a single operator-created A record. HTTP-01 validation only in this build (DNS-01 is a planned follow-up). New `internal/acme` package: `Manager` (account registration, single multi-SAN order, atomic PEM write, renewal loop that checks on startup and every 6h), `Account` (DWDAT2-encrypted ECDSA P-256 key storage), `httpProvider` (in-memory HTTP-01 challenge responder reusing the daemon's **existing** HTTP mux — no new listener). Staging-first workflow (`acme.endpoint: staging` default, flip to `production` once verified); restart-based cert apply (phase 1 — a short window per issue/renewal, not every save).
+- All 7 surfaces: REST (`GET /api/acme/status`, `POST /api/acme/renew`, `GET /api/acme/verify`), MCP (`acme_status`/`acme_renew`/`acme_issuer_log`), CLI (`datawatch acme status|renew|verify`), comm verb (`!acme status|renew|verify`), PWA (Settings → Web Server card gains a certificate-source selector: Self-signed | Custom | Let's Encrypt, replacing the three separate `tls_auto_generate`/`tls_cert`/`tls_key` fields), YAML (`acme:` config block), audit/alerts (existing `alerts.EmitSystem` pipe).
+- Docs: `docs/operations.md` "Native ACME / Let's Encrypt" section, `docs/config-reference.yaml` `acme:` block, `docs/howto/letsencrypt-acme.md`, `docs/flow/acme-letsencrypt-flow.md`, `docs/datawatch-definitions.md` bullet.
+
+### Fixed
+- The daemon's HTTP→HTTPS redirect unconditionally 307'd every request, including what would have been the ACME challenge path — redirecting Let's Encrypt's validator to a self-signed cert it can't trust, silently failing every order. Fixed with an unconditional (not loopback-gated, unlike every other redirect-bypass entry) bypass for `/.well-known/acme-challenge/`.
+
+### Live-verified (4 real bugs found and fixed, none caught by unit tests)
+Full issue → renew → production-flip cycle run against a real public host (`spaceportsouth.dmzs.com`) and a real Let's Encrypt directory (staging then production) — not simulated. Found and fixed during that run:
+1. **Restart-state-loss loop** — `DomainStatus` reset to "not issued" on every process restart, and Apply's own restart-based apply mechanism IS a process restart → infinite reissue loop (4 real staging orders before caught). Fixed: seed status from the cert already on disk at startup.
+2. **restartFn/HTTP-response race** — `POST /api/acme/renew` returned an empty response because the process started exiting before the response flushed. Fixed: 500ms delay before restart, matching the existing `/api/restart` handler's pattern.
+3. **Account registration not endpoint-aware** — staging and production are separate ACME registries; flipping `acme.endpoint` reused the wrong registration and got rejected two different ways (invalid account URL, then "no embedded JWK"). Fixed: track registration per-directory, clear the stale one before re-registering.
+4. **Cert never actually applied** — the PEM was written and status correctly reported it as issued, but the TLS listener kept serving the old self-signed cert because `server.tls_cert`/`tls_key` were never updated or persisted. Fixed: `Manager` now updates and saves the real config before restarting.
+
+Final acceptance check: `curl` with no `-k`/insecure flag (standard OS CA trust store) got a clean `HTTP/2 200` from the live production endpoint. Full writeup: [docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md](docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md).
+
+### Dependencies
+- Added `github.com/go-acme/lego/v4` v4.35.2 — mature, Apache-2.0, Go-native ACME client. Chosen over hand-rolling raw ACME (weeks of security-relevant protocol code) or shelling out to certbot/acme.sh (not "native," the gap this feature closes).
+
 ## v8.61.9 — feat(pwa): Agent/Chrome badges + Watch toggle in session detail header
 
 ### Added

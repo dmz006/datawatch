@@ -359,6 +359,40 @@ dns_channel:
   # Client polling interval (Go duration, e.g. 5s)
   poll_interval: ""
 
+# ── ACME / Let's Encrypt (BL397) ──
+# Native ACME subsystem -- the daemon itself obtains and renews a
+# browser-trusted cert. See operations.md "Native ACME / Let's Encrypt".
+acme:
+  # Master switch
+  enabled: false
+  # staging (default, untrusted certs, safe to test) | production
+  endpoint: staging
+  # One or more hostnames, all on ONE cert. Requires an A/AAAA record
+  # for each, pointing at this host.
+  domains: []
+  # Validation method -- only http01 is supported today; dns01 is planned
+  method: http01
+  http01:
+    # Optional: override which address the HTTP-01 challenge is served
+    # on. Empty = the daemon's existing HTTP mux (server.port must be 80
+    # for real Let's Encrypt validation -- see operations.md).
+    listen: ""
+  # Renew when the cert's remaining life drops to this many days (90-day
+  # Let's Encrypt certs; 30 matches common certbot/Caddy practice)
+  renewal_days: 30
+  retry:
+    # Retry cadence after a failed order attempt
+    interval_minutes: 30
+    # Pause (alert + stop retrying) after this many consecutive failures
+    max_consecutive_failures: 5
+  apply:
+    # Phase 3 (not yet built): swap the TLS config with no daemon
+    # restart. Leave false -- phase 1 always restarts to apply a cert.
+    hot_swap: false
+    # Also point mcp.tls_cert/tls_key at the same issued cert (MCP's SSE
+    # endpoint shares the same public host, just a different port)
+    update_mcp_cert: true
+
 # ── Push ──
 # Validation for outbound mobile push endpoints (POST /api/push/register). Loopback/link-local/metadata addresses are always rejected regardless of these flags.
 push:

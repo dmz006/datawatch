@@ -489,3 +489,31 @@ Operator: "sent a command after being idle for a few minutes and had to exit the
 | `_wsSendPing()` — sends `{"type":"ping"}` only when `readyState === OPEN` | **Yes** | No | 2 tests: sends when OPEN, does nothing (and doesn't throw) when CONNECTING or `state.ws` is `null` | — |
 | Full round trip: client ping → server pong → `wsLastActivityAt` refreshed | No | **Yes** | Playwright against a real daemon: captured actual WS frames over a real 20s `WS_PING_INTERVAL_MS` cycle — confirmed exactly one `{"type":"ping"}` sent and one `{"type":"pong"}` received | — |
 | Watchdog forces a reconnect when activity truly stops (simulating a dead-but-still-OPEN socket) | No | **Yes** | Playwright: froze `state.wsLastActivityAt` via a property getter/setter that swallows all writes (a naive one-time backdate isn't a valid simulation — the daemon's 5s periodic `stats` broadcast would overwrite it before the watchdog's next tick, which is in fact why the first version of this live test gave a false negative and had to be corrected to actually block every frame, not just pings, from refreshing the clock). Confirmed: the stale connection closed and a fresh one opened within one `WS_PING_INTERVAL_MS` tick. | Live test script not retained (ad hoc verification, deleted after use per the project's temp-file convention) — the pure-function unit tests above pin the same decision logic permanently |
+
+---
+
+## Native ACME / Let's Encrypt subsystem (BL397) — v8.61.9
+
+Full design + operator-interview decision log:
+`docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`. The ACME
+protocol handshake itself (account registration, HTTP-01 validation,
+issuance) has no meaningful offline simulation — it was live-verified
+against a real Let's Encrypt directory (both staging and production) on
+a real public host (`spaceportsouth.dmzs.com` / 66.228.59.180), not
+mocked. **4 real bugs were found and fixed during that live run that
+every unit test below had already passed** — each now has its own
+regression test, but the live run is what actually found them.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `Account` — PEM round-trip, encrypted-at-rest, reload | **Yes** | No | 3 tests in `internal/acme/account_test.go`: generate+persist+reload returns the same key, `SetRegistration` persists across reload, `LoadOrCreateAccount` with a real `encKey` produces non-plaintext output on disk and a wrong key fails to load | — |
+| `Account.IsRegisteredFor` / `ClearRegistration` — per-directory registration tracking | **Yes** | **Yes** (the bug it fixes was found live) | 2 tests: a staging registration is not reported valid for production, `ClearRegistration` nils `GetRegistration()` | Regression coverage for live bug #3 (staging↔production account registration confusion) |
+| `httpProvider` — HTTP-01 challenge Present/CleanUp/Handler | **Yes** | **Yes** | 2 tests in `internal/acme/provider_test.go`: full present→serve→cleanup→404 cycle, unknown token always 404; live-verified serving a real token to Let's Encrypt's actual validator during the real order | — |
+| `atomicWriteFile`, `parseLeafCert` | **Yes** | No | 2 tests in `internal/acme/manager_internal_test.go`: write+overwrite+no-leftover-tmp, finds a CERTIFICATE block among other PEM block types | — |
+| `loadExistingCertStatus` — seeds `DomainStatus` from the cert already on disk at startup | **Yes** | **Yes** (the bug it fixes was found live) | 2 tests: finds and parses a fresh cert, no file means not-issued | Regression coverage for live bug #1 (restart-state-loss infinite reissue loop — 4 real staging orders fired before caught) |
+| `applyCertificate` — updates + persists `server.tls_cert`/`tls_key` (+ MCP's) | **Yes** | **Yes** (the bug it fixes was found live) | 1 test: constructs a `Manager` directly, calls `applyCertificate` with a real self-signed test cert, asserts both in-memory and reloaded-from-disk config reflect the new paths, and that `restartFn` fires after the documented 500ms delay | Regression coverage for live bug #4 (cert written to disk but never actually applied — `curl` kept getting the old self-signed cert) |
+| `redirectToTLSHandler`'s unconditional ACME-challenge bypass | **Yes** | **Yes** | `TestRedirectToTLSHandler_AcmeChallengeBypassIsUnconditional` in `internal/server/redirect_bypass_test.go`: a non-loopback remote (simulating Let's Encrypt's real validator) gets the challenge served, not redirected; live-verified — the real HTTP-01 order against spaceportsouth.dmzs.com would have silently failed without this fix | Found *before* the live test (code review while prepping deployment), not by it — the one bug of the five total that wasn't live-test-discovered |
+| Full issue → write → apply → restart cycle (staging) | No (no meaningful offline simulation of the ACME protocol itself) | **Yes** | Real daemon on spaceportsouth.dmzs.com, `acme.endpoint: staging`: issued, `openssl x509` confirmed a valid `(STAGING)` Let's Encrypt cert, correct subject/90-day validity | — |
+| Force-renew via REST/CLI | No | **Yes** | `POST /api/acme/renew` → 200 with updated `not_after`/`last_renewal`; `datawatch acme status`/`verify` CLI exercised directly on the box | MCP and comm-verb surfaces share the identical REST-backed code path, not independently live-exercised |
+| Full issue cycle against production, real trust validation | No | **Yes** | Flipped `acme.endpoint: production`, forced renew, `curl` **without** `-k` (standard OS CA trust store, no special flags) got a clean `HTTP/2 200` from `https://spaceportsouth.dmzs.com:8443/api/health` | This is the feature's actual acceptance criterion — a real browser would trust this exactly the same way |
+| Pre-existing seeded data survives every restart in this cycle | No | **Yes** | 3 pre-existing tmux sessions on the shared test box confirmed present via `/api/sessions` after 6 daemon restarts across this test | Shared-VM coordination with the `datawatch-app` session (Apple sandbox use) — see the plan doc's "Live-test findings" section |

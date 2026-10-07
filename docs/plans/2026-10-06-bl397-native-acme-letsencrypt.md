@@ -267,6 +267,47 @@ TODO in this doc, not blocking Phase 1).
   final version, serving port, ufw rules, and production-cert confirmation
   — per the Handoff section below.
 
+## Live-test result: SUCCESS (2026-10-06)
+
+Full end-to-end flow verified against `spaceportsouth.dmzs.com` /
+`66.228.59.180`: HTTP-01 challenge served through the existing mux (no new
+listener), account registration, issuance, renewal, config persistence,
+and the TLS listener picking up the new cert — all confirmed working for
+both staging and production. Final check: `curl` with no `-k` flag
+(real trust validation, standard OS CA store) got a clean `HTTP/2 200`
+from `https://spaceportsouth.dmzs.com:8443/api/health`. HTTP→HTTPS
+redirect and all 3 pre-existing seeded sessions confirmed intact
+throughout.
+
+**Four real bugs found and fixed during this live test** (none caught by
+the unit tests added earlier — this is exactly why the live run was not
+optional):
+1. **Restart-state-loss infinite loop** — `DomainStatus` reset to
+   `Issued:false` on every process restart, and Apply's own restart-based
+   apply mechanism IS a process restart → infinite reissue loop (4 real
+   staging orders before caught). Fixed: `loadExistingCertStatus` seeds
+   status from the cert already on disk at startup.
+2. **restartFn/HTTP-response race** — `POST /api/acme/renew` returned an
+   empty response because the process started exiting before the
+   response flushed. Fixed: 500ms delay before `restartFn()`, matching
+   `/api/restart`'s existing pattern.
+3. **Account registration not endpoint-aware** — flipping staging→production
+   reused the staging-registered account against production's separate
+   registry, rejected with "invalid account URL", then "No embedded JWK
+   in JWS header" once the obvious fix was half-applied. Fixed:
+   `IsRegisteredFor(directoryURL)` + `ClearRegistration()` before
+   re-registering against a different directory.
+4. **Cert never actually applied** — PEM was written and `Status()`
+   correctly reported it as issued, but the TLS listener kept serving the
+   old self-signed cert because `server.tls_cert`/`tls_key` were never
+   updated or persisted. The plan's own §3.4 item 2 had been designed but
+   never implemented. Fixed: `NewManager` now takes the full
+   `*config.Config` + `cfgPath` so `applyCertificate` can update and save
+   the real config.
+
+12 unit tests total in the `acme` package (up from 7), including a
+regression test for each of the 4 bugs above.
+
 ## Handoff (last step, after verification passes)
 
 The `66.228.59.180` VM is the `datawatch-app` session's Apple App Store

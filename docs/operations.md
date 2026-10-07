@@ -1060,6 +1060,64 @@ mcp:
 
 When `tls_auto_generate` is true (default), self-signed certificates are generated in `{data_dir}/tls/` if no cert/key paths are provided.
 
+### Native ACME / Let's Encrypt (BL397)
+
+For a public deployment with a real hostname, datawatch can obtain and
+auto-renew a browser-trusted certificate itself — no external tool
+(Caddy, certbot) and no DNS management. The daemon performs the full
+ACME HTTP-01 handshake, writes the issued cert alongside the existing
+`{data_dir}/tls/` auto-cert location, and renews automatically.
+
+```yaml
+acme:
+  enabled: true
+  endpoint: staging              # staging (default, untrusted certs,
+                                  # safe to test against) | production
+  domains:
+    - datawatch.example.com      # one or more names on ONE cert
+  method: http01                 # only method supported today; dns01 is
+                                  # planned (see the BL397 plan doc)
+  renewal_days: 30               # renew when <= N days of life remain
+  retry:
+    interval_minutes: 30
+    max_consecutive_failures: 5
+  apply:
+    update_mcp_cert: true        # also point mcp.tls_cert/tls_key at it
+```
+
+**What `http01` requires**: one A/AAAA record for each domain pointing
+at this host, and **inbound TCP/80 reachable from the public internet**
+— Let's Encrypt's validator connects to port 80 specifically, which is
+not the same as `server.port` (default `8080`; the existing dual-port
+model only *redirects* 8080→8443, it doesn't bind port 80). To actually
+satisfy HTTP-01 you need either:
+- `server.port: 80` directly (root, or `setcap cap_net_bind_service=+ep`
+  on the binary if running as an unprivileged user), or
+- an external port-forward from 80 to whatever `server.port` is.
+
+**Workflow**: start with `endpoint: staging` (Let's Encrypt's staging
+directory — generous rate limits, but the cert itself isn't browser
+trusted) to verify the whole flow works, then flip to
+`endpoint: production` for a real cert. Each endpoint is tracked as a
+**separate ACME account registration** — switching endpoints re-registers
+automatically (same underlying account key, new registration), so no
+manual account reset is needed.
+
+**Cert apply**: this build (phase 1) applies a new/renewed cert by
+writing the PEM, updating `server.tls_cert`/`tls_key` (and MCP's, if
+`apply.update_mcp_cert`), and restarting the daemon — one short window
+per issue/renewal (roughly every 90 days). A later phase removes this
+restart (see the plan doc).
+
+**Other surfaces**: `GET/POST /api/acme/{status,renew,verify}`; MCP tools
+`acme_status`/`acme_renew`/`acme_issuer_log`; CLI
+`datawatch acme status|renew|verify`; comm verb
+`!acme status|renew|verify`; PWA Settings → Web Server card's
+certificate-source selector (Self-signed | Custom | Let's Encrypt).
+
+Full design, the operator-interview decision log, and 4 real bugs found
+during live verification: `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+
 ### Encryption at Rest
 
 When `--secure` mode is enabled, all data stores are encrypted with XChaCha20-Poly1305.
