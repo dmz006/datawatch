@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-07
 - **Version at planning**: v8.63.15
-- **Status**: In progress
+- **Status**: Complete — all 6 actionable issues closed (#107, #172, #182, #189, #190, #191), v8.66.0. #4 deliberately left open (perpetual tracking umbrella, status comment posted instead).
 
 ## Context
 
