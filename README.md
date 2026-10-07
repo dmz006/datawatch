@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.63.11-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v8.69.3-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -25,9 +25,15 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 - **Wear OS** — Automata queue dashboard, **private local voice** (audio goes straight to your own server, transcribed by your own Whisper instance — no Google, no cloud STT), tile shortcuts, ambient progress, health-data cross-reference.
 - **Android phone** — full session and Automata orchestration parity with desktop (REST/MCP/CLI), discussion scopes, file uploads, offline queue with auto-sync, bidirectional push replies.
 
-> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/apps/internaltest/4701534579731858967)
+> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
 >
-> **We need 15 testers to unlock production release.** [Join the beta →](https://play.google.com/apps/internaltest/4701534579731858967) Feedback: open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
+> **Android is in Google Play closed testing.** Google requires 12 testers opted in for 14 continuous days before production access:
+>
+> 1. [Join the tester group](https://groups.google.com/g/datawatch-testers)
+> 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
+> 3. Install from Play and stay opted in for 14 days — **we need 12 testers.**
+>
+> **iOS:** public TestFlight link coming after Apple's beta review. Feedback: open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
 
 ---
 

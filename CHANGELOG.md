@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.69.3 — docs: Android beta moved from internal testing to Google Play closed testing
+
+### Changed
+- Per the datawatch-app operator's Android closed-testing transition: README and the PWA's About → Mobile app card now point at the tester-group opt-in (`groups.google.com/g/datawatch-testers`) and closed-testing opt-in link (`play.google.com/apps/testing/com.dmzs.datawatchclient`) instead of the old internal-test link, and reflect Google's actual requirement (12 testers opted in for 14 continuous days), not the previous "15 testers" figure. Added an iOS TestFlight placeholder line pending Apple's beta review.
+- README's release-version badge corrected (was stuck at v8.63.11, 6 minor versions stale).
+- **NOT pushed yet** — the tester-group link isn't live at the time of this commit (operator is creating it); hold `git push` until confirmed live.
+
 ## v8.69.2 — fix(mcp): BL317 TS-387–396 implemented for real; found and fixed 18 MCP tools rejected by POST /api/mcp/call
 
 ### Fixed

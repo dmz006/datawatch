@@ -8291,12 +8291,12 @@ function renderSettingsView() {
             <div class="settings-value" style="font-size:12px;">
               <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
               <div style="margin-top:6px;">
-                <a href="https://play.google.com/apps/internaltest/4701534579731858967" target="_blank" rel="noopener"
+                <a href="https://groups.google.com/g/datawatch-testers" target="_blank" rel="noopener"
                   style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
                   Join Beta on Google Play
                 </a>
-                <div style="font-size:10px;color:var(--text2);margin-top:4px;">Now in testing — we're looking for beta testers! Try the app and share your feedback.</div>
+                <div style="font-size:10px;color:var(--text2);margin-top:4px;">Android: closed testing — join the tester group above, then <a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">opt in on Play</a> and stay in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple's beta review.</div>
               </div>
             </div>
           </div>
