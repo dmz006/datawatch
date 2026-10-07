@@ -564,6 +564,8 @@
   "llm_edit_yaml_tip": "Roh-YAML bearbeiten — Formular lädt nach dem Speichern mit den geparsten Werten neu",
   "llm_empty": "Noch keine LLMs. Unten hinzufügen — oder ollama.host / openwebui.url in cfg.yaml setzen und neu starten für Auto-Migration.",
   "llm_field_api_key_ref": "API-Schlüssel-Referenz (literal oder Secret-Referenz; Cloud-Arten)",
+  "llm_field_api_key_ref_unchanged": "(unverändert — Schlüssel gesetzt{prefix})",
+  "llm_field_api_key_ref_hint": "Leer lassen, um den aktuellen Schlüssel zu behalten. Neuen Wert eingeben, um ihn zu ersetzen.",
   "llm_field_auto_accept_disclaimer": "Starthinweise automatisch akzeptieren",
   "llm_field_auto_add_models": "Auto-enable new models",
   "llm_field_auto_git_commit": "Automatischer Git-Commit (vor/nach Sitzung)",

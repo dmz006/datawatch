@@ -544,4 +544,25 @@ regression test, but the live run is what actually found them.
 | `ErrAPNs.Unregistered()` — 410/Unregistered classification | **Yes** | No | `TestErrAPNs_Unregistered`: true for 410+"Unregistered", false for 429+"TooManyRequests" | Drives the auto-prune-on-dead-token behavior in the alert-fire dispatch path |
 | `NewDispatcher` — required-field validation, key-source precedence, sandbox URL selection | **Yes** | No | `TestNewDispatcher_RequiresCoreFields`, `TestNewDispatcher_RequiresAKeySource`, `TestNewDispatcher_LoadsFromKeyPath`, `TestNewDispatcher_SandboxURL` | — |
 | Full dispatch round-trip against Apple's real APNs servers | No | No | — | **Not live-verified** — needs a real Apple Developer account, a provisioned Auth Key, and a TestFlight-registered iOS device token, none of which are available in this environment. This is the one BL397 sub-feature shipped on unit tests alone (contrast Phase 1/ACME, which was fully live-verified against a real Let's Encrypt directory and a real public host). Flagged in `docs/parity-status.md` rather than overclaiming "verified." |
+
+## GH#179 — LLM registry `api_key_ref` read-path redaction — v8.63.1
+
+A literal `api_key_ref` (as opposed to a `${secret:name}` reference) was
+returned in clear text by `GET /api/llms`, `GET /api/llms/{name}`, and
+the `llm_list`/`llm_get` MCP tools (both proxy to the same REST handler).
+Fixed by mirroring the existing SEC-014 federation-peer redaction
+pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
+`inference.LLM.Redacted()`/`RedactedList()`. A changed response contract
+(two new fields) per the Testing Tracker Rule.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `inference.LLM.Redacted()` — clears a literal `api_key_ref`, sets `api_key_ref_present`/`api_key_ref_prefix` | **Yes** | No | `TestLLM_Redacted_ClearsLiteralKey` in `internal/inference/llm_test.go`: literal key cleared, prefix is first 4 chars, original struct untouched (copy semantics) | — |
+| `inference.LLM.Redacted()` — leaves a `${secret:name}` reference as-is | **Yes** | No | `TestLLM_Redacted_LeavesSecretRefAsIs`: a secret reference names a secret, it doesn't contain one, so it's safe to echo back (same reasoning as the existing `websearchAPIKeyRefs`/DNS-01 `dns01TokenSecretRef` convention) | — |
+| `RedactedList()` | **Yes** | No | `TestRedactedList`: mixed literal + secret-ref entries, input slice not mutated | — |
+| `GET /api/llms` / `GET /api/llms/{name}` never echo a literal key | **Yes** | No | `TestHandleLLMs_List_RedactsLiteralAPIKey`, `TestHandleLLMs_GetSingle_RedactsLiteralAPIKey` in `internal/server/gh179_llm_api_key_redaction_test.go`: response body byte-searched for the literal value, must be absent | `llm_list`/`llm_get` MCP tools proxy this same REST handler — fixed by the same change, not independently tested |
+| `GET /api/llms` still shows a `${secret:name}` reference | **Yes** | No | `TestHandleLLMs_List_LeavesSecretRefVisible` | — |
+| `PUT /api/llms/{name}` preserves a stored literal key when the client omits `api_key_ref` (the redacted-GET-echoed-back case) | **Yes** | **Yes** (a real regression this fix would otherwise have introduced) | `TestHandleLLMs_Put_PreservesLiteralKey_OnUnrelatedEdit`: reproduces the exact GET→edit-unrelated-field→PUT round trip the PWA and the `llm_add_model`/`llm_remove_model` MCP tools (`internal/mcp/inference.go`) both perform; PUT handler changed from a zero-valued decode to decode-onto-a-copy-of-the-existing-entry, matching the pre-existing `fedPeerUpdate` merge pattern | Without this companion fix, redacting the GET response would silently wipe every literal API key on the next unrelated edit |
+| `PUT /api/llms/{name}` with an explicit `"api_key_ref": ""` still clears the key on purpose | **Yes** | No | `TestHandleLLMs_Put_ExplicitEmptyClearsKey` | Confirms the merge-onto-existing fix doesn't make the key impossible to intentionally clear |
+| PWA edit form (`buildLLMForm`/`_renderLLMEditPanel`) — blank API-key field means "unchanged", not "clear" | No | No | — | Client-side only; mirrors the server-side contract via a `modal.dataset.apiKeyRefPresent`/`originalRecord.api_key_ref_present` check before including `api_key_ref` in the outgoing PUT body. No Playwright pass done for this specific field — follows the same node-test-only coverage pattern as the rest of this form |
 | Alert-fire → APNs fan-out wiring (`alertStore.AddListener` in `cmd/datawatch/main.go`) | No (the listener closure is deeply embedded in daemon startup code, same category as the pre-existing FilesTouched verifier closure noted elsewhere in this tracker) | No | — | Not independently unit-testable without a larger refactor; the pieces it calls (`DeviceStore.ListByKind`, `Dispatcher.Send`) are each tested in isolation above |

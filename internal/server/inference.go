@@ -54,7 +54,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapLLMsList) {
 			return
 		}
-		writeJSONOK(w, map[string]any{"llms": s.inferenceReg.List()})
+		writeJSONOK(w, map[string]any{"llms": inference.RedactedList(s.inferenceReg.List())})
 
 	case rest == "" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -143,13 +143,24 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, l)
+		writeJSONOK(w, l.Redacted())
 
 	case rest != "" && r.Method == http.MethodPut:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
 			return
 		}
-		var l inference.LLM
+		// #179 — decode onto a copy of the existing (unredacted) entry, not
+		// a zero-valued LLM, so a client that fetched a Redacted() GET
+		// response (api_key_ref omitted for a literal key) and echoes it
+		// back on an unrelated field edit doesn't wipe the stored key. An
+		// explicit "api_key_ref" in the body still overrides it normally.
+		existing, err := s.inferenceReg.Get(rest)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		l := *existing
+		l.APIKeyRefPresent, l.APIKeyRefPrefix = false, ""
 		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return

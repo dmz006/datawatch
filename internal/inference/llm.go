@@ -25,6 +25,7 @@ package inference
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +111,13 @@ type LLM struct {
 	// OR a `${secret:name}` reference resolved via the secrets store
 	// at call time.
 	APIKeyRef string `yaml:"api_key_ref,omitempty" json:"api_key_ref,omitempty"`
+	// APIKeyRefPresent/APIKeyRefPrefix are populated only by Redacted()/
+	// RedactedList(), never persisted or set from an inbound request body
+	// (#179 — GET /api/llms and the llm_list/llm_get MCP tools must never
+	// echo a literal API key in clear text; a "${secret:name}" reference
+	// is just a name, not a secret, so it is left in APIKeyRef as-is).
+	APIKeyRefPresent bool   `yaml:"-" json:"api_key_ref_present,omitempty"`
+	APIKeyRefPrefix  string `yaml:"-" json:"api_key_ref_prefix,omitempty"`
 	// TimeoutSeconds overrides the adapter default (300s for ollama
 	// per v5.26.9 cold-model latency observation; 60s for claude).
 	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
@@ -265,6 +273,39 @@ func (r *Registry) MigrateAutoTags() int {
 		_ = r.persistFn()
 	}
 	return touched
+}
+
+// secretRefPattern matches a whole-string "${secret:name}" reference.
+var secretRefPattern = regexp.MustCompile(`^\$\{secret:[a-zA-Z0-9_.\-]+\}$`)
+
+// Redacted returns a copy of l with a literal APIKeyRef cleared and
+// APIKeyRefPresent/APIKeyRefPrefix populated instead (#179 — a literal
+// API key must never appear in a GET/MCP-list response). A
+// "${secret:name}" reference is left as-is since it names a secret, it
+// doesn't contain one.
+func (l *LLM) Redacted() *LLM {
+	if l == nil {
+		return nil
+	}
+	cp := *l
+	if cp.APIKeyRef != "" && !secretRefPattern.MatchString(cp.APIKeyRef) {
+		cp.APIKeyRefPresent = true
+		cp.APIKeyRefPrefix = cp.APIKeyRef
+		if len(cp.APIKeyRefPrefix) > 4 {
+			cp.APIKeyRefPrefix = cp.APIKeyRefPrefix[:4]
+		}
+		cp.APIKeyRef = ""
+	}
+	return &cp
+}
+
+// RedactedList applies Redacted to every entry in a slice.
+func RedactedList(llms []*LLM) []*LLM {
+	out := make([]*LLM, len(llms))
+	for i, l := range llms {
+		out[i] = l.Redacted()
+	}
+	return out
 }
 
 func containsTag(ss []string, s string) bool {

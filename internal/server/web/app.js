@@ -8867,7 +8867,8 @@ function buildLLMForm(l) {
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
     <select id="fe_llm_compute_nodes" class="form-select" multiple size="4" style="min-height:80px;">${nodeOpts}</select>
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_api_key_ref')||'API key reference')}</label>
-    <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="$\{secret:anthropic-key\}" />
+    <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="${l.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', l.api_key_ref_prefix ? ' — '+l.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" />
+    ${l.api_key_ref_present ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref_hint')||'Leave blank to keep the current key. Type a new value to replace it.')}</div>` : ''}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
     <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
@@ -8882,7 +8883,13 @@ function collectLLMForm(originalRecord) {
   out.model = (document.getElementById('fe_llm_model')||{}).value || '';
   const sel = document.getElementById('fe_llm_compute_nodes');
   out.compute_nodes = sel ? Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean) : [];
-  out.api_key_ref = (document.getElementById('fe_llm_api_key_ref')||{}).value || '';
+  const feApiKey = (document.getElementById('fe_llm_api_key_ref')||{}).value || '';
+  // #179 — blank means "unchanged" when the server already has a literal
+  // key (it never sends the real value back); omit the field so the
+  // server-side merge-on-update preserves it instead of clearing it.
+  if (feApiKey) out.api_key_ref = feApiKey;
+  else if (originalRecord && originalRecord.api_key_ref_present) delete out.api_key_ref;
+  else out.api_key_ref = '';
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
@@ -9026,6 +9033,10 @@ window._renderLLMEditPanel = function(existing) {
   const modal = document.createElement('div');
   modal.id = 'llmAddPanel';
   modal.dataset.editName = isEdit ? existing.name : '';
+  // #179 — a literal api_key_ref is redacted on GET (api_key_ref is '',
+  // api_key_ref_present is true); remember that server-side so a blank
+  // field on save means "leave the stored key alone", not "clear it".
+  modal.dataset.apiKeyRefPresent = existing.api_key_ref_present ? '1' : '';
   modal.className = 'confirm-modal-overlay app-anchored';
   modal.innerHTML = `<div class="response-modal" style="width:100%;max-width:100%;">
     <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
@@ -9080,7 +9091,8 @@ window._renderLLMEditPanel = function(existing) {
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
-        <input id="llmEditAPIKey" class="form-input" placeholder="$\{secret:anthropic-key\}" value="${escHtml(existing.api_key_ref||'')}" />
+        <input id="llmEditAPIKey" class="form-input" placeholder="${existing.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', existing.api_key_ref_prefix ? ' — '+existing.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" value="${escHtml(existing.api_key_ref||'')}" />
+        ${existing.api_key_ref_present ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_field_api_key_ref_hint')||'Leave blank to keep the current key. Type a new value to replace it.')}</div>` : ''}
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
@@ -9384,20 +9396,26 @@ window._llmSaveDraft = function() {
   const fallbackChain = getBadgeInputValue('llmEditFallback').split(',').map(s => s.trim()).filter(Boolean);
   const url = isEdit ? '/api/llms/' + encodeURIComponent(editName) : '/api/llms';
   const method = isEdit ? 'PUT' : 'POST';
+  const payload = {
+    name: isEdit ? editName : name, kind, models, model: firstModel,
+    auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+    timeout_seconds: timeoutSec, max_inflight: maxInflight, tags,
+    binary, console_cols: consoleCols, console_rows: consoleRows,
+    output_mode: outputMode, input_mode: inputMode,
+    auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
+    skip_permissions: skipPerms, channel_enabled: channelEnabled,
+    auto_accept_disclaimer: autoAccept, permission_mode: permMode,
+    default_effort: effort, fallback_chain: fallbackChain,
+  };
+  // #179 — a blank field here means "unchanged" when a literal key was
+  // already set server-side (the real value is never sent back to the
+  // browser); omit the key entirely so the server's merge-on-update
+  // preserves it instead of overwriting with ''.
+  if (!apiKey && modal.dataset.apiKeyRefPresent === '1') delete payload.api_key_ref;
   apiFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: isEdit ? editName : name, kind, models, model: firstModel,
-      auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
-      timeout_seconds: timeoutSec, max_inflight: maxInflight, tags,
-      binary, console_cols: consoleCols, console_rows: consoleRows,
-      output_mode: outputMode, input_mode: inputMode,
-      auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
-      skip_permissions: skipPerms, channel_enabled: channelEnabled,
-      auto_accept_disclaimer: autoAccept, permission_mode: permMode,
-      default_effort: effort, fallback_chain: fallbackChain,
-    }),
+    body: JSON.stringify(payload),
   }).then(() => {
     showToast(isEdit ? '✓ LLM updated' : '✓ LLM added', 'success', 2000);
     if (modal) modal.remove();

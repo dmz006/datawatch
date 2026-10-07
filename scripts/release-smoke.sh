@@ -3213,6 +3213,42 @@ else
   skip "S62 — acme.enabled is true on this sandbox; skipping the disabled-path checks (unexpected for a fresh sandbox config)"
 fi
 
+H "63. GH#179 — LLM registry api_key_ref redaction (v8.63.1)"
+LLM_KEY_NAME="smoke-llm-keyredact-$$"
+LLM_KEY_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/llms" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"$LLM_KEY_NAME\",\"kind\":\"openwebui\",\"api_key_ref\":\"sk-smoke-secret-do-not-leak\"}" 2>/dev/null || echo "")
+if [[ -n "$LLM_KEY_CREATE" ]]; then
+  add_cleanup llm "$LLM_KEY_NAME"
+  LLM_KEY_GET=$(curl "${curl_args[@]}" "$BASE/api/llms/$LLM_KEY_NAME" 2>/dev/null || echo "")
+  if echo "$LLM_KEY_GET" | grep -q "sk-smoke-secret-do-not-leak"; then
+    ko "S63 — GET /api/llms/{name} echoed a literal api_key_ref in clear text"
+  elif echo "$LLM_KEY_GET" | grep -q '"api_key_ref_present":true'; then
+    ok "S63 — GET /api/llms/{name} carries api_key_ref_present, not the raw key"
+  else
+    ko "S63 — GET /api/llms/{name} missing api_key_ref_present: ${LLM_KEY_GET:0:200}"
+  fi
+  LLM_KEY_LIST=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null || echo "")
+  if echo "$LLM_KEY_LIST" | grep -q "sk-smoke-secret-do-not-leak"; then
+    ko "S63 — GET /api/llms (list) echoed a literal api_key_ref in clear text"
+  else
+    ok "S63 — GET /api/llms (list) does not echo a literal api_key_ref"
+  fi
+  # A PUT that omits api_key_ref (the redacted-GET-echoed-back case) must
+  # preserve the stored key, not wipe it.
+  curl "${curl_args[@]}" -s -X PUT "$BASE/api/llms/$LLM_KEY_NAME" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$LLM_KEY_NAME\",\"kind\":\"openwebui\",\"model\":\"smoke-model\"}" >/dev/null 2>&1
+  LLM_KEY_AFTER=$(curl "${curl_args[@]}" "$BASE/api/llms/$LLM_KEY_NAME" 2>/dev/null || echo "")
+  if echo "$LLM_KEY_AFTER" | grep -q '"api_key_ref_present":true'; then
+    ok "S63 — PUT omitting api_key_ref preserves the stored key (merge-on-update)"
+  else
+    ko "S63 — PUT omitting api_key_ref wiped the stored key: ${LLM_KEY_AFTER:0:200}"
+  fi
+else
+  skip "S63 — could not create a smoke LLM entry"
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

@@ -564,6 +564,8 @@
   "llm_edit_yaml_tip": "Editar YAML en bruto — el formulario recargará con los valores parseados al guardar",
   "llm_empty": "Aún no hay LLMs. Añade uno abajo — o pon ollama.host / openwebui.url en cfg.yaml y reinicia para auto-migrar.",
   "llm_field_api_key_ref": "Referencia de clave API (literal o referencia secreta; tipos cloud)",
+  "llm_field_api_key_ref_unchanged": "(sin cambios — clave configurada{prefix})",
+  "llm_field_api_key_ref_hint": "Déjelo en blanco para mantener la clave actual. Escriba un nuevo valor para reemplazarla.",
   "llm_field_auto_accept_disclaimer": "Aceptar disclaimers de inicio automáticamente",
   "llm_field_auto_add_models": "Auto-enable new models",
   "llm_field_auto_git_commit": "Commit git automático (antes/después de la sesión)",

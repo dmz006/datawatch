@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.1 — fix(inference): GH#179 — redact literal api_key_ref on every LLM read path
+
+### Security
+- **GH#179**: `GET /api/llms`, `GET /api/llms/{name}`, and the `llm_list`/`llm_get` MCP tools (both proxy the same REST handler) returned a literal `api_key_ref` — a raw API key stored directly instead of a `${secret:name}` reference — in clear text. Fixed by adding `inference.LLM.Redacted()`/`RedactedList()`, mirroring the existing SEC-014 federation-peer token redaction pattern (`multiserver.Entry.Redacted()`) one-for-one: a literal key is cleared and replaced with `api_key_ref_present` (bool) + `api_key_ref_prefix` (first 4 chars); a `${secret:name}` reference is left as-is since it names a secret rather than containing one.
+- **Companion fix caught in the same pass**: redacting the GET response created a latent data-loss bug — `PUT /api/llms/{name}` previously decoded onto a zero-valued struct, so a client that fetched the (now-redacted) GET and PUT it back on an unrelated field edit would have silently wiped the stored key. This is not hypothetical: the `llm_add_model`/`llm_remove_model` MCP tools (`internal/mcp/inference.go`) both do exactly this GET-then-PUT-back round trip. Fixed by changing the PUT handler to decode onto a copy of the existing entry, matching the pre-existing `fedPeerUpdate` merge pattern (`internal/server/federation_peers_api.go`) — an explicit `"api_key_ref": ""` in the request body still clears it on purpose.
+- PWA edit form (`buildLLMForm`/`_renderLLMEditPanel` in `app.js`): updated to treat a blank API-key field as "unchanged" (shows a masked placeholder) rather than "clear", mirroring the server-side contract.
+
+### Reuse audit
+- Extends the existing SEC-014 `multiserver.Entry.Redacted()`/`RedactedList()` convention and the `fedPeerUpdate` merge-onto-existing PUT pattern — no new redaction mechanism invented.
+
+### Tests
+- `internal/inference/llm_test.go`: `Redacted()`/`RedactedList()` — literal key cleared, secret ref left as-is, no mutation of the source.
+- `internal/server/gh179_llm_api_key_redaction_test.go`: REST-layer — GET list/single never echo a literal key, a secret ref stays visible, PUT omitting `api_key_ref` preserves the stored key (the confirmed-fails-without-fix regression), explicit empty still clears it on purpose.
+- `scripts/release-smoke.sh` section 63: live round trip against a real sandbox daemon — create with a literal key, confirm GET never echoes it, confirm a PUT without `api_key_ref` preserves it. All 3 checks pass.
+
 ## v8.63.0 — feat(acme): BL397 Phase 2/3/4 — DNS-01, zero-downtime hot-swap, APNs push (BL335)
 
 ### Added
