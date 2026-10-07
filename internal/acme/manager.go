@@ -393,7 +393,20 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 			"falling back to restart-based apply (phase 3 is not built)")
 	}
 	if m.restartFn != nil {
-		m.restartFn()
+		// Bug found live 2026-10-06: calling restartFn() synchronously
+		// here raced the HTTP response when IssueNow was triggered via
+		// POST /api/acme/renew — the process started exiting before the
+		// response finished flushing, so the caller saw an empty/reset
+		// response despite the renew succeeding. The existing
+		// POST /api/restart handler already solved this exact race with
+		// a short delay in a goroutine; mirrored here since applyCertificate
+		// has the same callers-in-flight problem (REST, MCP, CLI, comm,
+		// and the background Renewer itself).
+		restartFn := m.restartFn
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			restartFn()
+		}()
 	} else {
 		m.logEvent(alerts.LevelWarn, "ACME certificate written, manual restart needed",
 			"no restart callback was configured for this Manager")
