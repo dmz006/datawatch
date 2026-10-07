@@ -20637,6 +20637,69 @@ Object.defineProperty(window, '_alertsFilter', {
   configurable: true,
 });
 
+// GH#182 — extracts the alert id from the ?alert= query param. The Web App
+// Manifest protocol_handlers spec replaces %s with the full escaped URI
+// that was navigated to (web+datawatch://alert/<id>), not a bare id -- but
+// a plain link straight to ?alert=<id> (e.g. a push notification's
+// click-action) passes a bare id directly. Handles both without assuming
+// which one a given launch used.
+function parseAlertDeepLinkId(raw) {
+  if (!raw) return '';
+  if (!/:\/\//.test(raw)) return raw;
+  const m = /\/alert\/([^/?#]+)/.exec(raw);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+// GH#182 — open a specific alert from a deep link (web+datawatch://alert/<id>
+// via the manifest, or a plain ?alert=<id>). Figures out which top-level
+// tab (active/historical/system) actually contains the alert so the right
+// one opens, resets that tab's category filter so it can't be hiding the
+// target, then polls for the rendered card and un-hides any collapsed
+// ancestor (a non-first active-session subtab panel, or a collapsed
+// historical session group) via a generic walk-up rather than re-deriving
+// the exact nesting -- keeps working if the Alerts view's structure changes.
+function openAlertDeepLink(alertId) {
+  if (!alertId) return;
+  fetch('/api/alerts', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : []);
+      const found = (list || []).find(a => a.id === alertId);
+      let tab = 'active';
+      if (found) {
+        if (found.source === 'system' || !found.session_id) {
+          tab = 'system';
+        } else {
+          const sess = (state.sessions || []).find(s => s.full_id === found.session_id || s.id === found.session_id);
+          const DONE = new Set(['complete', 'failed', 'killed']);
+          tab = (sess && !DONE.has(sess.state)) ? 'active' : 'historical';
+        }
+      }
+      window._alertsTabSel = tab;
+      window._alertsFilters = window._alertsFilters || {};
+      window._alertsFilters[tab] = { active: 'all', search: '', sort: (window._alertsFilters[tab] || {}).sort || 'session' };
+      navigate('alerts');
+      _pollForDeepLinkedAlert(alertId, 0);
+    })
+    .catch(() => { navigate('alerts'); _pollForDeepLinkedAlert(alertId, 0); });
+}
+
+function _pollForDeepLinkedAlert(alertId, attempt) {
+  const el = document.getElementById('alert-' + alertId);
+  if (!el) {
+    if (attempt < 20) setTimeout(() => _pollForDeepLinkedAlert(alertId, attempt + 1), 150);
+    return;
+  }
+  let node = el.parentElement;
+  while (node && node.id !== 'alertsList') {
+    if (node.style && node.style.display === 'none') node.style.display = '';
+    node = node.parentElement;
+  }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('alert-deep-link-highlight');
+  setTimeout(() => el.classList.remove('alert-deep-link-highlight'), 2000);
+}
+
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
@@ -20716,7 +20779,7 @@ function renderAlertsView() {
 
       // BL344 — navigate to session from alert card
       const sessNavBtn = a.session_id ? `<div style="margin-top:6px;"><button class="btn-sm" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(a.session_id)})`)}" style="font-size:11px;padding:2px 8px;">${t('alert_go_to_session')||'Go to session →'}</button></div>` : '';
-      return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
+      return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
           <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
@@ -23116,6 +23179,17 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.removeItem('cs_settings_tab');
     }
     navigate(_initView || 'sessions', _initSession || undefined);
+
+    // GH#182 — alert deep link. A browser rewrites a registered
+    // web+datawatch://alert/<id> link into start_url?alert=<id> per the
+    // Web App Manifest protocol_handlers spec (see manifest.json); the
+    // same ?alert= param also works from a plain link (e.g. a push
+    // notification's click-action), installed or not.
+    const _deepLinkAlertRaw = new URLSearchParams(window.location.search).get('alert');
+    if (_deepLinkAlertRaw) {
+      const _deepLinkAlertId = parseAlertDeepLinkId(_deepLinkAlertRaw);
+      if (_deepLinkAlertId) setTimeout(() => openAlertDeepLink(_deepLinkAlertId), 300);
+    }
   });
 
   // Load initial unread alert count

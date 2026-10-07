@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.65.0 — feat(pwa): GH#182 — alert deep links via manifest protocol_handlers
+
+### Added
+- GH#182's last open item: a URL route that opens a specific alert, matching the apps' `datawatch://alert/<id>`. A browser tab can't register a custom scheme the OS dispatches, but an installed PWA can via the Web App Manifest's `protocol_handlers` — registered `web+datawatch` (browsers require the `web+` prefix) → `/?alert=%s` in `manifest.json`. New `parseAlertDeepLinkId()` handles both shapes that can reach it: the full escaped URI the manifest spec substitutes in for an installed-PWA launch, and a bare `?alert=<id>` for a plain link (e.g. a push notification's click-action) that doesn't go through `protocol_handlers` at all. `openAlertDeepLink()` figures out which of the Alerts view's three tabs (active/historical/system) actually contains the target alert, resets that tab's category filter so it can't be hiding it, then polls for the rendered card and walks up any collapsed ancestor (a non-first active-session subtab panel, or a collapsed historical session group) generically rather than re-deriving the exact nesting.
+- 6 new unit tests (`app-alert-deeplink.test.js`) for the URI/bare-id extraction logic, loading the real `app.js` the same way the existing escaping/nonce test suites do.
+
 ## v8.64.0 — feat(pwa): GH#172 D65/D67 + 2 live UI bugs found via real screenshot/pane capture
 
 ### Added

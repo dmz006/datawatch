@@ -8,6 +8,12 @@
   "background_color": "#0f1117",
   "theme_color": "#7c3aed",
   "orientation": "portrait-primary",
+  "protocol_handlers": [
+    {
+      "protocol": "web+datawatch",
+      "url": "/?alert=%s"
+    }
+  ],
   "icons": [
     {
       "src": "icon-192.png",
