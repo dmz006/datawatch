@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.11"
+var Version = "8.63.12"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2328,6 +2328,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	openwebui.SetChatEmitter(chatEmitFn)
 	ollama.SetChatEmitter(chatEmitFn)
 	opencode.SetACPChatEmitter(chatEmitFn)
+
+	// B98 — ollama's usageFn (conversation.go) was added but never wired
+	// here, so TokensIn/TokensOut/EstCostUSD stayed at zero for every
+	// ollama chat-mode session despite the backend already decoding
+	// prompt_eval_count/eval_count off the final streaming chunk.
+	ollama.SetUsageFn(func(tmuxSession string, tokensIn, tokensOut int) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		_ = mgr.AddUsage(sessID, tokensIn, tokensOut, session.CostRate{})
+	})
 
 	// Wire backend state persistence for daemon restart reconnect (B3)
 	saveConvFn := func(tmuxSession string, msgs interface{}) {

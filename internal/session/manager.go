@@ -5294,6 +5294,20 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		})
 	}
 
+	// B98 — same rationale as claude-code above, applied to opencode and
+	// goose (see opencode_usage.go / goose_usage.go for each backend's
+	// own discovery mechanism).
+	if sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-prompt" {
+		go trackOpenCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.CreatedAt, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
+			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		})
+	}
+	if sess.BackendFamily == "goose" {
+		go trackGooseUsage(ctx, sess.FullID, sess.Name, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
+			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		})
+	}
+
 	// Seek to end for new content
 	if _, err := f.Seek(0, 2); err != nil {
 		return
