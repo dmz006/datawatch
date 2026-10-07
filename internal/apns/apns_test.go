@@ -215,3 +215,37 @@ func TestNewDispatcher_SandboxURL(t *testing.T) {
 		t.Errorf("baseURL = %q, want sandbox", d.baseURL)
 	}
 }
+
+// GH#183 — baseURLFor must resolve from the per-device environment
+// when one is known, not just the dispatcher's own configured default.
+// Without this, a device registered under one environment would 400
+// BadDeviceToken against the daemon's global push.apns.sandbox setting
+// whenever it disagreed with the device's own build.
+func TestBaseURLFor(t *testing.T) {
+	d := &Dispatcher{baseURL: prodBaseURL} // configured default: production
+	cases := []struct {
+		environment string
+		want        string
+	}{
+		{"development", sandboxBaseURL},
+		{"production", prodBaseURL},
+		{"", prodBaseURL},      // unknown/unset -> dispatcher's configured default
+		{"bogus", prodBaseURL}, // unrecognized value -> same safe fallback
+	}
+	for _, c := range cases {
+		if got := d.baseURLFor(c.environment); got != c.want {
+			t.Errorf("baseURLFor(%q) = %q, want %q", c.environment, got, c.want)
+		}
+	}
+
+	// Same cases again with a sandbox-configured dispatcher, to confirm
+	// the per-device override wins over EITHER configured default, not
+	// just production's.
+	dSandbox := &Dispatcher{baseURL: sandboxBaseURL}
+	if got := dSandbox.baseURLFor("production"); got != prodBaseURL {
+		t.Errorf("a device explicitly registered as production must still reach the production host even when the dispatcher default is sandbox, got %q", got)
+	}
+	if got := dSandbox.baseURLFor(""); got != sandboxBaseURL {
+		t.Errorf("baseURLFor(\"\") = %q, want the dispatcher's own sandbox default", got)
+	}
+}

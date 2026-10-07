@@ -75,7 +75,7 @@ func (s *Server) handlePushAPNsTest(w http.ResponseWriter, r *http.Request) {
 				Alert: &apns.AlertPayload{Title: title, Body: "Test push from datawatch"},
 			},
 			Type: "test",
-		})
+		}, string(d.ApnsEnvironment))
 		cancel()
 		res := result{DeviceID: d.ID, OK: err == nil}
 		if err != nil {

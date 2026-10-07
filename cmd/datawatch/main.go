@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.3"
+var Version = "8.63.4"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6210,7 +6210,7 @@ Return STRICT JSON:
 		if apnsDispatcher != nil && httpServer != nil {
 			if ds := httpServer.DeviceStore(); ds != nil {
 				for _, d := range ds.ListByKind(devicespkg.KindAPNS) {
-					go func(token string, deviceID string) {
+					go func(token string, deviceID string, environment string) {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 						defer cancel()
 						unread := alertStore.UnreadCount()
@@ -6222,7 +6222,7 @@ Return STRICT JSON:
 							},
 							SessionID: a.SessionID,
 							Type:      string(a.Level),
-						})
+						}, environment)
 						if err != nil {
 							var apnsErr *apnspkg.ErrAPNs
 							if errors.As(err, &apnsErr) && apnsErr.Unregistered() {
@@ -6236,7 +6236,7 @@ Return STRICT JSON:
 							}
 							fmt.Printf("[apns] send to device %s failed: %v\n", deviceID, err)
 						}
-					}(d.Token, d.ID)
+					}(d.Token, d.ID, string(d.ApnsEnvironment))
 				}
 			}
 		}

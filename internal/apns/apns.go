@@ -219,11 +219,32 @@ func (e *ErrAPNs) Unregistered() bool {
 	return e.StatusCode == http.StatusGone && e.Reason == "Unregistered"
 }
 
+// baseURLFor resolves which APNs host to use for one send. GH#183: a
+// device registers its own environment ("production"/"development" —
+// debug/TestFlight builds use the sandbox host, App Store builds use
+// production); sending to the wrong host returns Apple's "400
+// BadDeviceToken". An empty/unknown environment (devices registered
+// before this field existed) falls back to the dispatcher's configured
+// push.apns.sandbox default, same as before this existed.
+func (d *Dispatcher) baseURLFor(environment string) string {
+	switch environment {
+	case "development":
+		return sandboxBaseURL
+	case "production":
+		return prodBaseURL
+	default:
+		return d.baseURL
+	}
+}
+
 // Send delivers payload to one device token. Uses Go's standard
 // net/http client, which negotiates HTTP/2 automatically over TLS (ALPN)
 // — no separate HTTP/2 library needed; Apple's APNs provider API
-// requires HTTP/2 and net/http already speaks it.
-func (d *Dispatcher) Send(ctx context.Context, deviceToken string, payload Payload) error {
+// requires HTTP/2 and net/http already speaks it. environment is the
+// device's own registered apns_environment ("production"/"development");
+// pass "" to use the dispatcher's configured default instead (see
+// baseURLFor).
+func (d *Dispatcher) Send(ctx context.Context, deviceToken string, payload Payload, environment string) error {
 	token, err := d.providerToken()
 	if err != nil {
 		return fmt.Errorf("apns: provider token: %w", err)
@@ -234,7 +255,7 @@ func (d *Dispatcher) Send(ctx context.Context, deviceToken string, payload Paylo
 		return fmt.Errorf("apns: marshal payload: %w", err)
 	}
 
-	url := d.baseURL + "/3/device/" + deviceToken
+	url := d.baseURLFor(environment) + "/3/device/" + deviceToken
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("apns: build request: %w", err)

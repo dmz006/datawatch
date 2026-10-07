@@ -26,9 +26,10 @@ func (s *Server) DeviceStore() *devices.Store { return s.deviceStore }
 // handleDevicesRegister implements POST /api/devices/register per
 // issue #1. Body format:
 //
-//   { "device_token": "...", "kind": "fcm"|"ntfy",
-//     "app_version": "x.y.z", "platform": "android"|"ios",
-//     "profile_hint": "label" }
+//	{ "device_token": "...", "kind": "fcm"|"ntfy"|"apns",
+//	  "app_version": "x.y.z", "platform": "android"|"ios",
+//	  "profile_hint": "label",
+//	  "apns_environment": "production"|"development" }  // apns only, GH#183
 //
 // Returns {"device_id": "<uuid>"}. Re-registering the same token
 // refreshes the metadata without duplicating the record.
@@ -45,22 +46,24 @@ func (s *Server) handleDevicesRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		DeviceToken string `json:"device_token"`
-		Kind        string `json:"kind"`
-		AppVersion  string `json:"app_version"`
-		Platform    string `json:"platform"`
-		ProfileHint string `json:"profile_hint"`
+		DeviceToken     string `json:"device_token"`
+		Kind            string `json:"kind"`
+		AppVersion      string `json:"app_version"`
+		Platform        string `json:"platform"`
+		ProfileHint     string `json:"profile_hint"`
+		ApnsEnvironment string `json:"apns_environment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	got, err := s.deviceStore.Register(devices.Device{
-		Token:       req.DeviceToken,
-		Kind:        devices.Kind(req.Kind),
-		AppVersion:  req.AppVersion,
-		Platform:    devices.Platform(req.Platform),
-		ProfileHint: req.ProfileHint,
+		Token:           req.DeviceToken,
+		Kind:            devices.Kind(req.Kind),
+		AppVersion:      req.AppVersion,
+		Platform:        devices.Platform(req.Platform),
+		ProfileHint:     req.ProfileHint,
+		ApnsEnvironment: devices.ApnsEnvironment(req.ApnsEnvironment),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.4 — fix(push): GH#183 — APNs dispatch picks the wrong host for mixed-environment devices
+
+### Fixed
+- Found while reviewing GH#183 against its own spec: APNs dispatch only had one daemon-wide `push.apns.sandbox` toggle, not the per-device `apns_environment` the issue explicitly asked for ("persist it on the Device record... pick the host from the device's apns_environment"). A debug/TestFlight build registered while the daemon's global flag was set for production (or vice versa) would 400 BadDeviceToken on every push. Fixed end-to-end: `devices.Device` gains an `ApnsEnvironment` field (`"production"`/`"development"`, validated on `Register`); `POST /api/devices/register` accepts `apns_environment` in the body and persists it, refreshed on every re-registration like the other metadata fields; `apns.Dispatcher.Send` now takes the device's own environment and resolves the correct APNs host per call (`baseURLFor`), falling back to the configured `push.apns.sandbox` default only for devices that never reported one (pre-existing registrations). Both dispatch call sites (`POST /api/push/apns/test` and the real alert-fire fan-out) now pass the device's own environment through.
+
 ## v8.63.3 — fix(docs): diagrams.js anchor-scroll fails on iOS double-encoded hash
 
 ### Fixed

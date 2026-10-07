@@ -52,15 +52,39 @@ const (
 // Valid reports whether the platform string is a known value.
 func (p Platform) Valid() bool { return p == PlatformAndroid || p == PlatformIOS }
 
+// ApnsEnvironment enumerates Apple's two push environments. Only
+// meaningful for Kind == KindAPNS — a debug/TestFlight build registers
+// "development" (routes to api.sandbox.push.apple.com); an App
+// Store / production build registers "production"
+// (api.push.apple.com). A token sent to the wrong host returns Apple's
+// "400 BadDeviceToken" (GH#183).
+type ApnsEnvironment string
+
+const (
+	ApnsEnvironmentProduction  ApnsEnvironment = "production"
+	ApnsEnvironmentDevelopment ApnsEnvironment = "development"
+)
+
+// Valid reports whether e is a known value, or empty (meaning
+// "unspecified — dispatch falls back to the daemon's configured
+// push.apns.sandbox default").
+func (e ApnsEnvironment) Valid() bool {
+	return e == "" || e == ApnsEnvironmentProduction || e == ApnsEnvironmentDevelopment
+}
+
 // Device is one registered push target.
 type Device struct {
-	ID          string    `json:"device_id"`
-	Token       string    `json:"device_token"` // FCM token or ntfy topic URL
-	Kind        Kind      `json:"kind"`
-	AppVersion  string    `json:"app_version,omitempty"`
-	Platform    Platform  `json:"platform,omitempty"`
-	ProfileHint string    `json:"profile_hint,omitempty"` // user-provided label
-	RegisteredAt time.Time `json:"registered_at"`
+	ID          string   `json:"device_id"`
+	Token       string   `json:"device_token"` // FCM token or ntfy topic URL
+	Kind        Kind     `json:"kind"`
+	AppVersion  string   `json:"app_version,omitempty"`
+	Platform    Platform `json:"platform,omitempty"`
+	ProfileHint string   `json:"profile_hint,omitempty"` // user-provided label
+	// ApnsEnvironment — see the type's own doc comment. Empty for
+	// non-APNs devices and for APNs devices registered before this
+	// field existed (dispatch falls back to the global config default).
+	ApnsEnvironment ApnsEnvironment `json:"apns_environment,omitempty"`
+	RegisteredAt    time.Time       `json:"registered_at"`
 }
 
 // Store persists devices to a JSON file. Safe for concurrent use.
@@ -120,6 +144,9 @@ func (s *Store) Register(d Device) (Device, error) {
 	}
 	if d.Platform != "" && !d.Platform.Valid() {
 		return Device{}, fmt.Errorf("devices: platform %q: must be android or ios", d.Platform)
+	}
+	if !d.ApnsEnvironment.Valid() {
+		return Device{}, fmt.Errorf("devices: apns_environment %q: must be production or development", d.ApnsEnvironment)
 	}
 
 	s.mu.Lock()

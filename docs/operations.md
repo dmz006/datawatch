@@ -1183,11 +1183,17 @@ uninstalled, token rotated) is automatically pruned from the registry.
 `datawatch push apns-test [--device-id <id>]` — useful for verifying the
 key/config is correct without waiting for a real alert.
 
-**Sandbox vs. production**: `sandbox: true` sends to
-`api.sandbox.push.apple.com` instead of `api.push.apple.com` — match
-this to the APNs environment the device's token was actually issued for
-(TestFlight and Xcode debug builds are typically sandbox; App Store
-builds are production).
+**Sandbox vs. production**: each device's own `apns_environment`
+(`"production"` or `"development"`, sent by the app at
+`POST /api/devices/register` and refreshed on every re-registration —
+GH#183) decides which host that device's pushes go to:
+`api.sandbox.push.apple.com` for `"development"` (TestFlight and Xcode
+debug builds), `api.push.apple.com` for `"production"` (App Store
+builds). This is per-device because a daemon can have both kinds of
+builds registered at once. `push.apns.sandbox: true` only sets the
+fallback used for a device that never sent `apns_environment` at all
+(devices registered before this field existed) — it is not a daemon-wide
+switch once devices report their own environment.
 
 ### Encryption at Rest
 

@@ -60,6 +60,54 @@ func TestRegister_RejectsUnknownPlatform(t *testing.T) {
 	}
 }
 
+// GH#183 — apns_environment round-trips through registration and is
+// refreshed on re-register, same as app_version/platform/profile_hint.
+func TestRegister_ApnsEnvironmentRoundTrips(t *testing.T) {
+	s, _ := storeFixture(t)
+	got, err := s.Register(Device{
+		Token: "apns-abc", Kind: KindAPNS, Platform: PlatformIOS,
+		ApnsEnvironment: ApnsEnvironmentDevelopment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ApnsEnvironment != ApnsEnvironmentDevelopment {
+		t.Errorf("ApnsEnvironment = %q, want %q", got.ApnsEnvironment, ApnsEnvironmentDevelopment)
+	}
+
+	// Re-register the same token under production (e.g. a TestFlight
+	// build graduated to App Store) — must refresh, not stick.
+	second, err := s.Register(Device{
+		Token: "apns-abc", Kind: KindAPNS, Platform: PlatformIOS,
+		ApnsEnvironment: ApnsEnvironmentProduction,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ApnsEnvironment != ApnsEnvironmentProduction {
+		t.Errorf("ApnsEnvironment not refreshed on re-register: got %q", second.ApnsEnvironment)
+	}
+}
+
+// An empty apns_environment (devices registered before this field
+// existed, or non-APNs kinds) must remain valid -- dispatch falls back
+// to the configured default rather than rejecting the registration.
+func TestRegister_EmptyApnsEnvironmentIsValid(t *testing.T) {
+	s, _ := storeFixture(t)
+	if _, err := s.Register(Device{Token: "fcm-x", Kind: KindFCM}); err != nil {
+		t.Errorf("empty ApnsEnvironment should be valid for a non-APNs device: %v", err)
+	}
+}
+
+func TestRegister_RejectsUnknownApnsEnvironment(t *testing.T) {
+	s, _ := storeFixture(t)
+	if _, err := s.Register(Device{
+		Token: "apns-x", Kind: KindAPNS, ApnsEnvironment: ApnsEnvironment("staging"),
+	}); err == nil {
+		t.Error("expected error for unknown apns_environment")
+	}
+}
+
 func TestRegister_SameTokenRefreshes(t *testing.T) {
 	s, _ := storeFixture(t)
 	first, _ := s.Register(Device{Token: "abc", Kind: KindFCM, AppVersion: "0.1.0"})
