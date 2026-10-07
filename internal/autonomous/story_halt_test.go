@@ -10,6 +10,15 @@ import (
 // runToTerminalOrBlocked is runToTerminal (scope_test.go) plus PRDBlocked as
 // an accepted terminal state, since the halt-on-story-failure feature under
 // test intentionally stops a PRD there instead of PRDCompleted/PRDFailed.
+//
+// Confirmed-flaky in CI (not locally, even at -count=5) across unrelated
+// commits this session: a 5s deadline with no post-terminal settle,
+// copy-pasted from runToTerminal before that helper's own v8.36.14 fix
+// (see its comment) for the same executor-goroutine-tail race. Applying
+// the identical fix here: a short settle sleep after the terminal status
+// is observed, plus a longer deadline for headroom on a loaded CI runner
+// (this test exercises two sequential task executions across a
+// dependency chain, more wall-clock than a single-task test).
 func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
@@ -19,10 +28,11 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 	if err := api.Run(id); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(id)
 		if got.Status == PRDCompleted || got.Status == PRDFailed || got.Status == PRDBlocked {
+			time.Sleep(50 * time.Millisecond)
 			return got
 		}
 		time.Sleep(20 * time.Millisecond)
