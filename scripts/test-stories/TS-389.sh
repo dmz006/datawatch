@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-389 — PUT /api/servers/{name} updates URL+token; change visible on next GET
 # tags: surface:api feature:multi-server
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-389"
 story_preflight "surface:api feature:multi-server" || return 0

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-393 — GET /api/autonomous/prds/aggregated returns array with server field per item
 # tags: surface:api feature:multi-server
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-393"
 story_preflight "surface:api feature:multi-server" || return 0

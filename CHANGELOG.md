@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.69.2 — fix(mcp): BL317 TS-387–396 implemented for real; found and fixed 18 MCP tools rejected by POST /api/mcp/call
+
+### Fixed
+- Per operator decision (2026-10-07) to implement the 10 BL317 E2E stories "for real" instead of leaving them as unported stubs: all 10 (`TS-387`–`TS-396`) already had complete, correct bodies — the "STUB: no implementation extracted from legacy runner" header comment on each was stale (removed). Ran them against a real isolated sandbox daemon (`scripts/run-tests.sh`, never production): 9 passed, 1 skipped (`TS-396`, `server_list` MCP tool rejected as "unknown tool").
+- Root-caused the `TS-396` skip: `federation.MCPToolCap` (the capability map `POST /api/mcp/call` consults before dispatching any tool call) had **zero** entries for any of the 6 BL312 `server_*` tools or the 12 BL316 `federation_{peer,group}_*` tools — all 18 were properly `AddTool`-registered and reachable over real stdio/SSE MCP, but every REST-bridge/CLI/channel-bridge call to any of them (the chokepoint every one of those actually uses) got a 404 `"unknown tool"`. `mcp_tool_caps.go`'s own header comment claimed a test (`internal/server/route_caps_a3_test.go`) enforces full coverage here — that file doesn't exist anywhere in the tree, and the test that sounded like it (`internal/server/mcp_bridge_cap_test.go`) only exercises a hand-rolled 2-tool fake catalog, so it could never have caught this.
+- Added all 18 missing map entries (list/get actions → `CapFederationList`, write/test actions → `CapFederationWrite`, mirroring the existing REST handlers' own gating exactly).
+- New `internal/mcp/mcp_tool_cap_coverage_test.go` — the *real* version of the safety net the stale comment claimed: constructs an actual `mcp.Server` via `New()` (same constructor production uses) and asserts every tool `ListTools()` returns has a `MCPToolCap` entry. Re-ran all 10 TS-387–396 stories after the fix: **10 passed, 0 failed, 0 skipped**.
+
 ## v8.69.1 — fix(pwa): server-picker chip onclick broke for every named server
 
 ### Fixed
