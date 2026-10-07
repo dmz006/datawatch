@@ -5,10 +5,12 @@
 // docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md for the full
 // design and the operator-interview decision log this package implements.
 //
-// Scope (phase 1 only — see the plan doc's decision log): HTTP-01
-// validation only (no DNS-01/dns_channel integration, that's phase 2);
-// restart-based cert apply (writes the PEM, then calls the daemon's
-// existing restart callback — no in-memory TLS hot-swap, that's phase 3).
+// Scope: HTTP-01 (no DNS management needed) and DNS-01 via a zone-scoped
+// provider token (Cloudflare in this build — B2 in the plan doc's
+// terminology; B1, delegation via dns_channel, is deferred). Cert apply
+// is restart-based by default, or zero-downtime hot-swap when
+// apply.hot_swap is true and the cert path isn't changing (see
+// internal/tlsutil's GetCertificate reload and applyCertificate below).
 package acme
 
 import (
@@ -28,11 +30,13 @@ import (
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge/http01"
 	"github.com/go-acme/lego/v4/lego"
+	"github.com/go-acme/lego/v4/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v4/registration"
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
 // Event is one entry in the Manager's issuer log — a bounded in-memory
@@ -84,6 +88,19 @@ type Manager struct {
 	fullCfg *config.Config
 	cfgPath string
 
+	// dns01TokenSecretRef holds the ORIGINAL, unresolved "${secret:name}"
+	// string for cfg.DNS01.TokenSecret — captured fresh from disk at
+	// construction, independent of fullCfg's in-memory copy (which may
+	// already be resolved to the plaintext token by main.go's global
+	// secretspkg.ResolveConfig pass that runs before NewManager). Every
+	// applyCertificate -> config.Save MUST restore
+	// fullCfg.Acme.DNS01.TokenSecret to this value first — config.Save
+	// does a plain yaml.Marshal with no redaction, so saving the
+	// already-resolved value would permanently leak the plaintext DNS
+	// provider token into config.yaml. Empty when method != "dns01" or
+	// no token_secret is configured.
+	dns01TokenSecretRef string
+
 	// restartFn is the daemon's existing self-restart callback (see
 	// internal/server/api.go's handleRestart -> s.restartFn ->
 	// syscall.Exec). Apply calls this directly after writing a new PEM
@@ -131,13 +148,13 @@ func (m *Manager) IssuerLog() []Event {
 // derivation key every other encrypted store uses (nil for a
 // non---secure daemon). restartFn may be nil (e.g. in tests); Apply then
 // only writes the PEM and logs that a manual restart is needed.
-func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, restartFn func()) (*Manager, error) {
+func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, restartFn func(), secretsStore secrets.Store) (*Manager, error) {
 	cfg := fullCfg.Acme
 	if len(cfg.Domains) == 0 {
 		return nil, errors.New("acme: at least one domain is required")
 	}
-	if cfg.Method != "http01" {
-		return nil, fmt.Errorf("acme: method %q not supported in this build (phase 1 is http01-only)", cfg.Method)
+	if cfg.Method != "http01" && cfg.Method != "dns01" {
+		return nil, fmt.Errorf("acme: unsupported method %q (must be http01 or dns01)", cfg.Method)
 	}
 
 	account, err := LoadOrCreateAccount(dataDir, "", encKey)
@@ -155,6 +172,30 @@ func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, 
 		restartFn: restartFn,
 		status:    make(map[string]*DomainStatus),
 		stopCh:    make(chan struct{}),
+	}
+
+	var dns01TokenPlaintext string
+	if cfg.Method == "dns01" {
+		// Capture the RAW (unresolved) token_secret reference fresh from
+		// disk — fullCfg's in-memory copy may already be resolved to the
+		// plaintext token by main.go's global secretspkg.ResolveConfig
+		// pass, which runs before NewManager. See dns01TokenSecretRef's
+		// doc comment on the Manager struct for why this matters.
+		if onDisk, err := config.Load(cfgPath); err == nil {
+			m.dns01TokenSecretRef = onDisk.Acme.DNS01.TokenSecret
+		} else {
+			m.dns01TokenSecretRef = cfg.DNS01.TokenSecret // best-effort fallback
+		}
+		if m.dns01TokenSecretRef == "" {
+			return nil, errors.New("acme: method is dns01 but dns01.token_secret is not set")
+		}
+		if secretsStore == nil {
+			return nil, errors.New("acme: method is dns01 but no secrets store is configured to resolve dns01.token_secret")
+		}
+		dns01TokenPlaintext, err = secrets.ResolveRef(m.dns01TokenSecretRef, secretsStore)
+		if err != nil {
+			return nil, fmt.Errorf("acme: resolve dns01.token_secret: %w", err)
+		}
 	}
 	// Bug caught live 2026-10-06: status used to start blank on every
 	// process restart (Issued: false), with nothing re-derived from the
@@ -198,8 +239,27 @@ func NewManager(fullCfg *config.Config, dataDir, cfgPath string, encKey []byte, 
 	if err != nil {
 		return nil, fmt.Errorf("acme client: %w", err)
 	}
-	if err := client.Challenge.SetHTTP01Provider(m.provider); err != nil {
-		return nil, fmt.Errorf("acme http01 provider: %w", err)
+
+	switch cfg.Method {
+	case "dns01":
+		switch cfg.DNS01.Provider {
+		case "cloudflare", "":
+			cfConfig := cloudflare.NewDefaultConfig()
+			cfConfig.AuthToken = dns01TokenPlaintext
+			dnsProvider, dnsErr := cloudflare.NewDNSProviderConfig(cfConfig)
+			if dnsErr != nil {
+				return nil, fmt.Errorf("acme cloudflare dns01 provider: %w", dnsErr)
+			}
+			if err := client.Challenge.SetDNS01Provider(dnsProvider); err != nil {
+				return nil, fmt.Errorf("acme dns01 provider: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("acme: dns01 provider %q not supported in this build (only cloudflare)", cfg.DNS01.Provider)
+		}
+	default: // "http01"
+		if err := client.Challenge.SetHTTP01Provider(m.provider); err != nil {
+			return nil, fmt.Errorf("acme http01 provider: %w", err)
+		}
 	}
 	m.client = client
 
@@ -435,6 +495,17 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 		pathUnchanged = pathUnchanged && m.fullCfg.MCP.TLSCert == certPath && m.fullCfg.MCP.TLSKey == keyPath
 		m.fullCfg.MCP.TLSCert = certPath
 		m.fullCfg.MCP.TLSKey = keyPath
+	}
+	// CRITICAL (DNS-01 secret safety): config.Save does a plain
+	// yaml.Marshal with no redaction. If dns01TokenSecretRef is set,
+	// m.fullCfg.Acme.DNS01.TokenSecret may currently hold the RESOLVED
+	// plaintext token (main.go's global secret-ref resolution pass runs
+	// once at daemon startup, before this Manager was even constructed)
+	// — saving that as-is would permanently write the plaintext DNS
+	// provider token into config.yaml. Always restore the original
+	// "${secret:...}" reference immediately before every save.
+	if m.dns01TokenSecretRef != "" {
+		m.fullCfg.Acme.DNS01.TokenSecret = m.dns01TokenSecretRef
 	}
 	if err := config.Save(m.fullCfg, m.cfgPath); err != nil {
 		return fmt.Errorf("save config with new cert paths: %w", err)

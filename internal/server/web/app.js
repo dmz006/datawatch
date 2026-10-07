@@ -13276,6 +13276,8 @@ function loadCommsConfig() {
           const mode = acmeEnabled ? 'acme' : (autoGen ? 'selfsigned' : 'custom');
           const domains = ((cfg.acme && cfg.acme.domains) || []).join(', ');
           const endpoint = (cfg.acme && cfg.acme.endpoint) || 'staging';
+          const acmeMethod = (cfg.acme && cfg.acme.method) || 'http01';
+          const dns01 = (cfg.acme && cfg.acme.dns01) || {};
           const certPath = (cfg.server && cfg.server.tls_cert) || '';
           const keyPath = (cfg.server && cfg.server.tls_key) || '';
           html += `<div class="settings-row" style="justify-content:space-between;">
@@ -13310,6 +13312,34 @@ function loadCommsConfig() {
                 <option value="staging" ${endpoint === 'staging' ? 'selected' : ''}>Staging (testing, untrusted certs)</option>
                 <option value="production" ${endpoint === 'production' ? 'selected' : ''}>Production (trusted certs)</option>
               </select>
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Validation method</div>
+              <select class="form-select general-cfg-input" id="acmeMethodSelect" onchange="saveGeneralField('acme.method', this.value); document.getElementById('acmeDns01Fields').style.display = this.value === 'dns01' ? '' : 'none';">
+                <option value="http01" ${acmeMethod === 'http01' ? 'selected' : ''}>HTTP-01 (no DNS management, no wildcard)</option>
+                <option value="dns01" ${acmeMethod === 'dns01' ? 'selected' : ''}>DNS-01 (wildcard support, needs a provider token)</option>
+              </select>
+            </div>
+            <div id="acmeDns01Fields" style="${acmeMethod === 'dns01' ? '' : 'display:none'}">
+              <div class="settings-row" style="justify-content:space-between;">
+                <div class="settings-label">DNS provider</div>
+                <select class="form-select general-cfg-input" onchange="saveGeneralField('acme.dns01.provider', this.value)">
+                  <option value="cloudflare" ${(dns01.provider || 'cloudflare') === 'cloudflare' ? 'selected' : ''}>Cloudflare</option>
+                </select>
+              </div>
+              <div class="settings-row" style="justify-content:space-between;">
+                <div class="settings-label">Provider token secret ref</div>
+                <input type="password" class="form-input general-cfg-input" placeholder="\${secret:cf-zone-edit-token}"
+                  onchange="saveGeneralField('acme.dns01.token_secret', this.value)" />
+              </div>
+              <div class="settings-row" style="justify-content:space-between;">
+                <div class="settings-label">Zone ID (reference only)</div>
+                <input type="text" class="form-input general-cfg-input" value="${escHtml(dns01.zone_id || '')}"
+                  onchange="saveGeneralField('acme.dns01.zone_id', this.value)" />
+              </div>
+              <div style="font-size:11px;color:var(--text2);padding:2px 12px 6px;">
+                Zone-scoped token only (Cloudflare "Zone &gt; DNS &gt; Edit" on one zone) — never the account-global key. Stored via the secrets manager, referenced here as <code>\${secret:name}</code>, never shown once saved.
+              </div>
             </div>
             <div id="acmeStatusCard" style="font-size:12px;color:var(--text2);padding:8px 0;">Loading cert status…</div>
             <div style="display:flex;gap:8px;padding:4px 0;">
@@ -14139,7 +14169,7 @@ function summarizerModelHint(modelName) {
 // Fields that require a daemon restart to take effect
 const RESTART_FIELDS = new Set([
   'server.host', 'server.port', 'server.tls', 'server.tls_auto_generate', 'server.tls_cert', 'server.tls_key',
-  'acme.enabled', 'acme.endpoint', 'acme.domains', // BL397 — Manager starts/stops only at daemon boot
+  'acme.enabled', 'acme.endpoint', 'acme.domains', 'acme.method', 'acme.dns01.provider', 'acme.dns01.token_secret', 'acme.dns01.zone_id', // BL397 — Manager starts/stops only at daemon boot
   'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.tls_enabled',
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);

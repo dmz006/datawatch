@@ -5051,6 +5051,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"domains":      s.cfg.Acme.Domains,
 			"method":       s.cfg.Acme.Method,
 			"renewal_days": s.cfg.Acme.RenewalDays,
+			"dns01": map[string]interface{}{
+				"provider":     s.cfg.Acme.DNS01.Provider,
+				"token_secret": mask(s.cfg.Acme.DNS01.TokenSecret), // never echo the ${secret:...} ref or a resolved token
+				"zone_id":      s.cfg.Acme.DNS01.ZoneID,
+			},
+			"apply": map[string]interface{}{
+				"hot_swap": s.cfg.Acme.Apply.HotSwap,
+			},
 		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
@@ -5859,6 +5867,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok {
 				cfg.Acme.RenewalDays = n
 			}
+		case "acme.method":
+			if s := toString(v); s == "http01" || s == "dns01" {
+				cfg.Acme.Method = s
+			}
+		case "acme.dns01.provider":
+			cfg.Acme.DNS01.Provider = toString(v)
+		case "acme.dns01.token_secret":
+			if s := toString(v); s != "" {
+				cfg.Acme.DNS01.TokenSecret = s
+			}
+		case "acme.dns01.zone_id":
+			cfg.Acme.DNS01.ZoneID = toString(v)
+		case "acme.apply.hot_swap":
+			cfg.Acme.Apply.HotSwap = toBool(v)
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":

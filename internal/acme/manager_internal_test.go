@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,6 +134,77 @@ func TestLoadExistingCertStatus_FindsAndParsesAFreshCert(t *testing.T) {
 // never actually pointed server.tls_cert/tls_key at the new file (or
 // mcp.tls_cert/tls_key, when configured to share the cert) and never
 // persisted the change — so even a restart had nothing new to pick up.
+// TestApplyCertificate_NeverPersistsResolvedDNS01Secret is a security
+// regression test for BL397 Phase 2 (DNS-01): config.Save does a plain
+// yaml.Marshal with no redaction. main.go's global secret-ref resolution
+// pass runs once at daemon startup and mutates fullCfg.Acme.DNS01.
+// TokenSecret in place -- from PLAINTEXT to that point on, in memory.
+// If applyCertificate ever saved fullCfg as-is, it would permanently
+// write that plaintext DNS provider token into config.yaml. This test
+// simulates exactly that already-resolved in-memory state and asserts
+// the file written to disk still has the original "${secret:...}"
+// reference, never the plaintext.
+func TestApplyCertificate_NeverPersistsResolvedDNS01Secret(t *testing.T) {
+	dataDir := t.TempDir()
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	fullCfg := config.DefaultConfig()
+	fullCfg.DataDir = dataDir
+	const secretRef = "${secret:cf-zone-edit-token}"
+	const plaintextToken = "cf-real-token-abc123-do-not-leak"
+	fullCfg.Acme.DNS01.TokenSecret = secretRef
+	if err := config.Save(fullCfg, cfgPath); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	// Simulate main.go's global ResolveConfig having already run: the
+	// IN-MEMORY struct now holds the plaintext, exactly as it would by
+	// the time a real NewManager call constructs a Manager.
+	fullCfg.Acme.DNS01.TokenSecret = plaintextToken
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	leafPEM := selfSignedPEMForTest(t, key)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	m := &Manager{
+		cfg: config.AcmeConfig{
+			Domains: []string{"spaceportsouth.dmzs.com"},
+			Method:  "dns01",
+		},
+		dataDir:             dataDir,
+		fullCfg:             fullCfg,
+		cfgPath:             cfgPath,
+		dns01TokenSecretRef: secretRef, // what NewManager would have captured fresh from disk
+		status:              map[string]*DomainStatus{"spaceportsouth.dmzs.com": {Domain: "spaceportsouth.dmzs.com"}},
+	}
+
+	if err := m.applyCertificate(&certificate.Resource{Certificate: leafPEM, PrivateKey: keyPEM}); err != nil {
+		t.Fatalf("applyCertificate: %v", err)
+	}
+
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(raw), plaintextToken) {
+		t.Fatal("SECURITY REGRESSION: the plaintext DNS-01 token was written to config.yaml on disk")
+	}
+
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload saved config: %v", err)
+	}
+	if reloaded.Acme.DNS01.TokenSecret != secretRef {
+		t.Fatalf("saved token_secret = %q, want the original reference %q preserved", reloaded.Acme.DNS01.TokenSecret, secretRef)
+	}
+}
+
 func TestApplyCertificate_UpdatesAndSavesServerTLSPaths(t *testing.T) {
 	dataDir := t.TempDir()
 	cfgPath := filepath.Join(dataDir, "config.yaml")

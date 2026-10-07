@@ -871,13 +871,14 @@ type AcmeConfig struct {
 	// sandbox listener reuses the main cert automatically).
 	Domains []string `yaml:"domains"`
 
-	// Method is the ACME validation method. Only "http01" is supported by
-	// this build; "dns01" is phase 2 (deferred — see the BL397 plan doc),
-	// present here only so a future phase-2 build doesn't need a schema
-	// migration.
+	// Method is the ACME validation method: "http01" (default, no DNS
+	// management needed, wildcard not supported) or "dns01" (BL397 Phase
+	// 2 — needed for wildcard domains or when inbound port 80 isn't
+	// available; requires dns01.provider + dns01.token_secret).
 	Method string `yaml:"method"`
 
 	HTTP01 AcmeHTTP01Config `yaml:"http01,omitempty"`
+	DNS01  AcmeDNS01Config  `yaml:"dns01,omitempty"`
 
 	// RenewalDays triggers a renewal when the cert's remaining life drops
 	// to this many days. Default 30 (90-day LE certs, ~certbot/Caddy
@@ -896,6 +897,28 @@ type AcmeHTTP01Config struct {
 	// responder. Empty means it's served through the daemon's existing
 	// HTTP mux on the normal port-80-redirect listener — no second port.
 	Listen string `yaml:"listen,omitempty"`
+}
+
+// AcmeDNS01Config holds DNS-01-specific settings (BL397 Phase 2).
+// Only the B2 "scoped provider token" shape is implemented — a
+// zone-scoped credential for one provider, resolved via the secrets
+// manager. B1 (delegated-zone via dns_channel) is deferred; see the
+// BL397 plan doc.
+type AcmeDNS01Config struct {
+	// Provider selects the DNS-01 provider plugin. Only "cloudflare" is
+	// wired in this build (lego supports 180+; add more as needed).
+	Provider string `yaml:"provider"`
+	// TokenSecret is a ${secret:name} reference to a ZONE-SCOPED
+	// credential (e.g. Cloudflare's "Zone > DNS > Edit" API token on one
+	// zone) — never the account-global key. Resolved at Manager-
+	// construction time and held only in memory; the config.yaml on disk
+	// always keeps the unresolved ${secret:...} reference, even after
+	// config.Save — see internal/acme's dns01TokenSecretRef handling.
+	TokenSecret string `yaml:"token_secret,omitempty"`
+	// ZoneID scopes the credential to one zone (Cloudflare's CF_Zone_ID
+	// equivalent — required so a leaked token's blast radius is one
+	// zone, not every zone the account token could otherwise reach).
+	ZoneID string `yaml:"zone_id,omitempty"`
 }
 
 // AcmeRetryConfig controls retry/backoff behavior after a failed order.
