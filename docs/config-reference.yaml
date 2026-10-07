@@ -386,8 +386,9 @@ acme:
     # Pause (alert + stop retrying) after this many consecutive failures
     max_consecutive_failures: 5
   apply:
-    # Phase 3 (not yet built): swap the TLS config with no daemon
-    # restart. Leave false -- phase 1 always restarts to apply a cert.
+    # true: most renewals apply with zero downtime (the listener reloads
+    # the cert from disk on its next handshake); the first-ever switch to
+    # ACME still restarts once. false (default): always restart to apply.
     hot_swap: false
     # Also point mcp.tls_cert/tls_key at the same issued cert (MCP's SSE
     # endpoint shares the same public host, just a different port)

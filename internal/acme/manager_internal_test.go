@@ -200,6 +200,110 @@ func TestApplyCertificate_UpdatesAndSavesServerTLSPaths(t *testing.T) {
 	}
 }
 
+// TestApplyCertificate_HotSwap_SkipsRestartOnUnchangedPath is the
+// regression test for BL397 Phase 3: when apply.hot_swap is true and the
+// cert path isn't changing (the normal renewal case — always the same
+// {data_dir}/tls/acme/<name>/ location), applyCertificate must NOT call
+// restartFn. The listener's GetCertificate callback (internal/tlsutil)
+// is what actually picks up the new PEM, with no daemon restart.
+func TestApplyCertificate_HotSwap_SkipsRestartOnUnchangedPath(t *testing.T) {
+	dataDir := t.TempDir()
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	fullCfg := config.DefaultConfig()
+	fullCfg.DataDir = dataDir
+	// Pre-seed the config as if a PRIOR apply already pointed these at
+	// the ACME path — simulating the second-and-later renewal case, not
+	// the first-ever switch (which always needs one restart regardless
+	// of hot_swap — see the sibling test below).
+	certPath := filepath.Join(dataDir, "tls", "acme", "spaceportsouth.dmzs.com", "fullchain.pem")
+	keyPath := filepath.Join(dataDir, "tls", "acme", "spaceportsouth.dmzs.com", "privkey.pem")
+	fullCfg.Server.TLSCert = certPath
+	fullCfg.Server.TLSKey = keyPath
+	if err := config.Save(fullCfg, cfgPath); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	leafPEM := selfSignedPEMForTest(t, key)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	restarted := false
+	m := &Manager{
+		cfg: config.AcmeConfig{
+			Domains: []string{"spaceportsouth.dmzs.com"},
+			Apply:   config.AcmeApplyConfig{HotSwap: true},
+		},
+		dataDir:   dataDir,
+		fullCfg:   fullCfg,
+		cfgPath:   cfgPath,
+		status:    map[string]*DomainStatus{"spaceportsouth.dmzs.com": {Domain: "spaceportsouth.dmzs.com"}},
+		restartFn: func() { restarted = true },
+	}
+
+	if err := m.applyCertificate(&certificate.Resource{Certificate: leafPEM, PrivateKey: keyPEM}); err != nil {
+		t.Fatalf("applyCertificate: %v", err)
+	}
+
+	time.Sleep(600 * time.Millisecond)
+	if restarted {
+		t.Error("expected restartFn NOT to be called when hot_swap is true and the cert path is unchanged")
+	}
+}
+
+// TestApplyCertificate_HotSwap_StillRestartsOnFirstPathChange confirms
+// the first-ever apply (switching to ACME from self-signed/custom, or
+// the very first ACME issue) still restarts even with hot_swap: true —
+// a running listener can't hot-reload a path it was never watching.
+func TestApplyCertificate_HotSwap_StillRestartsOnFirstPathChange(t *testing.T) {
+	dataDir := t.TempDir()
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	fullCfg := config.DefaultConfig() // Server.TLSCert is empty -- not yet pointed at ACME
+	fullCfg.DataDir = dataDir
+	if err := config.Save(fullCfg, cfgPath); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	leafPEM := selfSignedPEMForTest(t, key)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	restarted := false
+	m := &Manager{
+		cfg: config.AcmeConfig{
+			Domains: []string{"spaceportsouth.dmzs.com"},
+			Apply:   config.AcmeApplyConfig{HotSwap: true},
+		},
+		dataDir:   dataDir,
+		fullCfg:   fullCfg,
+		cfgPath:   cfgPath,
+		status:    map[string]*DomainStatus{"spaceportsouth.dmzs.com": {Domain: "spaceportsouth.dmzs.com"}},
+		restartFn: func() { restarted = true },
+	}
+
+	if err := m.applyCertificate(&certificate.Resource{Certificate: leafPEM, PrivateKey: keyPEM}); err != nil {
+		t.Fatalf("applyCertificate: %v", err)
+	}
+
+	time.Sleep(600 * time.Millisecond)
+	if !restarted {
+		t.Error("expected restartFn to be called on the first apply even with hot_swap: true (path was changing)")
+	}
+}
+
 func TestLoadExistingCertStatus_NoFileMeansNotIssued(t *testing.T) {
 	issued, notAfter := loadExistingCertStatus(t.TempDir(), []string{"never-issued.example"})
 	if issued {

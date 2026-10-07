@@ -914,11 +914,16 @@ type AcmeRetryConfig struct {
 // AcmeApplyConfig controls what happens after a cert is successfully
 // issued or renewed.
 type AcmeApplyConfig struct {
-	// HotSwap selects the cert-apply mechanism. false (default, phase 1):
-	// write the PEM then restart the daemon via the existing restartFn so
-	// the TLS listener re-loads it at startup — one short window per
-	// issue/renewal. true (phase 2, not yet built): swap the in-memory
-	// TLS config on the running listener with no restart.
+	// HotSwap selects the cert-apply mechanism. false (default): write
+	// the PEM then restart the daemon via the existing restartFn so the
+	// TLS listener re-loads it at startup — one short window per issue/
+	// renewal. true (BL397 Phase 3): the listener's GetCertificate
+	// callback (internal/tlsutil) already reloads the cert from disk on
+	// mtime change at every handshake, so most renewals need no restart
+	// at all — the one exception is the FIRST apply after switching to
+	// ACME (or the very first issue), where the cert PATH itself is
+	// changing and a running listener can't hot-reload a path it was
+	// never watching; that one restarts regardless of this setting.
 	HotSwap bool `yaml:"hot_swap"`
 	// UpdateMCPCert also points mcp.tls_cert/tls_key at the same issued
 	// cert. Default true — MCP's SSE endpoint binds to the same public

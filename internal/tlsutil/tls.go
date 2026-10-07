@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -67,13 +68,64 @@ func Build(cfg Config) (*tls.Config, error) {
 		return nil, fmt.Errorf("load TLS cert %s: %w", certFile, err)
 	}
 
+	// BL397 Phase 3 — GetCertificate (not a static Certificates slice) so a
+	// cert rotation at this same path (e.g. an ACME renewal) is picked up
+	// on the next handshake with no daemon restart, as long as the
+	// CONFIGURED PATH itself doesn't change — this is exactly the ACME
+	// renewal shape (always {data_dir}/tls/acme/<name>/, stable across
+	// renewals) but not the "operator points tls_cert at a brand new
+	// file" shape, which still needs a restart (this closure was built
+	// watching the path captured at daemon startup). Reload is bounded:
+	// a cheap os.Stat per handshake, a real LoadX509KeyPair only when
+	// mtime actually changed. On a load failure after the first success,
+	// keep serving the last good cert rather than erroring every
+	// handshake (e.g. a renewal mid-write race) — this is what Caddy
+	// does internally for the same reason.
+	rc := &reloadingCert{certFile: certFile, keyFile: keyFile, cert: &cert}
+	if fi, statErr := os.Stat(certFile); statErr == nil {
+		rc.modTime = fi.ModTime()
+	}
+
 	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		GetCertificate: rc.GetCertificate,
 		// TLS 1.3 minimum — enables post-quantum hybrid key exchange by default
 		// (X25519Kyber768Draft00 in Go 1.23+, X25519MLKEM768 in Go 1.24+).
 		MinVersion: tls.VersionTLS13,
 		// Leave CurvePreferences nil so Go picks the best including PQC hybrids.
 	}, nil
+}
+
+// reloadingCert serves the cert at a fixed path, reloading it from disk
+// when its mtime changes. See the doc comment at its construction site
+// in Build for the design rationale.
+type reloadingCert struct {
+	mu       sync.Mutex
+	certFile string
+	keyFile  string
+	cert     *tls.Certificate
+	modTime  time.Time
+}
+
+// GetCertificate implements tls.Config's GetCertificate callback.
+func (r *reloadingCert) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	fi, statErr := os.Stat(r.certFile)
+	if statErr == nil && fi.ModTime().After(r.modTime) {
+		if fresh, loadErr := tls.LoadX509KeyPair(r.certFile, r.keyFile); loadErr == nil {
+			r.cert = &fresh
+			r.modTime = fi.ModTime()
+		}
+		// On a load error (e.g. caught mid-write), fall through and keep
+		// serving r.cert — the last known-good certificate — rather than
+		// failing every handshake until the next successful reload.
+	}
+
+	if r.cert == nil {
+		return nil, fmt.Errorf("no certificate loaded for %s", r.certFile)
+	}
+	return r.cert, nil
 }
 
 // ensureSelfSigned returns paths to an existing or newly-generated self-signed cert.
@@ -105,13 +157,13 @@ func ensureSelfSigned(cfg Config) (certFile, keyFile string, err error) {
 	}
 
 	tmpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: cn},
-		NotBefore:    time.Now().Add(-time.Minute),
-		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IsCA:         true,
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IsCA:                  true,
 		BasicConstraintsValid: true,
 	}
 

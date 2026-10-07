@@ -416,9 +416,23 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 	// pick this up at boot.
 	certPath := filepath.Join(dir, "fullchain.pem")
 	keyPath := filepath.Join(dir, "privkey.pem")
+	// BL397 Phase 3: whether the daemon needs to restart to pick this up
+	// depends on whether the PATH server.tls_cert points at is actually
+	// changing. tlsutil.Build's GetCertificate (internal/tlsutil/tls.go)
+	// reloads the file CONTENTS at a fixed path on every handshake when
+	// the mtime changes — covering every renewal after the first, since
+	// certPath/keyPath are always this same {data_dir}/tls/acme/<name>/
+	// location. But the running listener was built watching whatever
+	// path was configured at daemon startup; if THIS apply is the first
+	// one (switching from self-signed/custom to ACME, or the very first
+	// ACME issue), the path itself is changing and no amount of mtime
+	// watching on the new path helps a listener that's still watching
+	// the old one — that case always needs a restart, hot_swap or not.
+	pathUnchanged := m.fullCfg.Server.TLSCert == certPath && m.fullCfg.Server.TLSKey == keyPath
 	m.fullCfg.Server.TLSCert = certPath
 	m.fullCfg.Server.TLSKey = keyPath
 	if m.cfg.Apply.UpdateMCPCert {
+		pathUnchanged = pathUnchanged && m.fullCfg.MCP.TLSCert == certPath && m.fullCfg.MCP.TLSKey == keyPath
 		m.fullCfg.MCP.TLSCert = certPath
 		m.fullCfg.MCP.TLSKey = keyPath
 	}
@@ -451,12 +465,18 @@ func (m *Manager) applyCertificate(res *certificate.Resource) error {
 	m.logEvent(alerts.LevelInfo, "ACME certificate issued: "+name,
 		fmt.Sprintf("expires %s", leaf.NotAfter.Format(time.RFC3339)))
 
-	if m.cfg.Apply.HotSwap {
-		// Phase 3, not built — see the BL397 plan doc. Falling through to
-		// the restart path keeps phase-1 behavior correct even if a
-		// config somehow sets hot_swap: true before phase 3 ships.
-		m.logEvent(alerts.LevelWarn, "ACME hot_swap requested but not implemented",
-			"falling back to restart-based apply (phase 3 is not built)")
+	if m.cfg.Apply.HotSwap && pathUnchanged {
+		// BL397 Phase 3: the listener's GetCertificate callback
+		// (internal/tlsutil) will pick up the new PEM contents at this
+		// same path on the next TLS handshake — no restart needed. Zero
+		// downtime, the actual goal of hot_swap: true.
+		m.logEvent(alerts.LevelInfo, "ACME certificate applied without a restart (hot_swap)",
+			"the TLS listener reloads the cert from disk on its next handshake")
+		return nil
+	}
+	if m.cfg.Apply.HotSwap && !pathUnchanged {
+		m.logEvent(alerts.LevelInfo, "ACME hot_swap enabled, but this is a cert-path change",
+			"a running listener can't hot-reload a path it isn't watching -- restarting once; subsequent renewals at this same path won't need to")
 	}
 	if m.restartFn != nil {
 		// Bug found live 2026-10-06: calling restartFn() synchronously
