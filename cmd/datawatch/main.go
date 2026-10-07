@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.63.6"
+var Version = "8.63.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -692,6 +692,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			tmpCfg, _ = loadConfigSecure()
 		}
 		if tmpCfg == nil {
+			// GH#173 — an operator-specified --config that fails to
+			// parse (for any reason, not just encryption) must not
+			// silently fall through to config.DefaultConfig()'s data
+			// dir: the PID-lock check below would then run against the
+			// PRODUCTION data dir instead of whatever the operator
+			// intended, misreporting "already running" against an
+			// unrelated daemon. Only fall back to defaults when no
+			// --config was given at all (first-run / no config file
+			// created yet, where a "not found" load error is expected).
+			if cfgPath != "" {
+				return fmt.Errorf("parse config %s: %w", resolveConfigPath(), loadErr)
+			}
 			tmpCfg = config.DefaultConfig()
 		}
 		pidPath := filepath.Join(expandHome(tmpCfg.DataDir), "daemon.pid")

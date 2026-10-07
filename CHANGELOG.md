@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.63.7 — fix(config): GH#173 — `config generate` emitted detection patterns as the literal string "[]"
+
+### Fixed
+- `datawatch config generate` wrote the four `detection.*_patterns` keys as `"[]"` — a quoted YAML *string* — instead of an empty list, because `internal/config/template.go` passed the Go string `"[]"` into `yamlVal`, which quotes any string containing `[]` (it looks like it needs escaping). The generated config then failed to load at all: `yaml: unmarshal errors: cannot unmarshal !!str \`[]\` into []string`.
+- Fixed by passing a real `[]string{}` and adding a proper `[]string` case to `yamlVal` that renders a real YAML flow sequence (`[]` empty, `[a, b]` non-empty, with per-element quoting for anything containing a comma or other special character — a flow-sequence element has stricter quoting needs than a bare scalar, since a literal comma there is the list separator).
+- Also fixed the side effect the issue flagged: when `--config <path>` is given and fails to parse, the daemon's pre-flight PID-lock check was silently falling back to `config.DefaultConfig()` — meaning it checked/wrote `~/.datawatch/daemon.pid` (the **production** data dir) instead of erroring out, so a broken `--config` could report "already running" against, or clobber the PID file of, an entirely unrelated daemon. Now exits with the real parse error immediately when `--config` was explicitly given (unaffected: the no-`--config`-yet first-run case, where a "file not found" load error is expected and the existing default-fallback behavior is correct).
+- New regression tests in `internal/config/gh173_generate_roundtrip_test.go`, including the issue's own suggested "generate then load" round trip — confirmed-fails with the exact original error text against the pre-fix code.
+
 ## v8.63.6 — fix(channel): GH#174 — MCP channel bridges never re-register after daemon restart
 
 ### Fixed

@@ -223,10 +223,15 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 
 	section(&b, "Detection Filters", "Configurable patterns for session state detection. One pattern per line.")
 	b.WriteString("detection:\n")
-	fieldi(&b, "prompt_patterns", "[]", "Patterns indicating LLM is waiting for input (empty = use built-in defaults)")
-	fieldi(&b, "completion_patterns", "[]", "Patterns indicating session completed")
-	fieldi(&b, "rate_limit_patterns", "[]", "Patterns indicating rate limit hit")
-	fieldi(&b, "input_needed_patterns", "[]", "Explicit protocol markers for input needed")
+	// GH#173 — these must be a real []string, not the literal string
+	// "[]": yamlVal quotes a string containing '[]' (it looks like it
+	// needs escaping), producing prompt_patterns: "[]" — a YAML string,
+	// not an empty list — which the loader then refuses to unmarshal
+	// into []string.
+	fieldi(&b, "prompt_patterns", []string{}, "Patterns indicating LLM is waiting for input (empty = use built-in defaults)")
+	fieldi(&b, "completion_patterns", []string{}, "Patterns indicating session completed")
+	fieldi(&b, "rate_limit_patterns", []string{}, "Patterns indicating rate limit hit")
+	fieldi(&b, "input_needed_patterns", []string{}, "Explicit protocol markers for input needed")
 	b.WriteString("\n")
 
 	section(&b, "Episodic Memory", "Vector-indexed project knowledge with semantic search and task learnings.")
@@ -302,6 +307,26 @@ func yamlVal(v interface{}) string {
 		return fmt.Sprintf("%d", val)
 	case int64:
 		return fmt.Sprintf("%d", val)
+	case []string:
+		// GH#173 — render a real YAML flow sequence ([] for empty, or
+		// [a, b] for non-empty), not Go's %v formatting (which would
+		// print "[a b]" — space-separated, no commas, not valid YAML).
+		// Quoting here is deliberately its own rule (not a call into
+		// the string case above): a comma is harmless in a bare scalar
+		// but splits a flow-sequence element, so it must be quoted here
+		// even though the scalar case doesn't need to quote it.
+		if len(val) == 0 {
+			return "[]"
+		}
+		items := make([]string, len(val))
+		for i, s := range val {
+			if s == "" || strings.ContainsAny(s, ":{}[]!@#$%^&*|>< \t,") {
+				items[i] = fmt.Sprintf("%q", s)
+			} else {
+				items[i] = s
+			}
+		}
+		return "[" + strings.Join(items, ", ") + "]"
 	default:
 		return fmt.Sprintf("%v", val)
 	}
