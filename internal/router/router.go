@@ -1137,6 +1137,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleEvalsCmd(cmd)
 	case CmdCouncil:
 		r.handleCouncilCmd(cmd)
+	case CmdAcme: // BL397
+		r.handleAcmeCmd(cmd)
 	case CmdCompute:
 		r.handleComputeCmd(cmd)
 	case CmdLLM:

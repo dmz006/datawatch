@@ -47,6 +47,7 @@ import (
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -73,6 +74,7 @@ type Server struct {
 	resultStore   *session.ResultStore        // BL360
 	cmdLib        *session.CmdLibrary
 	restartFn     func()
+	acmeManager   *acme.Manager // BL397, nil when ACME is disabled
 	version       string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
@@ -203,6 +205,7 @@ type Options struct {
 	ResultStore   *session.ResultStore        // BL360
 	CmdLib        *session.CmdLibrary
 	RestartFn     func()
+	AcmeManager   *acme.Manager // BL397, nil when ACME is disabled
 	Version       string
 	LatestVersion func() (string, error)
 	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
@@ -227,6 +230,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		resultStore:   opts.ResultStore, // BL360
 		cmdLib:        opts.CmdLib,
 		restartFn:     opts.RestartFn,
+		acmeManager:   opts.AcmeManager,
 		version:       opts.Version,
 		latestVersion: opts.LatestVersion,
 		fallbackToken: opts.FallbackToken,
@@ -306,6 +310,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
 	mcpSrv.AddTool(s.toolMarkAlertRead(), tracked(s.handleMarkAlertRead))
 	mcpSrv.AddTool(s.toolRestartDaemon(), tracked(s.handleRestartDaemon))
+	// BL397 — ACME subsystem.
+	mcpSrv.AddTool(s.toolAcmeStatus(), tracked(s.handleAcmeStatus))
+	mcpSrv.AddTool(s.toolAcmeRenew(), tracked(s.handleAcmeRenew))
+	mcpSrv.AddTool(s.toolAcmeIssuerLog(), tracked(s.handleAcmeIssuerLog))
 	mcpSrv.AddTool(s.toolGetVersion(), tracked(s.handleGetVersion))
 	mcpSrv.AddTool(s.toolListSavedCommands(), tracked(s.handleListSavedCommands))
 	mcpSrv.AddTool(s.toolSendSavedCommand(), tracked(s.handleSendSavedCommand))
@@ -1128,6 +1136,9 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
 		{s.toolRestartDaemon, "restart_daemon"},
+		{s.toolAcmeStatus, "acme_status"},
+		{s.toolAcmeRenew, "acme_renew"},
+		{s.toolAcmeIssuerLog, "acme_issuer_log"},
 		{s.toolGetVersion, "get_version"},
 		{s.toolListSavedCommands, "list_saved_commands"},
 		{s.toolSendSavedCommand, "send_saved_command"},
@@ -1537,6 +1548,26 @@ func (s *Server) toolMarkAlertRead() mcpsdk.Tool {
 func (s *Server) toolRestartDaemon() mcpsdk.Tool {
 	return mcpsdk.NewTool("restart_daemon",
 		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved."),
+	)
+}
+
+// BL397 — ACME subsystem MCP tools.
+
+func (s *Server) toolAcmeStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("acme_status",
+		mcpsdk.WithDescription("Get the native ACME/Let's Encrypt subsystem's current cert state for every configured domain (issued, expiry, last renewal, in-flight order, consecutive failures)."),
+	)
+}
+
+func (s *Server) toolAcmeRenew() mcpsdk.Tool {
+	return mcpsdk.NewTool("acme_renew",
+		mcpsdk.WithDescription("Force an ACME re-order for every configured domain right now, instead of waiting for the renewal loop."),
+	)
+}
+
+func (s *Server) toolAcmeIssuerLog() mcpsdk.Tool {
+	return mcpsdk.NewTool("acme_issuer_log",
+		mcpsdk.WithDescription("Pre-flight check before an ACME order: DNS resolution of every configured domain plus reachability of the configured ACME directory (staging/production). Does not perform an order."),
 	)
 }
 
@@ -2455,6 +2486,44 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 		s.restartFn()
 	}()
 	return mcpsdk.NewToolResultText("Restarting daemon… active tmux sessions will be preserved."), nil
+}
+
+// BL397 — ACME subsystem MCP handlers.
+
+func (s *Server) handleAcmeStatus(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigRead); deny != nil {
+		return deny, nil
+	}
+	if s.acmeManager == nil {
+		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+	}
+	b, _ := json.MarshalIndent(s.acmeManager.Status(), "", "  ")
+	return mcpsdk.NewToolResultText(string(b)), nil
+}
+
+func (s *Server) handleAcmeRenew(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+		return deny, nil
+	}
+	if s.acmeManager == nil {
+		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+	}
+	if err := s.acmeManager.IssueNow(); err != nil {
+		return mcpsdk.NewToolResultText("ACME renew failed: " + err.Error()), nil
+	}
+	b, _ := json.MarshalIndent(s.acmeManager.Status(), "", "  ")
+	return mcpsdk.NewToolResultText("Renewed.\n" + string(b)), nil
+}
+
+func (s *Server) handleAcmeIssuerLog(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.CapConfigRead); deny != nil {
+		return deny, nil
+	}
+	if s.acmeManager == nil {
+		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+	}
+	b, _ := json.MarshalIndent(s.acmeManager.IssuerLog(), "", "  ")
+	return mcpsdk.NewToolResultText(string(b)), nil
 }
 
 func (s *Server) handleGetVersion(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

@@ -326,6 +326,10 @@ type Config struct {
 	// DNSChannel holds DNS tunneling communication channel configuration.
 	DNSChannel DNSChannelConfig `yaml:"dns_channel"`
 
+	// Acme holds the native ACME / Let's Encrypt subsystem configuration
+	// (BL397). See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+	Acme AcmeConfig `yaml:"acme,omitempty"`
+
 	// Push controls outbound mobile push-endpoint validation (BL394 SSRF fix).
 	Push PushConfig `yaml:"push,omitempty"`
 
@@ -844,6 +848,83 @@ type DNSChannelConfig struct {
 	MaxResponseSize int    `yaml:"max_response_size"` // max response bytes before truncation (default 512)
 	PollInterval    string `yaml:"poll_interval"`     // client polling interval (default "5s")
 	RateLimit       int    `yaml:"rate_limit"`        // max queries per IP per minute (default 30, 0 = unlimited)
+}
+
+// AcmeConfig controls the native ACME / Let's Encrypt subsystem (BL397).
+// The daemon itself performs the ACME handshake and renewal — the
+// operator never leaves datawatch for certificate management. See
+// docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+type AcmeConfig struct {
+	// Enabled is the master switch, mirroring server.tls_enabled's shape.
+	Enabled bool `yaml:"enabled"`
+
+	// Endpoint selects the ACME directory: "staging" (default, untrusted
+	// certs, generous rate limits — use this first) or "production"
+	// (browser-trusted certs, strict rate limits: 5 certs/7 days per exact
+	// domain set, 5 auth-failures/hour). Flipping staging -> production is
+	// a config save, not a code event.
+	Endpoint string `yaml:"endpoint"`
+
+	// Domains are the hostnames to request a single multi-SAN cert for
+	// (one ACME order, not one order per name — e.g. the main server
+	// hostname plus the proxy-sandbox hostname share one cert since the
+	// sandbox listener reuses the main cert automatically).
+	Domains []string `yaml:"domains"`
+
+	// Method is the ACME validation method. Only "http01" is supported by
+	// this build; "dns01" is phase 2 (deferred — see the BL397 plan doc),
+	// present here only so a future phase-2 build doesn't need a schema
+	// migration.
+	Method string `yaml:"method"`
+
+	HTTP01 AcmeHTTP01Config `yaml:"http01,omitempty"`
+
+	// RenewalDays triggers a renewal when the cert's remaining life drops
+	// to this many days. Default 30 (90-day LE certs, ~certbot/Caddy
+	// convention — NOT the 66 the originating research PRD proposed; 66
+	// renews at only 24 days of cert age, far more aggressive than
+	// standard practice).
+	RenewalDays int `yaml:"renewal_days"`
+
+	Retry AcmeRetryConfig `yaml:"retry"`
+	Apply AcmeApplyConfig `yaml:"apply"`
+}
+
+// AcmeHTTP01Config holds HTTP-01-specific settings.
+type AcmeHTTP01Config struct {
+	// Listen is the optional bind address for the HTTP-01 challenge
+	// responder. Empty means it's served through the daemon's existing
+	// HTTP mux on the normal port-80-redirect listener — no second port.
+	Listen string `yaml:"listen,omitempty"`
+}
+
+// AcmeRetryConfig controls retry/backoff behavior after a failed order.
+type AcmeRetryConfig struct {
+	// IntervalMinutes is the retry cadence after a failed attempt.
+	// Default 30.
+	IntervalMinutes int `yaml:"interval_minutes"`
+	// MaxConsecutiveFailures pauses the renewal loop (alert + pause)
+	// after this many consecutive failures, so a persistent misconfig
+	// doesn't keep burning Let's Encrypt's failure-rate limits. Default 5
+	// (at 30-minute spacing, 5 failures span 2.5h — safely under LE's
+	// 5-auth-failures-per-hour cap).
+	MaxConsecutiveFailures int `yaml:"max_consecutive_failures"`
+}
+
+// AcmeApplyConfig controls what happens after a cert is successfully
+// issued or renewed.
+type AcmeApplyConfig struct {
+	// HotSwap selects the cert-apply mechanism. false (default, phase 1):
+	// write the PEM then restart the daemon via the existing restartFn so
+	// the TLS listener re-loads it at startup — one short window per
+	// issue/renewal. true (phase 2, not yet built): swap the in-memory
+	// TLS config on the running listener with no restart.
+	HotSwap bool `yaml:"hot_swap"`
+	// UpdateMCPCert also points mcp.tls_cert/tls_key at the same issued
+	// cert. Default true — MCP's SSE endpoint binds to the same public
+	// host as the main server (just a different port), and a TLS cert is
+	// host-scoped, not port-scoped, so one cert legitimately covers both.
+	UpdateMCPCert bool `yaml:"update_mcp_cert"`
 }
 
 // PushConfig controls validation of outbound mobile push-notification
@@ -2082,6 +2163,13 @@ func DefaultConfig() *Config {
 			Elicitation:     MCPElicitationConfig{Enabled: true},
 			Prompts:         MCPPromptsConfig{Enabled: true},
 		},
+		Acme: AcmeConfig{
+			Endpoint:    "staging",
+			Method:      "http01",
+			RenewalDays: 30,
+			Retry:       AcmeRetryConfig{IntervalMinutes: 30, MaxConsecutiveFailures: 5},
+			Apply:       AcmeApplyConfig{UpdateMCPCert: true},
+		},
 		// Backend addresses and binaries are intentionally empty in the default
 		// config so fresh installs don't trigger spurious v6→v7 migration toasts.
 		// Operators configure them explicitly via `datawatch setup llm <name>`.
@@ -2469,6 +2557,26 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.PlanningModel == "" && cfg.Autonomous.DecompositionModelLegacy != "" {
 		cfg.Autonomous.PlanningModel = cfg.Autonomous.DecompositionModelLegacy
 	}
+	// BL397 — native ACME subsystem defaults.
+	if cfg.Acme.Endpoint == "" {
+		cfg.Acme.Endpoint = "staging"
+	}
+	if cfg.Acme.Method == "" {
+		cfg.Acme.Method = "http01"
+	}
+	if cfg.Acme.RenewalDays == 0 {
+		cfg.Acme.RenewalDays = 30
+	}
+	if cfg.Acme.Retry.IntervalMinutes == 0 {
+		cfg.Acme.Retry.IntervalMinutes = 30
+	}
+	if cfg.Acme.Retry.MaxConsecutiveFailures == 0 {
+		cfg.Acme.Retry.MaxConsecutiveFailures = 5
+	}
+	// Apply.UpdateMCPCert's true-default follows the same convention as
+	// Server.TLSAutoGenerate: set only in DefaultConfig() for brand-new
+	// configs, not forced here for loaded ones (an omitted bool in an
+	// existing config.yaml is indistinguishable from an explicit false).
 }
 
 // normalizeBooleanFields fixes YAML representation inconsistencies where

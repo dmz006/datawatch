@@ -247,6 +247,13 @@ const (
 	//   "council get-run <id>"                 → one run
 	CmdCouncil CommandType = "council"
 
+	// BL397 — native ACME/Let's Encrypt subsystem.
+	//   "acme"                                 → cert state (same as "acme status")
+	//   "acme status"                          → cert state for every configured domain
+	//   "acme renew"                           → force a re-order now
+	//   "acme verify"                          → DNS + directory reachability check
+	CmdAcme CommandType = "acme"
+
 	// v7.0.0 S1 — ComputeNode registry.
 	//   "compute"                              → list nodes
 	//   "compute node {list,get,add,update,delete,health,detail} ..."
@@ -1366,6 +1373,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("council "):])
 		}
 		return Command{Type: CmdCouncil, Text: rest}
+
+	case lower == "acme" || strings.HasPrefix(lower, "acme "): // BL397
+		rest := ""
+		if lower != "acme" {
+			rest = strings.TrimSpace(text[len("acme "):])
+		}
+		return Command{Type: CmdAcme, Text: rest}
 
 	case lower == "compute" || strings.HasPrefix(lower, "compute "):
 		rest := ""

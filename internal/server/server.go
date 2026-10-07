@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
@@ -139,6 +140,17 @@ func loopbackPathBypassed(p string) bool {
 
 func (s *HTTPServer) redirectToTLSHandler(tlsPort int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// BL397 — the ACME HTTP-01 challenge MUST be served in plaintext
+		// on port 80, unredirected, for EVERY remote (not just loopback:
+		// Let's Encrypt's validators connect from public IPs). Redirecting
+		// it to the TLS port would send the validator to a self-signed
+		// cert it can't trust — a chicken-and-egg failure that would
+		// silently break every HTTP-01 order. This check is unconditional
+		// (no isLoopbackRemote gate) on purpose.
+		if strings.HasPrefix(r.URL.Path, acme.ChallengePathPrefix) {
+			s.srv.Handler.ServeHTTP(w, r)
+			return
+		}
 		if isLoopbackRemote(r.RemoteAddr) && loopbackPathBypassed(r.URL.Path) {
 			s.srv.Handler.ServeHTTP(w, r)
 			return
@@ -174,6 +186,17 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Public routes (no auth)
 	mux.HandleFunc("/api/health", api.handleHealth)
 	mux.HandleFunc("/.well-known/unifiedpush", api.handleUnifiedPushDiscovery) // alpha.35 #38 — top-level path; not under /api/
+	// BL397 — ACME HTTP-01 challenge path. Registered unconditionally so
+	// the route exists even if SetACMEManager is called after this mux is
+	// built (matches restartFn's late-binding pattern); dispatches to the
+	// live acmeManager at request time, 404s when ACME isn't enabled.
+	mux.HandleFunc(acme.ChallengePathPrefix, func(w http.ResponseWriter, r *http.Request) {
+		if api.acmeManager == nil {
+			http.NotFound(w, r)
+			return
+		}
+		api.acmeManager.ChallengeHandler().ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/healthz", api.handleHealthz)
 	mux.HandleFunc("/readyz", api.handleReadyz)
 	// F10 sprint 3: bootstrap is unauthenticated because the worker
@@ -433,6 +456,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/info", api.handleChannelInfo)
 	apiMux.HandleFunc("/api/channel/diagnostics", api.handleChannelDiagnostics) // BL362
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
+	// BL397 — ACME subsystem.
+	apiMux.HandleFunc("/api/acme/status", api.handleACMEStatus)
+	apiMux.HandleFunc("/api/acme/renew", api.handleACMERenew)
+	apiMux.HandleFunc("/api/acme/verify", api.handleACMEVerify)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/mcp/tools", api.handleMCPTools)
 	apiMux.HandleFunc("/api/mcp/call", api.handleMCPCall)
@@ -938,6 +965,11 @@ func (s *HTTPServer) SetAlertStore(store *alerts.Store) {
 // SetRestartFunc wires the restart function into the server for /api/restart.
 func (s *HTTPServer) SetRestartFunc(fn func()) {
 	s.api.SetRestartFunc(fn)
+}
+
+// SetACMEManager wires the ACME subsystem (BL397) into the server.
+func (s *HTTPServer) SetACMEManager(m *acme.Manager) {
+	s.api.SetACMEManager(m)
 }
 
 // SetUpdateFuncs wires update functions into the server for /api/update.

@@ -34,6 +34,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	slackgo "github.com/slack-go/slack"
 
+	"github.com/dmz006/datawatch/internal/acme"
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertrulespkg "github.com/dmz006/datawatch/internal/alertrules"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
@@ -302,6 +303,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAskCmd(),            // BL34
 		newProjectSummaryCmd(), // BL35
 		newTemplateCmd(),       // BL5
+		newAcmeCmd(),           // BL397
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
@@ -710,6 +712,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	var cfg *config.Config
 	var encKey []byte
+	var acmeMgr *acme.Manager // BL397, set below when acme.enabled; nil otherwise
 	if workerBootstrap != nil {
 		// Worker mode: the parent owns truth; never read disk config.
 		// Future sprints will fold richer worker config into
@@ -6053,6 +6056,23 @@ Return STRICT JSON:
 		}
 		httpServer.SetRestartFunc(daemonRestartFn)
 
+		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
+		// is false unless the operator opts in); failure to start it never
+		// blocks daemon startup — ACME is an optional capability, not a
+		// prerequisite for the daemon's normal TLS story (self-signed /
+		// manual certs keep working unchanged either way).
+		if cfg.Acme.Enabled {
+			var acmeErr error
+			acmeMgr, acmeErr = acme.NewManager(cfg.Acme, expandHome(cfg.DataDir), encKey, daemonRestartFn)
+			if acmeErr != nil {
+				fmt.Printf("[acme] startup failed, continuing without ACME: %v\n", acmeErr)
+				acmeMgr = nil
+			} else {
+				httpServer.SetACMEManager(acmeMgr)
+				acmeMgr.Start()
+			}
+		}
+
 		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
 		// as claude MCP channel replies, so the web UI renders them as amber lines.
 		hs := httpServer // capture
@@ -6209,6 +6229,7 @@ Return STRICT JSON:
 		SubStore:      discussionSubStore, // BL358
 		ResultStore:   resultStore,        // BL360
 		CmdLib:        cmdLib,
+		AcmeManager:   acmeMgr, // BL397
 		Version:       Version,
 		LatestVersion: fetchLatestVersion,
 		FallbackToken: cfg.Server.Token, // SEC-002

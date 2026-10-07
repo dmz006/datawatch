@@ -93,6 +93,39 @@ func TestRedirectToTLSHandler_LoopbackChannelBypass(t *testing.T) {
 	}
 }
 
+// TestRedirectToTLSHandler_AcmeChallengeBypassIsUnconditional (BL397)
+// asserts the ACME HTTP-01 challenge path bypasses the redirect from a
+// NON-loopback remote — unlike every other bypass entry, which only
+// applies to loopback traffic. Let's Encrypt's validators connect from
+// public IPs; if this bypass were loopback-gated like the others, every
+// HTTP-01 order would silently fail (redirected to a self-signed cert the
+// validator can't trust).
+func TestRedirectToTLSHandler_AcmeChallengeBypassIsUnconditional(t *testing.T) {
+	mainHits := 0
+	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mainHits++
+		_, _ = w.Write([]byte("keyauth-value"))
+	})
+	s := newTestRedirectServer(t, mainHandler)
+	h := s.redirectToTLSHandler(8443)
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/acme-challenge/abc123xyz", nil)
+	req.RemoteAddr = "203.0.113.5:443" // a real-looking public IP, NOT loopback
+	req.Host = "spaceportsouth.dmzs.com"
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("ACME challenge from a public IP got redirected (status %d) instead of served — HTTP-01 would fail", rr.Code)
+	}
+	if mainHits != 1 {
+		t.Fatalf("expected the challenge request to reach the main handler, mainHits=%d", mainHits)
+	}
+	if body := rr.Body.String(); body != "keyauth-value" {
+		t.Fatalf("got body %q, want the challenge response served unmodified", body)
+	}
+}
+
 // TestRedirectToTLSHandler_PathPrefixIsExact asserts that we don't
 // accidentally bypass paths that *start with* /api/channel but mean
 // something else — e.g. a future /api/channels-list endpoint must

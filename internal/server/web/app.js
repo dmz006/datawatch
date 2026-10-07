@@ -12927,9 +12927,11 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'server.port', label: 'Port', type: 'number' },
     { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
     { key: 'server.tls_port', label: 'TLS port', type: 'number', placeholder: '8443' },
-    { key: 'server.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
-    { key: 'server.tls_cert', label: 'TLS cert path', type: 'text' },
-    { key: 'server.tls_key', label: 'TLS key path', type: 'text' },
+    // BL397 — certificate source selector (self-signed / custom / ACME),
+    // replacing the three separate tls_auto_generate/tls_cert/tls_key
+    // fields with one conditional card so Let's Encrypt is a mode of the
+    // same control, not a disconnected feature.
+    { key: '_cert_source', label: 'Certificate source', type: 'acme_cert_source' },
     { key: '_tls_install', label: 'Install cert on phone', type: 'html',
       html: `<div style="font-size:11px;padding:8px 0;">
         <a href="/api/cert?format=der" style="color:var(--accent2);text-decoration:underline;font-weight:600;" download="datawatch-ca.crt">&#128274; Download CA Certificate (.crt)</a>
@@ -13265,6 +13267,56 @@ function loadCommsConfig() {
               <span class="toggle-slider"></span>
             </label>
           </div>`;
+        } else if (f.type === 'acme_cert_source') {
+          // BL397 — certificate-source selector: Self-signed | Custom | Let's
+          // Encrypt (ACME). Folds the ACME config into the existing TLS card
+          // instead of a disconnected new one, per operator direction.
+          const acmeEnabled = !!(cfg.acme && cfg.acme.enabled);
+          const autoGen = !!(cfg.server && cfg.server.tls_auto_generate);
+          const mode = acmeEnabled ? 'acme' : (autoGen ? 'selfsigned' : 'custom');
+          const domains = ((cfg.acme && cfg.acme.domains) || []).join(', ');
+          const endpoint = (cfg.acme && cfg.acme.endpoint) || 'staging';
+          const certPath = (cfg.server && cfg.server.tls_cert) || '';
+          const keyPath = (cfg.server && cfg.server.tls_key) || '';
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <select class="form-select general-cfg-input" onchange="onCertSourceChange(this.value)">
+              <option value="selfsigned" ${mode === 'selfsigned' ? 'selected' : ''}>Self-signed (auto-generate)</option>
+              <option value="custom" ${mode === 'custom' ? 'selected' : ''}>Custom cert path</option>
+              <option value="acme" ${mode === 'acme' ? 'selected' : ''}>Let's Encrypt (ACME)</option>
+            </select>
+          </div>
+          <div id="certSourceCustom" style="${mode === 'custom' ? '' : 'display:none'}">
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">TLS cert path</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(certPath)}"
+                onchange="saveGeneralField('server.tls_cert', this.value)" />
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">TLS key path</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(keyPath)}"
+                onchange="saveGeneralField('server.tls_key', this.value)" />
+            </div>
+          </div>
+          <div id="certSourceAcme" style="${mode === 'acme' ? '' : 'display:none'}">
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Domains (comma-separated)</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(domains)}"
+                placeholder="spaceportsouth.dmzs.com" onchange="saveGeneralField('acme.domains', this.value)" />
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Endpoint</div>
+              <select class="form-select general-cfg-input" onchange="saveGeneralField('acme.endpoint', this.value)">
+                <option value="staging" ${endpoint === 'staging' ? 'selected' : ''}>Staging (testing, untrusted certs)</option>
+                <option value="production" ${endpoint === 'production' ? 'selected' : ''}>Production (trusted certs)</option>
+              </select>
+            </div>
+            <div id="acmeStatusCard" style="font-size:12px;color:var(--text2);padding:8px 0;">Loading cert status…</div>
+            <div style="display:flex;gap:8px;padding:4px 0;">
+              <button class="btn-secondary" style="font-size:11px;" onclick="acmeRenewNow()">Renew now</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="acmeVerifyNow()">Verify</button>
+            </div>
+          </div>`;
         } else if (f.type === 'readonly') {
           // v5.28.3 — show the effective config value with no inline edit
           // control. Used to point operators at the canonical control
@@ -13284,8 +13336,69 @@ function loadCommsConfig() {
         }
       }
       el.innerHTML = html;
+      if (document.getElementById('acmeStatusCard')) loadAcmeStatus(); // BL397
     }
   }).catch(() => {});
+}
+
+// BL397 — ACME subsystem card helpers.
+function onCertSourceChange(mode) {
+  const patch = {};
+  if (mode === 'selfsigned') {
+    patch['server.tls_auto_generate'] = true;
+    patch['acme.enabled'] = false;
+  } else if (mode === 'custom') {
+    patch['server.tls_auto_generate'] = false;
+    patch['acme.enabled'] = false;
+  } else if (mode === 'acme') {
+    patch['acme.enabled'] = true;
+    patch['server.tls_auto_generate'] = false;
+  }
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(patch),
+  }).then(r => {
+    if (!r.ok) { showToast('Save failed', 'error'); return; }
+    showToast('Saved — restart required to apply', 'success', 2500);
+    const hint = document.getElementById('restartHint');
+    if (hint) hint.style.display = 'inline';
+    if (state.autoRestartOnConfig) triggerAutoRestart();
+    loadCommsConfig();
+  }).catch(() => showToast('Save failed', 'error'));
+}
+
+function loadAcmeStatus() {
+  const el = document.getElementById('acmeStatusCard');
+  if (!el) return;
+  apiFetch('/api/acme/status').then(data => {
+    if (!data || !data.enabled || !data.domains || !data.domains.length) {
+      el.textContent = 'Not yet issued — save settings, then restart to start the ACME subsystem.';
+      return;
+    }
+    el.innerHTML = data.domains.map(d => {
+      const exp = d.not_after ? new Date(d.not_after).toLocaleDateString() : '—';
+      const label = d.in_flight ? 'issuing…' : (d.issued ? ('expires ' + exp) : 'not issued yet');
+      const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
+      return `<div>${escHtml(d.domain)}: ${escHtml(label)}${err}</div>`;
+    }).join('');
+  }).catch(() => { el.textContent = 'Status unavailable.'; });
+}
+
+function acmeRenewNow() {
+  showToast('Requesting renewal…', 'info', 2000);
+  apiFetch('/api/acme/renew', { method: 'POST' }).then(() => {
+    showToast('Renewed', 'success', 2000);
+    loadAcmeStatus();
+  }).catch(err => showToast('Renew failed: ' + err.message, 'error'));
+}
+
+function acmeVerifyNow() {
+  showToast('Verifying…', 'info', 1500);
+  apiFetch('/api/acme/verify').then(data => {
+    if (data && data.ok) showToast('Verify OK — DNS resolves, ACME directory reachable', 'success', 3000);
+    else showToast('Verify found issues — check the domains list for details', 'warning', 3500);
+  }).catch(err => showToast('Verify failed: ' + err.message, 'error'));
 }
 
 function loadLLMTabConfig() {
@@ -14026,6 +14139,7 @@ function summarizerModelHint(modelName) {
 // Fields that require a daemon restart to take effect
 const RESTART_FIELDS = new Set([
   'server.host', 'server.port', 'server.tls', 'server.tls_auto_generate', 'server.tls_cert', 'server.tls_key',
+  'acme.enabled', 'acme.endpoint', 'acme.domains', // BL397 — Manager starts/stops only at daemon boot
   'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.tls_enabled',
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);

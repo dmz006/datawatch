@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
@@ -295,6 +296,11 @@ type Server struct {
 
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
+
+	// acmeManager (BL397) is wired from main.go when acme.enabled is
+	// true. nil when ACME is disabled — every acmeManager consumer must
+	// nil-check. See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+	acmeManager *acme.Manager
 
 	// reloaders (v5.27.2) maps subsystem name → reload function.
 	// Callers register via Server.RegisterReloader at startup so
@@ -836,6 +842,13 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
+
+// SetACMEManager wires the ACME subsystem (BL397) into the API server.
+// The mux's /.well-known/acme-challenge/ route (registered unconditionally
+// in server.go) dispatches to s.acmeManager.ChallengeHandler() when set,
+// 404s otherwise — so this can be called any time before the first real
+// ACME validation request arrives, not strictly before ListenAndServe.
+func (s *Server) SetACMEManager(m *acme.Manager) { s.acmeManager = m }
 
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
 // Optional ?node=<cn> probes a specific Compute Node's address instead of the default.
@@ -5031,6 +5044,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"recent_session_minutes": s.cfg.Server.RecentSessionMinutes,
 			"suppress_active_toasts": s.cfg.Server.SuppressActiveToasts,
 		},
+		// BL397 — native ACME subsystem.
+		"acme": map[string]interface{}{
+			"enabled":      s.cfg.Acme.Enabled,
+			"endpoint":     s.cfg.Acme.Endpoint,
+			"domains":      s.cfg.Acme.Domains,
+			"method":       s.cfg.Acme.Method,
+			"renewal_days": s.cfg.Acme.RenewalDays,
+		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
 			"account_number": s.cfg.Signal.AccountNumber,
@@ -5817,6 +5838,27 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			}
 		case "server.suppress_active_toasts":
 			cfg.Server.SuppressActiveToasts = toBool(v)
+		// BL397 — native ACME subsystem.
+		case "acme.enabled":
+			cfg.Acme.Enabled = toBool(v)
+		case "acme.endpoint":
+			if s := toString(v); s != "" {
+				cfg.Acme.Endpoint = s
+			}
+		case "acme.domains":
+			if s := toString(v); s != "" {
+				domains := make([]string, 0)
+				for _, d := range strings.Split(s, ",") {
+					if d = strings.TrimSpace(d); d != "" {
+						domains = append(domains, d)
+					}
+				}
+				cfg.Acme.Domains = domains
+			}
+		case "acme.renewal_days":
+			if n, ok := toInt(v); ok {
+				cfg.Acme.RenewalDays = n
+			}
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":

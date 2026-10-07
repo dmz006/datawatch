@@ -41,12 +41,23 @@ out of scope here per the decision log below).
    blocked, wildcard required), B's mechanics are still available as Plan
    C's phase 2 (`acme.method: dns01`), not a separate build.
 2. **Cert-apply mechanism: restart-based (Phase 1), not hot-swap (Phase 3).**
-   A cert renewal triggers `server.auto_restart_on_config: true` — the
-   daemon restarts itself, re-loading the new PEM at TLS-listener startup.
-   One short window per issue/renewal (~every 90 days). Zero-downtime
-   hot-swap (phase 3: drop `tls_cert`/`tls_key` from `RESTART_FIELDS`,
-   listener reloads PEM on mtime change) is **deferred**, not declined —
-   worth revisiting once phase 1 is proven.
+   A cert renewal writes the new PEM then restarts the daemon so the TLS
+   listener re-loads it at startup. One short window per issue/renewal
+   (~every 90 days). Zero-downtime hot-swap (phase 3: listener reloads PEM
+   on mtime change) is **deferred**, not declined — worth revisiting once
+   phase 1 is proven.
+   - **Implementation correction (found 2026-10-06, during build):** the
+     PRD assumed `server.auto_restart_on_config: true` is a watcher that
+     diffs config fields and auto-restarts on a TLS-path change. It isn't
+     — it's an exposed/settable config flag (`internal/config/config.go`)
+     with **no actual consumer** that triggers a restart from it (grepped
+     the full tree; the only restart path is the existing `POST
+     /api/restart` → `handleRestart` → `s.restartFn()` →
+     `syscall.Exec(selfPath, ...)` in `internal/server/api.go:8049`,
+     invoked manually or by other explicit callers). `acme.Manager`'s
+     `Apply` step calls that **same `restartFn`** directly after writing
+     the PEM — no new watcher needed, no dependency on wiring up the
+     config-diff mechanism this PRD assumed existed.
 3. **ACME client library: `github.com/go-acme/lego/v4`.** New third-party Go
    dependency. Handles JWS signing, account registration, order state
    machine, and the HTTP-01 challenge handler. AGENT.md's B17 (72-hour rule
@@ -221,6 +232,40 @@ TODO in this doc, not blocking Phase 1).
      silent failure.
 - `docs/testing-tracker.md` entry for the new REST/MCP/CLI/comm surfaces.
 - Per AGENT.md B17: dependency-audit note for `lego` in CHANGELOG.
+
+## Live-test findings (2026-10-06, found during deployment to 66.228.59.180)
+
+- **Real bug caught before it shipped**: the daemon's existing HTTP→HTTPS
+  redirect (`internal/server/server.go`'s `redirectToTLSHandler`)
+  unconditionally 307s every request to the TLS port — including the ACME
+  HTTP-01 challenge path. Since the TLS port serves a self-signed cert
+  (that's the whole problem ACME solves), Let's Encrypt's validator would
+  get redirected to a cert it can't trust and every order would silently
+  fail. Fixed: the `/.well-known/acme-challenge/` prefix now bypasses the
+  redirect **unconditionally** (not gated on `isLoopbackRemote` like every
+  other bypass entry — LE's validators connect from public IPs, not
+  loopback). Regression test:
+  `TestRedirectToTLSHandler_AcmeChallengeBypassIsUnconditional`.
+- **Port 80 is not datawatch's default port.** `server.port` defaults to
+  8080, not 80 — the "dual-port model" redirects 8080→8443, it does not
+  bind port 80 at all. For real-world Let's Encrypt validation (which
+  connects to port 80 specifically, per RFC 8555 §8.3), the deployment
+  needs `server.port: 80`, firewall port 80 open, and — since datawatch
+  commonly runs as an unprivileged user — `cap_net_bind_service` on the
+  binary (or root, or a port-forward). This isn't a datawatch code gap,
+  it's a deployment requirement; noting it here since it wasn't called out
+  in the original PRD's access-table framing.
+- **Test box reality (66.228.59.180)**: shared with the `datawatch-app`
+  session's Apple sandbox — confirmed via peer coordination, nothing live
+  depends on it yet (no Apple review submitted). Runs as unprivileged user
+  `demo` via a systemd **user** service (`systemctl --user -M demo@
+  restart datawatch`), binary at `/home/demo/.local/bin/datawatch`, config
+  at `/home/demo/.datawatch/config.yaml`. Firewall (ufw): only 22 and 8443
+  open; 8080 and 80 closed. Must preserve: the `demo-token` auth token, 3
+  seeded tmux sessions + 2 planned Automata in the data dir, the
+  `demo-cpu`/`ollama` compute-node+LLM registration. Must report back:
+  final version, serving port, ufw rules, and production-cert confirmation
+  — per the Handoff section below.
 
 ## Handoff (last step, after verification passes)
 
