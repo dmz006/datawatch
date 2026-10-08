@@ -69,6 +69,12 @@ systemctl --user status datawatch
 # Enable automatic start at login
 systemctl --user enable datawatch
 
+# Dedicated tmux server that hosts every session (installed alongside
+# datawatch.service by install.sh). It has its own cgroup and Restart=always,
+# so sessions survive daemon restarts and are not tied to any login session.
+systemctl --user status datawatch-tmux
+TMUX_TMPDIR=~/.datawatch/tmux tmux ls    # plain `tmux ls` won't show sessions
+
 # Follow live logs
 journalctl --user -u datawatch -f
 
@@ -206,6 +212,8 @@ datawatch session stop-all
 # Print the tmux attach command for a session
 datawatch session attach a3f2
 # Prints: tmux attach -t cs-myhost-a3f2
+# (or TMUX_TMPDIR=~/.datawatch/tmux tmux attach -t cs-myhost-a3f2 when
+# sessions run on the dedicated datawatch-tmux.service socket)
 # Run that command to get a full terminal in the session
 ```
 

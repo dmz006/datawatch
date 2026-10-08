@@ -1007,3 +1007,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `auditConfigPatch`'s (SEC-017) `configure` entry names the real session | **Yes** | **Yes** | `TestAuditConfigPatch_NamesSessionActor` | |
 | Shared `Server.audit` helper (skills-registry write paths) threads ctx through; existing skills tests still pass with the new signature | **Yes** | **Yes** | Full `internal/server` suite re-run green (634 tests) | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3245 passed, 0 failed | |
+
+## Dedicated tmux socket + socket-aware attach hints — v8.73.23
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `TmuxSocketDir` / `TmuxAttachCommand`: `TMUX_TMPDIR` env wins; empty with no dedicated socket; CLI fallback to `~/.datawatch/tmux` only once its socket exists | **Yes** | **Yes** | `TestTmuxSocketDir_EnvWins`, `_DefaultSocket`, `_FallsBackToDataDirSocket` | |
+| CLI `datawatch session attach <id>` prints the socket-qualified command | **Yes** | **Yes** | Live, 2026-10-08, production host: printed `TMUX_TMPDIR=/home/dmz/.datawatch/tmux tmux attach -t cs-johnnyjohnny-9245` from an operator shell with no `TMUX_TMPDIR` set | |
+| `datawatch-tmux.service` + `datawatch.service` (`TMUX_TMPDIR`): sessions created on the dedicated server survive a `systemctl --user restart datawatch` | No | **Yes** | Live, 2026-10-08: two restarted claude-code sessions stayed `running`/alive across a daemon restart; pane processes in `user@1000.service` `tmux-spawn-*` scopes, server in `datawatch-tmux.service` | install.sh unit generation checked with `bash -n` only; not run on a fresh host |
+| Comm-channel `attach` reply / session-start message use the socket-aware hint | No | No | Code inspection (`internal/router/router.go`, `internal/server/api.go`) | Not exercised via `POST /api/test/message` yet |
+
