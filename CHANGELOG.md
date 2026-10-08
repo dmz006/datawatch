@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.15 — fix(pwa): Settings tab is now federation-aware (item 3 of 3: picker + proxy-aware config loaders)
+
+### Fixed
+- Settings had no server picker at all — editing/viewing config always meant the local daemon, with no way to see or change a selected remote peer's own configuration. Added the picker (`_injectServerPickerBar`, `hideAll:true` — matches the Observer precedent; an aggregated "All servers" view of ~45 independent config sections has no coherent meaning).
+- 14 of Settings' ~45 sub-card loaders used a raw, non-proxy-aware `fetch()` that never reflected a selected remote peer's data at all — several had no error handling whatsoever (an unhandled rejection left the card stuck on its loading placeholder forever): `loadLinkStatus`, `loadConfigStatus`, `loadCommsConfig`, `loadGeneralConfig`, `loadAgentsConfig`, `loadCommBackendsStatus`, `loadSavedCommands`, `loadAlertRules`, `loadAlertRuleFirings`, `loadExitHooks`, `loadWorkQueue`, `loadFilters`, `loadVersionInfo`, `loadProfiles` (Project/Cluster Profiles). Migrated to `apiFetch`.
+- 10 more loaders were already proxy-aware (already got the real 401/403/502 text via the existing `_fedFetchError` classifier) but each `.catch()` replaced it with a generic string: `loadGuardrailProfilesPanel`, `loadProxySettings`, `loadCostRatesConfig`, `loadDetectionFilters`, `loadBrandingPanel`, `loadAboutMcpToolsSummary`, `loadLLMTabConfig`, `loadAutomataSettingsPanel`, `loadDocsTrustPanel`, `loadFileServicePanel`.
+- ~26 other loaders checked and confirmed already correct (Compute Nodes, LLMs registry, Secrets Store, Tailscale status, and more) — no change needed, verified rather than assumed.
+
+### Process
+- Three judgment calls deferred, flagged for operator sign-off: `loadServers`/`loadServersList` (ambiguous multi-hop-federation semantics — left local-only), `loadTailscaleConfig` (no dedicated error-display element without a markup change), `fileServiceUpload`'s raw FormData binary upload (different risk profile than a JSON GET migration). Full inventory and rationale in `docs/plans/2026-10-08-settings-tab-federation.md`, including an explicit note that the name-pattern audit may not be fully exhaustive of every sub-card.
+
+### Added
+- `app-settings-fed.test.js` (new file, 6 tests covering each distinct fix pattern once).
+
 ## v8.73.14 — security(SEC-005): verify Twilio's X-Twilio-Signature on inbound SMS webhooks
 
 ### Security
@@ -29,6 +43,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - 1 new test in `app-fed-conn-status.test.js` pinning the `loading_sessions` phase transition.
+
+## v8.73.11 — fix(pwa): Dashboard periodic re-polls + Observer's remaining sub-cards show real federated errors
 
 ### Fixed
 - Dashboard: the prior round's federated-error banner only covered the *initial* PRDs load — `_dashLoop`'s periodic re-fetches (PRDs ~5s, cost ~30s, heatmap/compute-nodes ~60s) still swallowed every failure silently. New `_dashSetFedError`/`_dashClearFedError`, keyed by source so independent cards failing at once don't clobber each other's message. The banner moved from a child of `#dashCardGrid` to a persistent sibling `#dashFedErrorBanner`, since `_dashBuildGrid`'s full `grid.innerHTML` replace on every layout load would eventually have wiped a banner nested inside it (a latent bug in the prior single-source version, masked in its own test).

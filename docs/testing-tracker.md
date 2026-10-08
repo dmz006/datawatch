@@ -9,6 +9,21 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Settings-Tab Federation (item 3 of 3)
+
+Added in v8.73.15. See `docs/plans/2026-10-08-settings-tab-federation.md` for the full per-function inventory.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Server picker injected into `renderSettingsView` | Yes | No | `app-settings-fed.test.js` | Confirms `hideAll:true` passed, matching Observer |
+| `loadConfigStatus` (raw-fetch migration pattern) | Yes | No | Same file — 2 tests (real error + proxy-URL regression guard) | Representative of 14 migrated functions |
+| `loadCommsConfig` (multi-section pattern) | Yes | No | Same file | Representative of 3 multi-section functions (Comms/General/LLM) |
+| `loadGuardrailProfilesPanel` (already-apiFetch pattern) | Yes | No | Same file | Representative of 10 functions |
+| `loadComputeNodesPanel`/`loadSecretsPanel` (already-correct confirmation) | Yes | No | Same file | Spot-check of the "no change needed" claim, not exhaustive |
+| Remaining ~34 touched/audited functions | No (not individually) | No | Code-reviewed, not unit-tested individually — each shares one of the 4 patterns above | Follow-up: consider per-function tests if a regression surfaces |
+
+---
+
 ## PWA Federated Error Visibility Phase 4 — Dashboard Periodic Re-polls + Observer's Remaining Sub-cards
 
 Added in v8.73.11. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md` (Phase 4).

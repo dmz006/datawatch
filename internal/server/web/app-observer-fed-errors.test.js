@@ -9,7 +9,7 @@
 // for the related GH#194 round.
 //
 // Not every one of the 12 loaders gets its own test here -- most share
-// one trivial pattern (_obsFedMsg(e, fallback) in a one-line .catch),
+// one trivial pattern (_fedMsg(e, fallback) in a one-line .catch),
 // already proven by loadStatsPanel's own test. This file covers that
 // pattern once more on a different endpoint, plus the two genuinely
 // different shapes: a "hide the card on any failure" pattern that had
@@ -31,7 +31,7 @@ function loadAppJS() {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
-  assert.equal(typeof sandbox._obsFedMsg, 'function', '_obsFedMsg is not defined -- did it get renamed?');
+  assert.equal(typeof sandbox._fedMsg, 'function', '_fedMsg is not defined -- did it get renamed?');
   return sandbox;
 }
 

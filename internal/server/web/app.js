@@ -8684,6 +8684,14 @@ function renderSettingsView() {
       </div>
     </div>`;
 
+  // Settings-tab federation pass (2026-10-08): server picker added so
+  // Settings can show/edit a selected remote peer's own config instead
+  // of always being local-only. hideAll:true matches the Observer
+  // precedent -- an aggregated "All servers" view of ~45 independent
+  // config sections has no coherent meaning the way Dashboard's single
+  // PRD/cost rollup does.
+  _injectServerPickerBar(view, renderSettingsView, { hideAll: true });
+
   loadSkillsPanel();
   if (typeof loadGuardrailProfilesPanel === 'function') loadGuardrailProfilesPanel(); // BL303 S2
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
@@ -8782,8 +8790,8 @@ function renderSettingsView() {
 function loadAgentsConfig() {
   const panel = document.getElementById('agentsConfigPanel');
   if (!panel) return;
-  fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/config')
     .then(cfg => {
       if (!cfg) { panel.innerHTML = '<em style="color:var(--error);">load failed</em>'; return; }
       const a = cfg.agents || {};
@@ -10965,8 +10973,10 @@ function saveAgentsConfig() {
 window.saveAgentsConfig = saveAgentsConfig;
 
 function loadVersionInfo() {
-  fetch('/api/health', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware
+  // -- the About tab's version should reflect whichever server (local
+  // or a selected remote peer) is actually active.
+  apiFetch('/api/health')
     .then(data => {
       if (!data) return;
       const el = document.getElementById('aboutVersion');
@@ -10975,7 +10985,11 @@ function loadVersionInfo() {
         el.innerHTML = `<a href="https://github.com/dmz006/datawatch/releases/tag/v${encodeURIComponent(ver)}" target="_blank" rel="noopener" style="color:var(--accent2);">v${escHtml(ver)}</a>`;
       }
     })
-    .catch(() => {});
+    .catch(e => {
+      const el = document.getElementById('aboutVersion');
+      const msg = _fedMsg(e, null);
+      if (el && msg) el.innerHTML = `<span style="color:var(--error);">${escHtml(msg)}</span>`;
+    });
   // BL183 follow-up (v5.2.0) — orphaned-tmux affordance moved here
   // from Settings → Monitor per operator.
   loadAboutOrphanedTmux();
@@ -11049,7 +11063,7 @@ function loadAboutMcpToolsSummary() {
     }
     el.innerHTML = `<div style="margin-bottom:4px;">${total} ${escHtml(t('about_mcp_tools_count_suffix')||'tools exposed')}</div>` +
       `<div style="max-height:260px;overflow-y:auto;">${body}</div>`;
-  }).catch(() => { el.textContent = t('about_mcp_tools_unavailable') || 'unavailable'; });
+  }).catch(e => { el.textContent = _fedMsg(e, t('about_mcp_tools_unavailable') || 'unavailable'); });
 }
 
 // GH#172 D79 — Config Viewer + raw config editor.
@@ -13779,9 +13793,13 @@ setInterval(() => {
 }, 10000);
 
 function loadCommsConfig() {
+  // Settings-tab federation pass (2026-10-08): both raw fetch()es --
+  // never reflected a selected remote server's own comms config, and
+  // any failure (including a federated 401/403/502) was silently
+  // swallowed below with zero visible feedback.
   Promise.all([
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+    apiFetch('/api/config'),
+    apiFetch('/api/interfaces').catch(() => [])
   ]).then(([cfg, interfaces]) => {
     if (!cfg) return;
     state._interfaces = interfaces || [];
@@ -13949,7 +13967,14 @@ function loadCommsConfig() {
       el.innerHTML = html;
       if (document.getElementById('acmeStatusCard')) loadAcmeStatus(); // BL397
     }
-  }).catch(() => {});
+  }).catch(e => {
+    const msg = _fedMsg(e, null);
+    if (!msg) return; // a local failure here was already silent before this pass -- preserve that
+    for (const sec of COMMS_CONFIG_FIELDS) {
+      const el = document.getElementById('ccfg_' + sec.id);
+      if (el) el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(msg)}</span>`;
+    }
+  });
 }
 
 // BL397 — ACME subsystem card helpers.
@@ -14123,7 +14148,14 @@ function loadLLMTabConfig() {
         loadOpenCodeProvidersCard(el);
       }
     }
-  }).catch(() => {});
+  }).catch(e => {
+    const msg = _fedMsg(e, null);
+    if (!msg) return; // a local failure here was already silent before this pass -- preserve that
+    for (const sec of LLM_CONFIG_FIELDS) {
+      const el = document.getElementById('llmCfg_' + sec.id);
+      if (el) el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(msg)}</span>`;
+    }
+  });
 }
 
 // ── BL391 — Web Search Providers card (Settings → Compute) ─────────────────
@@ -14334,10 +14366,12 @@ function saveOpenCodeProviderKey(provider, inputId) {
 window.saveOpenCodeProviderKey = saveOpenCodeProviderKey;
 
 function loadGeneralConfig() {
+  // Settings-tab federation pass (2026-10-08): all three were raw,
+  // non-proxy-aware fetch()es with a silently-swallowed failure.
   Promise.all([
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+    apiFetch('/api/config'),
+    apiFetch('/api/llms').catch(() => null),
+    apiFetch('/api/interfaces').catch(() => [])
   ]).then(([cfg, backendsData, interfaces]) => {
       if (!cfg) return;
       state._interfaces = interfaces || [];
@@ -14637,7 +14671,14 @@ function loadGeneralConfig() {
         el.innerHTML = html;
       }
     })
-    .catch(() => {});
+    .catch(e => {
+      const msg = _fedMsg(e, null);
+      if (!msg) return; // a local failure here was already silent before this pass -- preserve that
+      for (const sec of GENERAL_CONFIG_FIELDS) {
+        const el = document.getElementById('gcfg_' + sec.id);
+        if (el) el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(msg)}</span>`;
+      }
+    });
 }
 
 window.toggleDocsLinksPref = function(on) {
@@ -15312,8 +15353,9 @@ function isBackendConfigured(svc, s) {
 function loadConfigStatus() {
   const el = document.getElementById('configStatus');
   if (!el) return;
-  fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.json())
+  // Settings-tab federation pass (2026-10-08): raw fetch -- never
+  // reflected a selected remote server's own comm-backend config.
+  apiFetch('/api/config')
     .then(cfg => {
       const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
       el.innerHTML = services.map(svc => {
@@ -15344,7 +15386,7 @@ function loadConfigStatus() {
         </span>
       </div>`;
     })
-    .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = t('state_config_unavailable') || 'Config unavailable'; });
+    .catch(e => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = _fedMsg(e, t('state_config_unavailable') || 'Config unavailable'); });
 }
 
 function toggleBackend(service, enable) {
@@ -15667,7 +15709,7 @@ function loadProxySettings() {
       html += `</div></div>`;
     }
     el.innerHTML = html;
-  }).catch(() => { if (el) el.textContent = t('state_config_unavailable') || 'Config unavailable'; });
+  }).catch(e => { if (el) el.textContent = _fedMsg(e, t('state_config_unavailable') || 'Config unavailable'); });
 }
 
 function toggleProxySetting(key, val) {
@@ -16462,8 +16504,11 @@ function _onServerListReady(fn) {
 function loadLinkStatus() {
   const el = document.getElementById('linkStatusText');
   if (!el) return;
-  fetch('/api/link/status', { headers: tokenHeader() })
-    .then(r => r.json())
+  // Settings-tab federation pass (2026-10-08): was a raw, non-proxy-aware
+  // fetch() -- never reflected a selected remote server's own Signal
+  // link state at all. apiFetch both proxies correctly AND surfaces the
+  // real 401/403/502 text instead of a bare "Unknown".
+  apiFetch('/api/link/status')
     .then(data => {
       if (!el) return;
       if (data.linked) {
@@ -16474,8 +16519,8 @@ function loadLinkStatus() {
         el.textContent = t('signal_not_linked') || 'Not linked';
       }
     })
-    .catch(() => {
-      if (el) el.textContent = t('state_unknown') || 'Unknown';
+    .catch(e => {
+      if (el) el.textContent = _fedMsg(e, t('state_unknown') || 'Unknown');
     });
 }
 
@@ -17782,14 +17827,14 @@ function loadProfiles(kind) {
   const path = '/api/profiles/' + kind + 's';
   const panel = document.getElementById(kind + 'ProfilesPanel');
   if (!panel) return;
-  fetch(path, { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch(path)
     .then(data => {
       const profiles = (data && data.profiles) || [];
       panel.innerHTML = renderProfilesPanel(kind, profiles);
     })
     .catch(err => {
-      panel.innerHTML = `<div style="color:var(--error);font-size:13px;">Error loading profiles: ${escHtml(String(err))}</div>`;
+      panel.innerHTML = `<div style="color:var(--error);font-size:13px;">Error loading profiles: ${escHtml(err && err.message ? err.message : String(err))}</div>`;
     });
 }
 
@@ -22062,14 +22107,14 @@ function pageCmd(dir) {
   loadSavedCommands();
 }
 
-// Coordinator-flagged (2026-10-08), extending the prior round's Observer
-// instrumentation from the primary stats card only to the rest of its
-// ~12 independent sub-card loaders: every apiFetch-based card below
-// already gets the real 401/403/502 text via apiFetch's own classifier
-// (_fedFetchError) -- the gap was that each card's .catch(...) replaced
-// it with a generic "unavailable" string instead of showing it. Shared
-// so the same isRemote check isn't repeated in every one of them.
-function _obsFedMsg(e, fallback) {
+// Coordinator-flagged (2026-10-08): originally written for Observer's
+// ~12 independent sub-card loaders (every apiFetch-based card already
+// gets the real 401/403/502 text via apiFetch's own classifier,
+// _fedFetchError -- the gap was each card's .catch(...) replacing it
+// with a generic "unavailable" string instead of showing it), later
+// reused for the Settings-tab federation pass for the same reason.
+// Shared so the same isRemote check isn't repeated at every call site.
+function _fedMsg(e, fallback) {
   const isRemote = state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all';
   return isRemote ? ((e && e.message) || fallback) : fallback;
 }
@@ -22080,7 +22125,7 @@ function loadStatsPanel() {
   apiFetch('/api/stats').then(data => {
     renderStatsData(el, data);
   }).catch(e => {
-    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(_obsFedMsg(e, t('stats_unavailable')||'Stats unavailable.'))}</div>`;
+    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(_fedMsg(e, t('stats_unavailable')||'Stats unavailable.'))}</div>`;
   });
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
@@ -22137,7 +22182,7 @@ function loadAcmeHealthCard() {
     // made a federated capability denial indistinguishable from "ACME
     // just isn't enabled on this host" (the normal, common case). Only
     // hide for that local/non-remote case; a remote denial shows instead.
-    const msg = _obsFedMsg(e, null);
+    const msg = _fedMsg(e, null);
     if (msg) { block.style.display = ''; el.innerHTML = `<span style="opacity:0.85;">${escHtml(msg)}</span>`; }
     else block.style.display = 'none';
   });
@@ -22164,7 +22209,7 @@ function loadBackendHealthCard() {
       const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
     }).join('');
-  }).catch(e => { el.textContent = _obsFedMsg(e, t('obs_backend_unavailable') || 'unavailable'); });
+  }).catch(e => { el.textContent = _fedMsg(e, t('obs_backend_unavailable') || 'unavailable'); });
 }
 
 // GH#172 D78 — Envelopes card: the observer's own live process-tree
@@ -22198,7 +22243,7 @@ function loadObserverEnvelopesCard() {
       const chipsHtml = chips.length ? ` <span style="opacity:0.7;">${chips.map(escHtml).join(' · ')}</span>` : '';
       return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${kindBadge} ${escHtml(e.label||e.id||'')}</span>${chipsHtml}</div>`;
     }).join('');
-  }).catch(e => { el.textContent = _obsFedMsg(e, t('obs_envelopes_unavailable') || 'unavailable'); });
+  }).catch(e => { el.textContent = _fedMsg(e, t('obs_envelopes_unavailable') || 'unavailable'); });
 }
 
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
@@ -22247,7 +22292,7 @@ function loadChannelBridge(targetId) {
     }
     el.innerHTML = html;
   }).catch(e => {
-    el.textContent = _obsFedMsg(e, 'unavailable');
+    el.textContent = _fedMsg(e, 'unavailable');
   });
 }
 
@@ -22281,7 +22326,7 @@ function loadChannelDiagnostics() {
       html += '</details>';
     }
     el.innerHTML = html;
-  }).catch(e => { el.textContent = _obsFedMsg(e, 'unavailable'); });
+  }).catch(e => { el.textContent = _fedMsg(e, 'unavailable'); });
 }
 
 // Toggle helper for collapsible Observatory sections.
@@ -22356,7 +22401,7 @@ function loadPeerResourceOverview() {
       }).join('');
       el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
     });
-  }).catch(e => { el.innerHTML = `<span style="opacity:0.6;">${escHtml(_obsFedMsg(e, 'unavailable'))}</span>`; });
+  }).catch(e => { el.innerHTML = `<span style="opacity:0.6;">${escHtml(_fedMsg(e, 'unavailable'))}</span>`; });
 }
 window.loadPeerResourceOverview = loadPeerResourceOverview;
 
@@ -22532,7 +22577,7 @@ function loadEBPFStatus() {
     const msg = e.message ? `<div style="opacity:0.8;margin-top:3px;">${escHtml(e.message)}</div>` : '';
     line.innerHTML = head + msg;
   }).catch(e => {
-    line.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, '/api/stats?v=2 unavailable'))}</span>`;
+    line.innerHTML = `<span style="opacity:0.7;">${escHtml(_fedMsg(e, '/api/stats?v=2 unavailable'))}</span>`;
   });
 }
 
@@ -22568,7 +22613,7 @@ function loadEBPFNetworkTraffic() {
     html += '</table>';
     list.innerHTML = html;
   }).catch(e => {
-    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, t('ebpf_no_data')||'No eBPF data available'))}</span>`;
+    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_fedMsg(e, t('ebpf_no_data')||'No eBPF data available'))}</span>`;
   });
 }
 
@@ -22607,7 +22652,7 @@ function loadPluginsStatus() {
   }).catch(e => {
     // /api/plugins should always succeed locally (native list is
     // unconditional) -- a failure here on a federated peer is real.
-    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, 'plugin status unavailable'))}</span>`;
+    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_fedMsg(e, 'plugin status unavailable'))}</span>`;
   });
 }
 
@@ -22680,7 +22725,7 @@ function loadObserverPeers() {
 
     if (!peers.length) {
       if (peersErr) {
-        list.innerHTML = pills + `<span style="opacity:0.85;">${escHtml(_obsFedMsg(peersErr, 'no peers registered'))}</span>`;
+        list.innerHTML = pills + `<span style="opacity:0.85;">${escHtml(_fedMsg(peersErr, 'no peers registered'))}</span>`;
         return;
       }
       list.innerHTML = pills + '<span style="opacity:0.7;">no peers registered</span> &middot; '
@@ -23009,7 +23054,7 @@ function loadObserverClusterNodes() {
     // GH#194/coordinator-flagged (2026-10-08): same fix as the ACME
     // card above -- hiding on every failure made a federated denial
     // indistinguishable from the common "no cluster, single-node setup" case.
-    const msg = _obsFedMsg(e, null);
+    const msg = _fedMsg(e, null);
     if (msg) { block.style.display = ''; list.innerHTML = `<span style="opacity:0.85;">${escHtml(msg)}</span>`; }
     else block.style.display = 'none';
   });
@@ -23473,7 +23518,7 @@ function loadDetectionFilters() {
       </div>`;
     }
     el.innerHTML = html;
-  }).catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:12px;padding:8px;">Failed to load.</div>'; });
+  }).catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:12px;padding:8px;">${escHtml(_fedMsg(e, 'Failed to load.'))}</div>`; });
 }
 
 function addDetPattern(key) {
@@ -23600,8 +23645,8 @@ function deleteSelectedSchedules() {
 function loadSavedCommands() {
   const el = document.getElementById('savedCmdsList');
   if (!el) return;
-  fetch('/api/commands', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : [])
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/commands')
     .then(cmds => {
       if (!cmds || cmds.length === 0) {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No saved commands. Run <code>datawatch seed</code> to populate defaults.</div>';
@@ -23635,7 +23680,7 @@ function loadSavedCommands() {
         </div>`;
       }).join('') + '</div>';
     })
-    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load commands.</div>'; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(_fedMsg(e, 'Failed to load commands.'))}</div>`; });
 }
 
 function deleteSavedCmd(name) {
@@ -23703,8 +23748,8 @@ function pageFilter(dir) {
 function loadFilters() {
   const el = document.getElementById('filtersList');
   if (!el) return;
-  fetch('/api/filters', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : [])
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/filters')
     .then(filters => {
       if (!filters || filters.length === 0) {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No filters. Run <code>datawatch seed</code> to populate defaults.</div>';
@@ -23741,7 +23786,7 @@ function loadFilters() {
         </div>`;
       }).join('') + '</div>';
     })
-    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load filters.</div>'; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(_fedMsg(e, 'Failed to load filters.'))}</div>`; });
 }
 
 function toggleFilter(id, enable) {
@@ -23814,8 +23859,8 @@ function createFilter() {
 function loadAlertRules() {
   const el = document.getElementById('alertRulesList');
   if (!el) return;
-  fetch('/api/alert-rules', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : { rules: [] })
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/alert-rules')
     .then(data => {
       const rules = (data && data.rules) ? data.rules : (Array.isArray(data) ? data : []);
       if (!rules || rules.length === 0) {
@@ -23842,15 +23887,15 @@ function loadAlertRules() {
         </div>`;
       }).join('') + '</div>';
     })
-    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load alert rules.</div>'; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(_fedMsg(e, 'Failed to load alert rules.'))}</div>`; });
 }
 
 // GH#172 D70 — Alert-rule "Recent Firings" list (Android already has this).
 function loadAlertRuleFirings() {
   const el = document.getElementById('alertRuleFiringsList');
   if (!el) return;
-  fetch('/api/alert-rules/firings', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : { firings: [] })
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/alert-rules/firings')
     .then(data => {
       const firings = (data && Array.isArray(data.firings)) ? data.firings : [];
       if (firings.length === 0) {
@@ -23866,7 +23911,7 @@ function loadAlertRuleFirings() {
         </div>`;
       }).join('');
     })
-    .catch(() => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(t('alert_rules_firings_failed')||'Failed to load recent firings.')}</div>`; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(_fedMsg(e, t('alert_rules_firings_failed')||'Failed to load recent firings.'))}</div>`; });
 }
 
 function toggleAlertRule(name, enable) {
@@ -23935,8 +23980,8 @@ function createAlertRule() {
 function loadExitHooks() {
   const el = document.getElementById('exitHooksList');
   if (!el) return;
-  fetch('/api/exit-hooks', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : [])
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/exit-hooks')
     .then(hooks => {
       if (!hooks || hooks.length === 0) {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:0 16px;">No exit hooks configured.</div>';
@@ -23963,7 +24008,7 @@ function loadExitHooks() {
         </div>`;
       }).join('') + '</div>';
     })
-    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;padding:0 16px;">Failed to load exit hooks.</div>'; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;padding:0 16px;">${escHtml(_fedMsg(e, 'Failed to load exit hooks.'))}</div>`; });
 }
 
 function exitHookActionChange() {
@@ -26505,8 +26550,8 @@ function loadCommBackendsStatus() {
   const el = document.getElementById('commBackendsStatus');
   if (!el) return;
   const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
-  fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch('/api/config')
     .then(cfg => {
       if (!cfg) { el.textContent = 'Config unavailable'; return; }
       const enabled = services.filter(s => cfg[s] && cfg[s].enabled);
@@ -26540,7 +26585,7 @@ function loadCommBackendsStatus() {
         });
       }
     })
-    .catch(() => { el.textContent = 'Unavailable'; });
+    .catch(e => { el.textContent = _fedMsg(e, 'Unavailable'); });
 }
 window.loadCommBackendsStatus = loadCommBackendsStatus;
 
@@ -26824,7 +26869,7 @@ function loadFileServicePanel() {
       <div style="font-weight:600;margin-top:6px;">${escHtml(t('files_discussion_files')||'Discussion files')}</div>
       ${discHtml}
     `;
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load file service metadata.</span>'; });
+  }).catch(e => { el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load file service metadata.'))}</span>`; });
 }
 window.loadFileServicePanel = loadFileServicePanel;
 
@@ -26968,7 +27013,7 @@ function loadDocsTrustPanel() {
       <button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="${escHtml(`docsTrustDismiss(${JSON.stringify(e.source)})`)}">${escHtml(t('docs_dismiss_btn')||'Dismiss')}</button>
     </div>`).join('');
     pendEl.innerHTML = toolbar + rows;
-  }).catch(()=>{ pendEl.textContent = 'failed'; });
+  }).catch(e => { pendEl.textContent = _fedMsg(e, 'failed'); });
 }
 
 // BL274 S6 — bulk-trust helpers.
@@ -27757,8 +27802,8 @@ function loadAutomataSettingsPanel() {
           <input type="number" min="0" value="${ac.auto_fix_retries||0}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.auto_fix_retries',+this.value)">
         </div>`;
-    }).catch(() => {
-      if (aEl) aEl.innerHTML = '<em style="color:var(--text2);">not available</em>';
+    }).catch(e => {
+      if (aEl) aEl.innerHTML = `<em style="color:var(--text2);">${escHtml(_fedMsg(e, 'not available'))}</em>`;
     });
   }
 }
@@ -27887,8 +27932,8 @@ function loadGuardrailProfilesPanel() {
     }).join('');
     panel.innerHTML = `<div style="padding:6px 0;">${rows}</div>
       <div style="padding:6px 12px;">${addBtn}</div>`;
-  }).catch(() => {
-    panel.innerHTML = `<div style="padding:6px 12px;color:var(--error);font-size:12px;">Failed to load guardrail profiles</div>`;
+  }).catch(e => {
+    panel.innerHTML = `<div style="padding:6px 12px;color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load guardrail profiles'))}</div>`;
   });
 }
 window.loadGuardrailProfilesPanel = loadGuardrailProfilesPanel;
@@ -28374,7 +28419,7 @@ function loadCostRatesConfig() {
         <button class="btn-secondary" style="font-size:12px;" onclick="resetCostRates()">Reset to defaults</button>
         <span id="costRatesSaveStatus" style="font-size:11px;color:var(--text2);"></span>
       </div>`;
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cost rates.</span>'; });
+  }).catch(e => { el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load cost rates.'))}</span>`; });
 }
 window.loadCostRatesConfig = loadCostRatesConfig;
 
@@ -28595,7 +28640,7 @@ function loadBrandingPanel() {
       const lp = document.getElementById('splashLogoPath');
       if (lp) lp.value = cfg?.session?.splash_logo_path || '';
     }).catch(() => {});
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load splash info.</span>'; });
+  }).catch(e => { el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load splash info.'))}</span>`; });
 }
 window.loadBrandingPanel = loadBrandingPanel;
 window.saveBranding = function() {
@@ -30030,8 +30075,8 @@ function loadWorkQueue() {
   if (role) params.push('role=' + encodeURIComponent(role));
   if (state) params.push('state=' + encodeURIComponent(state));
   if (params.length) url += '?' + params.join('&');
-  fetch(url, { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
+  apiFetch(url)
     .then(items => {
       if (!items || items.length === 0) {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:0 16px;">No queue items found.</div>';
@@ -30053,7 +30098,7 @@ function loadWorkQueue() {
       html += '</table>';
       el.innerHTML = html;
     })
-    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;padding:0 16px;">Failed to load queue items.</div>'; });
+    .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;padding:0 16px;">${escHtml(_fedMsg(e, 'Failed to load queue items.'))}</div>`; });
 }
 
 function deleteQueueItem(id) {
