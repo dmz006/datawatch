@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.7 — fix(pwa): Automata/Dashboard/Observer ignored the federated picker mid-tab
+
+### Fixed
+- Operator-reported: "can't select different server on automata page." Not a proxying bug — `loadAutomataPanel`'s fetch already proxies correctly for a specific remote via `apiFetch`'s existing auto-proxy behavior. The real cause: `connect()`'s reconnect-driven view-refresh switch (the same mechanism just fixed for Alerts in v8.73.5) never included `'autonomous'` either, so clicking a different server chip updated `state.activeServer` and reconnected the WebSocket, but nothing ever re-fetched the PRD list — the tab looked frozen until navigating away and back. Dashboard and Observer had the identical gap (both have the server picker too, BL312 S6) — found proactively while fixing Automata and fixed in the same pass, before they were separately reported.
+
+### Added
+- 3 new tests pinning the reconnect-refresh branch for `autonomous`/`dashboard`/`observer`, matching the existing Alerts regression guard.
+
 ## v8.73.6 — test: real 2-daemon federation E2E, 68 stale STUB comments removed, capability-group smoke, GetByToken coverage
 
 ### Added

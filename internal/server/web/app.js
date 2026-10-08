@@ -301,14 +301,36 @@ function buildWsUrl() {
 // snapshot (which never happens if auth is failing, with no visible
 // sign why). The WS remains wired for live updates once this initial
 // fetch has something on screen.
+// _fedCapError builds the Promise rejection for a non-2xx federated
+// response, distinguishing WHY it failed instead of lumping 401 and 403
+// into one "authentication failed" message (coordinator-flagged
+// 2026-10-08): 401 means the token itself is bad/missing -- the peer
+// can't authenticate this daemon at all. 403 means the token IS valid
+// but this peer's granted capabilities don't cover the endpoint just
+// called -- a completely different, actionable situation ("ask the peer
+// owner to grant sessions:list", not "fix the token"). The server's own
+// 403 body already names the exact missing capability
+// ("federation peer lacks capability: sessions:list", see fedCap() in
+// internal/server/federation_cap.go) -- read and surface that real text
+// instead of guessing or hardcoding a capability name per endpoint.
+function _fedCapError(resp) {
+  if (resp.status === 401) {
+    return Promise.reject(new Error(t('fed_conn_error_auth') || 'Authentication failed — this server has no valid token configured'));
+  }
+  if (resp.status === 403) {
+    return resp.text().then(body => Promise.reject(new Error(
+      (body && body.trim()) || t('fed_conn_error_forbidden') || 'This server does not grant the capability this needs'
+    )));
+  }
+  return Promise.reject(new Error('HTTP ' + resp.status));
+}
+
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
   fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
     .then(r => {
-      if (r.status === 401 || r.status === 403) {
-        return Promise.reject(new Error(t('fed_conn_error_auth') || 'Authentication failed — this server has no valid token configured'));
-      }
+      if (r.status === 401 || r.status === 403) return _fedCapError(r);
       return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status));
     })
     .then(sessions => {
@@ -503,6 +525,24 @@ function connect() {
       // refresh list never included 'alerts', so no refetch ever fired
       // on a mid-tab server switch.
       renderAlertsView();
+    } else if (state.activeView === 'autonomous') {
+      // Operator-reported (2026-10-08): "can't select different server
+      // on automata page" -- same root cause as the Alerts case above,
+      // not a proxying bug (loadAutomataPanel's apiFetch already proxies
+      // correctly for a specific remote). This reconnect-driven refresh
+      // list just never included 'autonomous', so clicking a different
+      // picker chip updated state.activeServer and reconnected the WS,
+      // but never actually re-fetched the PRD list -- nothing visibly
+      // happened until navigating away and back.
+      renderAutonomousView();
+    } else if (state.activeView === 'dashboard') {
+      // Same gap, found proactively while fixing the above (Dashboard
+      // has the same picker, per BL312 S6) -- not yet operator-reported,
+      // fixed before it was.
+      renderDashboardView();
+    } else if (state.activeView === 'observer') {
+      // Same gap as dashboard above (BL312 S6 / BL317).
+      renderObserverView();
     } else if (state.activeView === 'session-detail' && state.activeSession) {
       // v6.11.13 — gave up on the optimized "same session alive" fast
       // path entirely. It was meant (since v5.26.35) to avoid tearing

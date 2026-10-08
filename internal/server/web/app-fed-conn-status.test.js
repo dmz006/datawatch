@@ -237,16 +237,27 @@ test('renderAlertsView() uses plain local endpoints when no federated server is 
 });
 
 test('reconnect-driven view refresh now includes "alerts" (switching servers mid-tab used to do nothing until navigating away and back)', () => {
-  const sandbox = loadAppJS();
-  vm.runInContext(`state.activeView = 'alerts';`, sandbox);
-  let called = false;
-  sandbox.renderAlertsView = () => { called = true; };
-  sandbox.document.getElementById = () => makeStubElement();
-  // Drive the same branch connect()'s ws.onopen uses, without needing a
-  // real WebSocket handshake.
   const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
   assert.match(src, /state\.activeView === 'alerts'\) \{[\s\S]{0,400}renderAlertsView\(\);/, 'connect()\'s reconnect-refresh switch must include an alerts branch calling renderAlertsView()');
 });
+
+// Operator-reported (2026-10-08): "can't select different server on
+// automata page" -- NOT a proxying bug (apiFetch already proxies
+// correctly for a specific remote); the reconnect-driven view-refresh
+// list (same mechanism just fixed for alerts) never included
+// 'autonomous' either, so clicking a different server chip updated
+// state.activeServer and reconnected the WS, but nothing ever
+// re-fetched the PRD list until navigating away and back. Dashboard and
+// Observer had the identical gap, found proactively and fixed in the
+// same pass -- these three pin all of them so the pattern can't regress
+// silently view-by-view again.
+for (const [view, renderFn] of [['autonomous', 'renderAutonomousView'], ['dashboard', 'renderDashboardView'], ['observer', 'renderObserverView']]) {
+  test(`reconnect-driven view refresh now includes "${view}" (same gap as alerts, same fix)`, () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
+    const re = new RegExp(`state\\.activeView === '${view}'\\) \\{[\\s\\S]{0,400}${renderFn}\\(\\);`);
+    assert.match(src, re, `connect()'s reconnect-refresh switch must include a '${view}' branch calling ${renderFn}()`);
+  });
+}
 
 test('selectServer() clears federated status when switching back to Local', () => {
   const sandbox = loadAppJS();
