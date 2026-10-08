@@ -947,3 +947,14 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | A federation peer (even with `full-control`) gets 403 — no capability should be sufficient to rotate the admin credential itself | **Yes** | **Yes** | `TestHandleRotateToken_FederationPeerForbidden` | |
 | `PUT /api/config` silently skips `server.token`/`mcp.token` but still applies other keys in the same patch, and reports the skip in the response body | **Yes** | **Yes** | `TestHandlePutConfig_ServerTokenAndMCPTokenSkipped` | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3216 passed, 0 failed | 3 pre-existing `internal/session`-package test failures under `-race` only (unrelated stack traces, no mention of any file touched this pass) — not introduced or fixed in this pass, flagged as a pre-existing gap |
+
+## SEC-017: audit-log every PUT /api/config write — v8.73.17
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| A successful `PUT /api/config` records exactly one `audit.Entry{Action:"configure"}` with every applied key listed | **Yes** | **Yes** | `TestAuditConfigPatch_RecordsAppliedKeys` | |
+| Credential-shaped values (`*token*`, `*password*`, `*secret*`, ...) are masked (first/last 2 chars visible) rather than logged in the clear | **Yes** | **Yes** | `TestAuditConfigPatch_MasksCredentialShapedValues` | |
+| Keys `applyConfigPatch` skipped (`server.token`/`mcp.token`, SEC-016) never appear in the audit entry's key list | **Yes** | **Yes** | `TestAuditConfigPatch_SkippedKeysExcludedFromAudit` | |
+| `PUT /api/config` still succeeds with no audit log configured (audit is best-effort, never blocks the write) | **Yes** | **Yes** | `TestAuditConfigPatch_NoAuditLogConfiguredIsANoop` | |
+| Key-substring sensitivity classifier | **Yes** | **Yes** | `TestIsSensitiveConfigKey` | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3221 passed, 0 failed | |

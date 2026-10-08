@@ -183,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.16"
+var Version = "8.73.17"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5577,6 +5577,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// SEC-017 — every config write, logged with the key names touched and
+	// a masked value for each (credential-shaped keys are masked outright;
+	// skipped keys, per applyConfigPatch, never reach here at all).
+	s.auditConfigPatch(patch, skipped)
 	// BL369 — propagate autonomous.* config changes to the live manager so
 	// injection_guard and other knobs take effect without a daemon restart.
 	for k := range patch {

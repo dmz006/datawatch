@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.17 — security(SEC-017): audit-log every PUT /api/config write
+
+### Security
+- `PUT /api/config` — DNS channel settings, proxy rules, webhook secrets, detection thresholds, autonomous guardrails, and everything else this generic patch path touches — had no audit trail at all, unlike every other comparably sensitive write path in this codebase (secrets, skills, identity, compute, council, inference registry — all already log through `s.auditLog`). Added `auditConfigPatch`: one `audit.Entry{Action: "configure"}` per successful `PUT /api/config`, recording every key actually applied (keys `applyConfigPatch` skipped — `server.token`/`mcp.token`, SEC-016 — are excluded, since they never touch config at all) with a masked value for anything credential-shaped (`token`/`password`/`secret`/`api_key`/`private_key`/`credential` substring match, case-insensitive and deliberately over-inclusive so a newly added sensitive field is masked by default).
+- Not done in this pass: `internal/audit.Log` (the mechanism this uses, matching every existing sensitive-write audit call site) is JSONL-only — CEF support exists only in the separate, F10-specific `internal/agents` audit sink. Adding CEF to the general audit log would change behavior for every one of its ~10 existing call sites uniformly; that's a real design decision for the audit subsystem as a whole, not a one-off addition for this single path, so it's flagged as a follow-up rather than built here.
+- Added `internal/server/sec017_config_audit_test.go`: applied keys recorded, credential-shaped values masked (first/last 2 chars visible), skipped keys excluded, no-op when audit logging is unconfigured, and the key-substring classifier directly.
+
 ## v8.73.16 — security(SEC-016): live admin-token rotation with a 60s grace window, removed from the generic config-patch path
 
 ### Security
