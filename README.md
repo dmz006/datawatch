@@ -260,9 +260,15 @@ datawatch compute node list
 datawatch compute pull-model datawatch-ollama llama3.1:8b
 datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 
-# Point an MCP host (Claude Desktop / Cursor / VS Code) at the daemon
-# — add to its mcpServers config:
+# Point an MCP host (Claude Desktop / Cursor / VS Code — or a
+# datawatch-spawned claude-code/opencode session from stage 2, which
+# already has this same MCP server wired in) at the daemon:
 #   {"datawatch": {"command": "datawatch", "args": ["mcp"], "env": {"DATAWATCH_TOKEN": "<bearer>"}}}
+# Once connected, drive setup and day-2 management with prompts instead
+# of CLI flags — "register my GPU box as a compute node and pull
+# llama3.1:8b", "is anything stuck right now?", "restart the daemon".
+# See docs/howto/setup-and-install.md's MCP section for the full
+# prompt → tool-call table.
 
 # (Optional) add a messaging backend
 datawatch setup telegram    # or discord / slack / signal

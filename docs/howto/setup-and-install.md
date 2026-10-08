@@ -156,7 +156,16 @@ datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 See [`llm-registry.md`](llm-registry.md) and
 [`compute-nodes.md`](compute-nodes.md) for the full model.
 
-### MCP — expose datawatch's 60+ tools to Claude Desktop / Cursor / VS Code
+### MCP — set up and manage datawatch itself through natural-language prompts
+
+MCP isn't just an API wrapper for *using* datawatch from your editor —
+it's a way to let an AI assistant *configure and operate* datawatch
+itself, so the rest of Stage 3 (and ongoing day-2 management) can be
+driven by prompts instead of memorized CLI flags. Connect any MCP host
+— Claude Desktop, Cursor, VS Code, or a `claude-code`/`opencode`
+session datawatch itself spawned in Stage 2 (it already has this same
+MCP server wired in, so a session can configure the daemon it's
+running inside):
 
 ```json
 {
@@ -170,7 +179,38 @@ See [`llm-registry.md`](llm-registry.md) and
 }
 ```
 
-Live tool catalogue at `https://localhost:8443/api/mcp/docs`.
+Live tool catalogue (60+ tools) at `https://localhost:8443/api/mcp/docs`.
+
+**Example prompts — setup.** Once connected, say these to your
+assistant instead of running the equivalent CLI command yourself:
+
+| You say | Tool(s) it calls |
+|---|---|
+| "What LLM backends and compute nodes do I have configured?" | `backends_list`, `llm_list`, `compute_node_list` |
+| "Register my gaming PC at 192.168.1.50 running Ollama as a compute node, then pull llama3.1:8b on it" | `compute_node_add`, `compute_node_pull_model` |
+| "Add a new LLM entry called 'fast' that fails over from my Ollama node to claude-code" | `llm_add`, `llm_add_model` |
+| "Set my operator identity — I'm a backend engineer, prefer terse answers" | `set_identity` / `configure_identity` |
+| "Register my home server ralfthewise as a federation peer, and skip TLS verification since it's self-signed" | `federation_peer_add` (`tls_skip_verify: true`) |
+| "Enable the Telegram channel with this bot token" | `config_set` + `reload` |
+
+**Example prompts — day-2 management.** The same connection keeps
+working after setup, for ongoing operation:
+
+| You say | Tool(s) it calls |
+|---|---|
+| "Start a claude-code session to refactor the auth module in ~/proj" | `start_session` |
+| "Is anything stuck or unhealthy right now?" | `diagnose`, `get_stats`, `sessions_stale` |
+| "Kill session abc123 and tell me what it was doing" | `session_output`, `kill_session` |
+| "Create an alert rule that pages me when a session fails twice in a row" | `alert_rule_create` |
+| "Reload the config, I just edited datawatch.yaml by hand" | `reload` |
+| "Restart the daemon" | `restart_daemon` |
+
+This is the same pattern Stage 2's minimal setup already demonstrated
+in reverse — a datawatch-spawned coding session doing work *for* you —
+except here the "work" is operating datawatch's own configuration. See
+[`mcp-tools.md`](mcp-tools.md) for the full tool reference and
+[`docs-as-mcp.md`](docs-as-mcp.md) for how an assistant can also search
+and apply these how-tos directly through MCP.
 
 ### REST
 
