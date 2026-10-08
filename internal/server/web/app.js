@@ -287,23 +287,35 @@ function buildWsUrl() {
   return `${proto}//${location.host}${wsPath}`;
 }
 
-// Operator-reported (2026-10-07): switching to a federated server showed
-// endless loading with no feedback and no way to tell what actually failed
-// — the WS path alone can't surface a real reason (a failed proxy dial just
-// looks like an abrupt close/1006 to browser JS, no status code or body).
-// This fires a one-shot HTTP probe through the same proxy path so a real
-// HTTP status/error is available to show, independent of the WS's own
-// connect/retry cycle. Cleared automatically the moment real session data
-// actually arrives (see the 'sessions' case in handleMessage).
+// Operator-reported (2026-10-07), then live-tested against a real
+// federated peer (2026-10-08): switching to a federated server showed
+// endless loading with no feedback. First fix used /api/health as the
+// probe -- wrong endpoint: health checks are deliberately public/
+// unauthenticated, so the probe reported "connected" even when the peer
+// had no token configured in servers.json and every real data call
+// (sessions, the WS feed) was silently 401ing in the background forever.
+// Confirmed live: GET .../api/health -> 200 with no auth; GET
+// .../api/sessions -> 401. Now probes with the real sessions fetch
+// itself -- this validates actual auth AND supplies the initial session
+// list directly, instead of waiting on the WS to maybe deliver a
+// snapshot (which never happens if auth is failing, with no visible
+// sign why). The WS remains wired for live updates once this initial
+// fetch has something on screen.
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
-  fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/health', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
-    .then(() => {
+  fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
+    .then(r => {
+      if (r.status === 401 || r.status === 403) {
+        return Promise.reject(new Error(t('fed_conn_error_auth') || 'Authentication failed — this server has no valid token configured'));
+      }
+      return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status));
+    })
+    .then(sessions => {
       if (state.activeServer !== serverName) return; // switched away while this was in flight
-      state._fedConnStatus = { server: serverName, phase: 'connected' };
-      if (state.activeView === 'sessions') renderSessionsView();
+      state._fedConnStatus = null; // real data is in state.sessions now, no status banner needed
+      state.sessions = sessions || [];
+      if (state.activeView === 'sessions') { onSessionsUpdated(); renderSessionsView(); }
     })
     .catch(e => {
       if (state.activeServer !== serverName) return;
@@ -2328,7 +2340,6 @@ function renderSessionsView() {
       if (fcs.phase === 'error') {
         view.innerHTML = `
           <div class="view-content" style="position:relative;">
-            <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
             <div class="empty-state">
               <span class="empty-state-icon">⚠️</span>
               <h3>${escHtml(t('fed_conn_error_title') || 'Could not reach this server')}</h3>
@@ -2339,16 +2350,17 @@ function renderSessionsView() {
         _injectServerPickerBar(view, renderSessionsView);
         return;
       }
-      // 'connecting' or 'connected' (health probe succeeded, real session
-      // data just hasn't arrived over WS yet — still an honest wait, not
-      // a guess).
-      const label = fcs.phase === 'connected'
-        ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
-        : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
+      // Only 'connecting' reaches here now -- _checkFederatedConnection
+      // clears the status entirely (straight to null) the moment the real
+      // sessions fetch succeeds, rather than passing through an
+      // intermediate 'connected' phase that still had to wait on the WS.
+      // No sessions-watermark here (operator-reported 2026-10-08: with no
+      // session cards around it, the normally-subtle 0.045-opacity
+      // background logo had nothing to recede behind and dominated the
+      // whole page) -- a dedicated status view doesn't need it.
       view.innerHTML = `
         <div class="view-content" style="position:relative;">
-          <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
-          ${loadingEyeBlock(label, 'panel')}
+          ${loadingEyeBlock(t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`, 'panel')}
         </div>`;
       _injectServerPickerBar(view, renderSessionsView);
       return;

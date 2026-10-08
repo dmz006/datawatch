@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.3 — fix(pwa): federated connection status was a false positive; giant watermark on the status screen
+
+### Fixed
+- Live-tested v8.73.2 against two real federated peers and found the fix was incomplete: the "connected" status was a false positive. It probed `/api/health`, which is deliberately public/unauthenticated, so a peer with no token configured in `servers.json` (confirmed live: `GET .../api/health` → 200, `GET .../api/sessions` → 401) reported "connected" while the real session data silently failed auth forever with nothing on screen to explain why. Now probes the real sessions endpoint itself — this validates actual auth and supplies the session list directly in the same call, instead of waiting on a WS push that was never coming. A 401/403 now shows a specific "Authentication failed — no valid token configured" message instead of a bare status code.
+- The federated-connecting status screen showed a giant, dominant background logo (the `.sessions-watermark` graphic, normally a faint 0.045-opacity texture meant to sit behind a full session list) — with no session cards around it to recede behind, it was the only thing on the page. Removed from the status/error views.
+
+### Known, deliberately deferred
+- Unreachable hosts (e.g. a configured peer that's actually down) still appear in the picker like any other — operator asked for these to be excluded or visually distinguished. Deferred: a correct version needs a bounded per-host timeout so one slow-to-fail host can't delay the whole picker from rendering, which is more than a quick patch. Tracked as a follow-up, not forgotten.
+- No automated test exercises the actual PWA-in-a-browser-against-a-real-federated-peer path — the existing TS-387–396 federation E2E stories cover the REST/backend surface (server CRUD, aggregated endpoints) only. This session's new unit tests (`app-fed-conn-status.test.js`) are the first coverage of the client-side logic, but are not a substitute for a live browser test.
+
 ## v8.73.2 — fix(pwa): federated server picker never appeared; no status/error when connecting
 
 ### Fixed

@@ -80,20 +80,28 @@ test('loadServerListEager does NOT poison state.servers to null on failure (retr
   assert.equal(vm.runInContext('state.servers', sandbox), undefined);
 });
 
-test('_checkFederatedConnection sets phase=connecting immediately, then phase=connected on a successful health probe', async () => {
+test('_checkFederatedConnection sets phase=connecting immediately, then fetches real sessions and clears the status entirely on success', async () => {
+  // Live-tested against a real federated peer (2026-10-08): the first
+  // version of this probed /api/health, which is deliberately
+  // unauthenticated -- it reported "connected" even when the peer had no
+  // token configured and every real data call was silently 401ing
+  // forever. Now probes the real sessions endpoint itself, which both
+  // validates actual auth and supplies the data directly.
   const sandbox = loadAppJS();
-  vm.runInContext(`fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })`, sandbox);
-  vm.runInContext(`state.activeServer = 'host-a'`, sandbox);
+  const fakeSessions = [{ id: 's1', name: 'remote session' }];
+  vm.runInContext(`fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(${JSON.stringify(fakeSessions)}) })`, sandbox);
+  vm.runInContext(`state.activeServer = 'host-a'; onSessionsUpdated = function(){};`, sandbox);
   vm.runInContext(`_checkFederatedConnection('host-a')`, sandbox);
   const immediate = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
   assert.equal(immediate.phase, 'connecting', 'status must flip to connecting synchronously, before the probe resolves');
   assert.equal(immediate.server, 'host-a');
   await flushAsync();
-  const after = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
-  assert.equal(after.phase, 'connected');
+  assert.equal(vm.runInContext('state._fedConnStatus', sandbox), null, 'status clears entirely on success -- no intermediate "connected" phase left waiting on the WS');
+  const sessions = JSON.parse(vm.runInContext('JSON.stringify(state.sessions)', sandbox));
+  assert.deepEqual(sessions, fakeSessions, 'the probe response itself should populate state.sessions directly, not wait on a WS push');
 });
 
-test('_checkFederatedConnection sets phase=error with a real reason when the probe fails', async () => {
+test('_checkFederatedConnection sets phase=error with a specific auth message on 401/403 (not a generic "HTTP 401")', async () => {
   const sandbox = loadAppJS();
   vm.runInContext(`fetch = () => Promise.resolve({ ok: false, status: 401 })`, sandbox);
   vm.runInContext(`state.activeServer = 'host-a'`, sandbox);
@@ -101,13 +109,24 @@ test('_checkFederatedConnection sets phase=error with a real reason when the pro
   await flushAsync();
   const status = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
   assert.equal(status.phase, 'error');
-  assert.match(status.message, /401/, 'error message should carry the real HTTP status, not a generic placeholder');
+  assert.match(status.message, /auth/i, 'a 401/403 should surface an actionable "authentication failed" message, not a bare status code -- this is the actual bug found live: a missing token in servers.json looked identical to a dead host');
+});
+
+test('_checkFederatedConnection sets phase=error with the real HTTP status for a non-auth failure', async () => {
+  const sandbox = loadAppJS();
+  vm.runInContext(`fetch = () => Promise.resolve({ ok: false, status: 502 })`, sandbox);
+  vm.runInContext(`state.activeServer = 'host-a'`, sandbox);
+  vm.runInContext(`_checkFederatedConnection('host-a')`, sandbox);
+  await flushAsync();
+  const status = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
+  assert.equal(status.phase, 'error');
+  assert.match(status.message, /502/);
 });
 
 test('_checkFederatedConnection ignores a stale probe result after the operator already switched to a different server', async () => {
   const sandbox = loadAppJS();
-  vm.runInContext(`fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })`, sandbox);
-  vm.runInContext(`state.activeServer = 'host-a'`, sandbox);
+  vm.runInContext(`fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })`, sandbox);
+  vm.runInContext(`state.activeServer = 'host-a'; onSessionsUpdated = function(){};`, sandbox);
   vm.runInContext(`_checkFederatedConnection('host-a')`, sandbox);
   // Operator switches away before the probe resolves.
   vm.runInContext(`state.activeServer = 'host-b'; state._fedConnStatus = null;`, sandbox);
