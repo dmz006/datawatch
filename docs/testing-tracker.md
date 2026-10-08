@@ -9,9 +9,9 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
-## BL398 Phases 0-2 — .trivyignore reconciliation, live rescan baseline, CVE tracing
+## BL398 Phases 0-2 + registry adoption (GH#197) — .trivyignore reconciliation, live rescan baseline, CVE tracing, structured registry
 
-Added in v8.73.27/v8.73.28/v8.73.29. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -20,6 +20,10 @@ Added in v8.73.27/v8.73.28/v8.73.29. See `docs/plans/2026-10-08-bl398-trivyignor
 | Full suppressed-vs-live diff against published `:8.73.2` images (70 suppressed vs. 70 live unique HIGH/CRITICAL IDs) | N/A (not code) | Yes | `comm -13`/`comm -23` between the suppressed-ID list and the union of all 5 images' live scan output | Found CVE-2026-104851 (fsspec) live-but-unsuppressed — already fixed in source (`Dockerfile.agent-aider`), just not yet in that published image tag |
 | Phase 1: same diff against 5 images built fresh from current source (not `:8.73.2`) | N/A (not code) | Yes | Built all 5 via a temporary local registry + insecure-registry buildx builder, tagged `v8.73.27`, fresh `trivy image --image-src remote` rescan of each | Exactly 70 live unique IDs == 70 suppressed IDs — clean baseline, zero gaps either direction. Directly confirmed CVE-2026-104851 is absent from the fresh `agent-aider` build (fix verified working, not just inferred from source) |
 | Phase 2: CVE-2026-19445 (`sni_callback` reachability in agent-gemini/agent-aider) | N/A (not code) | Yes | `docker run --entrypoint /bin/sh --network none` against both `:8.73.2` images, `grep -rn sni_callback` across stdlib + all site-packages (including `agent-aider`'s pipx venv) | Zero third-party/application call sites found; only the stdlib's own attribute definition. Confirmed-unreachable, not argued by analogy — `.trivyignore` entry upgraded from CAVEAT to TRACED |
+| `scripts/check_accepted_risks.py` schema lint | N/A (not code) | Yes | Ran against the migrated 70-entry registry: zero errors, zero escalations. Deliberately re-broke one entry (`first_added` after `added`) to confirm the lint actually catches it (caught a real migration bug this way — `cve/CVE-2026-8328`'s prose-noted review date predated its git-commit date) | Confirms the lint fails on structural violations, not just passes trivially |
+| `scripts/gen_trivyignore.py` generator | N/A (not code) | Yes | Ran twice consecutively against the same registry: zero diff (idempotent). Generated `.trivyignore`'s suppressed-ID set diffed against the hand-written file it replaces: identical 70 IDs | Confirms the generator is a faithful, stable round-trip, not a lossy one |
+| `scripts/accepted_risks_daily_watch.py` | N/A (not code) | Yes | Ran against the real registry + Phase 1's 5 fresh-scan JSON files | Correctly surfaced 1 added-in-24h, 64 past-expiry (the intentional migration backlog), and caught (then fixed) a false-positive "re-trace needed" from Debian epoch-prefix notation (`1:2.38.1-5...` vs `2.38.1-5...`) before it shipped |
+| `scripts/apply_stale_risk_removal.py` | N/A (not code) | Yes | Ran against a scratch copy of the real 70-entry registry, removing 1 entry | Resulting file still parses, has exactly 69 entries, removed ID absent — verified via a fresh `yaml.safe_load`, not just "the script didn't crash" |
 
 ---
 

@@ -7,6 +7,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
+        security-registry-gen security-registry-check \
         test-e2e-docker test-e2e-pwa test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
@@ -19,6 +20,14 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 sync-docs:
 	@SKIP=$$(grep -vE '^\s*(#|$$)' docs/_embed_skip.txt 2>/dev/null | awk '{printf "--exclude=%s ", $$0}'); \
 	rsync -a --delete --include='*/' --include='*.md' --include='*.png' --include='*.svg' --include='*.jpg' --include='*.gif' --exclude='*' $$SKIP docs/ internal/server/web/docs/
+
+# BL398/GH#197 (2026-10-08) — security-acceptance registry, shared
+# format with datawatch-app. Edit security/accepted-risks.yml, then:
+security-registry-check:
+	python3 scripts/check_accepted_risks.py
+
+security-registry-gen: security-registry-check
+	python3 scripts/gen_trivyignore.py
 
 # ── F10: container build pipeline ─────────────────────────────────────────
 # Variables read from .env.build (gitignored) so the IP/registry never lives

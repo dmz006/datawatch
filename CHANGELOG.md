@@ -5,6 +5,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.30 — feat(security): adopt the shared datawatch/datawatch-app security-acceptance standard (GH#197)
+
+### Added
+- **`security/accepted-risks.yml`** — structured security-acceptance registry, schema shared field-for-field with `datawatch-app` (GH#197 comment 6063915337). Per entry: `id` (`cve/CVE-...`), `kind`, `package`, `version` (the accepted version — change-invalidation trigger), `severity`, `images[]`, `impact: {traced, reachable, method, analysis}`, `first_added` (immutable), `added`, `expires` (≤ added+90d traced / +30d untraced), `validated_by`, `reason`.
+- **70 entries migrated** from `.trivyignore` by hand, one block at a time (not scraped): `analysis` text preserved from the file's own already-reviewed rationale; `images[]` and `version` sourced from BL398 Phase 1's real live-scan data (more accurate than the old file's own prose — e.g. CVE-2026-84782 actually spans all 5 images, not just stats-cluster as originally scoped); `first_added` pulled from real git history per ID. Severity corrected per-ID for 5 blocks that had mixed CRITICAL/HIGH findings previously given one composite label.
+- **Migration honesty**: `impact.traced` is `true` for exactly one entry (`cve/CVE-2026-19445`, traced this session). The other 69 are prose reasoning about exploit preconditions, never independently verified — this project's real state before today, not a bug. Most entries therefore import already past their new 30-day untraced expiry relative to their real historical date. That's the deliberate, honest BL398 Phase 2 backlog, not hidden by backdating.
+- `scripts/check_accepted_risks.py` — schema/completeness lint (required fields, `impact.method` required when traced, `first_added` ≤ `added`, `expires` ≤ the 90/30-day cap, `--base <ref>` for first_added immutability). Prints `ESCALATE` lines for a reachable HIGH/CRITICAL finding or a renewal past first expiry — advisory, does not fail the build. Does **not** fail on an already-expired entry; that's a daily-watch reporting concern, not a lint-blocking one (failing CI on the inherited backlog would block all unrelated work).
+- `scripts/gen_trivyignore.py` — generates `.trivyignore` and splices `docs/security-review.md`'s container-scanning table from the registry. Verified idempotent (two consecutive runs produce zero diff) and produces the exact same 70-ID suppressed set as the hand-written file it replaces.
+- `scripts/accepted_risks_daily_watch.py` — the shared daily-watch report: "added or renewed in the last 24h" first, then "re-trace needed" (accepted `version` no longer matches live-scanned installed version — Debian epoch-prefix notation normalized to avoid false positives), then "past expires, or due within 14 days".
+- `scripts/apply_stale_risk_removal.py` — supersedes `apply-stale-cve-removal.py` (deleted): removes fixed entries from the registry (not `.trivyignore` directly, since it's now generated) by entry-block text surgery, never a full YAML round-trip, so untouched entries' formatting is never disturbed.
+- `make security-registry-gen` / `make security-registry-check` Makefile targets.
+
+### Changed
+- `.github/workflows/security-scan.yaml` — new `security-registry` job: runs the lint (blocking on schema, `--base` immutability check against the PR base / `HEAD~1`) and regenerates `.trivyignore`/`docs/security-review.md`, failing if either has drifted from the registry.
+- `.github/workflows/secret-scan.yaml` — gitleaks switched from `gitleaks/gitleaks-action` (license-gated, `continue-on-error: true` because a rate-limited license check was indistinguishable from a real finding) to the plain CLI binary, now **blocking**. A failure now only ever means a real secret was found.
+- `.github/workflows/image-refresh.yaml`'s `recheck-ignored-cves` job: stale-ID regex widened from `^CVE-[0-9]+-[0-9]+$` to also match GHSA IDs (GH#197 finding); stale-fix removal now edits `security/accepted-risks.yml` + regenerates, not `.trivyignore` directly; its tracking issue (#196) now leads with the daily-watch report, renamed from "stale .trivyignore suppressions ready to remove" to "security/accepted-risks.yml daily watch" (issue number hardcoded rather than found by title search, so the rename doesn't orphan #196 into a duplicate).
+- `docs/security-review.md`'s "Accepted exceptions" table is now generated (was a hand-maintained 8-of-70 sample that had drifted, including one entry — CVE-2026-93990 — that was never actually in `.trivyignore` at all; dropped by this regeneration).
+
+### Process
+- `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md` updated: this registry adoption *is* BL398 Phase 4 (docs/security-review.md sync), done via generation rather than a one-time manual pass, which means it can't silently go stale again.
+- GH#197 comment 6063769975 (6 suggestions from this session) and comment 6063915337 (final shared schema) are the design record; not re-derived here.
+
 ## v8.73.29 — fix(security): BL398 Phase 2 — CVE-2026-19445 upgraded from caveat to independently traced
 
 ### Fixed

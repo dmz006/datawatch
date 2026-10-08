@@ -21,6 +21,16 @@
 # tag happened to run release.yaml's own gosec/govulncheck step), and
 # manual dispatch (for spot checks). Tag-push trigger stays removed —
 # release.yaml already runs govulncheck + gosec before goreleaser.
+#
+#   - security-registry (BLOCKING, schema-only) — validates
+#     security/accepted-risks.yml against the shared datawatch/
+#     datawatch-app acceptance standard (GH#197) with
+#     scripts/check_accepted_risks.py, and fails if .trivyignore or
+#     docs/security-review.md's generated table has drifted from the
+#     registry (scripts/gen_trivyignore.py, diffed against HEAD).
+#     Does NOT fail on an expired entry — that's the daily watch's job
+#     (.github/workflows/image-refresh.yaml), not this gate's; see
+#     check_accepted_risks.py's own docstring for why.
 
 name: security-scan
 
@@ -95,3 +105,25 @@ jobs:
           if live_n < base_n:
               print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Once stable, lower the baseline so regressions get caught at the new lower bar.")
           PY
+
+  security-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml
+      - name: Validate security/accepted-risks.yml (blocking on schema, advisory ESCALATE lines)
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          python3 scripts/check_accepted_risks.py --base "$BASE_REF"
+      - name: Regenerate .trivyignore + docs/security-review.md and diff against committed output
+        run: |
+          python3 scripts/gen_trivyignore.py
+          if ! git diff --exit-code .trivyignore docs/security-review.md; then
+            echo "::error::.trivyignore or docs/security-review.md is out of sync with security/accepted-risks.yml. Run 'python3 scripts/gen_trivyignore.py' and commit the result."
+            exit 1
+          fi
