@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v9.0.0-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.0.1-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -25,13 +25,15 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 - **Wear OS** — Automata queue dashboard, **private local voice** (audio goes straight to your own server, transcribed by your own Whisper instance — no Google, no cloud STT), tile shortcuts, ambient progress, health-data cross-reference.
 - **Android phone** — full session and Automata orchestration parity with desktop (REST/MCP/CLI), discussion scopes, file uploads, offline queue with auto-sync, bidirectional push replies.
 
-> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
+> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://groups.google.com/g/datawatch-testers)
 >
 > **Android is in Google Play closed testing.** Google requires 12 testers opted in for 14 continuous days before production access:
 >
-> 1. [Join the tester group](https://groups.google.com/g/datawatch-testers)
+> 1. [Join the tester group](https://groups.google.com/g/datawatch-testers) with the same Google account your phone uses for Play
 > 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
 > 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in) and stay opted in for 14 days — **we need 12 testers.**
+>
+> **Wear OS** is in the same closed test — once opted in, install it from Play on the watch (or from Play on the phone with "Install on more devices"). Android Auto is part of the phone app.
 >
 > **iOS:** public TestFlight link coming after Apple's beta review. Feedback: open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
 
@@ -52,7 +54,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.0 (2026-10-07).** Major-version milestone: formal
+**Current release: v9.0.1 (2026-10-07).** Major-version milestone: formal
 cut for memory-lifecycle completeness (subprocess scope isolation, lifecycle
 management, and PRD memory integration — all three shipped incrementally
 back in September, cut together here as the milestone the project had been

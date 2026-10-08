@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.1 — docs: Android beta instructions — badge/account/Wear OS fixes
+
+### Fixed
+- Relayed from the datawatch-app session: the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first — anyone clicking the badge cold landed on "not available." Badge now points at the tester-group link instead. Step 1 now notes to join with the same Google account the phone uses for Play (otherwise the opt-in doesn't apply to the device). Added a line noting Wear OS is in the same closed test (install from Play on the watch, or via "Install on more devices" from the phone); Android Auto is part of the phone app.
+
 ## v9.0.0 — Memory Lifecycle Complete (major release)
 
 Operator-authorized full-pipeline major release: run the complete E2E
