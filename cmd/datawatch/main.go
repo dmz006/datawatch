@@ -9942,7 +9942,7 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if !ok {
 		return fmt.Errorf("session not found: %s", id)
 	}
-	fmt.Printf("tmux attach-session -t %s\n", sess.TmuxSession)
+	fmt.Println(session.TmuxAttachCommand(sess.TmuxSession))
 	return nil
 }
 

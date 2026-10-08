@@ -493,12 +493,35 @@ install_service() {
     SERVICE_DIR="${HOME}/.config/systemd/user"
     mkdir -p "${SERVICE_DIR}"
 
+    # Dedicated tmux server for sessions, owned by systemd instead of whatever
+    # login shell first started tmux, and independent of daemon restarts.
+    TMUX_BIN="$(command -v tmux || echo /usr/bin/tmux)"
+    cat > "${SERVICE_DIR}/datawatch-tmux.service" <<EOF
+[Unit]
+Description=datawatch - dedicated tmux server for AI sessions
+
+[Service]
+Type=forking
+Environment=HOME=${HOME}
+Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TMUX_TMPDIR=${HOME}/.datawatch/tmux
+ExecStartPre=/usr/bin/mkdir -p ${HOME}/.datawatch/tmux
+ExecStartPre=/usr/bin/chmod 700 ${HOME}/.datawatch/tmux
+ExecStart=${TMUX_BIN} new-session -d -s datawatch-keepalive
+ExecStop=${TMUX_BIN} kill-server
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+
     # Write user service file
     cat > "${SERVICE_DIR}/datawatch.service" <<EOF
 [Unit]
 Description=datawatch - Multi-backend AI coding session daemon
-After=network-online.target default.target
-Wants=network-online.target
+After=network-online.target default.target datawatch-tmux.service
+Wants=network-online.target datawatch-tmux.service
 
 [Service]
 Type=simple
@@ -511,13 +534,14 @@ StandardError=journal
 SyslogIdentifier=datawatch
 Environment=HOME=${HOME}
 Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TMUX_TMPDIR=${HOME}/.datawatch/tmux
 
 [Install]
 WantedBy=default.target
 EOF
 
     systemctl --user daemon-reload
-    systemctl --user enable datawatch
+    systemctl --user enable datawatch-tmux datawatch
     success "User service installed. Start with: systemctl --user start datawatch"
     info "Enable lingering so service starts at boot (without login): loginctl enable-linger ${USER}"
   fi

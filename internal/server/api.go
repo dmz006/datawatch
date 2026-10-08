@@ -1941,7 +1941,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if !ok {
 			return "Session not found."
 		}
-		return fmt.Sprintf("tmux attach -t %s", sess.TmuxSession)
+		return session.TmuxAttachCommand(sess.TmuxSession)
 
 	case router.CmdHelp:
 		return router.HelpText(s.hostname)

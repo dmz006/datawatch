@@ -1659,8 +1659,8 @@ func (r *Router) handleNew(cmd Command) {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
 		return
 	}
-	r.send(fmt.Sprintf("[%s][%s] Started session for: %s\nTmux: %s\nAttach: tmux attach -t %s",
-		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, sess.TmuxSession))
+	r.send(fmt.Sprintf("[%s][%s] Started session for: %s\nTmux: %s\nAttach: %s",
+		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession)))
 }
 
 func (r *Router) handleList(filter string) {
@@ -1950,8 +1950,8 @@ func (r *Router) handleAttach(cmd Command) {
 		return
 	}
 
-	r.send(fmt.Sprintf("[%s][%s] Run on %s:\n  tmux attach -t %s",
-		r.hostname, sess.ID, sess.Hostname, sess.TmuxSession))
+	r.send(fmt.Sprintf("[%s][%s] Run on %s:\n  %s",
+		r.hostname, sess.ID, sess.Hostname, session.TmuxAttachCommand(sess.TmuxSession)))
 }
 
 // handleImplicitSend routes an unrecognised message to the single waiting session, if any.

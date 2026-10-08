@@ -2,7 +2,9 @@ package session
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -391,6 +393,36 @@ func (t *TmuxManager) SetEnvironment(session string, env map[string]string) erro
 
 // AttachCommand returns the shell command a user should run to attach to the session.
 func (t *TmuxManager) AttachCommand(session string) string {
+	return TmuxAttachCommand(session)
+}
+
+// TmuxSocketDir returns the TMUX_TMPDIR datawatch sessions live under, or ""
+// for tmux's default socket. The daemon gets it from its environment (set by
+// the datawatch-tmux.service / datawatch.env pair so the session tmux server
+// is owned by systemd rather than whichever login happened to start it
+// first). CLI processes run from an operator shell don't inherit that, so
+// fall back to the conventional ~/.datawatch/tmux when its socket exists.
+func TmuxSocketDir() string {
+	if d := os.Getenv("TMUX_TMPDIR"); d != "" {
+		return d
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	d := filepath.Join(home, ".datawatch", "tmux")
+	if _, err := os.Stat(filepath.Join(d, fmt.Sprintf("tmux-%d", os.Getuid()), "default")); err == nil {
+		return d
+	}
+	return ""
+}
+
+// TmuxAttachCommand returns the operator-facing attach command for a tmux
+// session, including TMUX_TMPDIR when sessions run on a dedicated socket.
+func TmuxAttachCommand(session string) string {
+	if d := TmuxSocketDir(); d != "" {
+		return fmt.Sprintf("TMUX_TMPDIR=%s tmux attach -t %s", d, session)
+	}
 	return fmt.Sprintf("tmux attach -t %s", session)
 }
 
