@@ -363,14 +363,18 @@ CVE-2026-93748
 # 3.11.2-6+deb12u9. "python: Use-after-free of a server-side SSLContext
 # when sni_callback switches contexts." Affects agent-gemini and
 # agent-aider (shared base). Blocked v8.73.2's release CI.
-# CAVEAT: not independently traced — the flaw needs a Python process
-# acting as a TLS *server* with ssl.SSLContext.sni_callback set and
-# switching contexts mid-handshake. gemini-cli and aider are HTTP
-# *clients* calling external LLM APIs (Google Gemini, litellm's provider
-# backends); neither runs a Python TLS server. That's the basis for
-# suppressing, but no exhaustive trace of every vendored dependency in
-# either tool's venv was done to confirm none of them opens a
-# server-side SSLContext. Re-review on the next release cycle and
-# re-check for a Debian fix.
+# TRACED (2026-10-08, GH#197's immediate ask): grepped every installed
+# Python package in both images' site-packages (and the stdlib) for
+# `sni_callback` — zero hits anywhere except the stdlib's own ssl.py
+# (the attribute's definition, not a call site). No vendored dependency
+# in either tool's venv ever sets sni_callback. aiohttp.worker does build
+# a server-side SSLContext (used by gunicorn's aiohttp worker class), but
+# the only aiohttp importers found are Google auth's async *client*
+# transport wrappers (_aiohttp_requests.py, aio/transport/aiohttp.py) —
+# nothing invokes aiohttp.worker as an actual server. gemini-cli and
+# aider are HTTP clients calling external LLM APIs; the vulnerable code
+# path is confirmed unreachable, not just argued by analogy. Re-check for
+# a Debian fix each release cycle; re-trace only if either tool's
+# dependency tree changes meaningfully.
 CVE-2026-19445
 

@@ -9,9 +9,9 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
-## BL398 Phases 0-1 — .trivyignore reconciliation + live rescan baseline
+## BL398 Phases 0-2 — .trivyignore reconciliation, live rescan baseline, CVE tracing
 
-Added in v8.73.27/v8.73.28. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+Added in v8.73.27/v8.73.28/v8.73.29. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -19,6 +19,7 @@ Added in v8.73.27/v8.73.28. See `docs/plans/2026-10-08-bl398-trivyignore-cve-rev
 | `GHSA-6v7p-g79w-8964` prune | N/A (not code) | Yes | Same rescan — grep'd for `msgpack` package name across all 5 images' JSON, zero hits | Confirms the package is no longer flagged, not just that the specific ID string changed |
 | Full suppressed-vs-live diff against published `:8.73.2` images (70 suppressed vs. 70 live unique HIGH/CRITICAL IDs) | N/A (not code) | Yes | `comm -13`/`comm -23` between the suppressed-ID list and the union of all 5 images' live scan output | Found CVE-2026-104851 (fsspec) live-but-unsuppressed — already fixed in source (`Dockerfile.agent-aider`), just not yet in that published image tag |
 | Phase 1: same diff against 5 images built fresh from current source (not `:8.73.2`) | N/A (not code) | Yes | Built all 5 via a temporary local registry + insecure-registry buildx builder, tagged `v8.73.27`, fresh `trivy image --image-src remote` rescan of each | Exactly 70 live unique IDs == 70 suppressed IDs — clean baseline, zero gaps either direction. Directly confirmed CVE-2026-104851 is absent from the fresh `agent-aider` build (fix verified working, not just inferred from source) |
+| Phase 2: CVE-2026-19445 (`sni_callback` reachability in agent-gemini/agent-aider) | N/A (not code) | Yes | `docker run --entrypoint /bin/sh --network none` against both `:8.73.2` images, `grep -rn sni_callback` across stdlib + all site-packages (including `agent-aider`'s pipx venv) | Zero third-party/application call sites found; only the stdlib's own attribute definition. Confirmed-unreachable, not argued by analogy — `.trivyignore` entry upgraded from CAVEAT to TRACED |
 
 ---
 

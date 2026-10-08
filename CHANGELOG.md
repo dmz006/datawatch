@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.29 — fix(security): BL398 Phase 2 — CVE-2026-19445 upgraded from caveat to independently traced
+
+### Fixed
+- `datawatch-app` filed `dmz006/datawatch#197` naming this as the immediate ask for a broader shared security-acceptance-standard proposal (that proposal itself needs a separate operator decision, not assumed as approved here). Pulled `agent-gemini:8.73.2` and `agent-aider:8.73.2` and grepped every installed Python package (stdlib + both images' site-packages, including `agent-aider`'s pipx venv) for `sni_callback` with `docker run --entrypoint /bin/sh --network none` (read-only, no live container, no network). Zero hits anywhere except the stdlib's own `ssl.py` attribute definition — no vendored dependency in either tool's venv ever sets it. `aiohttp.worker` does build a server-side `SSLContext`, but the only `aiohttp` importers found are Google auth's async client transport wrappers, not a server. `.trivyignore`'s CVE-2026-19445 entry upgraded from `CAVEAT: not independently traced` to a traced, confirmed-unreachable result.
+- 2 of the original 3 CAVEATed entries remain untraced (CVE-2026-19553, CVE-2026-93748) — Phase 2's remaining ~23 non-CAVEATed blocks also not started.
+
+### Process
+- `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md` updated with Phase 2 progress.
+
 ## v8.73.28 — docs(security): BL398 Phase 1 — fresh per-image live rescan baseline from source
 
 ### Added
