@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.5 — fix: Alerts tab ignored the federated-server picker; datawatch eye icon clipped everywhere
+
+### Fixed
+- The Alerts tab didn't honor a selected federated host at all — only "All servers" mode was special-cased (aggregated endpoint); any specific named remote fell straight through to the local `/api/alerts` and `/api/sessions`, so the picker had no effect on this view. Now proxies through `/api/proxy/<name>/...` the same way Sessions does. Also found and fixed: switching servers while already on the Alerts tab did nothing until navigating away and back (the reconnect-driven view-refresh list never included `alerts`), and a separate instance of the "All mode" session-clobbering bug (v8.73.4) in this view's own independent `/api/sessions` fetch.
+- The datawatch eye icon (`loadingEyeBlock`, used on ~40 cards/loading screens throughout the app) was visibly clipped — "cut in 1/3 and looks terrible" — on every single one of them, not just the new federation screens. Root cause: the eye's outer ellipse outline extends 1.92x/1.20x beyond its nominal "radius" (see `drawEye` in `splash-art.js`), but the radius calculation assumed a landscape canvas with horizontal headroom a square canvas doesn't have — every `loadingEyeBlock()` call site uses a square canvas. Fixed the radius formula to fit the actual drawn shape inside the canvas on both axes, for any aspect ratio.
+
+### Added
+- `splash-art.js` had no test coverage at all; added `splash-art.test.js` (4 tests) pinning the eye-outline-fits-inside-canvas property for square, landscape, and portrait canvases.
+- 4 new tests in `app-fed-conn-status.test.js` covering the Alerts federation-proxying fix and the reconnect-refresh-includes-alerts fix.
+
 ## v8.73.4 — fix: Store.Test() false-positive on bad token; "All servers" mode dropped remote sessions seconds after showing them
 
 ### Fixed

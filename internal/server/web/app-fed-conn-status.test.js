@@ -184,6 +184,70 @@ test('selectServer() kicks off a federated connection check when switching to a 
   assert.equal(vm.runInContext('__checkedServer', sandbox), 'host-a');
 });
 
+test('renderAlertsView() proxies through /api/proxy/<name>/... for a specific named remote server (not just "all")', () => {
+  // Operator-reported (2026-10-08): the Alerts tab ignored the selected
+  // federated host entirely -- only 'all' mode was special-cased
+  // (aggregated endpoint); any specific named remote fell straight
+  // through to the LOCAL /api/alerts and /api/sessions, so the picker
+  // had no effect on this view at all.
+  const sandbox = loadAppJS();
+  const fetchedUrls = [];
+  sandbox.fetch = (url) => {
+    fetchedUrls.push(url);
+    return Promise.resolve({ ok: false, status: 404 });
+  };
+  sandbox.document.getElementById = () => makeStubElement();
+  vm.runInContext(`state.activeServer = 'host-a';`, sandbox);
+  vm.runInContext('renderAlertsView()', sandbox);
+  const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
+  const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
+  assert.equal(alertsUrl, '/api/proxy/host-a/api/alerts', `alerts fetch should proxy through host-a, got: ${alertsUrl}`);
+  assert.equal(sessionsUrl, '/api/proxy/host-a/api/sessions', `sessions fetch should proxy through host-a, got: ${sessionsUrl}`);
+});
+
+test('renderAlertsView() stays on the aggregated endpoint for "all" mode and does not clobber state.sessions', () => {
+  const sandbox = loadAppJS();
+  const fetchedUrls = [];
+  sandbox.fetch = (url) => {
+    fetchedUrls.push(url);
+    return Promise.resolve({ ok: false, status: 404 });
+  };
+  sandbox.document.getElementById = () => makeStubElement();
+  vm.runInContext(`state.activeServer = 'all'; state.sessions = [{id:'keep-me'}];`, sandbox);
+  vm.runInContext('renderAlertsView()', sandbox);
+  const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
+  assert.equal(alertsUrl, '/api/alerts/aggregated');
+  assert.ok(!fetchedUrls.some(u => u === '/api/sessions'), 'must not fetch the LOCAL /api/sessions while in All mode (that is the exact clobbering bug already fixed in handleMessage)');
+});
+
+test('renderAlertsView() uses plain local endpoints when no federated server is selected (regression guard)', () => {
+  const sandbox = loadAppJS();
+  const fetchedUrls = [];
+  sandbox.fetch = (url) => {
+    fetchedUrls.push(url);
+    return Promise.resolve({ ok: false, status: 404 });
+  };
+  sandbox.document.getElementById = () => makeStubElement();
+  vm.runInContext(`state.activeServer = null;`, sandbox);
+  vm.runInContext('renderAlertsView()', sandbox);
+  const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
+  const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
+  assert.equal(alertsUrl, '/api/alerts');
+  assert.equal(sessionsUrl, '/api/sessions');
+});
+
+test('reconnect-driven view refresh now includes "alerts" (switching servers mid-tab used to do nothing until navigating away and back)', () => {
+  const sandbox = loadAppJS();
+  vm.runInContext(`state.activeView = 'alerts';`, sandbox);
+  let called = false;
+  sandbox.renderAlertsView = () => { called = true; };
+  sandbox.document.getElementById = () => makeStubElement();
+  // Drive the same branch connect()'s ws.onopen uses, without needing a
+  // real WebSocket handshake.
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
+  assert.match(src, /state\.activeView === 'alerts'\) \{[\s\S]{0,400}renderAlertsView\(\);/, 'connect()\'s reconnect-refresh switch must include an alerts branch calling renderAlertsView()');
+});
+
 test('selectServer() clears federated status when switching back to Local', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`fetch = () => new Promise(() => {})`, sandbox);

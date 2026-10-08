@@ -273,7 +273,17 @@
       }
     });
 
-    var radius = Math.min(w, h) * 0.37;
+    // drawEye's outer ellipse (the eye's actual outline shape) extends to
+    // radius*1.92 horizontally and radius*1.20 vertically -- see erx/ery
+    // in drawEye. The old flat `Math.min(w,h) * 0.37` assumed a landscape
+    // canvas with horizontal headroom beyond "radius" that doesn't exist
+    // on a SQUARE canvas -- every loadingEyeBlock() call site (~40 of
+    // them) uses a square canvas, so the eye's outer ellipse overflowed
+    // the canvas on both sides and got clipped by it: "cut in 1/3 and
+    // looks terrible everywhere" (operator-reported 2026-10-08). Size
+    // radius so the actual drawn ellipse, including its stroke, fits
+    // inside the canvas on both axes regardless of aspect ratio.
+    var radius = Math.min(w / (2 * 1.92), h / (2 * 1.20)) * 0.92;
     drawEye(ctx, cx, cy, radius, pupilScale, glowAlpha);
   }
 

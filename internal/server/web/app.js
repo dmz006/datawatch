@@ -496,6 +496,13 @@ function connect() {
       renderSettingsView();
     } else if (state.activeView === 'sessions') {
       renderSessionsView();
+    } else if (state.activeView === 'alerts') {
+      // Operator-reported (2026-10-08): switching the federated-server
+      // picker while already on the Alerts tab did nothing until the
+      // operator navigated away and back -- this reconnect-driven
+      // refresh list never included 'alerts', so no refetch ever fired
+      // on a mid-tab server switch.
+      renderAlertsView();
     } else if (state.activeView === 'session-detail' && state.activeSession) {
       // v6.11.13 — gave up on the optimized "same session alive" fast
       // path entirely. It was meant (since v5.26.35) to avoid tearing
@@ -21415,12 +21422,31 @@ function renderAlertsView() {
     <div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${loadingEyeBlock()}</div></div></div>`;
   _injectServerPickerBar(view, renderAlertsView); // BL312 S3
 
-  // BL312 S5 — use aggregated endpoint in all-servers mode
-  const alertsEndpoint = state.activeServer === 'all' ? '/api/alerts/aggregated' : '/api/alerts';
+  // BL312 S5 — use aggregated endpoint in all-servers mode.
+  // Operator-reported (2026-10-08): selecting a SPECIFIC federated host
+  // did nothing here -- only 'all' mode was special-cased; any other
+  // value of state.activeServer fell straight through to the local
+  // /api/alerts, so the Alerts tab silently ignored the picker entirely
+  // for a single named remote. Proxy through /api/proxy/<name>/... the
+  // same way Sessions does.
+  const _alertsSrv = state.activeServer;
+  const _alertsIsRemote = _alertsSrv && _alertsSrv !== 'all' && _alertsSrv !== 'local';
+  const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
+  const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
   Promise.all([
     fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []),
-    fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+    // Same "All" clobbering bug just fixed in handleMessage's 'sessions'
+    // case, a separate instance of it: this used to always fetch the
+    // LOCAL /api/sessions and unconditionally overwrite state.sessions,
+    // silently discarding remote entries while in "All" mode (and, for a
+    // specific remote, classifying every alert as "unknown session"
+    // since local session IDs never match a remote's). Skip the
+    // overwrite in "All" mode (the aggregated sessions list is kept
+    // current elsewhere); proxy it for a specific remote.
+    _alertsSrv === 'all'
+      ? Promise.resolve(null)
+      : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
   ]).then(([data, cmds, freshSessions]) => {
     // Update state.sessions with fresh data so active/inactive classification is accurate
     if (freshSessions && freshSessions.length > 0) {
