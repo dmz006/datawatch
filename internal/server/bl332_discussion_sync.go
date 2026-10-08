@@ -155,11 +155,63 @@ func (b *throttleBucket) allow() bool {
 	return true
 }
 
+// idleFor reports how long it's been since this bucket was last touched —
+// used by the SEC-018 sweep below to decide what's safe to evict. A bucket
+// with tokens == max hasn't been written to since it was fully refilled,
+// so is as good as idle even if lastAt itself is recent (e.g. created and
+// immediately left alone).
+func (b *throttleBucket) idleFor(now time.Time) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return now.Sub(b.lastAt)
+}
+
 // discussionThrottleMap holds one bucket per Bearer token.
+//
+// SEC-018 — this is a sync.Map with no natural owner (package-level global,
+// no struct/context to hang a shutdown-aware goroutine off of), so instead
+// of a bare LoadOrStore with no eviction, discussionThrottleSweepOnce lazily
+// starts a daemon-lifetime cleanup goroutine on first real use, mirroring
+// the DNS channel backend's cleanupRateBuckets (internal/messaging/backends/
+// dns/server.go) — same shape (ticker + iterate + delete stale entries),
+// just sync.Map's Range/Delete instead of a mutex-guarded map, and no ctx
+// to watch since there's nothing to hang one off here.
 var discussionThrottleMap sync.Map // key: string (Bearer token) → *throttleBucket
+var discussionThrottleSweepOnce sync.Once
+
+// discussionThrottleSweepInterval/discussionThrottleIdleTTL mirror the DNS
+// backend's 2-minute cadence; a bucket idle longer than the TTL is holding
+// nothing useful (it would just be recreated at max tokens on the caller's
+// next write) and its key is a real bearer token, so there's no reason to
+// keep it in memory indefinitely.
+const (
+	discussionThrottleSweepInterval = 2 * time.Minute
+	discussionThrottleIdleTTL       = 10 * time.Minute
+)
+
+func discussionThrottleSweep() {
+	now := time.Now()
+	discussionThrottleMap.Range(func(key, value any) bool {
+		if b, ok := value.(*throttleBucket); ok && b.idleFor(now) > discussionThrottleIdleTTL {
+			discussionThrottleMap.Delete(key)
+		}
+		return true
+	})
+}
+
+func discussionThrottleStartSweeper() {
+	go func() {
+		ticker := time.NewTicker(discussionThrottleSweepInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			discussionThrottleSweep()
+		}
+	}()
+}
 
 // discussionThrottleBucket returns (or creates) the bucket for a token.
 func discussionThrottleBucket(tok string) *throttleBucket {
+	discussionThrottleSweepOnce.Do(discussionThrottleStartSweeper)
 	v, _ := discussionThrottleMap.LoadOrStore(tok, &throttleBucket{
 		tokens: 60,
 		lastAt: time.Now(),

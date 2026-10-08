@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.18 — security(SEC-018): bounded TTL sweep for the discussion-sync throttle map
+
+### Security
+- `discussionThrottleMap` (`internal/server/bl332_discussion_sync.go`) — a `sync.Map` keyed by raw Bearer token, one `throttleBucket` per distinct token ever seen, with no eviction at all. Every token a caller ever authenticated with stayed in memory for the life of the daemon process; an unbounded number of distinct tokens (e.g. anything rotating credentials — SEC-016 made that routine) meant an unbounded map. Added a lazily-started (`sync.Once`), daemon-lifetime sweep goroutine mirroring the DNS channel backend's existing `cleanupRateBuckets` (`internal/messaging/backends/dns/server.go`) — same shape (ticker + iterate + delete stale entries), adapted to `sync.Map`'s `Range`/`Delete`. A bucket idle more than 10 minutes is evicted every 2-minute sweep; it's harmless to lose (a caller's next write just gets a fresh, fully-refilled bucket, identical to its first-ever request).
+- Added `internal/server/sec018_discussion_throttle_sweep_test.go`: idle buckets evicted, recently-touched buckets survive, eviction-then-recreation gets a fully-refilled bucket (not still drained), and the lazy-start path is safe to call repeatedly.
+
 ## v8.73.17 — security(SEC-017): audit-log every PUT /api/config write
 
 ### Security

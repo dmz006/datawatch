@@ -958,3 +958,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `PUT /api/config` still succeeds with no audit log configured (audit is best-effort, never blocks the write) | **Yes** | **Yes** | `TestAuditConfigPatch_NoAuditLogConfiguredIsANoop` | |
 | Key-substring sensitivity classifier | **Yes** | **Yes** | `TestIsSensitiveConfigKey` | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3221 passed, 0 failed | |
+
+## SEC-018: bounded TTL sweep for discussionThrottleMap — v8.73.18
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| A bucket idle past the TTL is evicted by the sweep; a recently-touched one survives | **Yes** | **Yes** | `TestDiscussionThrottleSweep_EvictsIdleBuckets` | |
+| A token that gets a fresh bucket after eviction starts fully refilled, not still drained from before | **Yes** | **Yes** | `TestDiscussionThrottleSweep_RecreatedWithFullBucketAfterEviction` | |
+| The lazy sweeper-start path (`sync.Once`) is safe to call repeatedly | **Yes** | **Yes** | `TestDiscussionThrottleBucket_StartsBackgroundSweeperOnce` | |
+| Pre-existing throttle enforcement behavior unaffected | **Yes** | **Yes** | `TestDiscussionThrottle_Enforced` re-run green | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3224 passed, 0 failed | |
