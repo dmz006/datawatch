@@ -301,19 +301,30 @@ function buildWsUrl() {
 // snapshot (which never happens if auth is failing, with no visible
 // sign why). The WS remains wired for live updates once this initial
 // fetch has something on screen.
-// _fedCapError builds the Promise rejection for a non-2xx federated
-// response, distinguishing WHY it failed instead of lumping 401 and 403
-// into one "authentication failed" message (coordinator-flagged
-// 2026-10-08): 401 means the token itself is bad/missing -- the peer
-// can't authenticate this daemon at all. 403 means the token IS valid
-// but this peer's granted capabilities don't cover the endpoint just
-// called -- a completely different, actionable situation ("ask the peer
-// owner to grant sessions:list", not "fix the token"). The server's own
-// 403 body already names the exact missing capability
-// ("federation peer lacks capability: sessions:list", see fedCap() in
-// internal/server/federation_cap.go) -- read and surface that real text
-// instead of guessing or hardcoding a capability name per endpoint.
-function _fedCapError(resp) {
+// _fedFetchError builds the Promise rejection for a non-2xx federated
+// response, distinguishing WHY it failed instead of lumping every
+// failure into one message (coordinator-flagged 2026-10-08, extended
+// 2026-10-08): three genuinely different situations, three different
+// messages --
+//   401 -- the token itself is bad/missing. The peer can't authenticate
+//          this daemon at all. Fix: configure a real token.
+//   403 -- the token IS valid, but this peer's granted capabilities
+//          don't cover the endpoint just called. Fix: ask the peer
+//          owner to grant the capability. The server's own 403 body
+//          already names it exactly ("federation peer lacks capability:
+//          sessions:list", see fedCap() in
+//          internal/server/federation_cap.go) -- surface that real text
+//          instead of guessing or hardcoding a capability name per
+//          endpoint.
+//   502 -- handleProxy/handleProxyWS's own dial to the remote failed
+//          (connection refused, timeout, DNS failure -- see
+//          internal/server/proxy.go) -- the host is genuinely
+//          unreachable, nothing to do with auth or capabilities at all.
+//          Body is "proxy error: <real dial error>" -- surface that,
+//          not a bare "HTTP 502".
+// (Was _fedCapError before 502 handling was added -- renamed since it's
+// no longer only about capabilities.)
+function _fedFetchError(resp) {
   if (resp.status === 401) {
     return Promise.reject(new Error(t('fed_conn_error_auth') || 'Authentication failed — this server has no valid token configured'));
   }
@@ -322,15 +333,21 @@ function _fedCapError(resp) {
       (body && body.trim()) || t('fed_conn_error_forbidden') || 'This server does not grant the capability this needs'
     )));
   }
+  if (resp.status === 502) {
+    return resp.text().then(body => Promise.reject(new Error(
+      (body && body.trim()) || t('fed_conn_error_unreachable') || 'Could not reach this server'
+    )));
+  }
   return Promise.reject(new Error('HTTP ' + resp.status));
 }
-
+// Back-compat alias -- a couple of call sites below were written against
+// the old name in the same pass this got renamed; functionally identical.
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
   fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
     .then(r => {
-      if (r.status === 401 || r.status === 403) return _fedCapError(r);
+      if (r.status === 401 || r.status === 403 || r.status === 502) return _fedFetchError(r);
       return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status));
     })
     .then(sessions => {
@@ -664,11 +681,21 @@ function apiFetch(path, opts = {}) {
   // Route through proxy when a specific remote server is selected
   // ('all' mode uses local API — aggregated endpoint handles fan-out)
   const srv = state.activeServer;
-  const url = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
   return fetch(url, Object.assign({}, opts, { headers }))
     .then(r => {
       if (r.status === 204 || r.status === 205) return null;
       if (r.ok) return r.json();
+      // Coordinator-flagged (2026-10-08): centralize the 401-vs-403
+      // distinction here instead of duplicating it at every call site --
+      // every apiFetch() caller automatically gets a real, capability-
+      // specific error message for a federated 401/403 instead of a bare
+      // status code or statusText. Only applies when this call is
+      // actually proxied to a remote; a LOCAL 401/403 isn't a "this peer
+      // lacks a capability" situation and keeps the original generic
+      // handling.
+      if (isRemote && (r.status === 401 || r.status === 403 || r.status === 502)) return _fedFetchError(r);
       return r.text().then(t => Promise.reject(new Error(t || r.statusText)));
     });
 }
@@ -16200,6 +16227,19 @@ function _serverPickerBar(opts) {
   ];
   const btns = chips.map(c => {
     const isActive = c.name === active;
+    // Operator-reported (2026-10-08): a genuinely-down federated host
+    // (connection refused) looked IDENTICAL to a working one in the
+    // picker -- no visual signal until clicked and waited on. Grey out
+    // (never remove -- a legitimately-configured-but-temporarily-down
+    // host looking deleted/never-existed is worse than showing it
+    // dimmed) once a background probe (_probePickerReachability, kicked
+    // off after this bar renders, never blocking it) confirms it's
+    // unreachable. Still fully clickable either way -- the probe result
+    // can be stale, and clicking is how the real, authoritative error
+    // surfaces (_checkFederatedConnection/_fedFetchError).
+    const unreachable = c.name && c.name !== 'all' && _serverReachability[c.name] === false;
+    const dim = unreachable ? 'opacity:0.45;' : '';
+    const title = unreachable ? ` title="${escHtml(t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)')}"` : '';
     // Operator-reported (2026-10-07): a server/peer name containing a
     // `"` (e.g. a real federated peer named "Apple Testing Sandbox" --
     // wait, the actual trigger was any name at all, since
@@ -16212,9 +16252,46 @@ function _serverPickerBar(opts) {
     // testServerEntry button already does it correctly: escHtml() the
     // whole onclick expression so embedded quotes become &quot;
     // entities instead of raw characters.
-    return `<button onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'})`)}" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}</button>`;
+    return `<button data-server-name="${escHtml(c.name || '')}"${title} onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'})`)}" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;${dim}background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}${unreachable ? ' ⚠' : ''}</button>`;
   }).join('');
   return `<div class="server-picker-bar" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-dim,#888);flex-shrink:0;">${escHtml(t('server_picker_label') || 'Server:')}</span>${btns}</div>`;
+}
+
+// Operator-reported (2026-10-08): see the chip-dimming comment above.
+// _serverReachability[name] is undefined (unknown/checking), true, or
+// false -- persists for the page session so re-rendering the bar (e.g.
+// switching views) doesn't re-probe hosts already known-bad.
+const _serverReachability = {};
+function _probePickerReachability(servers) {
+  (servers || []).forEach(s => {
+    if (_serverReachability[s.name] !== undefined) return; // already probed
+    _serverReachability[s.name] = undefined; // mark "checking" so a concurrent call doesn't double-probe
+    const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timeoutId = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
+    fetch('/api/proxy/' + encodeURIComponent(s.name) + '/api/health', Object.assign(
+      { headers: tokenHeader() }, ctrl ? { signal: ctrl.signal } : {}
+    ))
+      .then(r => { _serverReachability[s.name] = !!r.ok; })
+      .catch(() => { _serverReachability[s.name] = false; })
+      .finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+        _updatePickerChipReachability(s.name);
+      });
+  });
+}
+// Patches ONLY the one chip whose probe just resolved -- never a full
+// bar re-render, so an in-progress operator interaction (e.g. a click
+// on a different chip) is never disturbed by a probe landing late.
+function _updatePickerChipReachability(name) {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  const unreachable = _serverReachability[name] === false;
+  document.querySelectorAll('.server-picker-bar button[data-server-name="' + name.replace(/"/g, '\\"') + '"]').forEach(btn => {
+    if (unreachable) {
+      btn.style.opacity = '0.45';
+      btn.title = t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)';
+      if (!btn.textContent.includes('⚠')) btn.textContent = btn.textContent + ' ⚠';
+    }
+  });
 }
 
 // Injects the server picker bar into the top of containerEl.
@@ -16252,6 +16329,15 @@ function _injectServerPickerBar(containerEl, rerenderFn, opts) {
   tmp.innerHTML = html;
   const bar = tmp.firstChild;
   if (bar) containerEl.insertBefore(bar, containerEl.firstChild);
+  // Kick off background reachability probing AFTER the bar is already
+  // fully rendered and in the DOM -- per the operator's explicit
+  // requirement, the picker itself must never be blocked by a slow or
+  // dead host (a silent-packet-drop host can take far longer to time
+  // out than an actively-refused connection).
+  const realServers = (state.servers && Array.isArray(state.servers.servers)
+    ? state.servers.servers
+    : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
+  if (realServers.length) _probePickerReachability(realServers);
 }
 
 // Shared /api/servers loader used by every picker surface (top-bar,
@@ -18808,7 +18894,15 @@ function loadAutomataPanel() {
   // BL312 S5 — use aggregated endpoint in all-servers mode
   const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds';
   Promise.all([
-    apiFetch(prdsEndpoint).catch(() => ({ prds: [] })),
+    // Coordinator-flagged (2026-10-08): this used to swallow EVERY
+    // failure (including a federated 401/missing-token or 403/missing
+    // autonomous:list) into an empty list, before the real error-message
+    // handler below ever saw it -- a denied federated peer looked
+    // identical to "this Automaton list is genuinely empty". Let the
+    // primary data fetch's rejection propagate to the outer .catch();
+    // /api/llms stays best-effort (it only feeds the worker-LLM dropdown,
+    // not the core list).
+    apiFetch(prdsEndpoint),
     apiFetch('/api/llms').catch(() => null),
   ]).then(([data, backendsResp]) => {
     state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
@@ -18824,7 +18918,7 @@ function loadAutomataPanel() {
     state._prdChildIndex = childIdx;
     _automataRenderCards(expandedCardIds);
   }).catch(err => {
-    if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(String(err))}</span>`;
+    if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(err.message || String(err))}</span>`;
   });
 }
 window.loadAutomataPanel = loadAutomataPanel;
@@ -18865,7 +18959,7 @@ function loadAutomataTemplatesPanel() {
       _automataRenderTemplates();
     })
     .catch(err => {
-      if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(String(err))}</span>`;
+      if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(err.message || String(err))}</span>`;
     });
 }
 window.loadAutomataTemplatesPanel = loadAutomataTemplatesPanel;
@@ -21474,7 +21568,15 @@ function renderAlertsView() {
   const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
   const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
   Promise.all([
-    fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    // Coordinator-flagged (2026-10-08): this had no error handling at
+    // all -- a 401/403 from a remote peer (missing token, or a valid
+    // token lacking alerts:list) silently resolved to `null` and looked
+    // identical to "genuinely no alerts". Surface a real, specific error
+    // for a remote fetch; keep local/'all' behavior exactly as-is
+    // (unauthenticated-to-self and aggregated mode don't need this).
+    _alertsIsRemote
+      ? fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => (r.status === 401 || r.status === 403 || r.status === 502) ? _fedFetchError(r) : (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+      : fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []),
     // Same "All" clobbering bug just fixed in handleMessage's 'sessions'
     // case, a separate instance of it: this used to always fetch the
@@ -21487,7 +21589,13 @@ function renderAlertsView() {
     _alertsSrv === 'all'
       ? Promise.resolve(null)
       : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
-  ]).then(([data, cmds, freshSessions]) => {
+  ]).catch(e => {
+    const el = document.getElementById('alertsList');
+    if (!el || !_alertsIsRemote) return;
+    el.innerHTML = `<div style="text-align:center;color:var(--error,#ef4444);padding:32px;">${escHtml((e && e.message) || 'Failed to load alerts')}</div>`;
+  }).then(result => {
+    if (!result) return; // the .catch() above already rendered the error, or there's truly nothing
+    const [data, cmds, freshSessions] = result;
     // Update state.sessions with fresh data so active/inactive classification is accurate
     if (freshSessions && freshSessions.length > 0) {
       state.sessions = freshSessions;
@@ -21877,7 +21985,11 @@ function loadStatsPanel() {
   if (!el) return;
   apiFetch('/api/stats').then(data => {
     renderStatsData(el, data);
-  }).catch(() => { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_unavailable')||'Stats unavailable.'}</div>`; });
+  }).catch(e => {
+    const isRemote = state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all';
+    const msg = isRemote ? ((e && e.message) || (t('stats_unavailable')||'Stats unavailable.')) : (t('stats_unavailable')||'Stats unavailable.');
+    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(msg)}</div>`;
+  });
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
   // v4.1.1 — load eBPF status strip just above plugins.
@@ -25547,7 +25659,25 @@ function renderDashboardView() {
   if (prdData && prdData.length > 0) {
     _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
   } else {
-    _dashFetchPRDs().catch(() => {});
+    // Coordinator-flagged (2026-10-08): Dashboard's many cards all poll
+    // silently and swallow errors by design (reasonable for a stable
+    // local daemon's periodic background refresh) -- but that means a
+    // federated 401/403 on first entering this view had ZERO visible
+    // feedback anywhere, not even a console-only failure the operator
+    // could notice. Surface it once, on the initial load only (not the
+    // periodic _dashLoop re-fetch, to avoid a flickering banner every
+    // ~5s) -- a dedicated banner, not an attempt to instrument every
+    // individual polling fetch in this view.
+    state._dashFedError = null;
+    _dashFetchPRDs().catch(e => {
+      if (state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all') {
+        state._dashFedError = (e && e.message) || 'Failed to load';
+        const grid = document.getElementById('dashCardGrid');
+        if (grid) {
+          grid.insertAdjacentHTML('afterbegin', `<div class="dash-fed-error-banner" style="grid-column:1/-1;background:rgba(239,68,68,0.12);color:var(--error,#ef4444);border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;">${escHtml(t('dash_fed_error', [state.activeServer, state._dashFedError]) || `${state.activeServer}: ${state._dashFedError}`)}</div>`);
+        }
+      }
+    });
   }
   if (!_dash._costFetching) {
     _dash._costFetching = true;

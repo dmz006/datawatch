@@ -112,15 +112,20 @@ test('_checkFederatedConnection sets phase=error with a specific auth message on
   assert.match(status.message, /auth/i, 'a 401/403 should surface an actionable "authentication failed" message, not a bare status code -- this is the actual bug found live: a missing token in servers.json looked identical to a dead host');
 });
 
-test('_checkFederatedConnection sets phase=error with the real HTTP status for a non-auth failure', async () => {
+test('_checkFederatedConnection sets phase=error with the real dial-failure text for a non-auth failure, not a bare status code', async () => {
+  // Was a bare "HTTP 502" -- now routes through _fedFetchError like every
+  // other apiFetch-based caller, surfacing the real proxy dial error.
   const sandbox = loadAppJS();
-  vm.runInContext(`fetch = () => Promise.resolve({ ok: false, status: 502 })`, sandbox);
+  vm.runInContext(
+    `fetch = () => Promise.resolve({ ok: false, status: 502, text: () => Promise.resolve('proxy error: dial tcp: connect: connection refused') })`,
+    sandbox
+  );
   vm.runInContext(`state.activeServer = 'host-a'`, sandbox);
   vm.runInContext(`_checkFederatedConnection('host-a')`, sandbox);
   await flushAsync();
   const status = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
   assert.equal(status.phase, 'error');
-  assert.match(status.message, /502/);
+  assert.match(status.message, /connection refused/);
 });
 
 test('_checkFederatedConnection ignores a stale probe result after the operator already switched to a different server', async () => {

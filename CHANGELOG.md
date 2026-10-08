@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.8 — fix(pwa): federated 401/403/502 now show the real denial/unreachable text, not generic errors
+
+### Fixed
+- `_checkFederatedConnection` (Sessions) conflated 401 (bad/missing token) and 403 (valid token, missing capability) under one "authentication failed" message. Split: 401 keeps that wording; 403 now surfaces the server's real `federation peer lacks capability: <cap>` text (from `fedCap()`) verbatim.
+- Alerts' primary fetch had no error handling at all on a federated 401/403/502 — now classified the same way via the shared `_fedFetchError` classifier.
+- Automata (`loadAutomataPanel`) silently swallowed every federated failure into a fake empty PRD list (`.catch(() => ({ prds: [] }))`) before its own existing error-rendering code ever saw it — removed the swallow.
+- Dashboard and Observer had zero federated-denial feedback on their primary cards; both now show the real error on initial load (Dashboard: one-time banner on the PRDs card; Observer: the System Statistics card). Both views have other sub-cards (Dashboard's periodic re-poll, 11 of Observer's ~12 cards) intentionally left as-is this round — flagged for follow-up, not a regression.
+- `apiFetch()` now classifies 401/403/502 centrally for any proxied call, so every current and future `apiFetch`-based view gets real error text without reimplementing the split per call site.
+
+### Added
+- Server picker chips now background-probe each configured host's reachability (bounded timeout, never blocks the picker's own render) and dim an unreachable chip with a `⚠` marker — still fully clickable, since clicking is how the real, authoritative error surfaces.
+- 4 new locale keys (`fed_conn_error_forbidden`, `fed_conn_error_unreachable`, `server_chip_unreachable_tip`, `dash_fed_error`) across all 5 bundles.
+- `internal/server/web/app-fed-cap-errors.test.js` — 15 new tests.
+
+### Process
+- Settings-tab federation (the round's original ask) deferred to a follow-up session — see `docs/plans/2026-10-08-pwa-federated-error-visibility.md` for the full phase breakdown and what's explicitly not done yet.
+
 ## v8.73.7 — fix(pwa): Automata/Dashboard/Observer ignored the federated picker mid-tab
 
 ### Fixed

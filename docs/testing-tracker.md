@@ -9,6 +9,22 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## PWA Federated Error Visibility (401/403/502)
+
+Added in v8.73.8. `_fedFetchError`/`apiFetch` central classifier across Sessions, Alerts, Automata, Dashboard (partial), Observer (partial), server picker reachability. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `_fedFetchError` 401/403/502/empty-body classification | Yes | No | `app-fed-cap-errors.test.js` — fake responses for each status + empty body fallback | Not validated live against a real second daemon this round |
+| `apiFetch` auto-classification (proxied vs. local) + URL-routing regression guard | Yes | No | Same file — 3 tests | Builds on existing proxy routing, which was already live-validated in v8.73.6 (TS-785/786) |
+| `_checkFederatedConnection` 401-vs-403 split, 502 real dial text | Yes | No | `app-fed-conn-status.test.js` — updated the pre-existing 502 test to assert on real text instead of a bare status code | Was live-tested for 401 in an earlier round (see that file's own comments); 403/502 split not separately live-tested |
+| `loadAutomataPanel` no longer swallows federated errors | Yes | No | `app-fed-cap-errors.test.js` | |
+| `loadStatsPanel` (Observer) federated vs. local error framing | Yes | No | Same file — 2 tests | Only the primary stats card; 11 other Observer sub-cards not instrumented this round |
+| `renderDashboardView` one-time banner on initial federated failure | Yes | No | Same file | Periodic re-poll failures remain silent by design this round |
+| `_probePickerReachability` / dimmed picker chip | Yes | No | Same file — 4 tests | Bounded-timeout background probe; not live-tested against a genuinely unreachable host |
+
+---
+
 ## PWA Image Attachment + File Service API
 
 Added in v8.19.0. File service: `POST /api/files` (multipart upload), `DELETE /api/files`, `GET /api/files/meta`, `GET /api/files/peers/{name}`. PWA input bar 📷 button.
