@@ -15,15 +15,19 @@
 #     v5.26.40 made this blocking after the baseline mechanism
 #     landed (was advisory pre-v5.26.40).
 #
-# Triggers on tag pushes (the natural release boundary), PRs to main
-# (catch new findings before they land), and manual dispatch (for
-# spot checks).
+# Triggers on PRs to main (catch new findings before they land), direct
+# pushes to main (SEC-026, 2026-10-08 — a PR-only trigger left ~5 months
+# of direct-to-main commits completely unscanned until the next release
+# tag happened to run release.yaml's own gosec/govulncheck step), and
+# manual dispatch (for spot checks). Tag-push trigger stays removed —
+# release.yaml already runs govulncheck + gosec before goreleaser.
 
 name: security-scan
 
 on:
-  # Tag trigger removed — release.yaml runs govulncheck + gosec before goreleaser.
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
   workflow_dispatch:
 
