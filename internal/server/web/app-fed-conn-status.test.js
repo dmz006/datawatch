@@ -101,6 +101,31 @@ test('_checkFederatedConnection sets phase=connecting immediately, then fetches 
   assert.deepEqual(sessions, fakeSessions, 'the probe response itself should populate state.sessions directly, not wait on a WS push');
 });
 
+test('_checkFederatedConnection passes through a phase=loading_sessions step between the response arriving and the list being ready (GH#235 parity with the apps)', async () => {
+  // The apps show "Connecting…" while the authenticated check is in
+  // flight, then "Loading sessions from X…" while that response is turned
+  // into the list. This was a single opaque "connecting" the whole time on
+  // the PWA; split it at the same point -- once the response itself
+  // resolves (ok, status known) but before r.json() has finished.
+  const sandbox = loadAppJS();
+  const fakeSessions = [{ id: 's1', name: 'remote session' }];
+  let resolveJson;
+  const jsonPromise = new Promise((resolve) => { resolveJson = resolve; });
+  sandbox.__jsonPromise = jsonPromise; // sandbox IS the vm context's global object -- this makes __jsonPromise visible to code run via runInContext below
+  vm.runInContext(`fetch = () => Promise.resolve({ ok: true, status: 200, json: () => __jsonPromise })`, sandbox);
+  vm.runInContext(`state.activeServer = 'host-a'; onSessionsUpdated = function(){};`, sandbox);
+  vm.runInContext(`_checkFederatedConnection('host-a')`, sandbox);
+  await flushAsync(1);
+  const mid = JSON.parse(vm.runInContext('JSON.stringify(state._fedConnStatus)', sandbox));
+  assert.equal(mid.phase, 'loading_sessions', 'should have moved past connecting once the response resolved, before the list is ready');
+  assert.equal(mid.server, 'host-a');
+  resolveJson(fakeSessions);
+  await flushAsync();
+  assert.equal(vm.runInContext('state._fedConnStatus', sandbox), null, 'status clears once the list actually lands');
+  const sessions = JSON.parse(vm.runInContext('JSON.stringify(state.sessions)', sandbox));
+  assert.deepEqual(sessions, fakeSessions);
+});
+
 test('_checkFederatedConnection sets phase=error with a specific auth message on 401/403 (not a generic "HTTP 401")', async () => {
   const sandbox = loadAppJS();
   vm.runInContext(`fetch = () => Promise.resolve({ ok: false, status: 401 })`, sandbox);

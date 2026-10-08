@@ -892,3 +892,10 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `ExtractSalt` works across all three envelope versions | **Yes** | **Yes** | `TestExtractSaltAllVersions` | |
 | `memory.Store.encryptField`/`PGStore.encryptField` refuse the write (return an error) instead of silently storing plaintext when the AEAD seal fails | **Yes** | **Yes** | Full `internal/memory` suite (140 tests) re-run green after the signature change; no existing test exercised the AEAD-failure branch itself (that path requires an unconstructable cipher state) so the refusal logic is covered by type-checking + the call-site error propagation, not a dedicated failure-injection test | Flagging the missing failure-injection test as a gap, not fixed this pass |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3186 passed, 0 failed | |
+
+## fed_conn_* locale alignment (GH#235) + loading_sessions phase — v8.73.12
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| DE `fed_conn_error_title`, ES `fed_conn_error_auth` corrected to datawatch-app's reviewed values; `fed_conn_loading_sessions` added to all 5 bundles | **Yes** | **Yes** | All 5 `locales/*.json` parsed as valid JSON (`python3 -m json.tool`); full JS suite 176/176 green | `fed_conn_back_to_local` already matched in all 5 bundles — no change needed |
+| `_checkFederatedConnection` now passes through `phase: 'loading_sessions'` between the authenticated response resolving and the session list being ready, instead of staying on `'connecting'` the whole time | **Yes** | **Yes** | New test in `app-fed-conn-status.test.js` using a controlled, manually-resolved `json()` promise to observe the intermediate phase before resolving it | Matches the apps' existing two-phase UX per datawatch-app's GH#235 follow-up |

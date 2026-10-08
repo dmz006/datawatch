@@ -5,7 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.73.11 — fix(pwa): Dashboard periodic re-polls + Observer's remaining sub-cards now show real federated errors too
+## v8.73.12 — fix(i18n/pwa): fed_conn_* locale corrections (GH#235) + loading_sessions phase wired in
+
+### Fixed
+- datawatch-app posted real translation corrections against their own already-reviewed strings: DE `fed_conn_error_title` → "Dieser Server ist nicht erreichbar", ES `fed_conn_error_auth` → "Error de autenticación — este servidor no tiene configurado un token válido". `fed_conn_back_to_local` already matched (parameterized, no "Local" literal) in all 5 bundles.
+- `fed_conn_loading_sessions` was missing from all 5 bundles (the apps already ship it). Added the key, and wired it into `_checkFederatedConnection`: the status now splits "Connecting to X…" (while the authenticated sessions check is in flight) from "Loading sessions from X…" (once the response has resolved but before it's turned into the list) — previously both sub-steps showed the same "Connecting…" the whole time. Matches how the apps split the same two steps (datawatch-app, GH#235).
+
+### Added
+- 1 new test in `app-fed-conn-status.test.js` pinning the `loading_sessions` phase transition.
 
 ### Fixed
 - Dashboard: the prior round's federated-error banner only covered the *initial* PRDs load — `_dashLoop`'s periodic re-fetches (PRDs ~5s, cost ~30s, heatmap/compute-nodes ~60s) still swallowed every failure silently. New `_dashSetFedError`/`_dashClearFedError`, keyed by source so independent cards failing at once don't clobber each other's message. The banner moved from a child of `#dashCardGrid` to a persistent sibling `#dashFedErrorBanner`, since `_dashBuildGrid`'s full `grid.innerHTML` replace on every layout load would eventually have wiped a banner nested inside it (a latent bug in the prior single-source version, masked in its own test).
