@@ -1027,3 +1027,10 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `go test` of `internal/mcp`, `internal/server`, `internal/session` leaves the operator's real home untouched | **Yes** | **Yes** | Live, 2026-10-08: mtimes of `~/CLAUDE.md` and `~/.mcp.json` unchanged across the package runs; before the fix, a full `go test ./...` rewrote `~/CLAUDE.md` | `TestMain` HOME isolation |
 | E2E daemon config: `default_project_dir` rewritten to `$TEST_DATA/projects` in both run-tests.sh generation paths | No | No | `sed` output checked by hand against `testdata/datawatch.yaml`; `bash -n` clean | Not yet exercised by a full E2E run |
 
+## 42 missing locale keys found + CI regression guard (datawatch#195) — v8.73.25
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| All 42 keys added to all 5 locale bundles (EN real text, DE/ES/FR/JA EN-placeholder pending real translations) | **Yes** | **Yes** | All 5 `locales/*.json` parsed as valid JSON (`python3 -m json.tool`); each file grew by exactly 42 keys (1620 → 1662); full JS suite 182/182 green | `automata_wizard_backend_default` had no call-site fallback text at all; picked wording to match the adjacent effort-select placeholder |
+| `TestLocales_AllAppJSKeysExistInEnglishBundle` — regex-extracts every literal `t('...')` call-site key from `app.js`, asserts each exists in `locales/en.json` | **Yes** | **Yes** | New test; failed with exactly the 44 expected hits (42 real + 2 dynamic-prefix false positives) before the fix, 0 after | `automata_status_`/`chat_quick_reply_` concatenated-key call sites explicitly excluded as known dynamic prefixes, not missing keys |
+

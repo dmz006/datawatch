@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.25 — fix(i18n): 42 app.js keys were referenced but missing from every locale bundle (datawatch#195)
+
+### Fixed
+- datawatch-app found `lifecycle_hint_needs_review` rendering as the literal uppercased key on the Automata card. Root cause, same class as GH#235's earlier fix: `t(key)` returns the raw key string (not `undefined`) when a key is missing, so the `t('key') || 'fallback'` pattern used throughout `app.js` never reaches its English fallback — a missing key always renders as itself, not as any written fallback text. Audited every literal `t('...')` call site in `app.js` against `locales/en.json` and found 42 keys in this state (Automata wizard/detail, Compute Node Docker/proxy sub-cards, image upload, session kill-recursive checkbox, memory recall, PWA self-update toast, terminal controls, voice recording, and more) — added all 42 to all 5 locale bundles (EN with the real text each call site already had written as its own fallback; DE/ES/FR/JA carry the EN text as a placeholder pending real translations, per the Mobile-Parity Rule).
+- `automata_wizard_backend_default` had no fallback text in its call site at all (unlike the other 41); picked `— Default backend —` to match the adjacent effort-select placeholder's `— {label} —` style.
+
+### Added
+- `TestLocales_AllAppJSKeysExistInEnglishBundle` (datawatch-app's suggestion) — extracts every literal `t('...')` call-site key from `app.js` via regex and asserts each exists in `locales/en.json`, so this whole bug class fails CI instead of shipping silently. Two call sites build their real key via string concatenation (`t('automata_status_' + s)`, `t('chat_quick_reply_' + label)`) and are explicitly excluded as known dynamic-prefix patterns, not missing keys.
+
+### Process
+- Requesting real DE/ES/FR/JA translations for the 42 new keys from datawatch-app, same flow as GH#235.
+
 ## v8.73.24 — fix(session): test runs no longer write CLAUDE.md / .mcp.json into the operator's real home directory
 
 ### Fixed
