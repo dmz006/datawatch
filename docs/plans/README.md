@@ -1514,8 +1514,20 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > rationale against the real container contents instead of re-asserting
 > it; a mitigation pass looking for packages to delete outright (rsync's
 > 14-CVE block and gawk are the top candidates) rather than suppress
-> forever; and bringing `docs/security-review.md` back in sync. Not
-> started.
+> forever; and bringing `docs/security-review.md` back in sync.
+> **Phases 0-1 shipped (v8.73.30-32):** `security/accepted-risks.yml`
+> structured registry (70 entries, real per-ID severity/images/dates,
+> generates `.trivyignore` + `docs/security-review.md`'s table —
+> reconciliation and doc-sync done this way instead of hand-editing both);
+> `scripts/check_accepted_risks.py` blocking CI lint; daily watch extended
+> with fix-published/expiry/dismissed-alert-gap reporting
+> (`scripts/dismissed_alerts_watch.py` found 87/87 dismissed code-scanning
+> alerts unregistered — separate backlog); GHSA-regex fix in
+> `image-refresh.yaml`; gitleaks now blocking; CVE-2026-19445 flipped from
+> untraced to traced. Adopted jointly with `datawatch-app` as a shared
+> standard, tracked on GH#197. **Phase 2 (re-verify the ~69 migrated
+> entries that are still prose-only, not independently traced) and Phase 3
+> (removal-over-suppression, rsync's block first) not started.**
 
 > **BL335** ✅ Closed v8.62.x — APNs push notification support for iOS client (filed 2026-05-27, GH#107/#158). Shipped as BL397 Phase 4, folded in alongside the ACME work at the operator's request. New `internal/apns` package (JWT ES256 provider-token auth, HTTP/2 dispatch), wired into the real alert-fire path. 9 unit tests including a real signature-verification test; **not live-verified** against Apple's real servers (no Apple Developer credentials available in this environment) — see `docs/parity-status.md`. All 6 of the original items below shipped. See `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`'s "Phase 2/3/4 shipped" section for the full writeup.
 > 1. ~~Accept `platform=apns` on `POST /api/device/register`~~ — already worked (pre-existing `devices.KindAPNS`).
