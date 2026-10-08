@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.32 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 6 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v8.73.35 — security: triage a new finding blocking image-refresh.yaml (CVE-2026-77214, libexpat1)
 
 ### Fixed

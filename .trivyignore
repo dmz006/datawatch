@@ -74,8 +74,8 @@ CVE-2026-9538
 # release cycle (BL398 Phase 1's live rescan baseline).
 CVE-2025-26625
 
-# python3.11, libpython3.11-* -- CVE-2026-7210, CVE-2025-69534
-# severity: critical/high; images: agent-aider, agent-gemini
+# python3.11, libpython3.11-* -- CVE-2026-7210
+# severity: critical; images: agent-aider, agent-gemini
 # Python 3.11 installed in agent images for aider and other Python-based tools;
 # the datawatch service itself is Go. CVE-2026-7210:
 # xml.parsers.expat/ElementTree use-after-free via crafted XML -- agent tooling
@@ -85,7 +85,6 @@ CVE-2025-26625
 # No fix available in Debian bookworm as of this migration; re-check each
 # release cycle (BL398 Phase 1's live rescan baseline).
 CVE-2026-7210
-CVE-2025-69534
 
 # python3-click -- CVE-2026-7246
 # severity: high; images: agent-aider
@@ -112,15 +111,6 @@ CVE-2026-34980
 # No fix available in Debian bookworm as of this migration; re-check each
 # release cycle (BL398 Phase 1's live rescan baseline).
 CVE-2023-25193
-
-# python3.11, libpython3.11-* -- CVE-2026-3644
-# severity: high; images: agent-aider, agent-gemini
-# cpython incomplete control-character validation in HTTP header parsing. Python
-# installed in agent-gemini for gemini-cli; no direct HTTP server exposure via
-# Python in the container.
-# No fix available in Debian bookworm as of this migration; re-check each
-# release cycle (BL398 Phase 1's live rescan baseline).
-CVE-2026-3644
 
 # curl, libcurl3-gnutls, libcurl4 -- CVE-2026-12064, CVE-2026-8286, CVE-2026-8927, CVE-2026-8458
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
@@ -221,16 +211,6 @@ CVE-2026-58013
 CVE-2026-58014
 CVE-2026-58015
 
-# python3.11, libpython3.11-* -- CVE-2026-15308
-# severity: high; images: agent-aider, agent-gemini
-# CPU exhaustion via crafted HTML input to Python's built-in HTML parser. Python
-# installed in agent images (gemini, aider) for tooling compatibility. Agent
-# containers do not expose Python's html.parser to untrusted web content at
-# runtime.
-# No fix available in Debian bookworm as of this migration; re-check each
-# release cycle (BL398 Phase 1's live rescan baseline).
-CVE-2026-15308
-
 # bsdutils, libmount1, util-linux -- CVE-2026-53613
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
 # TOCTOU race in the mount(8) program via /proc/self/mountinfo. agent-base never
@@ -292,15 +272,6 @@ CVE-2026-78408
 CVE-2026-78409
 CVE-2026-78410
 
-# libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal, python3.11-venv -- CVE-2026-8328
-# severity: high; images: agent-aider, agent-gemini
-# FTP connection redirection through ftplib's ftpcp(). Affects agent-gemini and
-# agent-aider. These agent containers never use ftplib or FTP; all network
-# access is HTTPS to operator-configured endpoints.
-# No fix available in Debian bookworm as of this migration; re-check each
-# release cycle (BL398 Phase 1's live rescan baseline).
-CVE-2026-8328
-
 # sudo -- CVE-2026-96512
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
 # TZ-based bypass of sudoers NOTBEFORE/NOTAFTER time restrictions. The
@@ -322,18 +293,6 @@ CVE-2026-96512
 # release cycle (BL398 Phase 1's live rescan baseline).
 CVE-2026-84782
 
-# python3.11, libpython3.11-* -- CVE-2026-19553
-# severity: high; images: agent-aider, agent-gemini
-# Certificate verification bypass via missing server_hostname validation in
-# ssl.SSLContext.wrap_bio(). Whether agent-gemini's Python runtime actually
-# calls wrap_bio() (vs. the higher-level wrap_socket()/create_default_context()
-# paths most HTTP clients use, which are unaffected) was not independently
-# traced before suppressing -- only that no Debian fix exists.
-# No fix available in Debian bookworm. NOT independently traced (self-admitted
-# caveat) -- re-review should actually trace which TLS call path agent-gemini's
-# code uses, the way CVE-2026-19445 was traced this session.
-CVE-2026-19553
-
 # http-cache-semantics (npm) -- CVE-2026-93748
 # severity: high; images: agent-gemini
 # Information disclosure via the max-stale cache-control directive. Transitive
@@ -346,23 +305,6 @@ CVE-2026-19553
 # maintained package, not a slow Debian backport -- check for a fix each cycle,
 # not just on expiry.
 CVE-2026-93748
-
-# libpython3.11-minimal -- CVE-2026-19445
-# severity: high; images: agent-aider, agent-gemini
-# Use-after-free of a server-side SSLContext when sni_callback switches contexts
-# mid-handshake (3.11.2-6+deb12u9). Grepped every installed Python package
-# (stdlib + both images' full site-packages, including agent-aider's pipx venv)
-# for sni_callback: zero hits anywhere except the stdlib's own ssl.py attribute
-# definition. aiohttp.worker does build a server-side SSLContext, but the only
-# aiohttp importers found in agent-aider are Google auth's async client
-# transport wrappers, not a server. The vulnerable code path is confirmed
-# unreachable.
-# No fix available in Debian bookworm. Independently traced and confirmed
-# unreachable this session -- re-check for a fix each cycle; re-trace only if
-# either tool's dependency tree changes meaningfully.
-# TRACED: grep of installed site-packages in networkless container (docker run
-# --entrypoint /bin/sh --network none)
-CVE-2026-19445
 
 # libexpat1 -- CVE-2026-77214
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
