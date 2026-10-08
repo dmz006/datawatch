@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.24 — fix(session): test runs no longer write CLAUDE.md / .mcp.json into the operator's real home directory
+
+### Fixed
+- A session started without a `project_dir` used the configured `session.default_project_dir` only when it came in over REST. MCP and other callers went straight to the session manager, which fell back to `$HOME`. The manager now applies `default_project_dir` itself (with `~` expansion) and falls back to `$HOME` only when it's unset. Production behaviour is unchanged, since `default_project_dir` defaults to the home directory. (B108)
+- Symptoms: `go test` in `internal/mcp` rewrote the operator's `~/CLAUDE.md` with test-session guardrails on every run. An E2E test daemon (port 18080) overwrote `~/.mcp.json` with a `datawatch` channel entry pointing at itself, so interactive Claude Code sessions reported an MCP server at `127.0.0.1:18080` that wasn't connecting.
+- `internal/mcp`, `internal/server` and `internal/session` tests now run with `HOME` pointed at a throwaway directory (`TestMain`).
+- The E2E config template (`testdata/datawatch.yaml`) sets `default_project_dir` under the test data dir; `scripts/run-tests.sh` rewrites it in both config-generation paths.
+- Added `internal/session/b108_default_project_dir_test.go` (configured default, `~` expansion, unset → home).
+
 ## v8.73.23 — fix(session): sessions run on a dedicated, systemd-owned tmux server
 
 ### Fixed
@@ -20,7 +29,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Wired into the two concrete examples the design doc names: `handleSecretsGet`'s `secret_access` audit entry, and `auditConfigPatch`'s (SEC-017) `configure` entry. Also wired into the shared `Server.audit` helper used by all 7 skills-registry write paths (`skills_registry_create/update/delete/connect/sync/unsync/add_default`).
 - Not done in this pass (flagged, not silent): several other audit call sites still hardcode `Actor: "operator"` (`compute.go`, `council.go`, `inference.go`, `algorithm.go`, `evals.go`, `identity.go`) — same fix, just not threaded through in this pass. Also not done: CEF emission alongside JSONL (the design doc's "both formats" requirement) — `internal/audit.Log` is JSONL-only project-wide (see SEC-017's same note); extending it to CEF is a decision affecting every existing call site uniformly, not a per-finding addition.
 - Added `internal/server/hllm003_audit_actor_test.go`: `auditActor`'s three derivation cases (admin/session/peer) directly, plus the design doc's own named scenario end-to-end (`secret_access` audited as `session:sec-sandbox-18a6`, not `operator`) and the same for a config write.
-
 
 ## v8.73.21 — security(SEC-026): refresh the stale gosec baseline-diff ceiling to the measured live count
 
@@ -1025,7 +1033,6 @@ All of the above verified against a live daemon with a real headless Chrome (not
 
 All of this was verified against a live daemon, not just `go test`: started the daemon with the new listener enabled, registered a real (self-referential) federation peer, and confirmed with `curl` that (1) the main origin 301s `/remote/{name}/...` to the sandbox origin preserving path+query, (2) the sandbox origin serves the proxied PWA with exactly one correct `Content-Security-Policy` header naming the main origin, (3) the sandbox origin does not expose `/api/sessions` or any other main-API route, and (4) `PUT`/`GET /api/config` round-trips the new field. New Go tests (`internal/server/proxy_sandbox_test.go`) cover the redirect, the CSP builder, the sandbox mux's narrow route surface, and the header-stripping fix — the header-stripping test was confirmed to fail without the fix before being trusted. `go test ./...` (2952 tests, 82 packages) and `node --test internal/server/web/*.test.js` (13 tests) both clean.
 
-
 ### Fixed
 - **`POST`/`PUT`/`DELETE /api/smoke/progress` and `PUT /api/smoke/forward-url` were gated entirely by `CapAnalyticsRead`** — a read-sounding capability handed to broadly-distributed, explicitly read-only presets (`monitor`, `analytics-viewer`, `read-only`). Any identity holding one of those could write, overwrite, or delete arbitrary `*.json`-suffixed files under `~/.datawatch/smoke-runs/`, and update the cross-instance forward URL/token. The path-traversal half of this (`run_id`/`id` had zero validation on any of the three write paths, left unfixed as of v8.39.10 since it needed this same capability decision settled first) is fixed here too, alongside the capability mismatch itself. Added `CapAnalyticsWrite` and a new `smoke-reporter` builtin preset (`{CapAnalyticsRead, CapAnalyticsWrite}`), and split every write method onto the new capability while GET stays on `CapAnalyticsRead`. **Operator action may be needed:** the write path is also how one datawatch instance forwards its smoke results to another instance's dashboard (`#54`) over a federation-peer bearer token — if you have cross-instance smoke forwarding configured and the forwarding peer's identity was granted `monitor`/`analytics-viewer`/`read-only` (which happened to work only because of this bug), forwarding will start returning 403 after this upgrade until that peer is re-granted `smoke-reporter` (or `full-control`). New tests confirm a `monitor`-capability peer can still read but gets 403 on every write method, a `smoke-reporter`-capability peer can write, and — removing the new guards and re-running — that the tests actually catch the regression.
 - **4 Dependabot alerts' worth of stale `channel/package.json` override floors** (`hono`, `fast-uri`, `ip-address`, `qs` — 16 open alerts, all transitive via `@modelcontextprotocol/sdk`) bumped to their current first-patched versions (`hono>=4.13.7`, `fast-uri>=4.1.5`, `ip-address>=10.7.1`, `qs>=6.16.0`); `npm install` regenerated the lockfile, `npm audit` now reports 0 vulnerabilities, and `npm ls` confirms all four resolve above their floors. `make channel-build` re-run (no diff in the tracked embed copy, since only transitive dependency versions changed, not `channel/index.ts` itself).
@@ -1089,7 +1096,6 @@ All of this was verified against a live daemon, not just `go test`: started the 
 
 ### Fixed
 - **Removed 7 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
-
 
 ## v8.39.1 — fix(session): last_summary_long never populated for completed/killed/failed sessions
 
@@ -3107,7 +3113,6 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 - **`docs/datawatch-definitions.md` — Federation peer health alerts** — documents background peer-health goroutine, system alert on state transitions, and threshold values (BL343, v8.9.25).
 - **`docs/plans/README.md` — BL344, BL346, BL348–BL352** — seven new backlog items filed: alert-click navigation, FCM session_state_changed, PWA session tree view, get_my_session_id MCP tool, orphan lineage cleanup, kill-children cascade depth policy, federation lineage parity.
 - **Core feature reference matrix** — nine new rows covering all features documented in this release.
-
 
 ---
 

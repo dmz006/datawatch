@@ -1017,3 +1017,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `datawatch-tmux.service` + `datawatch.service` (`TMUX_TMPDIR`): sessions created on the dedicated server survive a `systemctl --user restart datawatch` | No | **Yes** | Live, 2026-10-08: two restarted claude-code sessions stayed `running`/alive across a daemon restart; pane processes in `user@1000.service` `tmux-spawn-*` scopes, server in `datawatch-tmux.service` | install.sh unit generation checked with `bash -n` only; not run on a fresh host |
 | Comm-channel `attach` reply / session-start message use the socket-aware hint | No | No | Code inspection (`internal/router/router.go`, `internal/server/api.go`) | Not exercised via `POST /api/test/message` yet |
 
+
+
+## Empty project_dir honours default_project_dir on every surface; test HOME isolation — v8.73.24
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `Manager.Start` with empty project_dir → `session.default_project_dir` (created, `~` expanded), unset → `$HOME` | **Yes** | **Yes** | `TestStart_EmptyProjectDir_UsesConfiguredDefault`, `_ExpandsTilde`, `_NoConfigFallsBackToHome` | Covers MCP `start_session`, which previously bypassed the REST-only default |
+| `go test` of `internal/mcp`, `internal/server`, `internal/session` leaves the operator's real home untouched | **Yes** | **Yes** | Live, 2026-10-08: mtimes of `~/CLAUDE.md` and `~/.mcp.json` unchanged across the package runs; before the fix, a full `go test ./...` rewrote `~/CLAUDE.md` | `TestMain` HOME isolation |
+| E2E daemon config: `default_project_dir` rewritten to `$TEST_DATA/projects` in both run-tests.sh generation paths | No | No | `sed` output checked by hand against `testdata/datawatch.yaml`; `bash -n` clean | Not yet exercised by a full E2E run |
+

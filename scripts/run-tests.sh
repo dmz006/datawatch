@@ -89,6 +89,7 @@ start_test_daemon() {
   mkdir -p "$TEST_DATA"
   sed \
     -e "s|data_dir: /data|data_dir: $TEST_DATA|g" \
+    -e "s|default_project_dir: /data/projects|default_project_dir: $TEST_DATA/projects|g" \
     -e "s|port: 8080|port: $TEST_PORT|g" \
     -e "s|tls_port: 8443|tls_port: $TEST_TLS_PORT|g" \
     -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
@@ -686,6 +687,7 @@ if [[ $NO_DAEMON -eq 0 ]]; then
       mkdir -p "$TEST_DATA"
       sed \
         -e "s|data_dir: /data|data_dir: $TEST_DATA|g" \
+        -e "s|default_project_dir: /data/projects|default_project_dir: $TEST_DATA/projects|g" \
         -e "s|port: 8080|port: $TEST_PORT|g" \
         -e "s|tls_port: 8443|tls_port: $TEST_TLS_PORT|g" \
         -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \

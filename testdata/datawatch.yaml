@@ -10,6 +10,9 @@ data_dir: /data
 
 session:
   llm_backend: shell
+  # Sessions started without a project_dir must never land in the real $HOME
+  # (they write CLAUDE.md / .mcp.json there). run-tests.sh rewrites /data.
+  default_project_dir: /data/projects
   max_sessions: 50
   input_idle_timeout: 10
   tail_lines: 20

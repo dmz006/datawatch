@@ -1575,7 +1575,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 
 	// Resolve project directory.
-	//   - empty → user home (legacy default)
+	//   - empty → session.default_project_dir, else user home (legacy default).
+	//     REST already applied default_project_dir; MCP and other callers
+	//     didn't, so a test daemon wrote CLAUDE.md/.mcp.json into the
+	//     operator's real $HOME (B108).
 	//   - relative + workspaceRoot set → join under workspaceRoot (F10 container mode)
 	//   - relative + no workspaceRoot → leave to caller (back-compat with the
 	//     pre-F10 absolute-path expectation; many call sites already pass abs)
@@ -1583,6 +1586,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if projectDir == "" {
 		home, _ := os.UserHomeDir()
 		projectDir = home
+		if m.cfg != nil && m.cfg.Session.DefaultProjectDir != "" {
+			d := m.cfg.Session.DefaultProjectDir
+			if d == "~" || strings.HasPrefix(d, "~/") {
+				d = filepath.Join(home, strings.TrimPrefix(d, "~"))
+			}
+			projectDir = d
+		}
 	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
 		projectDir = filepath.Join(m.workspaceRoot, projectDir)
 	}
