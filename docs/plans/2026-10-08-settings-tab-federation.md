@@ -92,6 +92,12 @@ here for the identical reason).
   regardless of which peer's data you're currently viewing"? Changing
   this carries real behavioral risk without a clear answer, so left as
   local-only pending explicit direction.
+  **Operator decision (2026-10-08): single-hop for now — keep the
+  shipped local-vantage-point behavior as-is.** The stated goal is true
+  multi-hop federation, but scoped much wider than this one card: "for
+  all channels and methods, not just us" — i.e. a future architecture
+  pass across REST/MCP/CLI/comm, not a PWA-only UI change. Needs its own
+  dated plan doc when picked up; not scheduled yet.
 - **`loadTailscaleConfig`** — populates form-field placeholders only
   (no dedicated status-display element to put an error message into
   without restructuring markup); left silently degrading to blank
