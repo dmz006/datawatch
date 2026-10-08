@@ -19457,6 +19457,7 @@ function switchAutomataDetailTab(tab) {
       if (tab === 'overview') html = _renderDetailOverview(prd);
       else if (tab === 'stories') html = _renderDetailStories(prd);
       else if (tab === 'decisions') html = _renderDetailDecisionsTab(prd);
+      else if (tab === 'memory') html = _renderDetailMemoryTab(prd); // GH#192 D77a
       else if (tab === 'scan') html = _renderDetailScanTab(prd);
       else if (tab === 'rules') html = _renderDetailRulesTab(prd);
       else html = _renderDetailOverview(prd);
@@ -19465,6 +19466,7 @@ function switchAutomataDetailTab(tab) {
         if (['planning','decomposing','running'].includes(prd.status || '')) _loadPRDActiveSessionCard(prd);
         if (['decomposing','running'].includes(prd.status || '')) _renderStatusGraphs(prd);
       }
+      if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
     }
     return;
   }
@@ -19735,6 +19737,7 @@ function _renderDetailContent(prd) {
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
+  else if (tab === 'memory') tabBody = _renderDetailMemoryTab(prd); // GH#192 D77a
   else if (tab === 'scan') tabBody = _renderDetailScanTab(prd);
   else if (tab === 'rules') tabBody = _renderDetailRulesTab(prd);
   else tabBody = _renderDetailOverview(prd);
@@ -19778,6 +19781,7 @@ function _renderDetailContent(prd) {
   }
   // Async load scan results when on Scan tab
   if (tab === 'scan') loadPRDScanResult(id);
+  if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
   // GATE alpha.36 (operator 2026-05-10): inline active-session card
   // (#290). When the PRD is in an active state, surface the spawned
   // session(s) + hook status under "Next" hint, before the toolbar.
@@ -20595,6 +20599,7 @@ function _renderDetailTabStrip(prd, currentTab) {
     ['overview',  t('prd_tab_overview')  || 'Overview', true],
     ['stories',   t('prd_tab_stories')   || 'Stories',  true],
     ['decisions', t('prd_tab_decisions') || 'Decisions', true],
+    ['memory',    t('prd_tab_memory')    || 'Memory',    true], // GH#192 D77a
     ['scan',      t('prd_tab_scan')      || 'Scan',      hasScan],
     ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
   ];
@@ -20712,6 +20717,145 @@ function _renderDetailDecisionsTab(prd) {
   }).join('');
   return `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;
 }
+
+// GH#192 D77a — per-Automaton memory tab: a stats tile (prd/story/
+// session-local memory counts), the aggregated memory report, and a
+// recall list scoped to this Automaton. Previously this whole feature
+// (loadMemoryScopeInventory/memoryScopeRecall) only existed in Observer,
+// project-wide, requiring the operator to type IDs into a generic form.
+// Both REST endpoints already existed server-side before this change —
+// checked first, per the issue's own instruction:
+//   GET /api/autonomous/prds/{id}/memory-report (BL386 Phase 4) — the
+//     "memory report" + stats tile data.
+//   GET /api/memory/scopes/recall?prd_id=X&project=Y (BL386 Phase 5,
+//     same endpoint Observer's memoryScopeRecall() already calls) —
+//     "recall scoped to this Automaton". It's a structural scope walk,
+//     not a free-text search (the REST handler has no q param to add),
+//     so the query box below filters the already-recalled list
+//     client-side rather than re-querying the server per keystroke.
+function _renderDetailMemoryTab(prd) {
+  const id = prd.id || '';
+  const idJ = JSON.stringify(id);
+  return `
+    <div id="prdMemoryStats_${id}" style="margin-bottom:10px;">${loadingEyeBlock()}</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">
+      ${escHtml(t('prd_memory_help')||'Memories associated with this Automaton, aggregated across its prd-shared and story-shared scopes.')}
+    </div>
+    <div id="prdMemoryReport_${id}"></div>
+    <details style="margin-top:12px;" open>
+      <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_memory_recall_title')||"Search this Automaton's memory")}</summary>
+      <input type="text" id="prdMemoryRecallQuery_${id}" placeholder="${escHtml(t('prd_memory_recall_ph')||'Filter…')}" oninput="_filterPRDMemoryRecall(${escHtml(idJ)})" style="width:100%;margin-top:6px;font-size:12px;box-sizing:border-box;" />
+      <div id="prdMemoryRecall_${id}" style="margin-top:6px;">${loadingEyeBlock()}</div>
+    </details>
+  `;
+}
+
+// Cache of the last scoped-recall result per PRD id, so the filter box
+// above can re-filter client-side on every keystroke without re-fetching.
+let _prdMemoryRecallCache = {};
+
+function _loadPRDMemoryTab(prd) {
+  const id = prd.id || '';
+  if (!id) return;
+  const statsEl = document.getElementById('prdMemoryStats_' + id);
+  const reportEl = document.getElementById('prdMemoryReport_' + id);
+  if (statsEl || reportEl) {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/memory-report')
+      .then(data => {
+        const results = Array.isArray(data) ? data : [];
+        _renderPRDMemoryStats(statsEl, results);
+        _renderPRDMemoryReportList(reportEl, results);
+      })
+      .catch(() => {
+        if (statsEl) statsEl.innerHTML = '';
+        if (reportEl) reportEl.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(t('prd_memory_unavailable')||'Memory report unavailable.')}</div>`;
+      });
+  }
+
+  const recallEl = document.getElementById('prdMemoryRecall_' + id);
+  if (!recallEl) return;
+  const qs = new URLSearchParams();
+  qs.set('prd_id', id);
+  if (prd.project_dir) qs.set('project', prd.project_dir);
+  apiFetch('/api/memory/scopes/recall?' + qs.toString())
+    .then(data => {
+      const raw = (data && data.results) || [];
+      // Same dedup rule as Observer's memoryScopeRecall() — recall walks
+      // every matching layer top-down, so a row visible from more than
+      // one layer comes back once per layer it overlaps with.
+      const seen = new Set();
+      const results = raw.filter(m => {
+        const key = m.id + '|' + (m.project_dir || '') + '|' + (m.created_at || '');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      _prdMemoryRecallCache[id] = results;
+      _renderPRDMemoryRecallList(id, results);
+    })
+    .catch(() => {
+      recallEl.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(t('memory_scope_recall_failed')||'Recall failed')}</div>`;
+    });
+}
+
+function _renderPRDMemoryStats(el, results) {
+  if (!el) return;
+  const counts = {};
+  for (const r of results) {
+    const scope = r.scope || 'unknown';
+    counts[scope] = (counts[scope] || 0) + (r.memories || []).length;
+  }
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">
+    <div class="stat-card"><div class="stat-value">${counts['prd-shared'] || 0}</div><div class="stat-label">${escHtml(t('prd_memory_stat_prd')||'Automaton')}</div></div>
+    <div class="stat-card"><div class="stat-value">${counts['story-shared'] || 0}</div><div class="stat-label">${escHtml(t('prd_memory_stat_story')||'Stories')}</div></div>
+    <div class="stat-card"><div class="stat-value">${counts['session-local'] || 0}</div><div class="stat-label">${escHtml(t('prd_memory_stat_session')||'Sessions')}</div></div>
+  </div>`;
+}
+
+function _renderPRDMemoryReportList(el, results) {
+  if (!el) return;
+  const all = results.flatMap(r => (r.memories || []).map(m => Object.assign({}, m, { _scope: r.scope, _scopeId: r.scope_id })));
+  if (all.length === 0) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(t('prd_memory_none')||'No memories recorded for this Automaton yet.')}</div>`;
+    return;
+  }
+  el.innerHTML = all.map(m => {
+    const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
+    return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      <div style="flex:1;min-width:0;">
+        <span style="font-size:10px;color:var(--text2);">#${m.id} ${escHtml(m._scope || '')}${m._scopeId ? ' (' + escHtml(m._scopeId) + ')' : ''}</span>
+        <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _renderPRDMemoryRecallList(prdId, results) {
+  const el = document.getElementById('prdMemoryRecall_' + prdId);
+  if (!el) return;
+  if (results.length === 0) {
+    el.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(t('memory_scope_no_results')||'No memories in this scope.')}</div>`;
+    return;
+  }
+  el.innerHTML = results.map(m => {
+    const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
+    return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      <div style="flex:1;min-width:0;">
+        <span style="font-size:10px;color:var(--text2);">#${m.id} ${escHtml(m.scope || '')} ${escHtml(m.role || '')}</span>
+        <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _filterPRDMemoryRecall(prdId) {
+  const input = document.getElementById('prdMemoryRecallQuery_' + prdId);
+  const all = _prdMemoryRecallCache[prdId] || [];
+  const q = (input && input.value || '').trim().toLowerCase();
+  const filtered = q ? all.filter(m => (m.content || '').toLowerCase().includes(q)) : all;
+  _renderPRDMemoryRecallList(prdId, filtered);
+}
+window._filterPRDMemoryRecall = _filterPRDMemoryRecall;
 
 // v6.13.1 (C10) — Rules Check tab. Shows the same shape as Scan when
 // rules guardrail is enabled / has results. Operator: "shouldn't there

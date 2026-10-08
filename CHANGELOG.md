@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.71.0 — feat(pwa): GH#192 Phase 2 — per-Automaton memory section
+
+### Added
+- **#2 (D77a)**: new "Memory" tab on the Automaton detail view (alongside Overview/Stories/Decisions/Scan/Rules) — a stats tile (prd-shared/story-shared/session-local memory counts), the aggregated memory report, and a recall list, all scoped to that specific Automaton. Previously this entire capability only existed in Observer, project-wide, requiring the operator to type PRD/story IDs into a generic form.
+- Checked server-side first, per the issue's own instruction: both REST endpoints already existed and needed zero backend changes — `GET /api/autonomous/prds/{id}/memory-report` (BL386 Phase 4) for the stats tile + report, and `GET /api/memory/scopes/recall?prd_id=X&project=Y` (BL386 Phase 5, the same endpoint Observer's `memoryScopeRecall()` already calls) for the scoped list. That recall endpoint is a structural scope walk, not a free-text search (no `q` param exists to add), so the new query box filters the already-recalled list client-side instead of re-querying per keystroke.
+- New locale keys (`prd_tab_memory`, `prd_memory_help`, `prd_memory_recall_title`, `prd_memory_recall_ph`, `prd_memory_unavailable`, `prd_memory_none`, `prd_memory_stat_{prd,story,session}`, `memory_scope_no_results`) added to all 5 locales.
+- 10 new unit tests (`app-gh192-phase2.test.js`).
+
+Phase 2 of 4 for GH#192; see `docs/plans/2026-10-07-gh192-parity-batch.md`. Phases 3-4 (#7 server-picker swipe gesture, #4 memory tags) follow as separate commits.
+
 ## v8.70.1 — fix(i18n): localize the council consensus/dissent viewer; close the version-bump policy gap
 
 ### Fixed
