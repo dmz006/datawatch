@@ -342,6 +342,24 @@ stop_test_daemon() {
     while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
 }
 
+stop_second_test_daemon() {
+  # TS-785 starts a real second daemon (federation E2E) and writes its PID
+  # here. Recovered-from-file the same way stop_docker_sim recovers its
+  # container/image names, so a SIGKILL'd run (DAEMON_PID lost) still gets
+  # cleaned up instead of leaking a second live daemon process.
+  local pidfile="$TEST_DIR/fed-peer-daemon.pid"
+  if [[ -f "$pidfile" ]]; then
+    local pid
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      wait_or_kill "$pid" 10
+    fi
+  fi
+  if [[ -n "${FED_PEER_DATA:-}" ]]; then
+    rm -rf "$FED_PEER_DATA" 2>/dev/null || true
+  fi
+}
+
 stop_docker_sim() {
   # Recover names persisted by TS-160 in case env vars were lost (SIGKILL on a prior run).
   if [[ -z "${DOCKER_SIM_CONTAINER:-}" && -n "${DOCKER_SIM_DATA:-}" && -f "$DOCKER_SIM_DATA/container.name" ]]; then
@@ -364,6 +382,7 @@ stop_docker_sim() {
 
 cleanup() {
   stop_test_daemon
+  stop_second_test_daemon
   stop_docker_sim
   destroy_pool
   if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then

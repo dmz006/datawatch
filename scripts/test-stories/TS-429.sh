@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-429 — POST /api/mcp/call with tool=get_version returns version string
 # tags: surface:api feature:mcp-tools
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-429"
 story_preflight "surface:api feature:mcp-tools" || return 0

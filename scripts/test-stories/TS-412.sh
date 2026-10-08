@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-412 — GET /api/compute/nodes/{name}/models?kind=ollama returns {models:[],kind,node} shape
 # tags: surface:api feature:compute
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-412"
 story_preflight "surface:api feature:compute" || return 0

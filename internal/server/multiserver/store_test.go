@@ -290,3 +290,46 @@ func TestStore_AddRequiresNameAndURL(t *testing.T) {
 		t.Error("Add with no URL: expected error")
 	}
 }
+
+// GetByToken resolves which federated peer is making a request --
+// fedAuthMiddleware's identity check for every authenticated federation
+// call. Found with zero test coverage during a 2026-10-08 testing audit
+// prompted by the Store.Test() false-positive bug (same package, same
+// auth-adjacent theme). The implementation itself is already correct
+// (constant-time compare, explicit empty-token guard) -- this locks that
+// behavior in so a future "simplification" can't quietly drop either
+// property.
+func TestStore_GetByToken(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "peer-a", URL: "http://a.example.com", Enabled: true, Token: "token-a"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "peer-b", URL: "http://b.example.com", Enabled: true, Token: "token-b"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	e, ok := s.GetByToken("token-a")
+	if !ok || e.Name != "peer-a" {
+		t.Errorf("GetByToken(token-a) = %v, %v; want peer-a, true", e, ok)
+	}
+
+	if _, ok := s.GetByToken("token-nonexistent"); ok {
+		t.Error("GetByToken with an unregistered token: expected no match, got one")
+	}
+
+	// The critical regression case: an entry with no token configured
+	// (the exact real-world state that caused today's live federation
+	// bugs -- a peer added without a token) must never match an empty
+	// bearer value. Without this guard, a caller presenting NO token at
+	// all would be resolved as that peer's identity.
+	if err := s.Add(&Entry{Name: "peer-no-token", URL: "http://c.example.com", Enabled: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, ok := s.GetByToken(""); ok {
+		t.Error("GetByToken(\"\") matched a token-less entry -- empty bearer values must never resolve to a peer identity")
+	}
+}

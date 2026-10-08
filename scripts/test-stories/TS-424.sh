@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-424 — GET /api/federation/meta-peers returns {by_node:{},unbound:[]} shape
 # tags: surface:api feature:observer
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-424"
 story_preflight "surface:api feature:observer" || return 0

@@ -175,6 +175,7 @@ cleanup_all() {
         prd)             curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
         peer)            curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
         fedpeer)         curl "${curl_args[@]}" -X DELETE "$BASE/api/federation/peers/$id" >/dev/null 2>&1 && echo "  removed federation peer $id" || echo "  (already gone) federation peer $id" ;;
+        fedgroup)        curl "${curl_args[@]}" -X DELETE "$BASE/api/federation/groups/$id" >/dev/null 2>&1 && echo "  removed federation group $id" || echo "  (already gone) federation group $id" ;;
         graph)           curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
         project-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/projects/$id" >/dev/null 2>&1 && echo "  removed project profile $id" || echo "  (already gone) project profile $id" ;;
         cluster-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/clusters/$id" >/dev/null 2>&1 && echo "  removed cluster profile $id" || echo "  (already gone) cluster profile $id" ;;
@@ -3294,6 +3295,52 @@ if [[ -n "$DEV_ID" ]]; then
   fi
 else
   skip "S64 — could not create a smoke APNs device registration"
+fi
+
+H "65. Custom (non-default) capability group is actually enforced live (2026-10-08)"
+# S60 already covers the DEFAULT federation-peer grant (narrowed, no
+# sessions:list). This covers the other half of CBAC that had zero smoke
+# coverage: a custom, narrowly-scoped capability GROUP -- the real
+# GroupStore/AsMap mechanism, not a mock -- actually gating what a peer
+# using it can and can't do.
+if [[ -z "$TOK" ]]; then
+  skip "S65 — sandbox admin token is empty; peer-vs-admin distinction doesn't apply (same caveat as S60)"
+else
+  CG_NAME="smoke-custom-group-$$"
+  CG_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/federation/groups" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$CG_NAME\",\"description\":\"smoke: alerts-list only\",\"caps\":[\"alerts:list\"]}" 2>/dev/null || echo "")
+  if echo "$CG_CREATE" | grep -q "\"$CG_NAME\""; then
+    add_cleanup fedgroup "$CG_NAME"
+    FP3_NAME="smoke-fedpeer-customgroup-$$"
+    FP3_TOKEN="smoke-customgroup-token-$$"
+    FP3_CREATE=$(curl "${curl_args[@]}" -s -X POST "$BASE/api/federation/peers" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"$FP3_NAME\",\"url\":\"http://127.0.0.1:1\",\"token\":\"$FP3_TOKEN\",\"enabled\":true,\"capabilities\":[\"$CG_NAME\"]}" 2>/dev/null || echo "")
+    if [[ -n "$FP3_CREATE" ]]; then
+      add_cleanup fedpeer "$FP3_NAME"
+      ALERTS_CODE=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $FP3_TOKEN" \
+        "$BASE/api/alerts" 2>/dev/null || echo "000")
+      if [[ "$ALERTS_CODE" == "200" ]]; then
+        ok "S65 — a peer granted only the custom alerts:list group gets 200 on GET /api/alerts (in-grant)"
+      else
+        ko "S65 — in-grant GET /api/alerts returned $ALERTS_CODE, expected 200"
+      fi
+      SESS_CODE3=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $FP3_TOKEN" \
+        "$BASE/api/sessions" 2>/dev/null || echo "000")
+      if [[ "$SESS_CODE3" == "403" ]]; then
+        ok "S65 — the same peer gets 403 on GET /api/sessions (outside the custom group's grant)"
+      else
+        ko "S65 — out-of-grant GET /api/sessions returned $SESS_CODE3, expected 403 (custom group enforcement not actually narrowing access)"
+      fi
+    else
+      skip "S65 — could not create a smoke federation peer using the custom group"
+    fi
+  else
+    skip "S65 — could not create the custom capability group: ${CG_CREATE:0:200}"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

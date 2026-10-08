@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-422 — POST /api/secrets/{name} sets secret; DELETE /api/secrets/{name} removes it
 # tags: surface:api feature:secrets
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-422"
 story_preflight "surface:api feature:secrets" || return 0

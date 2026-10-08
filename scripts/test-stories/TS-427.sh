@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # TS-427 — datawatch compute node list exits 0
 # tags: surface:cli feature:compute feature:cli
-# STUB: no implementation extracted from legacy runner. Mark as skip until ported.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-427"
 story_preflight "surface:cli feature:compute feature:cli" || return 0

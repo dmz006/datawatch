@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.6 — test: real 2-daemon federation E2E, 68 stale STUB comments removed, capability-group smoke, GetByToken coverage
+
+### Added
+- `scripts/test-stories/TS-785.sh`/`TS-786.sh` — real two-daemon federation E2E: a genuinely separate second daemon process, registered as a federated peer with a real token, proxied through `/api/proxy/<peer>/...`. Closes the gap `TS-387`-`TS-396` always had (they only ever dialed a deliberately-fake `localhost:99999` placeholder, never a real second daemon). TS-786 is a direct regression pin for the v8.73.2-v8.73.4 bug class: a bad-token peer must produce a real 401/error, not a false positive, on both the data-fetch path and the `Store.Test()` REST surface. `run-tests.sh` gained `stop_second_test_daemon()` cleanup.
+- `release-smoke.sh` §65 — custom (non-default) capability group enforcement, live: a peer granted only a narrow `alerts:list` group gets 200 on `/api/alerts`, 403 on `/api/sessions`. Complements §60's existing default-grant-only coverage.
+- `TestStore_GetByToken` — the function resolving a federated peer's bearer token to its identity had zero test coverage; the implementation was already correct (constant-time compare, empty-token guard), this just locks it in.
+
+### Fixed
+- 68 E2E story files (`scripts/test-stories/TS-*.sh`) carried a stale `# STUB: no implementation extracted from legacy runner` comment despite having complete, real implementations — the same pattern `TS-387`-`TS-396` already had and were corrected for. Confirmed the comment has zero effect on execution and spot-checked several files have substantial real bodies before stripping it from all 68.
+- Found and fixed live while writing the new federation E2E stories: multi-assertion test-stories' `RESULT` variable only reflects the *last* `ok()`/`ko()` call, silently masking earlier failures as an overall "pass." Fixed locally in TS-785/TS-786; flagged as a likely broader harness issue, not fixed suite-wide in this pass.
+
+### Process
+- Filed `dmz006/datawatch-app#235`: the Mobile-Parity Rule's "ship EN placeholder, request real translations" step wasn't followed for v8.73.2-v8.73.4's new `fed_conn_*`/`server_picker_loading` keys (real draft translations were written directly instead) — requesting the real DE/ES/FR/JA values retroactively.
+- `docs/testing-tracker.md` backfilled for v8.73.4 and this pass.
+
 ## v8.73.5 — fix: Alerts tab ignored the federated-server picker; datawatch eye icon clipped everywhere
 
 ### Fixed
