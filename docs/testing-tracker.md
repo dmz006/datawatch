@@ -9,15 +9,16 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
-## BL398 Phase 0 — .trivyignore prose/suppressed-ID reconciliation
+## BL398 Phases 0-1 — .trivyignore reconciliation + live rescan baseline
 
-Added in v8.73.27. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+Added in v8.73.27/v8.73.28. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
 | 7 prose-vs-suppressed-ID mismatches (6 blocks + 1 phantom reference) | N/A (not code) | Yes | Fresh `trivy image --image-src remote` rescan (no `--ignorefile`) against all 5 published `:8.73.2` GHCR images, grep'd for each CVE ID in the resulting JSON | All 7 confirmed genuinely absent from the live scan across all 5 images, not a gate-bypass bug |
 | `GHSA-6v7p-g79w-8964` prune | N/A (not code) | Yes | Same rescan — grep'd for `msgpack` package name across all 5 images' JSON, zero hits | Confirms the package is no longer flagged, not just that the specific ID string changed |
-| Full suppressed-vs-live diff (70 suppressed vs. 70 live unique HIGH/CRITICAL IDs) | N/A (not code) | Yes | `comm -13`/`comm -23` between the suppressed-ID list and the union of all 5 images' live scan output | Found CVE-2026-104851 (fsspec) live-but-unsuppressed — already fixed in source (`Dockerfile.agent-aider`), just not yet in a published image tag; no other gaps |
+| Full suppressed-vs-live diff against published `:8.73.2` images (70 suppressed vs. 70 live unique HIGH/CRITICAL IDs) | N/A (not code) | Yes | `comm -13`/`comm -23` between the suppressed-ID list and the union of all 5 images' live scan output | Found CVE-2026-104851 (fsspec) live-but-unsuppressed — already fixed in source (`Dockerfile.agent-aider`), just not yet in that published image tag |
+| Phase 1: same diff against 5 images built fresh from current source (not `:8.73.2`) | N/A (not code) | Yes | Built all 5 via a temporary local registry + insecure-registry buildx builder, tagged `v8.73.27`, fresh `trivy image --image-src remote` rescan of each | Exactly 70 live unique IDs == 70 suppressed IDs — clean baseline, zero gaps either direction. Directly confirmed CVE-2026-104851 is absent from the fresh `agent-aider` build (fix verified working, not just inferred from source) |
 
 ---
 

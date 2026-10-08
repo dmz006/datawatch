@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.28 — docs(security): BL398 Phase 1 — fresh per-image live rescan baseline from source
+
+### Added
+- Built all 5 container images (`agent-base`, `agent-gemini`, `agent-aider`, `parent-full`, `stats-cluster`) fresh from current source — not the published `:8.73.2` tag Phase 0 used — via a temporary local registry and a one-off insecure-registry-aware buildx builder, and ran a fresh unignored `trivy image` rescan against each.
+- Result: a clean baseline. The union of live HIGH/CRITICAL findings across all 5 images is exactly 70 unique IDs, identical one-for-one to `.trivyignore`'s 70 suppressed IDs post-Phase-0. Zero live-but-unsuppressed findings (nothing would fail CI today), zero further prune candidates. Directly confirmed (not just inferred from source) that `CVE-2026-104851` (fsspec) is absent from this fresh `agent-aider` build — the `Dockerfile.agent-aider` pin fix from v8.73.26 actually clears it once rebuilt.
+
+### Process
+- `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md` updated with full Phase 1 results. Phases 2-4 (re-verify non-CAVEATed rationale, removal-over-suppression pass, sync `docs/security-review.md`) remain not started.
+
 ## v8.73.27 — docs(security): BL398 Phase 0 — reconcile .trivyignore prose/suppressed-ID mismatches, prune a fixed CVE
 
 ### Fixed
