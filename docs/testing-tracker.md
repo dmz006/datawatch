@@ -968,3 +968,14 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | The lazy sweeper-start path (`sync.Once`) is safe to call repeatedly | **Yes** | **Yes** | `TestDiscussionThrottleBucket_StartsBackgroundSweeperOnce` | |
 | Pre-existing throttle enforcement behavior unaffected | **Yes** | **Yes** | `TestDiscussionThrottle_Enforced` re-run green | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3224 passed, 0 failed | |
+
+## SEC-021 (remainder): file-service default root + app/docs deny-list — v8.73.19
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Default root (no `file_service_root`/`root_path` configured) resolves to `<data_dir>/files`, never home | **Yes** | **Yes** | `TestFileServiceRoot_DefaultsToDataDirSubpath_NotHome` | |
+| An explicit `file_service_root` still wins over the new default | **Yes** | **Yes** | `TestFileServiceRoot_ExplicitFileServiceRootStillWins` | |
+| Deny-list classifier: `internal/server/web/*` and `docs/*` match; `documents/*` (substring neighbor) does not | **Yes** | **Yes** | `TestIsDenyListedFileServicePath` | |
+| JSON upload / multipart upload / delete all refuse a deny-listed target (403), and a file is never written/removed | **Yes** | **Yes** | `TestHandleFilesJSONUpload_DeniesAppDocsTree`, `TestHandleFilesUpload_DeniesAppWebTree`, `TestHandleFilesDelete_DeniesAppDocsTree` | |
+| A non-deny-listed path still succeeds (no over-blocking regression) | **Yes** | **Yes** | `TestHandleFilesJSONUpload_AllowsNonDenyListedPath`; pre-existing `TestFilesUpload_And_Delete`/`TestFilesUpload_ImageFile`/`TestFilesUpload_PathTraversal` re-run green | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3231 passed, 0 failed | |

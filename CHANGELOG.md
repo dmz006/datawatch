@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.19 — security(SEC-021 remainder): file-service default root off the operator's repo, app/docs deny-list
+
+### Security
+- `fileServiceRoot()` (`internal/server/bl333_file_service.go`) — with neither `file_service_root` nor `session.root_path` configured, defaulted to the operator's own home directory, and `session.root_path` (the operator's project/repo checkout) ranked ABOVE that fallback. A federation peer or operator-granted `config:write` caller with no `file_service_root` explicitly set landed inside the operator's actual repo by default — this is the write-scope half of the SEC-021 stored-XSS chain (docs/plans/historical-plans/2026-09-02-sec-design-c-audit-config.md §C3); the render-side half (`escHtml`/`DOMPurify` before `innerHTML`) was already fixed in v8.39.15. Default now resolves to `<data_dir>/files`, a dedicated subdirectory created on first use — in-repo file-service writes require an explicit operator opt-in, not a fallback.
+- Added a deny-list (defense in depth, independent of the default-root fix): `handleFilesJSONUpload`/`handleFilesUpload`/`handleFilesDelete` now refuse any path resolving into `internal/server/web/` or `docs/` relative to the configured root, even when the operator did explicitly configure a root that includes them (e.g. pointed at a repo checkout). Matches by path segment, not substring (`documents/` isn't caught by `docs`).
+- Added `internal/server/sec021_file_service_root_test.go`: default resolves to the data-dir subpath (never home), explicit `file_service_root` still wins, the deny-list classifier directly, and all three write handlers (JSON upload, multipart upload, delete) actually refuse a deny-listed target end-to-end while a non-deny-listed one still succeeds.
+
 ## v8.73.18 — security(SEC-018): bounded TTL sweep for the discussion-sync throttle map
 
 ### Security

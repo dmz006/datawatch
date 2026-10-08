@@ -41,6 +41,16 @@ func (s *Server) sessionRoot() string {
 	return home
 }
 
+// fileServiceRoot's default (neither FileServiceRoot nor RootPath
+// configured) used to be the operator's own home directory, and before
+// this fix, RootPath (the operator's project/repo checkout) ranked above
+// it -- so a federation peer or operator-granted config:write caller with
+// no file_service_root explicitly set landed in the operator's actual repo
+// by default, not an opt-in choice. SEC-021 (docs/plans/historical-plans/
+// 2026-09-02-sec-design-c-audit-config.md §C3): in-repo writes now require
+// an *explicit* file_service_root (or RootPath) configuration; the
+// fallback is a dedicated subdirectory of the daemon's own data directory,
+// created on first use.
 func (s *Server) fileServiceRoot() string {
 	if s.cfg != nil && s.cfg.Session.FileServiceRoot != "" {
 		root := s.cfg.Session.FileServiceRoot
@@ -58,8 +68,47 @@ func (s *Server) fileServiceRoot() string {
 		}
 		return filepath.Clean(root)
 	}
-	home, _ := os.UserHomeDir()
-	return home
+	dataDir := ""
+	if s.cfg != nil {
+		dataDir = s.cfg.DataDir
+	}
+	if dataDir == "" {
+		dataDir = "~/.datawatch"
+	}
+	if len(dataDir) > 0 && dataDir[0] == '~' {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, dataDir[1:])
+	}
+	root := filepath.Join(dataDir, "files")
+	_ = os.MkdirAll(root, 0700)
+	return filepath.Clean(root)
+}
+
+// denyListedFileServiceSubtrees (SEC-021, defense in depth) blocks the
+// file service from ever writing into datawatch's own app/docs tree, even
+// when the operator's configured root happens to include it (e.g.
+// file_service_root or RootPath pointed at a repo checkout). Matches by
+// path segment, not substring, so "documents/" isn't caught by "docs".
+var denyListedFileServiceSubtrees = []string{
+	filepath.Join("internal", "server", "web"),
+	"docs",
+}
+
+// isDenyListedFileServicePath reports whether target, resolved relative to
+// root, falls inside a deny-listed subtree.
+func isDenyListedFileServicePath(root, target string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, deny := range denyListedFileServiceSubtrees {
+		d := filepath.ToSlash(deny)
+		if rel == d || strings.HasPrefix(rel, d+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // checkPathTraversal returns an error if target escapes root.
@@ -105,6 +154,10 @@ func (s *Server) handleFilesJSONUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
+	if isDenyListedFileServicePath(root, target) {
+		http.Error(w, "path is in a deny-listed subtree (app/docs tree)", http.StatusForbidden)
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		http.Error(w, "mkdir parent: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -145,6 +198,10 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := checkPathTraversal(root, destPath); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if isDenyListedFileServicePath(root, destPath) {
+		http.Error(w, "path is in a deny-listed subtree (app/docs tree)", http.StatusForbidden)
 		return
 	}
 	f, _, err := r.FormFile("file")
@@ -202,6 +259,10 @@ func (s *Server) handleFilesDelete(w http.ResponseWriter, r *http.Request) {
 	root := s.fileServiceRoot()
 	if err := checkPathTraversal(root, target); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if isDenyListedFileServicePath(root, target) {
+		http.Error(w, "path is in a deny-listed subtree (app/docs tree)", http.StatusForbidden)
 		return
 	}
 	if err := os.Remove(target); err != nil {
