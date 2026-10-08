@@ -114,7 +114,7 @@ func extractUsage(stats json.RawMessage) (tokensIn, tokensOut int) {
 func printLines(tmuxSession, text string) {
 	for _, line := range strings.Split(text, "\n") {
 		escaped := strings.ReplaceAll(line, "'", `'\''`)
-		exec.Command("tmux", "send-keys", "-t", tmuxSession, //nolint:errcheck
+		_ = exec.Command("tmux", "send-keys", "-t", tmuxSession,
 			fmt.Sprintf("printf '%%s\\n' '%s'", escaped), "Enter").Run()
 	}
 }
@@ -124,7 +124,7 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	if len(displayTask) > 200 {
 		displayTask = displayTask[:197] + "..."
 	}
-	exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, //nolint:errcheck
+	_ = exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,
 		fmt.Sprintf("echo '[gemini] %s'", strings.ReplaceAll(displayTask, "'", "'\\''")), "Enter").Run()
 
 	go func() {

@@ -26,7 +26,7 @@ data: [DONE]
 func TestSendAndStream_ReportsUsageFromFinalChunk(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, realOpenWebUISSEFixture)
+		_, _ = fmt.Fprint(w, realOpenWebUISSEFixture)
 	}))
 	defer srv.Close()
 
@@ -57,7 +57,7 @@ func TestSendAndStream_ReportsUsageFromFinalChunk(t *testing.T) {
 func TestSendAndStream_NoUsageChunkNeverCallsUsageFn(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "data: {\"id\": \"chatcmpl-1\", \"choices\": [{\"delta\": {\"content\": \"Hi\"}}], \"object\": \"chat.completion.chunk\"}\n\ndata: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"id\": \"chatcmpl-1\", \"choices\": [{\"delta\": {\"content\": \"Hi\"}}], \"object\": \"chat.completion.chunk\"}\n\ndata: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
