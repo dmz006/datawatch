@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.72.2 — WIP checkpoint: memory tags backend (GH#192, incomplete — not shippable yet)
+
+### Added (partial — MCP + store only, REST/PWA/locale not done)
+- `TaggableBackend` interface + SQLite `Store.SetTags`, wired through `ServerAdapter.SetTags` (mirrors the existing `SetPinned` shape). `memory_remember`'s MCP tool gained an optional `tags` param (comma-separated), best-effort — a tag-write failure doesn't fail the remember call.
+
+### Known incomplete (checkpointed mid-implementation; the agent working on it was rate-limited before finishing)
+- REST `POST /api/memory/remember` has no `tags` field yet — MCP-only right now.
+- No PWA UI for entering tags (the Add Memory dialog this was meant to serve, GH#192 item 4, is untouched).
+- No locale-bundle entries, no docs/testing-tracker entry beyond what's below, no plan-doc update.
+- Do not treat GH#192 item 4 as shipped based on this commit alone.
+
 ## v8.72.1 — chore: reconcile the internal-tracker-ID rule with what's actually enforced; add a version-reuse CI check
 
 ### Added

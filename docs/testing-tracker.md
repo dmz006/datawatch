@@ -769,3 +769,14 @@ pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
 | `scripts/check-version-bump.sh` passes when the version is bumped | **Yes** | **Yes** | Run against the real current HEAD (always passes post-bump) | — |
 | `scripts/check-no-internal-refs.sh` now also checks `README.md` | **Yes** | **Yes** | Ran against the live repo after fixing README's 2 stray instances; passes | — |
 | CI (`ci.yaml`) runs both checks on every push/PR, not just at release time | No | No | — | Not live-verified against a real GH Actions run in this pass (would require an actual push/PR to trigger) — logic verified locally; flagged rather than overclaimed |
+
+## GH#192 memory-tags backend — WIP checkpoint, v8.72.2 (incomplete)
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `Store.SetTags` persists a comma-separated tag string against a memory row | **Yes** | No | `store_test.go` | — |
+| `ServerAdapter.SetTags` returns `ErrNamespaceUnsupported` when the active backend doesn't implement `TaggableBackend` | **Yes** | No | `store_test.go` | Mirrors `SetPinned`'s existing test |
+| `memory_remember` MCP tool's optional `tags` param writes through to `SetTags`, best-effort (remember succeeds even if the tag write fails) | **Yes** | No | `memory_tools_bl385_test.go` | — |
+| REST `/api/memory/remember` tags support | No | No | — | Not implemented yet — MCP-only so far |
+| PWA Add-Memory dialog tags input | No | No | — | Not implemented yet |
+| Full live round trip (MCP remember-with-tags → tag persisted → retrievable) | No | No | — | Not attempted — checkpointing mid-implementation, not claiming this works end-to-end yet |

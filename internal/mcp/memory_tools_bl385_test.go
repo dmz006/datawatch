@@ -17,6 +17,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -134,6 +135,54 @@ func TestBL385_MemoryRemember_NormalMode_UsesDirectPath(t *testing.T) {
 
 	if rec.lastPath != "/api/memory/save" {
 		t.Errorf("expected /api/memory/save, got %q", rec.lastPath)
+	}
+}
+
+// GH#192 D78a — memory_remember's tags param, proxy-mode (memoryAPI ==
+// nil) path. The direct-mode path (memoryAPI non-nil, calls SetTags
+// after Remember) is covered at the Store/ServerAdapter/REST-handler
+// layers in internal/memory and internal/server -- same best-effort
+// contract, same 3-line addition here, not re-verified against a full
+// MemoryMCP fake to avoid a large amount of interface boilerplate for
+// one assertion.
+func TestGH192_MemoryRemember_Tags_ProxyModeIncludesTagsInBody(t *testing.T) {
+	rec := &bl385Proxy{}
+	s, _ := newBL385Server(t, rec)
+
+	req := mcpsdk.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"text": "a memory", "tags": "work,bug"}
+	_, _ = s.handleMemoryRemember(context.Background(), req)
+
+	if rec.lastPath != "/api/memory/save" {
+		t.Fatalf("expected path /api/memory/save, got %q", rec.lastPath)
+	}
+	if !strings.Contains(rec.lastBody, `"tags":"work,bug"`) {
+		t.Errorf("expected tags in proxied body, got %q", rec.lastBody)
+	}
+}
+
+func TestGH192_MemoryRemember_NoTags_OmitsTagsFromBody(t *testing.T) {
+	rec := &bl385Proxy{}
+	s, _ := newBL385Server(t, rec)
+
+	req := mcpsdk.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"text": "a memory"}
+	_, _ = s.handleMemoryRemember(context.Background(), req)
+
+	if strings.Contains(rec.lastBody, "tags") {
+		t.Errorf("expected no tags key in proxied body when tags wasn't supplied, got %q", rec.lastBody)
+	}
+}
+
+func TestGH192_ToolMemoryRemember_SchemaIncludesTagsParam(t *testing.T) {
+	s := &Server{}
+	tool := s.toolMemoryRemember()
+	schema, err := json.Marshal(tool.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	if !strings.Contains(string(schema), `"tags"`) {
+		t.Errorf("expected a tags property in memory_remember's input schema, got: %s", schema)
 	}
 }
 

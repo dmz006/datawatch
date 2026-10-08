@@ -68,6 +68,13 @@ type PinnableBackend interface {
 	ListPinned(projectDir string, n int) ([]Memory, error)
 }
 
+// TaggableBackend is the optional capability extension for memory tags
+// (GH#192 D78a). SQLite Store implements it; the PG path can land
+// later. Mirrors PinnableBackend's shape exactly.
+type TaggableBackend interface {
+	SetTags(id int64, tags string) error
+}
+
 // TextSearchableBackend is an optional capability extension a Backend
 // implementation may satisfy to support keyword/full-text fallback search
 // when the embedding LLM is unavailable. SQLite Store implements all three

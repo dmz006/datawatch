@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -17,6 +18,8 @@ type fakeMemAPI struct {
 	statsErr  bool   // panic out of Stats() to simulate dead backend
 	statsNil  bool   // return nil to simulate degraded backend
 	statsBody map[string]interface{}
+	tagsErr   bool   // GH#192 D78a — simulate an unsupported-backend SetTags error
+	rememberID int64 // id Remember() returns (default 0)
 }
 
 func (f *fakeMemAPI) Stats() map[string]interface{} {
@@ -41,12 +44,18 @@ func (f *fakeMemAPI) SearchInNamespaces(string, []string, int) ([]map[string]int
 }
 func (f *fakeMemAPI) Delete(int64) error                     { return nil }
 func (f *fakeMemAPI) SetPinned(int64, bool) error            { return nil }
+func (f *fakeMemAPI) SetTags(int64, string) error {
+	if f.tagsErr {
+		return memory.ErrNamespaceUnsupported
+	}
+	return nil
+}
 func (f *fakeMemAPI) WakeUpBundle(string, string, string, string) string { return "" }
 func (f *fakeMemAPI) SweepStale(int, bool) (map[string]interface{}, error) { return nil, nil }
 func (f *fakeMemAPI) SpellCheckText(string, []string) []map[string]interface{} { return nil }
 func (f *fakeMemAPI) ExtractFactsText(string) []map[string]interface{} { return nil }
 func (f *fakeMemAPI) SchemaVersion() string { return "" }
-func (f *fakeMemAPI) Remember(string, string) (int64, error) { return 0, nil }
+func (f *fakeMemAPI) Remember(string, string) (int64, error) { return f.rememberID, nil }
 func (f *fakeMemAPI) Export(io.Writer) error                 { return nil }
 func (f *fakeMemAPI) Import(io.Reader) (int, error)          { return 0, nil }
 func (f *fakeMemAPI) WALRecent(int) []map[string]interface{}                       { return nil }

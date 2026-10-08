@@ -184,6 +184,9 @@ type MemoryMCP interface {
 	SpellCheckText(text string, extra []string) []map[string]interface{}
 	ExtractFactsText(text string) []map[string]interface{}
 	SchemaVersion() string
+	// SetTags (GH#192 D78a) — same best-effort, unsupported-backend
+	// contract as SetPinned.
+	SetTags(id int64, tags string) error
 }
 
 // KGMCP is the interface for knowledge graph operations from MCP tools.

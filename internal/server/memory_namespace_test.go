@@ -42,6 +42,7 @@ func (n *nsMemAPI) SearchInNamespaces(q string, ns []string, _ int) ([]map[strin
 }
 func (n *nsMemAPI) Delete(int64) error                       { return nil }
 func (n *nsMemAPI) SetPinned(int64, bool) error              { return nil }
+func (n *nsMemAPI) SetTags(int64, string) error              { return nil }
 func (n *nsMemAPI) WakeUpBundle(string, string, string, string) string { return "" }
 func (n *nsMemAPI) SweepStale(int, bool) (map[string]interface{}, error) { return nil, nil }
 func (n *nsMemAPI) SpellCheckText(string, []string) []map[string]interface{} { return nil }

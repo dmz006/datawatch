@@ -105,6 +105,12 @@ func (s *Server) toolMemoryRemember() mcpsdk.Tool {
 		mcpsdk.WithDescription("Store a memory/fact for future retrieval. Embedded with vector search for semantic recall."),
 		mcpsdk.WithString("text", mcpsdk.Required(), mcpsdk.Description("The text to remember")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("Project directory (default: session default)")),
+		// GH#192 D78a — best-effort: an unsupported-backend error setting
+		// tags doesn't fail the remember call, the memory is already saved.
+		// Not threaded into the subprocess-mode session-local scoped-save
+		// path below (/api/memory/scopes/save) -- a different endpoint/
+		// scope system, out of scope for this change.
+		mcpsdk.WithString("tags", mcpsdk.Description("Comma-separated tags (optional)")),
 		mcpsdk.WithReadOnlyHintAnnotation(false),
 		mcpsdk.WithDestructiveHintAnnotation(false),
 	)
@@ -113,6 +119,7 @@ func (s *Server) toolMemoryRemember() mcpsdk.Tool {
 func (s *Server) handleMemoryRemember(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	text := req.GetString("text", "")
 	projectDir := req.GetString("project_dir", "")
+	tags := req.GetString("tags", "")
 	if text == "" {
 		return mcpsdk.NewToolResultError("text is required"), nil
 	}
@@ -133,7 +140,11 @@ func (s *Server) handleMemoryRemember(_ context.Context, req mcpsdk.CallToolRequ
 		}
 	}
 	if s.memoryAPI == nil {
-		if r, ok := s.proxyMemoryPOST("/api/memory/save", map[string]any{"content": text, "project_dir": projectDir}); ok {
+		body := map[string]any{"content": text, "project_dir": projectDir}
+		if tags != "" {
+			body["tags"] = tags
+		}
+		if r, ok := s.proxyMemoryPOST("/api/memory/save", body); ok {
 			return r, nil
 		}
 		return mcpsdk.NewToolResultText("Memory not enabled. Set memory.enabled=true in config."), nil
@@ -141,6 +152,9 @@ func (s *Server) handleMemoryRemember(_ context.Context, req mcpsdk.CallToolRequ
 	id, err := s.memoryAPI.Remember(projectDir, text)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("remember failed: %v", err)), nil
+	}
+	if tags != "" {
+		_ = s.memoryAPI.SetTags(id, tags) // best-effort, see tool description
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Saved memory #%d", id)), nil
 }

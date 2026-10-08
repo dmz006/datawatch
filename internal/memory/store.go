@@ -52,6 +52,13 @@ type Memory struct {
 	Namespace  string    `json:"namespace,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	Similarity float64   `json:"similarity,omitempty"` // populated by search results
+	// Tags (GH#192 D78a) — operator-supplied, comma-separated free text set
+	// via SetTags after Remember/Save, never part of Remember's own params
+	// (kept additive so no existing Save*/Remember call signature changed).
+	// Populated only by ListRecent/ListFiltered/Search — the 3 read paths
+	// the PWA's memory browser actually uses, not every Memory-returning
+	// method in this file.
+	Tags       string    `json:"tags,omitempty"`
 }
 
 // DefaultNamespace is what Save / SaveWithMeta tag rows with when
@@ -204,6 +211,11 @@ func migrate(db *sql.DB) error {
 	// new rows aren't immediately eviction candidates.
 	db.Exec(`ALTER TABLE memories ADD COLUMN last_hit_at INTEGER DEFAULT 0`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_last_hit ON memories(last_hit_at)`) //nolint:errcheck
+	// GH#192 D78a — tags column. Comma-separated free text, set via
+	// SetTags after the row is created (mirrors SetPinned/PinnableBackend
+	// below) — Remember/Save's own signature is intentionally untouched.
+	db.Exec(`ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_tags ON memories(tags)`) //nolint:errcheck
 	// schema_version table — closes the migrate.py audit partial.
 	// Each migration above is idempotent already; this table lets
 	// the operator see which version a database has been brought
@@ -511,7 +523,7 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 	rows, err := s.db.Query(
 		`SELECT id, session_id, project_dir, content, summary, role,
 		        wing, room, hall, COALESCE(floor,''), COALESCE(shelf,''), COALESCE(box,''),
-		        COALESCE(source,''), COALESCE(last_hit_at,0),
+		        COALESCE(source,''), COALESCE(last_hit_at,0), COALESCE(tags,''),
 		        created_at, embedding
 		 FROM memories WHERE project_dir = ? AND embedding IS NOT NULL`,
 		projectDir,
@@ -532,7 +544,7 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 		var embBlob []byte
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
 			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Floor, &m.Shelf, &m.Box,
-			&m.Source, &m.LastHitAt, &m.CreatedAt, &embBlob); err != nil {
+			&m.Source, &m.LastHitAt, &m.Tags, &m.CreatedAt, &embBlob); err != nil {
 			continue
 		}
 		if len(embBlob) == 0 {
@@ -614,7 +626,7 @@ func (s *Store) SearchAll(queryVec []float32, topK int) ([]Memory, error) {
 // ListRecent returns the N most recent memories for a project.
 func (s *Store) ListRecent(projectDir string, n int) ([]Memory, error) {
 	rows, err := s.db.Query(
-		`SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
+		`SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, COALESCE(tags,''), created_at
 		 FROM memories WHERE project_dir = ?
 		 ORDER BY created_at DESC LIMIT ?`,
 		projectDir, n,
@@ -628,7 +640,7 @@ func (s *Store) ListRecent(projectDir string, n int) ([]Memory, error) {
 	for rows.Next() {
 		var m Memory
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
-			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Tags, &m.CreatedAt); err != nil {
 			continue
 		}
 		s.decryptMemory(&m)
@@ -675,6 +687,17 @@ func (s *Store) SetPinned(id int64, pinned bool) error {
 	_, err := s.db.Exec(`UPDATE memories SET pinned = ? WHERE id = ?`, flag, id)
 	if err == nil {
 		s.walLog("pin", map[string]interface{}{"id": id, "pinned": pinned})
+	}
+	return err
+}
+
+// SetTags (GH#192 D78a) replaces the comma-separated tag list on a
+// memory. Mirrors SetPinned exactly — additive, never part of
+// Remember/Save's own call signature.
+func (s *Store) SetTags(id int64, tags string) error {
+	_, err := s.db.Exec(`UPDATE memories SET tags = ? WHERE id = ?`, tags, id)
+	if err == nil {
+		s.walLog("tags", map[string]interface{}{"id": id, "tags": tags})
 	}
 	return err
 }
@@ -1050,7 +1073,7 @@ func (s *Store) Inventory(projectDir string) ([]ScopeInventoryEntry, error) {
 
 // ListFiltered returns memories matching optional filters.
 func (s *Store) ListFiltered(projectDir, role, since string, n int) ([]Memory, error) {
-	query := `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at FROM memories WHERE 1=1`
+	query := `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, COALESCE(tags,''), created_at FROM memories WHERE 1=1`
 	var args []interface{}
 	if projectDir != "" {
 		query += ` AND project_dir = ?`
@@ -1076,7 +1099,7 @@ func (s *Store) ListFiltered(projectDir, role, since string, n int) ([]Memory, e
 	for rows.Next() {
 		var m Memory
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
-			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Tags, &m.CreatedAt); err != nil {
 			continue
 		}
 		s.decryptMemory(&m)

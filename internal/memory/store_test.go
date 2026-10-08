@@ -77,6 +77,95 @@ func TestStore_ListByRole(t *testing.T) {
 	}
 }
 
+// GH#192 D78a — SetTags mirrors SetPinned exactly (same shape, same
+// TaggableBackend/PinnableBackend capability-extension pattern).
+func TestStore_SetTags(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close() //nolint:errcheck
+
+	id, err := s.Save("/proj", "a memory", "", "manual", "", nil)
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := s.SetTags(id, "work,bug"); err != nil {
+		t.Fatalf("SetTags: %v", err)
+	}
+
+	memories, err := s.ListRecent("/proj", 10)
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+	if len(memories) != 1 || memories[0].Tags != "work,bug" {
+		t.Fatalf("expected tags 'work,bug', got %+v", memories)
+	}
+}
+
+func TestStore_SetTags_Overwrites(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close() //nolint:errcheck
+
+	id, _ := s.Save("/proj", "a memory", "", "manual", "", nil)
+	if err := s.SetTags(id, "first"); err != nil {
+		t.Fatalf("SetTags 1: %v", err)
+	}
+	if err := s.SetTags(id, "second,third"); err != nil {
+		t.Fatalf("SetTags 2: %v", err)
+	}
+	memories, _ := s.ListRecent("/proj", 10)
+	if memories[0].Tags != "second,third" {
+		t.Errorf("tags = %q, want 'second,third' (a later SetTags call should replace, not append)", memories[0].Tags)
+	}
+}
+
+// A memory with no tags set at all must read back as "" (COALESCE), not
+// error or a NULL-scan panic -- the whole point of the DEFAULT ''
+// migration + COALESCE in every SELECT this column was added to.
+func TestStore_Tags_DefaultEmptyString(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close() //nolint:errcheck
+
+	_, _ = s.Save("/proj", "untagged", "", "manual", "", nil)
+	memories, err := s.ListRecent("/proj", 10)
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+	if memories[0].Tags != "" {
+		t.Errorf("Tags = %q, want empty string for an untagged memory", memories[0].Tags)
+	}
+}
+
+// Tags must round-trip through ListFiltered and Search too -- the issue
+// specifically named all 3 as the read paths the PWA's memory browser
+// actually uses (see the plan doc's scope boundary vs. the other ~25
+// Memory-returning methods in this file that were deliberately left
+// untouched).
+func TestStore_Tags_RoundTripThroughListFilteredAndSearch(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close() //nolint:errcheck
+
+	id, _ := s.Save("/proj", "filtered-and-searched", "", "manual", "", []float32{1, 0, 0})
+	if err := s.SetTags(id, "urgent"); err != nil {
+		t.Fatalf("SetTags: %v", err)
+	}
+
+	filtered, err := s.ListFiltered("/proj", "", "", 10)
+	if err != nil {
+		t.Fatalf("ListFiltered: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].Tags != "urgent" {
+		t.Fatalf("ListFiltered: expected tags 'urgent', got %+v", filtered)
+	}
+
+	searched, err := s.Search("/proj", []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(searched) != 1 || searched[0].Tags != "urgent" {
+		t.Fatalf("Search: expected tags 'urgent', got %+v", searched)
+	}
+}
+
 func TestStore_Delete(t *testing.T) {
 	s, _ := tempDB(t)
 	defer s.Close() //nolint:errcheck

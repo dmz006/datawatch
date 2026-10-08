@@ -82,6 +82,18 @@ func (a *ServerAdapter) SetPinned(id int64, pinned bool) error {
 	return pb.SetPinned(id, pinned)
 }
 
+// SetTags (GH#192 D78a) sets a memory's comma-separated tag list.
+// Returns ErrNamespaceUnsupported when the active backend doesn't
+// implement TaggableBackend (e.g. the PG path before the column is
+// added) — mirrors SetPinned exactly.
+func (a *ServerAdapter) SetTags(id int64, tags string) error {
+	tb, ok := a.retriever.Store().(TaggableBackend)
+	if !ok {
+		return ErrNamespaceUnsupported
+	}
+	return tb.SetTags(id, tags)
+}
+
 // SweepStale (v6.0.0) drops rows whose last_hit_at is zero AND
 // created_at is older than the cutoff. Returns the candidate +
 // deleted counts. Manual + pinned rows are exempt.
@@ -268,6 +280,7 @@ func convertToMaps(memories []Memory) []map[string]interface{} {
 			"source":     m.Source,
 			"last_hit_at": m.LastHitAt,
 			"pinned":     m.Pinned,
+			"tags":       m.Tags, // GH#192 D78a
 			"created_at": m.CreatedAt,
 			"similarity": m.Similarity,
 		}
