@@ -19,6 +19,14 @@ earlier, unrelated commits; an authoritative ASCII-word-boundary scan found
 |---|---|---|---|---|
 | Locale bundles (`de`/`es`/`fr`/`ja.json`) | Yes | Yes | `TestLocales_AutomatonNeverUntranslatedOrMistranslated` — scans every value in all 4 bundles for the untranslated word or the locale-specific mistranslation; full `TestLocales_*` suite + `go build` + `node --test internal/server/web/*.test.js` (182/182) all green | Validated by direct JSON read-back after the fix, not a browser click-through — this is a text-content check, not a rendering check |
 
+## GH#198 — "PRD" leaking into user-facing locale strings
+
+Added in v8.73.34, filed and closed same round as GH#193's cleanup.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Locale bundles (all 5, English included) | Yes | Yes | `TestLocales_PRDNeverUserFacing` — `\bPRDs?\b` across all 5 bundles; full `TestLocales_*` suite + `go build` + `node --test internal/server/web/*.test.js` (182/182) all green | Caught 2 keys that were entirely untranslated (byte-identical English in all 5 bundles) as a side effect — fully translated those into de/es/fr/ja rather than leaving a partial fix |
+
 ## Federation per-peer TLS skip-verify (`tls_skip_verify`)
 
 Added in v8.73.32. Prompted by a live operator report (federation to `ralfthewise` failing against its self-signed cert).

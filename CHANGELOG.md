@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.34 — fix(pwa): GH#198 — "PRD" was leaking into user-facing locale strings
+
+### Fixed
+- Closed GH#198 (filed during GH#193's cleanup). `\bPRDs?\b` (ASCII word
+  boundaries, catching the plural the first scan missed) found 6 keys
+  saying "PRD"/"PRDs" across all 5 bundles (English included —
+  `automata_type_registry_section_desc`'s source string itself said
+  "PRDs"): `automata_type_registry_section_desc`, `decompose_in_progress`,
+  `settings_injection_guard`, `settings_block_on_injection`,
+  `settings_quality_gates_enabled`, `capacity_pool_host_hint`. All
+  rewritten to say Automaton/Automata, conjugated per locale.
+- Two of those six (`settings_quality_gates_enabled`,
+  `capacity_pool_host_hint`) turned out to be entirely untranslated —
+  byte-identical English text duplicated into all 5 bundles, a separate,
+  pre-existing bug from the word-choice one. Fully translated both into
+  de/es/fr/ja rather than leaving a word-swapped English string in place.
+- `TestLocales_AutomatonNeverUntranslatedOrMistranslated` (GH#193's guard)
+  caught this live: the first-pass word-swap turned the PRD-leak into an
+  Automaton-left-in-English leak for those same two keys, which is what
+  surfaced the untranslated-string bug.
+- New regression guard: `TestLocales_PRDNeverUserFacing`, checking all 5
+  bundles (not just the 4 non-English ones) since the English source
+  itself had the leak.
+- Noted, not fixed (much larger, pre-existing, separate from this issue):
+  the entire "Quality Gates" settings section (`settings_quality_gates_
+  block_on_regression`, `settings_quality_gates_test_command`,
+  `settings_quality_gates_timeout`, `stats_quality_gates`) is still
+  completely untranslated in de/es/fr/ja — identical English text in
+  every bundle. Flagged for a future general-translation-coverage pass,
+  not filed as its own issue yet.
+
 ## v8.73.33 — fix(pwa): GH#193 — Automaton/Automata translated (and mistranslated) strings in de/es/fr/ja
 
 ### Fixed
