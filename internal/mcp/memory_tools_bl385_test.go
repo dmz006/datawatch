@@ -290,7 +290,7 @@ func TestBL385_MemorySweep_BlockedInSubprocessMode(t *testing.T) {
 			content = tc.Text
 		}
 	}
-	if !strings.Contains(content, "not available in subprocess mode") {
+	if !strings.Contains(content, "not available for a scoped session credential") {
 		t.Errorf("expected blocked message, got %q", content)
 	}
 }
@@ -313,7 +313,7 @@ func TestBL385_MemoryImport_BlockedInSubprocessMode(t *testing.T) {
 			content = tc.Text
 		}
 	}
-	if !strings.Contains(content, "not available in subprocess mode") {
+	if !strings.Contains(content, "not available for a scoped session credential") {
 		t.Errorf("expected blocked message, got %q", content)
 	}
 }

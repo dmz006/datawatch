@@ -116,22 +116,24 @@ func (s *Server) toolMemoryRemember() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryRemember(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryRemember(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	text := req.GetString("text", "")
 	projectDir := req.GetString("project_dir", "")
 	tags := req.GetString("tags", "")
 	if text == "" {
 		return mcpsdk.NewToolResultError("text is required"), nil
 	}
-	// BL385 Phase 3 — in subprocess mode, writes go to session-local scope
-	// via the daemon's scoped-save REST endpoint so the memory is isolated to
-	// this task's session and does not pollute the shared project store.
-	if s.subprocessMode() {
+	// BL385 Phase 3 — for a scoped caller (subprocess mode, or a session
+	// token through the shared daemon MCP server — HLLM-004), writes go to
+	// session-local scope via the daemon's scoped-save REST endpoint so the
+	// memory is isolated to this task's session and does not pollute the
+	// shared project store.
+	if callerID, scoped := s.scopedCallerSessionID(ctx); scoped {
 		scopeBody := map[string]any{
 			"scope": map[string]any{
 				"scope":      "session-local",
 				"project":    projectDir,
-				"session_id": s.callerSessionID,
+				"session_id": callerID,
 			},
 			"content": text,
 		}
@@ -167,16 +169,16 @@ func (s *Server) toolMemoryRecall() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryRecall(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryRecall(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	query := req.GetString("query", "")
 	if query == "" {
 		return mcpsdk.NewToolResultError("query is required"), nil
 	}
-	// BL385 Phase 3 — in subprocess mode, recall walks the scope hierarchy
-	// (session-local, story-shared, prd-shared, project-shared) so the agent
-	// sees memories written by earlier tasks in the same PRD/story.
-	if s.subprocessMode() {
-		q := url.Values{"q": {query}, "session": {s.callerSessionID}}
+	// BL385 Phase 3 / HLLM-004 — for a scoped caller, recall walks the scope
+	// hierarchy (session-local, story-shared, prd-shared, project-shared) so
+	// the agent sees memories written by earlier tasks in the same PRD/story.
+	if callerID, scoped := s.scopedCallerSessionID(ctx); scoped {
+		q := url.Values{"q": {query}, "session": {callerID}}
 		if s.callerPRDID != "" {
 			q.Set("prd_id", s.callerPRDID)
 		}
@@ -209,16 +211,16 @@ func (s *Server) toolMemoryList() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryList(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	projectDir := req.GetString("project_dir", "")
 	n := req.GetInt("n", 20)
-	// BL385 Phase 3 — in subprocess mode, list shows only the session-local
-	// layer so the agent sees its own writes without cross-contaminating from
-	// other sessions.
-	if s.subprocessMode() {
+	// BL385 Phase 3 / HLLM-004 — for a scoped caller, list shows only the
+	// session-local layer so the agent sees its own writes without
+	// cross-contaminating from other sessions.
+	if callerID, scoped := s.scopedCallerSessionID(ctx); scoped {
 		q := url.Values{
 			"project": {projectDir},
-			"session": {s.callerSessionID},
+			"session": {callerID},
 			"layers":  {"session-local"},
 			"top_k":   {fmt.Sprintf("%d", n)},
 		}
@@ -247,7 +249,15 @@ func (s *Server) toolMemoryForget() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryForget(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryForget(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// HLLM-004 — memory_forget takes a raw numeric ID with no session-scope
+	// context to check ownership against; for any scoped caller (subprocess
+	// mode, or a session token through the shared daemon MCP server) that
+	// would let a task session delete any memory, including other sessions'
+	// or the operator's. Same precedent as memory_sweep_stale/memory_import below.
+	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
+		return mcpsdk.NewToolResultError("memory_forget is not available for a scoped session credential"), nil
+	}
 	if s.memoryAPI == nil {
 		id := int64(req.GetInt("id", 0))
 		if r, ok := s.proxyMemoryPOST("/api/memory/delete", map[string]any{"id": id}); ok {
@@ -295,7 +305,11 @@ func (s *Server) toolMemoryPin() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryPin(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryPin(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// HLLM-004 — same raw-ID-with-no-ownership-context issue as memory_forget.
+	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
+		return mcpsdk.NewToolResultError("memory_pin is not available for a scoped session credential"), nil
+	}
 	if s.memoryAPI == nil {
 		id := int64(req.GetInt("id", 0))
 		pinned := req.GetBool("pinned", true)
@@ -327,12 +341,12 @@ func (s *Server) toolMemorySweep() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemorySweep(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	// BL385 Phase 3 — block cross-scope sweep in subprocess mode; sweeping
-	// shared layers from a task subprocess could evict memories that other
-	// concurrent tasks or the operator need.
-	if s.subprocessMode() {
-		return mcpsdk.NewToolResultError("memory_sweep_stale is not available in subprocess mode"), nil
+func (s *Server) handleMemorySweep(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// BL385 Phase 3 / HLLM-004 — block cross-scope sweep for any scoped
+	// caller; sweeping shared layers from a task session could evict
+	// memories that other concurrent tasks or the operator need.
+	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
+		return mcpsdk.NewToolResultError("memory_sweep_stale is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		days := req.GetInt("older_than_days", 90)
@@ -702,7 +716,12 @@ func (s *Server) toolMemoryExport() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryExport(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleMemoryExport(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// HLLM-004 — exports every memory in the store, not just this session's;
+	// blocked for any scoped caller, same as memory_import/memory_sweep_stale.
+	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
+		return mcpsdk.NewToolResultError("memory_export is not available for a scoped session credential"), nil
+	}
 	if s.memoryAPI == nil {
 		if r, ok := s.proxyMemoryGET("/api/memory/export", nil); ok {
 			return r, nil
@@ -900,11 +919,12 @@ func (s *Server) toolMemoryImport() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleMemoryImport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	// BL385 Phase 3 — block bulk import in subprocess mode; importing a large
-	// snapshot from a task could overwrite operator-curated shared memories.
-	if s.subprocessMode() {
-		return mcpsdk.NewToolResultError("memory_import is not available in subprocess mode"), nil
+func (s *Server) handleMemoryImport(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// BL385 Phase 3 / HLLM-004 — block bulk import for any scoped caller;
+	// importing a large snapshot from a task could overwrite
+	// operator-curated shared memories.
+	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
+		return mcpsdk.NewToolResultError("memory_import is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		data := req.GetString("json_data", "")

@@ -150,6 +150,60 @@ func (s *Server) SetCallerStoryID(id string) { s.callerStoryID = id }
 // memory writes default to session-local and cross-scope sweeps are blocked.
 func (s *Server) subprocessMode() bool { return s.callerSessionID != "" }
 
+// scopedCallerSessionID returns the FullID of the session whose scoped
+// credential this call should be treated as coming from, and whether any
+// such scoping applies at all. Two cases set it:
+//
+//   - The "Goose channel" subprocess case (datawatch mcp
+//     --caller-session-id=X): one fixed session per process, in s.callerSessionID.
+//   - The shared daemon MCP server case: a single long-lived Server instance
+//     serves every caller (admin, federation peers, AND every spawned
+//     session's own scoped credential) through one dispatch path
+//     (internal/server's handleMCPCall). That path resolves the real
+//     per-call session identity from the token that authenticated the
+//     request and stashes it on ctx via federation.WithCallerSessionID
+//     (HLLM-004) — checked first since it's the more specific, per-call
+//     signal.
+//
+// false means admin or a federation peer (already gated by mcpFedCap) —
+// no additional ownership scoping applies.
+func (s *Server) scopedCallerSessionID(ctx context.Context) (string, bool) {
+	if id := federation.CallerSessionIDFromContext(ctx); id != "" {
+		return id, true
+	}
+	if s.callerSessionID != "" {
+		return s.callerSessionID, true
+	}
+	return "", false
+}
+
+// ownsSession reports whether the calling session (per scopedCallerSessionID)
+// may act on targetFullID: itself, or any session in its own spawned subtree
+// (walked via ParentID, so a grandchild a session spawned indirectly is
+// still covered). Returns true unscoped (HLLM-004 doesn't apply) — see
+// scopedCallerSessionID.
+func (s *Server) ownsSession(ctx context.Context, targetFullID string) bool {
+	callerID, scoped := s.scopedCallerSessionID(ctx)
+	if !scoped {
+		return true
+	}
+	if targetFullID == "" || targetFullID == callerID {
+		return true
+	}
+	cur := targetFullID
+	for depth := 0; depth < 32; depth++ {
+		sess, ok := s.manager.GetSession(cur)
+		if !ok || sess.ParentID == "" {
+			return false
+		}
+		if sess.ParentID == callerID {
+			return true
+		}
+		cur = sess.ParentID
+	}
+	return false
+}
+
 // SetAgentAuditPath wires the audit file path for the agent_audit
 // MCP tool. cef=true marks the file as CEF-formatted (in which case
 // the tool refuses to query it — operators should use their SIEM).
@@ -1966,7 +2020,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	)), nil
 }
 
-func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
 	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
 		id = sn // resolveSession handles name lookup
@@ -1985,6 +2039,9 @@ func (s *Server) handleSessionOutput(_ context.Context, req mcpsdk.CallToolReque
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
 	}
 	if sess == nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+	}
+	if !s.ownsSession(ctx, sess.FullID) {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
@@ -2188,6 +2245,9 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
+	if !s.ownsSession(ctx, sess.FullID) {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+	}
 
 	if err := s.manager.SendInput(sess.FullID, text, "mcp"); err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending input: %v", err)), nil
@@ -2280,6 +2340,9 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
+	if !s.ownsSession(ctx, sess.FullID) {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+	}
 
 	if err := s.manager.Kill(sess.FullID); err != nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error killing session: %v", err)), nil
@@ -2370,6 +2433,12 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 			return mcpsdk.NewToolResultText(fmt.Sprintf("Error resolving session: %v", err)), nil
 		}
 	}
+	// HLLM-004 — reply_to_parent only ever means MY parent; an explicit
+	// session_id for a different session would let a caller inject input
+	// into an arbitrary other session's parent.
+	if childSess != nil && !s.ownsSession(ctx, childSess.FullID) {
+		childSess = nil
+	}
 	if childSess == nil || childSess.ParentID == "" {
 		return mcpsdk.NewToolResultText("No parent session found. This session was not spawned by another session, or parent_id is not recorded."), nil
 	}
@@ -2392,6 +2461,11 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 	var killed, skipped int
 	for _, sess := range sessions {
 		if sess.Hostname != s.hostname {
+			continue
+		}
+		// HLLM-004 — a subprocess-mode caller may only stop its own subtree,
+		// never every session on the host.
+		if !s.ownsSession(ctx, sess.FullID) {
 			continue
 		}
 		if sess.State == session.StateRunning || sess.State == session.StateWaitingInput {

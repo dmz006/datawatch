@@ -32,6 +32,15 @@ const (
 	CapObserversList  = "observers:list"
 	CapObserversRead  = "observers:read"
 	CapObserversWrite = "observers:write"
+	// CapObserversReadAllPeers (HLLM-007) gates observer_envelopes_all_peers
+	// specifically — a cross-host view that includes every OTHER registered
+	// observer peer's process-level envelopes, with Caller attribution that
+	// can reveal other sessions' activity across hosts. Deliberately split
+	// out of CapObserversRead (which stays local-only-safe) so it can be
+	// withheld from session-default while every existing grantee of plain
+	// observers:read (full-control, read-only) keeps exactly the access it
+	// had before.
+	CapObserversReadAllPeers = "observers:read-all-peers"
 
 	// LLM registry
 	CapLLMsList  = "llms:list"
@@ -133,7 +142,7 @@ const (
 var allCaps = []string{
 	CapSessionsList, CapSessionsRead, CapSessionsWrite, CapSessionsKill, CapSessionsInput,
 	CapAgentsList, CapAgentsRead, CapAgentsSpawn, CapAgentsTerminate,
-	CapObserversList, CapObserversRead, CapObserversWrite,
+	CapObserversList, CapObserversRead, CapObserversWrite, CapObserversReadAllPeers,
 	CapLLMsList, CapLLMsRead, CapLLMsWrite,
 	CapComputeList, CapComputeRead, CapComputeWrite,
 	CapAnalyticsRead, CapAnalyticsWrite,
@@ -284,7 +293,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Caps: []string{
 			CapSessionsList, CapSessionsRead,
 			CapAgentsList, CapAgentsRead,
-			CapObserversList, CapObserversRead,
+			CapObserversList, CapObserversRead, CapObserversReadAllPeers,
 			CapLLMsList, CapLLMsRead,
 			CapComputeList, CapComputeRead,
 			CapAnalyticsRead,
@@ -329,6 +338,13 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 	// Operators can grant a session MORE via `session.capabilities` in
 	// config (any custom group works, same mechanism as federation
 	// peers) if an integration genuinely needs a wider default.
+	//
+	// HLLM-007 — deliberately excludes CapObserversReadAllPeers: plain
+	// CapObserversRead is enough for a session's own local observer_stats/
+	// envelopes, but observer_envelopes_all_peers' cross-host Caller
+	// attribution would otherwise let any spawned session see every other
+	// registered peer's process-level activity, including unrelated
+	// sessions on other hosts.
 	"session-default": {
 		Name:        "session-default",
 		Description: "Default per-session scoped-credential grant (Design A3) — coordination + observability, not admin",

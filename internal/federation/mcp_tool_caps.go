@@ -275,7 +275,7 @@ var MCPToolCap = map[string]string{
 	"observer_config_set":            CapObserversWrite,
 	"observer_envelope":              CapObserversRead,
 	"observer_envelopes":             CapObserversRead,
-	"observer_envelopes_all_peers":   CapObserversRead,
+	"observer_envelopes_all_peers":   CapObserversReadAllPeers, // HLLM-007 — narrower than CapObserversRead, see capabilities.go
 	"observer_peer_delete":           CapObserversWrite,
 	"observer_peer_get":              CapObserversRead,
 	"observer_peer_register":         CapObserversWrite,

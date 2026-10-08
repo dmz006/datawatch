@@ -183,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.12"
+var Version = "8.73.13"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1022,7 +1022,20 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 	if req.Args == nil && req.Params != nil {
 		req.Args = req.Params
 	}
-	data, err := s.mcpBridge.MCPCallJSON(r.Context(), req.Tool, req.Args)
+	// HLLM-004 — when this call authenticated via a per-session scoped
+	// credential, stash the real owning session ID so the shared MCP
+	// server's session-lifecycle/memory tool handlers can scope the
+	// call to that session's own subtree instead of trusting it blindly
+	// (session-default previously had no ownership check at all).
+	ctx := r.Context()
+	if s.sessionTokens != nil {
+		if tok := callerTokenFromContext(ctx); tok != "" {
+			if sessID := s.sessionTokens.SessionIDForToken(tok); sessID != "" {
+				ctx = federation.WithCallerSessionID(ctx, sessID)
+			}
+		}
+	}
+	data, err := s.mcpBridge.MCPCallJSON(ctx, req.Tool, req.Args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

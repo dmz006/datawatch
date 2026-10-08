@@ -98,7 +98,11 @@ func (s *Server) handleObserverEnvelopesAllPeers(w http.ResponseWriter, r *http.
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.fedCap(w, r, federation.CapObserversRead) {
+	// HLLM-007 — narrower than the other observer reads on this page:
+	// this is the one endpoint that returns every OTHER registered peer's
+	// data too, so it needs its own capability rather than the broadly
+	// (session-default-)granted CapObserversRead.
+	if !s.fedCap(w, r, federation.CapObserversReadAllPeers) {
 		return
 	}
 	if s.observerAPI == nil {
