@@ -7,7 +7,7 @@
 # driver + S4.4 Helm chart: run this against a parent installed via
 # `helm install dw ./charts/datawatch`.
 #
-#   1. POST /api/profiles/project + /api/profiles/cluster (kind=k8s)
+#   1. POST /api/profiles/projects + /api/profiles/clusters (kind=k8s)
 #   2. POST /api/agents → driver shells out to `kubectl apply -f -`
 #   3. kubectl get pod -l datawatch.agent_id=<id> — confirm Pod exists
 #   4. POST /api/agents/bootstrap with bad token → 401
@@ -63,8 +63,8 @@ cleanup() {
         kubectl "${kubectl_args[@]}" -n "$NAMESPACE" delete pod \
             -l "datawatch.agent_id=$AGENT_ID" --ignore-not-found --grace-period=0 --force >/dev/null 2>&1 || true
     fi
-    curl -sf -X DELETE "$BASE_URL/api/profiles/project/$PROJECT_NAME" >/dev/null 2>&1 || true
-    curl -sf -X DELETE "$BASE_URL/api/profiles/cluster/$CLUSTER_NAME" >/dev/null 2>&1 || true
+    curl -sf -X DELETE "$BASE_URL/api/profiles/projects/$PROJECT_NAME" >/dev/null 2>&1 || true
+    curl -sf -X DELETE "$BASE_URL/api/profiles/clusters/$CLUSTER_NAME" >/dev/null 2>&1 || true
     exit "$rc"
 }
 trap cleanup EXIT
@@ -86,7 +86,7 @@ kubectl "${kubectl_args[@]}" get ns "$NAMESPACE" >/dev/null 2>&1 \
 pass "namespace $NAMESPACE"
 
 echo "→ step 1: create project + cluster profiles (kind=k8s)"
-curl -sf -X POST "$BASE_URL/api/profiles/project" \
+curl -sf -X POST "$BASE_URL/api/profiles/projects" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg name "$PROJECT_NAME" '{
         name: $name,
@@ -96,7 +96,7 @@ curl -sf -X POST "$BASE_URL/api/profiles/project" \
     }')" >/dev/null || fail "project profile create"
 pass "project profile $PROJECT_NAME"
 
-curl -sf -X POST "$BASE_URL/api/profiles/cluster" \
+curl -sf -X POST "$BASE_URL/api/profiles/clusters" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n \
         --arg name "$CLUSTER_NAME" \
@@ -170,8 +170,8 @@ done
 [ -n "$AGENT_ID" ] && fail "Pod still present after terminate"
 
 echo "→ step 7: profile cleanup"
-curl -sf -X DELETE "$BASE_URL/api/profiles/project/$PROJECT_NAME" >/dev/null || fail "project delete"
-curl -sf -X DELETE "$BASE_URL/api/profiles/cluster/$CLUSTER_NAME" >/dev/null || fail "cluster delete"
+curl -sf -X DELETE "$BASE_URL/api/profiles/projects/$PROJECT_NAME" >/dev/null || fail "project delete"
+curl -sf -X DELETE "$BASE_URL/api/profiles/clusters/$CLUSTER_NAME" >/dev/null || fail "cluster delete"
 pass "profiles removed"
 
 echo

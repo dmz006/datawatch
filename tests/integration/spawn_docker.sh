@@ -59,8 +59,9 @@ cleanup() {
     if [ -n "$AGENT_ID" ]; then
         curl -sf -X DELETE "$BASE_URL/api/agents/$AGENT_ID" >/dev/null 2>&1 || true
     fi
-    curl -sf -X DELETE "$BASE_URL/api/profiles/project/$PROJECT_NAME" >/dev/null 2>&1 || true
-    curl -sf -X DELETE "$BASE_URL/api/profiles/cluster/$CLUSTER_NAME" >/dev/null 2>&1 || true
+    curl -sf -X DELETE "$BASE_URL/api/profiles/projects/$PROJECT_NAME" >/dev/null 2>&1 || true
+    curl -sf -X DELETE "$BASE_URL/api/profiles/clusters/$CLUSTER_NAME" >/dev/null 2>&1 || true
+    [ -n "${DAEMON_VERSION:-}" ] && docker rmi "agent-claude:v${DAEMON_VERSION}" >/dev/null 2>&1 || true
     exit "$rc"
 }
 trap cleanup EXIT
@@ -77,7 +78,7 @@ curl -sf "$BASE_URL/healthz" >/dev/null || fail "daemon not reachable at $BASE_U
 pass "daemon healthy"
 
 echo "→ step 1: create project + cluster profiles"
-curl -sf -X POST "$BASE_URL/api/profiles/project" \
+curl -sf -X POST "$BASE_URL/api/profiles/projects" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg name "$PROJECT_NAME" '{
         name: $name,
@@ -87,7 +88,7 @@ curl -sf -X POST "$BASE_URL/api/profiles/project" \
     }')" >/dev/null || fail "project profile create"
 pass "project profile $PROJECT_NAME"
 
-curl -sf -X POST "$BASE_URL/api/profiles/cluster" \
+curl -sf -X POST "$BASE_URL/api/profiles/clusters" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg name "$CLUSTER_NAME" '{
         name: $name,
@@ -100,6 +101,15 @@ echo "→ step 2: spawn an agent (driver shells out to docker)"
 # The busybox placeholder keeps the container alive so Terminate has
 # something to remove. Real worker images would do this themselves
 # via `datawatch start --foreground`.
+#
+# The driver composes the image reference as <registry-prefix>/<image_pair.agent>:<DefaultTag>
+# (DefaultTag = the running daemon's own version, no per-request override exists), so a
+# project profile's image_pair.agent resolves to a real, registry-shaped tag. To honor this
+# script's "no fully-built agent image required" promise without touching the driver, we
+# locally tag $IMAGE (default busybox:latest) to match whatever that composed reference will
+# be, so `docker run` resolves it from the local image cache instead of trying to pull it.
+DAEMON_VERSION=$(curl -sf "$BASE_URL/api/info" | jq -r '.version')
+docker tag "$IMAGE" "agent-claude:v${DAEMON_VERSION}" >/dev/null
 SPAWN_RESP=$(curl -sf -X POST "$BASE_URL/api/agents" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n \
@@ -154,8 +164,8 @@ pass "agent terminated"
 AGENT_ID=""  # prevent cleanup from re-trying
 
 echo "→ step 6: profiles still there, delete them explicitly"
-curl -sf -X DELETE "$BASE_URL/api/profiles/project/$PROJECT_NAME" >/dev/null || fail "project delete"
-curl -sf -X DELETE "$BASE_URL/api/profiles/cluster/$CLUSTER_NAME" >/dev/null || fail "cluster delete"
+curl -sf -X DELETE "$BASE_URL/api/profiles/projects/$PROJECT_NAME" >/dev/null || fail "project delete"
+curl -sf -X DELETE "$BASE_URL/api/profiles/clusters/$CLUSTER_NAME" >/dev/null || fail "cluster delete"
 pass "profiles removed"
 
 echo
