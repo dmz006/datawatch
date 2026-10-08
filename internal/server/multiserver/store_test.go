@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -159,14 +160,19 @@ func TestStore_BuiltinsNotPersisted(t *testing.T) {
 }
 
 func TestStore_Test(t *testing.T) {
-	// Spin up a tiny test HTTP server that returns a health response.
+	// Spin up a tiny test HTTP server that returns a health response AND
+	// a real authenticated-endpoint response -- Test() now requires both.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" {
+		switch r.URL.Path {
+		case "/api/health":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"version":"7.0.0-smoke"}`)) //nolint:errcheck
-			return
+		case "/api/sessions":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
@@ -188,6 +194,51 @@ func TestStore_Test(t *testing.T) {
 	}
 	if version != "7.0.0-smoke" {
 		t.Errorf("version = %q, want %q", version, "7.0.0-smoke")
+	}
+}
+
+// Operator-reported 2026-10-08: Test() used to report success against a
+// server whose token was missing/wrong, because it only ever checked
+// /api/health -- deliberately public, never actually exercising the
+// token. This pins the fix: a healthy-but-unauthenticated remote must
+// surface as a real error, not a green "latency Nms" result.
+func TestStore_Test_FalsePositiveOnBadToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			// Public endpoint: responds fine regardless of auth, same as
+			// every real datawatch daemon.
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"version":"7.0.0-smoke"}`)) //nolint:errcheck
+		case "/api/sessions":
+			// Authenticated endpoint: rejects the bad/missing token.
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "bad-token", URL: srv.URL, Enabled: true, Token: "wrong-token"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	_, version, err := s.Test(context.Background(), "bad-token")
+	if err == nil {
+		t.Fatal("Test: expected an error for a server with a bad token, got nil (false positive)")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") {
+		t.Errorf("error = %q, want it to mention authentication failure", err.Error())
+	}
+	// The version should still come through -- the health check alone
+	// isn't wrong, it's just not sufficient on its own for "success".
+	if version != "7.0.0-smoke" {
+		t.Errorf("version = %q, want %q (health info should still be reported even on auth failure)", version, "7.0.0-smoke")
 	}
 }
 

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.4 — fix: Store.Test() false-positive on bad token; "All servers" mode dropped remote sessions seconds after showing them
+
+### Fixed
+- `multiserver.Store.Test()` — the function behind the Settings page's per-server "Test" button and the `federation_peer_test` MCP tool — had the exact same false-positive flaw as the PWA bug fixed in v8.73.3: it only ever probed `/api/health`, which is deliberately public/unauthenticated, so a server entry with a missing or wrong token still reported a green "latency Nms, version X.Y.Z" success. Found by a compliance audit immediately after the v8.73.3 fix shipped, specifically checking for the same bug class elsewhere. Now also confirms the token actually authenticates against `/api/sessions`, and surfaces a specific "authentication failed" error (with the version still reported) when it doesn't.
+- Operator-reported live: switching to "All servers" mode showed every server's sessions briefly, then quickly filtered down to local only. Root cause: "All" mode stays on the local WebSocket (the real aggregated list comes from a separate HTTP fetch, `_loadAllServersSessions`), but that same local WS still broadcasts its own ordinary local-only `sessions` snapshot on every connect/change — which was unconditionally overwriting `state.sessions`, discarding every remote entry the aggregated fetch had just added, usually within a second or two. Now re-triggers the real aggregated fetch instead of accepting the local-only push verbatim while in "All" mode.
+
 ## v8.73.3 — fix(pwa): federated connection status was a false positive; giant watermark on the status screen
 
 ### Fixed

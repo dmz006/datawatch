@@ -246,8 +246,19 @@ func (s *Store) Delete(name string) error {
 	return ErrNotFound
 }
 
-// Test pings the named server's /api/health endpoint and returns the
+// Test pings the named server's /api/health endpoint for its version/
+// latency, then separately confirms the configured token actually
+// authenticates against a real authenticated endpoint. Returns the
 // measured latency in milliseconds and the reported version string.
+//
+// Operator-reported 2026-10-08, found via a compliance audit after a
+// matching PWA bug: /api/health is deliberately public/unauthenticated
+// (so monitoring tools can probe liveness without credentials) -- a
+// server entry with a missing or wrong token still got a green "latency
+// Nms, version X.Y.Z" from this function, because it never actually
+// exercised the token. This is the dedicated "verify this will work"
+// button (Settings page Test, federation_peer_test MCP tool) giving
+// false confidence. Now requires BOTH checks to pass.
 func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version string, err error) {
 	e, ok := s.Get(name)
 	if !ok {
@@ -261,31 +272,50 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 	for len(url) > 0 && url[len(url)-1] == '/' {
 		url = url[:len(url)-1]
 	}
-	healthURL := url + "/api/health"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	client := &http.Client{Timeout: 10 * time.Second}
+	start := time.Now()
+
+	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/health", nil)
 	if err != nil {
 		return 0, "", fmt.Errorf("build request: %w", err)
 	}
-	if e.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+e.Token)
-	}
-
-	start := time.Now()
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(healthReq)
 	latencyMs = time.Since(start).Milliseconds()
 	if err != nil {
 		return latencyMs, "", err
 	}
-	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	resp.Body.Close() //nolint:errcheck
 
 	// Best-effort parse of {"version":"..."}.
 	var info struct {
 		Version string `json:"version"`
 	}
 	_ = json.Unmarshal(body, &info)
+
+	// Authenticated check -- /api/sessions requires a valid token on
+	// every datawatch daemon, making it a cheap, reliable probe of
+	// whether this entry's token actually works.
+	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/sessions", nil)
+	if err != nil {
+		return latencyMs, info.Version, fmt.Errorf("build auth-check request: %w", err)
+	}
+	if e.Token != "" {
+		authReq.Header.Set("Authorization", "Bearer "+e.Token)
+	}
+	authResp, err := client.Do(authReq)
+	if err != nil {
+		return latencyMs, info.Version, fmt.Errorf("reachable but auth check failed: %w", err)
+	}
+	defer authResp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, io.LimitReader(authResp.Body, 4096))
+	if authResp.StatusCode == http.StatusUnauthorized || authResp.StatusCode == http.StatusForbidden {
+		return latencyMs, info.Version, fmt.Errorf("reachable (v%s) but authentication failed — check this server's token", info.Version)
+	}
+	if authResp.StatusCode < 200 || authResp.StatusCode >= 300 {
+		return latencyMs, info.Version, fmt.Errorf("reachable (v%s) but unexpected status %d from authenticated check", info.Version, authResp.StatusCode)
+	}
 	return latencyMs, info.Version, nil
 }
 

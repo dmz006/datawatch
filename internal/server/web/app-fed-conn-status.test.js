@@ -141,6 +141,37 @@ test('real session data arriving clears any in-progress federated connection sta
   assert.equal(vm.runInContext('state._fedConnStatus', sandbox), null);
 });
 
+test('in "All servers" mode, a plain local sessions WS push does NOT clobber the aggregated list with local-only data', () => {
+  // Operator-reported (2026-10-08): switching to "All" showed every
+  // server's sessions briefly, then quickly filtered down to local only.
+  // "All" mode stays on the local WS (the aggregated list comes from a
+  // separate HTTP fetch, _loadAllServersSessions) -- that same local WS
+  // still broadcasts its own ordinary local-only 'sessions' snapshot,
+  // which used to unconditionally overwrite state.sessions and silently
+  // drop every remote entry the aggregated fetch had just added.
+  const sandbox = loadAppJS();
+  const aggregated = [
+    { id: 'local-1', server: 'local' },
+    { id: 'remote-1', server: 'host-a' },
+  ];
+  vm.runInContext(`state.activeServer = 'all'; state.sessions = ${JSON.stringify(aggregated)};`, sandbox);
+  let reloaded = false;
+  sandbox._loadAllServersSessions = () => { reloaded = true; };
+  // Simulate the local WS's own ordinary (non-aggregated) push.
+  vm.runInContext(`handleMessage({ type: 'sessions', data: { sessions: [{ id: 'local-1', server: 'local' }] } })`, sandbox);
+  const sessions = JSON.parse(vm.runInContext('JSON.stringify(state.sessions)', sandbox));
+  assert.deepEqual(sessions, aggregated, 'state.sessions must be untouched by the raw local push while in All mode -- the remote entry must survive');
+  assert.equal(reloaded, true, 'should re-trigger the real aggregated fetch instead, to pick up the local change without losing remote entries');
+});
+
+test('outside "All" mode, a local sessions WS push still updates state.sessions normally (regression guard)', () => {
+  const sandbox = loadAppJS();
+  vm.runInContext(`state.activeServer = null;`, sandbox);
+  vm.runInContext(`handleMessage({ type: 'sessions', data: { sessions: [{ id: 'local-1' }] } })`, sandbox);
+  const sessions = JSON.parse(vm.runInContext('JSON.stringify(state.sessions)', sandbox));
+  assert.deepEqual(sessions, [{ id: 'local-1' }]);
+});
+
 test('selectServer() kicks off a federated connection check when switching to a named remote server', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`fetch = () => new Promise(() => {})`, sandbox);

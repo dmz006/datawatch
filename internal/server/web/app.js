@@ -630,7 +630,21 @@ function apiFetch(path, opts = {}) {
 function handleMessage(msg) {
   switch (msg.type) {
     case 'sessions':
-      if (msg.data && msg.data.sessions) {
+      // Operator-reported (2026-10-08): "All servers" mode showed every
+      // server's sessions briefly, then quickly filtered down to local
+      // only. Root cause: "all" mode stays on the LOCAL WS (aggregated
+      // data is fetched separately via _loadAllServersSessions()'s own
+      // HTTP call), but this same WS still broadcasts its own ordinary
+      // local-only 'sessions' snapshot on connect/change -- which this
+      // case unconditionally used to overwrite state.sessions with,
+      // immediately discarding whatever remote entries the aggregated
+      // fetch had just added. Refresh the real aggregate instead of
+      // accepting the local-only push verbatim whenever "all" is active;
+      // the rest of this case (channelReady bookkeeping, version-change
+      // reload check) still applies regardless of mode.
+      if (state.activeServer === 'all') {
+        _loadAllServersSessions();
+      } else if (msg.data && msg.data.sessions) {
         state.sessions = msg.data.sessions || [];
       } else {
         state.sessions = msg.data || [];
