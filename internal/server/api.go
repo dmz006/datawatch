@@ -183,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.32"
+var Version = "8.73.33"
 
 // Server holds all HTTP handler dependencies
 type Server struct {

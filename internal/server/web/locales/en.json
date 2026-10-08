@@ -464,7 +464,7 @@
   "evals_running": "Running ",
   "evals_section_title": "Evals",
   "evals_threshold": "threshold",
-  "fab_launch_auto": "Launch Automation",
+  "fab_launch_auto": "Launch Automaton",
   "fab_new_template": "New template",
   "fab_new_session": "Start a new session",
   "fed_conn_back_to_local": "Back to %1$s",

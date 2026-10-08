@@ -5,6 +5,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.33 — fix(pwa): GH#193 — Automaton/Automata translated (and mistranslated) strings in de/es/fr/ja
+
+### Fixed
+- Closed GH#193. The issue listed 123 strings across the 4 non-English
+  bundles still carrying the untranslated English word "Automaton"/
+  "Automata" or the wrong word entirely ("Automation"/"automatización"/
+  "automatisation"/"オートメーション" — a different concept). Most had
+  already been fixed in earlier, unrelated commits by the time this ran;
+  an authoritative scan (`\bAutomat(a|on)s?\b`, ASCII word boundaries)
+  found de/es/fr already clean. `ja.json` had 8 real remaining leaks
+  (7 untranslated "Automaton" literals the shell's locale-aware `\b`
+  regex missed because Japanese ideographs register as word characters
+  under some grep locales — Go's `regexp` doesn't have that problem,
+  which is how the new test caught them; plus `fab_launch_auto` using
+  the wrong word, オートメーション, mirroring `en.json`'s own same bug).
+  `en.json`'s `fab_launch_auto` ("Launch Automation") also fixed to
+  "Launch Automaton", matching its two sibling keys
+  (`automata_btn_launch`, `automata_wizard_launch`).
+- New regression guard: `TestLocales_AutomatonNeverUntranslatedOrMistranslated`
+  (`internal/server/v8_73_33_automata_terminology_test.go`) — fails if
+  any de/es/fr/ja value contains the untranslated word or its locale's
+  specific mistranslation, per the ASCII-boundary lesson above.
+- Found, not fixed (separate from GH#193's scope — "PRD" leakage, not
+  Automaton/Automata): 4 (en), 4 (de), 4 (es), 5 (fr), 3 (ja) locale
+  values still say "PRD" instead of "Automaton"/"Automata". Flagged for
+  a follow-up issue, not bundled into this fix.
+
 ## v8.73.32 — feat(federation): per-peer TLS cert-verification bypass for self-signed servers
 
 ### Added

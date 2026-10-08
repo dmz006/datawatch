@@ -9,6 +9,16 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## GH#193 — Automaton/Automata terminology in de/es/fr/ja locales
+
+Added in v8.73.33. Most of the issue's 123-string list was already fixed by
+earlier, unrelated commits; an authoritative ASCII-word-boundary scan found
+8 real remaining leaks, all in `ja.json` (plus one in `en.json` itself).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Locale bundles (`de`/`es`/`fr`/`ja.json`) | Yes | Yes | `TestLocales_AutomatonNeverUntranslatedOrMistranslated` — scans every value in all 4 bundles for the untranslated word or the locale-specific mistranslation; full `TestLocales_*` suite + `go build` + `node --test internal/server/web/*.test.js` (182/182) all green | Validated by direct JSON read-back after the fix, not a browser click-through — this is a text-content check, not a rendering check |
+
 ## Federation per-peer TLS skip-verify (`tls_skip_verify`)
 
 Added in v8.73.32. Prompted by a live operator report (federation to `ralfthewise` failing against its self-signed cert).
