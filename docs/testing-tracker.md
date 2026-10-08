@@ -9,6 +9,22 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## GH#194 — Never Label the Connected Server "local"
+
+Added in v8.73.10. `handleListServers`'s new `hostname` field + client-side `_ensureLocalHostname`/`_localHostname`. See `docs/plans/2026-10-08-gh194-never-say-local.md`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `GET /api/servers` local entry carries `hostname` — `TestListServers_LocalEntryCarriesRealHostname` | Yes | No | Go test, direct handler call | Not validated against a live daemon this round |
+| `_ensureLocalHostname` caching + dedup-fetch | Yes | No | `app-server-identity-label.test.js` — 2 tests | |
+| `_serverPickerBar` local chip: real hostname vs. never-"Local" fallback | Yes | No | Same file — 2 tests | |
+| `loadSystemStatsGrid` (Observer) self-peer dedup, no "local" badge | Yes | No | Same file | Mocks `/api/stats` + `/api/observer/peers` with a matching self-peer entry |
+| `loadServers` (Settings list) real hostname display | Yes | No | Same file | |
+| Swipe-gesture modal picker (`_loadServerPickerModalList`) | No | No | Not unit tested this round — shares `_ensureLocalHostname`'s callback path, verified by code review only | Follow-up: add a direct test |
+| "Back to %1$s" button / connection toast / Sessions tooltip parameterization | No | No | Not unit tested this round — covered by manual code review of the render call sites | Follow-up: add direct tests |
+
+---
+
 ## PWA Federated Error Visibility (401/403/502)
 
 Added in v8.73.8. `_fedFetchError`/`apiFetch` central classifier across Sessions, Alerts, Automata, Dashboard (partial), Observer (partial), server picker reachability. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md`.

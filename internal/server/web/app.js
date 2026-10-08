@@ -2403,7 +2403,7 @@ function renderSessionsView() {
     <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
     <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
-    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
+    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
       ${t('session_tree_btn')||'Tree'}
@@ -2426,13 +2426,14 @@ function renderSessionsView() {
     const fcs = state._fedConnStatus;
     if (state.activeServer && state.activeServer !== 'all' && fcs && fcs.server === state.activeServer) {
       if (fcs.phase === 'error') {
+        _ensureLocalHostname(); // GH#194 -- so "Back to %1$s" shows the real name on the next render if not already cached
         view.innerHTML = `
           <div class="view-content" style="position:relative;">
             <div class="empty-state">
               <span class="empty-state-icon">⚠️</span>
               <h3>${escHtml(t('fed_conn_error_title') || 'Could not reach this server')}</h3>
               <p>${escHtml(t('fed_conn_error_body', [state.activeServer, fcs.message]) || `${state.activeServer}: ${fcs.message}`)}</p>
-              <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local') || 'Back to Local')}</button>
+              <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>
             </div>
           </div>`;
         _injectServerPickerBar(view, renderSessionsView);
@@ -16022,8 +16023,13 @@ function loadServers() {
       const pwaLink = sv.name !== 'local' && sv.enabled && pwaOrigin
         ? ` <a href="${escHtml(pwaHref)}" target="_blank" onclick="if(!event.ctrlKey&&!event.metaKey&&event.button===0){event.preventDefault();_showRemotePWAViewer('${escHtml(sv.name)}');}" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="View remote PWA (separate, isolated origin)">PWA</a>`
         : '';
+      // GH#194 -- "local" stays the stable routing key (selectServer
+      // call below), but the displayed name is the real hostname the
+      // server now reports (added server-side alongside this field)
+      // rather than the literal word "local".
+      const displayName = sv.name === 'local' ? (sv.hostname || sv.name) : sv.name;
       return `<div class="settings-row" style="justify-content:space-between">
-        <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+        <div><strong>${escHtml(displayName)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
         <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? (t('status_connected') || 'Connected') : (t('btn_select') || 'Select')}</button>
       </div>`;
     })).then(rows => {
@@ -16034,6 +16040,7 @@ function loadServers() {
 
 function selectServer(name) {
   const prev = state.activeServer;
+  _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
   // Toggle back to null (local) if same button clicked; otherwise switch
   state.activeServer = (state.activeServer === name) ? null : name;
   loadServers();
@@ -16061,7 +16068,7 @@ function selectServer(name) {
       } else {
         state._fedConnStatus = null;
       }
-      showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
+      showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Connected to ${_localHostname || 'this server'}`), 'info');
     }
   }
 }
@@ -16201,7 +16208,8 @@ function testServerEntry(name, btnEl) {
 // ── BL312 S3 — Per-tab server picker component ─────────────────────────────────
 
 // Returns HTML for a compact server picker bar.
-// Shows "All" + "Local" + one chip per enabled remote server.
+// Shows "All" + the local server's own hostname + one chip per enabled
+// remote server.
 // Hidden when no remote servers are registered.
 function _serverPickerBar(opts) {
   const servers = (state.servers && Array.isArray(state.servers.servers)
@@ -16209,6 +16217,13 @@ function _serverPickerBar(opts) {
     : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
   if (!servers.length) return '';
   const active = state.activeServer || null;
+  // GH#194 — never label the connected server "local" to the operator;
+  // show its real hostname once known (_ensureLocalHostname, kicked off
+  // by _injectServerPickerBar below). _localHostname is null on the
+  // very first render before that fetch resolves -- server_local_label
+  // is a brief, generic placeholder ("This server"), never the word
+  // "Local", patched to the real name in place once it arrives.
+  const localLabel = _localHostname || t('server_local_label') || 'This server';
   // BL317 — Observer has no backing aggregation for its ~9 independent
   // cards (eBPF, plugins, backend health, certs, envelopes, peer
   // resources, and its own pre-existing "observer peers" cross-node
@@ -16218,11 +16233,11 @@ function _serverPickerBar(opts) {
   // non-functional "All" that would silently keep showing local-only
   // data (operator decision, 2026-10-07).
   const chips = (opts && opts.hideAll) ? [
-    { name: null, label: t('server_local_label') || 'Local' },
+    { name: null, label: localLabel },
     ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
   ] : [
     { name: 'all', label: t('server_all_label') || 'All' },
-    { name: null, label: t('server_local_label') || 'Local' },
+    { name: null, label: localLabel },
     ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
   ];
   const btns = chips.map(c => {
@@ -16239,7 +16254,11 @@ function _serverPickerBar(opts) {
     // surfaces (_checkFederatedConnection/_fedFetchError).
     const unreachable = c.name && c.name !== 'all' && _serverReachability[c.name] === false;
     const dim = unreachable ? 'opacity:0.45;' : '';
-    const title = unreachable ? ` title="${escHtml(t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)')}"` : '';
+    // GH#194 — the local chip's own tooltip names the real hostname
+    // too (once known), never the word "Local".
+    const title = unreachable
+      ? ` title="${escHtml(t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)')}"`
+      : (c.name === null && _localHostname) ? ` title="${escHtml(t('server_chip_this_server_tip', [_localHostname]) || _localHostname)}"` : '';
     // Operator-reported (2026-10-07): a server/peer name containing a
     // `"` (e.g. a real federated peer named "Apple Testing Sandbox" --
     // wait, the actual trigger was any name at all, since
@@ -16294,6 +16313,51 @@ function _updatePickerChipReachability(name) {
   });
 }
 
+// GH#194 — the PWA must never label the connected server "local" to the
+// operator; every surface that used to say "Local" shows the real
+// hostname instead (from /api/health's own hostname field, the same one
+// GH#192/D78a already wired server-side for /api/stats). Cached for the
+// page session -- it never changes while this tab is open -- and
+// fetched once, lazily, the first time the picker bar (or anything else
+// that needs it) is rendered, same lazy-background pattern as the
+// reachability probe above: never blocks the bar's own synchronous
+// render, patches the chip in place once resolved.
+let _localHostname = null;
+let _localHostnameFetching = false;
+const _localHostnameWaiters = [];
+// cb (optional) fires once the real hostname resolves -- for a surface
+// that needs to fully regenerate its own markup (e.g. the swipe-gesture
+// modal's "● "/"○ " active-marker prefix) rather than the simple
+// text-patch _updatePickerChipLocalLabel does for the picker bar.
+// Never re-registers a waiter once _localHostname is already known --
+// callers that pass cb only do so from inside their own render, so a
+// resolved hostname must call cb at most once, not loop.
+function _ensureLocalHostname(cb) {
+  if (_localHostname) { if (cb) setTimeout(cb, 0); return; }
+  if (cb) _localHostnameWaiters.push(cb);
+  if (_localHostnameFetching) return;
+  _localHostnameFetching = true;
+  fetch('/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(h => {
+      if (h && h.hostname) {
+        _localHostname = h.hostname;
+        _updatePickerChipLocalLabel();
+        _localHostnameWaiters.splice(0).forEach(fn => { try { fn(); } catch (_) {} });
+      }
+    })
+    .catch(() => {})
+    .finally(() => { _localHostnameFetching = false; });
+}
+function _updatePickerChipLocalLabel() {
+  if (typeof document === 'undefined' || !document.querySelectorAll || !_localHostname) return;
+  document.querySelectorAll('.server-picker-bar button[data-server-name=""]').forEach(btn => {
+    const hadWarn = btn.textContent.includes('⚠');
+    btn.textContent = _localHostname + (hadWarn ? ' ⚠' : '');
+    btn.title = t('server_chip_this_server_tip', [_localHostname]) || _localHostname;
+  });
+}
+
 // Injects the server picker bar into the top of containerEl.
 // Fetches server list if not yet loaded, then re-renders via rerenderFn.
 // Operator-reported (2026-10-07): the picker never appeared at all for a
@@ -16338,6 +16402,10 @@ function _injectServerPickerBar(containerEl, rerenderFn, opts) {
     ? state.servers.servers
     : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
   if (realServers.length) _probePickerReachability(realServers);
+  // GH#194 — same lazy, non-blocking pattern for the local chip's real
+  // hostname (never blocks this render; patches the chip in place once
+  // /api/health resolves).
+  _ensureLocalHostname();
 }
 
 // Shared /api/servers loader used by every picker surface (top-bar,
@@ -20640,7 +20708,7 @@ window._loadPRDSessionResources = function(prd) {
     if (!d) return [];
     const gpu = [];
     if (d.gpu_name) gpu.push({ name: d.gpu_name, util_pct: d.gpu_util_pct, temp_c: d.gpu_temp, power_w: null, mem_used_bytes: (d.gpu_mem_used_mb||0)*1048576, mem_total_bytes: (d.gpu_mem_total_mb||0)*1048576 });
-    return [{ ref: t('server_local_label')||'Local', detail: { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu } }];
+    return [{ ref: d.hostname || _localHostname || t('server_local_label') || 'This server', detail: { host: { cpu_pct: d.cpu_cores > 0 ? Math.min(100, 100*d.cpu_load_avg_1/d.cpu_cores) : 0, mem_used_bytes: d.mem_used, mem_total_bytes: d.mem_total }, gpu } }];
   }).catch(() => []);
 
   const cnDetailFetch = refs => Promise.all([...refs].map(ref =>
@@ -22291,12 +22359,13 @@ function loadSystemStatsGrid() {
       </div>
     </div>`;
   };
-  const sysCard = (name, isLocal, dot, cpuHtml, memHtml, gpuHtml) => `
+  // GH#194 -- no "local" tag/badge; the card's own name (the real
+  // hostname) is label enough, and the word "local" never appears.
+  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml) => `
     <div style="background:var(--surface1,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
         <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
         <span style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>
-        ${isLocal ? `<span style="font-size:9px;padding:1px 5px;background:var(--accent);color:#fff;border-radius:3px;flex-shrink:0;">local</span>` : ''}
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
@@ -22319,14 +22388,24 @@ function loadSystemStatsGrid() {
       if (gTotal > 0) gpuHtml += bar('GPU VRAM', gUsed, gTotal, 'var(--accent2,#60a5fa)', fmtBytes(gUsed)+' / '+fmtBytes(gTotal));
     }
     const loadStr = cpuPct+'% · '+d.cpu_load_avg_1.toFixed(2)+'/'+d.cpu_load_avg_5.toFixed(2)+'/'+d.cpu_load_avg_15.toFixed(2);
-    return { name: d.hostname || 'local', isLocal: true, dot: 'var(--success,#10b981)',
+    // GH#194 -- real hostname (/api/stats has carried one since
+    // GH#192/D78a); the 'local' fallback is a last-resort for the rare
+    // case neither it nor the already-cached /api/health hostname
+    // resolved, never the normal path.
+    return { name: d.hostname || _localHostname || 'local', dot: 'var(--success,#10b981)',
       cpuHtml: bar('CPU', cpuPct, 100, cpuColor, loadStr),
       memHtml: bar('RAM', d.mem_used, d.mem_total, memPct > 85 ? 'var(--error)' : 'var(--accent)', fmtBytes(d.mem_used)+' / '+fmtBytes(d.mem_total)),
       gpuHtml };
   }).catch(() => null);
 
   const peersP = apiFetch('/api/observer/peers').then(data => {
-    const peers = (data && data.peers) || [];
+    // GH#194 -- /api/observer/peers always includes a synthesized
+    // "self" entry (is_self:true, see synthesizeSelfPeer server-side)
+    // so its OWN peers panel shows every host in one table. localP
+    // above already represents this exact same machine with live,
+    // real-time data -- without this filter it showed up a second
+    // time here too, as a duplicate card for the same physical host.
+    const peers = ((data && data.peers) || []).filter(p => !p.is_self);
     return Promise.all(peers.map(p =>
       apiFetch('/api/observer/peers/'+encodeURIComponent(p.name)+'/stats')
         .then(snap => {
@@ -22371,17 +22450,17 @@ function loadSystemStatsGrid() {
                 fmtBytes(g.mem_used_bytes)+' / '+fmtBytes(g.mem_total_bytes));
             }
           });
-          return { name: p.name, isLocal: false, dot,
+          return { name: p.name, dot,
             cpuHtml: cpuHtml || '', memHtml: memHtml || '', gpuHtml: gpuHtml || '' };
         })
-        .catch(() => ({ name: p.name, isLocal: false, dot: 'var(--text2)', cpuHtml:'', memHtml:'', gpuHtml:'' }))
+        .catch(() => ({ name: p.name, dot: 'var(--text2)', cpuHtml:'', memHtml:'', gpuHtml:'' }))
     ));
   }).catch(() => []);
 
   Promise.all([localP, peersP]).then(([local, peers]) => {
     const cards = [];
-    if (local) cards.push(sysCard(local.name, true, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
-    peers.forEach(p => cards.push(sysCard(p.name, false, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
+    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
+    peers.forEach(p => cards.push(sysCard(p.name, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
     if (!cards.length) {
       el.innerHTML = '';
       return;
@@ -23956,17 +24035,26 @@ function _loadServerPickerModalList() {
       ? state.servers.servers
       : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
     const active = state.activeServer || null;
-    // Always offers All + Local, even with zero remote servers configured
-    // -- the one thing the old scroll+highlight approach could never do.
+    // Always offers All + this server, even with zero remote servers
+    // configured -- the one thing the old scroll+highlight approach
+    // could never do. GH#194 -- never literally "Local"; real hostname
+    // once _ensureLocalHostname resolves (kicked off below).
     const chips = [
       { name: 'all', label: t('server_all_label') || 'All' },
-      { name: null, label: t('server_local_label') || 'Local' },
+      { name: null, label: _localHostname || t('server_local_label') || 'This server' },
       ...servers.map(s => ({ name: s.name, label: s.label || s.name })),
     ];
     el.innerHTML = chips.map(c => {
       const isActive = c.name === active;
-      return `<button onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
+      return `<button data-server-name="${escHtml(c.name || '')}" onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
     }).join('');
+    // GH#194 -- re-render (not a text-patch) once the real hostname
+    // resolves, so the "● "/"○ " active-marker prefix this modal's
+    // markup carries is rebuilt correctly rather than clobbered by a
+    // blind textContent overwrite. Only registers a waiter while the
+    // hostname is still unknown -- once known, render() already used
+    // it above, so there's nothing to wait for.
+    if (!_localHostname) _ensureLocalHostname(render);
   };
   if (state.servers === undefined) {
     listEl.innerHTML = `<div style="font-size:12px;color:var(--text-dim,#888);padding:8px 10px;">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;

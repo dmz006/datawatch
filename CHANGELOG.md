@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.10 — fix(pwa): GH#194 — never label the connected server "local"
+
+### Fixed
+- Observer's System Statistics grid showed the same physical machine twice: once as the local `/api/stats` card, once again from `/api/observer/peers`' own synthesized "self" entry (`is_self: true`, added in v7.0.0 #184 so the peers table shows every host in one place) — Observer's grid never excluded it. Filtered it out; dropped the "local" badge/tag entirely in the same pass.
+- The picker chip, the swipe-gesture modal's own independent picker, the "Back to Local" button, a hardcoded (non-localized) Sessions-view tooltip, the connection toast, and the Settings server list all displayed the literal word "Local"/"local" instead of the server's real name.
+- `handleListServers`' local entry gained a `hostname` field (server already had `s.hostname` wired for `/api/health`/`/api/stats`; `/api/servers` just never exposed it). `"local"` itself is unchanged and stays the stable routing/comparison key used throughout the client (`apiFetch`'s proxy check, `selectServer`, etc.) — this is a display-layer fix, not a rename.
+- New `_ensureLocalHostname()` lazily fetches `/api/health`'s hostname once per page session (same non-blocking, patch-in-place pattern as the existing picker-reachability probe) and feeds every surface above.
+
+### Added
+- `TestListServers_LocalEntryCarriesRealHostname` (Go); `app-server-identity-label.test.js` — 6 new JS tests.
+
+### Process
+- Could not verify exact wording parity against the Android/iOS apps making the identical change (#234–#236) — no access to those repos from here. Used generic neutral phrasing; flagged for a follow-up parity check once those PRs land.
+
 ## v8.73.9 — security(SEC-023): stronger Argon2id params, no more silent plaintext fallback on encryption failure
 
 ### Security

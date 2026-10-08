@@ -183,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.9"
+var Version = "8.73.10"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7113,18 +7113,25 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type serverInfo struct {
-		Name    string `json:"name"`
-		URL     string `json:"url"`
-		HasAuth bool   `json:"has_auth"`
-		Enabled bool   `json:"enabled"`
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		HasAuth  bool   `json:"has_auth"`
+		Enabled  bool   `json:"enabled"`
+		Hostname string `json:"hostname,omitempty"`
 	}
 	result := make([]serverInfo, 0, len(s.cfg.Servers)+1)
-	// Always include implicit local entry
+	// Always include implicit local entry. "local" stays the stable name
+	// used for routing/comparison throughout the client (apiFetch's
+	// isRemote check, selectServer, etc.) — Hostname is a separate,
+	// display-only field so the PWA can show the real machine name
+	// instead of the literal word "local" (GH#194: never label the
+	// connected server "local").
 	result = append(result, serverInfo{
-		Name:    "local",
-		URL:     fmt.Sprintf("http://localhost:%d", s.cfg.Server.Port),
-		HasAuth: s.cfg.Server.Token != "",
-		Enabled: true,
+		Name:     "local",
+		URL:      fmt.Sprintf("http://localhost:%d", s.cfg.Server.Port),
+		HasAuth:  s.cfg.Server.Token != "",
+		Enabled:  true,
+		Hostname: s.hostname,
 	})
 	for _, sv := range s.cfg.Servers {
 		result = append(result, serverInfo{

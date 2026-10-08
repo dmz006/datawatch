@@ -182,6 +182,37 @@ func TestReadyz_NoManager_Down(t *testing.T) {
 	}
 }
 
+func TestListServers_LocalEntryCarriesRealHostname(t *testing.T) {
+	// GH#194 — the PWA must never label the connected server "local" to
+	// the operator; the literal name "local" stays the stable
+	// routing/comparison key (apiFetch's isRemote check, selectServer,
+	// etc. all compare against it), but the client needs the real
+	// hostname to display instead. Pins that handleListServers' local
+	// entry carries both.
+	s := newTestServer(t, nil, nil)
+	s.cfg = &config.Config{}
+	s.cfg.Server.Port = 8443
+
+	rr := httptest.NewRecorder()
+	s.handleListServers(rr, httptest.NewRequest(http.MethodGet, "/api/servers", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body []struct {
+		Name     string `json:"name"`
+		Hostname string `json:"hostname"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) == 0 || body[0].Name != "local" {
+		t.Fatalf("expected first entry name=local, got %+v", body)
+	}
+	if body[0].Hostname != "testhost" {
+		t.Errorf("hostname=%q want %q (newTestServer's s.hostname)", body[0].Hostname, "testhost")
+	}
+}
+
 func TestGetConfig_ExposesWorkspaceRoot(t *testing.T) {
 	// F10 audit: ensure workspace_root is readable via /api/config so it
 	// has parity with default_project_dir and other session fields.
