@@ -1498,6 +1498,25 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
+> **BL398** — Full review of suppressed container-image CVEs (filed
+> 2026-10-08, operator-requested immediately after SEC-026/v8.73.26's
+> CVE-2026-19445 suppression: "set up a plan to review all suppressed cve
+> to see if they impact datawatch, good for documentation and
+> mitigation"). Plan: `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+> `.trivyignore` has 71 CVE/GHSA IDs across ~26 package-group blocks,
+> accumulated opportunistically release-by-release; only the 3 most
+> recent entries carry an honest CAVEAT admitting the actual code path
+> was never independently traced, and `docs/security-review.md`'s
+> container-scanning section is stale (documents only the original
+> v8.0.0-era 19 exceptions). 5 phases: reconcile ≥4 blocks where the
+> prose describes more CVEs than are actually suppressed; a fresh
+> per-image Trivy rescan baseline; re-verify every un-CAVEATed block's
+> rationale against the real container contents instead of re-asserting
+> it; a mitigation pass looking for packages to delete outright (rsync's
+> 14-CVE block and gawk are the top candidates) rather than suppress
+> forever; and bringing `docs/security-review.md` back in sync. Not
+> started.
+
 > **BL335** ✅ Closed v8.62.x — APNs push notification support for iOS client (filed 2026-05-27, GH#107/#158). Shipped as BL397 Phase 4, folded in alongside the ACME work at the operator's request. New `internal/apns` package (JWT ES256 provider-token auth, HTTP/2 dispatch), wired into the real alert-fire path. 9 unit tests including a real signature-verification test; **not live-verified** against Apple's real servers (no Apple Developer credentials available in this environment) — see `docs/parity-status.md`. All 6 of the original items below shipped. See `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`'s "Phase 2/3/4 shipped" section for the full writeup.
 > 1. ~~Accept `platform=apns` on `POST /api/device/register`~~ — already worked (pre-existing `devices.KindAPNS`).
 > 2. ~~Store APNs device tokens alongside FCM tokens~~ — already worked.
