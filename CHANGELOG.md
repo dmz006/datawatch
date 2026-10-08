@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.1 — docs: Android beta step 3 — install link now live
+
+### Changed
+- Google closed-testing track is now fully wired up (operator added the tester group to the Play console track). README's beta section and the PWA's About → Mobile app card now link step 3 directly to the Play Store listing (`play.google.com/store/apps/details?id=com.dmzs.datawatchclient`), noting the listing only appears after opting in. New `settings_mobile_app_install` locale key, all 5 bundles.
+
 ## v8.73.0 — feat(pwa): GH#192 Phase 4 — memory tags, end to end (feature complete)
 
 ### Added

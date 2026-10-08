@@ -8382,7 +8382,9 @@ function renderSettingsView() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
                   Join Beta on Google Play
                 </a>
-                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing — join the tester group above, then {opt_in} and stay in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple\'s beta review.').replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')}</div>
+                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing — join the tester group above, then {opt_in}, then {install} (the listing appears after you opt in) and stay opted in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple\'s beta review.')
+                  .replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')
+                  .replace('{install}', '<a href="https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_install')||'install from Google Play')+'</a>')}</div>
               </div>
             </div>
           </div>
