@@ -123,7 +123,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**70 suppressed container CVEs across 5 images, 1 independently traced.**
+**64 suppressed container CVEs across 5 images, 0 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -131,19 +131,14 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2023-2953 | `libldap-2.5-0` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2023-45853 | `zlib1g` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-26625 | `git-lfs` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-11822 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-11824 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-11940 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-12064 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-15308 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-16742 | `libsystemd0, libudev1` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-19445 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | yes | 2027-01-06 | No fix available in Debian bookworm. Independently traced and confirmed unreacha... |
-| CVE-2026-19553 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-11-01 | No fix available in Debian bookworm. NOT independently traced (self-admitted cav... |
 | CVE-2026-34980 | `libcups2` | high | parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-3644 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-07-12 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-40467 | `gawk` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
 | CVE-2026-40468 | `gawk` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
 | CVE-2026-40469 | `gawk` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
@@ -190,7 +185,6 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-78409 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-78410 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-8286 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-8328 | `libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal, python3.11-venv` | high | agent-gemini, agent-aider | no | 2026-10-26 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-8458 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-84782 | `libssl3` | high | agent-base, agent-gemini, agent-aider, parent-full, stats-cluster | no | 2026-10-29 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-8927 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
