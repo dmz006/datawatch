@@ -53,6 +53,25 @@ beyond what's already in 8.73.1.
   `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
   `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
   were already current.
+- **Release-gate lint**: the first `v9.0.0` tag's CI run failed on
+  `golangci-lint` errcheck — a `//nolint:errcheck` sat on the wrong line
+  (`exec.Command(...)` instead of the wrapped `.Run()` continuation two
+  lines down, which golangci-lint doesn't honor) in
+  `internal/llm/backends/gemini/backend.go`, plus two unguarded
+  `fmt.Fprint` in `internal/llm/backends/openwebui/usage_test.go`. Both
+  pre-existing, neither introduced by this release. Fixed; full E2E then
+  re-run completely from scratch (not just the narrower `release-smoke.sh`
+  recheck) to rule out side effects from the TS-557 plan-doc move:
+  **674 passed, 0 failed, 14 skipped, 48 min.**
+- **Agent-spawn integration smokes**: `tests/integration/spawn_docker.sh`
+  and `spawn_k8s.sh` are required by the major-release checklist but wired
+  into neither CI nor `scripts/run-tests.sh` — `git log -S` shows they'd
+  likely never actually passed. Both called the singular
+  `/api/profiles/project(cluster)` against routes that have always been
+  plural (404 on every call); `spawn_docker.sh` separately hardcoded an
+  `image_pair.agent` that the docker driver resolves to a non-existent
+  registry tag, leaving its own `$IMAGE` override as dead code. Fixed
+  both; they now pass end-to-end (real Pod and container lifecycle).
 
 ### Changed
 
