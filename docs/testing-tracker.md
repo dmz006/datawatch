@@ -9,6 +9,16 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## CVE-2026-77214 (libexpat1) — new finding triaged under the GH#197 standard
+
+Added in v8.73.35. Found live by manually re-triggering `image-refresh.yaml`
+to verify GH#197's "3 days failing" complaint was actually fixed.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `security/accepted-risks.yml` entry + generated `.trivyignore` | Yes | Yes | `scripts/check_accepted_risks.py` passes (71 entries); `scripts/gen_trivyignore.py` regenerated `.trivyignore` + `docs/security-review.md` cleanly | Reachability traced live: `docker run --network none` + a full-image `ldd` sweep found only `git-http-push` links `libexpat1`, which nothing in this codebase or a modern `git push` invokes |
+| `image-refresh.yaml`'s blocking scan | No (this is a live CI gate, not a unit test) | Yes | Manually re-triggered the workflow (`gh workflow run`) before and after this fix; the specific GH#197-cited failure (CVE-2026-19445) was already gone (stale pre-fix run), confirming this new finding was the one actually blocking `agent-base`'s promotion | Re-triggered again after this commit lands to confirm green (see CHANGELOG) |
+
 ## GH#193 — Automaton/Automata terminology in de/es/fr/ja locales
 
 Added in v8.73.33. Most of the issue's 123-string list was already fixed by

@@ -5,6 +5,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.35 — security: triage a new finding blocking image-refresh.yaml (CVE-2026-77214, libexpat1)
+
+### Fixed
+- `image-refresh.yaml` had failed 3 scheduled days running (noted in GH#197).
+  Traced the actual cause two ways: (1) re-triggered it manually after this
+  session's registry/`.trivyignore` work landed -- the specific failure GH#197
+  called out (`CVE-2026-19445` on agent-gemini/agent-aider) is gone, confirming
+  that one really was just a stale pre-fix run, not a live bug; (2) the
+  re-trigger immediately hit a genuinely new, real finding instead:
+  `CVE-2026-77214` (libexpat1, HIGH, heap buffer over-read in
+  `XML_ParseBuffer`) on `agent-base`/`agent-gemini`/`agent-aider`/`parent-full`
+  -- new since the BL398 migration baseline, not previously registered.
+- Traced it: scanned every executable in the image for a dynamic link to
+  `libexpat1` (networkless container, `docker run --network none`) -- only
+  `/usr/lib/git-core/git-http-push` links it, git's legacy dumb-HTTP/WebDAV
+  push path, superseded by smart-HTTP (the default since ~2010) and never
+  invoked by any datawatch code path. Confirmed unreachable, added to the
+  registry under GH#197's self-service rule (no operator approval needed --
+  not `reachable: yes` on a HIGH/CRITICAL finding).
+- Along the way: fresh Trivy rescans of all 5 registry images found the
+  *same installed package version* now reports *different* CVE IDs for
+  several existing entries than when they were originally suppressed (e.g.
+  zlib1g 1:1.2.13.dfsg-1 showed `CVE-2023-45853` at migration time, now
+  shows `CVE-2026-27171`/`CVE-2026-85091` instead, at the identical version).
+  CVE-ID churn against a stable package version, not real drift -- flagged
+  for BL398 Phase 2, since it means per-ID reconciliation alone can't be
+  trusted; re-verification needs to be keyed on package+version, not just
+  "is this ID still reported."
+
 ## v8.73.34 — fix(pwa): GH#198 — "PRD" was leaking into user-facing locale strings
 
 ### Fixed

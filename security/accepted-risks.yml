@@ -1382,3 +1382,24 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm. Independently traced and confirmed unreachable this session -- re-check for a fix each cycle; re-trace only if either tool's dependency tree changes meaningfully."
 
+  - id: cve/CVE-2026-77214
+    kind: container
+    package: "libexpat1"
+    version: "2.5.0-1+deb12u4"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "ldd scan of every executable in a networkless container (docker run --entrypoint /bin/sh --network none) to find every real linker to libexpat1, then traced each caller's actual invocation path"
+      analysis: "Heap buffer over-read in XML_ParseBuffer, triggered by malformed/attacker-controlled XML. Scanned every file in the image for a dynamic link to libexpat1: only /usr/lib/git-core/git-http-push links it. That binary is git's legacy dumb-HTTP/WebDAV push path, superseded by the smart-HTTP protocol git push has used by default since ~2010; it is never invoked by any datawatch code path, the image's own git usage, or a normal `git push` to a modern remote (GitHub/GitLab/etc. all serve smart HTTP). Even in the dumb-HTTP case the exposure is on push, not fetch, requiring the operator's own configured remote to be malicious -- not an attacker-controlled input."
+    first_added: "2026-10-08"
+    added: "2026-10-08"
+    expires: "2027-01-06"
+    validated_by: "claude-session"
+    reason: "Found live by image-refresh.yaml's blocking scan (new since the BL398 migration baseline -- not in the original 70). No fix available in Debian bookworm. Independently traced and confirmed unreachable this session."
+
