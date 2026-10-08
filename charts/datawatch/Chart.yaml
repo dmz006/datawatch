@@ -12,10 +12,12 @@ version: 0.23.0
 
 # App version. Track the datawatch release this chart was tested
 # against; values.yaml's image.tag overrides at install time.
-# v5.26.22 — bumped to current release. CI publishes GHCR tags
+# v9.0.0 — major-release maintenance audit (2026-10-07): Chart
+# templates/values unchanged (chart `version` not bumped), appVersion
+# refreshed to track the current release. CI publishes GHCR tags
 # without the `v` prefix; templates/_helpers.tpl strips a leading
 # `v` from image.tag so either form works for the override.
-appVersion: "5.26.22"
+appVersion: "9.0.0"
 
 home: https://github.com/dmz006/datawatch
 sources:

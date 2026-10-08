@@ -50,6 +50,38 @@ func TestHandleClaudeModels_Shape(t *testing.T) {
 	}
 }
 
+// v9.0.0 major-release model-alias refresh (AGENT.md's major-release rule)
+// found full_names stuck at "claude-opus-5"/"claude-sonnet-5" — missing
+// the "-5-5" minor-version suffix for the current Opus 5.5/Sonnet 5.5
+// models. Pins the corrected values so the next major release's refresh
+// has something concrete to diff against, instead of re-discovering the
+// drift from scratch.
+func TestHandleClaudeModels_FullNamesCurrentAsOfV9(t *testing.T) {
+	s := bl90Server(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/llm/claude/models", nil)
+	rr := httptest.NewRecorder()
+	s.handleClaudeModels(rr, req)
+
+	var got map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	fullNames := got["full_names"].([]interface{})
+	values := map[string]bool{}
+	for _, fn := range fullNames {
+		row := fn.(map[string]interface{})
+		if v, ok := row["value"].(string); ok {
+			values[v] = true
+		}
+	}
+	want := []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"}
+	for _, w := range want {
+		if !values[w] {
+			t.Errorf("full_names missing %q (got: %v)", w, values)
+		}
+	}
+}
+
 func TestHandleClaudeModels_RejectsPost(t *testing.T) {
 	s := bl90Server(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/llm/claude/models", nil)

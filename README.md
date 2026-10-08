@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.69.3-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.0.0-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -50,13 +50,62 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ---
 
-## Recent highlights
+## Current release
 
-**Current: [v8.69.4](CHANGELOG.md)** (2026-10-07). See `CHANGELOG.md` for everything shipped since v8.63.11 below — this rolling summary fell behind across roughly 90 versions and is being caught back up rather than backfilled from memory. Most recently: claude-code and ollama sessions now report real token usage/cost (`Session.TokensIn/TokensOut/EstCostUSD` had been zero for every session on every backend). v8.63.10 fixed a real gap in GH#186 found via a live browser spot-check: the Dashboard showed no loading state at all while its layout loaded. v8.63.9 shipped GH#186: the PWA now shows the animated datawatch eye for content-loading states across 123 cards/panels/sheets, matching the apps — not visually verified in a browser, see the changelog. v8.63.8 fixed GH#181: the council live-run log now renders persona replies/consensus/dissent as markdown instead of plain-text truncated to 600/400 chars, matching the apps and the completed-run viewer. v8.63.7 fixed GH#173: `config generate` emitted detection pattern lists as the literal string `"[]"`, which made the generated config fail to load; also hardened the daemon's PID-lock pre-check so a broken `--config` errors out instead of silently falling back to the production data dir. v8.63.6 fixed GH#174: the MCP channel bridge now re-announces its port every 60s instead of once at startup, so "Waiting for MCP channel…" self-heals after a daemon restart instead of staying stuck forever. v8.63.5 fixed GH#180: two config/manager sync gaps — `PUT /api/autonomous/config` wasn't reflected in `GET /api/config`, and a council LLM change via `PUT /api/config` + reload never reached the live orchestrator until a restart. v8.63.4 fixed GH#183: APNs push dispatch now picks the sandbox/production host per-device (`apns_environment`) instead of one daemon-wide toggle — a debug and a production build can now be registered at once without either one 400ing. v8.63.3 fixed a docs-viewer bug reported by the iOS app: "?" help links opened the right page but never scrolled to the section, because iOS percent-encodes the in-page anchor's `#`. v8.63.2 removed 8 stale `.trivyignore` CVE suppressions (GH#163) — fixes are now available upstream. v8.63.1 fixed a security issue where the LLM registry's `GET /api/llms` endpoint (and the `llm_list`/`llm_get` MCP tools) returned a literal API key in clear text — see GH#179 in the changelog. v8.63.0 made native ACME/Let's Encrypt feature-complete: HTTP-01 (v8.62.0, live-verified against a real Let's Encrypt directory), DNS-01 via Cloudflare (for wildcards or when port 80 isn't available), and zero-downtime hot-swap renewal (no daemon restart). Also ships native APNs push dispatch — the daemon sends directly to registered iOS devices on every alert, closing a gap open since v8.8.6. See [docs/howto/letsencrypt-acme.md](docs/howto/letsencrypt-acme.md).
+**Current release: v9.0.0 (2026-10-07).** Major-version milestone: formal
+cut for memory-lifecycle completeness (subprocess scope isolation, lifecycle
+management, and PRD memory integration — all three shipped incrementally
+back in September, cut together here as the milestone the project had been
+tracking toward since then), plus an Android/iOS parity batch (per-row
+server attribution, Dashboard cross-server aggregation, a real server-picker
+modal replacing a scroll-and-pulse, and end-to-end memory tags), a
+federation live-store staleness fix (cross-host
+comm-channel `send` and the CLI's `--server` flag were both blind to any
+peer added after daemon startup), and the routine major-release
+housekeeping (Claude model-alias refresh, container/Helm-chart audit, this
+README restructure). Full detail: [CHANGELOG.md](CHANGELOG.md).
 
-- **[v8.62.0](CHANGELOG.md)** — Native ACME/Let's Encrypt HTTP-01, live-verified end-to-end against a real public host and a real Let's Encrypt directory — 4 real bugs found and fixed in that run.
-- **[v8.61.1](CHANGELOG.md)** — PWA parity adoption sweep complete through Phase 3: pause/resume for a running Automaton, Observer/About cards, a Config Viewer with a safe raw editor, a dependency-graph view of an Automaton's stories/tasks, and the autonomous verifier now recording which files a task actually touched.
-- **[v8.39.25](CHANGELOG.md)** — Security Design A3: every spawned session gets its own scoped credential (not the admin token), closing the last of the SEC-002–SEC-014 security hardening sweep (11 real findings fixed: SSRF, path traversal, prototype pollution, reflected XSS, bearer-token leakage, an origin-isolation gap in the federation-peer PWA proxy). Full writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
+- **[v8.72.0](CHANGELOG.md)** — Three-finger swipe now opens a real
+  server-picker overlay (server list + an explicit "Add server" action)
+  instead of scrolling to and pulsing the always-visible toolbar bar —
+  works even with zero remote servers configured, which the old approach
+  never did.
+- **[v8.67.0](CHANGELOG.md)** — Cross-host comm-channel `send` and the
+  CLI's `--server` flag were both blind to any federation peer added after
+  daemon startup (a frozen snapshot from boot, never refreshed from the
+  live server registry) — fixed.
+- **[v8.62.0](CHANGELOG.md)** — Native ACME/Let's Encrypt HTTP-01,
+  live-verified end-to-end against a real public host and a real Let's
+  Encrypt directory — 4 real bugs found and fixed in that run.
+- **[v8.39.25](CHANGELOG.md)** — Security Design A3: every spawned session
+  gets its own scoped credential (not the admin token), closing the last of
+  the SEC-002–SEC-014 security hardening sweep (11 real findings fixed:
+  SSRF, path traversal, prototype pollution, reflected XSS, bearer-token
+  leakage, an origin-isolation gap in the federation-peer PWA proxy). Full
+  writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
+
+### v8.63.0–v8.73.1 highlights
+
+- claude-code and ollama sessions now report real token usage/cost
+  (`Session.TokensIn/TokensOut/EstCostUSD` had been zero for every session
+  on every backend). The PWA shows the animated datawatch eye for
+  content-loading states across 123 cards/panels/sheets, matching the apps
+  (GH#186), and council live-run logs render markdown instead of truncated
+  plain text (GH#181).
+- Native ACME/Let's Encrypt feature-complete: HTTP-01, DNS-01 via
+  Cloudflare (wildcards / port-80-unavailable), zero-downtime hot-swap
+  renewal, and native APNs push dispatch straight to registered iOS
+  devices. See [docs/howto/letsencrypt-acme.md](docs/howto/letsencrypt-acme.md).
+- Several real security/config-sync bugs found and fixed: the LLM
+  registry leaking a literal API key in clear text (GH#179), a config/
+  manager desync where `PUT /api/autonomous/config` and a council LLM
+  change didn't take effect until a daemon restart, APNs push dispatch
+  mixing up sandbox/production hosts per-device.
+- A help-link anchor mismatch fixed across most PWA cards (GH#189), 3
+  missing help-link pages, a Community Plugins browse/install card
+  (GH#191), and PRD scratch artifacts (`CHECKPOINT.md`,
+  `.decompose-output-*.json`) relocated out of the shared project
+  repository into a managed per-PRD scratch directory.
 
 ### v8.45.0–v8.61.1 highlights (PWA parity sweep, Phases 2–3, now complete)
 
@@ -67,6 +116,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the complete patch-by-patch history.
 
 ### Release eras
 
+- **v9.x** — Memory-lifecycle-complete era: the subprocess scope isolation / lifecycle management / PRD-integration memory trilogy, full Android/iOS parity sweeps, and federation live-store consistency fixes.
 - **v8.x** — Federation era: capability-based access control (50 capabilities, 14 built-in groups) gating every REST endpoint and MCP tool, multi-mode Compute Node routing (direct / docker-network / cross-peer proxy), channel routing, federated file service, discussion-scoped shared memory, full operational data encryption, and the Android/Wear/Auto app.
 - **v7.x** — Compute abstraction era: Compute Node registry + LLM Registry with automatic failover dispatch, the Ollama Marketplace, Claude Code hooks + live status board, systematic capability enforcement across 110+ endpoints.
 - **v6.x and earlier** — PAI-parity era: operator identity, Algorithm Mode's 7-phase reasoning harness, the Evals framework, Council Mode's multi-persona debate, Skill Registries, the native Secrets Manager, Tailscale mesh, and the original Signal-bridge core.

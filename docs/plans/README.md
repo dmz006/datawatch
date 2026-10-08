@@ -304,39 +304,35 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 ---
 
-#### v9.0.0 — Memory Lifecycle Complete (major release milestone)
+#### v9.0.0 — Memory Lifecycle Complete (major release milestone) ✅ Executed 2026-10-07
 
-**Operator-filed 2026-09-15. Status: in-progress (e2e green). Requires BL385 + BL386 + BL387.**
+**Operator-filed 2026-09-15. Status corrected 2026-10-07**: this entry had sat at "Status: in-progress"/"Status: planned" (below, for BL386/BL387) since 2026-09-16 — stale leftover, never updated after BL385/386/387 all actually shipped (BL385 v8.29.0, BL386 v8.30.0, BL387 v8.31.0–v8.33.0; see the Completed Backlog table above, which already tracked this correctly). The referenced `docs/plans/2026-09-15-v9-memory-lifecycle-major.md` does not exist on disk. The operator's 2026-10-07 instruction to execute the major release is the current authorization; see `docs/plans/2026-10-07-v9.0.0-major-release.md` for what v9.0.0 actually ships (the memory trilogy, already-shipped since September, plus every v8.x release since — this milestone had simply never been formally cut).
 
-**Purpose:** Operator-designated major release milestone. Validates the three-BL memory lifecycle trilogy with a full 9-scenario e2e suite, performance benchmarks, backward-compat audit, and documentation complete pass. No new features beyond v8.33.0.
-
-**Plan:** `docs/plans/2026-09-15-v9-memory-lifecycle-major.md`
-
-**E2E status (2026-09-16):** Full suite ran: 551 passed, 18 failed, 39 skipped. All 18 failures fixed (T45 sprint TS-680–694: locale keys, ScopeRef schema, auth header, async decompose, api_code stripping, MCP param names, PWA tab navigation). T47 sprint added: TS-696–705 covering B102–B106 (files_touched absolute paths, file viewer API, decompose/stream SSE, PRD status field, filter/status locale keys, app.js static checks). All fixed tests verified green.
+**E2E status (2026-09-16, historical)**: Full suite ran: 551 passed, 18 failed, 39 skipped. All 18 failures fixed (T45 sprint TS-680–694). T47 sprint added TS-696–705. Re-verified clean as part of the 2026-10-07 release pass — see the new plan doc for current numbers.
 
 ---
 
-#### BL387 — PRD memory integration (6 features: verifier memory, child inheritance, decomposer enrichment, cross-PRD seeding, auto-report, PWA tile)
+#### BL387 — PRD memory integration (6 features: verifier memory, child inheritance, decomposer enrichment, cross-PRD seeding, auto-report, PWA tile) ✅ Closed in v8.33.0
 
-**Operator-filed 2026-09-15. Status: planned. Requires BL386.**
+**Operator-filed 2026-09-15. Closed 2026-09-15 in v8.33.0 (3 phases: v8.31.0, v8.32.0, v8.33.0). Status corrected 2026-10-07 — left at "planned" after shipping.**
 
 **Problem:** PRDs remain memory-blind. Verifier findings are not persisted between retries. Child PRDs start from zero even when parent accumulated learnings. Decomposer has no access to prior project knowledge. Completed PRDs leave no audit trail of what was learned.
 
 **Plan:** `docs/plans/2026-09-15-bl387-prd-memory-integration.md`
 
-**Target releases:** v8.31.0 (Phase 1: verifier + child inheritance), v8.32.0 (Phase 2: decomposer enrichment + cross-PRD seeding), v8.33.0 (Phase 3: auto-report + PWA tile)
+**Shipped:** v8.31.0 (Phase 1: verifier + child inheritance), v8.32.0 (Phase 2: decomposer enrichment + cross-PRD seeding), v8.33.0 (Phase 3: auto-report + PWA tile)
 
 ---
 
-#### BL386 — Memory lifecycle management (warm-start seeding, harvest, archive-on-delete, handoff, PRD report)
+#### BL386 — Memory lifecycle management (warm-start seeding, harvest, archive-on-delete, handoff, PRD report) ✅ Closed in v8.30.0
 
-**Operator-filed 2026-09-15. Status: planned. Requires BL385.**
+**Operator-filed 2026-09-15. Closed 2026-09-15 in v8.30.0. Status corrected 2026-10-07 — left at "planned" after shipping.**
 
 **Problem:** Memory has no managed lifecycle. Sessions start cold, learnings stay trapped in session-local, and deleted PRDs/sessions leave memories orphaned or silently dropped. No mechanism for warm-start seeding, task-to-task handoff, harvest-on-completion, or archive-before-delete.
 
 **Plan:** `docs/plans/2026-09-15-bl386-memory-lifecycle-management.md`
 
-**Target release:** v8.30.0 (after BL385 / v8.29.0)
+**Shipped:** v8.30.0 (all 5 phases, after BL385 / v8.29.0)
 
 ---
 

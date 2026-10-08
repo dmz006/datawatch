@@ -5,6 +5,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.0 — Memory Lifecycle Complete (major release)
+
+Operator-authorized full-pipeline major release: run the complete E2E
+suite, fix everything found, cut 9.0.0. See
+`docs/plans/2026-10-07-v9.0.0-major-release.md` for the full writeup.
+
+### Why major, not minor
+
+This milestone has been tracked in the backlog since 2026-09-15, gated on
+the three-part memory-lifecycle trilogy (subprocess scope isolation,
+lifecycle management, PRD memory integration) — all three shipped
+incrementally back in September (v8.29.0–v8.33.0), but the milestone itself
+was never formally cut; its backlog status text went stale and was never
+corrected. v9.0.0 is that formal cut, bundled with every v8.x release since
+(the GH#192 Android/iOS parity batch, the federation live-store staleness
+fix, and this release's own full E2E pass + housekeeping) — no new feature
+beyond what's already in 8.73.1.
+
+### Fixed
+
+- **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
+  sandbox daemon, never production). The 1 failure was a release gate
+  (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past
+  the 7-day archive cutoff still sitting in `docs/plans/` — fixed by
+  running `tidy-plans.sh` for real; re-verified with a standalone
+  `release-smoke.sh` run afterward (185 passed, 0 failed, 33 skipped). The
+  15 skips are all pre-existing infrastructure-floor gaps in the sandbox
+  (1Password/Signal/Tailscale not configured, an Ollama vision model that
+  crashed mid-run, and a parallel-LLM Automata test hitting its own
+  documented 30-minute soft-skip branch) — none a code regression.
+- **Claude model aliases** (major-release refresh rule): `handleClaudeModels`'s
+  hardcoded `full_names` were missing the `-5-5` minor-version suffix —
+  `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
+  `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
+  were already current.
+
+### Changed
+
+- **Container/Helm maintenance audit**: confirmed every worker/parent
+  container image bakes in a fresh-from-source build of the `datawatch`
+  binary itself (`agent-base`'s builder stage), and that
+  `.github/workflows/release.yaml` already rebuilds every one of them on
+  every release tag push, unconditionally — no manual rebuild needed for
+  this release. `charts/datawatch/Chart.yaml`'s `appVersion` (stale at
+  `5.26.22`, ~80 releases behind) refreshed to `9.0.0`; chart `version`
+  left unchanged (no template/values changes this release).
+- **README restructure**: added the `## Current release` marquee section
+  the release checklist requires (previously just a drifted "Recent
+  highlights" paragraph with no dedicated heading); folded older entries
+  into `### vX.Y highlights` bullet groups.
+- **Backlog correction**: `docs/plans/README.md`'s v9.0.0/BL386/BL387
+  entries had sat at stale "in-progress"/"planned" status text since
+  2026-09-16, long after all three actually shipped — corrected to reflect
+  the real, already-tracked-elsewhere closure state.
+
 ## v8.73.1 — docs: Android beta step 3 — install link now live
 
 ### Changed
