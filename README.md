@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v9.0.1-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.0.0-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -54,7 +54,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.1 (2026-10-07).** Major-version milestone: formal
+**Current release: v9.0.0 (2026-10-07).** Major-version milestone: formal
 cut for memory-lifecycle completeness (subprocess scope isolation, lifecycle
 management, and PRD memory integration — all three shipped incrementally
 back in September, cut together here as the milestone the project had been
