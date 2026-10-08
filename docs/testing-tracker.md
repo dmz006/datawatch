@@ -989,3 +989,11 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `POST /api/skills/registries/{name}/sync` rolls back (Unsync) any skill that failed verification by default; `trust_unverified: true` keeps everything | **Yes** | **Yes** | `TestHandleSkillsSync_RollsBackUnverifiedByDefault`, `TestHandleSkillsSync_TrustUnverifiedKeepsEverything` (fake `skillsManager`) | |
 | CLI `--trust-unverified` flag and MCP `trust_unverified` param both thread through to the same REST body field | **Yes** | No | Verified by code inspection (`cli_skills.go`, `internal/mcp/skills.go`) and the REST-layer tests above covering the actual enforcement; no separate CLI-process or MCP-transport-level test added this pass | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3240 passed, 0 failed | |
+
+## SEC-026: gosec baseline-diff ceiling refresh — v8.73.21
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Live gosec count (exact CI command: `gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./...`) measured and compared against the baseline | **Yes** | **Yes** | Ran locally: live=63 vs. old baseline total=60; confirmed by-rule breakdown (G118:2, G122:6, G123:1, G702:3, G703:32, G704:19) sums to 63 and every rule ID is one of the six the baseline's own `_comment` already blanket-accepts — no new rule category | Not a Go test — this is a JSON-config correctness check, verified by running the real CI command and the real baseline-diff Python logic locally |
+| Updated `.gosec-baseline.json` produces a passing baseline-diff against the current live count | **Yes** | **Yes** | Re-ran the workflow's exact Python comparison logic locally against the new file: `live=63 baseline=63` → pass | |
+| `go test ./...` unaffected (this is a non-code config/docs change) | **Yes** | **Yes** | `go test ./...` — 3240 passed, 0 failed | |

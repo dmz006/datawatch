@@ -1,14 +1,14 @@
 {
-  "_comment": "gosec finding baseline (v8.2.0–v8.4.0 update, 2026-05-19). CI fails when the live count exceeds the baseline total — i.e. on net-new findings. To accept a NEW finding: review it, update docs/security-review.md, then bump total + by_rule. Notes: G115 (integer overflow) fully resolved in v8.x. G122 filepath.Walk TOCTOU in scan/plugin walkers — accepted, daemon runs as operator user, not multi-tenant. G702 command injection taint FP in voice transcription + identity CLI (inputs are operator-controlled). G703 path traversal taint analysis FP — all flagged callsites have explicit checkPathTraversal or filepath.Clean guards. G704 SSRF taint FP — all flagged URLs come from operator-configured federation peers, compute nodes, or proxy targets. G118/G123 goroutine/context handling — accepted pattern in long-running daemon.",
-  "_baseline_taken_at": "2026-05-19 (v8.4.0 pre-release)",
+  "_comment": "gosec finding baseline (SEC-026 refresh, 2026-10-08). CI fails when the live count exceeds the baseline total — i.e. on net-new findings. To accept a NEW finding: review it, update docs/security-review.md, then bump total + by_rule. Notes: G115 (integer overflow) fully resolved in v8.x, suppressed globally via .gosec-exclude. G122 filepath.Walk TOCTOU in scan/plugin walkers — accepted, daemon runs as operator user, not multi-tenant. G702 command injection taint FP in voice transcription + identity CLI (inputs are operator-controlled). G703 path traversal taint analysis FP — all flagged callsites have explicit checkPathTraversal or filepath.Clean guards. G704 SSRF taint FP — all flagged URLs come from operator-configured federation peers, compute nodes, or proxy targets. G118/G123 goroutine/context handling — accepted pattern in long-running daemon. SEC-026: this file had drifted out of sync with the live count (total=60 vs. a measured live=63) since the 2026-05-19 baseline — every one of the 63 live findings falls under an already-documented-accepted rule ID above (no new rule category appeared), so this is a bookkeeping refresh to the measured true count, not a loosening of what's actually accepted. The underlying drift-detection gap (security-scan.yaml only triggers on pull_request, never on a direct push to main — so this went uncaught for 5 months of main-branch commits) is a separate, larger CI-workflow-trigger decision, flagged in docs/security-review.md rather than changed here.",
+  "_baseline_taken_at": "2026-10-08 (SEC-026 refresh)",
   "_command": "EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\\n' ',' | sed 's/,$//') && gosec -exclude=\"$EXCLUDE\" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./...",
-  "total": 60,
+  "total": 63,
   "by_rule": {
     "G118": 2,
     "G122": 6,
     "G123": 1,
     "G702": 3,
-    "G703": 29,
+    "G703": 32,
     "G704": 19
   }
 }

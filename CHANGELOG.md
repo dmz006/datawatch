@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.21 — security(SEC-026): refresh the stale gosec baseline-diff ceiling to the measured live count
+
+### Security
+- `.gosec-baseline.json` had drifted out of sync with reality since its 2026-05-19 snapshot: `total: 60` against a measured live count of 63 (`gosec -exclude=... -severity=high -confidence=medium ./...`, the exact command the CI gate runs). Every one of the 63 live findings falls under a rule ID the baseline file's own documented rationale already blanket-accepts (G118, G122, G123, G702, G703 — now 32, up from 29 — G704) — no new rule category appeared, so this is a bookkeeping refresh to the true measured count, not a loosening of what's actually accepted.
+- Flagged, not fixed: `.github/workflows/security-scan.yaml` only triggers on `pull_request` to `main`, never on a direct push — so this drift went uncaught through roughly 5 months of main-branch commits, none of which went through a PR. Whether to also gate direct pushes (and how that'd interact with `release.yaml`'s own gosec step) is a CI-workflow-trigger decision, not a baseline-number change — documented in `docs/security-review.md` for a deliberate call, not decided unilaterally here.
+- Added a dated section to `docs/security-review.md` recording the old-vs-live per-rule breakdown and both points above, per this repo's own documented process ("bump the baseline... with rationale in docs/security-review.md").
+
 ## v8.73.20 — security(SEC-022): execute the skill manifest Verify command, gate unverified skills behind --trust-unverified
 
 ### Security

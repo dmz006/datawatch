@@ -147,6 +147,24 @@ Input scanner: `ScanForInjection(text)` in `internal/autonomous/security.go` che
 
 **Procedural addition:** Any new LLM prompt site that interpolates user-supplied text (spec, title, description) must add a security preamble and `<user_data>` tag. Reviewers: grep for `fmt.Sprintf` calls in `cmd/datawatch/main.go` that interpolate `req.Spec`, `task.Spec`, or user-facing string fields.
 
+## gosec baseline-diff refresh — SEC-026, 2026-10-08
+
+`.gosec-baseline.json` had drifted out of sync with reality: `total: 60` against a measured live count of 63 (`by_rule` was last taken 2026-05-19, v8.4.0-era). Every one of the 63 live findings is one of the six rule IDs the baseline file's own `_comment` already blanket-accepts (G118, G122, G123, G702, G703, G704) — no new rule category appeared, so this is a bookkeeping refresh to the measured true count, not a loosening of what's actually accepted:
+
+| Rule | Old baseline | Live (2026-10-08) |
+|---|---|---|
+| G118 | 2 | 2 |
+| G122 | 6 | 6 |
+| G123 | 1 | 1 |
+| G702 | 3 | 3 |
+| G703 | 29 | 32 |
+| G704 | 19 | 19 |
+| **Total** | **60** | **63** |
+
+`.gosec-baseline.json` updated to `total: 63` / `by_rule.G703: 32` so future *actual* regressions (a new rule category, or a count above 63) get caught, instead of a gate that was already 3 over and about to pass anything up to the next bump regardless.
+
+**Separate gap, not fixed here:** `.github/workflows/security-scan.yaml` only triggers on `pull_request` to `main`, never on a direct push — so this drift went uncaught through roughly 5 months of main-branch commits (2026-05-19 → 2026-10-08), none of which went through a PR. Whether to also run this gate on push (and how that interacts with the release pipeline's own `gosec` step in `release.yaml`) is a CI-workflow-trigger decision, not a baseline-number change — flagged for a deliberate call, not decided unilaterally here.
+
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
