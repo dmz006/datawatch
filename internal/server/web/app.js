@@ -15600,9 +15600,15 @@ function addMemoryQuick() {
   if (!input) return;
   const content = input.value.trim();
   if (!content) return;
-  apiFetch('/api/memory/save', { method: 'POST', body: JSON.stringify({ content }) })
+  // GH#192 D78a — optional, comma-separated tags.
+  const tagsInput = document.getElementById('memoryQuickAddTags');
+  const tags = tagsInput ? tagsInput.value.trim() : '';
+  const body = { content };
+  if (tags) body.tags = tags;
+  apiFetch('/api/memory/save', { method: 'POST', body: JSON.stringify(body) })
     .then(() => {
       input.value = '';
+      if (tagsInput) tagsInput.value = '';
       showToast(t('obs_add_memory_saved') || 'Memory saved', 'success', 2000);
       listMemories();
     })
@@ -15630,15 +15636,27 @@ function listMemories() {
       const date = m.created_at ? new Date(m.created_at).toLocaleDateString() : '';
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` <span style="color:var(--accent2);">[${Math.round(m.similarity*100)}%]</span>` : '';
+      const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
       return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
-          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>
+          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>${tags}
           <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
         </div>
         <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_failed_load') || 'Failed to load memories'; });
+}
+
+// GH#192 D78a — small chip row for a memory's comma-separated tags,
+// shared between the memory browser's list/search renderers. Returns
+// '' when there are no tags, so callers can splice it in unconditionally.
+function _renderMemoryTagChips(tagsStr) {
+  const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
+  if (tags.length === 0) return '';
+  return `<div style="margin-top:2px;">${tags.map(tag =>
+    `<span style="font-size:9px;padding:1px 6px;margin-right:3px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
+  ).join('')}</div>`;
 }
 
 function searchMemories() {
@@ -15656,9 +15674,10 @@ function searchMemories() {
     el.innerHTML = memories.map(m => {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` [${Math.round(m.similarity*100)}%]` : '';
+      const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
       return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
-          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>
+          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>${tags}
           <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
         </div>
         <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
@@ -25792,6 +25811,14 @@ function renderObserverView() {
           <div style="display:flex;gap:6px;padding:4px 12px;">
             <input type="text" id="memoryQuickAddInput" class="form-input" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
             <button class="btn-primary" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
+          </div>
+          <!-- GH#192 D78a — tags, optional, comma-separated. Checked
+               server-side first before assuming front-end-only: no tags
+               concept existed anywhere (schema/adapters/REST/MCP tool) —
+               added end-to-end; this input sends it in the same
+               POST /api/memory/save addMemoryQuick already calls. -->
+          <div style="padding:0 12px 4px;">
+            <input type="text" id="memoryQuickAddTags" class="form-input" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
           </div>
           <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
             <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />

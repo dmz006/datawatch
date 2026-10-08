@@ -770,13 +770,17 @@ pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
 | `scripts/check-no-internal-refs.sh` now also checks `README.md` | **Yes** | **Yes** | Ran against the live repo after fixing README's 2 stray instances; passes | — |
 | CI (`ci.yaml`) runs both checks on every push/PR, not just at release time | No | No | — | Not live-verified against a real GH Actions run in this pass (would require an actual push/PR to trigger) — logic verified locally; flagged rather than overclaimed |
 
-## GH#192 memory-tags backend — WIP checkpoint, v8.72.2 (incomplete)
+## GH#192 Phase 4 — memory tags, end to end — v8.73.0 (feature complete)
+
+**Correction**: an earlier WIP checkpoint (v8.72.2) claimed REST had no tags support yet. That was stale — `handleMemorySave`'s `tags` field had already landed in v8.72.1 (a shared-working-tree side effect, see CHANGELOG). This section supersedes that one with the real, complete picture.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `Store.SetTags` persists a comma-separated tag string against a memory row | **Yes** | No | `store_test.go` | — |
-| `ServerAdapter.SetTags` returns `ErrNamespaceUnsupported` when the active backend doesn't implement `TaggableBackend` | **Yes** | No | `store_test.go` | Mirrors `SetPinned`'s existing test |
-| `memory_remember` MCP tool's optional `tags` param writes through to `SetTags`, best-effort (remember succeeds even if the tag write fails) | **Yes** | No | `memory_tools_bl385_test.go` | — |
-| REST `/api/memory/remember` tags support | No | No | — | Not implemented yet — MCP-only so far |
-| PWA Add-Memory dialog tags input | No | No | — | Not implemented yet |
-| Full live round trip (MCP remember-with-tags → tag persisted → retrievable) | No | No | — | Not attempted — checkpointing mid-implementation, not claiming this works end-to-end yet |
+| `Store.SetTags` persists a comma-separated tag string against a memory row; a later call replaces rather than appends; an untagged memory reads back `""` via `COALESCE`, not a NULL-scan panic | **Yes** | No | `store_test.go` ×3 | Mirrors `SetPinned`'s shape exactly |
+| Tags round-trip through all 3 read paths the PWA's memory browser actually uses — `ListRecent`, `ListFiltered`, `Search` — not every `Memory`-returning method in the file (deliberate scope boundary, documented in the plan doc) | **Yes** | No | `store_test.go` | — |
+| `ServerAdapter.SetTags` sets tags via the `TaggableBackend` capability-cast, and the result flows through `convertToMaps`'s manual field list (not a JSON round-trip — this field had to be added explicitly, same as `pinned` before it) | **Yes** | No | `gh192_tags_test.go` | Caught during implementation: `convertToMaps` builds its `map[string]interface{}` field-by-field, so a new `Memory` struct field does **not** automatically appear in REST/MCP responses without this explicit addition |
+| `POST /api/memory/save` accepts an optional `tags` field; applies it best-effort after `Remember` succeeds (an unsupported-backend `SetTags` error doesn't fail the save, reflected via a `tags_applied: false` response field); omitting `tags` entirely skips the `SetTags` call | **Yes** | No | `gh192_memory_save_tags_test.go` ×4 | — |
+| `memory_remember` MCP tool's optional `tags` param — proxy-mode (`memoryAPI == nil`) includes it in the forwarded body only when supplied; the tool's input schema advertises the param | **Yes** | No | `memory_tools_bl385_test.go` ×3 (direct-mode with a full `MemoryMCP` fake not re-verified separately — same 3-line best-effort addition already covered at the REST/Store layers, to avoid a large amount of interface-boilerplate for one assertion) | — |
+| PWA: `addMemoryQuick()` sends the tags field only when non-empty, clears both inputs on success | **Yes** | No | `app-gh192-phase4.test.js` ×3 | — |
+| PWA: `_renderMemoryTagChips` renders one escaped chip per trimmed tag, returns `''` for no tags (absent/empty/null), and `listMemories`/`searchMemories` splice it into each row | **Yes** | No | `app-gh192-phase4.test.js` ×4 | Includes an explicit XSS-escaping check, not just a happy-path render |
+| Full live round trip: a real tagged memory added via the PWA dialog, persisted, and visible with its tags in the browser list after a page reload | No | No | — | Not live-verified in this pass — the unit tests above exercise the exact persistence/read/render mechanism the live scenario depends on, at every layer (Store → adapter → REST/MCP → PWA) |

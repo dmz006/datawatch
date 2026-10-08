@@ -763,6 +763,7 @@
   "obs_envelopes_none": "no envelopes tracked",
   "obs_envelopes_unavailable": "unavailable",
   "obs_add_memory_placeholder": "Add a memory…",
+  "obs_add_memory_tags_placeholder": "Tags (separes par des virgules, facultatif)",
   "obs_add_memory": "Add",
   "obs_add_memory_saved": "Memory saved",
   "obs_add_memory_failed": "Failed to save memory",

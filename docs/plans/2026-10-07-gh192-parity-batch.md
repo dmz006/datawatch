@@ -1,6 +1,6 @@
 # GH#192 — 8-item Android/iOS parity batch (PWA)
 
-**Status**: Phase 1 ✅ shipped v8.70.0 (#8, #1, #3, #5, #6). Phase 2 ✅ shipped v8.71.0 (#2). Phase 3 ✅ shipped v8.72.0 (#7). Phase 4 (#4) in progress.
+**Status**: ✅ **All 4 phases shipped — GH#192 complete.** Phase 1 v8.70.0 (#8, #1, #3, #5, #6). Phase 2 v8.71.0 (#2). Phase 3 v8.72.0 (#7). Phase 4 v8.73.0 (#4, memory tags end-to-end — REST/Store/adapter landed in v8.72.1-v8.72.2 via a shared-working-tree checkpoint, see CHANGELOG corrections; PWA + locale finished in v8.73.0).
 
 Operator-approved, filed by the datawatch-app peer session. Full issue body
 and explicit exclusions are in GH#192 itself; not duplicated here. This plan

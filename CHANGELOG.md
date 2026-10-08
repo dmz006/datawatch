@@ -5,18 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.72.2 — WIP checkpoint: memory tags backend (GH#192, incomplete — not shippable yet)
+## v8.73.0 — feat(pwa): GH#192 Phase 4 — memory tags, end to end (feature complete)
 
-### Added (partial — MCP + store only, REST/PWA/locale not done)
+### Added
+- **#4 (D78a)**: Add Memory now has an optional, comma-separated tags field, wired all the way through — not front-end-only. The REST/Store/MCP plumbing this builds on (`TaggableBackend`/`Store.SetTags`/`ServerAdapter.SetTags`/`handleMemorySave`'s `tags` field/`memory_remember`'s `tags` param) shipped in v8.72.1-8.72.2; see the corrected note on those entries below — this release finishes the PWA side: the Observer quick-add dialog (`addMemoryQuick`) sends the new tags field, and the memory browser (`listMemories`/`searchMemories`) shows a tag-chip row per memory via a new shared `_renderMemoryTagChips` helper.
+- New locale key (`obs_add_memory_tags_placeholder`) added to all 5 locales.
+- 7 new unit tests (`app-gh192-phase4.test.js`).
+
+This closes out GH#192 completely — all 4 phases (8 items) shipped across v8.70.0-v8.73.0. See `docs/plans/2026-10-07-gh192-parity-batch.md`.
+
+## v8.72.2 — memory tags backend checkpoint (GH#192) — correction: REST was already done
+
+**Correction (2026-10-07, verified via `git diff` against the actual committed tree, not just this commit's own description)**: this commit's original message claimed REST `POST /api/memory/save` had no `tags` field and was MCP-only. That was already stale when written — the `MemoryAPI.SetTags` interface addition and `handleMemorySave`'s `tags`/`tags_applied` handling had already landed in v8.72.1 (a different commit, same shared working tree). By the time this commit landed, only the PWA side (item 4's actual UI) and locale entries remained — both shipped in v8.73.0 above.
+
+### Added
 - `TaggableBackend` interface + SQLite `Store.SetTags`, wired through `ServerAdapter.SetTags` (mirrors the existing `SetPinned` shape). `memory_remember`'s MCP tool gained an optional `tags` param (comma-separated), best-effort — a tag-write failure doesn't fail the remember call.
 
-### Known incomplete (checkpointed mid-implementation; the agent working on it was rate-limited before finishing)
-- REST `POST /api/memory/remember` has no `tags` field yet — MCP-only right now.
-- No PWA UI for entering tags (the Add Memory dialog this was meant to serve, GH#192 item 4, is untouched).
-- No locale-bundle entries, no docs/testing-tracker entry beyond what's below, no plan-doc update.
-- Do not treat GH#192 item 4 as shipped based on this commit alone.
-
 ## v8.72.1 — chore: reconcile the internal-tracker-ID rule with what's actually enforced; add a version-reuse CI check
+
+**Addendum (2026-10-07)**: this commit also carries `internal/server/api.go`'s `MemoryAPI.SetTags` interface addition and `handleMemorySave`'s `tags`/`tags_applied` handling (GH#192 item 4's REST half) — a shared-working-tree side effect (uncommitted changes from a concurrent agent swept in alongside this commit's own diff), not mentioned in the original message. Noted here for anyone tracing where that code landed; the feature itself wasn't shippable until v8.73.0 completed the PWA side.
 
 ### Added
 - `scripts/check-version-bump.sh` — fails a commit that reuses the version its base ref already used (unless every changed file is test-only/plan-doc/chore). Found the gap via a compliance audit that caught a real historical instance of this. Wired into both `ci.yaml` (every push/PR) and `release-smoke.sh` (against the last release tag).
