@@ -21,7 +21,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/audit"
@@ -270,6 +272,12 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 		var req struct {
 			Skills []string `json:"skills"`
 			All    bool     `json:"all"`
+			// SEC-022 — manifest Verify commands now actually run (see
+			// skills.Manager.Sync). By default a skill whose Verify
+			// command fails is synced, then immediately rolled back
+			// (Unsync) rather than left usable but silently unverified.
+			// Mirrors the CLI's --trust-unverified flag.
+			TrustUnverified bool `json:"trust_unverified"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -284,8 +292,33 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit("skills_registry_sync", "registry", name, map[string]any{"synced_count": len(out)})
-		writeJSONOK(w, map[string]any{"synced": out})
+		var kept, refused []*skills.Synced
+		for _, sy := range out {
+			if sy.Verified || req.TrustUnverified {
+				kept = append(kept, sy)
+			} else {
+				refused = append(refused, sy)
+			}
+		}
+		if len(refused) > 0 {
+			refusedNames := make([]string, 0, len(refused))
+			for _, sy := range refused {
+				refusedNames = append(refusedNames, sy.Name)
+			}
+			if _, unsyncErr := s.skillsMgr.Unsync(name, refusedNames); unsyncErr != nil {
+				fmt.Fprintf(os.Stderr, "[skills] rollback of unverified skills from %s: %v\n", name, unsyncErr)
+			}
+		}
+		s.audit("skills_registry_sync", "registry", name, map[string]any{
+			"synced_count":  len(kept),
+			"refused_count": len(refused),
+		})
+		resp := map[string]any{"synced": kept}
+		if len(refused) > 0 {
+			resp["refused_unverified"] = refused
+			resp["note"] = "these skills' Verify command failed and were not kept; retry with trust_unverified=true to sync them anyway"
+		}
+		writeJSONOK(w, resp)
 
 	case "unsync":
 		if r.Method != http.MethodPost {
@@ -323,9 +356,9 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 // handleSkills serves the synced-skills surface (separate from the
 // /registries CRUD).
 //
-//   GET /api/skills                  — list all synced
-//   GET /api/skills/{name}           — get manifest + path
-//   GET /api/skills/{name}/content   — load markdown
+//	GET /api/skills                  — list all synced
+//	GET /api/skills/{name}           — get manifest + path
+//	GET /api/skills/{name}/content   — load markdown
 func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/skills")
 	rest = strings.TrimPrefix(rest, "/")

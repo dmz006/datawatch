@@ -15,40 +15,48 @@ import (
 // Registry is one place skills come from. Today only kind="git" is wired;
 // the schema leaves room for kind="local" / kind="http" in v6.7.x.
 type Registry struct {
-	Name           string    `json:"name"`
-	Kind           string    `json:"kind"` // git
-	URL            string    `json:"url"`
-	Branch         string    `json:"branch,omitempty"`
-	AuthSecretRef  string    `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
-	Enabled        bool      `json:"enabled"`
-	Description    string    `json:"description,omitempty"`
-	IsBuiltin      bool      `json:"is_builtin,omitempty"` // marks PAI default registry
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	LastSyncedAt   time.Time `json:"last_synced_at,omitempty"`
-	LastSyncError  string    `json:"last_sync_error,omitempty"`
+	Name          string    `json:"name"`
+	Kind          string    `json:"kind"` // git
+	URL           string    `json:"url"`
+	Branch        string    `json:"branch,omitempty"`
+	AuthSecretRef string    `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
+	Enabled       bool      `json:"enabled"`
+	Description   string    `json:"description,omitempty"`
+	IsBuiltin     bool      `json:"is_builtin,omitempty"` // marks PAI default registry
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	LastSyncedAt  time.Time `json:"last_synced_at,omitempty"`
+	LastSyncError string    `json:"last_sync_error,omitempty"`
 }
 
 // AvailableSkill is what `connect+browse` discovers in a registry's
 // shallow clone — present in the registry but not yet copied into the
 // synced area.
 type AvailableSkill struct {
-	Registry    string    `json:"registry"`
-	Name        string    `json:"name"`
-	Path        string    `json:"path"` // path relative to registry root
-	Manifest    *Manifest `json:"manifest,omitempty"`
-	Synced      bool      `json:"synced"`
+	Registry string    `json:"registry"`
+	Name     string    `json:"name"`
+	Path     string    `json:"path"` // path relative to registry root
+	Manifest *Manifest `json:"manifest,omitempty"`
+	Synced   bool      `json:"synced"`
 }
 
 // Synced is the canonical record of a skill that's been copied to
 // ~/.datawatch/skills/<registry>/<name>/. The Path is filesystem-absolute.
 type Synced struct {
-	Registry  string    `json:"registry"`
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Manifest  *Manifest `json:"manifest,omitempty"`
-	SyncedAt  time.Time `json:"synced_at"`
-	Version   string    `json:"version,omitempty"`
+	Registry string    `json:"registry"`
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`
+	Manifest *Manifest `json:"manifest,omitempty"`
+	SyncedAt time.Time `json:"synced_at"`
+	Version  string    `json:"version,omitempty"`
+	// SEC-022 — Manifest.Verify ("verification command, run after sync")
+	// was declared in the manifest format but never actually executed
+	// anywhere. Verified is true when the skill has no Verify command (an
+	// unverified-by-design skill isn't newly blocked) or its Verify command
+	// exited 0. VerifyError holds the command's failure reason/output when
+	// Verified is false.
+	Verified    bool   `json:"verified"`
+	VerifyError string `json:"verify_error,omitempty"`
 }
 
 // Index is the persistent state for the skills subsystem.
@@ -59,7 +67,7 @@ type Index struct {
 	// browse/select UX doesn't re-clone on every page load. Refreshed
 	// on Connect and on explicit refresh.
 	AvailableCache map[string][]*AvailableSkill `json:"available_cache,omitempty"`
-	UpdatedAt      time.Time                     `json:"updated_at"`
+	UpdatedAt      time.Time                    `json:"updated_at"`
 }
 
 // Store persists the Index to a single JSON file. Thread-safe.

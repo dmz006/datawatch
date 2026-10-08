@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.20 — security(SEC-022): execute the skill manifest Verify command, gate unverified skills behind --trust-unverified
+
+### Security
+- `Manifest.Verify` ("verification command, run after sync") was declared in the skill manifest format but never actually executed anywhere in the codebase. Added `runSkillVerify` (`internal/skills/manager.go`) — runs the command via `bash -c` in the synced skill's own directory with a 30s timeout, wired into `Manager.Sync` right after each skill is copied. A skill that declares no `Verify` is trivially verified (not newly blocked by this existing). New `Synced.Verified`/`Synced.VerifyError` fields report the result.
+- `Sync` itself never refuses on a verify failure — there's no interactive operator at that layer to decide trust. The gate lives one layer up, where a human/caller actually can: `POST /api/skills/registries/{name}/sync` now partitions the result into kept vs. refused and calls `Unsync` on anything that failed verification, unless the request sets `trust_unverified: true`. The CLI (`datawatch skills registry sync <name> --trust-unverified`) and the `skills_registry_sync` MCP tool (`trust_unverified` param) both pass this straight through to the same REST endpoint, so all three surfaces share one enforcement point.
+- Added `internal/skills/sec022_verify_test.go` (7 tests: empty/passing/failing verify commands, cwd correctness, and the three `Sync` outcomes) and `internal/server/sec022_skills_verify_test.go` (2 tests: default rollback of unverified skills, `trust_unverified` keeping everything) via a minimal fake `skillsManager`.
+
 ## v8.73.19 — security(SEC-021 remainder): file-service default root off the operator's repo, app/docs deny-list
 
 ### Security

@@ -979,3 +979,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | JSON upload / multipart upload / delete all refuse a deny-listed target (403), and a file is never written/removed | **Yes** | **Yes** | `TestHandleFilesJSONUpload_DeniesAppDocsTree`, `TestHandleFilesUpload_DeniesAppWebTree`, `TestHandleFilesDelete_DeniesAppDocsTree` | |
 | A non-deny-listed path still succeeds (no over-blocking regression) | **Yes** | **Yes** | `TestHandleFilesJSONUpload_AllowsNonDenyListedPath`; pre-existing `TestFilesUpload_And_Delete`/`TestFilesUpload_ImageFile`/`TestFilesUpload_PathTraversal` re-run green | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3231 passed, 0 failed | |
+
+## SEC-022: skill manifest Verify execution + --trust-unverified gate — v8.73.20
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `runSkillVerify`: empty command trivially passes; passing/failing shell commands; runs with cwd set to the skill directory | **Yes** | **Yes** | `TestRunSkillVerify_EmptyCommandPasses`, `_PassingCommand`, `_FailingCommandReportsReason`, `_RunsInSkillDirectory` | |
+| `Manager.Sync` sets `Verified`/`VerifyError` per skill; a failing verify does not make `Sync` itself error (no gate at that layer); no-Verify-declared is trivially verified | **Yes** | **Yes** | `TestSync_PassingVerifyMarksRecordVerified`, `TestSync_FailingVerifyMarksRecordUnverifiedButStillSyncs`, `TestSync_NoVerifyCommandIsTriviallyVerified` | |
+| `POST /api/skills/registries/{name}/sync` rolls back (Unsync) any skill that failed verification by default; `trust_unverified: true` keeps everything | **Yes** | **Yes** | `TestHandleSkillsSync_RollsBackUnverifiedByDefault`, `TestHandleSkillsSync_TrustUnverifiedKeepsEverything` (fake `skillsManager`) | |
+| CLI `--trust-unverified` flag and MCP `trust_unverified` param both thread through to the same REST body field | **Yes** | No | Verified by code inspection (`cli_skills.go`, `internal/mcp/skills.go`) and the REST-layer tests above covering the actual enforcement; no separate CLI-process or MCP-transport-level test added this pass | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3240 passed, 0 failed | |

@@ -86,6 +86,7 @@ func (s *Server) toolSkillsRegistrySync() mcpsdk.Tool {
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("registry name")),
 		mcpsdk.WithString("skills", mcpsdk.Description("comma-separated skill names; pass '*' or omit and set all=true to sync all available")),
 		mcpsdk.WithBoolean("all", mcpsdk.Description("sync every available skill in the registry")),
+		mcpsdk.WithBoolean("trust_unverified", mcpsdk.Description("SEC-022: keep a skill even if its manifest's verify command fails (default: rolled back)")),
 	)
 }
 func (s *Server) toolSkillsRegistryUnsync() mcpsdk.Tool {
@@ -200,8 +201,9 @@ func (s *Server) handleSkillsRegistryAvailable(_ context.Context, req mcpsdk.Cal
 func (s *Server) handleSkillsRegistrySync(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	name := mustString(req, "name")
 	all, _ := req.RequireBool("all")
+	trustUnverified, _ := req.RequireBool("trust_unverified")
 	skillsCSV := optString(req, "skills")
-	body := map[string]any{"all": all}
+	body := map[string]any{"all": all, "trust_unverified": trustUnverified}
 	if skillsCSV != "" {
 		body["skills"] = splitCSV(skillsCSV)
 	}

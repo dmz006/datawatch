@@ -179,13 +179,20 @@ func newSkillsRegistryBrowseCmd() *cobra.Command {
 }
 
 func newSkillsRegistrySyncCmd() *cobra.Command {
-	var all bool
+	var all, trustUnverified bool
 	c := &cobra.Command{
 		Use:   "sync <name> [skill ...]",
 		Short: "Sync selected (or --all) skills from a registry",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Sync selected (or --all) skills from a registry.
+
+Each skill's manifest may declare a "verify" command, run after syncing
+(SEC-022). By default a skill whose verify command fails is synced, then
+immediately rolled back — it won't be left on disk unverified. Pass
+--trust-unverified to keep it anyway (e.g. the verify command just checks
+for an optional dependency you know you don't have).`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			body := map[string]any{"all": all}
+			body := map[string]any{"all": all, "trust_unverified": trustUnverified}
 			if len(args) > 1 {
 				body["skills"] = args[1:]
 			}
@@ -193,6 +200,7 @@ func newSkillsRegistrySyncCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "sync every available skill in the registry")
+	c.Flags().BoolVar(&trustUnverified, "trust-unverified", false, "keep a skill even if its manifest's verify command fails")
 	return c
 }
 

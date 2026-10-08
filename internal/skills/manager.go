@@ -1,15 +1,49 @@
 package skills
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/pathsafe"
 )
+
+// skillVerifyTimeout bounds how long a manifest's Verify command may run
+// before Sync gives up on it — a hung verify command must not block sync
+// indefinitely (SEC-022).
+const skillVerifyTimeout = 30 * time.Second
+
+// runSkillVerify executes a skill manifest's Verify command (a shell
+// string, same trust level as the rest of the skill's content — it comes
+// from a registry the operator explicitly configured) in dir, and reports
+// whether it passed. An empty verify command trivially passes: a skill
+// that declares no Verify isn't newly blocked by this check existing.
+func runSkillVerify(verify, dir string) (ok bool, failReason string) {
+	if strings.TrimSpace(verify) == "" {
+		return true, ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), skillVerifyTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", "-c", verify) // #nosec G204 -- skill manifest content, same trust level as the skill's own scripts/markdown the operator chose to sync
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		if len(msg) > 2000 {
+			msg = msg[:2000] + "... (truncated)"
+		}
+		return false, msg
+	}
+	return true, ""
+}
 
 // CommunityDefaultRegistry is the official datawatch community registry for
 // skills and plugins. It is seeded first on daemon start so it appears at
@@ -189,6 +223,15 @@ func (m *Manager) Sync(registry string, skillNames []string) ([]*Synced, error) 
 		}
 		if av.Manifest != nil {
 			s.Version = av.Manifest.Version
+			// SEC-022 — actually run the manifest's declared Verify
+			// command now, rather than leaving it a documented-but-dead
+			// field. Sync itself never refuses on a failure (no
+			// interactive operator here to decide trust-unverified);
+			// Verified/VerifyError are reported on the record for the
+			// caller (CLI/REST/MCP) to act on.
+			s.Verified, s.VerifyError = runSkillVerify(av.Manifest.Verify, dst)
+		} else {
+			s.Verified = true // no manifest at all => nothing declared to verify
 		}
 		if err := m.Store.UpsertSynced(s); err != nil {
 			return out, err
