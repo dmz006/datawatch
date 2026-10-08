@@ -473,6 +473,7 @@
   "fed_conn_error_body": "%1$s : %2$s",
   "fed_conn_error_auth": "Échec de l'authentification — aucun jeton valide n'est configuré pour ce serveur",
   "fed_conn_error_forbidden": "Ce serveur n'accorde pas la capacité nécessaire",
+  "fed_conn_loading_sessions": "Chargement des sessions de %1$s…",
   "fed_conn_error_unreachable": "Impossible de joindre ce serveur",
   "fed_conn_error_title": "Impossible de joindre ce serveur",
   "federation_cap_group_label": "Groupe de Capacités",

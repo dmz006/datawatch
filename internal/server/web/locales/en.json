@@ -448,6 +448,7 @@
   "fed_conn_error_body": "%1$s: %2$s",
   "fed_conn_error_auth": "Authentication failed — this server has no valid token configured",
   "fed_conn_error_forbidden": "This server does not grant the capability this needs",
+  "fed_conn_loading_sessions": "Loading sessions from %1$s…",
   "fed_conn_error_unreachable": "Could not reach this server",
   "fed_conn_error_title": "Could not reach this server",
   "federation_cap_group_label": "Capability Group",

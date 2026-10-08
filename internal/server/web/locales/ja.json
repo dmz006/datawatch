@@ -473,6 +473,7 @@
   "fed_conn_error_body": "%1$s: %2$s",
   "fed_conn_error_auth": "認証に失敗しました — このサーバーには有効なトークンが設定されていません",
   "fed_conn_error_forbidden": "このサーバーは必要な権限を許可していません",
+  "fed_conn_loading_sessions": "%1$s からセッションを読み込み中…",
   "fed_conn_error_unreachable": "このサーバーに接続できませんでした",
   "fed_conn_error_title": "このサーバーに接続できませんでした",
   "federation_cap_group_label": "機能グループ",
