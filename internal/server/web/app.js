@@ -189,7 +189,8 @@ const state = {
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
-  servers: [],            // remote server list from /api/servers
+  servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
+  _fedConnStatus: null,   // {server, phase:'connecting'|'connected'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
   alertSystemUnread: 0,   // BL226 — system-sourced unread count
@@ -284,6 +285,31 @@ function buildWsUrl() {
   const srv = state.activeServer;
   const wsPath = (srv && srv !== 'local' && srv !== 'all') ? '/api/proxy/' + encodeURIComponent(srv) + '/ws' : '/ws';
   return `${proto}//${location.host}${wsPath}`;
+}
+
+// Operator-reported (2026-10-07): switching to a federated server showed
+// endless loading with no feedback and no way to tell what actually failed
+// — the WS path alone can't surface a real reason (a failed proxy dial just
+// looks like an abrupt close/1006 to browser JS, no status code or body).
+// This fires a one-shot HTTP probe through the same proxy path so a real
+// HTTP status/error is available to show, independent of the WS's own
+// connect/retry cycle. Cleared automatically the moment real session data
+// actually arrives (see the 'sessions' case in handleMessage).
+function _checkFederatedConnection(serverName) {
+  state._fedConnStatus = { server: serverName, phase: 'connecting' };
+  if (state.activeView === 'sessions') renderSessionsView();
+  fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(() => {
+      if (state.activeServer !== serverName) return; // switched away while this was in flight
+      state._fedConnStatus = { server: serverName, phase: 'connected' };
+      if (state.activeView === 'sessions') renderSessionsView();
+    })
+    .catch(e => {
+      if (state.activeServer !== serverName) return;
+      state._fedConnStatus = { server: serverName, phase: 'error', message: (e && e.message) || 'unreachable' };
+      if (state.activeView === 'sessions') renderSessionsView();
+    });
 }
 
 // ── WebSocket liveness watchdog ──────────────────────────────────────────────
@@ -605,6 +631,10 @@ function handleMessage(msg) {
           delete state.currentStatus[s.full_id];
         }
       }
+      // Real session data arrived — a federated-connection status banner
+      // (if showing) is now stale regardless of phase, since the thing it
+      // was waiting for just happened.
+      if (state._fedConnStatus) state._fedConnStatus = null;
       // Auto-reload browser if daemon version changed (new build deployed)
       if (msg.data && msg.data.version) {
         if (!state._daemonVersion) {
@@ -2288,6 +2318,41 @@ function renderSessionsView() {
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
+    // Operator-reported (2026-10-07): switched to a federated server and
+    // got stuck on an unlabeled skeleton forever, with no way to tell
+    // whether it was still trying or had failed. Show the real status
+    // instead, driven by _checkFederatedConnection's actual probe result
+    // — never a canned/decorative sequence.
+    const fcs = state._fedConnStatus;
+    if (state.activeServer && state.activeServer !== 'all' && fcs && fcs.server === state.activeServer) {
+      if (fcs.phase === 'error') {
+        view.innerHTML = `
+          <div class="view-content" style="position:relative;">
+            <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+            <div class="empty-state">
+              <span class="empty-state-icon">⚠️</span>
+              <h3>${escHtml(t('fed_conn_error_title') || 'Could not reach this server')}</h3>
+              <p>${escHtml(t('fed_conn_error_body', [state.activeServer, fcs.message]) || `${state.activeServer}: ${fcs.message}`)}</p>
+              <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local') || 'Back to Local')}</button>
+            </div>
+          </div>`;
+        _injectServerPickerBar(view, renderSessionsView);
+        return;
+      }
+      // 'connecting' or 'connected' (health probe succeeded, real session
+      // data just hasn't arrived over WS yet — still an honest wait, not
+      // a guess).
+      const label = fcs.phase === 'connected'
+        ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
+        : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
+      view.innerHTML = `
+        <div class="view-content" style="position:relative;">
+          <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+          ${loadingEyeBlock(label, 'panel')}
+        </div>`;
+      _injectServerPickerBar(view, renderSessionsView);
+      return;
+    }
     // GH#172 D60 — while the first WS "sessions" push hasn't landed
     // yet, an empty state looks identical to "genuinely no sessions".
     // Show shimmer placeholders instead until we actually know.
@@ -2298,6 +2363,7 @@ function renderSessionsView() {
           <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
           <div class="session-list">${skeletonCard.repeat(3)}</div>
         </div>`;
+      _injectServerPickerBar(view, renderSessionsView);
       return;
     }
     view.innerHTML = `
@@ -15877,6 +15943,7 @@ function selectServer(name) {
     state.outputBuffer = {};
     if (state.activeServer === 'all') {
       // BL312 S4 — "All" mode: stay on local WS, load aggregated sessions
+      state._fedConnStatus = null;
       if (state.ws) { state.ws.close(); state.ws = null; }
       connect(); // reconnects to local WS
       _loadAllServersSessions();
@@ -15884,6 +15951,16 @@ function selectServer(name) {
     } else {
       if (state.ws) { state.ws.close(); state.ws = null; }
       connect();
+      if (state.activeServer) {
+        // Operator-reported (2026-10-07): switching to a federated server
+        // gave no feedback and no real error on failure. Probe it
+        // independently of the WS's own connect/retry cycle so there's
+        // always an honest status to show instead of endless silent
+        // loading.
+        _checkFederatedConnection(state.activeServer);
+      } else {
+        state._fedConnStatus = null;
+      }
       showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
     }
   }
@@ -16069,29 +16146,74 @@ function _serverPickerBar(opts) {
 
 // Injects the server picker bar into the top of containerEl.
 // Fetches server list if not yet loaded, then re-renders via rerenderFn.
+// Operator-reported (2026-10-07): the picker never appeared at all for a
+// user who went straight to Sessions without ever visiting Settings — root
+// cause was state.servers defaulting to [] instead of undefined, so the
+// "haven't fetched yet" check here was always false and the fetch never
+// ran. Fixed at the state-init site; this function additionally no longer
+// renders nothing while loading (now a small text placeholder) and no
+// longer permanently gives up on a failed fetch (loadServerListEager
+// retries with backoff instead of poisoning state.servers to null forever)
+// — the host list must load independently of, and before, any individual
+// host's own connectivity, so a broken host never blocks seeing/picking a
+// working one.
 function _injectServerPickerBar(containerEl, rerenderFn, opts) {
   if (!containerEl) return;
-  if (state._serverPickerLoading) return;
   if (state.servers === undefined) {
-    state._serverPickerLoading = true;
-    fetch('/api/servers', { headers: tokenHeader() })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        state.servers = d;
-        state._serverPickerLoading = false;
-        if (rerenderFn) rerenderFn();
-      })
-      .catch(() => { state.servers = null; state._serverPickerLoading = false; });
+    if (rerenderFn) _onServerListReady(rerenderFn);
+    loadServerListEager();
+    const placeholder = `<div class="server-picker-bar server-picker-bar-loading" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--text-dim,#888);">${escHtml(t('server_picker_loading') || 'Loading servers…')}</span></div>`;
+    const existingPh = containerEl.querySelector('.server-picker-bar');
+    if (existingPh) { existingPh.outerHTML = placeholder; return; }
+    const tmpPh = document.createElement('div');
+    tmpPh.innerHTML = placeholder;
+    const barPh = tmpPh.firstChild;
+    if (barPh) containerEl.insertBefore(barPh, containerEl.firstChild);
     return;
   }
   const html = _serverPickerBar(opts);
-  if (!html) return;
   const existing = containerEl.querySelector('.server-picker-bar');
+  if (!html) { if (existing) existing.remove(); return; }
   if (existing) { existing.outerHTML = html; return; }
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   const bar = tmp.firstChild;
   if (bar) containerEl.insertBefore(bar, containerEl.firstChild);
+}
+
+// Shared /api/servers loader used by every picker surface (top-bar,
+// swipe-gesture modal). state.servers stays undefined until a real
+// response lands — never poisoned to null on a one-shot failure, which
+// used to hide the picker permanently with no retry (operator-reported
+// 2026-10-07). Retries with capped backoff on failure instead.
+let _serversLoadRetryDelay = 2000;
+const _serversLoadWaiters = [];
+function loadServerListEager() {
+  if (state.servers !== undefined) return;
+  if (state._serversLoading) return;
+  state._serversLoading = true;
+  fetch('/api/servers', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => {
+      state.servers = d;
+      state._serversLoading = false;
+      _serversLoadRetryDelay = 2000;
+      _serversLoadWaiters.splice(0).forEach(fn => { try { fn(); } catch (_) {} });
+    })
+    .catch(() => {
+      state._serversLoading = false;
+      setTimeout(loadServerListEager, Math.min(_serversLoadRetryDelay, 30000));
+      _serversLoadRetryDelay = Math.min(_serversLoadRetryDelay * 1.5, 30000);
+    });
+}
+
+// Registers fn to run once the current/next load attempt resolves with
+// real data (a failed attempt just retries — see loadServerListEager — so
+// waiters only fire on success, never on an intermediate failure).
+function _onServerListReady(fn) {
+  if (state.servers !== undefined) { setTimeout(fn, 0); return; }
+  _serversLoadWaiters.push(fn);
+  loadServerListEager();
 }
 
 // ── Signal Device Linking ──────────────────────────────────────────────────────
@@ -23643,10 +23765,9 @@ function _loadServerPickerModalList() {
     }).join('');
   };
   if (state.servers === undefined) {
-    fetch('/api/servers', { headers: tokenHeader() })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { state.servers = d; render(); })
-      .catch(() => { state.servers = null; render(); });
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-dim,#888);padding:8px 10px;">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;
+    _onServerListReady(render);
+    loadServerListEager();
   } else {
     render();
   }
@@ -23790,6 +23911,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_deepLinkAlertId) setTimeout(() => openAlertDeepLink(_deepLinkAlertId), 300);
     }
   });
+
+  // Operator-reported (2026-10-07): the server/host list must be available
+  // before the operator ever tries to pick one, and independent of whether
+  // any individual host is actually reachable — otherwise a slow/broken
+  // host can make it look like the picker itself is stuck. Kick this off
+  // eagerly at boot, in parallel with the other init fetches below, rather
+  // than waiting for the first view that happens to need it.
+  loadServerListEager();
 
   // Load initial unread alert count
   fetch('/api/alerts', { headers: tokenHeader() })

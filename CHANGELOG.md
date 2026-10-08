@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.2 — fix(pwa): federated server picker never appeared; no status/error when connecting
+
+### Fixed
+- **Root cause of the picker never appearing at all**: `state.servers` defaulted to `[]` instead of `undefined`, so `_injectServerPickerBar`'s "haven't fetched yet" check was always false — the fetch never ran unless some unrelated view (Settings) happened to populate it as a side effect first. A user who went straight to Sessions never saw the host picker, ever.
+- Switching to a federated server showed an unlabeled, endless skeleton loader with no way to tell whether it was still trying or had failed, and no way back except reloading. Added a real connection-status probe (`_checkFederatedConnection`, a one-shot health check through the same proxy path) driven entirely by actual events — "Connecting to X…" → "Loading sessions from X…" on success, or a clear error with the real reason and a one-click "Back to Local" on failure — never a canned sequence.
+- The server-list fetch no longer permanently gives up after one failure (previously poisoned `state.servers` to `null` forever with no retry); it now retries with capped backoff, and loads eagerly at app boot instead of lazily on first view-render, so the host list is available before — and independent of — whether any individual host is reachable. A broken federated host can no longer block picking a different, working one.
+- Same fix applied to the three-finger-swipe server-picker modal, which had an identical independent copy of the same bug.
+
+### Added
+- `server_picker_loading`, `fed_conn_connecting`, `fed_conn_loading_sessions`, `fed_conn_error_title`, `fed_conn_error_body`, `fed_conn_back_to_local` — new locale keys, all 5 bundles.
+- `internal/server/web/app-fed-conn-status.test.js` — 10 new tests pinning the state-default regression, retry-not-poison behavior, and the real event-driven status transitions.
+
 ## v9.0.0 — Memory Lifecycle Complete (major release)
 
 Operator-authorized full-pipeline major release: run the complete E2E

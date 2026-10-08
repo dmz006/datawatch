@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v9.0.0-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v8.73.2-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -54,18 +54,12 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.0 (2026-10-07).** Major-version milestone: formal
-cut for memory-lifecycle completeness (subprocess scope isolation, lifecycle
-management, and PRD memory integration — all three shipped incrementally
-back in September, cut together here as the milestone the project had been
-tracking toward since then), plus an Android/iOS parity batch (per-row
-server attribution, Dashboard cross-server aggregation, a real server-picker
-modal replacing a scroll-and-pulse, and end-to-end memory tags), a
-federation live-store staleness fix (cross-host
-comm-channel `send` and the CLI's `--server` flag were both blind to any
-peer added after daemon startup), and the routine major-release
-housekeeping (Claude model-alias refresh, container/Helm-chart audit, this
-README restructure). Full detail: [CHANGELOG.md](CHANGELOG.md).
+**Current release: v8.73.2 (2026-10-07).** Fixed the federated-server picker
+never appearing (and switching to a remote host hanging with no status or
+error) — see below. A v9.0.0 major-version milestone is staged and fully
+E2E-validated but not yet tagged, pending a final release-checklist pass;
+ordinary fixes continue shipping on the 8.x line until then. Full detail:
+[CHANGELOG.md](CHANGELOG.md).
 
 - **[v8.72.0](CHANGELOG.md)** — Three-finger swipe now opens a real
   server-picker overlay (server list + an explicit "Add server" action)

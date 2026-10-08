@@ -793,3 +793,18 @@ pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
 | `release-smoke.sh` (TS-557) — fails via its own `tidy-plans.sh --dry-run` release gate when plan docs older than the 7-day cutoff sit directly in `docs/plans/` instead of `historical-plans/` | **Yes** | **Yes** | Root-caused to 9 stale plan docs; fixed by running `tidy-plans.sh` for real (one of the 9 was untracked, belonging to separate in-progress work elsewhere in this shared tree — relocated with a plain `mv` instead of `git mv`, which can't move an untracked file, then re-ran `tidy-plans.sh` for the remaining tracked ones it had aborted on). Re-ran `release-smoke.sh` standalone afterward: 185 passed, 0 failed, 33 skipped, exit 0 | Housekeeping gap, not a code regression — none of this release's actual code changes caused the failure |
 | `handleClaudeModels`'s `full_names` — major-release alias refresh | **Yes** | No | `TestHandleClaudeModels_FullNamesCurrentAsOfV9` (`internal/server/v5275_claude_endpoints_test.go`) | Pins the corrected `claude-opus-5-5`/`claude-sonnet-5-5` values so the next major release's refresh has something concrete to diff against |
 | The 15 E2E skips, individually confirmed as pre-existing infrastructure-floor gaps, not code bugs | No | **Yes** | 1Password CLI absent (1), Signal unconfigured (1), Tailscale unconfigured (3), an Ollama vision model crash cascading into 3 related vision/council/compute-node skips, TS-695's own documented 30-min soft-skip branch (both compute nodes confirmed live simultaneously — its primary assertion — PRD just hadn't reached terminal state in the budget) | — |
+
+## Federated server picker — missing picker + no connection status — v8.73.2
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `state.servers` defaults to `undefined`, not `[]` | **Yes** | No | `app-fed-conn-status.test.js` | Pins the actual root cause |
+| `_injectServerPickerBar` triggers `loadServerListEager` while servers are unloaded, instead of silently doing nothing | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `loadServerListEager` populates `state.servers` on success | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `loadServerListEager` does not poison `state.servers` to `null` on failure (retries instead) | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `_checkFederatedConnection` transitions connecting → connected on a successful health probe | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `_checkFederatedConnection` transitions connecting → error with the real HTTP status on failure | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `_checkFederatedConnection` ignores a stale result after the operator switched to a different server mid-probe | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| Real `sessions` WS data clears any in-progress federated status | **Yes** | No | `app-fed-conn-status.test.js` | — |
+| `selectServer()` triggers the connection check / clears status appropriately | **Yes** | No | `app-fed-conn-status.test.js` ×2 | — |
+| Full live round trip against a real federated peer (picker appears, connects, lists sessions or shows a real error) | No | No | — | Not live-verified in this pass — the operator is testing this directly against their own federated sandbox host next; flagging rather than overclaiming |
