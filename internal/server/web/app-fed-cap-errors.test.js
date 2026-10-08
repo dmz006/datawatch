@@ -159,9 +159,11 @@ test('renderDashboardView: a federated PRDs-fetch failure on initial load shows 
   // passing only because the untranslated key happens to contain a
   // matching substring.
   vm.runInContext(`window._i18n.bundle = { dash_fed_error: '%1$s: %2$s' }; window._i18n.fallback = window._i18n.bundle;`, sandbox);
-  const gridEl = makeStubElement();
-  gridEl.insertAdjacentHTML = function (pos, html) { this.innerHTML = html + this.innerHTML; };
-  sandbox.document.getElementById = (id) => (id === 'dashCardGrid' ? gridEl : makeStubElement());
+  // #dashFedErrorBanner is a PERSISTENT sibling of #dashCardGrid (not a
+  // child -- _dashBuildGrid does a full innerHTML replace on #dashCardGrid
+  // on every layout load, which would wipe a banner nested inside it).
+  const bannerEl = makeStubElement();
+  sandbox.document.getElementById = (id) => (id === 'dashFedErrorBanner' ? bannerEl : makeStubElement());
   vm.runInContext(`state.activeServer = 'host-a'; state.activeView = 'dashboard'; _automataState.allPrds = [];`, sandbox);
   sandbox.fetch = (url) => {
     if (url.includes('/api/autonomous/prds')) return Promise.resolve(fakeResponse(403, 'federation peer lacks capability: autonomous:list'));
@@ -174,7 +176,45 @@ test('renderDashboardView: a federated PRDs-fetch failure on initial load shows 
   sandbox._dashLoadLayout = () => {};
   vm.runInContext('renderDashboardView()', sandbox);
   await flushAsync();
-  assert.match(gridEl.innerHTML, /autonomous:list/, `dashboard grid should show the real capability error; got: ${gridEl.innerHTML}`);
+  assert.match(bannerEl.innerHTML, /autonomous:list/, `dashboard banner should show the real capability error; got: ${bannerEl.innerHTML}`);
+});
+
+test('_dashSetFedError/_dashClearFedError: a periodic (not just initial) source surfaces in the shared banner and clears independently on its own success', () => {
+  // _dashLoop's periodic re-fetches (PRDs/cost/heatmap/compute-nodes)
+  // each wire their .catch/.then through these two functions rather
+  // than duplicating the isRemote + banner-render logic per source --
+  // this is the piece that actually changed; _dashLoop itself is only
+  // the (untested-here, canvas-heavy) wiring around it.
+  const sandbox = loadAppJS();
+  vm.runInContext(`window._i18n.bundle = { dash_fed_error: '%1$s: %2$s' }; window._i18n.fallback = window._i18n.bundle;`, sandbox);
+  const bannerEl = makeStubElement();
+  sandbox.document.getElementById = (id) => (id === 'dashFedErrorBanner' ? bannerEl : makeStubElement());
+  vm.runInContext(`state.activeServer = 'host-a';`, sandbox);
+
+  vm.runInContext(`_dashSetFedError('compute', new Error('federation peer lacks capability: compute:read'))`, sandbox);
+  assert.match(bannerEl.innerHTML, /compute:read/, `expected the compute-nodes error in the banner; got: ${bannerEl.innerHTML}`);
+
+  // A second, independent source failing must not clobber the first.
+  vm.runInContext(`_dashSetFedError('cost', new Error('federation peer lacks capability: cost:read'))`, sandbox);
+  assert.match(bannerEl.innerHTML, /compute:read/, 'the first source\'s message must still be present');
+  assert.match(bannerEl.innerHTML, /cost:read/, 'the second source\'s message must also be present');
+
+  // Clearing one source only removes ITS message, not the other's.
+  vm.runInContext(`_dashClearFedError('compute')`, sandbox);
+  assert.doesNotMatch(bannerEl.innerHTML, /compute:read/, 'cleared source should be gone');
+  assert.match(bannerEl.innerHTML, /cost:read/, 'the still-failing source should remain');
+
+  vm.runInContext(`_dashClearFedError('cost')`, sandbox);
+  assert.equal(bannerEl.innerHTML, '', 'banner should be empty once every source has cleared');
+});
+
+test('_dashSetFedError: a non-remote (local) activeServer never populates the banner', () => {
+  const sandbox = loadAppJS();
+  const bannerEl = makeStubElement();
+  sandbox.document.getElementById = (id) => (id === 'dashFedErrorBanner' ? bannerEl : makeStubElement());
+  vm.runInContext(`state.activeServer = null;`, sandbox);
+  vm.runInContext(`_dashSetFedError('compute', new Error('should never surface locally'))`, sandbox);
+  assert.equal(bannerEl.innerHTML, '', 'a local (non-federated) failure should not populate the Dashboard federation banner');
 });
 
 // ── Picker reachability probing ──────────────────────────────────────────

@@ -120,21 +120,68 @@ Observer) — both flagged above.
 
 Status: **Done**, shipped this round.
 
-## Explicitly NOT done this round
+## Phase 4 — Dashboard periodic re-polls + Observer's remaining 11 sub-cards (2026-10-08, follow-up)
 
-- **Settings tab** (the original directive's literal subject): the
-  server picker was not added to `renderSettingsView()`, no sub-card was
-  made federation-aware, and the raw-`fetch()`-based loaders
-  (`loadCommsConfig`, `loadGeneralConfig`, etc. — as opposed to
-  `loadLLMTabConfig`, which already uses `apiFetch`) were not migrated.
-  This is a large, separate pass across ~30+ sub-cards and needs its own
-  session. **Needs explicit operator sign-off on priority**: whether this
-  still happens next, or whether the federation-error-visibility pattern
-  (this round) was the higher-value half of the original ask.
-- Observer's remaining 11 sub-cards beyond the primary stats card (listed
-  in Phase 2).
-- Dashboard's periodic re-poll failures (only the initial load is
-  instrumented).
+Operator queued this as item 2, after GH#194 (never say "local" —
+`docs/plans/2026-10-08-gh194-never-say-local.md`) and before the full
+Settings-tab work (item 3). Closes the two gaps Phase 2/3 explicitly
+deferred:
+
+- **Dashboard periodic re-polls.** The prior round's banner only
+  covered the *initial* PRDs load. `_dashLoop`'s periodic re-fetches
+  (PRDs every ~5s, cost every ~30s, heatmap/analytics and compute nodes
+  every ~60s) all still swallowed failures silently
+  (`.catch(() => {})`). New `_dashSetFedError(source, err)` /
+  `_dashClearFedError(source)` / `_dashRenderFedErrorBanner()` —keyed by
+  source so independent cards failing at once don't clobber each
+  other's message, each clearing independently the next time its own
+  fetch succeeds. The banner moved from a child of `#dashCardGrid`
+  (where `_dashBuildGrid`'s `grid.innerHTML = ...` full-replace on every
+  layout load would eventually have wiped it — a latent bug in the
+  original single-source version, masked in its own test by stubbing
+  `_dashLoadLayout` to a no-op) to a persistent sibling,
+  `#dashFedErrorBanner`, that `_dashBuildGrid` never touches. The
+  initial-load PRDs banner was refactored onto the same shared
+  functions rather than keeping its own separate one-off code path.
+  Smoke-progress polling (`fetch('/api/smoke/progress')`) was found to
+  use a raw, non-proxy-aware `fetch()` rather than `apiFetch()` — a
+  separate, pre-existing bug (it never routes through the federated
+  peer at all when a remote is selected), left alone as out of scope
+  for an error-*visibility* pass; flagged for a future fix.
+- **Observer's remaining 11 sub-cards.** All 12 total (the primary
+  stats card was Phase 2) already route through `apiFetch`, so all
+  already got the real 401/403/502 text from Phase 1's classifier —
+  the gap was each card's own `.catch()` replacing it with a generic
+  string. New shared `_obsFedMsg(e, fallback)` applied to: ACME
+  certificates, Backend Health, Envelopes, MCP channel bridge, channel
+  diagnostics, Peer Resources, eBPF status, eBPF network traffic,
+  Plugins, Observer Peers, Cluster Nodes. Two needed more than the
+  one-line fix:
+  - **ACME** and **Cluster Nodes** both unconditionally *hid* their
+    whole card on any failure (ACME: "not enabled" is the common case;
+    Cluster: "single-node, no cluster" is the common case) — hiding
+    made a federated capability denial indistinguishable from those
+    normal states. Now: a remote failure un-hides the card and shows
+    the real error; a local/non-remote failure keeps the original
+    hide-on-failure behavior.
+  - **Observer Peers** does a `Promise.all` of the peers fetch *and* a
+    compute-nodes fetch, with each inner `.catch()` already
+    neutralizing its own failure into an empty object before the outer
+    `.then()` ever saw it — a 403 on `/api/observer/peers` looked
+    identical to "no peers registered yet". The peers fetch's inner
+    catch now captures the real error (`peersErr`) instead of
+    discarding it; the "no peers" branch shows it when present.
+
+## Explicitly NOT done (even after Phase 4)
+
+- **Settings tab** (the original directive's literal subject, now
+  queued as item 3): the server picker was not added to
+  `renderSettingsView()`, no sub-card was made federation-aware, and
+  the raw-`fetch()`-based loaders (`loadCommsConfig`, `loadGeneralConfig`,
+  etc. — as opposed to `loadLLMTabConfig`, which already uses
+  `apiFetch`) were not migrated. ~30+ sub-cards, needs its own session.
+- Dashboard's smoke-progress poll still isn't proxy-aware at all (see
+  Phase 4) — a distinct bug from error *visibility*, not fixed here.
 
 ## Parity surface
 
@@ -177,6 +224,18 @@ Status: **Done**, shipped this round.
 
 ## Status
 
-Phases 1–3: **Done**, shipped in this commit. Settings tab and the
-remaining Observer/Dashboard sub-cards: **deferred**, flagged above for
-operator sign-off on priority.
+Phases 1–4: **Done**, shipped (Phases 1-3 in v8.73.8; Phase 4 in a
+follow-up commit this same day, after GH#194/v8.73.10). Settings tab
+(item 3 in the operator's queue): **not started**.
+
+## Verification (Phase 4)
+
+- `node --test internal/server/web/app-fed-cap-errors.test.js` — 2 new
+  tests (`_dashSetFedError`/`_dashClearFedError` multi-source
+  set/clear/non-remote-noop).
+- `node --test internal/server/web/app-observer-fed-errors.test.js` —
+  new file, 6 tests covering the simple `_obsFedMsg` pattern plus the
+  two special shapes (hide-vs-show for ACME/Cluster Nodes, the
+  dual-fetch `peersErr` capture for Observer Peers).
+- `node --test internal/server/web/*.test.js` — full suite green.
+- `go build` / `go test ./...` — unaffected (no Go changes in Phase 4).

@@ -9,6 +9,19 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## PWA Federated Error Visibility Phase 4 — Dashboard Periodic Re-polls + Observer's Remaining Sub-cards
+
+Added in v8.73.11. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md` (Phase 4).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `_dashSetFedError`/`_dashClearFedError` multi-source banner | Yes | No | `app-fed-cap-errors.test.js` — 2 tests | Not validated against a real `_dashLoop` RAF cycle (canvas-heavy; isolated the helper functions directly instead, per that test's own comment) |
+| Observer sub-cards (`_obsFedMsg` simple pattern: Plugins, Backend Health, Envelopes, channel bridge/diagnostics, Peer Resources, eBPF status/network) | Yes | No | `app-observer-fed-errors.test.js` — 1 representative test (Plugins); rest share the identical one-line pattern already proven by `loadStatsPanel`'s existing test | Not individually tested — code-reviewed as identical to the proven pattern |
+| ACME / Cluster Nodes hide-vs-show distinction | Yes | No | Same file — 3 tests (remote shows+unhides, local still hides) | |
+| Observer Peers dual-fetch `peersErr` capture | Yes | No | Same file — 2 tests (real error shown vs. genuine empty-state preserved) | |
+
+---
+
 ## GH#194 — Never Label the Connected Server "local"
 
 Added in v8.73.10. `handleListServers`'s new `hostname` field + client-side `_ensureLocalHostname`/`_localHostname`. See `docs/plans/2026-10-08-gh194-never-say-local.md`.

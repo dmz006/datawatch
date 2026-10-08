@@ -190,7 +190,7 @@ const state = {
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
-  _fedConnStatus: null,   // {server, phase:'connecting'|'connected'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
+  _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
   alertSystemUnread: 0,   // BL226 — system-sourced unread count
@@ -348,7 +348,17 @@ function _checkFederatedConnection(serverName) {
   fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
     .then(r => {
       if (r.status === 401 || r.status === 403 || r.status === 502) return _fedFetchError(r);
-      return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status));
+      if (!r.ok) return Promise.reject(new Error('HTTP ' + r.status));
+      // Response headers are in -- the authenticated check succeeded.
+      // Turning that first response into the session list is its own
+      // visible phase now (datawatch-app parity, GH#235): "Connecting…"
+      // covers the wait on this fetch, "Loading sessions from X…" covers
+      // r.json() below, matching how the apps split the same two steps.
+      if (state.activeServer === serverName) {
+        state._fedConnStatus = { server: serverName, phase: 'loading_sessions' };
+        if (state.activeView === 'sessions') renderSessionsView();
+      }
+      return r.json();
     })
     .then(sessions => {
       if (state.activeServer !== serverName) return; // switched away while this was in flight
@@ -2439,17 +2449,21 @@ function renderSessionsView() {
         _injectServerPickerBar(view, renderSessionsView);
         return;
       }
-      // Only 'connecting' reaches here now -- _checkFederatedConnection
-      // clears the status entirely (straight to null) the moment the real
-      // sessions fetch succeeds, rather than passing through an
-      // intermediate 'connected' phase that still had to wait on the WS.
+      // 'connecting' or 'loading_sessions' reach here now (GH#235 parity
+      // split) -- _checkFederatedConnection clears the status entirely
+      // (straight to null) the moment the real sessions fetch succeeds,
+      // rather than passing through an intermediate 'connected' phase
+      // that still had to wait on the WS.
       // No sessions-watermark here (operator-reported 2026-10-08: with no
       // session cards around it, the normally-subtle 0.045-opacity
       // background logo had nothing to recede behind and dominated the
       // whole page) -- a dedicated status view doesn't need it.
+      const fcsLabel = fcs.phase === 'loading_sessions'
+        ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
+        : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
       view.innerHTML = `
         <div class="view-content" style="position:relative;">
-          ${loadingEyeBlock(t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`, 'panel')}
+          ${loadingEyeBlock(fcsLabel, 'panel')}
         </div>`;
       _injectServerPickerBar(view, renderSessionsView);
       return;
@@ -22048,15 +22062,25 @@ function pageCmd(dir) {
   loadSavedCommands();
 }
 
+// Coordinator-flagged (2026-10-08), extending the prior round's Observer
+// instrumentation from the primary stats card only to the rest of its
+// ~12 independent sub-card loaders: every apiFetch-based card below
+// already gets the real 401/403/502 text via apiFetch's own classifier
+// (_fedFetchError) -- the gap was that each card's .catch(...) replaced
+// it with a generic "unavailable" string instead of showing it. Shared
+// so the same isRemote check isn't repeated in every one of them.
+function _obsFedMsg(e, fallback) {
+  const isRemote = state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all';
+  return isRemote ? ((e && e.message) || fallback) : fallback;
+}
+
 function loadStatsPanel() {
   const el = document.getElementById('statsPanel');
   if (!el) return;
   apiFetch('/api/stats').then(data => {
     renderStatsData(el, data);
   }).catch(e => {
-    const isRemote = state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all';
-    const msg = isRemote ? ((e && e.message) || (t('stats_unavailable')||'Stats unavailable.')) : (t('stats_unavailable')||'Stats unavailable.');
-    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(msg)}</div>`;
+    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(_obsFedMsg(e, t('stats_unavailable')||'Stats unavailable.'))}</div>`;
   });
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
@@ -22108,7 +22132,15 @@ function loadAcmeHealthCard() {
       const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(d.domain)}</span> <span style="opacity:0.6;">— ${escHtml(label)}</span>${err}</div>`;
     }).join('');
-  }).catch(() => { block.style.display = 'none'; });
+  }).catch(e => {
+    // GH#194/coordinator-flagged (2026-10-08): hiding on ANY failure
+    // made a federated capability denial indistinguishable from "ACME
+    // just isn't enabled on this host" (the normal, common case). Only
+    // hide for that local/non-remote case; a remote denial shows instead.
+    const msg = _obsFedMsg(e, null);
+    if (msg) { block.style.display = ''; el.innerHTML = `<span style="opacity:0.85;">${escHtml(msg)}</span>`; }
+    else block.style.display = 'none';
+  });
 }
 
 // GH#172 D78 — Backend Health card: lists each configured LLM backend's
@@ -22132,7 +22164,7 @@ function loadBackendHealthCard() {
       const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
     }).join('');
-  }).catch(() => { el.textContent = t('obs_backend_unavailable') || 'unavailable'; });
+  }).catch(e => { el.textContent = _obsFedMsg(e, t('obs_backend_unavailable') || 'unavailable'); });
 }
 
 // GH#172 D78 — Envelopes card: the observer's own live process-tree
@@ -22166,7 +22198,7 @@ function loadObserverEnvelopesCard() {
       const chipsHtml = chips.length ? ` <span style="opacity:0.7;">${chips.map(escHtml).join(' · ')}</span>` : '';
       return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${kindBadge} ${escHtml(e.label||e.id||'')}</span>${chipsHtml}</div>`;
     }).join('');
-  }).catch(() => { el.textContent = t('obs_envelopes_unavailable') || 'unavailable'; });
+  }).catch(e => { el.textContent = _obsFedMsg(e, t('obs_envelopes_unavailable') || 'unavailable'); });
 }
 
 // v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
@@ -22214,8 +22246,8 @@ function loadChannelBridge(targetId) {
       html += `<div style="opacity:0.7;margin-top:4px;">Run <code>datawatch channel cleanup-stale-mcp-json</code> to remove.</div>`;
     }
     el.innerHTML = html;
-  }).catch(() => {
-    el.textContent = 'unavailable';
+  }).catch(e => {
+    el.textContent = _obsFedMsg(e, 'unavailable');
   });
 }
 
@@ -22249,7 +22281,7 @@ function loadChannelDiagnostics() {
       html += '</details>';
     }
     el.innerHTML = html;
-  }).catch(() => { el.textContent = 'unavailable'; });
+  }).catch(e => { el.textContent = _obsFedMsg(e, 'unavailable'); });
 }
 
 // Toggle helper for collapsible Observatory sections.
@@ -22324,7 +22356,7 @@ function loadPeerResourceOverview() {
       }).join('');
       el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
     });
-  }).catch(() => { el.innerHTML = '<span style="opacity:0.6;">unavailable</span>'; });
+  }).catch(e => { el.innerHTML = `<span style="opacity:0.6;">${escHtml(_obsFedMsg(e, 'unavailable'))}</span>`; });
 }
 window.loadPeerResourceOverview = loadPeerResourceOverview;
 
@@ -22499,8 +22531,8 @@ function loadEBPFStatus() {
     }
     const msg = e.message ? `<div style="opacity:0.8;margin-top:3px;">${escHtml(e.message)}</div>` : '';
     line.innerHTML = head + msg;
-  }).catch(() => {
-    line.innerHTML = '<span style="opacity:0.7;">/api/stats?v=2 unavailable</span>';
+  }).catch(e => {
+    line.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, '/api/stats?v=2 unavailable'))}</span>`;
   });
 }
 
@@ -22535,8 +22567,8 @@ function loadEBPFNetworkTraffic() {
     }
     html += '</table>';
     list.innerHTML = html;
-  }).catch(() => {
-    list.innerHTML = `<span style="opacity:0.7;">${escHtml(t('ebpf_no_data')||'No eBPF data available')}</span>`;
+  }).catch(e => {
+    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, t('ebpf_no_data')||'No eBPF data available'))}</span>`;
   });
 }
 
@@ -22572,9 +22604,10 @@ function loadPluginsStatus() {
       return;
     }
     list.innerHTML = nativeRows + subRows;
-  }).catch(() => {
-    // /api/plugins should always succeed now (native list is unconditional).
-    list.innerHTML = '<span style="opacity:0.7;">plugin status unavailable</span>';
+  }).catch(e => {
+    // /api/plugins should always succeed locally (native list is
+    // unconditional) -- a failure here on a federated peer is real.
+    list.innerHTML = `<span style="opacity:0.7;">${escHtml(_obsFedMsg(e, 'plugin status unavailable'))}</span>`;
   });
 }
 
@@ -22597,8 +22630,14 @@ function loadObserverPeers() {
   if (!list) return;
   // alpha.23b — also fetch ComputeNodes so each peer row can show
   // which Node it backs ("attached to <node>" / "(free)").
+  // GH#194/coordinator-flagged (2026-10-08): both inner .catch()es
+  // neutralize a federated 401/403/502 into an empty, successful-looking
+  // {peers:[]} -- a capability denial looked identical to "no peers
+  // registered yet". peersErr captures the real error so the "no peers"
+  // branch below can show it instead, when there is one.
+  let peersErr = null;
   Promise.all([
-    apiFetch('/api/observer/peers').then(r => r).catch(() => ({peers:[]})),
+    apiFetch('/api/observer/peers').then(r => r).catch(e => { peersErr = e; return {peers:[]}; }),
     apiFetch('/api/compute/nodes').then(r => r).catch(() => ({nodes:[]})),
   ]).then(([data, nodesResp]) => {
     const peers = (data && data.peers) || [];
@@ -22640,6 +22679,10 @@ function loadObserverPeers() {
         </div>` : '';
 
     if (!peers.length) {
+      if (peersErr) {
+        list.innerHTML = pills + `<span style="opacity:0.85;">${escHtml(_obsFedMsg(peersErr, 'no peers registered'))}</span>`;
+        return;
+      }
       list.innerHTML = pills + '<span style="opacity:0.7;">no peers registered</span> &middot; '
         + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a remote host, or spawn an autonomous worker (it auto-peers). <a href="/docs/api/observer-peers.md" style="color:var(--accent);">docs</a></span>';
       return;
@@ -22962,8 +23005,13 @@ function loadObserverClusterNodes() {
         </span>`;
       return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
     }).join('');
-  }).catch(() => {
-    block.style.display = 'none';
+  }).catch(e => {
+    // GH#194/coordinator-flagged (2026-10-08): same fix as the ACME
+    // card above -- hiding on every failure made a federated denial
+    // indistinguishable from the common "no cluster, single-node setup" case.
+    const msg = _obsFedMsg(e, null);
+    if (msg) { block.style.display = ''; list.innerHTML = `<span style="opacity:0.85;">${escHtml(msg)}</span>`; }
+    else block.style.display = 'none';
   });
 }
 
@@ -24848,6 +24896,41 @@ window.closeDashExpand = function() {
   if (expand) expand.classList.add('hidden');
 };
 
+// Coordinator-flagged (2026-10-08), extending the prior round's
+// initial-load-only Dashboard banner: the periodic re-fetches in
+// _dashLoop below (PRDs, cost, heatmap, compute nodes) are just as
+// federation-aware as the initial load, but were still swallowing
+// every failure silently (.catch(() => {})) -- a federated denial that
+// surfaced on first entering the view would silently go quiet again a
+// few seconds later on the first periodic re-fetch. #dashFedErrorBanner
+// is a PERSISTENT sibling of #dashCardGrid (not a child -- _dashBuildGrid
+// does a full grid.innerHTML replace on every layout load, which would
+// have wiped a banner nested inside it, as the previous single-source
+// version silently risked). Keyed by source so multiple cards failing
+// at once don't clobber each other's message, and each source clears
+// independently the next time ITS OWN fetch succeeds.
+function _dashSetFedError(source, err) {
+  if (!(state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all')) return;
+  state._dashFedErrors = state._dashFedErrors || {};
+  state._dashFedErrors[source] = (err && err.message) || 'Failed to load';
+  _dashRenderFedErrorBanner();
+}
+function _dashClearFedError(source) {
+  if (state._dashFedErrors && state._dashFedErrors[source]) {
+    delete state._dashFedErrors[source];
+    _dashRenderFedErrorBanner();
+  }
+}
+function _dashRenderFedErrorBanner() {
+  const el = document.getElementById('dashFedErrorBanner');
+  if (!el) return;
+  const errs = state._dashFedErrors || {};
+  const keys = Object.keys(errs);
+  if (!keys.length) { el.innerHTML = ''; return; }
+  const combined = keys.map(k => errs[k]).join('; ');
+  el.innerHTML = `<div class="dash-fed-error-banner" style="background:rgba(239,68,68,0.12);color:var(--error,#ef4444);border-radius:6px;padding:8px 12px;font-size:12px;margin:0 0 8px;">${escHtml(t('dash_fed_error', [state.activeServer, combined]) || `${state.activeServer}: ${combined}`)}</div>`;
+}
+
 function _dashLoop(ts) {
   if (state.activeView !== 'dashboard') { _dash.rafId = null; return; }
   _dash._frameCount++;
@@ -24888,13 +24971,13 @@ function _dashLoop(ts) {
   // Re-fetch automata every ~5s
   if (_dash._frameCount % 150 === 0 && !_dash._prdsFetching) {
     _dash._prdsFetching = true;
-    _dashFetchPRDs().then(() => { _dash._prdsLastFetch = Date.now(); }).catch(() => {}).finally(() => { _dash._prdsFetching = false; });
+    _dashFetchPRDs().then(() => { _dash._prdsLastFetch = Date.now(); _dashClearFedError('prds'); }).catch(e => _dashSetFedError('prds', e)).finally(() => { _dash._prdsFetching = false; });
   }
 
   // Fetch cost every ~30s
   if (_dash._frameCount % 900 === 0 && !_dash._costFetching) {
     _dash._costFetching = true;
-    _dashFetchCost().catch(() => {}).finally(() => { _dash._costFetching = false; });
+    _dashFetchCost().then(() => _dashClearFedError('cost')).catch(e => _dashSetFedError('cost', e)).finally(() => { _dash._costFetching = false; });
   }
 
   // Fetch heatmap data every ~60s
@@ -24902,7 +24985,8 @@ function _dashLoop(ts) {
     _dash._heatmapFetching = true;
     apiFetch('/api/analytics?range=30d').then(d => {
       _dash._heatmapData = (d && d.buckets) || [];
-    }).catch(() => {}).finally(() => { _dash._heatmapFetching = false; });
+      _dashClearFedError('heatmap');
+    }).catch(e => _dashSetFedError('heatmap', e)).finally(() => { _dash._heatmapFetching = false; });
   }
 
   // Fetch compute nodes every ~60s for runtime badges
@@ -24911,7 +24995,8 @@ function _dashLoop(ts) {
     apiFetch('/api/compute/nodes').then(d => {
       _dash._computeNodes = (d && (d.nodes || d)) || [];
       if (!Array.isArray(_dash._computeNodes)) _dash._computeNodes = [];
-    }).catch(() => {}).finally(() => { _dash._computeNodesFetching = false; });
+      _dashClearFedError('compute');
+    }).catch(e => _dashSetFedError('compute', e)).finally(() => { _dash._computeNodesFetching = false; });
   }
 
   // Poll smoke envelopes — fast (2.5s) if any run is active, slow (30s) otherwise
@@ -25719,6 +25804,7 @@ function renderDashboardView() {
         <button id="dashAddCardBtn" onclick="window._dashShowAddPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:6px;">+ Card</button>
         <button id="dashEditBtn" onclick="window._dashStartEdit()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:4px;">✎ Edit</button>
       </div>
+      <div id="dashFedErrorBanner"></div>
       <div class="dboard-card-grid" id="dashCardGrid">
         <div style="grid-column:1/-1;text-align:center;padding:40px 16px;">${loadingEyeBlock(null, 'panel')}</div>
       </div>
@@ -25747,29 +25833,21 @@ function renderDashboardView() {
   if (prdData && prdData.length > 0) {
     _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
   } else {
-    // Coordinator-flagged (2026-10-08): Dashboard's many cards all poll
-    // silently and swallow errors by design (reasonable for a stable
-    // local daemon's periodic background refresh) -- but that means a
-    // federated 401/403 on first entering this view had ZERO visible
-    // feedback anywhere, not even a console-only failure the operator
-    // could notice. Surface it once, on the initial load only (not the
-    // periodic _dashLoop re-fetch, to avoid a flickering banner every
-    // ~5s) -- a dedicated banner, not an attempt to instrument every
-    // individual polling fetch in this view.
-    state._dashFedError = null;
-    _dashFetchPRDs().catch(e => {
-      if (state.activeServer && state.activeServer !== 'local' && state.activeServer !== 'all') {
-        state._dashFedError = (e && e.message) || 'Failed to load';
-        const grid = document.getElementById('dashCardGrid');
-        if (grid) {
-          grid.insertAdjacentHTML('afterbegin', `<div class="dash-fed-error-banner" style="grid-column:1/-1;background:rgba(239,68,68,0.12);color:var(--error,#ef4444);border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;">${escHtml(t('dash_fed_error', [state.activeServer, state._dashFedError]) || `${state.activeServer}: ${state._dashFedError}`)}</div>`);
-        }
-      }
-    });
+    // Coordinator-flagged (2026-10-08), extended 2026-10-08: Dashboard's
+    // many cards all poll silently and swallow errors by design
+    // (reasonable for a stable local daemon's periodic background
+    // refresh) -- but that means a federated 401/403 had ZERO visible
+    // feedback anywhere. _dashSetFedError/_dashClearFedError (defined
+    // near _dashLoop) now cover both this initial load AND every
+    // periodic re-fetch below, keyed by source so they don't clobber
+    // each other.
+    state._dashFedErrors = {};
+    _dashRenderFedErrorBanner();
+    _dashFetchPRDs().then(() => _dashClearFedError('prds')).catch(e => _dashSetFedError('prds', e));
   }
   if (!_dash._costFetching) {
     _dash._costFetching = true;
-    _dashFetchCost().catch(() => {}).finally(() => { _dash._costFetching = false; });
+    _dashFetchCost().then(() => _dashClearFedError('cost')).catch(e => _dashSetFedError('cost', e)).finally(() => { _dash._costFetching = false; });
   }
   _dashInitNodes();
   // Load layout from server; falls back to default and calls _dashBuildGrid

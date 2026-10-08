@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.11 — fix(pwa): Dashboard periodic re-polls + Observer's remaining sub-cards now show real federated errors too
+
+### Fixed
+- Dashboard: the prior round's federated-error banner only covered the *initial* PRDs load — `_dashLoop`'s periodic re-fetches (PRDs ~5s, cost ~30s, heatmap/compute-nodes ~60s) still swallowed every failure silently. New `_dashSetFedError`/`_dashClearFedError`, keyed by source so independent cards failing at once don't clobber each other's message. The banner moved from a child of `#dashCardGrid` to a persistent sibling `#dashFedErrorBanner`, since `_dashBuildGrid`'s full `grid.innerHTML` replace on every layout load would eventually have wiped a banner nested inside it (a latent bug in the prior single-source version, masked in its own test).
+- Observer: the remaining 11 sub-cards beyond the primary stats card (ACME, Backend Health, Envelopes, channel bridge, channel diagnostics, Peer Resources, eBPF status/network, Plugins, Observer Peers, Cluster Nodes) all already got the real 401/403/502 text via `apiFetch`, but each replaced it with a generic "unavailable" string. ACME and Cluster Nodes additionally *hid their whole card* on any failure — indistinguishable from their own normal "not enabled"/"no cluster" states — now only hidden for a local/non-remote failure; a remote denial shows the real message instead. Observer Peers' dual `Promise.all` fetch neutralized a 403 on `/api/observer/peers` into an empty list before the "no peers registered" branch ever saw it; now captures and shows the real error.
+- Found while here: Dashboard's smoke-progress poll uses a raw, non-proxy-aware `fetch()` rather than `apiFetch()` — never actually routes through a selected remote peer. Separate, pre-existing bug; not fixed in this error-*visibility* pass, flagged as a follow-up.
+
+### Added
+- 2 new tests in `app-fed-cap-errors.test.js`; new `app-observer-fed-errors.test.js` (6 tests).
+
+### Process
+- See `docs/plans/2026-10-08-pwa-federated-error-visibility.md` (Phase 4) for the full breakdown. Item 2 of 3 in the operator's queue (GH#194 shipped as v8.73.10; full Settings-tab federation remains item 3).
+
 ## v8.73.10 — fix(pwa): GH#194 — never label the connected server "local"
 
 ### Fixed
