@@ -5,7 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v8.71.0 — feat(pwa): GH#192 Phase 2 — per-Automaton memory section
+## v8.72.0 — feat(pwa): GH#192 Phase 3 — three-finger swipe opens a real server-picker modal
+
+### Added
+- **#7 (D65a)**: three-finger swipe-up now opens a real server-picker overlay (server list + an explicit "Add server" action) instead of scrolling to and briefly pulsing the always-visible toolbar bar. Operator decision (2026-10-07): this reverses a prior deliberate design choice — documented in the code at the time — that treated the PWA's picker (an always-visible bar, decision D2a) as having nothing to "open," unlike the apps' hidden dialog. The toolbar bar is **not** removed; it stays the primary picker for mouse/trackpad use, and the modal is a phone-specific shortcut to the same `selectServer(...)` actions. Also fixes the old approach's real no-op: with zero remote servers configured, the swipe previously did nothing at all (`_serverPickerBar()` returns `''`); the new modal always offers at least All + Local.
+- "+ Add server" inside the modal routes to Settings → Comms and opens the existing `showServerForm()` add-server UX there (reused via navigation, not rebuilt — that form's DOM only exists on the Settings page).
+- Removed the now-dead `.server-picker-highlight` CSS (pulse animation + reduced-motion fallback) — no code references it anymore.
+- New locale keys (`server_picker_add`, `server_picker_modal_title`) added to all 5 locales.
+- 7 new unit tests (`app-gh192-phase3.test.js`).
+
+Phase 3 of 4 for GH#192; see `docs/plans/2026-10-07-gh192-parity-batch.md`. Phase 4 (#4 memory tags, full end-to-end) follows as a separate commit.
 
 ### Added
 - **#2 (D77a)**: new "Memory" tab on the Automaton detail view (alongside Overview/Stories/Decisions/Scan/Rules) — a stats tile (prd-shared/story-shared/session-local memory counts), the aggregated memory report, and a recall list, all scoped to that specific Automaton. Previously this entire capability only existed in Observer, project-wide, requiring the operator to type PRD/story IDs into a generic form.

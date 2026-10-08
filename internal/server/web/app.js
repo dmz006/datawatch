@@ -23570,18 +23570,92 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', _setAppH);
 }
 
+// GH#192 D65a — three-finger swipe opens a real server-picker overlay,
+// matching the apps (operator decision 2026-10-07, reversing the
+// scroll+highlight approach below: the PWA's always-visible toolbar bar
+// stays as the primary picker for mouse/trackpad use -- this is a
+// phone-specific shortcut to the same action set, now in a real overlay
+// instead of a scroll+pulse, and it no longer no-ops with zero
+// configured servers). Reuses the same selectServer()/state.servers
+// source _serverPickerBar() already uses -- no duplicate fetch, no
+// duplicate server-list logic.
+function openServerPickerModal() {
+  const existing = document.getElementById('serverPickerModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'serverPickerModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:320px;">
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">${escHtml(t('server_picker_modal_title') || 'Servers')}</div>
+    <div id="serverPickerModalList" style="display:flex;flex-direction:column;gap:6px;">${loadingEyeBlock()}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px;">
+      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="_openAddServerFromPicker()">+ ${escHtml(t('server_picker_add') || 'Add server')}</button>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="document.getElementById('serverPickerModal').remove()">${escHtml(t('action_close') || 'Close')}</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  _loadServerPickerModalList();
+}
+window.openServerPickerModal = openServerPickerModal;
+
+function _loadServerPickerModalList() {
+  const listEl = document.getElementById('serverPickerModalList');
+  if (!listEl) return;
+  const render = () => {
+    const el = document.getElementById('serverPickerModalList');
+    if (!el) return; // modal was closed before the fetch resolved
+    const servers = (state.servers && Array.isArray(state.servers.servers)
+      ? state.servers.servers
+      : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
+    const active = state.activeServer || null;
+    // Always offers All + Local, even with zero remote servers configured
+    // -- the one thing the old scroll+highlight approach could never do.
+    const chips = [
+      { name: 'all', label: t('server_all_label') || 'All' },
+      { name: null, label: t('server_local_label') || 'Local' },
+      ...servers.map(s => ({ name: s.name, label: s.label || s.name })),
+    ];
+    el.innerHTML = chips.map(c => {
+      const isActive = c.name === active;
+      return `<button onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
+    }).join('');
+  };
+  if (state.servers === undefined) {
+    fetch('/api/servers', { headers: tokenHeader() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { state.servers = d; render(); })
+      .catch(() => { state.servers = null; render(); });
+  } else {
+    render();
+  }
+}
+
+// "+ Add server" reuses the existing Settings -> Comms -> Remote Servers
+// add-server form (showServerForm/#serverFormWrap) via navigation,
+// rather than rebuilding a second copy of that form inside this modal --
+// that form's DOM only exists on the Settings page, so it can't be
+// reused in place from an arbitrary other view.
+function _openAddServerFromPicker() {
+  const modal = document.getElementById('serverPickerModal');
+  if (modal) modal.remove();
+  _settingsTab = 'comms';
+  localStorage.setItem('cs_settings_tab', 'comms');
+  navigate('settings');
+  setTimeout(() => {
+    showServerForm(null);
+    const wrap = document.getElementById('serverFormWrap');
+    if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 150);
+}
+window._openAddServerFromPicker = _openAddServerFromPicker;
+
 // ── GH#172 D65 — three-finger swipe-up gesture ──────────────────────────────
 // Android: gesture/ThreeFingerSwipe.kt (64dp, 500ms debounce) -> opens the
 // server/profile picker. iOS: ServerSwitchGesture.swift (3-touch swipe up ->
 // picker dialog). Confirmed via the datawatch-app repo's own parity audit
 // (docs/parity/sections/02-sessions-list.md row 91) before building, since
 // the issue thread alone didn't say what the gesture does.
-//
-// The PWA's server picker (_serverPickerBar) is already an always-visible
-// toolbar bar (decision D2a), not a hidden dialog to "open" -- so there is
-// no overlay to reveal. Scroll the active view to top (bringing the bar
-// into view if scrolled past) and briefly highlight it instead, rather than
-// building a new overlay that doesn't match the PWA's existing design.
 (function initThreeFingerSwipeGesture() {
   let startY = null;
   let lastTriggerAt = 0;
@@ -23592,15 +23666,6 @@ if (window.visualViewport) {
     let sum = 0;
     for (let i = 0; i < 3; i++) sum += touches[i].clientY;
     return sum / 3;
-  }
-
-  function highlightServerPicker() {
-    const bar = document.querySelector('.server-picker-bar');
-    if (!bar) return; // no remote servers registered -- nothing to highlight
-    const view = document.getElementById('view');
-    if (view) view.scrollTo({ top: 0, behavior: 'smooth' });
-    bar.classList.add('server-picker-highlight');
-    setTimeout(() => bar.classList.remove('server-picker-highlight'), 1200);
   }
 
   document.addEventListener('touchstart', (e) => {
@@ -23614,7 +23679,7 @@ if (window.visualViewport) {
       const now = Date.now();
       if (now - lastTriggerAt >= DEBOUNCE_MS) {
         lastTriggerAt = now;
-        highlightServerPicker();
+        openServerPickerModal();
       }
       startY = null; // require a fresh 3-touch start for the next trigger
     }

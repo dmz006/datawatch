@@ -2428,18 +2428,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .composer-status-spinner { animation: none; opacity: 0.6; }
 }
 
-/* GH#172 D65 — three-finger swipe-up gesture lands on the server picker bar. */
-.server-picker-highlight {
-  animation: dw-picker-pulse 1.2s ease-out;
-}
-@keyframes dw-picker-pulse {
-  0% { box-shadow: 0 0 0 2px var(--accent2, #60a5fa); }
-  100% { box-shadow: 0 0 0 2px transparent; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .server-picker-highlight { animation: none; outline: 2px solid var(--accent2, #60a5fa); }
-}
-
 /* GH#182 — alert deep link (web+datawatch://alert/<id>) lands here. */
 .alert-deep-link-highlight {
   animation: dw-picker-pulse 2s ease-out;
