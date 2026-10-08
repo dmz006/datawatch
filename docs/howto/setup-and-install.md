@@ -19,10 +19,16 @@ exec_steps:
 ---
 # How-to: Setup + install
 
-End-to-end first-time install: download the binary, start the daemon,
-configure auth + a backend, smoke-test, find your way to the logs.
-After this you have a daemon you can spawn sessions in and a PWA you
-can drive it from.
+End-to-end first-time install, in three stages, each a complete
+working state on its own:
+
+1. **Install** — download the binary, start the daemon, smoke-test.
+2. **Minimal setup** — one backend (opencode or claude-code), one
+   session. No messaging, no LLM registry, no MCP yet.
+3. **Full datawatch setup** — the LLM registry (more backends/hardware,
+   failover), MCP, messaging channels, mobile, REST.
+
+Stop after stage 2 if that's all you need today.
 
 ## What it is
 
@@ -44,7 +50,7 @@ Tailscale for agent mesh, etc.).
 - **Ports**: 8080 (HTTP / redirect) + 8443 (HTTPS) by default;
   customizable.
 
-## Setup
+## Stage 1 — install
 
 ```sh
 # 1. Download the binary for your platform from GitHub Releases.
@@ -72,75 +78,85 @@ curl -sk https://localhost:8443/api/health
 #  → {"status":"ok","version":"...","hostname":"...","encrypted":false,...}
 ```
 
-## Two happy paths
+## Stage 2 — minimal setup: one backend, one session (opencode or claude)
 
-### 4a. Happy path — CLI
+The fastest path from a fresh install to a real AI session: no
+messaging backend, no LLM registry, no MCP server required yet. Pick
+whichever coding CLI you already have on your machine.
 
 ```sh
-# Configure a backend (claude-code as example).
+# opencode
+datawatch config set llm.backends.opencode.enabled true
+datawatch config set llm.backends.opencode.path "$(which opencode)"
+
+# — or — claude-code
 datawatch config set llm.backends.claude_code.enabled true
-datawatch config set llm.backends.claude_code.path /home/$USER/.local/bin/claude
+datawatch config set llm.backends.claude_code.path "$(which claude)"
+
 datawatch reload
 
 # Confirm backend is healthy.
 datawatch backends list
-#  → claude-code  ENABLED  reachable  models=[claude-sonnet-4-5,...]
+#  → opencode | claude-code  ENABLED  reachable  models=[...]
 
 # Spawn a smoke session.
-SID=$(datawatch sessions start --llm claude-code \
+SID=$(datawatch sessions start --llm opencode \
   --task "What model are you?" --project-dir /tmp 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
+# (swap --llm claude-code if that's the one you configured)
 sleep 5
 datawatch sessions tail $SID | head -20
 datawatch sessions kill $SID
-
-# Update + restart later (preserves running sessions via pipe-pane re-establish).
-datawatch update           # downloads latest if available
-datawatch restart          # graceful stop + start
 ```
 
-### 4b. Happy path — PWA
+Or the same thing from the PWA instead of the CLI:
 
 1. Open `https://localhost:8443` in your browser. Accept the
    self-signed cert (or trust the CA bundle from
    `~/.datawatch/tls/ca.pem`).
-2. PWA prompts for the bearer token printed in step 2 above. Paste +
-   click **Save & Reconnect**.
+2. PWA prompts for the bearer token printed at `datawatch init` time.
+   Paste + click **Save & Reconnect**.
 3. PWA loads. Bottom nav: Sessions / Automata / Alerts / Observer /
    Settings.
-4. Settings → LLM → pick a backend (e.g. claude-code) → fill in the
-   config card (binary path, etc.) → **Save**. The status row turns
-   green when the daemon can reach the backend.
+4. Settings → LLM → pick opencode or claude-code → fill in the config
+   card (binary path, etc.) → **Save**. The status row turns green
+   when the daemon can reach the backend.
 5. Bottom nav → **Sessions** → **+** FAB → backend dropdown → Task
    "Hello, what model are you?" → **Start**.
 6. Watch the session detail open with xterm-streamed output. Confirm
    the LLM answers.
-7. (Optional) **Install as PWA**: browser menu → Install Datawatch.
-   Adds it to your launcher; runs in its own window.
 
-## Other channels
+This is a complete, working datawatch install — everything in Stage 3
+is additive, not required.
 
-### 5a. Mobile (Compose Multiplatform)
+Later, to update: `datawatch update` (downloads the latest version if
+one is available) then `datawatch restart` (graceful stop + start;
+preserves running sessions via pipe-pane re-establish).
 
-Download the companion app (link in Settings → About → Mobile app
-pointer once published). On first launch, paste the same bearer token
-+ daemon URL. Connects over Tailscale or LAN.
+## Stage 3 — full datawatch setup: LLM registry + MCP
 
-### 5b. REST
+Layer on the rest once the Stage 2 minimal path works.
+
+### LLM registry — more backends/hardware, ordered failover
+
+Stage 2 configured exactly one backend by hand. The **LLM Registry**
+maps named entries to an ordered failover list of compute nodes, used
+by every consumer (sessions, Council, Automata, `/api/ask`):
 
 ```sh
-TOKEN=$(cat ~/.datawatch/token); BASE=https://localhost:8443
+datawatch identity configure   # operator identity / Telos
+#  or open the PWA and click the 🤖 robot icon in the header
 
-curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/health
-curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/info
-curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/reload
+datawatch llm list
+datawatch compute node list
+datawatch compute pull-model datawatch-ollama llama3.1:8b
+datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 ```
 
-Full Swagger UI at `/api/docs`; raw OpenAPI at `/api/openapi.yaml`.
+See [`llm-registry.md`](llm-registry.md) and
+[`compute-nodes.md`](compute-nodes.md) for the full model.
 
-### 5c. MCP
-
-After install, point your MCP host at:
+### MCP — expose datawatch's 60+ tools to Claude Desktop / Cursor / VS Code
 
 ```json
 {
@@ -156,17 +172,40 @@ After install, point your MCP host at:
 
 Live tool catalogue at `https://localhost:8443/api/mcp/docs`.
 
-### 5d. Comm channel
+### REST
+
+```sh
+TOKEN=$(cat ~/.datawatch/token); BASE=https://localhost:8443
+
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/health
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/info
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/reload
+```
+
+Full Swagger UI at `/api/docs`; raw OpenAPI at `/api/openapi.yaml`.
+
+### Messaging channel (optional)
 
 Out of the box, datawatch listens on no comm channels. Configure one
 (Signal / Telegram / Slack / etc.) — see [`comm-channels.md`](comm-channels.md). After
 linking, `health` from any channel returns daemon status.
 
-### 5e. YAML
+### Mobile (Compose Multiplatform)
 
-`~/.datawatch/datawatch.yaml` is the source of truth. Auto-generated
-by `datawatch init`; edit + `datawatch reload` (or `restart` for
-top-level structural changes).
+Download the companion app (link in Settings → About → Mobile app
+pointer once published). On first launch, paste the same bearer token
++ daemon URL. Connects over Tailscale or LAN.
+
+### (Optional) Install as PWA
+
+Browser menu → Install Datawatch. Adds it to your launcher; runs in
+its own window.
+
+### YAML
+
+`~/.datawatch/datawatch.yaml` is the source of truth for everything
+above. Auto-generated by `datawatch init`; edit + `datawatch reload`
+(or `restart` for top-level structural changes).
 
 ## Diagram
 

@@ -202,38 +202,78 @@ Update is version-string aware. Tmux sessions survive daemon restarts.
 
 ## Quick start
 
+Three stages, each one a complete, working state on its own — stop after
+stage 2 if that's all you need today.
+
+### 1. Install
+
+See [Installation](#installation) above, then initialize + start:
+
 ```bash
-# 1. Initialize configuration
 datawatch config init
-
-# 2. Set up a messaging backend (choose one)
-datawatch setup telegram    # Telegram bot
-datawatch setup discord     # Discord bot
-datawatch setup slack       # Slack app
-datawatch setup signal      # Signal (requires signal-cli + Java)
-datawatch setup web         # Web UI only (no messaging backend needed)
-
-# 3. Start the daemon
 datawatch start
+curl -ks https://localhost:8443/api/health   # {"status":"ok",...}
+```
 
-# 4. Configure your operator identity
+### 2. Minimal setup — one backend, one session
+
+The fastest path from a fresh install to a real AI session: no messaging
+backend, no LLM registry, no MCP server required yet. Pick whichever
+coding CLI you already have on your machine — [opencode](https://opencode.ai)
+or [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
+
+```bash
+# opencode
+datawatch config set llm.backends.opencode.enabled true
+datawatch config set llm.backends.opencode.path "$(which opencode)"
+
+# — or — claude-code
+datawatch config set llm.backends.claude_code.enabled true
+datawatch config set llm.backends.claude_code.path "$(which claude)"
+
+datawatch reload
+datawatch backends list
+#  → opencode | claude-code   ENABLED   reachable
+
+datawatch sessions start --llm opencode --task "Hello, what model are you?" --project-dir /tmp
+# (swap --llm claude-code if that's the one you configured)
+```
+
+Open `https://localhost:8443` in a browser to watch the session stream
+live, or `datawatch sessions tail <id>` from the CLI. This is a
+complete, working datawatch install — everything past this point is
+additive.
+
+### 3. Full datawatch setup — LLM registry + MCP
+
+Layer on the rest once the minimal path works:
+
+```bash
+# Configure your operator identity
 datawatch identity configure
 # or open the PWA and click the 🤖 robot icon in the header
 
-# 5. Review auto-migrated LLM entries and add your hardware
+# Register more backends/hardware in the LLM Registry (ordered
+# failover list, not just the one backend from stage 2)
 datawatch llm list
 datawatch compute node list
-
-# 6. Pull a model and start chatting
 datawatch compute pull-model datawatch-ollama llama3.1:8b
 datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 
-# 7. Verify
-datawatch version
-curl -ks https://localhost:8443/api/health
+# Point an MCP host (Claude Desktop / Cursor / VS Code) at the daemon
+# — add to its mcpServers config:
+#   {"datawatch": {"command": "datawatch", "args": ["mcp"], "env": {"DATAWATCH_TOKEN": "<bearer>"}}}
+
+# (Optional) add a messaging backend
+datawatch setup telegram    # or discord / slack / signal
 ```
 
-Send `help` in the configured channel to see the command reference, or see [docs/howto/chat-and-llm-quickstart.md](docs/howto/chat-and-llm-quickstart.md) for the fastest path from daemon to chatting.
+Send `help` in a configured messaging channel to see the command
+reference, or see
+[docs/howto/setup-and-install.md](docs/howto/setup-and-install.md) for
+the full walkthrough of all three stages, and
+[docs/howto/chat-and-llm-quickstart.md](docs/howto/chat-and-llm-quickstart.md)
+for the most-common chat × backend pairings.
 
 ---
 
