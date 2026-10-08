@@ -11,7 +11,7 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ## BL398 Phases 0-2 + registry adoption (GH#197) — .trivyignore reconciliation, live rescan baseline, CVE tracing, structured registry
 
-Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30/v8.73.31. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -24,6 +24,8 @@ Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30. See `docs/plans/2026-10-08-bl398-t
 | `scripts/gen_trivyignore.py` generator | N/A (not code) | Yes | Ran twice consecutively against the same registry: zero diff (idempotent). Generated `.trivyignore`'s suppressed-ID set diffed against the hand-written file it replaces: identical 70 IDs | Confirms the generator is a faithful, stable round-trip, not a lossy one |
 | `scripts/accepted_risks_daily_watch.py` | N/A (not code) | Yes | Ran against the real registry + Phase 1's 5 fresh-scan JSON files | Correctly surfaced 1 added-in-24h, 64 past-expiry (the intentional migration backlog), and caught (then fixed) a false-positive "re-trace needed" from Debian epoch-prefix notation (`1:2.38.1-5...` vs `2.38.1-5...`) before it shipped |
 | `scripts/apply_stale_risk_removal.py` | N/A (not code) | Yes | Ran against a scratch copy of the real 70-entry registry, removing 1 entry | Resulting file still parses, has exactly 69 entries, removed ID absent — verified via a fresh `yaml.safe_load`, not just "the script didn't crash" |
+| `scripts/dismissed_alerts_watch.py` (code-scanning) | N/A (not code) | Yes | Ran live against `dmz006/datawatch`'s real code-scanning API (not a mock) | Found 87 of 87 dismissed alerts genuinely unregistered — a real finding, matched manually against the registry's 0 code-scanning entries |
+| `scripts/dismissed_alerts_watch.py` (dependabot, no token) | N/A (not code) | Yes | Ran with `SCA_WATCH_TOKEN` unset | Correctly degrades to "NOT CHECKED" with an explicit warning rather than silently skipping or crashing |
 
 ---
 

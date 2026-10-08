@@ -219,6 +219,7 @@ jobs:
       packages: write
       issues: write
       pull-requests: write
+      security-events: read  # GH#197 daily watch: code-scanning dismissed-alert check
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
@@ -359,9 +360,13 @@ jobs:
 
       - name: Daily watch report (security/accepted-risks.yml -- GH#197's shared standard)
         id: watch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCA_WATCH_TOKEN: ${{ secrets.SCA_WATCH_TOKEN }}
         run: |
           set -euo pipefail
           python3 scripts/accepted_risks_daily_watch.py security/accepted-risks.yml /tmp/scan-*.json > /tmp/watch-report.md
+          python3 scripts/dismissed_alerts_watch.py "$GITHUB_REPOSITORY" security/accepted-risks.yml >> /tmp/watch-report.md
           cat /tmp/watch-report.md
 
       - name: Open a PR removing the now-stale suppressions

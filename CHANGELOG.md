@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.31 — feat(security): dismissed-GitHub-alert gap detection (GH#197 daily watch)
+
+### Added
+- `scripts/dismissed_alerts_watch.py` — flags code-scanning/Dependabot alerts dismissed in GitHub's UI with no `security/accepted-risks.yml` entry. A UI dismissal is itself an acceptance decision; this catches one made with no impact analysis, no expiry, no record at all — exactly the gap GH#197 was filed to close. Found live against this repo: **87 of 87 dismissed code-scanning alerts are currently unregistered** (datawatch has zero `code-scanning`/`dependency` kind entries yet — this only reports the gap, it does not auto-register any of them, since each needs its own real impact analysis).
+- Wired into `image-refresh.yaml`'s daily watch: code-scanning works with the existing `GITHUB_TOKEN` + a new `security-events: read` permission. Dependabot degrades to "NOT CHECKED" with an explicit warning when `SCA_WATCH_TOKEN` isn't set — GitHub's Dependabot-alerts API does not reliably honor the default Actions token even with `security-events: read`; a fine-grained PAT with "Dependabot alerts: read-only" is required, matching `datawatch-app`'s own `sca_fix_watch.py` behavior.
+
+### Process
+- **Operator action needed, not done by this commit**: the Dependabot half needs a `SCA_WATCH_TOKEN` repo secret (a fine-grained PAT) created in GitHub's UI — that's not something achievable via API/CLI. Until it's set, the daily watch will report "dependabot: NOT CHECKED" rather than silently skip the check.
+- The 87 unregistered code-scanning dismissals are a new, separate backlog from BL398's CVE-suppression one — registering them (or fixing/re-opening them) is follow-up work, not scoped into this commit.
+
 ## v8.73.30 — feat(security): adopt the shared datawatch/datawatch-app security-acceptance standard (GH#197)
 
 ### Added
