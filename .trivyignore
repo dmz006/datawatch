@@ -26,11 +26,15 @@ CVE-2025-7458
 CVE-2026-11822
 CVE-2026-11824
 
-# curl / libcurl4 — no fix in bookworm (2 HIGH)
-#   CVE-2026-5773: Wrong file transfer via SMB protocol. SMB is not
-#     used by curl in this image (no SMB server configured).
+# curl / libcurl4 — no fix in bookworm (1 HIGH)
 #   CVE-2026-6276: Cookie leak on cross-origin redirect. curl is used
 #     by agent tooling for REST API calls; operator-configured endpoints.
+# BL398 (2026-10-08): CVE-2026-5773 (SMB file-transfer flaw) was in this
+# block's prose but never in the suppressed-ID list below it. Confirmed
+# via a fresh unignored rescan of all 5 images: it is not currently
+# flagged by Trivy at all (prose was likely written defensively alongside
+# the sibling CVE-2026-6276 finding that was actually flagged). Removed
+# from the prose rather than left implying it's suppressed.
 CVE-2026-6276
 
 # libldap-2.5-0 CVE-2023-2953 — HIGH, no fix in bookworm
@@ -46,7 +50,7 @@ CVE-2023-2953
 # prior container shell access.
 CVE-2025-69720
 
-# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (2 CVEs)
+# perl / perl-base / perl-modules-5.36 / libperl5.36 — no fix in bookworm (1 CVE)
 # Perl is installed as a transitive dependency (git and gnupg pull it in).
 # The datawatch service does not execute Perl scripts or call Archive::Tar.
 # GH#163 (2026-10-07): CVE-2026-42496, CVE-2026-42497, CVE-2026-48962, and
@@ -55,9 +59,10 @@ CVE-2025-69720
 #   CVE-2026-9538 (HIGH): Archive::Tar memory corruption via crafted tar
 #     archive. Only exploitable if Archive::Tar is called to extract a
 #     malicious tar; datawatch does not extract tar archives at runtime.
-#   CVE-2026-48959 (HIGH): IO::Uncompress::Unzip CPU exhaustion via malformed
-#     zip file. datawatch does not decompress zip files via Perl at runtime;
-#     Perl is only present as a transitive dependency of git.
+# BL398 (2026-10-08): CVE-2026-48959 (IO::Uncompress::Unzip CPU exhaustion)
+# was in this block's prose but never in the suppressed-ID list below it.
+# Confirmed via a fresh unignored rescan of all 5 images: not currently
+# flagged by Trivy at all. Removed from the prose.
 CVE-2026-9538
 
 # git-lfs CVE-2025-26625 — HIGH, no fix available
@@ -67,7 +72,7 @@ CVE-2026-9538
 # operator-configured; no untrusted LFS servers are contacted.
 CVE-2025-26625
 
-# python3.11 / libpython3.11-* — no fix in bookworm (3 CVEs)
+# python3.11 / libpython3.11-* — no fix in bookworm (2 CVEs)
 # Python 3.11 is installed in agent images for aider and other Python-based
 # tools. The datawatch service itself is written in Go and does not use Python.
 #   CVE-2026-7210 (CRITICAL): xml.parsers.expat / xml.etree.ElementTree use
@@ -77,8 +82,10 @@ CVE-2025-26625
 #   CVE-2025-69534 (HIGH): python-markdown DoS via malformed HTML-like input.
 #     Markdown parsing is a tool-use concern; no untrusted content is piped
 #     through python-markdown by the container's core service.
-#   CVE-2026-6100 (HIGH): Arbitrary code execution or information disclosure.
-#     No publicly-available exploit details; status affected, no fix in bookworm.
+# BL398 (2026-10-08): CVE-2026-6100 was in this block's prose but never in
+# the suppressed-ID list below it. Confirmed via a fresh unignored rescan
+# of all 5 images: not currently flagged by Trivy at all. Removed from
+# the prose.
 CVE-2026-7210
 CVE-2025-69534
 
@@ -99,34 +106,34 @@ CVE-2026-34980
 # by the datawatch service or signal-cli in normal operation.
 CVE-2023-25193
 
-# python3.11 / libpython3.11-* — 3 new HIGH CVEs, no fix in bookworm
+# python3.11 / libpython3.11-* — 1 new HIGH CVE, no fix in bookworm
 # Affect libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal.
 # Python is installed in agent-gemini for gemini-cli; the datawatch service is Go.
 #   CVE-2026-3644 (HIGH): cpython incomplete control character validation in HTTP
 #     header parsing. Gemini CLI uses Python; no direct HTTP server exposure via
 #     Python in the container.
-#   CVE-2026-4224 (HIGH): cpython stack overflow parsing XML with deeply nested
-#     DTD. Only triggerable via attacker-controlled XML; gemini-cli does not parse
-#     untrusted XML.
-#   CVE-2026-9669 (HIGH): bz2.BZ2Decompressor reuse after exception. Only
-#     exploitable if bz2 decompressor is called on attacker-controlled data;
-#     no bz2 decompression of untrusted streams by gemini-cli.
+# BL398 (2026-10-08): CVE-2026-4224 and CVE-2026-9669 were in this block's
+# prose but never in the suppressed-ID list below it. Confirmed via a
+# fresh unignored rescan of all 5 images: neither is currently flagged by
+# Trivy at all. Removed from the prose.
 CVE-2026-3644
 
-# curl / libcurl3-gnutls / libcurl4 — 5 CVEs (HIGH, fix_deferred by Debian)
+# curl / libcurl3-gnutls / libcurl4 — 4 CVEs (HIGH, fix_deferred by Debian)
 #   CVE-2026-12064: SSH host verification bypass via schemeless SFTP/SCP URLs.
 #     curl is used for operator-configured HTTPS endpoints; no SCP/SFTP usage.
 #   CVE-2026-8286: TLS configuration mismatch allowing insecure connections.
 #     Mitigated by operator-controlled endpoints and CA verification.
 #   CVE-2026-8927: Proxy auth state not cleared on redirect information leak.
 #     No HTTP proxies are configured by default in the container.
-#   CVE-2026-8932: Improper mTLS connection reuse security bypass.
-#     No mTLS is configured between agents in the default deployment.
 #   CVE-2026-8458 (HIGH): Unauthorized connection reuse due to a logical flaw.
 #     Could cause libcurl to reuse a connection to a different server. curl in
 #     this image contacts only operator-configured HTTPS endpoints; no untrusted
 #     server can inject a connection for reuse. Affects curl, libcurl4,
 #     libcurl3-gnutls; no fix in bookworm.
+# BL398 (2026-10-08): CVE-2026-8932 (improper mTLS connection reuse) was in
+# this block's prose but never in the suppressed-ID list below it.
+# Confirmed via a fresh unignored rescan of all 5 images: not currently
+# flagged by Trivy at all. Removed from the prose.
 CVE-2026-12064
 CVE-2026-8286
 CVE-2026-8927
@@ -210,12 +217,11 @@ CVE-2026-58015
 # html.parser to untrusted web content at runtime.
 CVE-2026-15308
 
-# msgpack / MessagePack GHSA-6v7p-g79w-8964 — HIGH
-# Denial of service via crafted MessagePack data. MessagePack is an aider
-# copy vendored inside pip itself (pip/_vendor), so it cannot be bumped from the
-# image; fixed when pip ships a newer vendored msgpack. Not exposed to untrusted
-# MessagePack streams from external sources.
-GHSA-6v7p-g79w-8964
+# BL398 (2026-10-08): GHSA-6v7p-g79w-8964 (msgpack DoS, aider/pip's vendored
+# copy) removed — a fresh unignored rescan of all 5 images found it no
+# longer flagged at all; pip has since shipped a newer vendored msgpack
+# per this entry's own original rationale. Mirrors the GH#163 precedent of
+# pruning an entry once its underlying package is fixed/removed.
 
 # util-linux family (bsdutils, libmount1, util-linux) — CVE-2026-53613 (HIGH, affected, no fix in bookworm)
 # TOCTOU race in the mount(8) program via /proc/self/mountinfo. The agent-base
@@ -223,12 +229,17 @@ GHSA-6v7p-g79w-8964
 # non-root user with no mount capabilities. Not exploitable in this context.
 CVE-2026-53613
 
-# rsync — no fix in bookworm (14 CVEs, all HIGH, all require rsync >= 3.5.0)
+# rsync — no fix in bookworm (19 CVEs, all HIGH, all require rsync >= 3.5.0)
 # rsync is included in the agent-base image for use as a file-sync utility
 # by autonomous agent tasks. All CVEs below require either a malicious rsync
 # server, local privilege escalation paths, or daemon mode — none of which
 # are configured in this image. The container runs rsync as a client only,
 # connecting to operator-controlled remotes.
+# BL398 (2026-10-08): header previously said "14 CVEs" but 19 are listed
+# and suppressed below — stale count, corrected. All 19 are confirmed still
+# present in a fresh unignored rescan; this is the single largest
+# suppression block and the top Phase 3 candidate for outright removal
+# (is rsync genuinely needed by autonomous agent tasks, or legacy-unused?).
 #   CVE-2026-53783: Directory escape via TOCTOU.
 #   CVE-2026-53784: Unauthorized file access via symlink module.
 #   CVE-2026-53785: Arbitrary file write via path traversal.
@@ -279,11 +290,15 @@ CVE-2026-16742
 # util-linux family — CVE-2026-76642 + CVE-2026-78408/78409/78410 (HIGH, no fix in bookworm)
 # Four new CVEs in util-linux and its split packages (bsdutils, libblkid1,
 # libmount1, libsmartcols1, libuuid1, mount, util-linux-extra). All lack a
-# fixed version in Debian bookworm. These join CVE-2026-53615 and CVE-2026-53613
-# already suppressed for the same package family. The agent-base container runs
+# fixed version in Debian bookworm. These join CVE-2026-53613 already
+# suppressed for the same package family. The agent-base container runs
 # as an unprivileged non-root user; util-linux partition-table parsing and
 # block-device utilities are not invoked by the datawatch service or agent
 # tooling on attacker-controlled input at runtime.
+# BL398 (2026-10-08): this prose previously also named "CVE-2026-53615" as
+# already suppressed alongside CVE-2026-53613, but CVE-2026-53615 does not
+# appear anywhere else in this file and is not in the current live scan of
+# any image — phantom reference, removed.
 CVE-2026-76642
 CVE-2026-78408
 CVE-2026-78409

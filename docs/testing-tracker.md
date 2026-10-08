@@ -9,6 +9,18 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## BL398 Phase 0 — .trivyignore prose/suppressed-ID reconciliation
+
+Added in v8.73.27. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| 7 prose-vs-suppressed-ID mismatches (6 blocks + 1 phantom reference) | N/A (not code) | Yes | Fresh `trivy image --image-src remote` rescan (no `--ignorefile`) against all 5 published `:8.73.2` GHCR images, grep'd for each CVE ID in the resulting JSON | All 7 confirmed genuinely absent from the live scan across all 5 images, not a gate-bypass bug |
+| `GHSA-6v7p-g79w-8964` prune | N/A (not code) | Yes | Same rescan — grep'd for `msgpack` package name across all 5 images' JSON, zero hits | Confirms the package is no longer flagged, not just that the specific ID string changed |
+| Full suppressed-vs-live diff (70 suppressed vs. 70 live unique HIGH/CRITICAL IDs) | N/A (not code) | Yes | `comm -13`/`comm -23` between the suppressed-ID list and the union of all 5 images' live scan output | Found CVE-2026-104851 (fsspec) live-but-unsuppressed — already fixed in source (`Dockerfile.agent-aider`), just not yet in a published image tag; no other gaps |
+
+---
+
 ## Settings-Tab Federation (item 3 of 3)
 
 Added in v8.73.15. See `docs/plans/2026-10-08-settings-tab-federation.md` for the full per-function inventory.

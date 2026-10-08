@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.27 — docs(security): BL398 Phase 0 — reconcile .trivyignore prose/suppressed-ID mismatches, prune a fixed CVE
+
+### Fixed
+- Found during BL398's planned top-to-bottom pass: 7 blocks in `.trivyignore` whose prose described a CVE that was never actually added to the suppressed-ID list below it (curl/libcurl4's CVE-2026-5773, perl's CVE-2026-48959, two python3.11 blocks' CVE-2026-6100 and CVE-2026-4224/CVE-2026-9669, a second curl block's CVE-2026-8932, and a phantom "CVE-2026-53615 already suppressed" reference in the util-linux block that doesn't exist anywhere in the file). Pulled all 5 published `:8.73.2` images from GHCR and ran a fresh, unignored `trivy image` rescan against each (`--image-src remote`, after the local-Docker-daemon path hit corrupted-layer tar errors) — confirmed every one of the 7 is genuinely absent from the current scan, not a gate-bypass bug. Prose corrected to stop implying suppression of CVEs that were never flagged.
+- `rsync` block's header said "14 CVEs" but 19 are listed/suppressed — stale count, corrected (flagged as the top Phase 3 removal candidate: by far the largest single block).
+- Pruned `GHSA-6v7p-g79w-8964` (msgpack, aider/pip's vendored copy) — no longer flagged in any of the 5 live rescans; pip shipped a newer vendored msgpack since the entry was written, exactly per its own original "fixed when pip ships a newer vendored msgpack" rationale.
+- Bonus full suppressed-vs-live diff (properly Phase 1's job, but the scan data was already in hand): only one live-but-unsuppressed HIGH/CRITICAL finding across all 5 images — CVE-2026-104851 (fsspec, agent-aider) — already fixed in `Dockerfile.agent-aider`'s forced-minimum pin as of v8.73.26; the scanned `:8.73.2` tag just predates that fix landing in a published image. No other untracked findings.
+
+### Process
+- `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md` updated with full Phase 0 results. Phases 1-4 (per-image rescan baseline as a standing process, re-verifying non-CAVEATed rationale, a removal-over-suppression pass, syncing `docs/security-review.md`) remain not started.
+
 ## v8.73.26 — fix(i18n/security): real DE/ES/FR/JA translations for v8.73.25's 43 keys; container CVE triage
 
 ### Fixed
