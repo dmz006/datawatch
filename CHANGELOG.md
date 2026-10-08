@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.26 — fix(i18n/security): real DE/ES/FR/JA translations for v8.73.25's 43 keys; container CVE triage
+
+### Fixed
+- Real DE/ES/FR/JA translations for the 43 keys v8.73.25 shipped with EN placeholders (datawatch-app, GH#195 comment 6059595242; includes `disabled`, missed in the original count). French `send_enter_title` reverted from "ENTRÉE" to "ENTER" for consistency with `send_esc_title`/every other locale treating physical key names as literal, not translated.
+- v8.73.2's release CI (run 37725331231) failed its container matrix on 2 of 8 images — unrelated to anything built this session:
+  - CVE-2026-19445 (HIGH, `libpython3.11-minimal`, Debian base image, no fix available) — use-after-free of a server-side SSLContext when `sni_callback` switches contexts. Suppressed in `.trivyignore` with documented rationale (neither gemini-cli nor aider runs a Python TLS server) and a re-review flag, following this project's established CVE-exception process.
+  - CVE-2026-104851 (HIGH, `fsspec` Python package, `agent-aider` only) — a fix *is* available; bumped the forced-minimum pin in `Dockerfile.agent-aider` to `fsspec>=2026.6.0` alongside the other already-forced transitive-dependency minimums.
+
 ## v8.73.25 — fix(i18n): 42 app.js keys were referenced but missing from every locale bundle (datawatch#195)
 
 ### Fixed

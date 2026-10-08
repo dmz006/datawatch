@@ -1034,3 +1034,10 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | All 42 keys added to all 5 locale bundles (EN real text, DE/ES/FR/JA EN-placeholder pending real translations) | **Yes** | **Yes** | All 5 `locales/*.json` parsed as valid JSON (`python3 -m json.tool`); each file grew by exactly 42 keys (1620 → 1662); full JS suite 182/182 green | `automata_wizard_backend_default` had no call-site fallback text at all; picked wording to match the adjacent effort-select placeholder |
 | `TestLocales_AllAppJSKeysExistInEnglishBundle` — regex-extracts every literal `t('...')` call-site key from `app.js`, asserts each exists in `locales/en.json` | **Yes** | **Yes** | New test; failed with exactly the 44 expected hits (42 real + 2 dynamic-prefix false positives) before the fix, 0 after | `automata_status_`/`chat_quick_reply_` concatenated-key call sites explicitly excluded as known dynamic prefixes, not missing keys |
 
+## Real DE/ES/FR/JA translations + container CVE triage — v8.73.26
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| 43 keys (42 + `disabled`, which was missed in the original count) get real DE/ES/FR/JA text, replacing the EN placeholders | **Yes** | **Yes** | All 5 `locales/*.json` re-validated as valid JSON; key count unchanged (1662); full JS suite 182/182 green | Source: datawatch-app, GH#195 comment 6059595242 |
+| CVE-2026-19445 suppressed in `.trivyignore`; CVE-2026-104851 fixed by bumping `fsspec` pin in `Dockerfile.agent-aider` | No | No | Rationale documented in `.trivyignore`; not re-run through an actual container build/Trivy scan in this session (no local Docker build) | Will be confirmed by the next release CI container matrix run |
+

@@ -33,7 +33,8 @@ RUN install_packages \
         "protobuf>=5.29.6,<6" \
         "httplib2>=0.32.0" \
         "msgpack>=1.2.1" \
-        "setuptools>=78.1.1" && \
+        "setuptools>=78.1.1" \
+        "fsspec>=2026.6.0" && \
     # linux-libc-dev (kernel headers) is pulled by build-essential for C compilation
     # of Python native extensions during pip install. All compilation is now done;
     # purge it to eliminate 100+ unfixable kernel CVEs from the Trivy scan.

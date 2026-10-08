@@ -344,3 +344,18 @@ CVE-2026-19553
 # above, which wait on a slow OS-level security backport).
 CVE-2026-93748
 
+# libpython3.11-minimal CVE-2026-19445 — HIGH, affected, no fix in bookworm
+# 3.11.2-6+deb12u9. "python: Use-after-free of a server-side SSLContext
+# when sni_callback switches contexts." Affects agent-gemini and
+# agent-aider (shared base). Blocked v8.73.2's release CI.
+# CAVEAT: not independently traced — the flaw needs a Python process
+# acting as a TLS *server* with ssl.SSLContext.sni_callback set and
+# switching contexts mid-handshake. gemini-cli and aider are HTTP
+# *clients* calling external LLM APIs (Google Gemini, litellm's provider
+# backends); neither runs a Python TLS server. That's the basis for
+# suppressing, but no exhaustive trace of every vendored dependency in
+# either tool's venv was done to confirm none of them opens a
+# server-side SSLContext. Re-review on the next release cycle and
+# re-check for a Debian fix.
+CVE-2026-19445
+
