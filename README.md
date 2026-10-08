@@ -264,15 +264,28 @@ datawatch sessions start --llm ollama --model llama3.1:8b --task "Hello"
 # datawatch-spawned claude-code/opencode session from stage 2, which
 # already has this same MCP server wired in) at the daemon:
 #   {"datawatch": {"command": "datawatch", "args": ["mcp"], "env": {"DATAWATCH_TOKEN": "<bearer>"}}}
-# Once connected, drive setup and day-2 management with prompts instead
-# of CLI flags — "register my GPU box as a compute node and pull
-# llama3.1:8b", "is anything stuck right now?", "restart the daemon".
-# See docs/howto/setup-and-install.md's MCP section for the full
-# prompt → tool-call table.
 
 # (Optional) add a messaging backend
 datawatch setup telegram    # or discord / slack / signal
 ```
+
+Once that MCP host is connected, it can configure datawatch through
+plain prompts instead of CLI flags or hand-edited YAML — including
+finding out what to do first. Example, verbatim:
+
+> **You:** "What's configured and what isn't? Set up something that's
+> missing."
+>
+> **Claude:** calls `alert_rule_list`, `compute_node_list`,
+> `federation_peer_list` — sees two compute nodes and a federation peer,
+> but zero alert rules. Calls `docs_search("alert rule")` to confirm the
+> schema, then `alert_rule_create` to add one (e.g. GPU usage on your
+> RTX node above 90%, cooldown 5 minutes). No restart needed.
+
+Same pattern for anything else: ask what's there, let it read the docs
+it needs, let it call the tool. See
+docs/howto/setup-and-install.md's MCP section for the fuller
+prompt → tool-call reference.
 
 Send `help` in a configured messaging channel to see the command
 reference, or see
