@@ -190,7 +190,7 @@ assistant instead of running the equivalent CLI command yourself:
 | "Register my gaming PC at 192.168.1.50 running Ollama as a compute node, then pull llama3.1:8b on it" | `compute_node_add`, `compute_node_pull_model` |
 | "Add a new LLM entry called 'fast' that fails over from my Ollama node to claude-code" | `llm_add`, `llm_add_model` |
 | "Set my operator identity — I'm a backend engineer, prefer terse answers" | `set_identity` / `configure_identity` |
-| "Register my home server ralfthewise as a federation peer, and skip TLS verification since it's self-signed" | `federation_peer_add` (`tls_skip_verify: true`) |
+| "Register my home server at https://homelab.local:8443 as a federation peer, and skip TLS verification since it's self-signed" | `federation_peer_add` (`tls_skip_verify: true`) |
 | "Enable the Telegram channel with this bot token" | `config_set` + `reload` |
 
 **Example prompts — day-2 management.** The same connection keeps

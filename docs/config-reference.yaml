@@ -716,7 +716,7 @@ servers:
   #   token: "another-token"
   #   enabled: true
   # - name: self-signed-peer
-  #   url: https://ralfthewise:8443
+  #   url: https://homelab.local:8443
   #   enabled: true
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
