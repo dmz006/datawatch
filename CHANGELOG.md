@@ -25,7 +25,7 @@ beyond what's already in 8.73.1.
 
 ### Fixed
 
-- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test.
+- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test (install via Play Store search on the watch itself, or play.google.com in a browser — "Install on more devices" often doesn't surface the watch as an option).
 - **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
   sandbox daemon, never production). The 1 failure was a release gate
   (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past

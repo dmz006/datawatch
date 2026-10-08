@@ -33,7 +33,7 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 > 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
 > 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in) and stay opted in for 14 days — **we need 12 testers.**
 >
-> **Wear OS** is in the same closed test — once opted in, install it from Play on the watch (or from Play on the phone with "Install on more devices"). Android Auto is part of the phone app.
+> **Wear OS** is in the same closed test. Once you've opted in, open Play Store on the watch and search **datawatch**, or install it from play.google.com in a browser and pick the watch. Android Auto is part of the phone app.
 >
 > **iOS:** public TestFlight link coming after Apple's beta review. Feedback: open an issue in [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
 
