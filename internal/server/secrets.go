@@ -256,10 +256,11 @@ func (s *Server) handleSecretsGet(w http.ResponseWriter, r *http.Request, name s
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Audit every value fetch.
+	// Audit every value fetch. HLLM-003 — Actor names the real caller
+	// (operator / session:<id> / peer:<name>), not a hardcoded "operator".
 	if s.auditLog != nil {
 		_ = s.auditLog.Write(audit.Entry{
-			Actor:  "operator",
+			Actor:  s.auditActor(r.Context()),
 			Action: "secret_access",
 			Details: map[string]any{
 				"resource_type": "secret",

@@ -997,3 +997,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | Live gosec count (exact CI command: `gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./...`) measured and compared against the baseline | **Yes** | **Yes** | Ran locally: live=63 vs. old baseline total=60; confirmed by-rule breakdown (G118:2, G122:6, G123:1, G702:3, G703:32, G704:19) sums to 63 and every rule ID is one of the six the baseline's own `_comment` already blanket-accepts — no new rule category | Not a Go test — this is a JSON-config correctness check, verified by running the real CI command and the real baseline-diff Python logic locally |
 | Updated `.gosec-baseline.json` produces a passing baseline-diff against the current live count | **Yes** | **Yes** | Re-ran the workflow's exact Python comparison logic locally against the new file: `live=63 baseline=63` → pass | |
 | `go test ./...` unaffected (this is a non-code config/docs change) | **Yes** | **Yes** | `go test ./...` — 3240 passed, 0 failed | |
+
+## HLLM-003: audit entries name the real caller, not hardcoded "operator" — v8.73.22
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `auditActor` derives `operator`/`session:<id>`/`peer:<name>` from the same context identity `fedCap` checks | **Yes** | **Yes** | `TestAuditActor_AdminContextIsOperator`, `_SessionTokenNamesOwningSession`, `_FederationPeerNamesItself` | |
+| `handleSecretsGet`'s `secret_access` audit entry names the real session, not "operator" — the design doc's own named acceptance scenario | **Yes** | **Yes** | `TestHandleSecretsGet_AuditsRealCallerNotHardcodedOperator` — asserts `session:testhost-sec-sandbox-18a6`, mirroring the doc's literal example name | |
+| `auditConfigPatch`'s (SEC-017) `configure` entry names the real session | **Yes** | **Yes** | `TestAuditConfigPatch_NamesSessionActor` | |
+| Shared `Server.audit` helper (skills-registry write paths) threads ctx through; existing skills tests still pass with the new signature | **Yes** | **Yes** | Full `internal/server` suite re-run green (634 tests) | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3245 passed, 0 failed | |

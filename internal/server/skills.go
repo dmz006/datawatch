@@ -20,6 +20,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -143,7 +144,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			s.audit("skills_registry_create", "registry", req.Name, nil)
+			s.audit(r.Context(), "skills_registry_create", "registry", req.Name, nil)
 			writeJSONOK(w, req)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -167,7 +168,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		s.audit("skills_registry_add_default", "registry", skills.CommunityDefaultRegistry.Name+","+skills.PAIDefaultRegistry.Name, nil)
+		s.audit(r.Context(), "skills_registry_add_default", "registry", skills.CommunityDefaultRegistry.Name+","+skills.PAIDefaultRegistry.Name, nil)
 		writeJSONOK(w, map[string]any{"status": "ok", "names": []string{skills.CommunityDefaultRegistry.Name, skills.PAIDefaultRegistry.Name}})
 		return
 	}
@@ -212,7 +213,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			s.audit("skills_registry_update", "registry", name, nil)
+			s.audit(r.Context(), "skills_registry_update", "registry", name, nil)
 			writeJSONOK(w, req)
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapConfigWrite) {
@@ -223,7 +224,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			s.audit("skills_registry_delete", "registry", name, map[string]any{"removed_synced": n})
+			s.audit(r.Context(), "skills_registry_delete", "registry", name, map[string]any{"removed_synced": n})
 			writeJSONOK(w, map[string]any{"status": "deleted", "name": name, "removed_synced": n})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -243,7 +244,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit("skills_registry_connect", "registry", name, map[string]any{"available_count": len(avail)})
+		s.audit(r.Context(), "skills_registry_connect", "registry", name, map[string]any{"available_count": len(avail)})
 		writeJSONOK(w, map[string]any{"available": avail})
 
 	case "available":
@@ -309,7 +310,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 				fmt.Fprintf(os.Stderr, "[skills] rollback of unverified skills from %s: %v\n", name, unsyncErr)
 			}
 		}
-		s.audit("skills_registry_sync", "registry", name, map[string]any{
+		s.audit(r.Context(), "skills_registry_sync", "registry", name, map[string]any{
 			"synced_count":  len(kept),
 			"refused_count": len(refused),
 		})
@@ -345,7 +346,7 @@ func (s *Server) handleSkillsRegistries(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit("skills_registry_unsync", "registry", name, map[string]any{"removed_count": len(removed)})
+		s.audit(r.Context(), "skills_registry_unsync", "registry", name, map[string]any{"removed_count": len(removed)})
 		writeJSONOK(w, map[string]any{"removed": removed})
 
 	default:
@@ -436,8 +437,10 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 }
 
 // audit writes an audit entry if the audit log is configured.
-// Mirrors the pattern used elsewhere in the server package.
-func (s *Server) audit(action, resourceType, resourceID string, details map[string]any) {
+// Mirrors the pattern used elsewhere in the server package. HLLM-003 —
+// Actor names the real caller (operator / session:<id> / peer:<name>),
+// derived from ctx, not a hardcoded "operator".
+func (s *Server) audit(ctx context.Context, action, resourceType, resourceID string, details map[string]any) {
 	if s.auditLog == nil {
 		return
 	}
@@ -447,5 +450,5 @@ func (s *Server) audit(action, resourceType, resourceID string, details map[stri
 	}
 	d["resource_type"] = resourceType
 	d["resource_id"] = resourceID
-	_ = s.auditLog.Write(audit.Entry{Action: action, Actor: "operator", Details: d})
+	_ = s.auditLog.Write(audit.Entry{Action: action, Actor: s.auditActor(ctx), Details: d})
 }

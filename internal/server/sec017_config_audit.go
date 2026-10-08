@@ -9,6 +9,7 @@
 package server
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -57,7 +58,7 @@ func maskConfigValue(key string, v interface{}) interface{} {
 // key that was actually applied (skipped keys, per applyConfigPatch, are
 // reported back to the caller separately and never touch config, so they're
 // excluded here too) with a masked value for anything credential-shaped.
-func (s *Server) auditConfigPatch(patch map[string]interface{}, skipped []string) {
+func (s *Server) auditConfigPatch(ctx context.Context, patch map[string]interface{}, skipped []string) {
 	if s.auditLog == nil || len(patch) == 0 {
 		return
 	}
@@ -78,8 +79,9 @@ func (s *Server) auditConfigPatch(patch map[string]interface{}, skipped []string
 		return
 	}
 	sort.Strings(keys)
+	// HLLM-003 — Actor names the real caller, not a hardcoded "operator".
 	_ = s.auditLog.Write(audit.Entry{
-		Actor:  "operator",
+		Actor:  s.auditActor(ctx),
 		Action: "configure",
 		Details: map[string]any{
 			"keys":    keys,

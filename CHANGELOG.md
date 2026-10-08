@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.22 — security(HLLM-003): audit entries name the real caller, not a hardcoded "operator"
+
+### Security
+- "Audit cannot distinguish operator from LLM": every audit entry hardcoded `Actor: "operator"` regardless of who actually presented the credential, so a spawned session's `secret_get` (or config write) read identically to the operator's own in the audit log — exactly the scenario `docs/plans/historical-plans/2026-09-02-sec-design-c-audit-config.md` §C1 names as its acceptance test. Added `Server.auditActor(ctx)` — derives `operator` / `session:<id>` / `peer:<name>` from the same request-context identity `fedCap` already checks (Design A3's per-session scoped credential is the key enabler here: the credential and the audit now share the same identity, no handler-specific logic needed beyond passing `ctx` through).
+- Wired into the two concrete examples the design doc names: `handleSecretsGet`'s `secret_access` audit entry, and `auditConfigPatch`'s (SEC-017) `configure` entry. Also wired into the shared `Server.audit` helper used by all 7 skills-registry write paths (`skills_registry_create/update/delete/connect/sync/unsync/add_default`).
+- Not done in this pass (flagged, not silent): several other audit call sites still hardcode `Actor: "operator"` (`compute.go`, `council.go`, `inference.go`, `algorithm.go`, `evals.go`, `identity.go`) — same fix, just not threaded through in this pass. Also not done: CEF emission alongside JSONL (the design doc's "both formats" requirement) — `internal/audit.Log` is JSONL-only project-wide (see SEC-017's same note); extending it to CEF is a decision affecting every existing call site uniformly, not a per-finding addition.
+- Added `internal/server/hllm003_audit_actor_test.go`: `auditActor`'s three derivation cases (admin/session/peer) directly, plus the design doc's own named scenario end-to-end (`secret_access` audited as `session:sec-sandbox-18a6`, not `operator`) and the same for a config write.
+
 ## v8.73.21 — security(SEC-026): refresh the stale gosec baseline-diff ceiling to the measured live count
 
 ### Security
