@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.73.13"
+var Version = "8.73.14"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2877,7 +2877,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Twilio SMS
 	if cfg.Twilio.Enabled && cfg.Twilio.AccountSID != "" {
-		twilioB := twilio.New(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromNumber, cfg.Twilio.ToNumber, cfg.Twilio.WebhookAddr)
+		twilioB := twilio.New(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromNumber, cfg.Twilio.ToNumber, cfg.Twilio.WebhookAddr, cfg.Twilio.WebhookPublicURL)
 		defer twilioB.Close() //nolint:errcheck
 		r := newRouter(cfg.Hostname, cfg.Twilio.ToNumber, twilioB)
 		routers = append(routers, r)
@@ -12568,13 +12568,24 @@ func runSetupTwilio(_ *cobra.Command, _ []string) error {
 		}
 		return ":9003"
 	}())
+	// SEC-005 — the exact public URL Twilio will POST to is required to
+	// verify X-Twilio-Signature; without it the webhook accepts any POST
+	// unsigned (see twilio.New's own warning if left blank).
+	cfg.Twilio.WebhookPublicURL = cliPrompt(reader,
+		"Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.ts.net/sms — blank disables signature verification)",
+		cfg.Twilio.WebhookPublicURL)
 	cfg.Twilio.Enabled = true
 
 	if err := setupSave(cfg); err != nil {
 		return err
 	}
 	fmt.Printf("Twilio SMS configured. Configure webhook in Twilio console:\n")
-	fmt.Printf("  Your number → Messaging → Webhook URL → http://YOUR_HOST%s/sms\n", cfg.Twilio.WebhookAddr)
+	if cfg.Twilio.WebhookPublicURL != "" {
+		fmt.Printf("  Your number → Messaging → Webhook URL → %s\n", cfg.Twilio.WebhookPublicURL)
+	} else {
+		fmt.Printf("  Your number → Messaging → Webhook URL → http://YOUR_HOST%s/sms\n", cfg.Twilio.WebhookAddr)
+		fmt.Println("  WARNING: no public webhook URL set — signature verification will be disabled. Re-run setup once you know the exact public URL.")
+	}
 	fmt.Println("Start the daemon with: datawatch start")
 	return nil
 }

@@ -1204,6 +1204,14 @@ type TwilioConfig struct {
 	ToNumber string `yaml:"to_number"`
 	// WebhookAddr is the address for the incoming SMS webhook (e.g. ":9003").
 	WebhookAddr string `yaml:"webhook_addr"`
+	// WebhookPublicURL (SEC-005) is the exact URL configured as this
+	// number's "A MESSAGE COMES IN" webhook in the Twilio console (e.g.
+	// "https://host.ts.net/sms") — required to verify the X-Twilio-Signature
+	// header, which Twilio computes over this exact URL plus the sorted
+	// POST params. Left empty, the webhook accepts any POST with no
+	// signature check at all (matches this codebase's github_webhook.secret
+	// convention: unset is allowed, but loud about the risk).
+	WebhookPublicURL string `yaml:"webhook_public_url"`
 }
 
 // NtfyConfig holds ntfy push notification configuration.

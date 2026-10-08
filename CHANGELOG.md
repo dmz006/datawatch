@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.14 — security(SEC-005): verify Twilio's X-Twilio-Signature on inbound SMS webhooks
+
+### Security
+- `internal/messaging/backends/twilio/backend.go` — the `/sms` webhook accepted any POST unverified; the only defense was checking the `From` form field against the configured `to_number`, which is trivially spoofable since `From` is just a value the caller sends. Mirrors SEC-004's GitHub webhook HMAC fix: added `verifySignature` implementing Twilio's documented `X-Twilio-Signature` algorithm (HMAC-SHA1 over the exact webhook URL + sorted POST param key+value pairs, keyed by the account's auth token, base64-encoded; `hmac.Equal` for constant-time comparison).
+- New `twilio.webhook_public_url` config key — the exact URL configured as the number's "A MESSAGE COMES IN" webhook in the Twilio console; required to reconstruct the signed string. Left unset, verification is disabled with a loud startup warning (same "optional secret" convention as `github_webhook.secret`), not a silent gap. Wired into `runStart`, the `datawatch setup twilio` CLI flow, `internal/wizard`'s interactive wizard, and `internal/config/template.go`'s generated config.
+- Extracted the webhook handler from an inline closure into `Backend.handleSMS` (no behavior change) so it's directly testable, matching the github backend's existing shape.
+- Added `internal/messaging/backends/twilio/backend_test.go` (previously zero coverage): signature accept/reject (wrong token, tampered param, wrong URL, missing/malformed header, empty-URL bypass) plus end-to-end handler tests.
+
 ## v8.73.13 — security(HLLM-004, HLLM-007): scope session-lifecycle/memory tools + observer_envelopes_all_peers to the owning session
 
 ### Security

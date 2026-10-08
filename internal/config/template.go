@@ -109,6 +109,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "from_number", cfg.Twilio.FromNumber, "From phone number")
 	fieldi(&b, "to_number", cfg.Twilio.ToNumber, "To phone number")
 	fieldi(&b, "webhook_addr", cfg.Twilio.WebhookAddr, "Webhook listen address")
+	fieldi(&b, "webhook_public_url", cfg.Twilio.WebhookPublicURL, "Public webhook URL (exact Twilio console value; required for X-Twilio-Signature verification, SEC-005)")
 	b.WriteString("ntfy:\n")
 	fieldi(&b, "enabled", cfg.Ntfy.Enabled, "Enable ntfy push notifications")
 	fieldi(&b, "server_url", cfg.Ntfy.ServerURL, "ntfy server URL")

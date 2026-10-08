@@ -911,3 +911,13 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `memory_forget`/`memory_pin`/`memory_export` refused outright for any scoped caller (static or ctx-based) | **Yes** | **Yes** | `TestMemoryForgetPinExport_BlockedForScopedCaller`, `TestMemoryForgetPinExport_BlockedForSharedInstanceCtxIdentity`; pre-existing `TestBL385_MemorySweep_BlockedInSubprocessMode`/`TestBL385_MemoryImport_BlockedInSubprocessMode` updated for the new message text, still green | |
 | `observer_envelopes_all_peers` requires the new `CapObserversReadAllPeers`, not the broadly-granted `CapObserversRead`; `full-control`/`read-only` keep prior access, `session-default` does not | **Yes** | No | Capability wiring verified by code inspection (`capabilities.go`, `mcp_tool_caps.go`, `observer.go`) and the full existing federation/capability test suite re-run green; no new live-peer test added this pass (would need a federated-peer harness scoped specifically to this one capability) | Flagging the missing live-peer test as a gap, not fixed this pass |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3197 passed, 0 failed | |
+
+## SEC-005: Twilio X-Twilio-Signature verification — v8.73.14
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `verifySignature` accepts a correctly-signed request; rejects wrong auth token, tampered param, wrong URL, missing header, malformed (undecodable) header | **Yes** | **Yes** | `TestVerifySignature_ValidAccepted`, `_WrongTokenRejected`, `_TamperedParamRejected`, `_WrongURLRejected`, `_MissingHeaderRejected`, `_MalformedHeaderRejected` | `internal/messaging/backends/twilio/backend.go` had zero prior test coverage |
+| Empty `webhook_public_url` deliberately bypasses verification (documented, matches `github_webhook.secret` convention) | **Yes** | **Yes** | `TestVerifySignature_EmptyPublicURLBypasses`, `TestHandleSMS_EmptyPublicURLAllowsUnsigned` | |
+| `Backend.handleSMS` end-to-end: valid signature delivers the message; invalid/missing signature returns 401 and never delivers | **Yes** | **Yes** | `TestHandleSMS_ValidSignatureDeliversMessage`, `TestHandleSMS_InvalidSignatureRejectedNoMessage`, `TestHandleSMS_MissingSignatureRejected` | |
+| `from != to_number` secondary filter still works for a validly-signed request from an unexpected number | **Yes** | **Yes** | `TestHandleSMS_WrongFromNumberIgnoredEvenWithValidSignature` | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3209 passed, 0 failed | |
