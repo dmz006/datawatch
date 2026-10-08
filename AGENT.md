@@ -130,25 +130,50 @@ When creating a large implementation plan (3+ files or non-trivial architectural
 Every commit that adds or changes behavior must include documentation updates. Failure to
 update docs is a blocking issue — do not merge/push without them.
 
-### No internal tracker IDs in user-facing docs
+### No internal tracker IDs in operator-FACING UI/API surfaces
 
-Internal tracking IDs (B1, B23, F4, F11, F16, BL7, etc.) must **never** appear in
-user-facing documentation. These IDs are internal-only and live exclusively in
-`docs/plans/README.md` (the backlog tracker) and `docs/plans/*.md` (plan files).
+**Corrected 2026-10-07** — this rule's text had drifted out of sync with
+the actual enforced policy for a long time. The real, deliberately-scoped
+rule (encoded in `scripts/check-no-internal-refs.sh`, wired into
+`release-smoke.sh` and now also `ci.yaml`, referencing
+`memory: feedback_user_facing_docs_no_internals`) is narrower than the
+file list this section used to name: internal tracking IDs (B1, B23, F4,
+F11, F16, BL7, S##, etc.) must **never** appear in a surface an operator
+reads *while using the product* — but they're explicitly fine, and
+expected, in reference/archaeology material read by someone maintaining
+or auditing the project.
 
-**Files that must NOT contain tracker IDs:**
-- `CHANGELOG.md`, `README.md`, `docs/setup.md`, `docs/operations.md`
-- `docs/messaging-backends.md`, `docs/llm-backends.md`, `docs/config-reference.yaml`
-- `docs/encryption.md`, `docs/architecture.md`, `docs/data-flow.md`
-- All files under `docs/flow/`, and any other user-facing doc
+**Surfaces that must NOT contain tracker IDs** (enforced by
+`scripts/check-no-internal-refs.sh`):
+- Locale bundles (`internal/server/web/locales/*.json`) — every string an
+  operator sees rendered in the PWA/apps.
+- `openapi.yaml` summaries (Swagger UI).
+- REST API JSON `"note"` fields (`internal/server/*.go`).
+- PWA tooltip/title attributes and visible fallback strings
+  (`internal/server/web/app.js`).
+- `docs/howto/*.md` prose (operator-facing tutorials).
+- `docs/datawatch-definitions.md`.
+- `README.md` — the project's public front door; a compliance audit
+  (2026-10-07) found and fixed 2 stray instances here, and the check
+  script now also covers it.
 
-**Files where tracker IDs ARE allowed:**
-- `docs/plans/README.md` (backlog tracker)
-- `docs/plans/*.md` (plan documents)
+**Reference/archaeology material where tracker IDs ARE expected and
+useful** (NOT checked, NOT a violation — a 2026-10-07 audit found ~1000+
+pre-existing instances across these and confirmed they're intentional,
+not drift):
+- `CHANGELOG.md` — cross-references plan docs and commits for anyone
+  doing release archaeology; this is the main reason tracker IDs exist.
+- `docs/plans/README.md` (backlog tracker) and `docs/plans/*.md` (plan
+  documents) — their entire purpose.
+- Technical reference docs consumed by maintainers/operators editing
+  config or reading architecture, where the ID is traceability context,
+  not reader-facing copy: `docs/config-reference.yaml` comments,
+  `docs/architecture.md`, `docs/operations.md`, `docs/llm-backends.md`,
+  `docs/flow/*.md`.
 
-When referencing a feature or bug in user-facing docs, use a plain English description
-instead (e.g. "multi-user access control feature" not "BL7"). GitHub release notes
-follow the same rule.
+When writing NEW content for one of the must-not-contain surfaces above,
+use a plain English description instead (e.g. "multi-user access control
+feature" not "BL7"). GitHub release notes follow the same rule.
 
 ### General documentation checklist (every change)
 

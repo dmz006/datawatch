@@ -62,6 +62,14 @@ if grep -nE 'title="[^"]*\b(BL[0-9]+|F[0-9]+|B[0-9]+|S[0-9]+)\b[^"]*"' internal/
     done < <(grep -nE 'title="[^"]*\b(BL[0-9]+|F[0-9]+|B[0-9]+|S[0-9]+)\b[^"]*"' internal/server/web/app.js | grep -vE ':\s*//|<!--')
 fi
 
+# 5b. README.md — the project's public front door (2026-10-07: an audit
+#     found and fixed 2 stray instances here; now enforced going forward).
+if grep -qE '\b(BL[0-9]+|F[0-9]+\b|B[0-9]+\b|S[0-9]+\b)' README.md; then
+    while IFS= read -r line; do
+        report "README.md: $line"
+    done < <(grep -nE '\b(BL[0-9]+|F[0-9]+\b|B[0-9]+\b|S[0-9]+\b)' README.md)
+fi
+
 # 5. datawatch-definitions.md must not contain internal refs (operator doc).
 if [[ -f docs/datawatch-definitions.md ]]; then
     if grep -qE '\b(BL[0-9]+|F[0-9]+\b|B[0-9]+\b|S[0-9]+\b)' docs/datawatch-definitions.md; then

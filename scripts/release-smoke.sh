@@ -39,6 +39,13 @@ fi
 if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
   "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
 fi
+# 2026-10-07 — version-bump/reuse audit. Compares against the most
+# recent release tag so a release never reuses an already-shipped
+# version even if the reuse happened several commits back.
+if [ "${DW_SKIP_VERSION_BUMP_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-version-bump.sh" ]; then
+  LAST_TAG=$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null || echo "HEAD^")
+  "$SMOKE_DIR/check-version-bump.sh" "$LAST_TAG" >&2 || exit 1
+fi
 # v6.21.0 — Docs-as-MCP currency lints.
 if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do

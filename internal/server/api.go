@@ -74,6 +74,9 @@ type MemoryAPI interface {
 	// always-surface in L1. Backends that don't support pinning
 	// return ErrNamespaceUnsupported (which the handler maps to 501).
 	SetPinned(id int64, pinned bool) error
+	// SetTags (GH#192 D78a) replaces a memory's comma-separated tag
+	// list. Same unsupported-backend contract as SetPinned.
+	SetTags(id int64, tags string) error
 	// WakeUpBundle (v5.26.71) returns the composed L0+L1+L4+L5
 	// wake-up context for the supplied (project, agent) pair.
 	// Used by GET /api/memory/wakeup so smoke + operator tooling
@@ -180,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.72.0"
+var Version = "8.72.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2812,7 +2815,7 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMemorySave saves a new memory via POST /api/memory/save.
-// Body: {"content": "text to remember", "project_dir": "/optional/path"}
+// Body: {"content": "text to remember", "project_dir": "/optional/path", "tags": "comma,separated"}
 func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapConfigWrite) {
 		return
@@ -2828,6 +2831,11 @@ func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Content    string `json:"content"`
 		ProjectDir string `json:"project_dir"`
+		// Tags (GH#192 D78a) — comma-separated. Best-effort: an
+		// unsupported-backend error here doesn't fail the save, the
+		// memory itself was already created successfully by Remember
+		// above. Same graceful-degradation standard as pinning.
+		Tags string `json:"tags"`
 	}
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 	if req.Content == "" {
@@ -2839,8 +2847,16 @@ func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	tagsApplied := true
+	if req.Tags != "" {
+		if err := s.memoryAPI.SetTags(id, req.Tags); err != nil {
+			tagsApplied = false
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "id": id}) //nolint:errcheck
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status": "ok", "id": id, "tags_applied": tagsApplied,
+	})
 }
 
 func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {

@@ -498,7 +498,8 @@ rtk go test ./...
 | `check-howto-coverage.sh` | BL274: every howto must be curated or in LLM-only allowlist |
 | `check-plugin-manifests.sh` | Plugin manifest validation (docs.files existence) |
 | `check-docs-sync.sh` | Verifies `internal/server/web/docs/` matches `docs/` |
-| `check-no-internal-refs.sh` | Greps user-facing docs for B/BL/F tracker IDs |
+| `check-no-internal-refs.sh` | Greps operator-facing UI/API surfaces (locales, openapi, PWA, howtos, README, definitions doc) for B/BL/F tracker IDs — CHANGELOG/plans/config-reference are intentionally exempt |
+| `check-version-bump.sh` | Fails if the version is reused from its base ref without a real bump (2026-10-07) |
 | `delete-past-minor-assets.sh` | Asset retention cleanup (run post-GH-release) |
 | `delete-past-minor-containers.sh` | GHCR container retention cleanup |
 | `container-upgrade.sh` | Base image upgrade helper |

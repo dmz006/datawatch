@@ -759,3 +759,13 @@ pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
 | Every chip's `onclick` both switches servers (`selectServer(...)`) and removes the modal — no leftover overlay after a pick | **Yes** | No | `app-gh192-phase3.test.js` | — |
 | `_openAddServerFromPicker` sets `_settingsTab = 'comms'` and calls `navigate('settings')` — routes to the existing add-server form via navigation rather than rebuilding a second copy of it inside the modal (that form's DOM only exists on the Settings page) | **Yes** | No | `app-gh192-phase3.test.js` | — |
 | Full live round trip: an actual 3-finger swipe gesture on a touch device opening the modal, and the modal's visual appearance/backdrop-click-to-close behavior | No | No | — | Not live-verified in this pass (no touch-event simulation in this Node-vm test harness) — the unit tests above exercise the exact chip-generation/routing logic the gesture's call target depends on; `confirm-modal-overlay`'s click-to-close and backdrop styling are pre-existing, shared with `showConfirmModal` |
+
+## CI enforcement — version-bump reuse + internal-ref leak scope correction — v8.72.1
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `scripts/check-version-bump.sh` fails when the version is reused from its base ref with non-exempt files changed | **Yes** | **Yes** | Manually run against the real historical pair (`638edb04`/`71397878`, both `var Version = "8.62.0"`, 9 non-test files changed) — confirmed the logic would have failed it | Added after a compliance audit found that exact real-world case |
+| `scripts/check-version-bump.sh` passes when the version is unchanged but every changed file is test-only/plan-doc/chore | **Yes** | No | Manual run against synthetic exempt-only diff | — |
+| `scripts/check-version-bump.sh` passes when the version is bumped | **Yes** | **Yes** | Run against the real current HEAD (always passes post-bump) | — |
+| `scripts/check-no-internal-refs.sh` now also checks `README.md` | **Yes** | **Yes** | Ran against the live repo after fixing README's 2 stray instances; passes | — |
+| CI (`ci.yaml`) runs both checks on every push/PR, not just at release time | No | No | — | Not live-verified against a real GH Actions run in this pass (would require an actual push/PR to trigger) — logic verified locally; flagged rather than overclaimed |

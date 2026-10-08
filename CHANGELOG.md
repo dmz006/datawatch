@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.72.1 — chore: reconcile the internal-tracker-ID rule with what's actually enforced; add a version-reuse CI check
+
+### Added
+- `scripts/check-version-bump.sh` — fails a commit that reuses the version its base ref already used (unless every changed file is test-only/plan-doc/chore). Found the gap via a compliance audit that caught a real historical instance of this. Wired into both `ci.yaml` (every push/PR) and `release-smoke.sh` (against the last release tag).
+- `scripts/check-no-internal-refs.sh` now also checks `README.md`; wired into `ci.yaml` for every push/PR (previously release-time only).
+
+### Changed
+- AGENT.md's "no internal tracker IDs" rule corrected to match the policy that's actually been enforced for a while: operator-FACING surfaces (locale bundles, openapi summaries, REST notes, PWA titles, howto prose, the definitions doc, README) must stay clean; reference/archaeology material (CHANGELOG, plan docs, config-reference comments, architecture/operations/llm-backends docs) is explicitly fine and expected to carry tracker IDs — a 2026-10-07 audit found ~1000+ existing instances there and confirmed they're intentional, not drift. The old written rule had never been updated after this scope was narrowed.
+
 ## v8.72.0 — feat(pwa): GH#192 Phase 3 — three-finger swipe opens a real server-picker modal
 
 ### Added
