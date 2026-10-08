@@ -1094,6 +1094,8 @@
   "server_chip_unreachable_tip": "Nicht erreichbar (zum Versuchen trotzdem klicken)",
   "server_delete_btn": "Löschen",
   "server_enabled_label": "Aktiviert",
+  "server_tls_skip_verify_label": "Skip TLS certificate verification",
+  "server_tls_skip_verify_tip": "Only for a self-signed/local-dev server on a trusted network",
   "server_indicator_return_tip": "Klicken, um zu %1$s zurückzukehren",
   "server_local_label": "Dieser Server",
   "server_name_label": "Name",

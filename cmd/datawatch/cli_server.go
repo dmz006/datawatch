@@ -40,6 +40,7 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 			token, _ := cmd.Flags().GetString("token")
 			label, _ := cmd.Flags().GetString("label")
 			enabled, _ := cmd.Flags().GetBool("enabled")
+			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -59,6 +60,9 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 			if label != "" {
 				body["label"] = label
 			}
+			if tlsSkipVerify {
+				body["tls_skip_verify"] = true
+			}
 			return daemonJSON(http.MethodPost, "/api/servers", body)
 		},
 	}
@@ -67,6 +71,7 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 	addCmd.Flags().String("token", "", "bearer token for authentication (optional)")
 	addCmd.Flags().String("label", "", "human-readable label (optional)")
 	addCmd.Flags().Bool("enabled", true, "whether the server is active")
+	addCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this server only (self-signed/local-dev server on a trusted network)")
 	cmd.AddCommand(addCmd)
 
 	updateCmd := &cobra.Command{
@@ -94,6 +99,10 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 				enabled, _ := cmd.Flags().GetBool("enabled")
 				body["enabled"] = enabled
 			}
+			if cmd.Flags().Changed("tls-skip-verify") {
+				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
+				body["tls_skip_verify"] = tlsSkipVerify
+			}
 			return daemonJSON(http.MethodPut, "/api/servers/"+args[0], body)
 		},
 	}
@@ -101,6 +110,7 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 	updateCmd.Flags().String("token", "", "new bearer token")
 	updateCmd.Flags().String("label", "", "new human-readable label")
 	updateCmd.Flags().Bool("enabled", true, "enable or disable the server")
+	updateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this server only")
 	cmd.AddCommand(updateCmd)
 
 	cmd.AddCommand(&cobra.Command{

@@ -9,6 +9,20 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Federation per-peer TLS skip-verify (`tls_skip_verify`)
+
+Added in v8.73.32. Prompted by a live operator report (federation to `ralfthewise` failing against its self-signed cert).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `multiserver.HTTPClient` / `Store.Test()` | Yes | Yes | `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed TLS, not a mock); asserts `TLSSkipVerify=false` fails with a cert error and `=true` succeeds against the identical server | Not yet re-validated against the real `ralfthewise` end-to-end — pending after this ships and the daemon restarts |
+| REST (`fedPeerAdd`/`fedPeerUpdate`, plain `/api/servers` add/update) | Yes (existing suite) | No | Auto-pass-through confirmed by code reading (both decode straight into/onto `Entry`) | Not independently exercised with this specific field by name |
+| MCP (`federation_peer_add/update`, `server_add/update`) | No | No | New `tls_skip_verify` param added to 4 tool schemas + handler body maps, mirroring the existing `enabled`-field explicit-presence pattern | No MCP-level test added this pass — same risk profile as `enabled`, which also has none |
+| CLI (`federation peer add/update`, `server add/update`, `setup server`) | No | No | New `--tls-skip-verify` flags + an interactive prompt in `setup server`, mirroring existing flag patterns | Not exercised live this pass |
+| PWA (Remote Servers + Federation Peers forms) | No | No | Checkbox added to both forms, wired into `saveServer()`/`submitFedPeerForm()`; 2 new locale keys × 5 bundles | Not click-tested in a real browser this pass — code-reviewed against the existing `enabled`/`federated` checkbox wiring it mirrors |
+
+
+
 ## BL398 Phases 0-2 + registry adoption (GH#197) — .trivyignore reconciliation, live rescan baseline, CVE tracing, structured registry
 
 Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30/v8.73.31. See `docs/plans/2026-10-08-bl398-trivyignore-cve-review.md`.

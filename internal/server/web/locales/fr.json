@@ -1094,6 +1094,8 @@
   "server_chip_unreachable_tip": "Injoignable (cliquez pour essayer quand même)",
   "server_delete_btn": "Supprimer",
   "server_enabled_label": "Activé",
+  "server_tls_skip_verify_label": "Skip TLS certificate verification",
+  "server_tls_skip_verify_tip": "Only for a self-signed/local-dev server on a trusted network",
   "server_indicator_return_tip": "Cliquez pour revenir à %1$s",
   "server_local_label": "Ce serveur",
   "server_name_label": "Nom",

@@ -1094,6 +1094,8 @@
   "server_chip_unreachable_tip": "到達不能(クリックして試す)",
   "server_delete_btn": "削除",
   "server_enabled_label": "有効",
+  "server_tls_skip_verify_label": "Skip TLS certificate verification",
+  "server_tls_skip_verify_tip": "Only for a self-signed/local-dev server on a trusted network",
   "server_indicator_return_tip": "クリックして%1$sに戻る",
   "server_local_label": "このサーバー",
   "server_name_label": "名前",

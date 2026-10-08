@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.73.31"
+var Version = "8.73.32"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -12889,9 +12889,15 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 
 	token := cliPrompt(reader, "Bearer token (press Enter to skip): ", "")
 
+	tlsSkipVerify := false
+	if strings.HasPrefix(url, "https://") {
+		ans := cliPrompt(reader, "Skip TLS certificate verification for this server? Only for a self-signed/local-dev server on a trusted network (y/N): ", "n")
+		tlsSkipVerify = strings.HasPrefix(strings.ToLower(strings.TrimSpace(ans)), "y")
+	}
+
 	// Test connectivity
 	fmt.Printf("Testing connection to %s ...\n", url)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := multiserver.HTTPClient(tlsSkipVerify, 5*time.Second)
 	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(url, "/")+"/api/health", nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -12909,10 +12915,11 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 	}
 
 	entry := config.RemoteServerConfig{
-		Name:    name,
-		URL:     url,
-		Token:   token,
-		Enabled: true,
+		Name:          name,
+		URL:           url,
+		Token:         token,
+		Enabled:       true,
+		TLSSkipVerify: tlsSkipVerify,
 	}
 	// Replace existing or append
 	replaced := false

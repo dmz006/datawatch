@@ -35,6 +35,7 @@ func newFederationCmd() *cobra.Command {
 			url, _ := cmd.Flags().GetString("url")
 			token, _ := cmd.Flags().GetString("token")
 			capsStr, _ := cmd.Flags().GetString("capabilities")
+			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -49,6 +50,9 @@ func newFederationCmd() *cobra.Command {
 			}
 			if token != "" {
 				body["token"] = token
+			}
+			if tlsSkipVerify {
+				body["tls_skip_verify"] = true
 			}
 			if capsStr != "" {
 				var caps []string
@@ -77,6 +81,7 @@ func newFederationCmd() *cobra.Command {
 	peerAddCmd.Flags().String("token", "", "bearer token for authentication (optional)")
 	peerAddCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names (optional)")
 	peerAddCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns (e.g. telegram:group:-123,signal:+1555)")
+	peerAddCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network)")
 	peerCmd.AddCommand(peerAddCmd)
 
 	peerCmd.AddCommand(&cobra.Command{
@@ -104,6 +109,13 @@ func newFederationCmd() *cobra.Command {
 			if token != "" {
 				body["token"] = token
 			}
+			// Only include tls_skip_verify if the flag was explicitly set —
+			// otherwise an update that doesn't mention it would silently
+			// reset an existing true value back to false.
+			if cmd.Flags().Changed("tls-skip-verify") {
+				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
+				body["tls_skip_verify"] = tlsSkipVerify
+			}
 			if capsStr != "" {
 				var caps []string
 				for _, c := range strings.Split(capsStr, ",") {
@@ -130,6 +142,7 @@ func newFederationCmd() *cobra.Command {
 	peerUpdateCmd.Flags().String("token", "", "new bearer token")
 	peerUpdateCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names")
 	peerUpdateCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns")
+	peerUpdateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only")
 	peerCmd.AddCommand(peerUpdateCmd)
 
 	peerCmd.AddCommand(&cobra.Command{

@@ -26,6 +26,10 @@ type RemoteServerConfig struct {
 	AuthType string `yaml:"auth_type,omitempty"`
 	// Capabilities is the CBAC grant list; mix of group names and surface:action strings.
 	Capabilities []string `yaml:"capabilities,omitempty"`
+	// TLSSkipVerify disables TLS cert validation for THIS peer only. Default
+	// false. OK for a self-signed/local-dev peer on a trusted network only;
+	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
+	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
 }
 
 // MemoryConfig controls the episodic memory system — vector-indexed project

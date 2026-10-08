@@ -8428,6 +8428,10 @@ function renderSettingsView() {
                   <input type="checkbox" id="serverFormFederated" />
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
+                <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev server on a trusted network'}">
+                  <input type="checkbox" id="serverFormTLSSkipVerify" />
+                  ${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}
+                </label>
                 <div id="serverFormCapsWrap" style="display:none;">
                   <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
                   ${renderBadgeInput('serverFormCaps', '', { freeform: true, placeholder: 'federation-peer, session-operator…' })}
@@ -8457,6 +8461,7 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors" /></div>
               </div>
@@ -16180,6 +16185,7 @@ function showServerForm(entry) {
   const editNameEl = document.getElementById('serverFormEditName');
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
+  const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
   const capsWrap = document.getElementById('serverFormCapsWrap');
   if (!wrap || !nameEl || !urlEl) return;
   nameEl.value = entry ? (entry.name||'') : '';
@@ -16187,6 +16193,7 @@ function showServerForm(entry) {
   urlEl.value = entry ? (entry.url||'') : '';
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
+  if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!(entry && entry.tls_skip_verify);
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
   if (fedEl) {
     fedEl.checked = !!(entry && entry.federated);
@@ -16220,6 +16227,7 @@ function saveServer() {
   const editNameEl = document.getElementById('serverFormEditName');
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
+  const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -16228,7 +16236,7 @@ function saveServer() {
     return;
   }
   const editName = editNameEl ? editNameEl.value : '';
-  const body = { name, url, enabled: enabledEl ? enabledEl.checked : true };
+  const body = { name, url, enabled: enabledEl ? enabledEl.checked : true, tls_skip_verify: tlsSkipVerifyEl ? tlsSkipVerifyEl.checked : false };
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
   if (fedEl && fedEl.checked) {
@@ -26644,10 +26652,12 @@ function showFedPeerForm(entry) {
     const nameEl = document.getElementById('fedPeerFormName');
     const urlEl = document.getElementById('fedPeerFormURL');
     const ciEl = document.getElementById('fedPeerFormChannelIdentity');
+    const tlsSkipVerifyEl = document.getElementById('fedPeerFormTLSSkipVerify');
     if (nameEl) { nameEl.value = entry.name || ''; nameEl.disabled = true; }
     if (urlEl) urlEl.value = entry.url || '';
     // BL331 — populate channel_identity (stored as []string, shown as CSV)
     if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
+    if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!entry.tls_skip_verify;
   }
 }
 window.showFedPeerForm = showFedPeerForm;
@@ -26671,7 +26681,8 @@ function submitFedPeerForm() {
   if (!url) { if (errEl) { errEl.textContent = 'URL is required'; errEl.style.display = ''; } return; }
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
-  const body = { name, url, enabled: true };
+  const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend

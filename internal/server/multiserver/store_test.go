@@ -242,6 +242,53 @@ func TestStore_Test_FalsePositiveOnBadToken(t *testing.T) {
 	}
 }
 
+// Operator-reported 2026-10-08 (ralfthewise): Test() against a peer with a
+// self-signed certificate used to fail with "x509: certificate signed by
+// unknown authority" for every caller, with no way to opt a specific,
+// trusted peer out of verification. TLSSkipVerify fixes this per-entry
+// (every other peer keeps full verification).
+func TestStore_Test_TLSSkipVerify(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"version":"7.0.0-selfsigned"}`)) //nolint:errcheck
+		case "/api/sessions":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if err := s.Add(&Entry{Name: "strict", URL: srv.URL, Enabled: true}); err != nil {
+		t.Fatalf("Add(strict): %v", err)
+	}
+	if _, _, err := s.Test(context.Background(), "strict"); err == nil {
+		t.Fatal("Test(strict): expected a certificate-verification error against a self-signed server with TLSSkipVerify=false, got nil")
+	} else if !strings.Contains(err.Error(), "certificate") && !strings.Contains(err.Error(), "x509") {
+		t.Errorf("Test(strict) error = %q, want it to mention the certificate problem", err.Error())
+	}
+
+	if err := s.Add(&Entry{Name: "trusted", URL: srv.URL, Enabled: true, TLSSkipVerify: true}); err != nil {
+		t.Fatalf("Add(trusted): %v", err)
+	}
+	_, version, err := s.Test(context.Background(), "trusted")
+	if err != nil {
+		t.Fatalf("Test(trusted): expected TLSSkipVerify=true to succeed against the same self-signed server, got: %v", err)
+	}
+	if version != "7.0.0-selfsigned" {
+		t.Errorf("version = %q, want %q", version, "7.0.0-selfsigned")
+	}
+}
+
 func TestStore_TestNotFound(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewStore(dir, nil)

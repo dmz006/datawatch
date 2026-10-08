@@ -8,6 +8,7 @@ package multiserver
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,25 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 )
+
+// HTTPClient returns an *http.Client for talking to a federation peer or
+// remote server. When skipVerify is true (per-entry TLSSkipVerify), TLS
+// certificate verification is disabled for THIS client only — every other
+// outbound call in the process keeps full verification. Shared by every
+// call site that talks to a peer (Store.Test, the /api/proxy and /remote
+// reverse-proxy handlers) so "does this peer skip verification" has one
+// answer, not five independently-drifting http.Client constructions.
+func HTTPClient(skipVerify bool, timeout time.Duration) *http.Client {
+	if !skipVerify {
+		return &http.Client{Timeout: timeout}
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // operator-opted-in per peer, documented risk
+		},
+	}
+}
 
 // ErrNotFound is returned when a named entry does not exist.
 var ErrNotFound = errors.New("server not found")
@@ -51,6 +71,10 @@ type Entry struct {
 	// When set, structured commands arriving on these channels are
 	// forwarded to this peer's /api/sessions/start or automata endpoint.
 	ChannelIdentity []string `json:"channel_identity,omitempty"`
+	// TLSSkipVerify disables TLS cert validation for this peer only (every
+	// other peer keeps full verification). Default false. OK for a
+	// self-signed/local-dev peer on a trusted network; document the risk.
+	TLSSkipVerify bool      `json:"tls_skip_verify,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	// SEC-014 — populated only by Redacted(), never persisted or set from
@@ -129,16 +153,17 @@ func newStore(dataDir string, seeds []config.RemoteServerConfig, key []byte) (*S
 			continue // runtime entry wins
 		}
 		builtins = append(builtins, &Entry{
-			Name:         sc.Name,
-			URL:          sc.URL,
-			Token:        sc.Token,
-			Enabled:      sc.Enabled,
-			Builtin:      true,
-			Federated:    sc.Federated,
-			AuthType:     sc.AuthType,
-			Capabilities: sc.Capabilities,
-			CreatedAt:    time.Time{},
-			UpdatedAt:    time.Time{},
+			Name:          sc.Name,
+			URL:           sc.URL,
+			Token:         sc.Token,
+			Enabled:       sc.Enabled,
+			Builtin:       true,
+			Federated:     sc.Federated,
+			AuthType:      sc.AuthType,
+			Capabilities:  sc.Capabilities,
+			TLSSkipVerify: sc.TLSSkipVerify,
+			CreatedAt:     time.Time{},
+			UpdatedAt:     time.Time{},
 		})
 	}
 	// Builtins first so they appear at the top of the list.
@@ -273,7 +298,7 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 		url = url[:len(url)-1]
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := HTTPClient(e.TLSSkipVerify, 10*time.Second)
 	start := time.Now()
 
 	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/health", nil)

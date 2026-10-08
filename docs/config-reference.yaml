@@ -715,6 +715,13 @@ servers:
   #   url: http://203.0.113.50:8080
   #   token: "another-token"
   #   enabled: true
+  # - name: self-signed-peer
+  #   url: https://ralfthewise:8443
+  #   enabled: true
+  #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
+  #                               # only — every other peer keeps full
+  #                               # verification. Only for a self-signed/
+  #                               # local-dev peer on a trusted network.
 # Requires daemon restart after changes. The proxy will:
 # - Forward HTTP API calls via /api/proxy/{server}/*
 # - Relay WebSocket connections via /api/proxy/{server}/ws

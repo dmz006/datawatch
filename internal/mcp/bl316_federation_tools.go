@@ -66,6 +66,7 @@ func (s *Server) toolFederationPeerAdd() mcpsdk.Tool {
 		mcpsdk.WithString("url", mcpsdk.Required(), mcpsdk.Description("base URL of the peer instance")),
 		mcpsdk.WithString("token", mcpsdk.Description("bearer token for the peer (optional)")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings (optional; defaults to federation-peer)")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network; default false)")),
 	)
 }
 
@@ -83,6 +84,7 @@ func (s *Server) toolFederationPeerUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("url", mcpsdk.Description("new base URL")),
 		mcpsdk.WithString("token", mcpsdk.Description("new bearer token")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (default false)")),
 	)
 }
 
@@ -172,6 +174,9 @@ func (s *Server) handleFederationPeerAddMCP(ctx context.Context, req mcpsdk.Call
 	if caps := mustString(req, "capabilities"); caps != "" {
 		body["capabilities"] = strings.Split(caps, ",")
 	}
+	if req.GetBool("tls_skip_verify", false) {
+		body["tls_skip_verify"] = true
+	}
 	out, err := s.proxyJSON("POST", "/api/federation/peers", body)
 	if err != nil {
 		return nil, err
@@ -204,6 +209,14 @@ func (s *Server) handleFederationPeerUpdateMCP(ctx context.Context, req mcpsdk.C
 	}
 	if caps := mustString(req, "capabilities"); caps != "" {
 		body["capabilities"] = strings.Split(caps, ",")
+	}
+	// Only include tls_skip_verify if the caller explicitly passed it —
+	// otherwise an update that doesn't mention it would silently reset an
+	// existing true value back to false.
+	if argsMap, ok := req.Params.Arguments.(map[string]any); ok {
+		if _, has := argsMap["tls_skip_verify"]; has {
+			body["tls_skip_verify"] = req.GetBool("tls_skip_verify", false)
+		}
 	}
 	out, err := s.proxyJSON("PUT", "/api/federation/peers/"+name, body)
 	if err != nil {

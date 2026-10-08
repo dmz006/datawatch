@@ -183,7 +183,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.31"
+var Version = "8.73.32"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7126,7 +7126,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)

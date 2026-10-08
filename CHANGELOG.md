@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.32 — feat(federation): per-peer TLS cert-verification bypass for self-signed servers
+
+### Added
+- Operator reported federation to `ralfthewise` failing while its web UI loaded fine. Root cause: `ralfthewise`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
+- New per-entry `tls_skip_verify` field (`multiserver.Entry`, `config.RemoteServerConfig`) disables cert verification for **that one peer only** — every other peer/server keeps full verification. Shared `multiserver.HTTPClient(skipVerify, timeout)` helper used by all 5 outbound call sites instead of 5 independently-drifting `http.Client` constructions.
+- Full-surface parity: REST (`fedPeerAdd`/`fedPeerUpdate`/plain server add/update — auto-pass-through, no DTU needed), MCP (`federation_peer_add/update`, `server_add/update` — new `tls_skip_verify` param), CLI (`federation peer add/update --tls-skip-verify`, `server add/update --tls-skip-verify`, and an interactive prompt in `datawatch setup server`), YAML (`servers[].tls_skip_verify`), PWA (checkbox on both the "Remote Servers" and "Federation Peers" forms, 2 new locale keys × 5 bundles). No comm-channel surface exists for server management, so none was added.
+- `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed, not mocked): confirms `TLSSkipVerify=false` fails with a certificate error against it and `TLSSkipVerify=true` succeeds against the *same* server.
+
+### Process
+- Update-on-partial-PUT semantics vary by surface (fed peers merge; plain `/api/servers` PUT fully overwrites) — pre-existing behavior, not changed here; followed each surface's existing optional-field convention rather than introducing a third one.
+- `showFedPeerForm`'s edit path has a pre-existing latent gap (`submitFedPeerForm` always POSTs, never PUTs) noted by this session's research pass but intentionally not fixed here — out of scope for this change.
+
 ## v8.73.31 — feat(security): dismissed-GitHub-alert gap detection (GH#197 daily watch)
 
 ### Added

@@ -69,6 +69,7 @@ func (s *Server) toolServerAdd() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("bearer token for the remote instance (optional)")),
 		mcpsdk.WithString("label", mcpsdk.Description("human-readable label (optional)")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("whether the server is active (default true)")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this server only (self-signed/local-dev server on a trusted network; default false)")),
 	)
 }
 
@@ -87,6 +88,7 @@ func (s *Server) toolServerUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("new bearer token")),
 		mcpsdk.WithString("label", mcpsdk.Description("human-readable label")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("whether the server is active")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this server only")),
 	)
 }
 
@@ -145,6 +147,9 @@ func (s *Server) handleServerAddMCP(ctx context.Context, req mcpsdk.CallToolRequ
 	if label := mustString(req, "label"); label != "" {
 		body["label"] = label
 	}
+	if req.GetBool("tls_skip_verify", false) {
+		body["tls_skip_verify"] = true
+	}
 	out, err := s.proxyJSON("POST", "/api/servers", body)
 	if err != nil {
 		return nil, err
@@ -167,10 +172,13 @@ func (s *Server) handleServerUpdateMCP(ctx context.Context, req mcpsdk.CallToolR
 	if label := mustString(req, "label"); label != "" {
 		body["label"] = label
 	}
-	// Only include enabled if the caller explicitly passed it.
+	// Only include enabled/tls_skip_verify if the caller explicitly passed them.
 	if argsMap, ok := req.Params.Arguments.(map[string]any); ok {
 		if _, has := argsMap["enabled"]; has {
 			body["enabled"] = req.GetBool("enabled", true)
+		}
+		if _, has := argsMap["tls_skip_verify"]; has {
+			body["tls_skip_verify"] = req.GetBool("tls_skip_verify", false)
 		}
 	}
 	out, err := s.proxyJSON("PUT", "/api/servers/"+name, body)
