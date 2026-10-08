@@ -3,8 +3,13 @@
 
 Used by the `recheck-ignored-cves` job in .github/workflows/image-refresh.yaml
 after it rebuilds every real shipped image fresh (no cache) and scans each
-one WITHOUT .trivyignore applied. Any accepted CVE absent from every one of
-those fresh, unsuppressed scans has a real upstream fix available now.
+one WITHOUT .trivyignore applied. The stale-ids file it reads is produced by
+scripts/compute_stale_risks.py, which only calls an entry stale when the
+package it names is no longer installed at the exact suppressed version in
+any image it applies to -- version-anchored, not CVE-ID-presence-anchored,
+since a Trivy vulnerability-DB rebuild can relabel a CVE for an unchanged
+package without the installed version ever moving (see that script's
+docstring).
 
 Supersedes the old apply-stale-cve-removal.py, which edited .trivyignore
 directly -- .trivyignore is now GENERATED from this registry

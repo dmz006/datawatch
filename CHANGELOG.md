@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.36 — fix(security): BL398 — anchor CVE-suppression staleness to installed package version, not ID presence
+
+### Fixed
+- `image-refresh.yaml`'s `recheck-ignored-cves` job decided a suppressed CVE
+  was "fixed upstream" purely from whether its ID appeared in a fresh,
+  unsuppressed scan. Confirmed this is unsound: Trivy's vulnerability DB
+  updates multiple times a day and can relabel a CVE for a package whose
+  installed version never moved (`zlib1g` 1:1.2.13.dfsg-1 reported as
+  `CVE-2023-45853` in one scan, `CVE-2026-27171`/`CVE-2026-85091` a few hours
+  later — `Status: affected` both times, no `FixedVersion`). The old logic
+  auto-opened PRs deleting still-valid suppressions on this basis twice
+  today (#199, #200), including `cve/CVE-2026-19445` — an entry traced and
+  confirmed as a real, currently-applicable finding on the same unchanged
+  package just hours earlier. Both PRs closed without merging.
+- New `scripts/compute_stale_risks.py` replaces the `comm -23` ID diff.
+  It only calls an entry stale when the package it names is no longer
+  installed at the *exact suppressed version* in any image it applies to,
+  reading Trivy's `--list-all-pkgs` package inventory (added to the scan
+  step) via each package's `ID` field (`<name>@<full-version>`, the only
+  field that includes the epoch/revision the registry's `version` and
+  `InstalledVersion` both use — `Packages[].Version` alone silently drops
+  them, caught by a local test before this shipped). A real fix always
+  bumps the version; database churn never does.
+- Entries where the package+version is unchanged but the registered ID no
+  longer appears in a fresh scan are left in place and flagged in a new
+  "ID churn" section of the daily watch report/tracking issue — informational
+  only, never auto-removed. Validated against both auto-opened PRs' actual
+  removal lists: every churned entry (including `CVE-2026-19445`) correctly
+  kept-and-flagged; the one genuine version bump in that data (`libssl3`
+  3.0.20-1~deb12u2 → 3.0.22-1~deb12u1) correctly flagged stale.
+- `apply_stale_risk_removal.py`'s removal logic is unchanged (pure
+  subtraction from a trusted stale-ids list) — only the upstream source of
+  that list changed; docstring updated to point at the new script.
+
 ## v8.73.35 — security: triage a new finding blocking image-refresh.yaml (CVE-2026-77214, libexpat1)
 
 ### Fixed
