@@ -152,17 +152,21 @@ func RotateKey(store *Store, oldKey, newKey []byte) (int, error) {
 
 		// Encrypt with new key
 		store.encKey = newKey
-		encContent := store.encryptField(plainContent)
-		encSummary := store.encryptField(plainSummary)
-		store.encKey = oldKey // restore for next iteration
-
-		_, err := store.db.Exec(
-			`UPDATE memories SET content = ?, summary = ? WHERE id = ?`,
-			encContent, encSummary, r.id,
-		)
-		if err == nil {
-			count++
+		encContent, encErr := store.encryptField(plainContent)
+		if encErr == nil {
+			var encSummary string
+			encSummary, encErr = store.encryptField(plainSummary)
+			if encErr == nil {
+				_, err := store.db.Exec(
+					`UPDATE memories SET content = ?, summary = ? WHERE id = ?`,
+					encContent, encSummary, r.id,
+				)
+				if err == nil {
+					count++
+				}
+			}
 		}
+		store.encKey = oldKey // restore for next iteration
 	}
 
 	// Set new key permanently
@@ -207,8 +211,14 @@ func MigrateToEncrypted(store *Store, key []byte) (int, error) {
 
 	count := 0
 	for _, r := range toEncrypt {
-		enc := store.encryptField(r.content)
-		encSum := store.encryptField(r.summary)
+		enc, encErr := store.encryptField(r.content)
+		if encErr != nil {
+			continue
+		}
+		encSum, encErr := store.encryptField(r.summary)
+		if encErr != nil {
+			continue
+		}
 		_, err := store.db.Exec(
 			`UPDATE memories SET content = ?, summary = ? WHERE id = ?`,
 			enc, encSum, r.id,

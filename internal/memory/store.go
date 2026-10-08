@@ -110,15 +110,18 @@ func NewStoreEncrypted(dbPath string, encKey []byte) (*Store, error) {
 func (s *Store) IsEncrypted() bool { return len(s.encKey) == 32 }
 
 // encryptField encrypts a string for storage. Returns original if no key set.
-func (s *Store) encryptField(plaintext string) string {
+// If encryption is enabled but the AEAD seal fails, the write is refused
+// (returns an error) rather than silently persisting plaintext under an
+// encrypted-store contract.
+func (s *Store) encryptField(plaintext string) (string, error) {
 	if len(s.encKey) != 32 || plaintext == "" {
-		return plaintext
+		return plaintext, nil
 	}
 	ct, err := fieldEncrypt([]byte(plaintext), s.encKey)
 	if err != nil {
-		return plaintext // fallback to plaintext on error
+		return "", fmt.Errorf("refusing to store plaintext: field encryption failed: %w", err)
 	}
-	return "ENC:" + ct
+	return "ENC:" + ct, nil
 }
 
 // decryptMemory decrypts the content and summary fields of a memory in-place.
@@ -336,8 +339,14 @@ func (s *Store) SaveWithNamespaceAndSource(projectDir, content, summary, role, s
 		embBlob = encodeVector(embedding)
 	}
 	hash := contentHash(content)
-	storedContent := s.encryptField(content)
-	storedSummary := s.encryptField(summary)
+	storedContent, err := s.encryptField(content)
+	if err != nil {
+		return 0, err
+	}
+	storedSummary, err := s.encryptField(summary)
+	if err != nil {
+		return 0, err
+	}
 
 	result, err := s.db.Exec(
 		`INSERT INTO memories (session_id, project_dir, content, summary, role, embedding, content_hash, wing, room, hall, namespace, floor, shelf, box, source)

@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.9 — security(SEC-023): stronger Argon2id params, no more silent plaintext fallback on encryption failure
+
+### Security
+- `internal/config/encrypt.go` — config-file envelope's Argon2id parameters (`t=1, m=64MiB, p=4`) were below the OWASP high-strength offline-storage baseline. Added a new `DWATCH3` envelope using `t=4, m=512MiB, p=4`. `Encrypt`/`EncryptWithSalt` now always write v3; `Decrypt` still reads v1 (legacy AES-GCM) and v2 (weak-Argon2id XChaCha20) transparently, so existing `--secure` config files keep working and are re-sealed to v3 the next time they're saved (`SaveSecure` → `Encrypt`). Derived key buffers are now zeroed after use in `Encrypt`/`Decrypt`/`decryptV1`/`decryptV2`/`decryptV3`.
+- `internal/memory/store.go` / `pg_store.go` — `encryptField` silently fell back to storing **plaintext** (no `ENC:` prefix) whenever the AEAD seal failed, under an encrypted-store contract the caller believed was in force. Changed `encryptField` to return `(string, error)`; a seal failure now refuses the write (`Save`/`SaveWithMeta` return the error) instead of persisting unencrypted content. `RotateKey`/`MigrateToEncrypted` updated to skip (not silently plaintext-write) any row that fails to re-seal.
+- Not changed in this pass: `config.DeriveKey` (the master key for session/skills/schedule/compute/multiserver/etc. stores under `--secure`) intentionally still uses the legacy weak Argon2id params — it has no envelope version marker of its own, and strengthening it would silently change the derived key for every existing `--secure` install, locking them out of all dependent data with no migration path. Needs a dedicated key-rotation migration (derive under both param sets, re-encrypt every dependent store, cut over) — tracked as a follow-up.
+- Added `internal/config/encrypt_test.go` (previously zero test coverage on this file): v3 roundtrip, wrong-password rejection, legacy-v2 backward-compat decrypt, salt extraction across versions.
+
 ## v8.73.8 — fix(pwa): federated 401/403/502 now show the real denial/unreachable text, not generic errors
 
 ### Fixed

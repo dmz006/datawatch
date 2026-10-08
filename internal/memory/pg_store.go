@@ -152,15 +152,18 @@ func (s *PGStore) migrate() error {
 // IsEncrypted returns true if encryption is enabled.
 func (s *PGStore) IsEncrypted() bool { return len(s.encKey) == 32 }
 
-func (s *PGStore) encryptField(plaintext string) string {
+// encryptField encrypts a string for storage. If encryption is enabled but
+// the AEAD seal fails, the write is refused (returns an error) rather than
+// silently persisting plaintext under an encrypted-store contract.
+func (s *PGStore) encryptField(plaintext string) (string, error) {
 	if len(s.encKey) != 32 || plaintext == "" {
-		return plaintext
+		return plaintext, nil
 	}
 	ct, err := fieldEncrypt([]byte(plaintext), s.encKey)
 	if err != nil {
-		return plaintext
+		return "", fmt.Errorf("refusing to store plaintext: field encryption failed: %w", err)
 	}
-	return "ENC:" + ct
+	return "ENC:" + ct, nil
 }
 
 func (s *PGStore) decryptField(stored string) string {
@@ -216,8 +219,14 @@ func (s *PGStore) SaveWithMeta(projectDir, content, summary, role, sessionID, wi
 		}
 	}
 
-	storedContent := s.encryptField(content)
-	storedSummary := s.encryptField(summary)
+	storedContent, err := s.encryptField(content)
+	if err != nil {
+		return 0, err
+	}
+	storedSummary, err := s.encryptField(summary)
+	if err != nil {
+		return 0, err
+	}
 
 	var embBlob []byte
 	if len(embedding) > 0 {
