@@ -936,3 +936,14 @@ Follow-up audit after the federation bug round (v8.73.2–v8.73.4), per the oper
 | `Backend.handleSMS` end-to-end: valid signature delivers the message; invalid/missing signature returns 401 and never delivers | **Yes** | **Yes** | `TestHandleSMS_ValidSignatureDeliversMessage`, `TestHandleSMS_InvalidSignatureRejectedNoMessage`, `TestHandleSMS_MissingSignatureRejected` | |
 | `from != to_number` secondary filter still works for a validly-signed request from an unexpected number | **Yes** | **Yes** | `TestHandleSMS_WrongFromNumberIgnoredEvenWithValidSignature` | |
 | Full repo regression | **Yes** | **Yes** | `go test ./...` — 3209 passed, 0 failed | |
+
+## SEC-016: live admin-token rotation, 60s grace window, removed from PUT /api/config — v8.73.16
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `POST /api/auth/rotate-token` swaps the live token immediately (new token authenticates right away, no restart) and persists it to disk | **Yes** | **Yes** | `TestHandleRotateToken_AdminGetsNewTokenImmediately` | |
+| Previous token stays valid during the 60s grace window, then is hard-revoked | **Yes** | **Yes** | `TestHandleRotateToken_OldTokenValidDuringGraceWindow`, `TestHandleRotateToken_OldTokenRevokedAfterGraceWindow` (forces `oldTokenExpiry` into the past rather than sleeping 60s) | |
+| Operator-supplied `new_token` is honored; a too-short one (<16 chars) is rejected with the live token left unchanged | **Yes** | **Yes** | `TestHandleRotateToken_OperatorSuppliedToken`, `TestHandleRotateToken_TooShortOperatorTokenRejected` | |
+| A federation peer (even with `full-control`) gets 403 — no capability should be sufficient to rotate the admin credential itself | **Yes** | **Yes** | `TestHandleRotateToken_FederationPeerForbidden` | |
+| `PUT /api/config` silently skips `server.token`/`mcp.token` but still applies other keys in the same patch, and reports the skip in the response body | **Yes** | **Yes** | `TestHandlePutConfig_ServerTokenAndMCPTokenSkipped` | |
+| Full repo regression | **Yes** | **Yes** | `go test ./...` — 3216 passed, 0 failed | 3 pre-existing `internal/session`-package test failures under `-race` only (unrelated stack traces, no mention of any file touched this pass) — not introduced or fixed in this pass, flagged as a pre-existing gap |

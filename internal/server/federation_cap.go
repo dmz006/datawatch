@@ -9,7 +9,6 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -153,7 +152,12 @@ func nonceAwarePath(path string) bool {
 //  3. Rejects everything else with 401.
 func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.token == "" {
+		// SEC-016 — s.token can be rotated live (POST /api/auth/rotate-token),
+		// so this read goes through tokenMu like every other access to it.
+		s.tokenMu.RLock()
+		noTokenConfigured := s.token == ""
+		s.tokenMu.RUnlock()
+		if noTokenConfigured {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -200,8 +204,10 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 		}
 		// Admin token. (assessment T3 — constant-time compare; a timing
 		// side-channel on the admin bearer token is the same class of
-		// leak the token itself is meant to prevent.)
-		if tok != "" && len(tok) == len(s.token) && subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) == 1 {
+		// leak the token itself is meant to prevent. SEC-016 — checkToken
+		// also accepts the previous token during its post-rotation grace
+		// window.)
+		if tok != "" && s.checkToken(tok) {
 			ctx := context.WithValue(r.Context(), callerTokenKey, tok)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return

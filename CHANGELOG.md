@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.16 — security(SEC-016): live admin-token rotation with a 60s grace window, removed from the generic config-patch path
+
+### Security
+- New `POST /api/auth/rotate-token` (admin-only — a federation peer or session-scoped credential gets 403): hot-swaps the live admin bearer token immediately (no restart) and persists it to `config.yaml`. Accepts an optional `new_token` (min 16 chars) or generates a random 32-byte hex token. The previous token stays valid for 60 seconds (`tokenRotationGrace`) so an in-flight client isn't cut off mid-request, then is hard-revoked.
+- `server.token`/`mcp.token` are no longer settable through the generic `PUT /api/config` patch path — that path writes straight to disk with no live effect and no grace window, so rotating the admin credential through it either silently did nothing until the next restart, or (with `server.auto_restart_on_config`) cut off every existing client the instant the new process came up. `applyConfigPatch` now skips these two keys and `handlePutConfig`'s response reports them back under `skipped`/`skipped_reason` so a caller still using the old path finds out immediately rather than assuming it worked. `mcp.token` still requires a restart to take effect (same as before) — only `server.token` got the live hot-swap in this pass, since it's the one every REST/WS client is actually gated on.
+- Added `internal/server/sec016_token_rotation_test.go`: immediate effect of a new token, old-token grace window, hard revocation after expiry, operator-supplied vs. generated tokens, too-short rejection, federation-peer 403, and the `PUT /api/config` skip behavior.
+
 ## v8.73.15 — fix(pwa): Settings tab is now federation-aware (item 3 of 3: picker + proxy-aware config loaders)
 
 ### Fixed

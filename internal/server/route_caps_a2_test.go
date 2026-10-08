@@ -39,6 +39,10 @@ var routeCapsExceptions = map[string]string{
 		"checkProxyAuth (admin/federation token OR a peer-scoped proxy " +
 		"token bound to the exact peer in the path), not the general cap " +
 		"model.",
+	"handleRotateToken": "SEC-016 — rotates the admin bearer token itself; " +
+		"explicitly refuses any peer or session-scoped caller rather than " +
+		"gating on a capability (no capability should ever be sufficient " +
+		"to let a non-admin caller replace the admin credential).",
 }
 
 // handlerFuncs parses every non-test .go file directly under dir (not

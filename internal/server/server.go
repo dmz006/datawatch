@@ -234,7 +234,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/backends", api.handleBackends)
 	apiMux.HandleFunc("/api/files", api.handleFiles)
 	apiMux.HandleFunc("/api/files/download", api.handleFilesDownload)
-	apiMux.HandleFunc("/api/auth/nonce", api.handleAuthNonce) // SEC-006
+	apiMux.HandleFunc("/api/auth/nonce", api.handleAuthNonce)          // SEC-006
+	apiMux.HandleFunc("/api/auth/rotate-token", api.handleRotateToken) // SEC-016
 	// BL333 — federated file service sub-routes.
 	apiMux.HandleFunc("/api/files/peers/", api.handleFilesPeer)
 	apiMux.HandleFunc("/api/files/discussions/", api.handleFilesDiscussion)

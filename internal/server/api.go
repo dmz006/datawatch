@@ -183,14 +183,23 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.15"
+var Version = "8.73.16"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub                *Hub
-	manager            *session.Manager
-	hostname           string
-	token              string
+	hub      *Hub
+	manager  *session.Manager
+	hostname string
+	token    string
+	// SEC-016 — tokenMu guards token/oldToken/oldTokenExpiry, which
+	// POST /api/auth/rotate-token mutates live (hot-swap, no restart)
+	// while fedAuthMiddleware reads them on every request. oldToken stays
+	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
+	// client that already has the previous token isn't cut off mid-flight;
+	// after that it's hard-revoked, same as if it had never existed.
+	tokenMu            sync.RWMutex
+	oldToken           string
+	oldTokenExpiry     time.Time
 	availableBackends  []string // registered LLM backend names
 	cfg                *config.Config
 	cfgPath            string
@@ -5513,7 +5522,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	applyConfigPatch(s.cfg, patch)
+	skipped := applyConfigPatch(s.cfg, patch)
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {
@@ -5587,7 +5596,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	go s.warmVersionCache()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	resp := map[string]interface{}{"status": "ok"}
+	if len(skipped) > 0 {
+		// SEC-016 — loud, not silent: a caller still trying to set
+		// server.token/mcp.token through the generic patch path finds out
+		// immediately rather than assuming it took effect.
+		resp["skipped"] = skipped
+		resp["skipped_reason"] = "use POST /api/auth/rotate-token to change the admin bearer token"
+	}
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 
 // applyLLMRegistryPatch applies config patch keys that now live in the LLM registry
@@ -5657,10 +5674,20 @@ func (s *Server) applyLLMRegistryPatch(patch map[string]interface{}) {
 }
 
 // applyConfigPatch applies dot-path key/value pairs from patch to cfg.
-// Only known, non-sensitive fields are applied; credential fields are ignored.
-func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
+// Returns the keys that were present in patch but silently skipped (SEC-016:
+// server.token/mcp.token specifically — these are the admin/MCP bearer
+// credentials; changing them here would write a new value to disk that the
+// live process never picks up (no restart happens from this path) with no
+// grace window on the old value, so any client still using it would be
+// stuck guessing when it stops working. Use POST /api/auth/rotate-token
+// instead, which hot-swaps the live credential with a 60s overlap).
+func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
+	var skipped []string
 	for k, v := range patch {
 		switch k {
+		case "server.token", "mcp.token":
+			skipped = append(skipped, k)
+			continue
 		case "telegram.enabled":
 			cfg.Telegram.Enabled = toBool(v)
 		case "discord.enabled":
@@ -5863,10 +5890,6 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Server.PublicURL = toString(v)
 		case "server.tls":
 			cfg.Server.TLSEnabled = toBool(v)
-		case "server.token":
-			if s := toString(v); s != "" {
-				cfg.Server.Token = s
-			}
 		case "server.tls_auto_generate":
 			cfg.Server.TLSAutoGenerate = toBool(v)
 		case "server.tls_cert":
@@ -5940,10 +5963,6 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			}
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
-		case "mcp.token":
-			if s := toString(v); s != "" {
-				cfg.MCP.Token = s
-			}
 		case "mcp.tls_enabled":
 			cfg.MCP.TLSEnabled = toBool(v)
 		case "mcp.tls_auto_generate":
@@ -6715,6 +6734,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			fmt.Fprintf(os.Stderr, "[config] applyConfigPatch: unknown key %q (no-op)\n", k)
 		}
 	}
+	return skipped
 }
 
 // SetTestMessageHandler wires a function that routes simulated messages through
