@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.5 — chore(release): suppress 5 no-fix-available CVEs blocking v9.0.3's agent-base scan
+
+### Security
+- v9.0.3's `release.yaml` run built all containers successfully but
+  failed the `agent-base` Trivy scan on 5 newly-disclosed CVEs with no
+  fix available yet: `libgnutls30` CVE-2026-88647/88648 (no Debian
+  bookworm backport as of 2026-10-09), and CVE-2026-78667/78669/97031
+  (Go stdlib `net/http`/`crypto/tls` + `golang.org/x/net` DoS CVEs
+  baked into the `gh` CLI binary — `gh` is installed as a prebuilt apt
+  package, not compiled here, and v2.102.0 (2026-09-30) is cli/cli's
+  latest release as of this scan; our own `GO_VERSION` pin has no
+  effect on gh's embedded toolchain). Suppressed in `.trivyignore`
+  with rationale and a re-check-each-cycle note, per the established
+  no-fix-CVE suppression process. No code change.
+
 ## v9.0.4 — docs: clarify Android beta is pending Google review
 
 ### Changed
