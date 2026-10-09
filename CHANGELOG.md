@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.79.0 — feat: Cross-Session Communication Rule (BL401)
+
+### Added
+- A new policy section injected into spawned claude-code sessions'
+  `CLAUDE.md`, mirroring the existing Memory Use Rule / RTK
+  instructions pattern exactly (same injection mechanism, same
+  idempotent-merge behavior) — steers the LLM toward datawatch's own
+  audited `memory_remember`/`memory_recall`/`memory_discussion_write`/
+  `memory_discussion_recall`/`discussion_subscribe`/`reply_to_parent`/
+  `memory_handoff` tools instead of Claude Code's native cross-session
+  messaging, for anything that should be audited or might cross a
+  host/container boundary. Not an absolute ban — ephemeral, same-host
+  coordination nobody needs to audit is explicitly called out as
+  still fine.
+- New `cross_session.enabled` config (default `true`) — a tri-state
+  instruction-injection toggle mirroring `memory.session_awareness`'s
+  shape, not a subsystem toggle like `memory.enabled`/`rtk.enabled`
+  (there's no separate subsystem here to turn on/off, only whether
+  the guidance text is injected). Full REST/MCP(generic)/YAML/PWA
+  parity; CLI/comm deliberately excluded (same reasoning as other
+  simple policy toggles).
+- New howto with a diagram: `docs/howto/cross-session-policy.md`.
+- 5 new tests (4 in `internal/session/gh_cross_session_policy_test.go`,
+  1 in `internal/server/applyconfigpatch_b38_test.go`).
+
+### Fixed
+- **Pre-existing bug found while wiring this feature**:
+  `memory.session_awareness` (documented "injects memory instructions
+  into session guardrails, default true", fully exposed over
+  REST/PWA) was never actually consulted by the guardrails-injection
+  code path — only `memory.enabled` was. An operator who turned
+  memory on but explicitly disabled `session_awareness` saw no
+  effect. Now respects both flags.
+
 ## v8.78.2 — fix(lint): ineffectual level assignment in create-alert handlers
 
 ### Fixed

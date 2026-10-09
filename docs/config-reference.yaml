@@ -462,6 +462,16 @@ audit:
   # ArcSight/Sentinel). Opt-in -- most operators don't run a SIEM.
   cef_mirror_enabled: false
 
+cross_session:
+  # Inject the Cross-Session Communication Rule into spawned
+  # claude-code sessions' CLAUDE.md -- steers the LLM toward
+  # datawatch's own audited memory/discussion/reply MCP tools instead
+  # of Claude Code's native cross-session messaging, for anything
+  # that should be audited or might cross a host/container boundary.
+  # Mirrors memory.session_awareness's shape: an instruction-injection
+  # toggle, not a subsystem toggle, so it defaults to true.
+  enabled: true
+
 # ── LLM Backends ──
 # AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.
 ollama:

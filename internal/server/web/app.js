@@ -13773,6 +13773,9 @@ const LLM_CONFIG_FIELDS = [
     { key: 'vision.default_prompt', label: 'Default prompt (overrides built-in)', type: 'text', placeholder: 'Describe this image concisely.' },
     { key: 'vision.max_image_bytes', label: 'Max image size bytes (0 = 10 MB)', type: 'number', placeholder: '0' },
   ]},
+  { id: 'cross_session', section: 'Cross-Session Communication Rule', docs: 'howto/cross-session-policy.md', fields: [
+    { key: 'cross_session.enabled', label: 'Inject policy into spawned claude-code sessions', labelKey: 'settings_cross_session_enabled', type: 'toggle' },
+  ]},
 ];
 
 function loadDaemonLog(offset) {

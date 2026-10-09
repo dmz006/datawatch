@@ -1665,5 +1665,6 @@
   "community_plugins_connect": "Conectar",
   "settings_audit_access_log_enabled": "Registrar accesos HTTP/WS + fallos de autenticación",
   "settings_audit_retention_days": "Retención del registro de auditoría (días, -1 = nunca purgar)",
-  "settings_audit_cef_mirror_enabled": "Duplicar registros de auditoría en formato CEF (para SIEM)"
+  "settings_audit_cef_mirror_enabled": "Duplicar registros de auditoría en formato CEF (para SIEM)",
+  "settings_cross_session_enabled": "Inyectar la regla de comunicación entre sesiones en sesiones generadas"
 }

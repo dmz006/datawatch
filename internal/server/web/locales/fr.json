@@ -1665,5 +1665,6 @@
   "community_plugins_connect": "Connecter",
   "settings_audit_access_log_enabled": "Journaliser les accès HTTP/WS + les échecs d'authentification",
   "settings_audit_retention_days": "Conservation du journal d'audit (jours, -1 = jamais purger)",
-  "settings_audit_cef_mirror_enabled": "Dupliquer les journaux d'audit au format CEF (pour SIEM)"
+  "settings_audit_cef_mirror_enabled": "Dupliquer les journaux d'audit au format CEF (pour SIEM)",
+  "settings_cross_session_enabled": "Injecter la règle de communication inter-sessions dans les sessions créées"
 }

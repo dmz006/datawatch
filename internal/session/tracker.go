@@ -169,8 +169,9 @@ func (t *Tracker) RecordResume() error {
 
 // GuardrailsOptions controls which sections are included in session guardrails.
 type GuardrailsOptions struct {
-	MemoryEnabled bool
-	RTKEnabled    bool
+	MemoryEnabled       bool
+	RTKEnabled          bool
+	CrossSessionEnabled bool
 }
 
 // WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
@@ -272,6 +273,12 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 				modified = true
 			}
 
+			// Add Cross-Session Communication Rule if enabled and not present.
+			if opt.CrossSessionEnabled && !strings.Contains(existingStr, "cross-session-communication-rule") {
+				existingStr += "\n\n" + crossSessionCommunicationRule()
+				modified = true
+			}
+
 			if modified {
 				os.WriteFile(targetFile, []byte(existingStr), 0644) //nolint:errcheck
 			}
@@ -338,6 +345,60 @@ rtk git log
 **Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
 Run ` + "`rtk gain`" + ` to view token savings statistics.
 <!-- /rtk-instructions -->`
+}
+
+// crossSessionCommunicationRule returns the Cross-Session
+// Communication Rule section to append to existing CLAUDE.md/AGENT.md
+// (operator policy, 2026-10-09). Mirrors the Memory Use Rule's shape:
+// steer the LLM toward datawatch's own audited tools instead of
+// Claude Code's own native session-to-session messaging, for anything
+// that should be audited or might cross a host/container boundary.
+func crossSessionCommunicationRule() string {
+	return `<!-- cross-session-communication-rule -->
+# Cross-Session Communication Rule (datawatch)
+
+A future session reading this may be on a different host or in a
+different container than the session that wrote it. Claude Code's own
+native session-to-session messaging (SendMessage/ListAgents) only
+works between sessions sharing one Claude Code install on one
+machine, and it is not recorded anywhere datawatch's own audit trail
+can see. For anything that should be audited, or anything that might
+need to reach a session on another host, use datawatch's own tools
+instead — they are federation-aware and every write lands in
+` + "`audit.log`" + `.
+
+## Use datawatch's tools for
+
+- **Durable facts, decisions, or context another session should
+  inherit** — ` + "`memory_remember`" + ` to save, ` + "`memory_recall`" + ` to retrieve.
+- **A running conversation between two or more sessions, including
+  ones on other hosts** — ` + "`memory_discussion_write`" + `/
+  ` + "`memory_discussion_recall`" + ` (synced to the discussion's registered
+  peers automatically); ` + "`discussion_subscribe`" + ` to get new entries
+  pushed to you instead of polling.
+- **Replying to the session that spawned you** — ` + "`reply_to_parent`" + `,
+  not a raw SendMessage back up the chain.
+- **Handing a finished task's findings to the next task in the same
+  story** — ` + "`memory_handoff`" + `.
+
+## Available tools
+
+| Tool | Purpose |
+|------|---------|
+| ` + "`memory_discussion_write`" + ` | Write to a shared, cross-host discussion scope |
+| ` + "`memory_discussion_recall`" + ` | Read a discussion scope, optionally by semantic query |
+| ` + "`discussion_subscribe`" + ` | Get new discussion entries pushed to this session |
+| ` + "`reply_to_parent`" + ` | Reply to the session that spawned this one |
+| ` + "`memory_handoff`" + ` | Pass a task-completion summary to the next task in the story |
+
+## When native cross-session messaging is still fine
+
+Ephemeral, same-host coordination that nobody needs to audit or
+retrieve later — e.g. "is session X still running?" — doesn't need to
+go through datawatch. The rule is about anything durable, auditable,
+or that might cross a host boundary, not every message between
+sessions.
+<!-- /cross-session-communication-rule -->`
 }
 
 func minimalSessionGuardrails(sess *Session) string {

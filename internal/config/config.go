@@ -136,6 +136,34 @@ func (m MemoryConfig) EffectiveStorageMode() string {
 	return "summary"
 }
 
+// CrossSessionConfig controls the Cross-Session Communication Rule —
+// guidance injected into spawned claude-code sessions' CLAUDE.md
+// steering them toward datawatch's own audited memory/discussion/
+// reply MCP tools, instead of Claude Code's native cross-session
+// messaging or any other non-datawatch persistence, for anything that
+// should be audited or might run across a host/container boundary
+// (operator policy, 2026-10-09). This only controls whether the
+// GUIDANCE TEXT is injected — the underlying tools it points at
+// (memory_recall, memory_discussion_write/recall, reply_to_parent,
+// memory_handoff) work regardless of this setting.
+type CrossSessionConfig struct {
+	// Enabled injects the policy section into session guardrails
+	// (default true — same instruction-injection-toggle shape as
+	// Memory.SessionAwareness, not a subsystem toggle like
+	// Memory.Enabled/RTK.Enabled, since there's no separate subsystem
+	// here to turn on or off).
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// IsEnabled returns whether the Cross-Session Communication Rule is
+// injected into session guardrails (default true).
+func (c CrossSessionConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
 // IsAutoSave returns whether auto-save is enabled (defaults to true).
 func (m MemoryConfig) IsAutoSave() bool {
 	if m.AutoSave == nil {
@@ -378,6 +406,13 @@ type Config struct {
 
 	// Memory controls the episodic memory system — vector-indexed project knowledge.
 	Memory MemoryConfig `yaml:"memory" json:"memory"`
+
+	// CrossSession controls whether spawned claude-code sessions are
+	// instructed to prefer datawatch's own audited memory/comm MCP
+	// tools over Claude Code's native cross-session messaging for
+	// anything that should be audited or might cross a host/container
+	// boundary (operator policy, 2026-10-09).
+	CrossSession CrossSessionConfig `yaml:"cross_session" json:"cross_session"`
 
 	// Proxy controls connection pooling, circuit breaker, and offline queuing
 	// for remote server communication.

@@ -137,3 +137,18 @@ func TestApplyConfigPatch_SessionQuickCommands(t *testing.T) {
 		t.Errorf("QuickCommands[2].Category = %v, want empty string", cfg.Session.QuickCommands[2].Category)
 	}
 }
+
+// Cross-Session Communication Rule (operator policy, 2026-10-09) — confirms
+// cross_session.enabled round-trips through applyConfigPatch, the same way
+// every other config field's REST write path does.
+func TestApplyConfigPatch_CrossSession(t *testing.T) {
+	cfg := &config.Config{}
+	applyConfigPatch(cfg, map[string]interface{}{"cross_session.enabled": false})
+	if cfg.CrossSession.IsEnabled() {
+		t.Error("cross_session.enabled=false should make IsEnabled() false")
+	}
+	applyConfigPatch(cfg, map[string]interface{}{"cross_session.enabled": true})
+	if !cfg.CrossSession.IsEnabled() {
+		t.Error("cross_session.enabled=true should make IsEnabled() true")
+	}
+}

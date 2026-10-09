@@ -1764,8 +1764,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	guardrailOpts := GuardrailsOptions{}
 	if m.cfg != nil {
-		guardrailOpts.MemoryEnabled = m.cfg.Memory.Enabled
+		// Fix: cfg.Memory.SessionAwareness (documented "injects memory
+		// instructions into session guardrails, default true") was never
+		// actually consulted here — only Memory.Enabled was. An operator
+		// who turned memory on but explicitly set session_awareness=false
+		// (expecting the guardrails injection specifically to stop) saw
+		// no effect. Respect both.
+		guardrailOpts.MemoryEnabled = m.cfg.Memory.Enabled && m.cfg.Memory.IsSessionAwareness()
 		guardrailOpts.RTKEnabled = m.cfg.RTK.Enabled
+		guardrailOpts.CrossSessionEnabled = m.cfg.CrossSession.IsEnabled()
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
 

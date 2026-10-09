@@ -1498,6 +1498,24 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
+> **BL401** — ✅ Shipped v8.78.2 (same day filed). Cross-Session
+> Communication Rule: a policy section injected into spawned
+> claude-code sessions' CLAUDE.md, mirroring the existing Memory Use
+> Rule / RTK instructions pattern exactly (`internal/session/
+> tracker.go`'s `WriteSessionGuardrails`), steering the LLM toward
+> datawatch's own audited `memory_remember`/`memory_recall`/
+> `memory_discussion_write`/`memory_discussion_recall`/
+> `discussion_subscribe`/`reply_to_parent`/`memory_handoff` tools
+> instead of Claude Code's native cross-session messaging, for
+> anything that should be audited or might cross a host/container
+> boundary. New `cross_session.enabled` config (default true, a
+> tri-state instruction-injection toggle mirroring
+> `memory.session_awareness`'s shape, not a subsystem toggle). Found
+> and fixed a real pre-existing bug along the way:
+> `memory.session_awareness` was documented and fully exposed over
+> REST/PWA but never actually consulted by the guardrails-injection
+> code path. Plan: `docs/plans/2026-10-09-cross-session-communication-rule.md`.
+
 > **BL400** — Alerts: conditions, filtering, and SIEM parity (filed
 > 2026-10-09, operator-raised while reviewing GH#201 Phase 5's
 > `create_alert` docs: "alerts on every event is really just a log

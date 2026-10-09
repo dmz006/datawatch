@@ -1665,5 +1665,6 @@
   "community_plugins_connect": "Connect",
   "settings_audit_access_log_enabled": "Log HTTP/WS access + auth failures",
   "settings_audit_retention_days": "Audit log retention (days, -1 = never prune)",
-  "settings_audit_cef_mirror_enabled": "Mirror audit logs in CEF format (for SIEM)"
+  "settings_audit_cef_mirror_enabled": "Mirror audit logs in CEF format (for SIEM)",
+  "settings_cross_session_enabled": "Inject Cross-Session Communication Rule into spawned sessions"
 }

@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.78.2"
+var Version = "8.79.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5548,6 +5548,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_awareness":  s.cfg.Memory.IsSessionAwareness(),
 			"session_broadcast":  s.cfg.Memory.IsSessionBroadcast(),
 		},
+		"cross_session": map[string]interface{}{
+			"enabled": s.cfg.CrossSession.IsEnabled(),
+		},
 		"proxy": map[string]interface{}{
 			"enabled":                   s.cfg.Proxy.Enabled,
 			"health_interval":           s.cfg.Proxy.HealthInterval,
@@ -6178,6 +6181,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "memory.session_awareness":
 			val := toBool(v)
 			cfg.Memory.SessionAwareness = &val
+		case "cross_session.enabled":
+			val := toBool(v)
+			cfg.CrossSession.Enabled = &val
 		case "memory.session_broadcast":
 			val := toBool(v)
 			cfg.Memory.SessionBroadcast = &val

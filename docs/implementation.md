@@ -661,6 +661,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |
 | `audit.cef_mirror_enabled` | bool | `false` | Additionally write a CEF-formatted line (`<file>.cef`) alongside every entry, for SIEM forwarding. |
 | `imap_mcp.token` | string | `""` | Bearer token imap-mcp ≥ 0.5.3 requires on every request except `GET /api/health`. Accepts a `${secret:name}` reference. Needs `read` + `send` scopes. |
+| `cross_session.enabled` | bool | `true` | Inject the Cross-Session Communication Rule into spawned claude-code sessions' `CLAUDE.md` — steers the LLM toward datawatch's own audited memory/discussion/reply tools instead of Claude Code's native cross-session messaging. |
 
 ### Dependencies
 
