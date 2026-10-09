@@ -422,6 +422,36 @@ func (s *Server) handleAuditQuery(_ context.Context, req mcpsdk.CallToolRequest)
 	return textOK(string(out)), nil
 }
 
+// ----- GH#201: access log query ---------------------------------------------
+
+func (s *Server) toolAuditAccessQuery() mcpsdk.Tool {
+	return mcpsdk.NewTool("audit_access_query",
+		mcpsdk.WithDescription("Query the HTTP access / WebSocket lifecycle / auth-failure log (GH#201). "+
+			"Answers 'who connected, from what IP, when, with what principal' and 'auth failures / new IPs'. Newest-first."),
+		mcpsdk.WithString("actor", mcpsdk.Description("Filter by resolved principal (admin, session-scoped, peer:<name>, proxy:<name>, unauthenticated)")),
+		mcpsdk.WithString("action", mcpsdk.Description("Filter by event type (http_access, auth_failure, ws_connect, ws_disconnect)")),
+		mcpsdk.WithString("since", mcpsdk.Description("RFC3339 lower bound")),
+		mcpsdk.WithString("until", mcpsdk.Description("RFC3339 upper bound")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 100)")),
+	)
+}
+func (s *Server) handleAuditAccessQuery(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	q := url.Values{}
+	for _, k := range []string{"actor", "action", "since", "until"} {
+		if v := req.GetString(k, ""); v != "" {
+			q.Set(k, v)
+		}
+	}
+	if n := int(req.GetFloat("limit", 0)); n > 0 {
+		q.Set("limit", strconv.Itoa(n))
+	}
+	out, err := s.proxyGet("/api/audit/access", q)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- BL37: diagnose ------------------------------------------------------
 
 func (s *Server) toolDiagnose() mcpsdk.Tool {

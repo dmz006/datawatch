@@ -329,6 +329,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)                          // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
+	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)                                       // BL242 (list + create)
 	apiMux.HandleFunc("/api/docs/", api.handleDocs)                                            // BL274 (v6.16.0)
@@ -921,6 +922,12 @@ func (s *HTTPServer) DeviceStore() *devices.Store { return s.api.DeviceStore() }
 // SetAuditLog (BL9) wires the operator audit log for /api/audit.
 func (s *HTTPServer) SetAuditLog(l *audit.Log) {
 	s.api.SetAuditLog(l)
+}
+
+// SetAccessLog (GH#201) wires the HTTP access / WS lifecycle / auth-failure
+// log for /api/audit/access.
+func (s *HTTPServer) SetAccessLog(l *audit.Log) {
+	s.api.SetAccessLog(l)
 }
 
 // SetSecretsStore (BL242) wires the centralized secrets store for /api/secrets.

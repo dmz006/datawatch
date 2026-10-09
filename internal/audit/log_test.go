@@ -3,6 +3,7 @@
 package audit
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -108,5 +109,83 @@ func TestBL9_Read_NoFileEmpty(t *testing.T) {
 	}
 	if len(out) != 0 {
 		t.Errorf("empty log should return empty slice, got %d entries", len(out))
+	}
+}
+
+// GH#201 — retention.
+
+func TestGH201_Prune_RemovesOnlyOlderEntries(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	old := time.Now().Add(-48 * time.Hour)
+	recent := time.Now().Add(-1 * time.Hour)
+	if err := l.Write(Entry{Timestamp: old, Actor: "a", Action: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Write(Entry{Timestamp: recent, Actor: "a", Action: "recent"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	removed, err := l.Prune(cutoff)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+
+	out, err := l.Read(QueryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].Action != "recent" {
+		t.Fatalf("after prune, entries = %+v, want only 'recent'", out)
+	}
+
+	// Log must still be writable after the rewrite (file handle re-opened).
+	if err := l.Write(Entry{Actor: "a", Action: "after_prune"}); err != nil {
+		t.Fatalf("write after prune: %v", err)
+	}
+	out, _ = l.Read(QueryFilter{})
+	if len(out) != 2 {
+		t.Fatalf("after writing post-prune, entries = %d, want 2", len(out))
+	}
+}
+
+func TestGH201_Prune_NoOldEntries_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	l, _ := New(dir)
+	defer func() { _ = l.Close() }()
+	if err := l.Write(Entry{Actor: "a", Action: "recent"}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := l.Prune(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 0 {
+		t.Errorf("removed = %d, want 0", removed)
+	}
+}
+
+func TestGH201_NewAt_ExactPath(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/sub/access.log"
+	l, err := NewAt(path)
+	if err != nil {
+		t.Fatalf("NewAt: %v", err)
+	}
+	defer func() { _ = l.Close() }()
+	if err := l.Write(Entry{Actor: "x", Action: "http_access"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file at exact path %s: %v", path, err)
 	}
 }

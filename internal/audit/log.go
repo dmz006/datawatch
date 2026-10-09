@@ -34,7 +34,7 @@ type Log struct {
 	f    *os.File
 }
 
-// New opens (or creates) the audit log file.
+// New opens (or creates) the operator audit log file at <dir>/audit.log.
 func New(dir string) (*Log, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("audit: data dir required")
@@ -42,7 +42,19 @@ func New(dir string) (*Log, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "audit.log")
+	return NewAt(filepath.Join(dir, "audit.log"))
+}
+
+// NewAt opens (or creates) a log file at the exact given path (GH#201 —
+// used for the separate HTTP access / WS lifecycle log, access.log,
+// alongside the operator audit log New opens).
+func NewAt(path string) (*Log, error) {
+	if path == "" {
+		return nil, fmt.Errorf("audit: path required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
@@ -81,6 +93,64 @@ func (l *Log) Write(e Entry) error {
 		return err
 	}
 	return nil
+}
+
+// Prune (GH#201) rewrites the log file keeping only entries at or after
+// cutoff, dropping older ones. Returns the number of entries removed.
+// Safe to call periodically on a live log — the file is reopened in place
+// after rewriting so subsequent Write calls keep working.
+func (l *Log) Prune(cutoff time.Time) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f == nil {
+		return 0, fmt.Errorf("audit: log closed")
+	}
+
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	var kept []string
+	removed := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		var e Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			kept = append(kept, line) // keep unparseable lines rather than silently drop data
+			continue
+		}
+		if e.Timestamp.Before(cutoff) {
+			removed++
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+
+	out := strings.Join(kept, "\n")
+	if out != "" {
+		out += "\n"
+	}
+	if err := l.f.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(l.path, []byte(out), 0644); err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return 0, err
+	}
+	l.f = f
+	return removed, nil
 }
 
 // QueryFilter scopes a Read call.

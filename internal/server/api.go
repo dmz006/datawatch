@@ -184,7 +184,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.40"
+var Version = "8.73.41"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -245,6 +245,9 @@ type Server struct {
 
 	// BL9 — operator audit log.
 	auditLog *audit.Log
+
+	// GH#201 — HTTP access / WS lifecycle / auth-failure log.
+	accessLog *audit.Log
 
 	// BL242 — centralized secrets store.
 	secretsStore secretsStore
@@ -1995,6 +1998,22 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.register <- c
 
+	// GH#201 — WS connect/disconnect lifecycle. principal/remoteIP/UA are
+	// captured now (from the pre-upgrade request) since they're not
+	// available once the connection drops to a bare websocket.Conn.
+	wsPrincipal := principalFromContext(r.Context())
+	wsRemoteIP := remoteIP(r)
+	wsUA := r.Header.Get("User-Agent")
+	if s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault()) {
+		_ = s.accessLog.Write(audit.Entry{
+			Actor:  wsPrincipal,
+			Action: "ws_connect",
+			Details: map[string]any{
+				"remote_ip": wsRemoteIP, "user_agent": wsUA,
+			},
+		})
+	}
+
 	// Send initial session list
 	sessions := s.manager.ListSessions()
 	raw, _ := json.Marshal(SessionsData{Sessions: sessions})
@@ -2014,6 +2033,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		s.hub.unregister <- c
 		_ = conn.Close()
+		if s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault()) {
+			_ = s.accessLog.Write(audit.Entry{
+				Actor:  wsPrincipal,
+				Action: "ws_disconnect",
+				Details: map[string]any{
+					"remote_ip": wsRemoteIP, "user_agent": wsUA,
+				},
+			})
+		}
 	}()
 
 	conn.SetReadLimit(32 * 1024)

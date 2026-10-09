@@ -506,6 +506,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                   // BL6
 	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                   // BL6
 	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                 // BL9
+	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))     // GH#201
 	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                     // BL37
 	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                         // BL17
 	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                   // BL12

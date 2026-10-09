@@ -337,6 +337,10 @@ type Config struct {
 	// Push controls outbound mobile push-endpoint validation (BL394 SSRF fix).
 	Push PushConfig `yaml:"push,omitempty"`
 
+	// Audit controls the HTTP access / WS lifecycle / auth-failure log
+	// and retention for it and the operator audit log (GH#201).
+	Audit AuditConfig `yaml:"audit,omitempty"`
+
 	// Update controls automatic self-update behaviour.
 	Update UpdateConfig `yaml:"update"`
 
@@ -989,6 +993,38 @@ type PushConfig struct {
 	// POST /api/devices/register (kind=apns) and tracked in
 	// internal/devices.Store, dispatched on alert fire.
 	APNs APNsConfig `yaml:"apns,omitempty"`
+}
+
+// AuditConfig (GH#201) controls the HTTP access / WS lifecycle /
+// auth-failure log (separate file from the operator action log, since
+// access-log volume is much higher and less individually significant)
+// and retention for both logs. Never includes the Authorization header
+// or any token value — only request metadata and the resolved principal.
+type AuditConfig struct {
+	// AccessLogEnabled, default true, turns on logging of every HTTP
+	// request/response (method, path, status, remote IP, user agent,
+	// resolved principal), every auth failure, and every WebSocket
+	// connect/disconnect to <data_dir>/access.log.
+	AccessLogEnabled *bool `yaml:"access_log_enabled,omitempty"`
+	// RetentionDays prunes entries older than this from both the
+	// operator audit log and the access log. 0 = use the default (30).
+	// Negative disables pruning (keep forever).
+	RetentionDays int `yaml:"retention_days,omitempty"`
+}
+
+// AccessLogEnabledOrDefault returns the effective access-log setting,
+// defaulting to true when unset.
+func (a AuditConfig) AccessLogEnabledOrDefault() bool {
+	return a.AccessLogEnabled == nil || *a.AccessLogEnabled
+}
+
+// RetentionDaysOrDefault returns the effective retention window in days,
+// defaulting to 30 when unset (0). A negative value means "never prune".
+func (a AuditConfig) RetentionDaysOrDefault() int {
+	if a.RetentionDays == 0 {
+		return 30
+	}
+	return a.RetentionDays
 }
 
 // APNsConfig holds Apple Push Notification service provider-token

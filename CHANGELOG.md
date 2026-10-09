@@ -5,6 +5,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.41 — feat: GH#201/BL399 Phase 1 — HTTP access / WS lifecycle / auth-failure log
+
+### Added
+- New `<data_dir>/access.log`, separate from the operator action log
+  (`audit.log`) since request volume is much higher and individually
+  less significant — reuses `internal/audit.Log`'s existing type/format
+  (new `audit.NewAt(path)` opens an exact path vs `audit.New(dir)`'s
+  hardcoded filename) rather than inventing new machinery.
+- Every request through `fedAuthMiddleware` — the single choke point
+  every `/api/*` route and `/ws` pass through, and therefore CLI (HTTP
+  client) + direct API + MCP (also an HTTP client via `proxyGet`/
+  `proxyPost`) uniformly, with no separate per-surface wiring needed —
+  now logs `http_access` (success) or `auth_failure` (the 401
+  fallthrough): method, path, status, remote IP, user agent, and the
+  resolved principal (`admin` / `session-scoped` / `peer:<name>` /
+  `proxy:<name>` / `unauthenticated`). Never the Authorization header or
+  token value, verified by a test that greps written entries for the
+  actual token strings used.
+- WS connect/disconnect logged the same way from `handleWS`.
+- Query surface: `GET /api/audit/access` (same filter shape as the
+  existing `GET /api/audit`) and a new `audit_access_query` MCP tool.
+- Config: `audit.access_log_enabled` (default true) and
+  `audit.retention_days` (default 30, negative = never prune).
+  `audit.Log.Prune` rewrites a log file dropping entries older than a
+  cutoff; applied to both `audit.log` and `access.log` at startup and
+  on a 24h ticker.
+- New plan doc (`docs/plans/2026-10-09-gh201-audit-completeness.md`,
+  BL399) scoping the 4 remaining phases: threading actor identity
+  across federation hops (a real open design question — nothing today
+  forwards an origin-actor across a peer forward), chained-children
+  (F10 `ParentAgentID`) attribution in the agent audit trail, the full
+  state-changing-handler completeness sweep (session/Automata/alert-
+  rules/federation-peer/device management confirmed still uncovered —
+  12 files already audit other sensitive paths, these aren't among
+  them), and a create-alert API/MCP tool.
+- Confirmed, not fixed because not broken: `audit/agents.jsonl` (F10
+  agent-cluster spawn events) and `auth/audit.jsonl` (git-token-broker
+  events) were both already correctly wired in `main.go` — they were
+  legitimately empty (no qualifying events on this deployment), not
+  unwired dead code as the original report's phrasing suggested.
+
 ## v8.73.40 — fix: GH#202 — channel registrations hijacked across sessions
 
 ### Fixed

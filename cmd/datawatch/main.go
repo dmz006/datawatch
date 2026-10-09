@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.73.40"
+var Version = "8.73.41"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3509,10 +3509,52 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
 		}
 		// BL9 — open the operator audit log under the data dir.
+		var wiredAuditLog, wiredAccessLog *auditpkg.Log
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
+			wiredAuditLog = auditLog
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
+		}
+		// GH#201 — separate HTTP access / WS lifecycle / auth-failure log.
+		// Own file (access.log, not audit.log) since request volume is
+		// much higher than state-changing operator actions and shouldn't
+		// drown them out in the same file/retention window.
+		if cfg.Audit.AccessLogEnabledOrDefault() {
+			if accessLog, err := auditpkg.NewAt(filepath.Join(expandHome(cfg.DataDir), "access.log")); err == nil {
+				httpServer.SetAccessLog(accessLog)
+				wiredAccessLog = accessLog
+			} else {
+				fmt.Printf("[warn] access log open failed: %v\n", err)
+			}
+		}
+		// GH#201 — retention: prune both logs at startup and once a day
+		// thereafter. RetentionDaysOrDefault's negative value means "never
+		// prune" (operator opt-out, e.g. for compliance retention needs
+		// longer than this daemon manages itself).
+		if days := cfg.Audit.RetentionDaysOrDefault(); days >= 0 {
+			maxAge := time.Duration(days) * 24 * time.Hour
+			pruneAuditLogs := func() {
+				cutoff := time.Now().Add(-maxAge)
+				if wiredAuditLog != nil {
+					if n, err := wiredAuditLog.Prune(cutoff); err == nil && n > 0 {
+						fmt.Printf("[audit] pruned %d entries older than %d days from audit.log\n", n, days)
+					}
+				}
+				if wiredAccessLog != nil {
+					if n, err := wiredAccessLog.Prune(cutoff); err == nil && n > 0 {
+						fmt.Printf("[audit] pruned %d entries older than %d days from access.log\n", n, days)
+					}
+				}
+			}
+			pruneAuditLogs()
+			go func() {
+				ticker := time.NewTicker(24 * time.Hour)
+				defer ticker.Stop()
+				for range ticker.C {
+					pruneAuditLogs()
+				}
+			}()
 		}
 		// BL242 — centralized secrets store.
 		var secretsStore secretspkg.Store

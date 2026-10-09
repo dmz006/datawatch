@@ -1498,6 +1498,32 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
+> **BL399** — GH#201: access/audit logging completeness (filed
+> 2026-10-09, datawatch-app relaying an operator ask after they couldn't
+> confirm whether Apple TestFlight reviewers had connected to the demo
+> server — no HTTP access log, no WS connect/disconnect log, no
+> auth-failure log, and the existing operator audit log stops after 3
+> seed entries). Plan:
+> `docs/plans/2026-10-09-gh201-audit-completeness.md`. 5 phases.
+> **Phase 1 (HTTP access / WS lifecycle / auth-failure log) shipped
+> (v8.73.41):** new `access.log` (separate from the operator `audit.log`
+> — same `internal/audit.Log` type, reused rather than rebuilt), one
+> middleware hook (`fedAuthMiddleware`) covering CLI + API + MCP access
+> uniformly since all three are HTTP clients against the same `/api/*`
+> surface, `GET /api/audit/access` + `audit_access_query` MCP tool,
+> retention config + daily pruning. Confirmed two parts of the original
+> report were already-working, not bugs: `audit/agents.jsonl` (F10
+> agent-cluster events) and `auth/audit.jsonl` (git-token-broker events)
+> were both correctly wired, just legitimately empty — neither one was
+> ever a general access/auth-failure log.
+> **Phases 2-5 not started** — cross-federation-hop actor attribution
+> (a real open design question, not a quick fix), chained-children
+> (F10 `ParentAgentID`) threading into the audit trail, the full
+> state-changing-handler completeness sweep (session/Automata/alert-
+> rules/federation-peer/device management confirmed still uncovered),
+> and the create-alert API/MCP tool. See the plan doc for the full
+> per-phase scope.
+
 > **BL398** — Full review of suppressed container-image CVEs (filed
 > 2026-10-08, operator-requested immediately after SEC-026/v8.73.26's
 > CVE-2026-19445 suppression: "set up a plan to review all suppressed cve

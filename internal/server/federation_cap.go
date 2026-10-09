@@ -158,6 +158,7 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 		noTokenConfigured := s.token == ""
 		s.tokenMu.RUnlock()
 		if noTokenConfigured {
+			s.logAccess(r, http.StatusOK, "unauthenticated")
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -198,6 +199,7 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			if caps, ok := s.sessionTokens.CapsForToken(tok); ok {
 				ctx := context.WithValue(r.Context(), sessionCapsKey, caps)
 				ctx = context.WithValue(ctx, callerTokenKey, tok)
+				s.logAccess(r, http.StatusOK, "session-scoped")
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -209,6 +211,7 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 		// window.)
 		if tok != "" && s.checkToken(tok) {
 			ctx := context.WithValue(r.Context(), callerTokenKey, tok)
+			s.logAccess(r, http.StatusOK, "admin")
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -218,6 +221,13 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			if ok && peer.Federated {
 				ctx := context.WithValue(r.Context(), fedPeerKey, peer)
 				ctx = context.WithValue(ctx, callerTokenKey, tok)
+				// GH#201 — this only records WHICH PEER forwarded the
+				// request, not who behind that peer actually initiated
+				// it on their own daemon. Real cross-hop attribution
+				// needs the peer to forward its own origin-actor
+				// alongside the request; nothing does that yet (see the
+				// audit plan doc's federation-attribution section).
+				s.logAccess(r, http.StatusOK, "peer:"+peer.Name)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -241,10 +251,12 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			}
 			if peerName != "" && proxyTokens.valid(tok, peerName) {
 				ctx := context.WithValue(r.Context(), scopedProxyPeerKey, peerName)
+				s.logAccess(r, http.StatusOK, "proxy:"+peerName)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 		}
+		s.logAccess(r, http.StatusUnauthorized, "unauthenticated")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
