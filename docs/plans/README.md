@@ -1522,12 +1522,43 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > `scripts/check_accepted_risks.py` blocking CI lint; daily watch extended
 > with fix-published/expiry/dismissed-alert-gap reporting
 > (`scripts/dismissed_alerts_watch.py` found 87/87 dismissed code-scanning
-> alerts unregistered — separate backlog); GHSA-regex fix in
-> `image-refresh.yaml`; gitleaks now blocking; CVE-2026-19445 flipped from
-> untraced to traced. Adopted jointly with `datawatch-app` as a shared
-> standard, tracked on GH#197. **Phase 2 (re-verify the ~69 migrated
-> entries that are still prose-only, not independently traced) and Phase 3
-> (removal-over-suppression, rsync's block first) not started.**
+> alerts unregistered); GHSA-regex fix in `image-refresh.yaml`; gitleaks
+> now blocking; CVE-2026-19445 flipped from untraced to traced. Adopted
+> jointly with `datawatch-app` as a shared standard, tracked on GH#197
+> (**closed 2026-10-08** — standard fully implemented and operating on
+> both repos).
+> **The 87/87 dismissed-alerts gap is now closed (v8.73.37):** all 87
+> migrated into the registry as `kind: code-scanning` entries (158 total
+> now), each using the alert's own real GitHub `dismissed_comment` as its
+> `impact.analysis` rather than new analysis — these were already reviewed
+> and justified during BL394, just never mirrored into the structured
+> registry. `dismissed_alerts_watch.py` now reports 0/87 unregistered.
+> **A real flaw in the daily recheck's own automation was found and fixed
+> this session (v8.73.36):** `recheck-ignored-cves` treated "suppressed
+> CVE ID absent from a fresh scan" as proof of a real fix. Confirmed
+> unsound live — Trivy's vulnerability DB relabels CVE IDs for an
+> unchanged package several times a day (`zlib1g` same version, two
+> different IDs hours apart) — and it auto-opened two PRs (#199, #200,
+> both closed without merging) that would have deleted still-valid
+> suppressions on that basis, including the just-traced `CVE-2026-19445`.
+> Replaced with `scripts/compute_stale_risks.py`, which anchors staleness
+> to the installed package version instead of ID presence. Documented in
+> `docs/howto/container-image-refresh.md`; shared with `datawatch-app`
+> (their #209) since the schema is shared, though their own automation
+> checks real published package versions already and doesn't have this
+> failure mode.
+> **Phase 2 (re-verify the ~69 migrated *container*-CVE entries that are
+> still prose-only, not independently traced) remains open and unstarted
+> — the one genuinely unfinished piece of BL398.** It's a real, sizable
+> body of work (an independent reachability trace per entry, the way
+> CVE-2026-19445's was done), not something to rush through inline, and
+> the CVE-ID-churn finding above makes the bar for "verified" here
+> explicitly about reachability against real container contents, not
+> about matching IDs against a scan.
+> **Phase 3 (removal-over-suppression) — decided, not pursued:** the
+> operator reviewed removing rsync (the 14-CVE block) and gawk, and
+> declined both — rsync is relied on, gawk removal wasn't judged
+> worthwhile on its own. This is a closed decision, not a dropped task.
 
 > **BL335** ✅ Closed v8.62.x — APNs push notification support for iOS client (filed 2026-05-27, GH#107/#158). Shipped as BL397 Phase 4, folded in alongside the ACME work at the operator's request. New `internal/apns` package (JWT ES256 provider-token auth, HTTP/2 dispatch), wired into the real alert-fire path. 9 unit tests including a real signature-verification test; **not live-verified** against Apple's real servers (no Apple Developer credentials available in this environment) — see `docs/parity-status.md`. All 6 of the original items below shipped. See `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`'s "Phase 2/3/4 shipped" section for the full writeup.
 > 1. ~~Accept `platform=apns` on `POST /api/device/register`~~ — already worked (pre-existing `devices.KindAPNS`).
