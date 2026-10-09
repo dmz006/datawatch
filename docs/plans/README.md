@@ -1498,6 +1498,24 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
+> **BL402** — GH#204: result panel for scheduled jobs and integrations
+> (filed by a peer session at the operator's request, 2026-10-09).
+> Plan: `docs/plans/2026-10-09-gh204-result-panel.md`. 5 phases, not
+> started. Investigation before planning corrected two of the issue's
+> own assumptions: subprocess-mode sessions get *zero* environment
+> injection today (not "already gets DATAWATCH_SESSION_ID" as assumed
+> — confirmed by reading `runSubprocess()`), and the generic BL360
+> result store is the wrong fit for schedule-keyed history (no
+> per-caller scoping, no count-based retention) — a new dedicated
+> store was decided instead. Operator decisions: reuse the existing
+> Design-A3 `SessionTokenStore` rather than a second token system;
+> general mechanism for any session type, not subprocess-only; new
+> dashboard card is opt-in (not default); retention configurable,
+> default 20. Explicit commitment in the plan itself: Phase 3/4's PWA
+> changes get a `datawatch-app` issue filed in the same
+> session/commit that ships them — not after, per today's own earlier
+> compliance miss (see app#241).
+
 > **BL401** — ✅ Shipped v8.78.2 (same day filed). Cross-Session
 > Communication Rule: a policy section injected into spawned
 > claude-code sessions' CLAUDE.md, mirroring the existing Memory Use
