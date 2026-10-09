@@ -5,6 +5,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.3 — fix: orphaned-tmux PWA card not federation-aware + real test leak
+
+### Fixed
+- Operator report: the About page's "Orphaned tmux sessions" card
+  looked identical on a federated remote server as on the local host.
+  Root cause: `loadAboutOrphanedTmux()` used a bare `fetch('/api/stats')`
+  instead of the federation-aware `apiFetch()` helper, so it always
+  hit the local daemon regardless of which server was selected —
+  confirmed `ralfthewise` actually has 0 orphans of its own, the card
+  was just silently showing the local host's list. Also cleaned up a
+  dead/unused array in `killOrphanedTmux()` built from the same
+  non-federated pattern (never actually invoked).
+- Traced the 54 real orphaned tmux sessions this surfaced (all named
+  `cs-h-*`, matching neither E2E's `dw-e2e-test` nor the imap-hourly
+  schedule's real hostname) by capturing live pane contents directly:
+  every one traced back to `internal/server/gh201_phase4_audit_test.go`
+  (GH#201 Phase 4's own audit-logging tests), which calls the real
+  `handleStartSession` REST handler to verify audit entries but never
+  killed the genuine tmux-backed session it created. Because this
+  host's `TMUX_TMPDIR` isn't test-isolated (points at the same
+  dedicated socket the production daemon uses), every `go test ./...`
+  run leaked 2-3 real orphaned panes onto production. Added `t.Cleanup`
+  teardown to `TestGH201Phase4_SessionStart_Audited` and to the shared
+  `startTestSession` helper (covers the Rollback/Input tests too).
+  Verified: full suite re-run, 3346 passed, 0 new orphans. Killed the
+  54 pre-existing ones via `/api/stats/kill-orphans`.
+
 ## v9.0.2 — chore: prevent Dockerfile GO_VERSION drift from recurring
 
 ### Added

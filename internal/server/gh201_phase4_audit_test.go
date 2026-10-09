@@ -64,6 +64,20 @@ func TestGH201Phase4_SessionStart_Audited(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
+	// This is a real tmux-backed session (handleStartSession isn't
+	// mocked) — found 2026-10-09 leaking 54 real orphaned tmux panes
+	// onto the production tmux server over a day of `go test` runs,
+	// because this host's TMUX_TMPDIR isn't test-isolated. Kill it.
+	var startResp struct {
+		FullID string `json:"full_id"`
+		ID     string `json:"id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &startResp)
+	fullID := startResp.FullID
+	if fullID == "" {
+		fullID = startResp.ID
+	}
+	t.Cleanup(func() { srv.manager.KillTmuxSession(fullID) })
 	e := gh201Phase4LastAction(t, al)
 	if e.Action != "start" {
 		t.Errorf("action = %q, want start", e.Action)

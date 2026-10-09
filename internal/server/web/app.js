@@ -11009,8 +11009,13 @@ function loadVersionInfo() {
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
   if (!el) return;
-  fetch('/api/stats', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Found 2026-10-09 (operator report): this used a bare fetch() to
+  // '/api/stats', which always hits the LOCAL daemon's own origin —
+  // when viewing a remote federated server's About page, it silently
+  // showed the local host's orphan list instead, looking identical
+  // regardless of which server was selected. apiFetch() routes
+  // through /api/proxy/<peer>/... when a remote server is active.
+  apiFetch('/api/stats')
     .then(data => {
       const orphans = (data && data.orphaned_tmux) || [];
       const list = orphans.length === 0
@@ -28288,21 +28293,20 @@ window.orchDeleteGraph = function(id) {
 
 function killOrphanedTmux() {
   showConfirmModal('Kill all orphaned tmux sessions?', () => {
-    apiFetch('/api/stats').then(data => {
-      if (!data.orphaned_tmux) return;
-      const kills = data.orphaned_tmux.map(name =>
-        fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() },
-          body: JSON.stringify({ text: 'tmux-kill:' + name }) })
-      );
-      // Use direct tmux kill via a simple API call
-      apiFetch('/api/stats/kill-orphans', { method: 'POST' })
-        .then(() => {
-          showToast('Orphaned sessions killed', 'success', 2000);
-          if (typeof loadStatsPanel === 'function') loadStatsPanel();
-          if (typeof loadAboutOrphanedTmux === 'function') loadAboutOrphanedTmux();
-        })
-        .catch(() => showToast('Failed to kill orphans', 'error'));
-    });
+    // apiFetch already routes through /api/proxy/<peer>/... when a
+    // remote server is selected, so this correctly targets whichever
+    // host's orphans the About page is currently showing (2026-10-09:
+    // removed a dead, unused `kills` array built from a raw, non-
+    // federation-aware fetch('/api/command', ...) that was never
+    // actually invoked — the real work was always done by the
+    // kill-orphans call below).
+    apiFetch('/api/stats/kill-orphans', { method: 'POST' })
+      .then(() => {
+        showToast('Orphaned sessions killed', 'success', 2000);
+        if (typeof loadStatsPanel === 'function') loadStatsPanel();
+        if (typeof loadAboutOrphanedTmux === 'function') loadAboutOrphanedTmux();
+      })
+      .catch(() => showToast('Failed to kill orphans', 'error'));
   });
 }
 window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;

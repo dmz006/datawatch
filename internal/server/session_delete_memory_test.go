@@ -43,10 +43,24 @@ func startTestSession(t *testing.T, srv *Server, projectDir string) string {
 		ID     string `json:"id"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.FullID != "" {
-		return resp.FullID
+	fullID := resp.FullID
+	if fullID == "" {
+		fullID = resp.ID
 	}
-	return resp.ID
+	// Found 2026-10-09: handleStartSession is real end-to-end — it
+	// creates a genuine tmux-backed session via the manager, not a
+	// mock. A caller that exercises some other action (rollback,
+	// input, start itself) and never kills it left the tmux pane
+	// running forever: t.TempDir() wipes the test's on-disk session
+	// store at teardown, but the actual tmux pane lives on a separate,
+	// persistent tmux server process this test only *connects* to, not
+	// owns — and if that server happens to be the real production one
+	// (TMUX_TMPDIR inherited from the shell, not test-isolated), the
+	// leak is a real orphaned session on a live daemon, not just test
+	// noise. Every caller gets this for free now instead of each test
+	// needing to remember its own teardown.
+	t.Cleanup(func() { srv.manager.KillTmuxSession(fullID) })
+	return fullID
 }
 
 // TestHandleDeleteSession_MemoryStrategyPurge verifies purge removes only
