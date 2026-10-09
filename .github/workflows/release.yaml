@@ -431,16 +431,24 @@ jobs:
           # limit exceeded for installation" — GITHUB_TOKEN's installation-
           # wide quota (shared across every concurrent workflow run in this
           # repo, not just this job) was exhausted, and `gh release view`'s
-          # 404-on-rate-limit behavior masked that as "not found." Fixed by
-          # detecting the rate-limit response explicitly and sleeping until
-          # its actual reset time instead of blindly retrying every 60s.
+          # 404-on-rate-limit behavior masked that as "not found." That fix
+          # detected the rate limit by grepping the upload error text for
+          # "rate limit" — but v9.0.3/v9.0.5 (2026-10-09) hit the identical
+          # "release not found" symptom with NO "rate limit" substring in
+          # the error at all (confirmed: the release existed in the GitHub
+          # API the whole time, so this was a read-path cache/propagation
+          # lag again, just one longer than 8x60s=8min). Rather than keep
+          # guessing at the cause from error text, check actual quota via
+          # `gh api rate_limit` directly every attempt (authoritative, not
+          # text-matched) and widen the plain-lag backoff to use the full
+          # 15-minute job timeout.
           TAG="v${{ steps.ver.outputs.version }}"
           FILE="datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz"
           REPO="${GITHUB_REPOSITORY}"
           echo "pre-flight: TAG=$TAG FILE=$FILE REPO=$REPO"
           ls -lh "$FILE" || echo "pre-flight: file not found"
 
-          attempts=8
+          attempts=12
           for attempt in $(seq 1 "$attempts"); do
             echo "Upload attempt $attempt of $attempts: $FILE"
             if out=$(gh release upload "$TAG" "$FILE" --clobber --repo "$REPO" 2>&1); then
@@ -452,15 +460,16 @@ jobs:
             if [ "$attempt" -ge "$attempts" ]; then
               break
             fi
-            if echo "$out" | grep -qi "rate limit"; then
+            remaining=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo -1)
+            if [ "$remaining" = "0" ]; then
               reset=$(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null || echo 0)
               wait=$(( reset - $(date +%s) + 5 ))
               [ "$wait" -lt 10 ] && wait=10
               [ "$wait" -gt 600 ] && wait=600
-              echo "Rate-limited; sleeping ${wait}s until quota resets"
+              echo "Rate-limited (quota remaining=0); sleeping ${wait}s until quota resets"
               sleep "$wait"
             else
-              echo "Upload failed; sleeping 60s before retry"
+              echo "Upload failed (quota remaining=$remaining, not rate-limited -- likely read-path lag); sleeping 60s before retry"
               sleep 60
             fi
           done
