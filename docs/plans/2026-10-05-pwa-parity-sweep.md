@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-05
 - **Version at planning**: v8.39.26
-- **Status**: In progress.
+- **Status**: ✅ Complete (2026-10-08) — every phase, GH#172/#176/#177/#178/#181/#182, and BL335/Phase 4 shipped and closed. See the final entries below.
   - **Phase 0 ✅ complete** (v8.39.27, patch).
   - **Phase 1 ✅ complete** (v8.40.0–v8.44.0, 5 batches: D70/71/72/74,
     D64, D68, D81, GH#182×6). D52, D75, D66's Chrome-badge half, and
@@ -75,7 +75,45 @@
     D#, close when each issue's list is done) instead of a
     datawatch-app-side filing. `docs/parity-status.md` is also stale
     (last touched v8.33.32) and needs a refresh pass.
-  - **Phase 4** planned, not started.
+  - **Phase 4 (BL335/APNs) ✅ complete**, shipped v8.62.x — folded into
+    BL397 Phase 4 alongside the ACME work at the operator's request
+    rather than run standalone. New `internal/apns` package (JWT ES256
+    provider-token auth, HTTP/2 dispatch), wired into the real
+    alert-fire path. 9 unit tests including a real signature-
+    verification test; not live-verified against Apple's real servers
+    (no Apple Developer credentials available in this environment) —
+    see `docs/parity-status.md`. All 4 items BL335 originally listed
+    shipped. See `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+  - **GH#172 ✅ closed 2026-10-07.** All 25 D-items shipped, including
+    the two that looked blocked above: D65 (three-finger swipe-up —
+    pulled the real spec from datawatch-app's
+    `docs/parity/sections/02-sessions-list.md`, a hand-rolled 3-touch
+    detector on the raw Touch Events API) and D67 ("other Android
+    extras" — pulled from `03-session-detail.md`; 2 of 3 sub-items
+    shipped, the third — Terminal/Chat mode-preference persistence —
+    documented as a genuine architecture difference rather than forced,
+    since the PWA's session detail view has no live user-toggleable
+    mode construct to persist a preference for). The earlier "blocked
+    on a GH#172 reply" note above was itself based on a since-corrected
+    repo mixup (see the Mobile-Parity Audit note) — once pointed at the
+    real issue, both D65/D67 just needed their specs looked up, not an
+    external decision.
+  - **GH#182 ✅ closed 2026-10-07.** All 8 items shipped, including the
+    deep-link item this doc listed as blocked on a URL-shape decision:
+    resolved via the Web App Manifest's `protocol_handlers`
+    (`web+datawatch` → `/?alert=%s`), which also transparently handles
+    a bare `?alert=<id>` query param for push-notification click-actions.
+  - **Phase 3 follow-up's remaining items (#17-20, cosmetic #1/#2) and
+    the "blocked, no work without further input" list (#1, #2, #10,
+    #16)** are folded into GH#172/#182's own D-item lists above and
+    closed with them — nothing separate survives outside those two
+    issues.
+  - **Status: ✅ Plan complete.** Every phase, every D-item, GH#172,
+    #176, #177, #178, #181, #182, and BL335/Phase 4 are shipped and
+    closed. `docs/parity-status.md` still needs the refresh pass this
+    doc's Mobile-Parity Audit note called for (last touched v8.33.32,
+    now several phases stale) — tracked separately, not blocking this
+    plan's closure.
 
 ## Context
 
