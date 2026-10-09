@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.74.1"
+var Version = "8.74.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2936,6 +2936,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// imap-mcp email command channel
 	if cfg.ImapMcp.Enabled && cfg.ImapMcp.URL != "" {
 		imapMcpB := imapmcp.New(cfg.ImapMcp.URL, cfg.ImapMcp.Account, cfg.ImapMcp.SubjectPrefix)
+		// GH#203 — set now in case Token is a literal (no secrets store
+		// configured at all); re-applied below, after ResolveConfig runs,
+		// for the ${secret:...}-reference case.
+		imapmcp.SetToken(cfg.ImapMcp.Token)
 		r := newRouter(cfg.Hostname, "imap_mcp", imapMcpB)
 		routers = append(routers, r)
 		fmt.Printf("[%s] imap-mcp email channel enabled (%s)\n", cfg.Hostname, cfg.ImapMcp.URL)
@@ -3684,6 +3688,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// api_key is only resolved here, after the fact. Re-apply
 				// it to the already-registered backend instance.
 				openwebui.SetAPIKey(cfg.OpenWebUI.APIKey)
+				// GH#203 — same reason: imap_mcp's backend (if enabled) was
+				// also constructed above, before secretsStore existed.
+				imapmcp.SetToken(cfg.ImapMcp.Token)
 			}
 		}
 

@@ -1286,6 +1286,13 @@ type ImapMcpConfig struct {
 	URL           string `yaml:"url"`            // imap-mcp API base URL (e.g. http://localhost:8765)
 	Account       string `yaml:"account"`        // imap-mcp account name; empty = use default
 	SubjectPrefix string `yaml:"subject_prefix"` // prefix for outbound reply subjects; default "datawatch"
+	// Token (GH#203) is the bearer token imap-mcp >= 0.5.3 requires on
+	// every request except GET /api/health. Accepts a ${secret:name}
+	// reference (resolved by secretspkg.ResolveConfig at startup) so the
+	// value never lives in config.yaml in plaintext. Needs the "read"
+	// and "send" scopes on the imap-mcp side. Empty = no Authorization
+	// header sent (imap-mcp <= 0.5.2, or auth disabled there).
+	Token string `yaml:"token,omitempty"`
 }
 
 // GitHubWebhookConfig holds GitHub webhook listener configuration.

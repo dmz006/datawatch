@@ -270,6 +270,21 @@ slack:
   channel_id: ""
   # Auto-manage channel
   auto_manage_channel: false
+imap_mcp:
+  # Enable the imap-mcp email command channel
+  enabled: false
+  # imap-mcp API base URL
+  url: "http://localhost:8765"
+  # imap-mcp account name; empty = use imap-mcp's default account
+  account: ""
+  # Prefix for outbound reply subjects
+  subject_prefix: "datawatch"
+  # Bearer token (GH#203) imap-mcp >= 0.5.3 requires on every request
+  # except GET /api/health. Accepts a ${secret:name} reference so the
+  # value never lives here in plaintext. Needs the "read" and "send"
+  # scopes on the imap-mcp side. Empty = no Authorization header sent
+  # (fine against imap-mcp <= 0.5.2, or with auth disabled there).
+  token: ""
 matrix:
   # Enable Matrix homeserver
   enabled: false

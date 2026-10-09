@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.74.2 — fix: GH#203 — imap_mcp backend sends a bearer token (imap-mcp ≥ 0.5.3 auth)
+
+### Fixed
+- imap-mcp 0.5.3 makes token auth mandatory on its HTTP server (every
+  request except `GET /api/health`). The `imap_mcp` messaging backend
+  sent no `Authorization` header, so it would start getting 401s on
+  every call (`GET /api/accounts`, the long-lived `GET /api/events`
+  SSE stream, `POST /api/accounts/{a}/messages/send`) once that's
+  deployed. New `imap_mcp.token` config field (accepts a
+  `${secret:name}` reference, resolved at startup same as the other
+  secret-ref-capable fields — never lives in config.yaml in plaintext)
+  sent as `Authorization: Bearer <token>` on all three calls.
+- A 401/403 is treated as a configuration problem, not a transient
+  network error: `Subscribe`'s reconnect loop now recognizes it (a new
+  `*authError` type) and jumps straight to and stays at the 60s max
+  backoff instead of hot-looping the normal 2s-doubling reconnect ramp
+  that would just keep failing for the same reason every time. Logged
+  once, clearly, naming the likely cause (missing/wrong token, or a
+  token lacking the needed scope).
+- 10 new tests (`backend_test.go`): auth header sent on all three call
+  sites, no header sent when no token is configured, a 401/403 is
+  reported as the new error type with imap-mcp's own message surfaced,
+  and the no-hot-loop property itself (counts actual reconnect attempts
+  within a short window after a 401).
+- `docs/config-reference.yaml`, `docs/implementation.md`.
+
 ## v8.74.1 — fix(security): bump Go toolchain + golang.org/x/net for real, reachable CVEs
 
 ### Fixed

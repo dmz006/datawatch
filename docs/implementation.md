@@ -660,6 +660,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `audit.access_log_enabled` | bool | `true` | Log every HTTP request/response, auth failure, and WS connect/disconnect to `access.log` (method, path, status, remote IP, user agent, resolved principal — never the token). |
 | `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |
 | `audit.cef_mirror_enabled` | bool | `false` | Additionally write a CEF-formatted line (`<file>.cef`) alongside every entry, for SIEM forwarding. |
+| `imap_mcp.token` | string | `""` | Bearer token imap-mcp ≥ 0.5.3 requires on every request except `GET /api/health`. Accepts a `${secret:name}` reference. Needs `read` + `send` scopes. |
 
 ### Dependencies
 

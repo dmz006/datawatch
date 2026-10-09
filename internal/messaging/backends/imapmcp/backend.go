@@ -15,6 +15,7 @@
 //	  url: "http://localhost:8765"
 //	  account: ""             # empty = imap-mcp default account
 //	  subject_prefix: "datawatch"
+//	  token: "${secret:imap_mcp_token_datawatch}"  # GH#203, imap-mcp >= 0.5.3
 package imapmcp
 
 import (
@@ -22,14 +23,84 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/messaging"
 )
+
+// token is process-wide (GH#203), set via SetToken once at daemon startup
+// after secretspkg.ResolveConfig resolves a ${secret:name} reference —
+// mirrors the established pattern for backends constructed before the
+// secrets store exists (e.g. openwebui.SetAPIKey). Read per-request rather
+// than copied into a Backend field at construction time, so a late
+// SetToken call (the normal startup order) still takes effect.
+var (
+	tokenMu sync.RWMutex
+	token   string
+)
+
+// SetToken sets the bearer token sent on every imap-mcp request except
+// GET /api/health. Safe to call before or after any Backend is
+// constructed; empty clears it (no Authorization header sent).
+func SetToken(t string) {
+	tokenMu.Lock()
+	token = t
+	tokenMu.Unlock()
+}
+
+func getToken() string {
+	tokenMu.RLock()
+	defer tokenMu.RUnlock()
+	return token
+}
+
+// setAuthHeader adds the configured bearer token to req, if one is set.
+func setAuthHeader(req *http.Request) {
+	if t := getToken(); t != "" {
+		req.Header.Set("Authorization", "Bearer "+t)
+	}
+}
+
+// authError (GH#203) distinguishes a 401/403 from imap-mcp -- a
+// configuration problem (missing/wrong token, or a token lacking the
+// needed scope) -- from an ordinary transient network error. Subscribe
+// uses this to back off slowly instead of hot-looping reconnect attempts
+// that will keep failing for the same reason every time.
+type authError struct {
+	status int
+	body   string
+}
+
+func (e *authError) Error() string {
+	kind := "unauthorized"
+	if e.status == http.StatusForbidden {
+		kind = "forbidden"
+	}
+	msg := strings.TrimSpace(e.body)
+	if msg == "" {
+		return fmt.Sprintf("imap-mcp %s (HTTP %d)", kind, e.status)
+	}
+	return fmt.Sprintf("imap-mcp %s (HTTP %d): %s", kind, e.status, msg)
+}
+
+// newAuthError builds an authError from a non-2xx response, extracting
+// imap-mcp's documented {"error":"..."} body shape when present.
+func newAuthError(status int, body []byte) *authError {
+	var decoded struct {
+		Error string `json:"error"`
+	}
+	msg := strings.TrimSpace(string(body))
+	if json.Unmarshal(body, &decoded) == nil && decoded.Error != "" {
+		msg = decoded.Error
+	}
+	return &authError{status: status, body: msg}
+}
 
 // Backend connects datawatch to a running imap-mcp server.
 type Backend struct {
@@ -64,11 +135,19 @@ func (b *Backend) SelfID() string {
 		Name    string `json:"name"`
 		Default bool   `json:"default"`
 	}
-	resp, err := b.httpClient.Get(b.url + "/api/accounts")
+	req, err := http.NewRequest(http.MethodGet, b.url+"/api/accounts", nil)
+	if err != nil {
+		return ""
+	}
+	setAuthHeader(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 	var accounts []acctInfo
 	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		return ""
@@ -114,15 +193,25 @@ func (b *Backend) Send(recipient, message string) error {
 	if err != nil {
 		return fmt.Errorf("imap_mcp send marshal: %w", err)
 	}
-	resp, err := b.httpClient.Post(
+	req, err := http.NewRequest(
+		http.MethodPost,
 		fmt.Sprintf("%s/api/accounts/%s/messages/send", b.url, account),
-		"application/json",
 		bytes.NewReader(data),
 	)
 	if err != nil {
 		return fmt.Errorf("imap_mcp send: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
+	setAuthHeader(req)
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("imap_mcp send: %w", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("imap_mcp send: %w", newAuthError(resp.StatusCode, body))
+	}
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("imap_mcp send: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -132,34 +221,57 @@ func (b *Backend) Send(recipient, message string) error {
 
 // Subscribe connects to the imap-mcp SSE event stream and calls handler for
 // each verified inbound.command event. Reconnects with exponential backoff
-// on network errors. Blocks until ctx is cancelled.
+// on network errors; a 401/403 (GH#203 — a configuration problem, not a
+// transient one) jumps straight to and stays at maxBackoff instead of
+// hot-looping reconnect attempts that would keep failing for the same
+// reason every time. Blocks until ctx is cancelled.
 func (b *Backend) Subscribe(ctx context.Context, handler func(messaging.Message)) error {
 	backoff := 2 * time.Second
 	const maxBackoff = 60 * time.Second
+	loggedAuthErr := false
 
 	for {
-		if err := b.stream(ctx, handler); err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(backoff):
-			}
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-			continue
+		err := b.stream(ctx, handler)
+		if err == nil {
+			// clean exit means ctx was cancelled
+			return nil
 		}
-		// clean exit means ctx was cancelled
-		return nil
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		var authErr *authError
+		if errors.As(err, &authErr) {
+			if !loggedAuthErr {
+				fmt.Printf("[imap_mcp] SSE connect failed: %v — this is a configuration problem (missing/wrong imap_mcp.token, or a token lacking the \"read\" scope), not a transient error; backing off at %s intervals until it's fixed\n", authErr, maxBackoff)
+				loggedAuthErr = true
+			}
+			backoff = maxBackoff
+		} else {
+			loggedAuthErr = false
+			backoff = nextBackoff(backoff, maxBackoff)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(backoff):
+		}
 	}
 }
 
+// nextBackoff doubles cur, capped at max. Extracted as a pure function so
+// the backoff-selection logic is unit-testable without real sleeping.
+func nextBackoff(cur, max time.Duration) time.Duration {
+	cur *= 2
+	if cur > max {
+		cur = max
+	}
+	return cur
+}
+
 // stream opens one SSE connection and reads events until the connection drops
-// or ctx is cancelled.
+// or ctx is cancelled. Returns an *authError on a 401/403 response.
 func (b *Backend) stream(ctx context.Context, handler func(messaging.Message)) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.url+"/api/events", nil)
 	if err != nil {
@@ -167,6 +279,7 @@ func (b *Backend) stream(ctx context.Context, handler func(messaging.Message)) e
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
+	setAuthHeader(req)
 
 	client := &http.Client{} // no timeout — SSE is long-lived
 	resp, err := client.Do(req)
@@ -175,6 +288,10 @@ func (b *Backend) stream(ctx context.Context, handler func(messaging.Message)) e
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return newAuthError(resp.StatusCode, body)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("SSE endpoint returned %d", resp.StatusCode)
 	}
@@ -235,12 +352,12 @@ func (b *Backend) handleSSELine(raw string, handler func(messaging.Message)) {
 		text += " " + strings.TrimSpace(cmd.Command.Args)
 	}
 	handler(messaging.Message{
-		ID:          cmd.Command.Nonce,
-		Sender:      cmd.From,
-		Text:        text,
-		Backend:     b.Name(),
-		GroupID:     cmd.Account,
-		GroupName:   cmd.Account,
-		SenderName:  cmd.From,
+		ID:         cmd.Command.Nonce,
+		Sender:     cmd.From,
+		Text:       text,
+		Backend:    b.Name(),
+		GroupID:    cmd.Account,
+		GroupName:  cmd.Account,
+		SenderName: cmd.From,
 	})
 }
