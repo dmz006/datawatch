@@ -125,6 +125,7 @@ func (s *Server) handleDecomposeAsync(w http.ResponseWriter, r *http.Request, pr
 
 	job := newDecomposeJob(prdID)
 	s.decomposeJobs.Store(prdID, job)
+	s.audit(r.Context(), "decompose", "automaton", prdID, nil) // GH#201 Phase 4 — logged at kick-off, not completion (async job)
 
 	go func() {
 		job.mu.Lock()

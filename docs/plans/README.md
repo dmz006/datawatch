@@ -1552,10 +1552,20 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > 9 events dropping it entirely, plus making it a directly-filterable
 > field instead of a loose Extra key). `GET /api/agents/audit` and the
 > `agent_audit` MCP tool both gain a matching `parent_agent_id` filter.
-> **Phases 4-5 not started** — the full state-changing-handler
-> completeness sweep (session/Automata/alert-rules/federation-peer/
-> device management confirmed still uncovered), and the create-alert
-> API/MCP tool. See the plan doc for the full per-phase scope.
+> **Phase 4 (state-changing-action completeness sweep) shipped
+> (v8.78.0):** audit logging wired into ~40 call sites — session
+> lifecycle (start/kill/delete/rollback/send_input), the full
+> Automata/PRD lifecycle in `handleAutonomousPRDs`, alert rules,
+> federation peer management, device registration, templates,
+> guardrail profiles, scan/autonomous config, schedules, and
+> orchestrator graphs. Found and fixed a real pre-existing gap along
+> the way: `POST /api/sessions/{id}/rollback` had no capability check
+> at all (its MCP sibling `session_rollback` correctly required
+> `CapSessionsWrite`) — closed with the same check. Confirmed council
+> config was already fully audited (9 pre-existing call sites),
+> correcting this phase's own "lower-priority bucket" assumption.
+> **Phase 5 not started** — the create-alert API/MCP tool. See the
+> plan doc for the full scope.
 
 > **BL398** — Full review of suppressed container-image CVEs (filed
 > 2026-10-08, operator-requested immediately after SEC-026/v8.73.26's

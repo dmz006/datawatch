@@ -59,6 +59,16 @@ func (s *Server) handleSessionRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// GH#201 Phase 4 — this REST route had NO capability check at all,
+	// unlike its own MCP tool sibling (session_rollback, gated on
+	// CapSessionsWrite via mcp_tool_caps.go) — any authenticated
+	// federation peer, even one granted zero capabilities, could force
+	// a destructive git rollback through this endpoint specifically.
+	// Closes the REST/MCP inconsistency with the same capability the
+	// MCP path already enforces; admin-token callers are unaffected.
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
 	if s.manager == nil {
 		http.Error(w, "manager not available", http.StatusServiceUnavailable)
 		return
@@ -90,6 +100,7 @@ func (s *Server) handleSessionRollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.audit(r.Context(), "rollback", "session", sess.ID, map[string]any{"force": req.Force}) // GH#201 Phase 4
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":      "ok",
@@ -153,6 +164,10 @@ func (s *Server) handleSessionInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// GH#201 Phase 4 — the Note carries a length, never the input text
+	// itself (could contain anything up to and including a credential
+	// the operator is typing into a session).
+	s.audit(r.Context(), "send_input", "session", resolvedID, map[string]any{"text_len": len(req.Text)})
 	writeJSONOK(w, map[string]any{"session_id": resolvedID, "sent": true})
 }
 

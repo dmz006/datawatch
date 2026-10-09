@@ -79,7 +79,7 @@ func (s *Server) handleFederationPeers(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPut:
 			s.fedPeerUpdate(w, r, name)
 		case http.MethodDelete:
-			s.fedPeerDelete(w, name)
+			s.fedPeerDelete(w, r, name)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -154,6 +154,14 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, _ := s.serverStore.Get(body.Name)
+	// GH#201 Phase 4 — this is a materially more sensitive action than
+	// the *access* a peer makes (already covered by Phase 1's access
+	// log): it changes WHO's allowed in, not just records a request.
+	// Never logs the peer token.
+	s.audit(r.Context(), "create", "federation_peer", body.Name, map[string]any{
+		"url":          body.URL,
+		"capabilities": body.Capabilities,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(e.Redacted())
@@ -190,10 +198,14 @@ func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 	e, _ := s.serverStore.Get(name)
+	s.audit(r.Context(), "update", "federation_peer", name, map[string]any{ // GH#201 Phase 4
+		"url":          merged.URL,
+		"capabilities": merged.Capabilities,
+	})
 	writeJSONOK(w, e.Redacted())
 }
 
-func (s *Server) fedPeerDelete(w http.ResponseWriter, name string) {
+func (s *Server) fedPeerDelete(w http.ResponseWriter, r *http.Request, name string) {
 	if err := s.serverStore.Delete(name); err != nil {
 		switch err {
 		case multiserver.ErrNotFound:
@@ -205,6 +217,7 @@ func (s *Server) fedPeerDelete(w http.ResponseWriter, name string) {
 		}
 		return
 	}
+	s.audit(r.Context(), "delete", "federation_peer", name, nil) // GH#201 Phase 4
 	w.WriteHeader(http.StatusNoContent)
 }
 

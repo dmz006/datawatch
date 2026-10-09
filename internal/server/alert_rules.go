@@ -71,6 +71,7 @@ func (s *Server) handleAlertRules(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
+			s.audit(r.Context(), "create", "alert_rule", rule.Name, nil) // GH#201 Phase 4
 			writeJSONOK(w, map[string]any{"status": "ok", "name": rule.Name})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -126,6 +127,7 @@ func (s *Server) handleAlertRules(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
+			s.audit(r.Context(), "update", "alert_rule", name, nil) // GH#201 Phase 4
 			writeJSONOK(w, map[string]any{"status": "ok", "name": name})
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapConfigWrite) {
@@ -135,6 +137,7 @@ func (s *Server) handleAlertRules(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
+			s.audit(r.Context(), "delete", "alert_rule", name, nil) // GH#201 Phase 4
 			writeJSONOK(w, map[string]any{"status": "ok", "name": name})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -152,6 +155,7 @@ func (s *Server) handleAlertRules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		s.audit(r.Context(), action, "alert_rule", name, nil) // GH#201 Phase 4
 		writeJSONOK(w, map[string]any{"status": "ok", "name": name, "action": action})
 
 	default:

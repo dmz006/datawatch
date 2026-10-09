@@ -69,6 +69,13 @@ func (s *Server) handleDevicesRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// GH#201 Phase 4 — who gets paged matters; never logs the raw push
+	// token (device_token is credential-shaped, same reasoning as
+	// sec017's config-masking rule).
+	s.audit(r.Context(), "register", "device", got.ID, map[string]any{
+		"kind":     req.Kind,
+		"platform": req.Platform,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"device_id": got.ID})
 }
@@ -108,6 +115,7 @@ func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.audit(r.Context(), "delete", "device", rest, nil) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 	default:

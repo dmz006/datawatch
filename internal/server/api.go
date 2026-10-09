@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.77.0"
+var Version = "8.78.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4162,6 +4162,7 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.audit(r.Context(), "kill", "session", targetID, nil) // GH#201 Phase 4
 	go s.hub.BroadcastSessions(s.manager.ListSessions())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
@@ -4220,6 +4221,13 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	// GH#201 Phase 4 — deleting a session is MORE sensitive than
+	// killing one (it can also destroy tracking data and memories),
+	// and had no audit entry at all.
+	s.audit(r.Context(), "delete", "session", req.ID, map[string]any{
+		"delete_data":     req.DeleteData,
+		"memory_strategy": req.MemoryStrategy,
+	})
 	go s.hub.BroadcastSessions(s.manager.ListSessions())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
@@ -4700,6 +4708,17 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
 	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	// GH#201 Phase 4 — session lifecycle was the plan's own leading
+	// example of a state-changing action access-logging alone can't
+	// explain ("a PUT /api/config, session and Automata changes are
+	// missing"). task/project_dir are included for operator
+	// readability; no credential-shaped fields exist on this request.
+	s.audit(r.Context(), "start", "session", sess.FullID, map[string]any{
+		"task":        req.Task,
+		"project_dir": req.ProjectDir,
+		"backend":     req.Backend,
+		"parent_id":   req.ParentID,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }
@@ -7402,6 +7421,7 @@ func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"session_id": sessionID, "command": req.Command}) // GH#201 Phase 4
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(sc) //nolint:errcheck
@@ -7424,6 +7444,7 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no pending schedules with that name", http.StatusNotFound)
 			return
 		}
+		s.audit(r.Context(), "cancel", "schedule", name, map[string]any{"count": n}) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"status": "cancelled", "count": n}) //nolint:errcheck
 		return
@@ -7432,6 +7453,7 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.audit(r.Context(), "cancel", "schedule", id, nil) // GH#201 Phase 4
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
 }
@@ -7592,6 +7614,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"type": req.Type, "command": req.Command}) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(sc) //nolint:errcheck
@@ -7626,6 +7649,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		s.audit(r.Context(), "update", "schedule", req.ID, nil) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "updated"}) //nolint:errcheck
 
@@ -7655,6 +7679,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		s.audit(r.Context(), "delete", "schedule", id+name, nil) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
 

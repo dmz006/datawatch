@@ -5,6 +5,65 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.78.0 — feat: GH#201 Phase 4 — state-changing-action completeness sweep
+
+### Added
+- Audit logging for state-changing actions that only had access-log
+  coverage (Phase 1) or none at all, closing the plan's own leading
+  example ("a PUT /api/config, session and Automata changes are
+  missing"):
+  - **Session lifecycle**: start, kill, delete, rollback, send_input
+    (`api.go`, `rollback.go`). `send_input`'s audit entry records
+    `text_len`, never the input text itself; `delete`'s records
+    `delete_data`/`memory_strategy`, never memory contents.
+  - **Alert rules**: create, update, delete, enable, disable
+    (`alert_rules.go`).
+  - **Federation peer management**: create, update, delete
+    (`federation_peers_api.go`) — distinct from the *access* a peer
+    makes (Phase 1's `peer:<name>` access-log entries); this is
+    changing who's allowed in. Never logs the peer token.
+  - **Device registration**: register, delete (`devices.go`). Never
+    logs the raw push token.
+  - **Automata/PRD lifecycle**: every state-changing action in
+    `handleAutonomousPRDs` — create/delete/cancel/edit, approve,
+    reject, reset_to_draft, archive, clone_to_template,
+    request_revision, edit_task, edit_story, add/remove_story,
+    add/remove_task, set_story_profile, approve/reject_story,
+    set_story_files, set_task_files, record_task_files_touched,
+    reset_task, repair_depends_on, cancel_story, cancel_task,
+    instantiate, set_llm, set_story_llm, set_task_llm, set_profiles,
+    set_type, set_guided_mode, set_skills, set_concurrency,
+    set_priority, set_dirs, set_quality_gates,
+    set_continue_on_story_failure, set_memory_seed, set_memory_harvest,
+    set_permission_mode, pause, resume, set_guardrails, scan, scan_fix,
+    run, decompose (logged at async kick-off) (`autonomous.go`,
+    `autonomous_decompose.go`).
+  - **Lower-priority bucket**: automaton templates (create/update/
+    delete/instantiate), automaton types (register), guardrail
+    profiles (create/update/delete), scan config (update), the
+    top-level autonomous config (update), schedules (create/update/
+    cancel/delete, both `/api/schedule` and `/api/schedules`), and
+    orchestrator graphs (create/plan/run/cancel). Council config was
+    already fully audited before this phase (confirmed by reading
+    `council.go` — 9 existing `auditCouncil` call sites) — a
+    correction to the plan's own assumption, not new work.
+- **Security finding, fixed**: `POST /api/sessions/{id}/rollback` had
+  **no capability check at all** — any authenticated federation peer,
+  even one granted zero capabilities, could force a destructive git
+  rollback through this REST route, while its own MCP tool sibling
+  (`session_rollback`) correctly required `CapSessionsWrite`. Closed
+  by adding the same check the MCP path already enforced.
+- 10 new tests (`internal/server/gh201_phase4_audit_test.go`): the
+  full session lifecycle (including a test proving the rollback
+  capability fix actually rejects a no-capability peer, and that a
+  *failed* rollback never writes an audit entry), the full alert-rule
+  lifecycle, federation-peer create/update/delete with a token-leak
+  check, device register/delete with a token-leak check, and a
+  representative Automata create/approve/delete sample — the
+  remaining ~35 PRD/Automata call sites follow the identical
+  `s.audit(...)` call shape this sample proves correct, confirmed
+  type-safe by the full build rather than individually re-tested.
+
 ## v8.77.0 — feat: GH#201 Phase 3 — chained-children (ParentAgentID) in the agent audit trail
 
 ### Added

@@ -132,6 +132,7 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 					g = planned
 				}
 			}
+			s.audit(r.Context(), "create", "orchestrator_graph", "", map[string]any{"title": req.Title, "prd_ids": req.PRDIDs}) // GH#201 Phase 4
 			writeJSONOK(w, g)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -164,6 +165,7 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			s.audit(r.Context(), "cancel", "orchestrator_graph", id, nil) // GH#201 Phase 4
 			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -182,15 +184,24 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.audit(r.Context(), "plan", "orchestrator_graph", id, nil) // GH#201 Phase 4
 		writeJSONOK(w, planned)
 	case "run":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		s.audit(r.Context(), "run", "orchestrator_graph", id, nil) // GH#201 Phase 4
 		// Fire-and-forget — the HTTP response returns quickly, runner
 		// continues in the background. Operators poll GET /graphs/{id}
-		// for progress.
+		// for progress. Deliberately context.Background(), not
+		// r.Context(): the latter is cancelled the moment this HTTP
+		// response is written, which would kill the run before it
+		// started. GH#201 Phase 4's audit call just above now also
+		// references r.Context() in this same block, which trips
+		// gosec's G118 "request-scoped context is available" heuristic
+		// — a false positive here, not a bug.
+		// #nosec G118 -- intentional fire-and-forget, see comment above
 		go s.orchestratorAPI.RunGraph(context.Background(), id) //nolint:errcheck
 		writeJSONOK(w, map[string]any{"status": "running", "id": id})
 	default:

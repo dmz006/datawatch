@@ -4,7 +4,8 @@
 - **Version at planning**: v8.73.40
 - **Status**: Phase 1 shipped (v8.73.41) and gap-closed (v8.74.0 — see
   "Phase 1 gap closure" below). Phase 2 shipped (v8.76.0). Phase 3
-  shipped (v8.77.0). Phases 4-5 planned, not started.
+  shipped (v8.77.0). Phase 4 shipped (v8.78.0). Phase 5 planned, not
+  started.
 - **Filed by**: datawatch-app, operator-requested — could not confirm
   whether Apple TestFlight reviewers had connected to the demo server;
   no HTTP access log, no WS connect/disconnect log, no auth-failure log,
@@ -27,7 +28,7 @@
 | 1 (gaps) | AGENT.md compliance closure (CEF, config/doc/MCP parity, observability, smoke, release checklist) | ✅ Done | v8.74.0 |
 | 2 | Federation-hop actor attribution | ✅ Done | v8.76.0 |
 | 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ✅ Done | v8.77.0 |
-| 4 | State-changing-action completeness sweep | ⬜ Not started | — |
+| 4 | State-changing-action completeness sweep | ✅ Done | v8.78.0 |
 | 5 | Create-alert API + MCP tool | ⬜ Not started | — |
 
 Update this table (and each phase's own Status line) every time a
@@ -251,6 +252,18 @@ same as `docs/plans/*.md`. No change needed.
   agent-cluster internal audit trail, not a config field or a UI
   surface on any client.
 
+**Phase 4 additions**:
+- **REST**: no new endpoint — every call site is an existing route
+  (`/api/sessions/*`, `/api/alert-rules/*`, `/api/federation/peers/*`,
+  `/api/devices/*`, `/api/autonomous/*`, `/api/schedule(s)`,
+  `/api/orchestrator/graphs/*`) gaining an audit side effect, same
+  "covered by construction" shape as Phase 1's access-logging
+  middleware.
+- **MCP/CLI/comm/YAML/PWA/Android/iPhone**: unaffected — this phase
+  only adds a side effect (an `audit.log` write) to handlers that
+  already existed on every surface; it changes no request/response
+  contract, so nothing downstream needs updating.
+
 ## Phase 2 — thread provenance through federation hops ✅ shipped (v8.76.0)
 
 **Design questions, as settled by the operator (2026-10-09):**
@@ -384,7 +397,86 @@ one doesn't leak in; `ReapIdle`'s struct-mediated path specifically;
 `ReadEvents` filtering; the CEF extension field present/absent; the
 JSON `omitempty` round trip.
 
-## Phase 4 — state-changing-action completeness sweep (not started)
+## Phase 4 — state-changing-action completeness sweep ✅ shipped (v8.78.0)
+
+Operator decision (2026-10-09): full sweep done in one pass rather
+than scoping the long tail to a follow-up, once sizing showed it was
+~40 individual call sites inside a small number of already-located
+handler files (mechanical once the list was fixed, exactly as this
+phase's original text predicted).
+
+**A real pre-existing security gap found and fixed along the way**:
+`handleSessionRollback` (`POST /api/sessions/{id}/rollback`) had no
+capability check at all — confirmed by reading the handler before
+this phase started wiring its audit call. Its own MCP tool sibling
+(`session_rollback`) correctly requires `CapSessionsWrite`
+(`mcp_tool_caps.go`), but the direct REST route had nothing: any
+authenticated federation peer, even one granted zero capabilities,
+could force a destructive git rollback through it. Operator decision:
+fix immediately rather than only flag, adding the identical
+`CapSessionsWrite` check the MCP path already enforced — admin-token
+callers are unaffected, and no deployment should have been depending
+on the gap.
+
+**What shipped, by priority bucket (per this phase's own ordering)**:
+1. **Session lifecycle** — start (`handleStartSession`), kill
+   (`handleKillSession`), delete (`handleDeleteSession`, more
+   sensitive than kill since it can destroy tracking data/memories —
+   added even though not in the original 4-verb list), rollback
+   (`handleSessionRollback`, alongside the capability fix above),
+   send_input (`handleSessionInput`). `send_input` logs `text_len`
+   only, never the text; `delete` logs `delete_data`/
+   `memory_strategy`, never memory contents.
+2. **Automata/PRD lifecycle** — every state-changing branch of
+   `handleAutonomousPRDs` (`autonomous.go`, ~1500 lines, confirmed 40
+   actual call sites once counted — more than the "~25" estimated at
+   sizing time) plus the async decompose kick-off
+   (`autonomous_decompose.go`, logged at job start since the mutation
+   itself runs in a background goroutine outlasting the request).
+   Full list in the CHANGELOG entry.
+3. **Alert rules** — create/update/delete/enable/disable
+   (`alert_rules.go`).
+4. **Federation peer management** — create/update/delete
+   (`federation_peers_api.go`). Never logs the peer token.
+5. **Device registration** — register/delete (`devices.go`). Never
+   logs the raw push token.
+6. **Lower-priority bucket** — templates (create/update/delete/
+   instantiate, both the dedicated TemplateStore in `autonomous.go`
+   and the PRD-level `clone_to_template`/collection-level
+   `instantiate`), automaton types (register), guardrail profiles
+   (create/update/delete), scan config (update), top-level autonomous
+   config (update), schedules (create/update/cancel/delete on both
+   `/api/schedule` and the newer `/api/schedules`), orchestrator
+   graphs (create/plan/run/cancel).
+
+**Correction to this phase's own original scoping**: council config
+was listed as part of the lower-priority bucket needing work. Reading
+`council.go` before touching it found 9 existing `auditCouncil(...)`
+call sites already covering config update, persona add/update/
+restore-default/remove, run start/cancel — council was already fully
+audited before this phase began. No change made; flagged as a
+pre-existing correct state, not silently skipped.
+
+**All of `s.audit(...)`'s call sites use the pre-existing
+`internal/server/skills.go` helper** (`s.audit(ctx, action,
+resourceType, resourceID, details)`, which resolves `Actor` via the
+same `auditActor(ctx)` HLLM-003 logic Phase 1/2 already rely on) —
+this phase added zero new audit-writing machinery, exactly matching
+the plan's original "mechanical once the list is fixed" framing.
+
+**Tests**: 10 in `internal/server/gh201_phase4_audit_test.go` — the
+full session lifecycle including a dedicated test proving the
+rollback capability fix actually rejects a zero-capability peer and
+that a *failed* rollback attempt never writes a misleading success
+audit entry, the full alert-rule lifecycle, federation-peer create/
+update/delete with an explicit token-leak check, device register/
+delete with an explicit token-leak check, and a representative
+Automata create/approve/delete sample. The remaining ~35 PRD/Automata
+call sites were not each individually re-tested — they follow the
+exact same `s.audit(r.Context(), "<action>", "automaton", id, ...)`
+shape the sample proves correct, and the full repo build (which
+would fail on any typo'd field/undefined symbol across all ~40 sites)
+is the mechanical correctness check for those.
 
 The actual "record what changed, not just that a request happened"
 ask. Access-logging `PUT /api/config` tells you a request happened;
@@ -581,6 +673,39 @@ from AGENT.md each time.
 - [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
   no new operator-facing endpoint surface, just a new filter param on
   an existing one)
+
+### Every commit (AGENT.md Section A) — Phase 4 commit (v8.78.0)
+
+- [x] A1 — rules: Testing Requirements, Audit Logging Rule (new
+  entries follow the existing JSON-lines + CEF-mirror shape
+  unchanged), Planning Rules (Parity surface)
+- [x] A2 — `go test ./...`: 3324 passed, 0 failed (10 new this phase)
+- [x] A3 — `version: v8.78.0 (both files)`
+- [x] A4 — `changelog: added`
+- [x] A5 — `readme: N/A` (audit-trail completeness, not a new
+  top-level feature)
+- [x] A6 — `backlog: refactored`
+- [x] A7 — `id-check: clean`
+- [x] A8 — `leak-check: clean`
+- [x] A9 — `node-check: N/A` (no JS/PWA touched)
+- [x] A10 — `make-build: ok`
+- [ ] A11 — `ci: <pending — check after push>`
+
+### Conditional, this feature's actual triggers (AGENT.md Section B) — Phase 4
+
+| # | Trigger | Applies here? | Status |
+|---|---|---|---|
+| B16 | New audit-event-emitting code path | Yes — ~40 new `Action` values (`start`, `kill`, `delete`, `rollback`, `send_input`, `create`, `approve`, `reject`, …) | ✅ All reuse the existing `audit.Entry`/CEF shape; no new format code |
+| Security fix (not a standard B-trigger, logged for traceability) | Yes — `handleSessionRollback` capability gap | ✅ Closed; test added proving the rejection |
+
+### Release cadence (AGENT.md Section C) — Phase 4, minor release
+
+- [x] C1 — `dep-audit: N/A` (no new dependency)
+- [x] C2 — `gosec: clean` (exact CI command: live=63, baseline=63,
+  after fixing the 1 new G118 false-positive this phase's own code
+  surfaced)
+- [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
+  every call site is an existing endpoint gaining a side effect)
 
 ### Phase-specific gate before marking any future phase ✅ Done
 
