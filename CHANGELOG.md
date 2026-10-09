@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.39 — fix(pwa): GH#198 follow-up — finish the Quality Gates settings translations
+
+### Fixed
+- 4 locale keys (`settings_quality_gates_block_on_regression`,
+  `settings_quality_gates_test_command`, `settings_quality_gates_timeout`,
+  `stats_quality_gates`) were still byte-identical English across all 5
+  locale bundles — flagged but deliberately not fixed in GH#198 (that fix
+  was scoped to the "PRD" word-leak, not a full untranslated-string sweep).
+  Now translated into de/es/fr/ja, reusing the "Quality-Gate(s)" /
+  "puerta(s) de calidad" / "porte(s) de qualité" / "品質ゲート" terms this
+  session's earlier GH#198 work already established for the sibling
+  `settings_quality_gates_enabled` key.
+
 ## v8.73.38 — fix(ci): release.yaml — v8.73.31's missing stats-cluster tarball was GitHub API rate-limiting, not propagation lag
 
 ### Fixed
