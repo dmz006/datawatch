@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.78.2 — fix(lint): ineffectual level assignment in create-alert handlers
+
+### Fixed
+- `golangci-lint`'s `ineffassign` caught `level := alerts.LevelInfo`
+  as a dead initial assignment in both `handleAlertCreate` (`api.go`)
+  and `handleCreateAlert` (`mcp/server.go`) — the immediately-following
+  `switch` always reassigns it, including in the `LevelInfo`/`""` case.
+  Declared with `var` instead; behavior unchanged. No functional
+  difference from what's already running on the production daemon.
+
 ## v8.78.1 — feat: GH#201 Phase 5 — create-alert API/MCP tool; fix: service-caller secret-scope gap
 
 ### Added
