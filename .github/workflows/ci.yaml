@@ -51,6 +51,15 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
+      # 2026-10-09 — a Dockerfile's exact-pinned ARG GO_VERSION can fall
+      # behind go.mod's `go` directive without anything catching it until
+      # the actual release workflow runs a container build against a
+      # pushed tag (v9.0.0: Dockerfile.agent-base's GO_VERSION=1.26.6 vs.
+      # go.mod's `go 1.26.9` — go mod download failed, cascading into 6
+      # skipped agent-* images). Every push/PR, not just release time.
+      - name: dockerfile GO_VERSION drift check
+        run: bash scripts/check-dockerfile-go-versions.sh
+
       - name: go test
         run: go test ./... -count=1 -timeout 5m
 

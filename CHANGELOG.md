@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.2 — chore: prevent Dockerfile GO_VERSION drift from recurring
+
+### Added
+- `scripts/check-dockerfile-go-versions.sh` — fails if any
+  `docker/dockerfiles/Dockerfile.*`'s exact-pinned `ARG GO_VERSION`
+  is below go.mod's `go` directive (the exact class of bug that
+  broke v9.0.0's container build). Floating two-component pins
+  (`GO_VERSION=1.26`, no patch) are left alone since those always
+  resolve to the latest patch at build time. Also caught and fixed a
+  second, independent instance while writing this: `Dockerfile.lang-go`
+  (the Go toolchain image agent workers use to build datawatch repos)
+  was pinned to `1.25.0`, four minor versions behind — meaning a
+  worker using that image to build *this* repo would hit the same
+  `go mod download` failure. Both confirmed against the real upstream
+  tags (Docker Hub for agent-base/stats-cluster/validator, go.dev's
+  tarball dist for lang-go) before committing.
+- Wired into `ci.yaml` (every push/PR, same promotion pattern as the
+  version-bump and internal-ref-leak checks) and into `release.yaml`
+  itself as defense-in-depth (a tag can point at a commit CI never
+  ran against) — runs right after the compile check, before any of
+  the expensive container-matrix jobs start.
+- `release-smoke.sh` and AGENT.md's Section D2 (container maintenance
+  audit) updated to call it out explicitly.
+
 ## v9.0.1 — fix: agent-base container build failure in v9.0.0's release run
 
 ### Fixed

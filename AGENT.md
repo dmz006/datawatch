@@ -1271,8 +1271,19 @@ Minor/major releases only:
 | # | Check | Required token |
 |---|---|---|
 | D1 | `make cross` — all 5 binary assets built and attached to GH release | `make-cross: ok` |
-| D2 | Container maintenance audit: per-image rebuild decision made; Helm `Chart.yaml` `version` + `appVersion` bumped if chart changed; `## Container images` section in release notes | `containers: audited` |
+| D2 | Container maintenance audit: per-image rebuild decision made; Helm `Chart.yaml` `version` + `appVersion` bumped if chart changed; every `docker/dockerfiles/Dockerfile.*`'s exact-pinned `ARG GO_VERSION` is >= go.mod's `go` directive (`bash scripts/check-dockerfile-go-versions.sh` — also runs in CI on every push/PR and again in release.yaml before the container matrix, but verify it actually ran clean for this release); `## Container images` section in release notes | `containers: audited` |
 | D3 | Asset retention cleanup: `bash scripts/delete-past-minor-assets.sh` run post-release | `asset-cleanup: ok` |
+
+v9.0.0 (2026-10-09) shipped with `Dockerfile.agent-base`'s `GO_VERSION`
+one minor-patch behind go.mod's `go` directive — `go mod download`
+failed in that image's builder stage, and because every other agent-*
+image builds FROM agent-base, 6 more images were silently skipped in
+the same release run (`needs: build-base`). Not caught locally because
+no local check existed for this; `scripts/check-dockerfile-go-versions.sh`
+closes that gap and is wired into both `ci.yaml` and `release.yaml` now,
+but D2 still calls for a human glance at the release run's container job
+list — a script catching the version mismatch doesn't guarantee someone
+looked at whether all N images in the matrix actually got pushed.
 
 ---
 

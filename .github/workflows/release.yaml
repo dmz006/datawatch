@@ -60,6 +60,17 @@ jobs:
       - name: build (compile check)
         run: make build
 
+      # 2026-10-09 — v9.0.0's release run found this the hard way: a
+      # Dockerfile's exact-pinned ARG GO_VERSION (Dockerfile.agent-base)
+      # had fallen behind go.mod's `go` directive, so `go mod download`
+      # failed in the containers job below — cascading into 6 skipped
+      # agent-* images, caught only after the tag was already pushed.
+      # Also runs on every push/PR via ci.yaml, but tags can point at a
+      # commit CI never ran against, so this fails fast here too,
+      # before any of the expensive container builds below even start.
+      - name: dockerfile GO_VERSION drift check
+        run: bash scripts/check-dockerfile-go-versions.sh
+
 # ── Stage 2: security (parallel, both must pass) ─────────────────────────────
 
   govulncheck:
