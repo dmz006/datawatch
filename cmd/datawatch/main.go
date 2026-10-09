@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.5"
+var Version = "9.0.6"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7315,7 +7315,8 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
-	// Primary: goreleaser archive (both datawatch + datawatch-channel are inside).
+	// Primary: goreleaser archive for the main datawatch binary (datawatch-channel
+	// lives in its own separate archive -- see downloadChannelBinary below).
 	var archiveName, mainBin, chanBin string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", version, goos, goarch)
@@ -7422,20 +7423,29 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 	fmt.Printf("[update] Successfully updated to v%s.\n", version)
 
 	// Also update the datawatch-channel sibling binary if one exists alongside self.
+	// v9.0.5 (2026-10-09): this used to re-extract chanBin from the MAIN
+	// datawatch archive (archivePath) and silently swallow any failure --
+	// datawatch-channel has lived in its own separate goreleaser archive
+	// for some time, so that extraction always failed and the sibling
+	// binary silently never got updated on any self-update where it
+	// already existed. Download its real archive instead, and report a
+	// failure instead of swallowing it (matches downloadChannelBinary's
+	// archive-name logic below).
 	siblingChan := filepath.Join(filepath.Dir(selfPath), chanBin)
 	if _, statErr := os.Stat(siblingChan); statErr == nil {
-		newChan := filepath.Join(tmpDir, "datawatch-channel-new")
-		var chanErr error
-		if goos == "windows" {
-			chanErr = extractFromZip(archivePath, chanBin, newChan)
+		chanTmpDir, chanTmpErr := os.MkdirTemp("", "datawatch-channel-sib-*")
+		if chanTmpErr != nil {
+			fmt.Printf("[update] sibling channel binary update failed: %v\n", chanTmpErr)
 		} else {
-			chanErr = extractFromTarGz(archivePath, chanBin, newChan)
-		}
-		if chanErr == nil {
-			_ = os.Chmod(newChan, 0755)
-			if repErr := replaceExecutable(siblingChan, newChan); repErr == nil {
+			newChanPath, chanErr := downloadChannelBinary(chanTmpDir, version)
+			if chanErr != nil {
+				fmt.Printf("[update] sibling channel binary update failed: %v\n", chanErr)
+			} else if repErr := replaceExecutable(siblingChan, newChanPath); repErr != nil {
+				fmt.Printf("[update] sibling channel binary update failed: %v\n", repErr)
+			} else {
 				fmt.Printf("[update] Also updated %s.\n", siblingChan)
 			}
+			_ = os.RemoveAll(chanTmpDir)
 		}
 	}
 	return nil
@@ -7602,13 +7612,20 @@ func downloadChannelBinary(dataDir, targetVersion string) (string, error) {
 		dst += ".exe"
 	}
 
-	// Primary: extract datawatch-channel from the goreleaser archive (both binaries live there).
+	// Primary: extract datawatch-channel from its own dedicated goreleaser
+	// archive. v9.0.5 (2026-10-09): this used to look inside the MAIN
+	// datawatch_*.tar.gz archive, but .goreleaser.yaml has packaged
+	// datawatch-channel as its own separate archive (a distinct build id
+	// with its own archive id, both named "datawatch-channel") for some
+	// time now -- the main archive never contained it, so both this and
+	// the legacy bare-binary fallback below 404'd on every real release,
+	// confirmed live against v9.0.5 on ralfthewise.
 	var archiveName, chanBin string
 	if goos == "windows" {
-		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", targetVersion, goos, goarch)
+		archiveName = fmt.Sprintf("datawatch-channel_%s_%s_%s.zip", targetVersion, goos, goarch)
 		chanBin = "datawatch-channel.exe"
 	} else {
-		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", targetVersion, goos, goarch)
+		archiveName = fmt.Sprintf("datawatch-channel_%s_%s_%s.tar.gz", targetVersion, goos, goarch)
 		chanBin = "datawatch-channel"
 	}
 	archiveURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", targetVersion, archiveName)

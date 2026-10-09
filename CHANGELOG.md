@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.6 — fix: datawatch-channel sibling binary silently never updated
+
+### Fixed
+- Found while updating `ralfthewise` after v9.0.5: its `~/.local/bin/
+  datawatch-channel` binary was stale since 2026-05-12 even though the
+  main `datawatch` binary had been updating normally every release.
+  Root cause: `datawatch-channel` moved to its own dedicated goreleaser
+  archive (`datawatch-channel_<version>_<os>_<arch>.tar.gz`) some time
+  ago, but both binary-update code paths still assumed it was bundled
+  inside the main `datawatch_<version>_<os>_<arch>.tar.gz` archive —
+  `downloadChannelBinary` (used for first-time/self-heal installs)
+  surfaced an explicit "channel binary not found" error; `installPrebuiltBinary`'s
+  sibling-binary update (used on every regular self-update where the
+  binary already exists) extracted from the wrong archive and silently
+  swallowed the failure, so it never updated at all. Both now fetch the
+  real `datawatch-channel_*` archive; the sibling-update path now also
+  reports a failure instead of swallowing it.
+
 ## v9.0.5 — chore(release): suppress 5 no-fix-available CVEs blocking v9.0.3's agent-base scan
 
 ### Security
