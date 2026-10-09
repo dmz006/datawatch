@@ -1403,3 +1403,2002 @@ entries:
     validated_by: "claude-session"
     reason: "Found live by image-refresh.yaml's blocking scan (new since the BL398 migration baseline -- not in the original 70). No fix available in Debian bookworm. Independently traced and confirmed unreachable this session."
 
+
+  # --- code-scanning: GitHub-dismissed alerts migrated from BL394's own
+  # review (docs/plans/2026-10-03-bl394-security-findings-review.md) into
+  # this structured registry -- not new analysis. Each entry's `impact.
+  # analysis` is the real dismissal comment recorded on GitHub at the time
+  # each alert was actually reviewed and dismissed (pulled verbatim via
+  # `gh api repos/dmz006/datawatch/code-scanning/alerts/<n>`), so `added`
+  # below is each alert's real `dismissed_at` date, not today's date.
+  - id: code-scanning/526
+    kind: code-scanning
+    package: "js/xss"
+    path: "internal/server/web/app.js"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: escHtml(text) runs first, before any markdown-to-HTML
+        regex substitutions -- a correct escape-then-template pattern. All
+        regex captures operate on already-escaped text. CodeQL doesn't
+        recognize this custom helper as a sanitizer.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/528
+    kind: code-scanning
+    package: "js/xss"
+    path: "internal/server/web/app.js"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 v8.39.10: this is the html+= accumulator; the actual untrusted
+        value (ch.name, in renderChanRow's onclick builder) is now escaped via
+        escJsAttr() before reaching it. Regression test app-escaping.test.js,
+        confirmed to fail without the fix. See doc §3h.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/529
+    kind: code-scanning
+    package: "js/xss-through-dom"
+    path: "internal/server/web/app.js"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: code comment explicitly documents data-i18n-html is for
+        first-party translation keys only, never user input. Checked -- no
+        injection point feeds external text into the translation dictionary.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/530
+    kind: code-scanning
+    package: "js/xss-through-dom"
+    path: "internal/server/web/app.js"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: html is built from the operator's own freely-edited
+        textarea content in their own browser tab (compute-node/LLM YAML-form
+        editor). Can only inject into one's own session -- self-XSS only, not
+        cross-user exploitable.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/541
+    kind: code-scanning
+    package: "go/request-forgery"
+    path: "internal/compute/probe.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: n.Address is operator-registered compute-node config
+        (added via compute_node_add), not external/attacker-supplied input.
+        Same reasoning as the allowlisted federation-proxy findings in this
+        batch -- operator's own infra, not reachable by a caller.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/542
+    kind: code-scanning
+    package: "go/request-forgery"
+    path: "internal/server/api.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: target resolved via s.findServer(serverName), an admin-
+        registered federation-peer allowlist (internal/server/server.go), not
+        an arbitrary caller-supplied URL. CodeQL's dataflow doesn't recognize
+        the map-lookup-by-name as breaking attacker control of the
+        destination.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/543
+    kind: code-scanning
+    package: "go/request-forgery"
+    path: "internal/server/push.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.3: dial-time SSRF guard (net.Dialer.Control hook in
+        newPushHTTPClient) runs before every send. CodeQL's static analysis
+        doesn't trace the guard inside the Transport's dialer as breaking
+        taint. Verified by tests in push_ssrf_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/544
+    kind: code-scanning
+    package: "go/request-forgery"
+    path: "internal/server/proxy.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: target resolved via s.findServer(serverName), an admin-
+        registered federation-peer allowlist (internal/server/server.go), not
+        an arbitrary caller-supplied URL. CodeQL's dataflow doesn't recognize
+        the map-lookup-by-name as breaking attacker control of the
+        destination.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/545
+    kind: code-scanning
+    package: "go/reflected-xss"
+    path: "internal/server/proxy.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 §6/§6a: mitigated by origin separation (v8.39.12) + scoped proxy
+        tokens (v8.39.13), not sink sanitization. Content is isolated to its
+        own browser origin regardless of contents, so a compromised peer can't
+        read the real session. Verified live w/ headless Chrome.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      won't fix -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/547
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/council/council.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/548
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/council/council.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/549
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/council/council.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/551
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/evals/evals.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/552
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/memory/layers.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: path is filepath.Join(l.dataDir, "identity.txt") -- a
+        fixed filename under a construction-time-set directory, no per-request
+        or external input involved at all.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/553
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/memory/layers_recursive.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 v8.39.10: pathsafe.ValidateRecordName(agentID) runs 2 lines
+        above this sink. CodeQL doesn't connect it across the call. Traversal
+        falls back to host L0, verified by
+        TestL0ForAgent_RejectsPathTraversal. See
+        docs/plans/2026-10-03-bl394-security-findings-review.md §3b.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/555
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/556
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/557
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/558
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/559
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/560
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/561
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/secfile/secfile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: secfile.ReadFile/WriteFile is a generic helper; grepped
+        all 20 call sites in this codebase -- every one passes a path field
+        set once at store-construction time (e.g. filepath.Join(dataDir,
+        fixed-name)), never a per-request value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/563
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api_smoke_progress.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/564
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api_smoke_progress.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: name/id sourced from a URL path segment, which Go's
+        stdlib http.ServeMux auto-cleans of .. before dispatch (confirmed
+        apiMux is http.NewServeMux()). Can't carry a traversal sequence,
+        unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/565
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/566
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/567
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/568
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/569
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/570
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/api.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/571
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_scope.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/572
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_sync.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/573
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_scope.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/574
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_scope.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/575
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_scope.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/576
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl332_discussion_scope.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: id sourced from a URL path segment, which Go's stdlib
+        http.ServeMux auto-cleans of .. before dispatch. Can't carry a
+        traversal sequence, unlike a body-sourced field.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/577
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/578
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/579
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/580
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/581
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/582
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/583
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/bl333_file_service.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: guarded by checkPathTraversal or an identical inline
+        filepath.Clean + separator-suffixed HasPrefix check -- verified it
+        correctly handles the classic /root-evil sibling-dir bypass. CodeQL
+        doesn't recognize this custom idiom as a sanitizer barrier.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/584
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/server/council.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: p comes from DefaultPersonas(), a hardcoded compile-time
+        list of built-in persona definitions -- not external input. Same
+        Persona.Name field is tainted elsewhere (AddPersona) but this call
+        site has no external influence at all.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/585
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/reconcile.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: dir is a session tracking directory already
+        established/validated at session creation (same trust boundary as
+        sess.ProjectDir elsewhere in this package) -- not a per-request
+        externally-supplied value.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/586
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir here is resolved from the session's own
+        configured workspace root (m.workspaceRoot) joined with an already-
+        validated relative path, established at session-creation time -- not
+        raw external request input reaching this call unguarded.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/587
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/tracker.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/588
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/tracker.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/589
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/tracker.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/590
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/tracker.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/591
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/skills/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.4: pathsafe.ValidateRecordName(av.Name) runs in
+        Sync() before copyDir/copyFile are ever called with this dst. These
+        are generic helpers one call frame removed from the validation; CodeQL
+        doesn't connect the two. Verified by sync_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/592
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/skills/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.4: pathsafe.ValidateRecordName(av.Name) runs in
+        Sync() before copyDir/copyFile are ever called with this dst. These
+        are generic helpers one call frame removed from the validation; CodeQL
+        doesn't connect the two. Verified by sync_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/593
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/skills/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.4: pathsafe.ValidateRecordName(av.Name) runs in
+        Sync() before copyDir/copyFile are ever called with this dst. These
+        are generic helpers one call frame removed from the validation; CodeQL
+        doesn't connect the two. Verified by sync_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/594
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/skills/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.4: pathsafe.ValidateRecordName(av.Name) runs in
+        Sync() before copyDir/copyFile are ever called with this dst. These
+        are generic helpers one call frame removed from the validation; CodeQL
+        doesn't connect the two. Verified by sync_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/595
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/skills/manager.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.4: pathsafe.ValidateRecordName(av.Name) runs in
+        Sync() before copyDir/copyFile are ever called with this dst. These
+        are generic helpers one call frame removed from the validation; CodeQL
+        doesn't connect the two. Verified by sync_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/596
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/tooling/artifacts.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/597
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/tooling/artifacts.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/598
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/tooling/artifacts.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/599
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/tooling/artifacts.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: projectDir is the session's own already-validated,
+        operator-set working directory, established at session creation.
+        backend is matched against a fixed small set of known values. No
+        additional externally-influenced path segments involved.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/600
+    kind: code-scanning
+    package: "go/uncontrolled-allocation-size"
+    path: "internal/memory/pg_store.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: topK is already clamped to len(candidates) two lines
+        above this allocation, bounding it to the real DB-derived candidate
+        count. CodeQL isn't recognizing that clamp as neutralizing.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/601
+    kind: code-scanning
+    package: "go/uncontrolled-allocation-size"
+    path: "internal/memory/store.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: topK is already clamped to len(candidates) two lines
+        above this allocation, bounding it to the real DB-derived candidate
+        count. CodeQL isn't recognizing that clamp as neutralizing.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/602
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch-channel/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/603
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/agents/client.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/604
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/agents/client.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/605
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/606
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/607
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/608
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/609
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/agents/tls.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/610
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/compute/probe.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/611
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/mcp/sx_parity.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/612
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/observer/cluster_k8s.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/613
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/observer/cluster_k8s.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/614
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/server/compute.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/615
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/server/compute.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/616
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/server/marketplace.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/617
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "internal/server/marketplace.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: operator-registered infra (compute node/k8s/loopback
+        self-signed cert), not an external host. Already #nosec G402-reviewed
+        at this line; gosec's suppression doesn't register with CodeQL, hence
+        the duplicate flag.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/618
+    kind: code-scanning
+    package: "go/clear-text-logging"
+    path: "cmd/datawatch/main.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: traced to config/template.go via
+        GenerateAnnotatedConfig, whose sole caller always passes
+        config.DefaultConfig() -- a zero-value config, never the operator's
+        real loaded secrets.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/620
+    kind: code-scanning
+    package: "go/clear-text-logging"
+    path: "internal/agents/spawn.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: this field is the secret's reference NAME (e.g. a
+        secrets-vault key name), not its value. The actual secret value
+        (sec.Value) never reaches this log line. CodeQL's naming heuristic
+        fired on the field name alone.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/621
+    kind: code-scanning
+    package: "go/clear-text-logging"
+    path: "internal/agents/spawn.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: this field is the secret's reference NAME (e.g. a
+        secrets-vault key name), not its value. The actual secret value
+        (sec.Value) never reaches this log line. CodeQL's naming heuristic
+        fired on the field name alone.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/622
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/compute/probe.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: argv-list exec.Command (not a shell); target built from
+        operator-registered compute-node SSH config, not external input. Same
+        operator-infra reasoning as the other dismissed findings in this
+        batch.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/623
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/server/project_summary.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: argv-list exec.Command invocation (not a shell), already
+        #nosec G702-reviewed at this line. Scanner-sync gap, not a new finding
+        -- gosec's suppression doesn't register with CodeQL.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/624
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/session/git.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: originURL traces only to proj.Git.URL, the operator's
+        own project-profile config (profile_create/update) -- not external
+        input. Same accepted-risk class as compute-node/federation-peer config
+        elsewhere in this codebase.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/625
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/session/manager.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: gated by CapSessionsWrite, only in session-operator and
+        comms-channel-agent presets -- never a low-trust tier. The capability
+        itself already means can run arbitrary tasks; bash -c for subprocess
+        is not a new escalation.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/626
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/session/tracker.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 review: argv-list exec.Command invocation (not a shell), already
+        #nosec G702-reviewed at this line. Scanner-sync gap, not a new finding
+        -- gosec's suppression doesn't register with CodeQL.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/627
+    kind: code-scanning
+    package: "go/email-injection"
+    path: "internal/messaging/backends/email/backend.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 SS3f correction: hasCRLF checks run above this line. Also
+        verified net/smtp.SendMail's own validateLine already rejects this
+        before dialing -- see the doc for the full writeup. Verified by
+        backend_test.go.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record
+
+  - id: code-scanning/628
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/messaging/backends/webhook/backend.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        BL394 code-path review (docs/plans/2026-10-03-bl394-security-findings-
+        review.md), dismissed on GitHub with the recorded comment below.
+      analysis: >-
+        BL394 fixed v8.39.5: scoping check (Clean + separator-suffixed
+        HasPrefix vs webhook.image_dir) runs immediately above this line.
+        CodeQL doesn't recognize the custom guard. Verified by backend_test.go
+        incl. the real attack end-to-end.
+    first_added: "2026-10-04"
+    added: "2026-10-04"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis for the full dismissal record

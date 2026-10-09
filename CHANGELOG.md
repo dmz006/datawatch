@@ -5,6 +5,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.37 — security: BL398/GH#197 — migrate all 87 dismissed code-scanning alerts into the structured registry
+
+### Fixed
+- `scripts/dismissed_alerts_watch.py` (GH#197's daily watch) flagged 87
+  GitHub-dismissed code-scanning alerts with no `security/accepted-risks.yml`
+  entry. These weren't unreviewed findings — BL394
+  (`docs/plans/2026-10-03-bl394-security-findings-review.md`) already
+  reviewed and dismissed all 87 with real reasoning; they just predated the
+  structured registry and were never migrated into it.
+- Added 87 `kind: code-scanning` entries (`security/accepted-risks.yml`,
+  70 → 158 total with the existing container entries), one per alert
+  (`id`, `package` = rule id, `path` = file, matching datawatch-app's own
+  `code-scanning` schema field-for-field). Each entry's `impact.analysis`
+  is the alert's own real GitHub dismissal comment, pulled verbatim via
+  `gh api repos/dmz006/datawatch/code-scanning/alerts/<n>` — not
+  re-derived or re-analyzed, since that reasoning was already written
+  down correctly at the time each alert was actually reviewed.
+  `added`/`first_added` use each alert's real `dismissed_at` date rather
+  than today's, so expiry tracking reflects when the decision was
+  actually made.
+- `scripts/check_accepted_risks.py` passes against all 158 entries.
+  `scripts/dismissed_alerts_watch.py` now reports `0 of 87 unregistered`
+  for code-scanning (Dependabot remains separately gated on
+  `SCA_WATCH_TOKEN`, confirmed working as of this session).
+
 ## v8.73.36 — fix(security): BL398 — anchor CVE-suppression staleness to installed package version, not ID presence
 
 ### Fixed
