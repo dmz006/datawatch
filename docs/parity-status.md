@@ -1,7 +1,7 @@
 # Client Parity Status
 
 **Standard: PWA == Android == iOS**
-**Last updated:** v8.62.0 (2026-10-06), cross-referenced against `dmz006/datawatch-app` v1.28.4 (2026-10-06)
+**Last updated:** v8.79.0 (2026-10-09), cross-referenced against `dmz006/datawatch-app` as of app#241 (filed 2026-10-09, not yet actioned)
 
 This table tracks the parity state of operator-visible features across all three clients.
 iOS parity standard added in v8.8.6 (issue #107 in `dmz006/datawatch`).
@@ -33,6 +33,8 @@ Legend:
 | Settings — General | ✅ | ✅ | ✅ |
 | Settings — LLM backends | ✅ | ✅ | ✅ |
 | Settings — Messaging backends | ✅ | ✅ | ✅ |
+| Settings — Audit & Access Log (v8.74.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
+| Settings — Cross-Session Communication Rule (v8.79.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
 | Push notifications (FCM) | ✅ | ✅ | N/A |
 | Push notifications (APNs) | N/A | N/A | ✅ v8.62.x — server-side dispatch shipped (BL397 Phase 4 / BL335); **unit-tested only, not live-verified against real Apple servers** (no Apple Developer account/Auth Key/TestFlight device token available in this environment) |
 | Alert list + mark read | ✅ | ✅ | ✅ |
