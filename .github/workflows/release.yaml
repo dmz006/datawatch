@@ -402,7 +402,7 @@ jobs:
     needs: [goreleaser, build-base]
     if: ${{ needs.goreleaser.result == 'success' && !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
@@ -435,20 +435,25 @@ jobs:
           # detected the rate limit by grepping the upload error text for
           # "rate limit" — but v9.0.3/v9.0.5 (2026-10-09) hit the identical
           # "release not found" symptom with NO "rate limit" substring in
-          # the error at all (confirmed: the release existed in the GitHub
-          # API the whole time, so this was a read-path cache/propagation
-          # lag again, just one longer than 8x60s=8min). Rather than keep
-          # guessing at the cause from error text, check actual quota via
-          # `gh api rate_limit` directly every attempt (authoritative, not
-          # text-matched) and widen the plain-lag backoff to use the full
-          # 15-minute job timeout.
+          # the error at all (confirmed live: a manually-authenticated `gh
+          # release upload` against the exact same tag succeeded instantly
+          # while the job's own GITHUB_TOKEN still saw "release not found"
+          # minutes later -- this is cross-job GITHUB_TOKEN read-after-write
+          # propagation lag against a release a SIBLING job's token
+          # created, not rate-limiting and not a real absence). The prior
+          # rate-limit incident needed 40+ minutes to clear once. Rather
+          # than keep guessing at the cause from error text, check actual
+          # quota via `gh api rate_limit` directly every attempt
+          # (authoritative, not text-matched) for the rate-limit case, and
+          # widen the plain-lag backoff enough to absorb a repeat of the
+          # worst historical lag (job timeout bumped 15->30min to fit).
           TAG="v${{ steps.ver.outputs.version }}"
           FILE="datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz"
           REPO="${GITHUB_REPOSITORY}"
           echo "pre-flight: TAG=$TAG FILE=$FILE REPO=$REPO"
           ls -lh "$FILE" || echo "pre-flight: file not found"
 
-          attempts=12
+          attempts=25
           for attempt in $(seq 1 "$attempts"); do
             echo "Upload attempt $attempt of $attempts: $FILE"
             if out=$(gh release upload "$TAG" "$FILE" --clobber --repo "$REPO" 2>&1); then
