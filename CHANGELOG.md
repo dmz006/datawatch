@@ -5,6 +5,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.38 — fix(ci): release.yaml — v8.73.31's missing stats-cluster tarball was GitHub API rate-limiting, not propagation lag
+
+### Fixed
+- `attach-tarball` and `attach-security-summary` both failed on v8.73.31's
+  release run. The real cause, visible in `attach-security-summary`'s
+  plain-text error: `"API rate limit exceeded for installation"` —
+  `GITHUB_TOKEN`'s installation-wide quota (shared across every concurrent
+  workflow run in the repo, not scoped to this job) was exhausted, 40+
+  minutes after the release was actually published — far past the window
+  the v8.36.7 "propagation lag" theory assumed, because that was never the
+  real mechanism. `gh release view`/`gh release upload` surface a rate
+  limit as a plain "release not found", which is what made the original
+  misdiagnosis look plausible.
+- Both jobs now detect a rate-limit response explicitly (`grep -qi "rate
+  limit"` on the command's own output) and sleep until the quota's actual
+  reset time (`gh api rate_limit`), capped to 10 minutes, instead of a
+  blind fixed 60s retry that just keeps hitting the same exhausted quota.
+- `attach-security-summary` also replaced `softprops/action-gh-release`
+  with the same hand-rolled `gh release upload` loop `attach-tarball` uses
+  — the third-party action has no retry/backoff at all, so it's where the
+  real error message actually surfaced once, uselessly, on a run that then
+  immediately failed for good.
+- v8.73.31's release itself is unaffected (goreleaser's own 15 assets and
+  every container image published fine) — only the stats-cluster tarball
+  and security-summary.md are missing from it. Backfilling those is a
+  `gh run rerun --failed` on the original run, not a manual upload or a new
+  release tag, once this fix is on `main` (the rerun re-executes failed
+  jobs with this workflow's current `main` content, same as any other
+  workflow rerun).
+
 ## v8.73.37 — security: BL398/GH#197 — migrate all 87 dismissed code-scanning alerts into the structured registry
 
 ### Fixed

@@ -410,31 +410,45 @@ jobs:
             | gzip > datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
       - name: Upload tarball as release asset
         run: |
-          # v8.36.7 — bumped from 3x90s to 8x60s. Observed live on v8.36.6:
-          # `gh release view`/`gh release upload` returned "release not
-          # found" for a full 3 minutes of retries starting 6 minutes after
-          # goreleaser's own log confirmed "release published" for the same
-          # tag/repo, using the identical secrets.GITHUB_TOKEN — a read-path
-          # propagation lag specific to this job's gh CLI calls, not a
-          # permissions or ordering bug (goreleaser's direct REST publish
-          # was long since done; needs: [goreleaser] already serializes
-          # this job after it). A manual retry ~15 minutes after publish
-          # succeeded immediately, so the lag resolves within that window;
-          # widening the in-job retry budget to comfortably cover it.
+          # v8.36.7 widened this to 8x60s assuming a read-path propagation
+          # lag (gh release view/upload returning "release not found" for
+          # several minutes after goreleaser's own publish). v8.73.31
+          # (2026-10-08) failed the same way after a FULL 40+ minutes past
+          # publish — too long for propagation lag. The actual error,
+          # surfaced in the sibling attach-security-summary job's plain-text
+          # softprops/action-gh-release failure in the same run: "API rate
+          # limit exceeded for installation" — GITHUB_TOKEN's installation-
+          # wide quota (shared across every concurrent workflow run in this
+          # repo, not just this job) was exhausted, and `gh release view`'s
+          # 404-on-rate-limit behavior masked that as "not found." Fixed by
+          # detecting the rate-limit response explicitly and sleeping until
+          # its actual reset time instead of blindly retrying every 60s.
           TAG="v${{ steps.ver.outputs.version }}"
           FILE="datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz"
           REPO="${GITHUB_REPOSITORY}"
           echo "pre-flight: TAG=$TAG FILE=$FILE REPO=$REPO"
-          gh release view "$TAG" --repo "$REPO" || echo "pre-flight: release view failed"
           ls -lh "$FILE" || echo "pre-flight: file not found"
+
           attempts=8
           for attempt in $(seq 1 "$attempts"); do
-            echo "Upload attempt $attempt of $attempts"
-            if gh release upload "$TAG" "$FILE" --clobber --repo "$REPO"; then
+            echo "Upload attempt $attempt of $attempts: $FILE"
+            if out=$(gh release upload "$TAG" "$FILE" --clobber --repo "$REPO" 2>&1); then
+              echo "$out"
               echo "Upload succeeded on attempt $attempt"
               exit 0
             fi
-            if [ "$attempt" -lt "$attempts" ]; then
+            echo "$out"
+            if [ "$attempt" -ge "$attempts" ]; then
+              break
+            fi
+            if echo "$out" | grep -qi "rate limit"; then
+              reset=$(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null || echo 0)
+              wait=$(( reset - $(date +%s) + 5 ))
+              [ "$wait" -lt 10 ] && wait=10
+              [ "$wait" -gt 600 ] && wait=600
+              echo "Rate-limited; sleeping ${wait}s until quota resets"
+              sleep "$wait"
+            else
               echo "Upload failed; sleeping 60s before retry"
               sleep 60
             fi
@@ -537,11 +551,48 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
       - name: Upload security-summary.md as release asset
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
-        with:
-          files: |
-            security-summary.md
-            scan-artifacts/gosec-results/gosec.json
-            scan-artifacts/gosec-results/gosec.sarif
-            scan-artifacts/govulncheck-results/govulncheck.txt
-          fail_on_unmatched_files: false
+        # Replaced softprops/action-gh-release (v8.73.37) with the same
+        # hand-rolled gh CLI + rate-limit-aware backoff attach-tarball uses
+        # above — this exact step is what first surfaced the real failure
+        # on v8.73.31: "API rate limit exceeded for installation", which
+        # the third-party action has no retry/backoff for at all.
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          REPO="${GITHUB_REPOSITORY}"
+          failed=0
+          for FILE in security-summary.md \
+                      scan-artifacts/gosec-results/gosec.json \
+                      scan-artifacts/gosec-results/gosec.sarif \
+                      scan-artifacts/govulncheck-results/govulncheck.txt; do
+            if [ ! -f "$FILE" ]; then
+              echo "skip (not found, matches fail_on_unmatched_files:false precedent): $FILE"
+              continue
+            fi
+            attempts=6
+            uploaded=0
+            for attempt in $(seq 1 "$attempts"); do
+              echo "Upload attempt $attempt of $attempts: $FILE"
+              if out=$(gh release upload "$TAG" "$FILE" --clobber --repo "$REPO" 2>&1); then
+                echo "$out"; echo "Upload succeeded on attempt $attempt"
+                uploaded=1
+                break
+              fi
+              echo "$out"
+              [ "$attempt" -ge "$attempts" ] && break
+              if echo "$out" | grep -qi "rate limit"; then
+                reset=$(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null || echo 0)
+                wait=$(( reset - $(date +%s) + 5 ))
+                [ "$wait" -lt 10 ] && wait=10
+                [ "$wait" -gt 600 ] && wait=600
+                echo "Rate-limited; sleeping ${wait}s until quota resets"
+                sleep "$wait"
+              else
+                echo "Upload failed; sleeping 60s before retry"
+                sleep 60
+              fi
+            done
+            [ "$uploaded" -eq 1 ] || failed=1
+          done
+          [ "$failed" -eq 0 ] || { echo "One or more uploads failed"; exit 1; }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
