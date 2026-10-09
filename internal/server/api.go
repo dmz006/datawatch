@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,7 +184,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.39"
+var Version = "8.73.40"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -8008,14 +8009,26 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 			readySess = sess
 		}
 	}
-	if readySess == nil {
-		// Fallback: find the most recently started running claude-code session
+	if readySess == nil && body.SessionID == "" {
+		// GH#202 — fallback for a session-less registration (e.g. a
+		// project-level `.mcp.json` "datawatch" entry with no
+		// CLAUDE_SESSION_ID). Only claim a session that doesn't already
+		// have a live channel — never guess one away from a session whose
+		// bridge is still answering.
+		//
+		// Sorted newest-first: ListSessions() returns map iteration order
+		// (unordered), so the "most recently started" comment this fallback
+		// has always carried was never actually true before this sort was
+		// added — candidate selection was effectively random among matches.
 		sessions := s.manager.ListSessions()
-		for i := len(sessions) - 1; i >= 0; i-- {
-			sess := sessions[i]
+		sort.Slice(sessions, func(i, j int) bool {
+			return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
+		})
+		for _, sess := range sessions {
 			if sess.BackendFamily == "claude-code" &&
 				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
-				sess.Hostname == s.hostname {
+				sess.Hostname == s.hostname &&
+				!channelStillAlive(sess) {
 				readySess = sess
 				break
 			}
@@ -8023,6 +8036,23 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
+	// GH#202 — session channel bridges register at `claude mcp add --scope
+	// user` (GH#128/v8.12.0: a per-session CLAUDE_CONFIG_DIR broke auth and
+	// onboarding worse than this, so --scope user stayed). That means every
+	// Claude process on the host loads every session's channel entry, and
+	// a stray duplicate still carries the real session_id when it calls
+	// ready — only its port is wrong. Only move a session to a new port
+	// when its current one has actually gone quiet; otherwise whichever
+	// duplicate registers last would silently steal the session out from
+	// under its real, still-running bridge.
+	if readySess != nil && readySess.ChannelReady && readySess.ChannelPort != 0 &&
+		readySess.ChannelPort != port && channelStillAlive(readySess) {
+		fmt.Printf("[channel] ignoring ready for %s on port %d — existing port %d is still alive (likely a stray duplicate bridge)\n",
+			readySess.FullID, port, readySess.ChannelPort)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ignored_existing_alive"}) //nolint:errcheck
+		return
+	}
 
 	// Mark session as channel-ready and store its channel port.
 	if readySess != nil {

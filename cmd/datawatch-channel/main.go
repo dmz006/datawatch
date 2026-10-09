@@ -15,7 +15,10 @@
 //                                       {request_id, behavior}
 //
 // Env vars (all match channel.js for drop-in swap):
-//   DATAWATCH_CHANNEL_PORT  HTTP listen port (default 7433; 0 = random)
+//   DATAWATCH_CHANNEL_PORT  HTTP listen port (default 0 = random; GH#202:
+//                           a fixed default clashed between concurrent
+//                           sessions on the same host — the daemon always
+//                           learns the real bound port via /api/channel/ready)
 //   DATAWATCH_API_URL       parent API base URL (default http://localhost:8080)
 //   DATAWATCH_TOKEN         bearer token for parent API (optional)
 //   CLAUDE_SESSION_ID       session id to tag in notifications (optional)
@@ -49,8 +52,7 @@ import (
 )
 
 const (
-	defaultChannelPort = 7433
-	defaultAPIURL      = "http://localhost:8080"
+	defaultAPIURL = "http://localhost:8080"
 	bridgeName         = "datawatch"
 	bridgeVersion      = "0.1.0"
 	// channelReadyHeartbeatInterval — GH#174. Bounds how long "Waiting
@@ -256,7 +258,12 @@ type config struct {
 
 func loadConfig() config {
 	return config{
-		channelPort: envInt("DATAWATCH_CHANNEL_PORT", defaultChannelPort),
+		// GH#202 — default to 0 (auto-select a free port). The old fixed
+		// default (7433) meant two sessions on the same host with
+		// DATAWATCH_CHANNEL_PORT unset both tried to bind the identical
+		// port and the second one crashed with FATAL ... bind: address
+		// already in use.
+		channelPort: envInt("DATAWATCH_CHANNEL_PORT", 0),
 		apiURL:      envStr("DATAWATCH_API_URL", defaultAPIURL),
 		token:       os.Getenv("DATAWATCH_TOKEN"),
 		sessionID:   os.Getenv("CLAUDE_SESSION_ID"),
@@ -522,7 +529,18 @@ func writeJSONOK(w http.ResponseWriter) {
 // probeDaemon does a quick GET /api/health against the configured API URL
 // to verify the daemon is reachable before we attempt tool discovery.
 func probeDaemon(cfg config) error {
-	client := &http.Client{Timeout: 3 * time.Second}
+	// GH#202 — DATAWATCH_API_URL's plain-http default (8080) 307-redirects
+	// to the daemon's TLS port (8443) with a self-signed cert; the default
+	// client's transport rejected it as x509: unknown authority, logging a
+	// misleading WARN on every startup even though tool discovery (which
+	// uses the same loopback-only, self-signed-aware client elsewhere in
+	// this file) worked fine.
+	client := &http.Client{ // #nosec G402 -- loopback only, self-signed daemon cert
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback only, self-signed daemon cert
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, cfg.apiURL+"/api/health", nil)
 	if err != nil {
 		return err

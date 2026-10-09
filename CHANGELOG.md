@@ -5,6 +5,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.73.40 — fix: GH#202 — channel registrations hijacked across sessions
+
+### Fixed
+- Session channel MCP servers register at `claude mcp add --scope user`
+  (GH#128/v8.12.0 — a per-session `CLAUDE_CONFIG_DIR` broke auth/
+  onboarding worse than this, so `--scope user` stayed). Confirmed live
+  on this host: every Claude process loads every session's channel entry
+  from `~/.claude.json`, so a stray duplicate bridge process calls
+  `POST /api/channel/ready` with a *real* session_id but the wrong port,
+  or no session_id at all, and whichever call lands last used to win —
+  silently re-pointing a session away from its real, still-running
+  bridge. `handleChannelReady` now refuses to move a session to a new
+  port while its current one still answers a `/health` probe
+  (`channelStillAlive`, reusing the existing `probeChannelBridge`
+  helper), whether the request carried the real session_id or fell back
+  to guessing one.
+- The session-less fallback (`channel/ready` with no `session_id`) also
+  used to pick from `ListSessions()`'s raw map-iteration order while
+  calling it "the most recently started session" — that was never
+  actually true (map order is unordered), so selection among multiple
+  candidates was effectively random. Now explicitly sorted by
+  `CreatedAt` descending, and skips any session that's already
+  channel-ready on a live port rather than stealing one.
+- `DATAWATCH_CHANNEL_PORT`'s default changed from a fixed `7433` to `0`
+  (auto-select a free port) — the fixed default meant two sessions on
+  the same host with the env var unset both tried to bind the identical
+  port, and the second one crashed with `FATAL ... bind: address
+  already in use`. The bound port is always reported to the daemon via
+  its own `/api/channel/ready` call regardless of this default, so
+  nothing else needed to change.
+- `datawatch-channel`'s daemon health probe now tolerates the daemon's
+  self-signed cert on its HTTP→TLS redirect (same loopback-only
+  `InsecureSkipVerify` pattern already used elsewhere in that binary) —
+  previously logged a misleading `x509: certificate signed by unknown
+  authority` WARN on every startup even though tool discovery worked
+  fine.
+- New regression tests (`gh202_channel_ready_test.go`): a stray duplicate
+  registration can't steal a session whose channel is still alive, and
+  the session-less fallback skips live sessions in favor of a genuinely
+  unregistered one.
+
 ## v8.73.39 — fix(pwa): GH#198 follow-up — finish the Quality Gates settings translations
 
 ### Fixed

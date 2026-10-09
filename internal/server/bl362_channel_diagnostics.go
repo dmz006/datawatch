@@ -18,6 +18,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // ChannelDiagnostics is the on-the-wire shape of GET /api/channel/diagnostics.
@@ -122,4 +123,11 @@ func probeChannelBridge(port int) error {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// channelStillAlive reports whether sess has a registered channel port that
+// still answers a health probe. Used by handleChannelReady (GH#202) to avoid
+// re-pointing a session whose bridge is still genuinely running.
+func channelStillAlive(sess *session.Session) bool {
+	return sess.ChannelReady && sess.ChannelPort != 0 && probeChannelBridge(sess.ChannelPort) == nil
 }
