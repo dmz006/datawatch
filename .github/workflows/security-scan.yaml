@@ -104,11 +104,19 @@ jobs:
     # count exceeds the baseline. See docs/security-review.md for
     # the documented set of accepted findings; bump the baseline
     # file deliberately when a new finding is reviewed and accepted.
+    #
+    # GH#203 (2026-10-09) — go-version was `stable` (same issue, same
+    # fix as the govulncheck job above): resolved to go1.27.2 on the
+    # very next push after this comment was written, and gosec produced
+    # zero bytes of output under it (empty /tmp/gosec.json → the
+    # baseline-diff script's own JSON parse failed, not a real finding).
+    # Pinned to go.mod's version so this job builds/runs against what we
+    # actually ship, not whatever Go happened to be newest that day.
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
@@ -120,7 +128,17 @@ jobs:
           set +e
           EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
           $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          gosec_rc=$?
           set -e
+          # GH#203 — surface a clear diagnostic instead of a raw Python
+          # traceback if gosec itself failed to produce valid JSON (the
+          # go-version-stable incident above: empty output, exit code
+          # swallowed by `set +e`, next step's json.load just died).
+          if [ ! -s /tmp/gosec.json ] || ! python3 -c 'import json; json.load(open("/tmp/gosec.json"))' 2>/dev/null; then
+            echo "::error::gosec itself failed to produce valid JSON output (exit code $gosec_rc) -- this is a tooling/environment problem, not a scan result. See the raw output above."
+            cat /tmp/gosec.json
+            exit 1
+          fi
           python3 - <<'PY'
           import json, sys
           from collections import Counter
